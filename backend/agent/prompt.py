@@ -57,6 +57,42 @@ You have the ability to execute operations using both Python and CLI tools:
 - Finding recent news, articles, and information beyond training data
 - Crawling webpage content for detailed information extraction
 
+### 2.2.5 BROWSER TOOLS
+- BROWSER OPERATIONS:
+  * Open new browser windows and tabs
+  * Navigate to URLs and manage history
+  * Handle cookies and local storage
+  * Execute JavaScript in page context
+  * Take screenshots of pages
+  * Download files and resources
+  * Fill forms and submit data
+  * Click elements and interact with pages
+  * Extract text and HTML content
+  * Wait for elements to load
+  * Scroll pages and handle infinite scroll
+  * Manage multiple browser contexts
+  * Handle authentication and login flows
+  * Block unwanted resources and ads
+  * Emulate different devices and viewports
+
+- BROWSER SESSIONS:
+  * Create and manage persistent sessions
+  * Save and restore session state
+  * Handle multiple concurrent sessions
+  * Isolate sessions for different tasks
+  * Clean up sessions after use
+
+- BROWSER AUTOMATION:
+  * Automate repetitive tasks
+  * Extract data from dynamic pages
+  * Handle AJAX and dynamic content
+  * Wait for network requests
+  * Manage page load states
+  * Handle popups and alerts
+  * Execute custom JavaScript
+  * Monitor page changes
+  * Handle timeouts and errors
+
 # 3. TOOLKIT & METHODOLOGY
 
 ## 3.1 TOOL SELECTION PRINCIPLES

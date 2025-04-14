@@ -12,6 +12,7 @@ from agentpress.thread_manager import ThreadManager
 from agentpress.response_processor import ProcessorConfig
 from agent.tools.sb_shell_tool import SandboxShellTool
 from agent.tools.sb_files_tool import SandboxFilesTool
+from agent.tools.sb_browser_tool import SandboxBrowserTool
 from agent.prompt import get_system_prompt
 from sandbox.sandbox import daytona, create_sandbox, get_or_start_sandbox
 from utils.billing import check_billing_status, get_account_id_from_thread
@@ -52,6 +53,7 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
     else:
         sandbox_pass = str(uuid4())
         sandbox = create_sandbox(sandbox_pass)
+        print(f"\033[91m{sandbox.get_preview_link(6080)}/vnc_lite.html?password={sandbox_pass}\033[0m")
         sandbox_id = sandbox.id
         await client.table('projects').update({
             'sandbox': {
@@ -60,14 +62,18 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
             }
         }).eq('project_id', project_id).execute()
     
-    # thread_manager.add_tool(SandboxBrowseTool, sandbox=sandbox)
-    thread_manager.add_tool(SandboxShellTool, sandbox=sandbox)
-    thread_manager.add_tool(SandboxFilesTool, sandbox=sandbox)
-    thread_manager.add_tool(MessageTool)
-    thread_manager.add_tool(WebSearchTool)
-    thread_manager.add_tool(SandboxDeployTool, sandbox=sandbox)
+    # thread_manager.add_tool(SandboxShellTool, sandbox=sandbox)
+    # thread_manager.add_tool(SandboxFilesTool, sandbox=sandbox)
+    thread_manager.add_tool(SandboxBrowserTool, sandbox=sandbox)
+    # thread_manager.add_tool(SandboxDeployTool, sandbox=sandbox)
+    # thread_manager.add_tool(MessageTool)
+    # thread_manager.add_tool(WebSearchTool)
 
-    system_message = { "role": "system", "content": get_system_prompt() }
+    xml_examples = ""
+    for tag_name, example in thread_manager.tool_registry.get_xml_examples().items():
+        xml_examples += f"{example}\n"
+
+    system_message = { "role": "system", "content": get_system_prompt() + "\n\n" + f"<tool_examples>\n{xml_examples}\n</tool_examples>" }
 
     model_name = "anthropic/claude-3-7-sonnet-latest"
     # model_name = "groq/llama-3.3-70b-versatile"
