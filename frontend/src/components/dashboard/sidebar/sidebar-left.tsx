@@ -24,19 +24,19 @@ import { createClient } from "@/lib/supabase/client"
 
 // Only keep necessary data
 const navSecondaryItems = [
-  {
-    title: "Help",
-    url: "#",
-    icon: HelpCircle,
-  },
+  // {
+  //   title: "Help",
+  //   url: "https://www.kortix.ai/help",
+  //   icon: HelpCircle,
+  // },
   {
     title: "Careers",
-    url: "#",
+    url: "https://www.kortix.ai/careers",
     icon: BookOpen,
   },
   {
     title: "Book Demo",
-    url: "#",
+    url: "https://cal.com/marko-kraemer/15min",
     icon: CalendarClock,
   },
 ]

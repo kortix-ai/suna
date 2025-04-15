@@ -7,6 +7,7 @@ import {
   MoreHorizontal,
   Trash2,
   StarOff,
+  Plus,
 } from "lucide-react"
 
 import {
@@ -30,7 +31,7 @@ import Link from "next/link"
 
 export function NavAgents() {
   const { isMobile } = useSidebar()
-  const [agents, setAgents] = useState<{name: string, url: string, emoji: string}[]>([])
+  const [agents, setAgents] = useState<{name: string, url: string}[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
   // Load agents dynamically from the API
@@ -45,13 +46,9 @@ export function NavAgents() {
           if (threads && threads.length > 0) {
             // For each thread in the project, create an agent entry
             for (const thread of threads) {
-              // Generate a simple emoji based on the project name hash
-              const emoji = getEmojiFromName(project.name)
-              
               agentsList.push({
                 name: project.name,
-                url: `/dashboard/agents/${thread.thread_id}`,
-                emoji: emoji
+                url: `/dashboard/agents/${thread.thread_id}`
               })
             }
           }
@@ -68,17 +65,6 @@ export function NavAgents() {
     loadAgents()
   }, [])
 
-  // Function to generate emoji from name
-  const getEmojiFromName = (name: string) => {
-    const emojis = ["📊", "📝", "💼", "🔍", "✅", "📈", "💡", "🎯", "🗂️", "🤖", "💬", "📚"]
-    // Simple hash function to pick a consistent emoji for the same name
-    let hash = 0
-    for (let i = 0; i < name.length; i++) {
-      hash = name.charCodeAt(i) + ((hash << 5) - hash)
-    }
-    return emojis[Math.abs(hash) % emojis.length]
-  }
-
   // Get only the latest 20 agents for the sidebar
   const recentAgents = agents.slice(0, 20)
 
@@ -86,6 +72,14 @@ export function NavAgents() {
     <SidebarGroup className="group-data-[collapsible=icon]:hidden">
       <div className="flex justify-between items-center">
         <SidebarGroupLabel>Agents</SidebarGroupLabel>
+        <Link 
+          href="/dashboard/agents/new" 
+          className="text-muted-foreground hover:text-foreground h-8 w-8 flex items-center justify-center rounded-md"
+          title="New Agent"
+        >
+          <Plus className="h-4 w-4" />
+          <span className="sr-only">New Agent</span>
+        </Link>
       </div>
 
       <SidebarMenu>
@@ -106,7 +100,6 @@ export function NavAgents() {
               <SidebarMenuItem key={`agent-${index}`}>
                 <SidebarMenuButton asChild>
                   <Link href={item.url} title={item.name}>
-                    <span>{item.emoji}</span>
                     <span>{item.name}</span>
                   </Link>
                 </SidebarMenuButton>
@@ -122,11 +115,6 @@ export function NavAgents() {
                     side={isMobile ? "bottom" : "right"}
                     align={isMobile ? "end" : "start"}
                   >
-                    <DropdownMenuItem>
-                      <StarOff className="text-muted-foreground" />
-                      <span>Remove from agents</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
                     <DropdownMenuItem>
                       <LinkIcon className="text-muted-foreground" />
                       <span>Copy Link</span>
