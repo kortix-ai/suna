@@ -764,6 +764,10 @@ export default function AgentPage({ params }: AgentPageProps) {
               <>
                 {messages.map((message, index) => {
                   // Skip messages containing "ToolResult("
+                  if (!message || !message?.content || !message?.role) {
+                    return null;
+                  }
+
                   if (message.content.includes("ToolResult(")) {
                     return null;
                   }
@@ -939,6 +943,9 @@ export default function AgentPage({ params }: AgentPageProps) {
           <>
             {messages.map((message, index) => {
               // Skip messages containing "ToolResult("
+              if (!message || !message?.content || !message?.role) {
+                return null;
+              }
               if (message.content.includes("ToolResult(")) {
                 return null;
               }

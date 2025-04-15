@@ -63,12 +63,12 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
             }
         }).eq('project_id', project_id).execute()
     
-    # thread_manager.add_tool(SandboxShellTool, sandbox=sandbox)
-    # thread_manager.add_tool(SandboxFilesTool, sandbox=sandbox)
-    thread_manager.add_tool(SandboxBrowserTool, sandbox=sandbox)
-    # thread_manager.add_tool(SandboxDeployTool, sandbox=sandbox)
-    # thread_manager.add_tool(MessageTool)
-    # thread_manager.add_tool(WebSearchTool)
+    thread_manager.add_tool(SandboxShellTool, sandbox=sandbox)
+    thread_manager.add_tool(SandboxFilesTool, sandbox=sandbox)
+    thread_manager.add_tool(SandboxBrowserTool, sandbox=sandbox, thread_id=thread_id, thread_manager=thread_manager)
+    thread_manager.add_tool(SandboxDeployTool, sandbox=sandbox)
+    thread_manager.add_tool(MessageTool)
+    thread_manager.add_tool(WebSearchTool)
 
     xml_examples = ""
     for tag_name, example in thread_manager.tool_registry.get_xml_examples().items():
@@ -116,11 +116,36 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
                 continue_execution = False
                 break
         # Get the latest message from messages table that its tpye is browser_state
+        
         latest_browser_state = await client.table('messages').select('*').eq('thread_id', thread_id).eq('type', 'browser_state').order('created_at', desc=True).limit(1).execute()
+        temporary_message = None
         if latest_browser_state.data and len(latest_browser_state.data) > 0:
-            temporary_message = latest_browser_state.data[0].get('content', '')
-        else:
-            temporary_message = None
+            try:
+                content = json.loads(latest_browser_state.data[0]["content"])
+                screenshot_base64 = content["screenshot_base64"]
+                # Create a copy of the browser state without screenshot
+                browser_state = content.copy()
+                browser_state.pop('screenshot_base64', None)
+                browser_state.pop('screenshot_url', None) 
+                browser_state.pop('screenshot_url_base64', None)
+                temporary_message = { "role": "user", "content": [] }
+                if browser_state:
+                    temporary_message["content"].append({
+                        "type": "text",
+                        "text": f"The following is the current state of the browser:\n{browser_state}"
+                    })
+                if screenshot_base64:
+                    temporary_message["content"].append({
+                        "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{screenshot_base64}",
+                            }
+                    })
+                else:
+                    print("@@@@@ THIS TIME NO SCREENSHOT!!")
+            except Exception as e:
+                print(f"Error parsing browser state: {e}")
+                # print(latest_browser_state.data[0])
 
         response = await thread_manager.run_thread(
             thread_id=thread_id,
@@ -131,7 +156,7 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
             llm_max_tokens=64000,
             tool_choice="auto",
             max_xml_tool_calls=1,
-            # temporary_message=
+            temporary_message=temporary_message,
             processor_config=ProcessorConfig(
                 xml_tool_calling=True,
                 native_tool_calling=False,

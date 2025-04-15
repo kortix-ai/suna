@@ -2,6 +2,7 @@ import traceback
 import json
 
 from agentpress.tool import ToolResult, openapi_schema, xml_schema
+from agentpress.thread_manager import ThreadManager
 from sandbox.sandbox import SandboxToolsBase, Sandbox
 from utils.logger import logger
 
@@ -9,8 +10,10 @@ from utils.logger import logger
 class SandboxBrowserTool(SandboxToolsBase):
     """Tool for executing tasks in a Daytona sandbox with browser-use capabilities."""
     
-    def __init__(self, sandbox: Sandbox):
+    def __init__(self, sandbox: Sandbox, thread_id: str, thread_manager: ThreadManager):
         super().__init__(sandbox)
+        self.thread_id = thread_id
+        self.thread_manager = thread_manager
 
     async def _execute_browser_action(self, endpoint: str, params: dict = None, method: str = "POST") -> ToolResult:
         """Execute a browser automation action through the API
@@ -45,43 +48,40 @@ class SandboxBrowserTool(SandboxToolsBase):
             if response.exit_code == 0:
                 try:
                     result = json.loads(response.result)
+
+                    if not "content" in result:
+                        result["content"] = ""
+                    
+                    if not "role" in result:
+                        result["role"] = "assistant"
+
                     logger.info("Browser automation request completed successfully")
 
-                    # Create a cleaned version of the result based on BrowserActionResult schema
-                    cleaned_result = {
-                        "success": result.get("success", False),
-                        "message": result.get("message", ""),
-                        "error": result.get("error", ""),
-                        "url": result.get("url"),
-                        "title": result.get("title"),
-                        "elements": result.get("elements"),
-                        "pixels_above": result.get("pixels_above", 0),
-                        "pixels_below": result.get("pixels_below", 0),
-                        "content": result.get("content"),
-                        "element_count": result.get("element_count", 0),
-                        "interactive_elements": result.get("interactive_elements"),
-                        "viewport_width": result.get("viewport_width"),
-                        "viewport_height": result.get("viewport_height")
+                    # Add full result to thread messages for state tracking
+                    await self.thread_manager.add_message(
+                        thread_id=self.thread_id,
+                        type="browser_state",
+                        content=result,
+                        is_llm_message=False
+                    )
+
+                    # Return tool-specific success response
+                    success_response = {
+                        "success": True,
+                        "message": result.get("message", "Browser action completed successfully")
                     }
 
-                    # Print screenshot info to console but don't return it
-                    if "screenshot_base64" in result:
-                        has_screenshot = bool(result.get("screenshot_base64"))
-                        print(f"\033[95mScreenshot captured: {has_screenshot}\033[0m")
+                    # Add relevant browser-specific info
+                    if result.get("url"):
+                        success_response["url"] = result["url"]
+                    if result.get("title"):
+                        success_response["title"] = result["title"]
+                    if result.get("element_count"):
+                        success_response["elements_found"] = result["element_count"]
+                    if result.get("pixels_below"):
+                        success_response["scrollable_content"] = result["pixels_below"] > 0
 
-                    # Print viewport info if available
-                    if cleaned_result["viewport_width"] and cleaned_result["viewport_height"]:
-                        print(f"\033[95mViewport size: {cleaned_result['viewport_width']}x{cleaned_result['viewport_height']}\033[0m")
-
-                    # Print interactive elements count
-                    if cleaned_result["element_count"] > 0:
-                        print(f"\033[95mFound {cleaned_result['element_count']} interactive elements\033[0m")
-
-                    print("************************************************")
-                    print(cleaned_result)
-                    print("************************************************")
-
-                    return self.success_response(cleaned_result)
+                    return self.success_response(success_response)
 
                 except json.JSONDecodeError:
                     logger.error(f"Failed to parse response JSON: {response.result}")
