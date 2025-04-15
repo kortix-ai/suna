@@ -13,6 +13,9 @@ export interface ParsedTag {
   isToolCall?: boolean; // Whether this is a tool call (vs a result)
   isPaired?: boolean; // Whether this tag has been paired with its call/result
   status?: 'running' | 'completed' | 'error'; // Status of the tool call
+  
+  // VNC preview for browser-related tools
+  vncPreview?: string; // VNC preview image URL
 }
 
 // Display mode for tool components
@@ -37,7 +40,20 @@ export const SUPPORTED_XML_TAGS = [
   'list-directory',
   'search-code',
   'complete',
-  'full-file-rewrite'
+  'full-file-rewrite',
+  'browser-navigate-to',
+  'browser-click-element',
+  'browser-input-text',
+  'browser-go-back',
+  'browser-wait',
+  'browser-scroll-down',
+  'browser-scroll-up',
+  'browser-scroll-to-text',
+  'browser-switch-tab',
+  'browser-close-tab',
+  'browser-get-dropdown-options',
+  'browser-select-dropdown-option',
+  'browser-drag-drop'
 ];
 
 // Tool status labels

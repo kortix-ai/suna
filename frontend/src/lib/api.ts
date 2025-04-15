@@ -80,8 +80,11 @@ export type Project = {
   description: string;
   account_id: string;
   created_at: string;
-  sandbox_id?: string;
-  sandbox_pass?: string;
+  sandbox: {
+    vnc_preview?: string;
+    id?: string;
+    pass?: string;
+  };
 }
 
 export type Thread = {
@@ -214,7 +217,8 @@ export const createProject = async (
     name: data.name,
     description: data.description || '',
     account_id: data.account_id,
-    created_at: data.created_at
+    created_at: data.created_at,
+    sandbox: { id: "", pass: "", vnc_preview: "" }
   };
 };
 

@@ -58,7 +58,8 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
         await client.table('projects').update({
             'sandbox': {
                 'id': sandbox_id,
-                'pass': sandbox_pass
+                'pass': sandbox_pass,
+                'vnc_preview': sandbox.get_preview_link(6080)
             }
         }).eq('project_id', project_id).execute()
     
@@ -114,6 +115,12 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
                 print(f"Last message was from assistant, stopping execution")
                 continue_execution = False
                 break
+        # Get the latest message from messages table that its tpye is browser_state
+        latest_browser_state = await client.table('messages').select('*').eq('thread_id', thread_id).eq('type', 'browser_state').order('created_at', desc=True).limit(1).execute()
+        if latest_browser_state.data and len(latest_browser_state.data) > 0:
+            temporary_message = latest_browser_state.data[0].get('content', '')
+        else:
+            temporary_message = None
 
         response = await thread_manager.run_thread(
             thread_id=thread_id,
@@ -124,6 +131,7 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
             llm_max_tokens=64000,
             tool_choice="auto",
             max_xml_tool_calls=1,
+            # temporary_message=
             processor_config=ProcessorConfig(
                 xml_tool_calling=True,
                 native_tool_calling=False,

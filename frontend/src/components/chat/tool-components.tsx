@@ -4,7 +4,7 @@ import React from 'react';
 import { ParsedTag, ToolComponentProps } from '@/lib/types/tool-calls';
 import { 
   File, FileText, Terminal, FolderPlus, Folder, Code, Search as SearchIcon, 
-  Bell, Replace, Plus, Minus
+  Bell, Replace, Plus, Minus, Globe
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { diffLines } from 'diff';
@@ -458,6 +458,69 @@ export const SearchCodeTool: React.FC<ToolComponentProps> = ({ tag, mode }) => {
   );
 };
 
+/**
+ * Browser Navigate Tool Component
+ */
+export const BrowserNavigateTool: React.FC<ToolComponentProps> = ({ tag, mode }) => {
+  const url = tag.content || '';
+  const isRunning = tag.status === 'running';
+  
+  if (mode === 'compact') {
+    return (
+      <CompactToolDisplay
+        icon={<Globe className="h-4 w-4 mr-2" />}
+        name={isRunning ? "Navigating to" : "Navigated to"}
+        input={url}
+        isRunning={isRunning}
+      />
+    );
+  }
+
+  return (
+    <div className="border rounded-lg overflow-hidden border-subtle dark:border-white/10">
+      <div className="flex items-center px-2 py-1 text-xs font-medium border-b border-subtle dark:border-white/10 bg-background-secondary dark:bg-background-secondary text-foreground">
+        <Globe className="h-4 w-4 mr-2" />
+        <div className="flex-1">{isRunning ? `Navigating to` : `Navigated to`}: {url}</div>
+        {isRunning && (
+          <div className="flex items-center gap-2">
+            <span className="text-amber-500">Running</span>
+            <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse"></div>
+          </div>
+        )}
+      </div>
+      <div className="p-3 bg-card-bg dark:bg-background-secondary text-foreground">
+        <div className="space-y-2">
+          <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
+            <Globe className="h-3 w-3" />
+            <span className="font-mono">{url}</span>
+          </div>
+          
+          {/* Display VNC preview if available */}
+          {tag.vncPreview && (
+            <div className="mt-2 border border-subtle dark:border-white/10 rounded-md overflow-hidden">
+              <div className="text-xs bg-black text-white p-1">VNC Preview</div>
+              <div className="relative w-full h-[300px] overflow-hidden">
+                <iframe 
+                  src={tag.vncPreview} 
+                  title="Browser preview" 
+                  className="absolute top-0 left-0 border-0"
+                  style={{
+                    width: '200%',
+                    height: '200%',
+                    transform: 'scale(0.5)',
+                    transformOrigin: '0 0'
+                  }}
+                  sandbox="allow-same-origin allow-scripts"
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // Tool component registry
 export const ToolComponentRegistry: Record<string, React.FC<ToolComponentProps>> = {
   'create-file': CreateFileTool,
@@ -471,6 +534,19 @@ export const ToolComponentRegistry: Record<string, React.FC<ToolComponentProps>>
   'ask': NotifyTool,  // Handle ask similar to notify for now
   'complete': NotifyTool, // Handle complete similar to notify for now
   'full-file-rewrite': FullFileRewriteTool,
+  'browser-navigate-to': BrowserNavigateTool,
+  'browser-click-element': BrowserNavigateTool,
+  'browser-input-text': BrowserNavigateTool,
+  'browser-go-back': BrowserNavigateTool,
+  'browser-wait': BrowserNavigateTool,
+  'browser-scroll-down': BrowserNavigateTool,
+  'browser-scroll-up': BrowserNavigateTool,
+  'browser-scroll-to-text': BrowserNavigateTool,
+  'browser-switch-tab': BrowserNavigateTool,
+  'browser-close-tab': BrowserNavigateTool,
+  'browser-get-dropdown-options': BrowserNavigateTool,
+  'browser-select-dropdown-option': BrowserNavigateTool,
+  'browser-drag-drop': BrowserNavigateTool,
 };
 
 // Helper function to get the appropriate component for a tag
