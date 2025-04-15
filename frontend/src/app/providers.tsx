@@ -3,6 +3,7 @@
 import { ThemeProvider } from 'next-themes';
 import { useState, createContext } from 'react';
 import { ParsedTag } from '@/lib/types/tool-calls';
+import { AuthProvider } from '@/components/AuthProvider';
 
 // Create the context here instead of importing it
 export const ToolCallsContext = createContext<{
@@ -18,10 +19,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [toolCalls, setToolCalls] = useState<ParsedTag[]>([]);
 
   return (
-    <ToolCallsContext.Provider value={{ toolCalls, setToolCalls }}>
-      <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-        {children}
-      </ThemeProvider>
-    </ToolCallsContext.Provider>
+    <AuthProvider>
+      <ToolCallsContext.Provider value={{ toolCalls, setToolCalls }}>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          {children}
+        </ThemeProvider>
+      </ToolCallsContext.Provider>
+    </AuthProvider>
   );
 } 

@@ -4,7 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default async function TeamSettingsPage({ params: { accountSlug } }: { params: { accountSlug: string } }) {
-    const supabaseClient = createClient();
+    const supabaseClient = await createClient();
     const { data: teamAccount } = await supabaseClient.rpc('get_account_by_slug', {
         slug: accountSlug
     });

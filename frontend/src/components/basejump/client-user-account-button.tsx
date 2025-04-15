@@ -12,6 +12,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import Link from "next/link";
 import { UserIcon } from "lucide-react";
+import { signOut } from "@/app/auth/actions";
+import { useRouter } from "next/navigation";
 
 interface ClientUserAccountButtonProps {
     userName?: string;
@@ -22,6 +24,13 @@ export default function ClientUserAccountButton({
     userName = "Account", 
     userEmail = "" 
 }: ClientUserAccountButtonProps) {
+    const router = useRouter();
+
+    const handleSignOut = async () => {
+        await signOut();
+        router.refresh();
+    };
+    
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -58,7 +67,9 @@ export default function ClientUserAccountButton({
                 <DropdownMenuSeparator className="border-subtle dark:border-white/10" />
                 <div className="p-1">
                     <DropdownMenuItem asChild className="rounded-md hover:bg-hover-bg text-foreground/90 cursor-pointer">
-                        <Link href="/api/auth/signout" className="flex w-full h-full">Log out</Link>
+                        <button onClick={handleSignOut} className="flex w-full h-full px-2 py-1.5 text-left">
+                            Log out
+                        </button>
                     </DropdownMenuItem>
                 </div>
             </DropdownMenuContent>

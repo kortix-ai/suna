@@ -1,6 +1,7 @@
 "use client";
 
-import { useFormState, useFormStatus } from "react-dom";
+import { useFormStatus } from "react-dom";
+import { useActionState } from "react";
 import { type ComponentProps } from "react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "./alert";
@@ -18,7 +19,7 @@ const initialState = {
 
 export function SubmitButton({ children, formAction, errorMessage, pendingText = "Submitting...", ...props }: Props) {
   const { pending, action } = useFormStatus();
-  const [state, internalFormAction] = useFormState(formAction, initialState);
+  const [state, internalFormAction] = useActionState(formAction, initialState);
 
 
   const isPending = pending && action === internalFormAction;

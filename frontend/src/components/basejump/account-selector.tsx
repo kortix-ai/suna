@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/dialog"
 import { Popover, PopoverContent, PopoverTrigger, } from "@/components/ui/popover"
 import NewTeamForm from "@/components/basejump/new-team-form";
-import { useAccounts } from "@/lib/hooks/use-accounts";
+import { useAccounts } from "@/hooks/use-accounts";
 
 type PopoverTriggerProps = ComponentPropsWithoutRef<typeof PopoverTrigger>;
 

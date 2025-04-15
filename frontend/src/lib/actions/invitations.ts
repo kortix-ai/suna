@@ -11,7 +11,7 @@ export async function createInvitation(prevState: any, formData: FormData): Prom
     const accountId = formData.get("accountId") as string;
     const accountRole = formData.get("accountRole") as string;
 
-    const supabase = createClient();
+    const supabase = await createClient();
 
     const { data, error } = await supabase.rpc('create_invitation', {
         account_id: accountId,
@@ -38,7 +38,7 @@ export async function deleteInvitation(prevState: any, formData: FormData) {
     const invitationId = formData.get("invitationId") as string;
     const returnPath = formData.get("returnPath") as string;
 
-    const supabase = createClient();
+    const supabase = await createClient();
 
     const { error } = await supabase.rpc('delete_invitation', {
         invitation_id: invitationId
@@ -58,7 +58,7 @@ export async function acceptInvitation(prevState: any, formData: FormData) {
 
     const token = formData.get("token") as string;
 
-    const supabase = createClient();
+    const supabase = await createClient();
 
     const { error, data } = await supabase.rpc('accept_invitation', {
         lookup_invitation_token: token

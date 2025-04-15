@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Badge } from "../ui/badge";
 
 export default async function ManageTeams() {
-    const supabaseClient = createClient();
+    const supabaseClient = await createClient();
 
     const { data } = await supabaseClient.rpc('get_accounts');
 

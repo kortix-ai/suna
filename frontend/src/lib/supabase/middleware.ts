@@ -5,7 +5,7 @@ function forceLoginWithReturn(request: NextRequest) {
   const originalUrl = new URL(request.url);
   const path = originalUrl.pathname;
   const query = originalUrl.searchParams.toString();
-  return NextResponse.redirect(new URL(`/login?returnUrl=${encodeURIComponent(path + (query ? `?${query}` : ''))}`, request.url));
+  return NextResponse.redirect(new URL(`/auth?returnUrl=${encodeURIComponent(path + (query ? `?${query}` : ''))}`, request.url));
 }
 
 export const validateSession = async (request: NextRequest) => {
@@ -74,7 +74,7 @@ export const validateSession = async (request: NextRequest) => {
     const protectedRoutes = ['/dashboard', '/invitation'];
 
     if (!user && protectedRoutes.some(path => request.nextUrl.pathname.startsWith(path))) {
-      // redirect to /login
+      // redirect to /auth
       return forceLoginWithReturn(request);
     }
 

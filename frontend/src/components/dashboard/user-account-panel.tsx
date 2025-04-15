@@ -2,18 +2,6 @@
 
 import { useRouter } from "next/navigation";
 import AccountSelector from "@/components/basejump/account-selector";
-import { Button } from "@/components/ui/button";
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuGroup,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import Link from "next/link";
-import { UserIcon } from "lucide-react";
 
 interface UserAccountPanelProps {
     accountId: string;

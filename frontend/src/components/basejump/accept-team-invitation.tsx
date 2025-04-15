@@ -8,7 +8,7 @@ type Props = {
     token: string;
 }
 export default async function AcceptTeamInvitation({ token }: Props) {
-    const supabaseClient = createClient();
+    const supabaseClient = await createClient();
     const { data: invitation } = await supabaseClient.rpc('lookup_invitation', {
         lookup_invitation_token: token
     });

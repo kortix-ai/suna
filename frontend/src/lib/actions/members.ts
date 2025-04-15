@@ -9,7 +9,7 @@ export async function removeTeamMember(prevState: any, formData: FormData) {
     const userId = formData.get("userId") as string;
     const accountId = formData.get("accountId") as string;
     const returnUrl = formData.get("returnUrl") as string;
-    const supabase = createClient();
+    const supabase = await createClient();
 
     const { error } = await supabase.rpc('remove_account_member', {
         user_id: userId,
@@ -35,7 +35,7 @@ export async function updateTeamMemberRole(prevState: any, formData: FormData) {
     const returnUrl = formData.get("returnUrl") as string;
     const makePrimaryOwner = formData.get("makePrimaryOwner");
 
-    const supabase = createClient();
+    const supabase = await createClient();
 
     const { error } = await supabase.rpc('update_account_user_role', {
         user_id: userId,

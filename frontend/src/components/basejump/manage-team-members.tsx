@@ -8,7 +8,7 @@ type Props = {
 }
 
 export default async function ManageTeamMembers({accountId}: Props) {
-    const supabaseClient = createClient();
+    const supabaseClient = await createClient();
 
     const { data: members } = await supabaseClient.rpc('get_account_members', {
         account_id: accountId

@@ -5,7 +5,7 @@ import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 const returnUrl = process.env.NEXT_PUBLIC_URL as string;
 
 export default async function TeamBillingPage({params: {accountSlug}}: {params: {accountSlug: string}}) {
-    const supabaseClient = createClient();
+    const supabaseClient = await createClient();
     const {data: teamAccount} = await supabaseClient.rpc('get_account_by_slug', {
         slug: accountSlug
     });
