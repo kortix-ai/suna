@@ -39,44 +39,16 @@ Suna's powerful toolkit includes seamless browser automation to navigate the web
 Suna consists of four main components:
 
 ### Backend API
-
-The Backend API is built with Python and FastAPI, providing:
-
-- **REST Endpoints**: Handles all communication between the frontend and agent system
-- **Thread Management**: Manages conversation threads and maintains user context
-- **LLM Integration**: Connects to OpenAI, Anthropic, and other providers via LiteLLM
+Python/FastAPI service that handles REST endpoints, thread management, and LLM integration with OpenAI, Anthropic, and others via LiteLLM.
 
 ### Frontend
-
-The Frontend is built with Next.js and React, providing:
-
-- **Modern UI**: Clean, responsive interface built with React and Tailwind CSS
-- **Chat Interface**: Natural conversation interface with the AI agent
-- **Dashboard**: Track and manage your tasks and agent interactions
-- **Use Case Gallery**: Browse and learn from example Suna use cases
-- **Real-time Updates**: Streaming responses and live agent status
+Next.js/React application providing a responsive UI with chat interface, dashboard, etc.
 
 ### Agent Docker
-
-The Agent Docker environment provides isolated execution for the AI agent:
-
-- **Sandbox Environment**: Safely execute code and browse the web
-- **Browser Automation**: Control Chrome for web interactions
-- **Code Interpreter**: Python interpreter for data analysis and computation
-- **File System Access**: Securely manage user files and resources
-- **Tool Integration**: Connect to external APIs and services
-- **Security**: Isolated container environment for safe execution
+Isolated execution environment for every agent - with browser automation, code interpreter, file system access, tool integration, and security features.
 
 ### Supabase Database
-
-The Supabase Database provides data persistence and user management:
-- **Authentication**: Secure API access and user verification
-- **User Accounts**: Authentication and profile management
-- **Conversation History**: Store and retrieve chat conversations
-- **File Storage**: Manage user uploads and generated files
-- **Agent State**: Persist agent state across sessions
-- **Analytics**: Collect usage metrics and performance data
-- **Real-time Subscriptions**: Live updates for collaborative features
+Handles data persistence with authentication, user management, conversation history, file storage, agent state, analytics, and real-time subscriptions.
 
 
 ## Run Locally / Self-Hosting
