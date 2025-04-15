@@ -3,7 +3,7 @@
 import React, { useState, Suspense } from 'react';
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRouter } from 'next/navigation';
-import { ChatInput } from '@/components/chat/chat-input';
+import { ChatInput } from '@/components/thread/chat-input';
 import { createProject, addUserMessage, startAgent, createThread } from "@/lib/api";
 
 function DashboardContent() {

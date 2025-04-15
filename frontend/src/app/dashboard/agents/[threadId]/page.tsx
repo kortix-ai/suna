@@ -3,16 +3,16 @@
 import React, { useState, useEffect, useCallback, useRef, useContext } from "react";
 import { getProject, getMessages, getThread, addUserMessage, startAgent, stopAgent, getAgentRuns, streamAgent, type Message, type Project, type Thread, type AgentRun } from "@/lib/api";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, Square, Send, User, Plus } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
-import { SUPPORTED_XML_TAGS, ParsedTag } from "@/lib/types/tool-calls";
+import { SUPPORTED_XML_TAGS } from "@/lib/types/tool-calls";
 import { ToolCallsContext } from "@/app/providers";
-import { getComponentForTag } from "@/components/chat/tool-components";
 import { BillingErrorAlert } from "@/components/billing/BillingErrorAlert";
 import { useBillingError } from "@/hooks/useBillingError";
+import { MessageList } from "@/components/thread/message-list";
+import { ChatInput } from "@/components/thread/chat-input";
 
 interface AgentPageProps {
   params: {
@@ -21,9 +21,9 @@ interface AgentPageProps {
 }
 
 // Parse XML tags in content
-function parseXMLTags(content: string): { parts: (string | ParsedTag)[], openTags: Record<string, ParsedTag> } {
-  const parts: (string | ParsedTag)[] = [];
-  const openTags: Record<string, ParsedTag> = {};
+function parseXMLTags(content: string): { parts: any[], openTags: Record<string, any> } {
+  const parts: any[] = [];
+  const openTags: Record<string, any> = {};
   const tagStack: Array<{tagName: string, position: number}> = [];
   
   // Find all opening and closing tags
@@ -85,7 +85,7 @@ function parseXMLTags(content: string): { parts: (string | ParsedTag)[], openTag
       }
       
       // Create tag object with unique ID
-      const parsedTag: ParsedTag = {
+      const parsedTag: any = {
         tagName,
         attributes,
         content: '',
@@ -112,7 +112,7 @@ function parseXMLTags(content: string): { parts: (string | ParsedTag)[], openTag
       for (let i = tagStack.length - 1; i >= 0; i--) {
         if (tagStack[i].tagName === tagName) {
           const openTagIndex = tagStack[i].position;
-          const openTag = parts[openTagIndex] as ParsedTag;
+          const openTag = parts[openTagIndex] as any;
           
           // Get content between this opening and closing tag pair
           const contentStart = position;
@@ -193,41 +193,12 @@ function parseXMLTags(content: string): { parts: (string | ParsedTag)[], openTag
   return { parts, openTags };
 }
 
-// Simple component to handle message formatting with XML tag support
-function MessageContent({ content }: { content: string }) {
-  const { parts, openTags } = parseXMLTags(content);
-  
-  return (
-    <div className="whitespace-pre-wrap">
-      {parts.map((part, index) => {
-        if (typeof part === 'string') {
-          return (
-            <React.Fragment key={index}>
-              {part.split('\n').map((line, i) => (
-                <React.Fragment key={i}>
-                  {line}
-                  {i < part.split('\n').length - 1 && <br />}
-                </React.Fragment>
-              ))}
-            </React.Fragment>
-          );
-        } else {
-          // Render specialized tool component based on tag type
-          const ToolComponent = getComponentForTag(part);
-          return <ToolComponent key={index} tag={part} mode="compact" />;
-        }
-      })}
-    </div>
-  );
-}
-
 export default function AgentPage({ params }: AgentPageProps) {
   const resolvedParams = React.use(params as any) as { threadId: string };
   const { threadId } = resolvedParams;
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialMessage = searchParams.get('message');
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const streamCleanupRef = useRef<(() => void) | null>(null);
   
   const [agent, setAgent] = useState<Project | null>(null);
@@ -254,7 +225,7 @@ export default function AgentPage({ params }: AgentPageProps) {
     console.log(`[TOOLS] Processing ${allContent.length} content items for tool calls`);
     
     // Create a new array of tags with a better deduplication strategy
-    const extractedTags: ParsedTag[] = [];
+    const extractedTags: any[] = [];
     const seenTagIds = new Set<string>();
     
     allContent.forEach((content, idx) => {
@@ -342,8 +313,8 @@ export default function AgentPage({ params }: AgentPageProps) {
     });
     
     // Try to pair tool calls with their results
-    const pairedTags: ParsedTag[] = [];
-    const callsByTagName: Record<string, ParsedTag[]> = {};
+    const pairedTags: any[] = [];
+    const callsByTagName: Record<string, any[]> = {};
     
     // Group by tag name first
     extractedTags.forEach(tag => {
@@ -395,11 +366,6 @@ export default function AgentPage({ params }: AgentPageProps) {
     // Update tool calls in the shared context
     setToolCalls(pairedTags);
   }, [messages, streamContent, setToolCalls, agent]);
-  
-  // Scroll to bottom of messages
-  const scrollToBottom = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, []);
   
   // Load initial data
   useEffect(() => {
@@ -469,11 +435,6 @@ export default function AgentPage({ params }: AgentPageProps) {
       }
     };
   }, [threadId, initialMessage, router]);
-  
-  // Scroll to bottom when messages change
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, streamContent, scrollToBottom]);
   
   // Handle streaming agent responses
   const handleStreamAgent = useCallback((agentRunId: string) => {
@@ -645,8 +606,8 @@ export default function AgentPage({ params }: AgentPageProps) {
   }, [threadId, conversation, handleBillingError]);
   
   // Handle sending a message
-  const handleSendMessage = async () => {
-    if (!userMessage.trim() || isSending) return;
+  const handleSendMessage = async (message: string) => {
+    if (!message.trim() || isSending) return;
     if (!conversation) return;
     
     setIsSending(true);
@@ -658,7 +619,7 @@ export default function AgentPage({ params }: AgentPageProps) {
       const userMsg: Message = {
         type: 'user',
         role: 'user',
-        content: userMessage,
+        content: message,
       };
       setMessages(prev => [...prev, userMsg]);
       
@@ -666,7 +627,7 @@ export default function AgentPage({ params }: AgentPageProps) {
       setUserMessage("");
       
       // Add user message to API and start agent
-      await addUserMessage(conversation.thread_id, userMessage);
+      await addUserMessage(conversation.thread_id, message);
       const agentResponse = await startAgent(conversation.thread_id);
       
       // Set current agent run ID and start streaming
@@ -751,130 +712,25 @@ export default function AgentPage({ params }: AgentPageProps) {
           isOpen={true}
         />
         <div className="flex flex-col h-[calc(100vh-10rem)] max-h-[calc(100vh-10rem)] overflow-hidden">
-          <div className="flex-1 overflow-y-auto p-4 pb-[120px] space-y-4" id="messages-container">
-            {messages.length === 0 && !streamContent ? (
-              <div className="flex items-center justify-center h-full">
-                <div className="text-center">
-                  <h3 className="text-lg font-medium">Start a conversation</h3>
-                  <p className="text-sm text-muted-foreground mt-2 mb-4">
-                    Send a message to start talking with {agent?.name || "the AI agent"}
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <>
-                {messages.map((message, index) => {
-                  // Skip messages containing "ToolResult("
-                  if (!message || !message?.content || !message?.role) {
-                    return null;
-                  }
-
-                  if (message.content.includes("ToolResult(")) {
-                    return null;
-                  }
-                  
-                  return (
-                    <div
-                      key={index}
-                      className={`flex ${
-                        message.role === "user" ? "justify-end" : "justify-start"
-                      }`}
-                    >
-                      <div
-                        className={`max-w-[80%] p-4 rounded-lg ${
-                          message.role === "user"
-                            ? "bg-[#f0efe7] text-foreground flex items-start"
-                            : ""
-                        }`}
-                      >
-                        {message.role === "user" && (
-                          <User className="h-5 w-5 mr-2 shrink-0 mt-0.5" />
-                        )}
-                        <MessageContent content={message.content} />
-                      </div>
-                    </div>
-                  );
-                })}
-                
-                {/* Show streaming content if available */}
-                {streamContent && (
-                  <div className="flex justify-start">
-                    <div className="max-w-[80%] p-4">
-                      <div className="whitespace-pre-wrap">
-                        <MessageContent content={streamContent} />
-                        {isStreaming && (
-                          <span 
-                            className="inline-block h-4 w-0.5 bg-foreground/50 mx-px"
-                            style={{ 
-                              opacity: 0.7,
-                              animation: 'cursorBlink 1s ease-in-out infinite',
-                            }}
-                          />
-                        )}
-                        <style jsx global>{`
-                          @keyframes cursorBlink {
-                            0%, 100% { opacity: 1; }
-                            50% { opacity: 0; }
-                          }
-                        `}</style>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                {/* Show a loading indicator if the agent is running but no stream yet */}
-                {isAgentRunning && !streamContent && (
-                  <div className="flex justify-start">
-                    <div className="max-w-[80%] p-4">
-                      <div className="flex items-center space-x-2">
-                        <div className="h-2 w-2 bg-foreground rounded-full animate-pulse"></div>
-                        <div className="h-2 w-2 bg-foreground rounded-full animate-pulse delay-150"></div>
-                        <div className="h-2 w-2 bg-foreground rounded-full animate-pulse delay-300"></div>
-                        <span className="text-sm text-muted-foreground ml-2">AI is thinking...</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-            <div ref={messagesEndRef} id="messages-end"></div>
-          </div>
+          <MessageList
+            messages={messages}
+            streamContent={streamContent}
+            isStreaming={isStreaming}
+            isAgentRunning={isAgentRunning}
+            agentName={agent?.name}
+          />
           
-          <div className="absolute bottom-0 left-0 right-0 z-10 bg-background pb-6">
-            <div className="relative bg-white border border-gray-200 rounded-2xl p-2 mx-4">
-              <Textarea
+          <div className="fixed bottom-0 left-0 right-0 z-10 bg-background pb-6">
+            <div className="max-w-screen-md mx-auto px-4">
+              <ChatInput
+                onSubmit={handleSendMessage}
+                loading={isSending}
+                disabled={true}
+                isAgentRunning={isAgentRunning}
+                onStopAgent={handleStopAgent}
                 value={userMessage}
-                onChange={(e) => setUserMessage(e.target.value)}
-                placeholder="Type your message..."
-                className="resize-none min-h-[100px] pr-12 border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
-                disabled={isAgentRunning || isSending || !conversation}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && e.shiftKey === false) {
-                    e.preventDefault();
-                    handleSendMessage();
-                  }
-                }}
+                onChange={setUserMessage}
               />
-              <div className="absolute bottom-3 right-3 flex space-x-2">
-                <Button 
-                  variant="outline"
-                  className="h-10 w-10 p-0 rounded-2xl border border-gray-200"
-                  disabled={isAgentRunning || isSending || !conversation}
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-                <Button 
-                  onClick={isAgentRunning ? handleStopAgent : handleSendMessage}
-                  className="h-10 w-10 p-0 rounded-2xl" 
-                  disabled={(!userMessage.trim() && !isAgentRunning) || isSending || !conversation}
-                >
-                  {isAgentRunning ? (
-                    <Square className="h-4 w-4" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
             </div>
           </div>
         </div>
@@ -930,129 +786,25 @@ export default function AgentPage({ params }: AgentPageProps) {
   
   return (
     <div className="flex flex-col h-[calc(100vh-10rem)] max-h-[calc(100vh-10rem)] overflow-hidden">
-      <div className="flex-1 overflow-y-auto p-4 pb-[120px] space-y-4" id="messages-container">
-        {messages.length === 0 && !streamContent ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <h3 className="text-lg font-medium">Start a conversation</h3>
-              <p className="text-sm text-muted-foreground mt-2 mb-4">
-                Send a message to start talking with {agent?.name || "the AI agent"}
-              </p>
-            </div>
-          </div>
-        ) : (
-          <>
-            {messages.map((message, index) => {
-              // Skip messages containing "ToolResult("
-              if (!message || !message?.content || !message?.role) {
-                return null;
-              }
-              if (message.content.includes("ToolResult(")) {
-                return null;
-              }
-              
-              return (
-                <div
-                  key={index}
-                  className={`flex ${
-                    message.role === "user" ? "justify-end" : "justify-start"
-                  }`}
-                >
-                  <div
-                    className={`max-w-[80%] p-4 rounded-lg ${
-                      message.role === "user"
-                        ? "bg-[#f0efe7] text-foreground flex items-start"
-                        : ""
-                    }`}
-                  >
-                    {message.role === "user" && (
-                      <User className="h-5 w-5 mr-2 shrink-0 mt-0.5" />
-                    )}
-                    <MessageContent content={message.content} />
-                  </div>
-                </div>
-              );
-            })}
-            
-            {/* Show streaming content if available */}
-            {streamContent && (
-              <div className="flex justify-start">
-                <div className="max-w-[80%] p-4">
-                  <div className="whitespace-pre-wrap">
-                    <MessageContent content={streamContent} />
-                    {isStreaming && (
-                      <span 
-                        className="inline-block h-4 w-0.5 bg-foreground/50 mx-px"
-                        style={{ 
-                          opacity: 0.7,
-                          animation: 'cursorBlink 1s ease-in-out infinite',
-                        }}
-                      />
-                    )}
-                    <style jsx global>{`
-                      @keyframes cursorBlink {
-                        0%, 100% { opacity: 1; }
-                        50% { opacity: 0; }
-                      }
-                    `}</style>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            {/* Show a loading indicator if the agent is running but no stream yet */}
-            {isAgentRunning && !streamContent && (
-              <div className="flex justify-start">
-                <div className="max-w-[80%] p-4">
-                  <div className="flex items-center space-x-2">
-                    <div className="h-2 w-2 bg-foreground rounded-full animate-pulse"></div>
-                    <div className="h-2 w-2 bg-foreground rounded-full animate-pulse delay-150"></div>
-                    <div className="h-2 w-2 bg-foreground rounded-full animate-pulse delay-300"></div>
-                    <span className="text-sm text-muted-foreground ml-2">AI is thinking...</span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-        <div ref={messagesEndRef} id="messages-end"></div>
-      </div>
+      <MessageList
+        messages={messages}
+        streamContent={streamContent}
+        isStreaming={isStreaming}
+        isAgentRunning={isAgentRunning}
+        agentName={agent?.name}
+      />
       
-      <div className="absolute bottom-0 left-0 right-0 z-10 bg-background pb-6">
-        <div className="relative bg-white border border-gray-200 rounded-2xl p-2 mx-4">
-          <Textarea
+      <div className="fixed bottom-0 left-0 right-0 z-10 bg-background pb-6">
+        <div className="max-w-screen-md mx-auto px-4">
+          <ChatInput
+            onSubmit={handleSendMessage}
+            loading={isSending}
+            disabled={!conversation}
+            isAgentRunning={isAgentRunning}
+            onStopAgent={handleStopAgent}
             value={userMessage}
-            onChange={(e) => setUserMessage(e.target.value)}
-            placeholder="Type your message..."
-            className="resize-none min-h-[100px] pr-12 border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
-            disabled={isAgentRunning || isSending || !conversation}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && e.shiftKey === false) {
-                e.preventDefault();
-                handleSendMessage();
-              }
-            }}
+            onChange={setUserMessage}
           />
-          <div className="absolute bottom-3 right-3 flex space-x-2">
-            <Button 
-              variant="outline"
-              className="h-10 w-10 p-0 rounded-2xl border border-gray-200"
-              disabled={isAgentRunning || isSending || !conversation}
-            >
-              <Plus className="h-4 w-4" />
-            </Button>
-            <Button 
-              onClick={isAgentRunning ? handleStopAgent : handleSendMessage}
-              className="h-10 w-10 p-0 rounded-2xl" 
-              disabled={(!userMessage.trim() && !isAgentRunning) || isSending || !conversation}
-            >
-              {isAgentRunning ? (
-                <Square className="h-4 w-4" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
         </div>
       </div>
     </div>

@@ -4,7 +4,7 @@ import { useEffect, useState, useContext } from 'react';
 import { ToolCallsContext } from '@/app/providers';
 import { ParsedTag, ToolDisplayMode } from '@/lib/types/tool-calls';
 import { Grid3X3 } from 'lucide-react';
-import { getComponentForTag } from '@/components/chat/tool-components';
+import { getComponentForTag } from '@/components/thread/tool-components';
 
 export function useToolsPanel() {
   const { toolCalls, setToolCalls } = useContext(ToolCallsContext);
