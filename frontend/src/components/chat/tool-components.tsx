@@ -4,7 +4,7 @@ import React from 'react';
 import { ParsedTag, ToolComponentProps } from '@/lib/types/tool-calls';
 import { 
   File, FileText, Terminal, FolderPlus, Folder, Code, Search as SearchIcon, 
-  Bell, Replace, Plus, Minus, Globe
+  Bell, Replace, Plus, Minus, Globe, Search
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { diffLines } from 'diff';
@@ -521,6 +521,65 @@ export const BrowserNavigateTool: React.FC<ToolComponentProps> = ({ tag, mode })
   );
 };
 
+/**
+ * Web Search Tool Component
+ */
+export const WebSearchTool: React.FC<ToolComponentProps> = ({ tag, mode }) => {
+  const query = tag.attributes.query || '';
+  const isRunning = tag.status === 'running';
+  
+  if (mode === 'compact') {
+    return (
+      <CompactToolDisplay
+        icon={<Search className="h-4 w-4 mr-2" />}
+        name={isRunning ? "Web search in progress..." : "Web search complete"}
+        input={query}
+        isRunning={isRunning}
+      />
+    );
+  }
+
+  const results = tag.result?.output ? JSON.parse(tag.result.output) : [];
+
+  return (
+    <div className="border rounded-lg overflow-hidden border-subtle dark:border-white/10">
+      <div className="flex items-center px-2 py-1 text-xs font-medium border-b border-subtle dark:border-white/10 bg-background-secondary dark:bg-background-secondary text-foreground">
+        <Search className="h-4 w-4 mr-2" />
+        <div className="flex-1">Web Search: {query}</div>
+        {isRunning && (
+          <div className="flex items-center gap-2">
+            <span className="text-amber-500">Searching</span>
+            <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse"></div>
+          </div>
+        )}
+      </div>
+      <div className="p-3 bg-card-bg dark:bg-background-secondary text-foreground">
+        {results.length > 0 ? (
+          <div className="space-y-3">
+            {results.map((result: any, index: number) => (
+              <div key={index} className="text-sm">
+                <a href={result.URL} target="_blank" rel="noopener noreferrer" className="font-medium text-blue-600 hover:underline">
+                  {result.Title}
+                </a>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {result.URL}
+                  {result['Published Date'] && (
+                    <span className="ml-2">
+                      ({new Date(result['Published Date']).toLocaleDateString()})
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="text-sm text-muted-foreground">No results found</div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // Tool component registry
 export const ToolComponentRegistry: Record<string, React.FC<ToolComponentProps>> = {
   'create-file': CreateFileTool,
@@ -547,10 +606,15 @@ export const ToolComponentRegistry: Record<string, React.FC<ToolComponentProps>>
   'browser-get-dropdown-options': BrowserNavigateTool,
   'browser-select-dropdown-option': BrowserNavigateTool,
   'browser-drag-drop': BrowserNavigateTool,
+  'web-search': WebSearchTool,
 };
 
 // Helper function to get the appropriate component for a tag
 export function getComponentForTag(tag: ParsedTag): React.FC<ToolComponentProps> {
+  console.log("getComponentForTag", tag);
+  if (!tag || !tag?.tagName) {
+    console.warn(`No tag name for tag: ${tag}`);
+  }
   if (!ToolComponentRegistry[tag.tagName]) {
     console.warn(`No component registered for tag type: ${tag.tagName}`);
   }

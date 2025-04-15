@@ -16,12 +16,12 @@ export const SUBSCRIPTION_PLANS = {
 const PLAN_DETAILS = {
   [SUBSCRIPTION_PLANS.FREE]: {
     name: 'Free',
-    limit: 1,
+    limit: 100,
     price: 0
   },
   [SUBSCRIPTION_PLANS.BASIC]: {
     name: 'Basic',
-    limit: 10,
+    limit: 100,
     price: 10
   },
   [SUBSCRIPTION_PLANS.PRO]: {

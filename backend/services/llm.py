@@ -121,11 +121,12 @@ def prepare_params(
         logger.debug(f"Added {len(tools)} tools to API parameters")
 
     # # Add Claude-specific headers
-    # if "claude" in model_name.lower() or "anthropic" in model_name.lower():
-    #     params["extra_headers"] = {
-    #         "anthropic-beta": "max-tokens-3-5-sonnet-2024-07-15"
-    #     }
-    #     logger.debug("Added Claude-specific headers")
+    if "claude" in model_name.lower() or "anthropic" in model_name.lower():
+        params["extra_headers"] = {
+            # "anthropic-beta": "max-tokens-3-5-sonnet-2024-07-15"
+            "anthropic-beta": "output-128k-2025-02-19"
+        }
+        logger.debug("Added Claude-specific headers")
     
     # Add OpenRouter-specific parameters
     if model_name.startswith("openrouter/"):

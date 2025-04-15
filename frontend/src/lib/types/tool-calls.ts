@@ -53,7 +53,8 @@ export const SUPPORTED_XML_TAGS = [
   'browser-close-tab',
   'browser-get-dropdown-options',
   'browser-select-dropdown-option',
-  'browser-drag-drop'
+  'browser-drag-drop',
+  'web-search'
 ];
 
 // Tool status labels
