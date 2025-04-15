@@ -57,6 +57,17 @@ You have the ability to execute operations using both Python and CLI tools:
 - Finding recent news, articles, and information beyond training data
 - Crawling webpage content for detailed information extraction
 
+### 2.2.5 BROWSER TOOLS AND CAPABILITIES
+- BROWSER OPERATIONS:
+  * Navigate to URLs and manage history
+  * Fill forms and submit data
+  * Click elements and interact with pages
+  * Extract text and HTML content
+  * Wait for elements to load
+  * Scroll pages and handle infinite scroll
+  * YOU CAN DO ANYTHING ON THE BROWSER - including clicking on elements, filling forms, submitting data, etc.
+  * The browser is in a sandboxed environment, so nothing to worry about.
+
 # 3. TOOLKIT & METHODOLOGY
 
 ## 3.1 TOOL SELECTION PRINCIPLES

@@ -12,6 +12,7 @@ from agentpress.thread_manager import ThreadManager
 from agentpress.response_processor import ProcessorConfig
 from agent.tools.sb_shell_tool import SandboxShellTool
 from agent.tools.sb_files_tool import SandboxFilesTool
+from agent.tools.sb_browser_tool import SandboxBrowserTool
 from agent.prompt import get_system_prompt
 from sandbox.sandbox import daytona, create_sandbox, get_or_start_sandbox
 from utils.billing import check_billing_status, get_account_id_from_thread
@@ -52,22 +53,28 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
     else:
         sandbox_pass = str(uuid4())
         sandbox = create_sandbox(sandbox_pass)
+        print(f"\033[91m{sandbox.get_preview_link(6080)}/vnc_lite.html?password={sandbox_pass}\033[0m")
         sandbox_id = sandbox.id
         await client.table('projects').update({
             'sandbox': {
                 'id': sandbox_id,
-                'pass': sandbox_pass
+                'pass': sandbox_pass,
+                'vnc_preview': sandbox.get_preview_link(6080)
             }
         }).eq('project_id', project_id).execute()
     
-    # thread_manager.add_tool(SandboxBrowseTool, sandbox=sandbox)
     thread_manager.add_tool(SandboxShellTool, sandbox=sandbox)
     thread_manager.add_tool(SandboxFilesTool, sandbox=sandbox)
+    thread_manager.add_tool(SandboxBrowserTool, sandbox=sandbox, thread_id=thread_id, thread_manager=thread_manager)
+    thread_manager.add_tool(SandboxDeployTool, sandbox=sandbox)
     thread_manager.add_tool(MessageTool)
     thread_manager.add_tool(WebSearchTool)
-    thread_manager.add_tool(SandboxDeployTool, sandbox=sandbox)
 
-    system_message = { "role": "system", "content": get_system_prompt() }
+    xml_examples = ""
+    for tag_name, example in thread_manager.tool_registry.get_xml_examples().items():
+        xml_examples += f"{example}\n"
+
+    system_message = { "role": "system", "content": get_system_prompt() + "\n\n" + f"<tool_examples>\n{xml_examples}\n</tool_examples>" }
 
     model_name = "anthropic/claude-3-7-sonnet-latest"
     # model_name = "groq/llama-3.3-70b-versatile"
@@ -108,6 +115,37 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
                 print(f"Last message was from assistant, stopping execution")
                 continue_execution = False
                 break
+        # Get the latest message from messages table that its tpye is browser_state
+        
+        latest_browser_state = await client.table('messages').select('*').eq('thread_id', thread_id).eq('type', 'browser_state').order('created_at', desc=True).limit(1).execute()
+        temporary_message = None
+        if latest_browser_state.data and len(latest_browser_state.data) > 0:
+            try:
+                content = json.loads(latest_browser_state.data[0]["content"])
+                screenshot_base64 = content["screenshot_base64"]
+                # Create a copy of the browser state without screenshot
+                browser_state = content.copy()
+                browser_state.pop('screenshot_base64', None)
+                browser_state.pop('screenshot_url', None) 
+                browser_state.pop('screenshot_url_base64', None)
+                temporary_message = { "role": "user", "content": [] }
+                if browser_state:
+                    temporary_message["content"].append({
+                        "type": "text",
+                        "text": f"The following is the current state of the browser:\n{browser_state}"
+                    })
+                if screenshot_base64:
+                    temporary_message["content"].append({
+                        "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{screenshot_base64}",
+                            }
+                    })
+                else:
+                    print("@@@@@ THIS TIME NO SCREENSHOT!!")
+            except Exception as e:
+                print(f"Error parsing browser state: {e}")
+                # print(latest_browser_state.data[0])
 
         response = await thread_manager.run_thread(
             thread_id=thread_id,
@@ -115,9 +153,10 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
             stream=stream,
             llm_model=model_name,
             llm_temperature=0,
-            llm_max_tokens=64000,
+            llm_max_tokens=128000,
             tool_choice="auto",
             max_xml_tool_calls=1,
+            temporary_message=temporary_message,
             processor_config=ProcessorConfig(
                 xml_tool_calling=True,
                 native_tool_calling=False,

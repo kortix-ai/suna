@@ -175,29 +175,3 @@ export function useToolsPanel() {
     prevTool,
   };
 }
-
-// Helper function to get a friendly title for a tool call
-function getToolTitle(tag: ParsedTag): string {
-  switch (tag.tagName) {
-    case 'create-file':
-      return `Creating file: ${tag.attributes.file_path || ''}`;
-    case 'read-file':
-      return `Reading file: ${tag.attributes.file_path || ''}`;
-    case 'execute-command':
-      return `Executing: ${tag.attributes.command || ''}`;
-    case 'create-directory':
-      return `Creating directory: ${tag.attributes.path || ''}`;
-    case 'list-directory':
-      return `Listing directory: ${tag.attributes.path || ''}`;
-    case 'search-code':
-      return `Searching code: ${tag.attributes.query || ''}`;
-    case 'notify':
-      return `Notification: ${tag.attributes.message || ''}`;
-    case 'str-replace':
-      return `String replace: ${tag.attributes.pattern || ''}`;
-    case 'full-file-rewrite':
-      return `Full file rewrite: ${tag.attributes.file_path || ''}`;
-    default:
-      return `${tag.tagName} operation`;
-  }
-} 

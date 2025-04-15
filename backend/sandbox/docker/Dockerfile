@@ -94,7 +94,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy server script
+COPY . /app
 COPY server.py /app/server.py
+COPY browser_api.py /app/browser_api.py
 
 # Install Playwright and browsers with system dependencies
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
@@ -105,9 +107,6 @@ RUN playwright install-deps
 RUN playwright install chromium
 # Verify installation
 RUN python -c "from playwright.sync_api import sync_playwright; print('Playwright installation verified')"
-
-# Copy the application code
-# COPY . .
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1

@@ -282,6 +282,12 @@ export default function AgentPage({ params }: AgentPageProps) {
           part.isToolCall = !isUserMessage;
           part.status = part.isClosing ? 'completed' : 'running';
           
+          // Check if this is a browser-related tool and add VNC preview
+          if (part.tagName.includes('browser') && agent?.sandbox?.vnc_preview) {
+            console.log(`[TOOLS] Adding VNC preview from sandbox to browser tool ${part.tagName}`);
+            part.vncPreview = agent.sandbox.vnc_preview + "/vnc_lite.html?password=" + agent.sandbox.pass;
+          }
+          
           // Use ID for deduplication
           if (!seenTagIds.has(part.id)) {
             seenTagIds.add(part.id);
@@ -306,6 +312,12 @@ export default function AgentPage({ params }: AgentPageProps) {
         // Mark as tool call or result
         tag.isToolCall = !isUserMessage;
         tag.status = tag.isClosing ? 'completed' : 'running';
+        
+        // Check if this is a browser-related tool and add VNC preview
+        if (tag.tagName.includes('browser') && agent?.sandbox?.vnc_preview) {
+          console.log(`[TOOLS] Adding VNC preview from sandbox to browser tool ${tag.tagName}`);
+          tag.vncPreview = agent.sandbox.vnc_preview + "/vnc_lite.html?password=" + agent.sandbox.pass;
+        }
         
         // Use ID for deduplication
         if (!seenTagIds.has(tag.id)) {
@@ -381,7 +393,7 @@ export default function AgentPage({ params }: AgentPageProps) {
     
     // Update tool calls in the shared context
     setToolCalls(pairedTags);
-  }, [messages, streamContent, setToolCalls]);
+  }, [messages, streamContent, setToolCalls, agent]);
   
   // Scroll to bottom of messages
   const scrollToBottom = useCallback(() => {
@@ -752,6 +764,10 @@ export default function AgentPage({ params }: AgentPageProps) {
               <>
                 {messages.map((message, index) => {
                   // Skip messages containing "ToolResult("
+                  if (!message || !message?.content || !message?.role) {
+                    return null;
+                  }
+
                   if (message.content.includes("ToolResult(")) {
                     return null;
                   }
@@ -927,6 +943,9 @@ export default function AgentPage({ params }: AgentPageProps) {
           <>
             {messages.map((message, index) => {
               // Skip messages containing "ToolResult("
+              if (!message || !message?.content || !message?.role) {
+                return null;
+              }
               if (message.content.includes("ToolResult(")) {
                 return null;
               }

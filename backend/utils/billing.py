@@ -4,9 +4,9 @@ from services.supabase import DBConnection
 
 # Define subscription tiers and their monthly hour limits
 SUBSCRIPTION_TIERS = {
-    'price_1RDQbOG6l1KZGqIrgrYzMbnL': {'name': 'free', 'hours': 1},
-    'price_1RC2PYG6l1KZGqIrpbzFB9Lp': {'name': 'base', 'hours': 1},
-    'price_1RDQWqG6l1KZGqIrChli4Ys4': {'name': 'extra', 'hours': 1}
+    'price_1RDQbOG6l1KZGqIrgrYzMbnL': {'name': 'free', 'hours': 100},
+    'price_1RC2PYG6l1KZGqIrpbzFB9Lp': {'name': 'base', 'hours': 100},
+    'price_1RDQWqG6l1KZGqIrChli4Ys4': {'name': 'extra', 'hours': 100}
 }
 
 async def get_account_subscription(client, account_id: str) -> Optional[Dict]:
