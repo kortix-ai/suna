@@ -222,7 +222,8 @@ function MessageContent({ content }: { content: string }) {
 }
 
 export default function AgentPage({ params }: AgentPageProps) {
-  const { threadId } = params;
+  const resolvedParams = React.use(params as any) as { threadId: string };
+  const { threadId } = resolvedParams;
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialMessage = searchParams.get('message');
