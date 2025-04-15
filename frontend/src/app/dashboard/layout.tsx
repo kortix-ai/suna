@@ -17,9 +17,9 @@ export default async function DashboardRootLayout({
 
   return (
     <DashboardLayout
-      accountId={personalAccount?.account_id || user.id}
-      userName={user?.user_metadata?.name || user.email?.split('@')[0] || 'User'}
-      userEmail={user.email}
+      accountId={personalAccount?.account_id || user?.id}
+      userName={user?.user_metadata?.name || user?.email?.split('@')[0] || 'User'}
+      userEmail={user?.email}
       rightPanelTitle="Suna's Computer"
     >
       {children}
