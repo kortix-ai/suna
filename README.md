@@ -1,6 +1,8 @@
 <div align="center">
 
-# Suna - The Open Source generalist AI Agent that acts on your behalf.
+# Suna - Open Source generalist AI Agent
+
+(that acts on your behalf)
 
 ![Suna Screenshot](docs/images/suna_screenshot.png)
 
