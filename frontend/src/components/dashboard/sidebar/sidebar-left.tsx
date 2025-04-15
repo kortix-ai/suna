@@ -4,31 +4,25 @@ import * as React from "react"
 import {
   BookOpen,
   CalendarClock,
-  HelpCircle,
-  MessageCircleQuestion,
 } from "lucide-react"
 
 import { NavAgents } from "@/components/dashboard/sidebar/nav-agents"
-import { NavUser } from "@/components/dashboard/sidebar/nav-user"
+import { NavUserWithTeams } from "@/components/dashboard/sidebar/nav-user-with-teams"
 import { NavSecondary } from "@/components/dashboard/sidebar/nav-secondary"
-import { TeamSwitcher } from "@/components/dashboard/sidebar/team-switcher"
+import { KortixLogo } from "@/components/dashboard/sidebar/kortix-logo"
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
   SidebarRail,
+  useSidebar,
 } from "@/components/ui/sidebar"
 import { useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 
 // Only keep necessary data
 const navSecondaryItems = [
-  // {
-  //   title: "Help",
-  //   url: "https://www.kortix.ai/help",
-  //   icon: HelpCircle,
-  // },
   {
     title: "Careers",
     url: "https://www.kortix.ai/careers",
@@ -44,6 +38,7 @@ const navSecondaryItems = [
 export function SidebarLeft({
   ...props
 }: React.ComponentProps<typeof Sidebar>) {
+  const { state } = useSidebar()
   const [user, setUser] = useState<{
     name: string;
     email: string;
@@ -73,16 +68,18 @@ export function SidebarLeft({
   }, [])
 
   return (
-    <Sidebar className="border-r-0" {...props}>
-      <SidebarHeader>
-        <TeamSwitcher />
+    <Sidebar collapsible="icon" className="border-r-0" {...props}>
+      <SidebarHeader className="border-b px-2 py-2">
+        <div className="flex h-[40px] items-center px-1">
+          <KortixLogo />
+        </div>
       </SidebarHeader>
       <SidebarContent>
         <NavAgents />
         <NavSecondary items={navSecondaryItems} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={user} />
+        <NavUserWithTeams user={user} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

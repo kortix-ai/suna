@@ -41,50 +41,48 @@ export function MessageList({
   }
   
   return (
-    <div className="flex flex-col flex-1 overflow-y-auto overflow-x-hidden p-4 pb-32">
-      {/* Regular messages */}
-      <AnimatePresence initial={false}>
-        {filteredMessages.map((message, index) => (
+    <div className="flex flex-col flex-1 overflow-y-auto overflow-x-hidden py-6 pb-28">
+      <div className="w-full max-w-3xl mx-auto">
+        <AnimatePresence initial={false}>
+          {filteredMessages.map((message, index) => (
+            <motion.div
+              key={index}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ 
+                duration: 0.2, 
+                ease: [0.25, 0.1, 0.25, 1],
+                delay: 0.05
+              }}
+            >
+              <MessageDisplay
+                content={message.content}
+                role={message.role as 'user' | 'assistant'}
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
+        
+        {streamContent && (
           <motion.div
-            key={index}
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ 
-              duration: 0.3, 
-              ease: [0.25, 0.1, 0.25, 1],
-              delay: 0.1
-            }}
+            transition={{ duration: 0.2 }}
           >
             <MessageDisplay
-              content={message.content}
-              role={message.role as 'user' | 'assistant'}
+              content={streamContent}
+              role="assistant"
+              isStreaming={isStreaming}
             />
           </motion.div>
-        ))}
-      </AnimatePresence>
-      
-      {/* Streaming message */}
-      {streamContent && (
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
-        >
-          <MessageDisplay
-            content={streamContent}
-            role="assistant"
-            isStreaming={isStreaming}
-          />
-        </motion.div>
-      )}
-      
-      {/* Loading indicator when agent is running but no stream yet */}
-      {isAgentRunning && !streamContent && (
-        <ThinkingIndicator />
-      )}
-      
-      {/* Element to scroll to */}
-      <div ref={messagesEndRef} />
+        )}
+        
+        {isAgentRunning && !streamContent && (
+          <ThinkingIndicator />
+        )}
+        
+        <div ref={messagesEndRef} />
+      </div>
     </div>
   );
 } 

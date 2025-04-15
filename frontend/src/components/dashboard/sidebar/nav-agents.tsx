@@ -8,6 +8,7 @@ import {
   Trash2,
   StarOff,
   Plus,
+  MessagesSquare,
 } from "lucide-react"
 
 import {
@@ -30,7 +31,7 @@ import { getProjects, getThreads } from "@/lib/api"
 import Link from "next/link"
 
 export function NavAgents() {
-  const { isMobile } = useSidebar()
+  const { isMobile, state } = useSidebar()
   const [agents, setAgents] = useState<{name: string, url: string}[]>([])
   const [isLoading, setIsLoading] = useState(true)
 
@@ -69,11 +70,11 @@ export function NavAgents() {
   const recentAgents = agents.slice(0, 20)
 
   return (
-    <SidebarGroup className="group-data-[collapsible=icon]:hidden">
+    <SidebarGroup>
       <div className="flex justify-between items-center">
         <SidebarGroupLabel>Agents</SidebarGroupLabel>
         <Link 
-          href="/dashboard/agents/new" 
+          href="/dashboard" 
           className="text-muted-foreground hover:text-foreground h-8 w-8 flex items-center justify-center rounded-md"
           title="New Agent"
         >
@@ -98,48 +99,58 @@ export function NavAgents() {
           <>
             {recentAgents.map((item, index) => (
               <SidebarMenuItem key={`agent-${index}`}>
-                <SidebarMenuButton asChild>
+                <SidebarMenuButton 
+                  asChild
+                  tooltip={state === "collapsed" ? item.name : undefined}
+                >
                   <Link href={item.url} title={item.name}>
+                    <MessagesSquare className="h-4 w-4" />
                     <span>{item.name}</span>
                   </Link>
                 </SidebarMenuButton>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <SidebarMenuAction showOnHover>
-                      <MoreHorizontal />
-                      <span className="sr-only">More</span>
-                    </SidebarMenuAction>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent
-                    className="w-56 rounded-lg"
-                    side={isMobile ? "bottom" : "right"}
-                    align={isMobile ? "end" : "start"}
-                  >
-                    <DropdownMenuItem>
-                      <LinkIcon className="text-muted-foreground" />
-                      <span>Copy Link</span>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <a href={item.url} target="_blank" rel="noopener noreferrer">
-                        <ArrowUpRight className="text-muted-foreground" />
-                        <span>Open in New Tab</span>
-                      </a>
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem>
-                      <Trash2 className="text-muted-foreground" />
-                      <span>Delete</span>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                {state !== "collapsed" && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <SidebarMenuAction showOnHover>
+                        <MoreHorizontal />
+                        <span className="sr-only">More</span>
+                      </SidebarMenuAction>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      className="w-56 rounded-lg"
+                      side={isMobile ? "bottom" : "right"}
+                      align={isMobile ? "end" : "start"}
+                    >
+                      <DropdownMenuItem>
+                        <LinkIcon className="text-muted-foreground" />
+                        <span>Copy Link</span>
+                      </DropdownMenuItem>
+                      <DropdownMenuItem asChild>
+                        <a href={item.url} target="_blank" rel="noopener noreferrer">
+                          <ArrowUpRight className="text-muted-foreground" />
+                          <span>Open in New Tab</span>
+                        </a>
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem>
+                        <Trash2 className="text-muted-foreground" />
+                        <span>Delete</span>
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
               </SidebarMenuItem>
             ))}
             
             {agents.length > 20 && (
               <SidebarMenuItem>
-                <SidebarMenuButton asChild className="text-sidebar-foreground/70">
+                <SidebarMenuButton 
+                  asChild 
+                  className="text-sidebar-foreground/70"
+                  tooltip={state === "collapsed" ? "See all agents" : undefined}
+                >
                   <Link href="/dashboard/agents">
-                    <MoreHorizontal />
+                    <MoreHorizontal className="h-4 w-4" />
                     <span>See all agents</span>
                   </Link>
                 </SidebarMenuButton>
@@ -150,6 +161,7 @@ export function NavAgents() {
           // Empty state
           <SidebarMenuItem>
             <SidebarMenuButton className="text-sidebar-foreground/70">
+              <MessagesSquare className="h-4 w-4" />
               <span>No agents yet</span>
             </SidebarMenuButton>
           </SidebarMenuItem>

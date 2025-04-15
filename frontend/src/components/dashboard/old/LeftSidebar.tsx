@@ -2,8 +2,8 @@
 import Link from "next/link";
 import { Search, MessagesSquare, ArrowRight, PanelLeft, X } from "lucide-react";
 import { useState, useEffect } from "react";
-import UserAccountPanel from "@/components/dashboard/user-account-panel";
-import NavItem from "@/components/dashboard/NavItem";
+import UserAccountPanel from "@/components/dashboard/old/user-account-panel";
+import NavItem from "@/components/dashboard/old/NavItem";
 import { getProjects, getThreads } from "@/lib/api";
 
 interface LeftSidebarProps {

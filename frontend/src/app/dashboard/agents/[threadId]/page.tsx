@@ -193,6 +193,62 @@ function parseXMLTags(content: string): { parts: any[], openTags: Record<string,
   return { parts, openTags };
 }
 
+// Chat container component to reduce duplication
+function ChatContainer({ 
+  children, 
+  messages, 
+  streamContent, 
+  isStreaming, 
+  isAgentRunning, 
+  agent, 
+  onSendMessage, 
+  isSending, 
+  conversation, 
+  onStopAgent,
+  userMessage,
+  setUserMessage 
+}: {
+  children?: React.ReactNode;
+  messages: Message[];
+  streamContent: string;
+  isStreaming: boolean;
+  isAgentRunning: boolean;
+  agent: Project | null;
+  onSendMessage: (message: string) => void;
+  isSending: boolean;
+  conversation: Thread | null;
+  onStopAgent: () => void;
+  userMessage: string;
+  setUserMessage: (message: string) => void;
+}) {
+  return (
+    <div className="flex flex-col h-[calc(100vh-5.5rem)] overflow-hidden">
+      {children}
+      <MessageList
+        messages={messages}
+        streamContent={streamContent}
+        isStreaming={isStreaming}
+        isAgentRunning={isAgentRunning}
+        agentName={agent?.name}
+      />
+      
+      <div className="sticky bottom-0 w-full bg-background/80 backdrop-blur-sm pt-2 pb-3 border-t border-zinc-200 dark:border-zinc-800">
+        <div className="w-full max-w-3xl mx-auto px-4">
+          <ChatInput
+            onSubmit={onSendMessage}
+            loading={isSending}
+            disabled={!conversation}
+            isAgentRunning={isAgentRunning}
+            onStopAgent={onStopAgent}
+            value={userMessage}
+            onChange={setUserMessage}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AgentPage({ params }: AgentPageProps) {
   const resolvedParams = React.use(params as any) as { threadId: string };
   const { threadId } = resolvedParams;
@@ -201,6 +257,7 @@ export default function AgentPage({ params }: AgentPageProps) {
   const initialMessage = searchParams.get('message');
   const streamCleanupRef = useRef<(() => void) | null>(null);
   
+  // State
   const [agent, setAgent] = useState<Project | null>(null);
   const [conversation, setConversation] = useState<Thread | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -222,20 +279,16 @@ export default function AgentPage({ params }: AgentPageProps) {
     // Extract tool calls from all messages
     const allContent = [...messages.map(msg => msg.content), streamContent].filter(Boolean);
     
-    console.log(`[TOOLS] Processing ${allContent.length} content items for tool calls`);
-    
     // Create a new array of tags with a better deduplication strategy
     const extractedTags: any[] = [];
     const seenTagIds = new Set<string>();
     
+    // Process content to extract tools
     allContent.forEach((content, idx) => {
-      console.log(`[TOOLS] Extracting from content #${idx}, length: ${content.length}`);
       const { parts, openTags } = parseXMLTags(content);
       
-      let tagsFound = 0;
-      
       // Mark tool calls vs results based on position and sender
-      const isUserMessage = idx % 2 === 0; // Assuming alternating user/assistant messages
+      const isUserMessage = idx % 2 === 0;
       
       // Process all parts to mark as tool calls or results
       parts.forEach(part => {
@@ -256,7 +309,6 @@ export default function AgentPage({ params }: AgentPageProps) {
           
           // Check if this is a browser-related tool and add VNC preview
           if (part.tagName.includes('browser') && agent?.sandbox?.vnc_preview) {
-            console.log(`[TOOLS] Adding VNC preview from sandbox to browser tool ${part.tagName}`);
             part.vncPreview = agent.sandbox.vnc_preview + "/vnc_lite.html?password=" + agent.sandbox.pass;
           }
           
@@ -264,7 +316,6 @@ export default function AgentPage({ params }: AgentPageProps) {
           if (!seenTagIds.has(part.id)) {
             seenTagIds.add(part.id);
             extractedTags.push(part);
-            tagsFound++;
           }
         }
       });
@@ -287,7 +338,6 @@ export default function AgentPage({ params }: AgentPageProps) {
         
         // Check if this is a browser-related tool and add VNC preview
         if (tag.tagName.includes('browser') && agent?.sandbox?.vnc_preview) {
-          console.log(`[TOOLS] Adding VNC preview from sandbox to browser tool ${tag.tagName}`);
           tag.vncPreview = agent.sandbox.vnc_preview + "/vnc_lite.html?password=" + agent.sandbox.pass;
         }
         
@@ -295,14 +345,9 @@ export default function AgentPage({ params }: AgentPageProps) {
         if (!seenTagIds.has(tag.id)) {
           seenTagIds.add(tag.id);
           extractedTags.push(tag);
-          tagsFound++;
         }
       });
-      
-      console.log(`[TOOLS] Found ${tagsFound} tags in content #${idx}`);
     });
-    
-    console.log(`[TOOLS] Extracted ${extractedTags.length} total tools`);
     
     // Sort the tools by timestamp (oldest first)
     extractedTags.sort((a, b) => {
@@ -361,8 +406,6 @@ export default function AgentPage({ params }: AgentPageProps) {
       });
     });
     
-    console.log(`[TOOLS] Paired ${pairedTags.length} tools, ${pairedTags.filter(t => t.isPaired).length} were paired`);
-    
     // Update tool calls in the shared context
     setToolCalls(pairedTags);
   }, [messages, streamContent, setToolCalls, agent]);
@@ -376,15 +419,8 @@ export default function AgentPage({ params }: AgentPageProps) {
       try {
         // Check if we're creating a new conversation or using an existing one
         if (threadId === 'new') {
-          try {
-            // For new threads, we need a project ID - we could redirect to project selection
-            // or use a default project (future enhancement)
-            router.push('/dashboard');
-            return;
-          } catch (err) {
-            console.error("Failed to create new thread:", err);
-            setError("Failed to create a new conversation");
-          }
+          router.push('/dashboard');
+          return;
         } else {
           // Load existing conversation (thread) data
           const conversationData = await getThread(threadId);
@@ -429,7 +465,6 @@ export default function AgentPage({ params }: AgentPageProps) {
     // Clean up streaming on component unmount
     return () => {
       if (streamCleanupRef.current) {
-        console.log("[PAGE] Cleaning up stream on unmount");
         streamCleanupRef.current();
         streamCleanupRef.current = null;
       }
@@ -440,7 +475,6 @@ export default function AgentPage({ params }: AgentPageProps) {
   const handleStreamAgent = useCallback((agentRunId: string) => {
     // Clean up any existing stream first
     if (streamCleanupRef.current) {
-      console.log("[PAGE] Cleaning up existing stream before starting new one");
       streamCleanupRef.current();
       streamCleanupRef.current = null;
     }
@@ -448,13 +482,9 @@ export default function AgentPage({ params }: AgentPageProps) {
     setIsStreaming(true);
     setStreamContent("");
     
-    console.log(`[PAGE] Setting up stream for agent run ${agentRunId}`);
-    
     const cleanup = streamAgent(agentRunId, {
       onMessage: (rawData: string) => {
         try {
-          console.log(`[PAGE] Raw message data:`, rawData);
-          
           // Handle data: prefix format (SSE standard)
           let processedData = rawData;
           let jsonData: {
@@ -476,7 +506,6 @@ export default function AgentPage({ params }: AgentPageProps) {
             if (jsonData?.type === 'status') {
               // Handle billing limit reached
               if (jsonData?.status === 'stopped' && jsonData?.message?.includes('Billing limit reached')) {
-                console.log("[PAGE] Detected billing limit status event");
                 setIsStreaming(false);
                 setCurrentAgentRunId(null);
                 
@@ -499,15 +528,13 @@ export default function AgentPage({ params }: AgentPageProps) {
                     setMessages(updatedMsgs);
                     setAgentRuns(updatedRuns);
                     setStreamContent("");
-                  }).catch(err => console.error("[PAGE] Failed to update after billing limit:", err));
+                  }).catch(err => console.error("Failed to update after billing limit:", err));
                 }
                 
                 return;
               }
               
               if (jsonData?.status === 'completed') {
-                console.log("[PAGE] Detected completion status event");
-                
                 // Reset streaming on completion
                 setIsStreaming(false);
                 
@@ -515,8 +542,6 @@ export default function AgentPage({ params }: AgentPageProps) {
                 if (threadId) {
                   getMessages(threadId)
                     .then(updatedMsgs => {
-                      console.log("[PAGE] Updated messages:");
-                      console.log(updatedMsgs);
                       setMessages(updatedMsgs);
                       setStreamContent("");
                       
@@ -527,7 +552,7 @@ export default function AgentPage({ params }: AgentPageProps) {
                       setAgentRuns(updatedRuns);
                       setCurrentAgentRunId(null);
                     })
-                    .catch(err => console.error("[PAGE] Failed to update after completion:", err));
+                    .catch(err => console.error("Failed to update after completion:", err));
                 }
                 
                 return;
@@ -542,7 +567,6 @@ export default function AgentPage({ params }: AgentPageProps) {
             }
           } catch (e) {
             // If not valid JSON, just append the raw data
-            console.warn("[PAGE] Failed to parse as JSON:", e);
           }
           
           // If we couldn't parse as special format, just append the raw data
@@ -550,17 +574,15 @@ export default function AgentPage({ params }: AgentPageProps) {
             setStreamContent(prev => prev + processedData);
           }
         } catch (error) {
-          console.warn("[PAGE] Failed to process message:", error);
+          console.warn("Failed to process message:", error);
         }
       },
       onError: (error: Error | string) => {
-        console.error("[PAGE] Streaming error:", error);
+        console.error("Streaming error:", error);
         setIsStreaming(false);
         setCurrentAgentRunId(null);
       },
       onClose: async () => {
-        console.log("[PAGE] Stream connection closed");
-        
         // Set UI state to not streaming
         setIsStreaming(false);
         
@@ -582,7 +604,7 @@ export default function AgentPage({ params }: AgentPageProps) {
             }, 50);
           }
         } catch (err) {
-          console.error("[PAGE] Error checking final status:", err);
+          console.error("Error checking final status:", err);
           
           // If there was streaming content, add it as a message
           if (streamContent) {
@@ -668,7 +690,6 @@ export default function AgentPage({ params }: AgentPageProps) {
       if (runningAgentId) {
         // Clean up stream first
         if (streamCleanupRef.current) {
-          console.log("[PAGE] Cleaning up stream before stopping agent");
           streamCleanupRef.current();
           streamCleanupRef.current = null;
         }
@@ -700,6 +721,7 @@ export default function AgentPage({ params }: AgentPageProps) {
   // Check if agent is running either from agent runs list or streaming state
   const isAgentRunning = isStreaming || currentAgentRunId !== null || agentRuns.some(run => run.status === "running");
   
+  // Render based on state
   if (billingError) {
     return (
       <>
@@ -711,36 +733,26 @@ export default function AgentPage({ params }: AgentPageProps) {
           onDismiss={clearBillingError}
           isOpen={true}
         />
-        <div className="flex flex-col h-[calc(100vh-10rem)] max-h-[calc(100vh-10rem)] overflow-hidden">
-          <MessageList
-            messages={messages}
-            streamContent={streamContent}
-            isStreaming={isStreaming}
-            isAgentRunning={isAgentRunning}
-            agentName={agent?.name}
-          />
-          
-          <div className="fixed bottom-0 left-0 right-0 z-10 bg-background pb-6">
-            <div className="max-w-screen-md mx-auto px-4">
-              <ChatInput
-                onSubmit={handleSendMessage}
-                loading={isSending}
-                disabled={true}
-                isAgentRunning={isAgentRunning}
-                onStopAgent={handleStopAgent}
-                value={userMessage}
-                onChange={setUserMessage}
-              />
-            </div>
-          </div>
-        </div>
+        <ChatContainer
+          messages={messages}
+          streamContent={streamContent}
+          isStreaming={isStreaming}
+          isAgentRunning={isAgentRunning}
+          agent={agent}
+          onSendMessage={handleSendMessage}
+          isSending={isSending}
+          conversation={conversation}
+          onStopAgent={handleStopAgent}
+          userMessage={userMessage}
+          setUserMessage={setUserMessage}
+        />
       </>
     );
   }
   
   if (error) {
     return (
-      <div className="max-w-2xl mx-auto py-8 space-y-6">
+      <div className="max-w-2xl mx-auto py-6 space-y-4">
         {typeof error === 'string' ? (
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
@@ -750,7 +762,7 @@ export default function AgentPage({ params }: AgentPageProps) {
         ) : (
           error
         )}
-        <div className="flex space-x-4">
+        <div className="flex space-x-3">
           <Button variant="outline" onClick={() => router.push(`/dashboard/agents`)}>
             Back to Agents
           </Button>
@@ -764,49 +776,39 @@ export default function AgentPage({ params }: AgentPageProps) {
   
   if (isLoading || (!agent && threadId !== 'new')) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-4 mx-auto max-w-screen-lg px-4 py-6">
         <div className="flex justify-between items-center">
           <div>
-            <Skeleton className="h-7 w-48" />
-            <Skeleton className="h-5 w-64 mt-2" />
+            <Skeleton className="h-6 w-40" />
+            <Skeleton className="h-4 w-56 mt-1.5" />
           </div>
         </div>
         
-        <div className="space-y-4 mt-8">
-          <div className="space-y-4">
+        <div className="space-y-3 mt-6">
+          <div className="space-y-3">
             {[1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-24 w-full" />
+              <Skeleton key={i} className="h-16 w-full rounded-lg" />
             ))}
           </div>
-          <Skeleton className="h-12 w-full mt-4" />
+          <Skeleton className="h-10 w-full mt-4 rounded-lg" />
         </div>
       </div>
     );
   }
   
   return (
-    <div className="flex flex-col h-[calc(100vh-10rem)] max-h-[calc(100vh-10rem)] overflow-hidden">
-      <MessageList
-        messages={messages}
-        streamContent={streamContent}
-        isStreaming={isStreaming}
-        isAgentRunning={isAgentRunning}
-        agentName={agent?.name}
-      />
-      
-      <div className="fixed bottom-0 left-0 right-0 z-10 bg-background pb-6">
-        <div className="max-w-screen-md mx-auto px-4">
-          <ChatInput
-            onSubmit={handleSendMessage}
-            loading={isSending}
-            disabled={!conversation}
-            isAgentRunning={isAgentRunning}
-            onStopAgent={handleStopAgent}
-            value={userMessage}
-            onChange={setUserMessage}
-          />
-        </div>
-      </div>
-    </div>
+    <ChatContainer
+      messages={messages}
+      streamContent={streamContent}
+      isStreaming={isStreaming}
+      isAgentRunning={isAgentRunning}
+      agent={agent}
+      onSendMessage={handleSendMessage}
+      isSending={isSending}
+      conversation={conversation}
+      onStopAgent={handleStopAgent}
+      userMessage={userMessage}
+      setUserMessage={setUserMessage}
+    />
   );
 }

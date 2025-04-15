@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useState } from 'react';
-import { User, Bot, ChevronDown, ChevronUp, Code, Eye, EyeOff } from 'lucide-react';
+import { ChevronDown, ChevronUp, Code, Eye, EyeOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ParsedTag, SUPPORTED_XML_TAGS } from "@/lib/types/tool-calls";
 import { getComponentForTag } from "@/components/thread/tool-components";
-import { motion, AnimatePresence } from "motion/react";
+import { motion } from "motion/react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
@@ -194,10 +194,7 @@ export function MessageContent({ content, maxHeight = 300 }: MessageContentProps
   const [expanded, setExpanded] = useState(false);
   const [showRawXml, setShowRawXml] = useState(false);
   
-  // Check if content has XML tags
   const hasXmlTags = parts.some(part => typeof part !== 'string');
-  
-  // Check if content is very long
   const isLongContent = content.length > 1000 || (parts.length > 0 && parts.some(p => typeof p !== 'string'));
   
   return (
@@ -205,12 +202,12 @@ export function MessageContent({ content, maxHeight = 300 }: MessageContentProps
       <div 
         className={cn(
           "whitespace-pre-wrap overflow-hidden transition-all duration-200",
-          !expanded && isLongContent && `max-h-[${maxHeight}px]`
+          !expanded && isLongContent && "max-h-[300px]"
         )}
         style={{ maxHeight: !expanded && isLongContent ? maxHeight : 'none' }}
       >
         {showRawXml ? (
-          <pre className="p-2 bg-muted/40 rounded text-xs overflow-x-auto">
+          <pre className="p-2 bg-muted/30 rounded-md text-xs overflow-x-auto">
             {content}
           </pre>
         ) : (
@@ -228,16 +225,15 @@ export function MessageContent({ content, maxHeight = 300 }: MessageContentProps
                   </React.Fragment>
                 );
               } else {
-                // Render specialized tool component based on tag type
                 const ToolComponent = getComponentForTag(part);
                 return (
                   <div 
                     key={index} 
-                    className="my-2 rounded border border-border/50 overflow-hidden"
+                    className="my-2 rounded-md border border-border/30 overflow-hidden"
                   >
-                    <div className="bg-muted/30 px-2 py-1 text-xs font-medium border-b border-border/30 flex items-center justify-between">
+                    <div className="bg-muted/20 px-2 py-1 text-xs font-medium border-b border-border/20 flex items-center justify-between">
                       <span>{part.tagName}</span>
-                      <Badge variant="outline" className="text-[10px] h-4 px-1.5">Tool</Badge>
+                      <Badge variant="outline" className="text-[10px] h-4 px-1.5 bg-transparent">Tool</Badge>
                     </div>
                     <div className="p-2">
                       <ToolComponent key={index} tag={part} mode="compact" />
@@ -250,19 +246,17 @@ export function MessageContent({ content, maxHeight = 300 }: MessageContentProps
         )}
       </div>
       
-      {/* Fade-out effect for collapsed long content */}
       {isLongContent && !expanded && (
         <div className="h-12 bg-gradient-to-t from-background to-transparent -mt-12 relative"></div>
       )}
       
-      {/* Controls for expanding/showing raw XML */}
       {(isLongContent || hasXmlTags) && (
         <div className="flex items-center space-x-2 mt-2 text-xs text-muted-foreground">
           {isLongContent && (
             <Button 
               variant="ghost" 
               size="sm" 
-              className="h-6 px-2 text-xs flex items-center gap-1 rounded-md"
+              className="h-5 px-2 text-xs flex items-center gap-1 rounded-md hover:bg-muted/40"
               onClick={() => setExpanded(!expanded)}
             >
               {expanded ? (
@@ -283,7 +277,7 @@ export function MessageContent({ content, maxHeight = 300 }: MessageContentProps
             <Button 
               variant="ghost" 
               size="sm" 
-              className="h-6 px-2 text-xs flex items-center gap-1 rounded-md"
+              className="h-5 px-2 text-xs flex items-center gap-1 rounded-md hover:bg-muted/40"
               onClick={() => setShowRawXml(!showRawXml)}
             >
               {showRawXml ? (
@@ -307,108 +301,79 @@ export function MessageContent({ content, maxHeight = 300 }: MessageContentProps
 
 export function MessageDisplay({ content, role, isStreaming = false }: MessageDisplayProps) {
   return (
-    <div
-      className={cn(
-        "flex w-full max-w-screen-md mx-auto",
-        role === "user" ? "justify-end" : "justify-start",
-        "mb-4"
-      )}
-    >
-      {role === "assistant" && (
-        <div className="flex items-start space-x-4">
-          <div className="flex-shrink-0">
-            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-secondary/20 border border-secondary/30">
-              <Bot className="w-4 h-4 text-secondary" />
-            </div>
-          </div>
-          <div className="flex-1">
-            <div className="bg-card rounded-2xl rounded-tl-sm p-4 shadow-sm border border-border/50">
-              <MessageContent content={content} />
-              {isStreaming && (
-                <span 
-                  className="inline-block h-4 w-0.5 bg-foreground/50 mx-px"
-                  style={{ 
-                    opacity: 0.7,
-                    animation: 'cursorBlink 1s ease-in-out infinite',
-                  }}
-                />
-              )}
-              <style jsx global>{`
-                @keyframes cursorBlink {
-                  0%, 100% { opacity: 1; }
-                  50% { opacity: 0; }
-                }
-              `}</style>
-            </div>
-          </div>
-        </div>
-      )}
-
+    <div className="w-full max-w-screen-lg mb-4 px-4">
       {role === "user" && (
-        <div className="flex items-start justify-end space-x-4 max-w-3xl">
-          <div className="flex-1">
-            <div className="bg-accent rounded-2xl rounded-tr-sm p-4 ml-auto shadow-sm border border-border/50">
-              <MessageContent content={content} />
-            </div>
-          </div>
-          <div className="flex-shrink-0">
-            <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/20 border border-primary/30">
-              <User className="w-4 h-4 text-primary" />
-            </div>
-          </div>
-        </div>
+        <div className="text-xs text-muted-foreground mb-1.5 font-medium">You</div>
       )}
+      
+      {role === "assistant" && (
+        <div className="text-xs text-muted-foreground mb-1.5 font-medium">Suna</div>
+      )}
+      
+      <div 
+        className={cn(
+          "max-w-[90%]",
+          role === "user" ? "bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800" : 
+                           "bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800",
+          "rounded-lg p-3 shadow-sm"
+        )}
+      >
+        <MessageContent content={content} />
+        {isStreaming && (
+          <span 
+            className="inline-block h-4 w-0.5 bg-foreground/50 mx-px"
+            style={{ 
+              opacity: 0.7,
+              animation: 'cursorBlink 1s ease-in-out infinite',
+            }}
+          />
+        )}
+        <style jsx global>{`
+          @keyframes cursorBlink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+          }
+        `}</style>
+      </div>
     </div>
   );
 }
 
-// Component for displaying a loading/thinking indicator
 export function ThinkingIndicator() {
   return (
-    <div className="flex justify-start max-w-screen-md mx-auto mb-4">
-      <div className="flex items-start space-x-4">
-        <div className="flex-shrink-0">
-          <div className="flex items-center justify-center w-8 h-8 rounded-full bg-secondary/20 border border-secondary/30">
-            <Bot className="w-4 h-4 text-secondary" />
-          </div>
-        </div>
-        <div className="flex-1">
-          <div className="bg-card rounded-2xl rounded-tl-sm p-4 shadow-sm border border-border/50">
-            <div className="flex items-center space-x-2">
-              <motion.div
-                animate={{ scale: [0.8, 1, 0.8] }}
-                transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
-                className="w-2 h-2 bg-muted-foreground/60 rounded-full"
-              />
-              <motion.div
-                animate={{ scale: [0.8, 1, 0.8] }}
-                transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut", delay: 0.2 }}
-                className="w-2 h-2 bg-muted-foreground/60 rounded-full"
-              />
-              <motion.div
-                animate={{ scale: [0.8, 1, 0.8] }}
-                transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut", delay: 0.4 }}
-                className="w-2 h-2 bg-muted-foreground/60 rounded-full"
-              />
-            </div>
-          </div>
+    <div className="w-full max-w-screen-lg mb-4 px-4">
+      <div className="text-xs text-muted-foreground mb-1.5 font-medium">Suna</div>
+      
+      <div className="max-w-[90%] bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 shadow-sm">
+        <div className="flex items-center space-x-1.5">
+          <motion.div
+            animate={{ scale: [0.8, 1, 0.8] }}
+            transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
+            className="w-1.5 h-1.5 bg-muted-foreground/40 rounded-full"
+          />
+          <motion.div
+            animate={{ scale: [0.8, 1, 0.8] }}
+            transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut", delay: 0.2 }}
+            className="w-1.5 h-1.5 bg-muted-foreground/40 rounded-full"
+          />
+          <motion.div
+            animate={{ scale: [0.8, 1, 0.8] }}
+            transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut", delay: 0.4 }}
+            className="w-1.5 h-1.5 bg-muted-foreground/40 rounded-full"
+          />
         </div>
       </div>
     </div>
   );
 }
 
-// Component for empty/start conversation state
 export function EmptyChat({ agentName = "AI assistant" }) {
   return (
-    <div className="flex items-center justify-center h-full max-w-screen-md mx-auto">
-      <div className="text-center">
-        <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-secondary/20 border border-secondary/30 mb-4">
-          <Bot className="w-6 h-6 text-secondary" />
-        </div>
-        <h3 className="text-lg font-medium mb-2">Start a conversation</h3>
+    <div className="flex items-center justify-center h-full w-full">
+      <div className="text-center px-4">
+        <h3 className="text-base font-medium mb-1">What can I help you ship?</h3>
         <p className="text-sm text-muted-foreground max-w-[300px]">
-          Send a message to start talking with {agentName}
+          Send a message to start talking with Suna
         </p>
       </div>
     </div>

@@ -5,11 +5,11 @@ import { useTheme } from "next-themes";
 import { useToolsPanel } from "@/hooks/use-tools-panel";
 
 // Import our new components
-import LeftSidebar from "@/components/dashboard/LeftSidebar";
-import Header from "@/components/dashboard/Header";
-import MainContent from "@/components/dashboard/MainContent";
-import RightSidebar from "@/components/dashboard/RightSidebar";
-import FloatingPanel from "@/components/dashboard/FloatingPanel";
+import LeftSidebar from "@/components/dashboard/old/LeftSidebar";
+import Header from "@/components/dashboard/old/Header";
+import MainContent from "@/components/dashboard/old/MainContent";
+import RightSidebar from "@/components/dashboard/old/RightSidebar";
+import FloatingPanel from "@/components/dashboard/old/FloatingPanel";
 
 interface DashboardLayoutProps {
   children: ReactNode;

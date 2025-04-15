@@ -1,4 +1,4 @@
-import DashboardLayout from "@/components/dashboard/DashboardLayout";
+import DashboardLayout from "@/components/dashboard/old/DashboardLayout";
 import { createClient } from "@/lib/supabase/server";
 
 interface DashboardRootLayoutProps {

@@ -120,6 +120,28 @@ export function PricingSection() {
     },
   ];
 
+  // Handle tab change
+  const handleTabChange = (tab: "cloud" | "self-hosted") => {
+    if (tab === "self-hosted") {
+      // Scroll to the open-source section when self-hosted tab is clicked
+      const openSourceSection = document.getElementById("open-source");
+      if (openSourceSection) {
+        // Get the position of the section and scroll to a position slightly above it
+        const rect = openSourceSection.getBoundingClientRect();
+        const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+        const offsetPosition = scrollTop + rect.top - 100; // 100px offset from the top
+        
+        window.scrollTo({
+          top: offsetPosition,
+          behavior: 'smooth'
+        });
+      }
+    } else {
+      // Set the deployment type to cloud for cloud tab
+      setDeploymentType(tab);
+    }
+  };
+
   // Update price animation
   const PriceDisplay = ({
     tier,
@@ -279,7 +301,7 @@ export function PricingSection() {
   return (
     <section
       id="pricing"
-      className="flex flex-col items-center justify-center gap-10 pb-10 w-full relative"
+      className="flex flex-col items-center justify-center gap-10 pb-20 w-full relative"
     >
       <SectionHeader>
         <h2 className="text-3xl md:text-4xl font-medium tracking-tighter text-center text-balance">
@@ -293,14 +315,12 @@ export function PricingSection() {
         <div className="absolute -top-14 left-1/2 -translate-x-1/2">
           <PricingTabs
             activeTab={deploymentType}
-            setActiveTab={setDeploymentType}
+            setActiveTab={handleTabChange}
             className="mx-auto"
           />
         </div>
 
-        {deploymentType === "self-hosted" ? (
-          <SelfHostedContent />
-        ) : (
+        {deploymentType === "cloud" && (
           <div className="grid min-[650px]:grid-cols-2 min-[900px]:grid-cols-3 gap-4 w-full max-w-6xl mx-auto px-6">
             {cloudPricingItems.map((tier) => (
               <div

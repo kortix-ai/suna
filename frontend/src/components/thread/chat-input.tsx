@@ -223,7 +223,7 @@ export function ChatInput({
         <AnimatePresence>
           {uploadedFiles.length > 0 && (
             <motion.div 
-              className="mb-2 space-y-1.5"
+              className="space-y-1"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 10 }}
@@ -278,7 +278,7 @@ export function ChatInput({
                 ? "Agent is running... type 'stop' to stop" 
                 : placeholder
             }
-            className="resize-none pr-24 min-h-[56px] max-h-[200px] rounded-2xl border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none"
+            className="resize-none pr-24 min-h-[48px] max-h-[200px] rounded-2xl border-0 focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none py-3"
             disabled={disabled || loading}
             aria-disabled={disabled || loading}
           />
@@ -348,9 +348,6 @@ export function ChatInput({
               )}
             </Button>
           </div>
-          
-          {/* Subtle glow effect under the input */}
-          <div className="absolute -bottom-4 inset-x-0 h-6 bg-secondary/10 blur-xl rounded-full -z-10 opacity-50"></div>
         </div>
       </form>
     </div>

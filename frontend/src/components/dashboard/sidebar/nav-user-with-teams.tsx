@@ -2,13 +2,32 @@
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
-import { ChevronDown, Plus, Command, AudioWaveform } from "lucide-react"
+import Link from "next/link"
+import {
+  BadgeCheck,
+  Bell,
+  ChevronDown,
+  ChevronsUpDown,
+  Command,
+  CreditCard,
+  LogOut,
+  Plus,
+  Settings,
+  User,
+  AudioWaveform,
+} from "lucide-react"
 import { useAccounts } from "@/hooks/use-accounts"
 import NewTeamForm from "@/components/basejump/new-team-form"
 
 import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@/components/ui/avatar"
+import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -19,6 +38,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  useSidebar,
 } from "@/components/ui/sidebar"
 import {
   Dialog,
@@ -28,9 +48,19 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import { createClient } from "@/lib/supabase/client"
 
-export function TeamSwitcher() {
+export function NavUserWithTeams({
+  user,
+}: {
+  user: {
+    name: string
+    email: string
+    avatar: string
+  }
+}) {
   const router = useRouter()
+  const { isMobile } = useSidebar()
   const { data: accounts } = useAccounts()
   const [showNewTeamDialog, setShowNewTeamDialog] = React.useState(false)
   
@@ -101,6 +131,20 @@ export function TeamSwitcher() {
     }
   }
 
+  const handleLogout = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.push("/auth")
+  }
+
+  const getInitials = (name: string) => {
+    return name.split(' ')
+      .map(part => part.charAt(0))
+      .join('')
+      .toUpperCase()
+      .substring(0, 2)
+  }
+
   if (!activeTeam) {
     return null
   }
@@ -111,20 +155,42 @@ export function TeamSwitcher() {
         <SidebarMenuItem>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <SidebarMenuButton className="w-fit px-1.5">
-                <div className="bg-sidebar-primary text-sidebar-primary-foreground flex aspect-square size-5 items-center justify-center rounded-md">
-                  <activeTeam.logo className="size-3" />
+              <SidebarMenuButton
+                size="lg"
+                className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+              >
+                <Avatar className="h-8 w-8 rounded-lg">
+                  <AvatarImage src={user.avatar} alt={user.name} />
+                  <AvatarFallback className="rounded-lg">{getInitials(user.name)}</AvatarFallback>
+                </Avatar>
+                <div className="grid flex-1 text-left text-sm leading-tight">
+                  <span className="truncate font-medium">{user.name}</span>
+                  <span className="truncate text-xs">{user.email}</span>
                 </div>
-                <span className="truncate font-medium">{activeTeam.name}</span>
-                <ChevronDown className="opacity-50" />
+                <ChevronsUpDown className="ml-auto size-4" />
               </SidebarMenuButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent
-              className="w-64 rounded-lg"
+              className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
+              side={isMobile ? "bottom" : "right"}
               align="start"
-              side="bottom"
               sideOffset={4}
             >
+              <DropdownMenuLabel className="p-0 font-normal">
+                <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
+                  <Avatar className="h-8 w-8 rounded-lg">
+                    <AvatarImage src={user.avatar} alt={user.name} />
+                    <AvatarFallback className="rounded-lg">{getInitials(user.name)}</AvatarFallback>
+                  </Avatar>
+                  <div className="grid flex-1 text-left text-sm leading-tight">
+                    <span className="truncate font-medium">{user.name}</span>
+                    <span className="truncate text-xs">{user.email}</span>
+                  </div>
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+
+              {/* Teams Section */}
               {personalAccount && (
                 <>
                   <DropdownMenuLabel className="text-muted-foreground text-xs">
@@ -193,6 +259,28 @@ export function TeamSwitcher() {
                   <div className="text-muted-foreground font-medium">Add team</div>
                 </DropdownMenuItem>
               </DialogTrigger>
+              <DropdownMenuSeparator />
+
+              {/* User Settings Section */}
+              <DropdownMenuGroup>
+                <DropdownMenuItem asChild>
+                  <Link href="/dashboard/settings/billing">
+                    <CreditCard className="mr-2 h-4 w-4" />
+                    Billing
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/dashboard/settings">
+                    <Settings className="mr-2 h-4 w-4" />
+                    Settings
+                  </Link>
+                </DropdownMenuItem>
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleLogout}>
+                <LogOut className="mr-2 h-4 w-4" />
+                Log out
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </SidebarMenuItem>
@@ -209,4 +297,4 @@ export function TeamSwitcher() {
       </DialogContent>
     </Dialog>
   )
-}
+} 
