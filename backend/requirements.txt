@@ -22,3 +22,4 @@ certifi
 python-ripgrep
 daytona_sdk
 boto3
+exa-py
