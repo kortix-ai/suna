@@ -1,23 +1,50 @@
 import { Button } from "@/components/ui/button";
-import { X, Package, Info } from "lucide-react"; 
+import { X, Package, Info, Terminal, CheckCircle, SkipBack, SkipForward } from "lucide-react";
+import { Slider } from "@/components/ui/slider";
 
-// Define the structure for tool call data based on page.tsx state
-interface ToolCallData {
+// Define the structure for LIVE tool call data (from streaming)
+export interface ToolCallData {
   id?: string;
   name?: string;
   arguments?: string;
   index?: number;
 }
 
+// Define the structure for HISTORICAL tool call pairs
+export interface HistoricalToolPair {
+  type: 'historical';
+  assistantCall: { content?: string; name?: string }; // Include name from parsed content if needed
+  userResult: { content?: string; name?: string };
+}
+
+// Union type for side panel content
+export type SidePanelContent = ToolCallData | HistoricalToolPair;
+
+// Type guard to check if content is a HistoricalToolPair
+function isHistoricalPair(content: SidePanelContent | null): content is HistoricalToolPair {
+  return !!content && (content as HistoricalToolPair).type === 'historical';
+}
+
 interface ToolCallSidePanelProps {
   isOpen: boolean;
   onClose: () => void;
-  toolCallData: ToolCallData | null; 
-  // Add other props later if needed, e.g., history of tool calls
+  content: SidePanelContent | null;
+  currentIndex: number | null;
+  totalPairs: number;
+  onNavigate: (newIndex: number) => void;
 }
 
-export function ToolCallSidePanel({ isOpen, onClose, toolCallData }: ToolCallSidePanelProps) {
+export function ToolCallSidePanel({
+  isOpen,
+  onClose,
+  content,
+  currentIndex,
+  totalPairs,
+  onNavigate
+}: ToolCallSidePanelProps) {
   // Updated styling for full-height panel that sits alongside the header
+  const showNavigation = isHistoricalPair(content) && totalPairs > 1 && currentIndex !== null;
+
   return (
     <div 
       className={`
@@ -41,41 +68,120 @@ export function ToolCallSidePanel({ isOpen, onClose, toolCallData }: ToolCallSid
             </Button>
           </div>
           <div className="flex-1 p-4 overflow-y-auto">
-            {toolCallData ? (
-              <div className="space-y-4">
-                <div>
-                  <h3 className="font-semibold text-sm mb-1 text-muted-foreground">Tool Name:</h3>
-                  <p className="text-sm font-mono bg-muted p-2 rounded break-all">{toolCallData.name || 'N/A'}</p>
+            {/* Navigation Controls - Conditionally Rendered */} 
+            {showNavigation && (
+              <div className="mb-6 pb-4 border-b">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-muted-foreground">
+                    Step {currentIndex + 1} of {totalPairs}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => onNavigate(currentIndex - 1)}
+                      disabled={currentIndex === 0}
+                      className="h-7 w-7"
+                    >
+                      <SkipBack className="h-4 w-4" />
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      onClick={() => onNavigate(currentIndex + 1)}
+                      disabled={currentIndex === totalPairs - 1}
+                      className="h-7 w-7"
+                    >
+                      <SkipForward className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="font-semibold text-sm mb-1 text-muted-foreground">Arguments:</h3>
-                  <pre className="text-xs font-mono bg-muted p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">
-                    {toolCallData.arguments 
-                      ? (() => {
-                          try {
-                            // Attempt to parse and pretty-print JSON arguments
-                            return JSON.stringify(JSON.parse(toolCallData.arguments), null, 2);
-                          } catch (e) {
-                            // Fallback for non-JSON arguments
-                            return toolCallData.arguments;
-                          }
-                        })()
-                      : 'No arguments'}
-                  </pre>
-                </div>
-                {/* Placeholder for future details */}
-                {/* 
-                <div>
-                  <h3 className="font-semibold text-sm mb-1 text-muted-foreground">Status:</h3>
-                  <p className="text-sm">Running / Completed / Error</p>
-                </div>
-                <div>
-                  <h3 className="font-semibold text-sm mb-1 text-muted-foreground">Result:</h3>
-                  <pre className="text-xs font-mono bg-muted p-2 rounded overflow-x-auto">Tool output...</pre>
-                </div> 
-                */}
+                <Slider
+                  value={[currentIndex]} // Slider value is an array
+                  max={totalPairs - 1}
+                  step={1}
+                  onValueChange={(value) => onNavigate(value[0])} // onValueChange gives an array
+                />
               </div>
+            )}
+
+            {content ? (
+              // ---- Render Historical Pair ----
+              'type' in content && content.type === 'historical' ? (
+                <div className="space-y-6"> {/* Increased spacing for sections */}
+                  <div>
+                    <h3 className="font-semibold text-sm mb-2 flex items-center gap-1.5 text-muted-foreground">
+                      <Terminal className="h-4 w-4" />
+                      Tool Call (Assistant)
+                    </h3>
+                    <div className="space-y-2">
+                      <div>
+                        <h4 className="text-xs font-medium text-muted-foreground/80 mb-1">Name:</h4>
+                        <p className="text-sm font-mono bg-muted p-2 rounded break-all">{content.assistantCall.name || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-medium text-muted-foreground/80 mb-1">Content/Arguments:</h4>
+                        <pre className="text-xs font-mono bg-muted p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">
+                          {content.assistantCall.content || 'No content'}
+                        </pre>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="font-semibold text-sm mb-2 flex items-center gap-1.5 text-muted-foreground">
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      Tool Result (User)
+                    </h3>
+                     <div className="space-y-2">
+                      <div>
+                        <h4 className="text-xs font-medium text-muted-foreground/80 mb-1">Name:</h4>
+                        <p className="text-sm font-mono bg-muted p-2 rounded break-all">{content.userResult.name || 'N/A'}</p>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-medium text-muted-foreground/80 mb-1">Content/Output:</h4>
+                        <pre className="text-xs font-mono bg-muted p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">
+                          {content.userResult.content || 'No content'}
+                        </pre>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) :
+              // ---- Render Live Tool Call Data ----
+              'name' in content ? ( // Check if it's ToolCallData
+                <div className="space-y-4">
+                  <div>
+                    <h3 className="font-semibold text-sm mb-1 text-muted-foreground">Tool Name (Live):</h3>
+                    <p className="text-sm font-mono bg-muted p-2 rounded break-all">{content.name || 'N/A'}</p>
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-sm mb-1 text-muted-foreground">Arguments (Live):</h3>
+                    <pre className="text-xs font-mono bg-muted p-2 rounded overflow-x-auto whitespace-pre-wrap break-all">
+                      {content.arguments
+                        ? (() => {
+                            try {
+                              // Attempt to parse and pretty-print JSON arguments
+                              return JSON.stringify(JSON.parse(content.arguments || ''), null, 2);
+                            } catch (e) {
+                              // Fallback for non-JSON arguments
+                              return content.arguments;
+                            }
+                          })()
+                        : 'No arguments'}
+                    </pre>
+                  </div>
+                  {/* Add optional ID/Index if needed */}
+                   {content.id && (
+                     <div>
+                       <h3 className="font-semibold text-sm mb-1 text-muted-foreground">Tool Call ID:</h3>
+                       <p className="text-xs font-mono bg-muted p-1 rounded break-all">{content.id}</p>
+                     </div>
+                   )}
+                </div>
+              ) : null // Should not happen if content is not null, but handles edge case
             ) : (
+              // ---- Render Empty State ----
               <div className="text-center text-muted-foreground text-sm mt-8 flex flex-col items-center gap-2">
                 <Package className="h-10 w-10 mb-2 text-muted-foreground/50" />
                 <p className="font-medium">No Tool Call Active</p>

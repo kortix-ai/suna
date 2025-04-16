@@ -1,16 +1,16 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { ArrowDown, File } from 'lucide-react';
+import { ArrowDown, File, Terminal, ExternalLink, SkipBack, SkipForward } from 'lucide-react';
 import { addUserMessage, getMessages, startAgent, stopAgent, getAgentStatus, streamAgent, getAgentRuns, getProject, getThread } from '@/lib/api';
 import { toast } from 'sonner';
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChatInput } from '@/components/thread/chat-input';
 import { FileViewerModal } from '@/components/thread/file-viewer-modal';
 import { SiteHeader } from "@/components/thread/thread-site-header"
-import { ToolCallSidePanel } from "@/components/thread/tool-call-side-panel";
+import { ToolCallSidePanel, SidePanelContent, ToolCallData } from "@/components/thread/tool-call-side-panel";
 import { useSidebar } from "@/components/ui/sidebar";
 
 // Define a type for the params to make React.use() work properly
@@ -35,6 +35,92 @@ interface ApiMessage {
   };
 }
 
+// Define structure for grouped tool call/result sequences
+type ToolSequence = {
+  type: 'tool_sequence';
+  items: ApiMessage[];
+};
+
+// Type for items that will be rendered
+type RenderItem = ApiMessage | ToolSequence;
+
+// Type guard to check if an item is a ToolSequence
+function isToolSequence(item: RenderItem): item is ToolSequence {
+  return (item as ToolSequence).type === 'tool_sequence';
+}
+
+// Function to group consecutive assistant tool call / user tool result pairs
+function groupMessages(messages: ApiMessage[]): RenderItem[] {
+  const grouped: RenderItem[] = [];
+  let i = 0;
+  while (i < messages.length) {
+    const currentMsg = messages[i];
+    const nextMsg = i + 1 < messages.length ? messages[i + 1] : null;
+
+    let currentSequence: ApiMessage[] = [];
+
+    // Check if current message is the start of a potential sequence
+    if (currentMsg.role === 'assistant') {
+      // Regex to find the first XML-like tag: <tagname ...> or <tagname>
+      const toolTagMatch = currentMsg.content?.match(/<([a-zA-Z\-_]+)(?:\s+[^>]*)?>/);
+      if (toolTagMatch && nextMsg && nextMsg.role === 'user') {
+        const expectedTag = toolTagMatch[1];
+        // Regex to check for <tool_result><tagname>...</tagname></tool_result>
+        // Using 's' flag for dotall to handle multiline content within tags -> Replaced with [\s\S] to avoid ES target issues
+        const toolResultRegex = new RegExp(`^<tool_result>\\s*<(${expectedTag})(?:\\s+[^>]*)?>[\\s\\S]*?</\\1>\\s*</tool_result>`);
+
+        if (nextMsg.content?.match(toolResultRegex)) {
+          // Found a pair, start a sequence
+          currentSequence.push(currentMsg);
+          currentSequence.push(nextMsg);
+          i += 2; // Move past this pair
+
+          // Check for continuation
+          while (i < messages.length) {
+            const potentialAssistant = messages[i];
+            const potentialUser = i + 1 < messages.length ? messages[i + 1] : null;
+
+            if (potentialAssistant.role === 'assistant') {
+              const nextToolTagMatch = potentialAssistant.content?.match(/<([a-zA-Z\-_]+)(?:\s+[^>]*)?>/);
+              if (nextToolTagMatch && potentialUser && potentialUser.role === 'user') {
+                const nextExpectedTag = nextToolTagMatch[1];
+                // Replaced dotall 's' flag with [\s\S]
+                const nextToolResultRegex = new RegExp(`^<tool_result>\\s*<(${nextExpectedTag})(?:\\s+[^>]*)?>[\\s\\S]*?</\\1>\\s*</tool_result>`);
+
+                if (potentialUser.content?.match(nextToolResultRegex)) {
+                  // Sequence continues
+                  currentSequence.push(potentialAssistant);
+                  currentSequence.push(potentialUser);
+                  i += 2; // Move past the added pair
+                } else {
+                  // Assistant/User message, but not a matching tool result pair - break sequence
+                  break;
+                }
+              } else {
+                // Assistant message without tool tag, or no following user message - break sequence
+                break;
+              }
+            } else {
+              // Not an assistant message - break sequence
+              break;
+            }
+          }
+          // Add the completed sequence to grouped results
+          grouped.push({ type: 'tool_sequence', items: currentSequence });
+          continue; // Continue the outer loop from the new 'i'
+        }
+      }
+    }
+
+    // If no sequence was started or continued, add the current message normally
+    if (currentSequence.length === 0) {
+       grouped.push(currentMsg);
+       i++; // Move to the next message
+    }
+  }
+  return grouped;
+}
+
 export default function ThreadPage({ params }: { params: Promise<ThreadParams> }) {
   const unwrappedParams = React.use(params);
   const threadId = unwrappedParams.threadId;
@@ -49,7 +135,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const [agentStatus, setAgentStatus] = useState<'idle' | 'running' | 'paused'>('idle');
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamContent, setStreamContent] = useState('');
-  const [toolCallData, setToolCallData] = useState<{id?: string, name?: string, arguments?: string, index?: number} | null>(null);
+  const [toolCallData, setToolCallData] = useState<ToolCallData | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>('Project');
   
@@ -69,6 +155,9 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const [fileViewerOpen, setFileViewerOpen] = useState(false);
   const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
   const initialLayoutAppliedRef = useRef(false);
+  const [sidePanelContent, setSidePanelContent] = useState<SidePanelContent | null>(null);
+  const [allHistoricalPairs, setAllHistoricalPairs] = useState<{ assistantCall: ApiMessage, userResult: ApiMessage }[]>([]);
+  const [currentPairIndex, setCurrentPairIndex] = useState<number | null>(null);
 
   // Access the state and controls for the main SidebarLeft
   const { state: leftSidebarState, setOpen: setLeftSidebarOpen } = useSidebar();
@@ -123,6 +212,25 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     };
   }, [toggleSidePanel]); // Dependency: the toggle function
 
+  // Preprocess messages to group tool call/result sequences and extract historical pairs
+  const processedMessages = useMemo(() => {
+    const grouped = groupMessages(messages);
+    const historicalPairs: { assistantCall: ApiMessage, userResult: ApiMessage }[] = [];
+    grouped.forEach(item => {
+      if (isToolSequence(item)) {
+        for (let i = 0; i < item.items.length; i += 2) {
+          if (item.items[i+1]) {
+            historicalPairs.push({ assistantCall: item.items[i], userResult: item.items[i+1] });
+          }
+        }
+      }
+    });
+    // Update the state containing all historical pairs
+    // Use a functional update if necessary to avoid stale state issues, though likely fine here
+    setAllHistoricalPairs(historicalPairs);
+    return grouped;
+  }, [messages]);
+
   const handleStreamAgent = useCallback(async (runId: string) => {
     // Prevent multiple streams for the same run
     if (streamCleanupRef.current && agentRunId === runId) {
@@ -139,6 +247,9 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     
     setIsStreaming(true);
     setStreamContent('');
+    setToolCallData(null); // Clear old live tool call data
+    setSidePanelContent(null); // Clear side panel when starting new stream
+    setCurrentPairIndex(null); // Reset index when starting new stream
     
     console.log(`[PAGE] Setting up stream for agent run ${runId}`);
     
@@ -170,6 +281,8 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
               index: number;
             };
           } | null = null;
+          
+          let currentLiveToolCall: ToolCallData | null = null;
           
           try {
             jsonData = JSON.parse(processedData);
@@ -211,6 +324,32 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
               setAgentRunId(null);
               return;
             }
+
+            // --- Handle Live Tool Call Updates for Side Panel ---
+            if (jsonData?.type === 'tool_call' && jsonData.tool_call) {
+              console.log('[PAGE] Received tool_call update:', jsonData.tool_call);
+              currentLiveToolCall = {
+                id: jsonData.tool_call.id,
+                name: jsonData.tool_call.function.name,
+                arguments: jsonData.tool_call.function.arguments,
+                index: jsonData.tool_call.index,
+              };
+              setToolCallData(currentLiveToolCall); // Keep for stream content rendering
+              setCurrentPairIndex(null); // Live data means not viewing a historical pair
+              setSidePanelContent(currentLiveToolCall); // Update side panel
+              if (!isSidePanelOpen) {
+                // Optionally auto-open side panel? Maybe only if user hasn't closed it recently.
+                // setIsSidePanelOpen(true);
+              }
+            } else if (jsonData?.type === 'tool_result') {
+              // When tool result comes in, clear the live tool from side panel?
+              // Or maybe wait until stream end?
+              console.log('[PAGE] Received tool_result, clearing live tool from side panel');
+              setSidePanelContent(null);
+              setToolCallData(null);
+              // Don't necessarily clear currentPairIndex here, user might want to navigate back
+            }
+            // --- End Side Panel Update Logic ---
           } catch (e) {
             console.warn('[PAGE] Failed to parse message:', e);
           }
@@ -235,6 +374,8 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         setAgentRunId(null);
         setStreamContent('');  // Clear any partial content
         setToolCallData(null); // Clear tool call data on error
+        setSidePanelContent(null); // Clear side panel on error
+        setCurrentPairIndex(null);
       },
       onClose: async () => {
         console.log('[PAGE] Stream connection closed');
@@ -245,6 +386,8 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         
         // Reset tool call data
         setToolCallData(null);
+        setSidePanelContent(null); // Clear side panel on close
+        setCurrentPairIndex(null);
         
         try {
           // Only check status if we still have an agent run ID
@@ -329,6 +472,12 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
             if (!messagesLoadedRef.current) {
               const messagesData = await getMessages(threadId);
               if (isMounted) {
+                // Log the parsed messages structure
+                console.log('[PAGE] Loaded messages structure:', {
+                  count: messagesData.length,
+                  fullMessages: messagesData
+                });
+                
                 setMessages(messagesData as ApiMessage[]);
                 messagesLoadedRef.current = true;
                 
@@ -697,6 +846,60 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     setFileViewerOpen(true);
   };
 
+  // Click handler for historical tool previews
+  const handleHistoricalToolClick = (pair: { assistantCall: ApiMessage, userResult: ApiMessage }) => {
+    // Extract tool names for display in the side panel
+    const userToolName = pair.userResult.content?.match(/<tool_result>\s*<([a-zA-Z\-_]+)/)?.[1] || 'Tool';
+
+    // Extract only the XML part and the tool name from the assistant message
+    const assistantContent = pair.assistantCall.content || '';
+    // Find the first opening tag and the corresponding closing tag
+    const xmlRegex = /<([a-zA-Z\-_]+)(?:\s+[^>]*)?>[\s\S]*?<\/\1>/;
+    const xmlMatch = assistantContent.match(xmlRegex);
+    const toolCallXml = xmlMatch ? xmlMatch[0] : '[Could not extract XML tag]';
+    const assistantToolName = xmlMatch ? xmlMatch[1] : 'Tool'; // Extract name from the matched tag
+
+    const userResultContent = pair.userResult.content?.match(/<tool_result>([\s\S]*)<\/tool_result>/)?.[1].trim() || '[Could not parse result]';
+
+    setSidePanelContent({
+      type: 'historical',
+      assistantCall: { name: assistantToolName, content: toolCallXml },
+      userResult: { name: userToolName, content: userResultContent }
+    });
+    // Find and set the index of the clicked pair
+    const pairIndex = allHistoricalPairs.findIndex(p => 
+      p.assistantCall.content === pair.assistantCall.content && 
+      p.userResult.content === pair.userResult.content
+      // Note: This comparison might be fragile if messages aren't unique.
+      // A unique ID per message would be better.
+    );
+    setCurrentPairIndex(pairIndex !== -1 ? pairIndex : null);
+    setIsSidePanelOpen(true);
+  };
+
+  // Handler for navigation within the side panel
+  const handleSidePanelNavigate = (newIndex: number) => {
+    if (newIndex >= 0 && newIndex < allHistoricalPairs.length) {
+      const pair = allHistoricalPairs[newIndex];
+      setCurrentPairIndex(newIndex);
+      
+      // Re-extract data for the side panel (similar to handleHistoricalToolClick)
+      const assistantContent = pair.assistantCall.content || '';
+      const xmlRegex = /<([a-zA-Z\-_]+)(?:\s+[^>]*)?>[\s\S]*?<\/\1>/;
+      const xmlMatch = assistantContent.match(xmlRegex);
+      const toolCallXml = xmlMatch ? xmlMatch[0] : '[Could not extract XML tag]';
+      const assistantToolName = xmlMatch ? xmlMatch[1] : 'Tool';
+      const userToolName = pair.userResult.content?.match(/<tool_result>\s*<([a-zA-Z\-_]+)/)?.[1] || 'Tool';
+      const userResultContent = pair.userResult.content?.match(/<tool_result>([\s\S]*)<\/tool_result>/)?.[1].trim() || '[Could not parse result]';
+
+      setSidePanelContent({
+        type: 'historical',
+        assistantCall: { name: assistantToolName, content: toolCallXml },
+        userResult: { name: userToolName, content: userResultContent }
+      });
+    }
+  };
+
   // Only show a full-screen loader on the very first load
   if (isLoading && !initialLoadCompleted.current) {
     return (
@@ -739,8 +942,11 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         </div>
         <ToolCallSidePanel 
           isOpen={isSidePanelOpen} 
-          onClose={() => setIsSidePanelOpen(false)}
-          toolCallData={toolCallData}
+          onClose={() => { setIsSidePanelOpen(false); setSidePanelContent(null); setCurrentPairIndex(null); }}
+          content={sidePanelContent}
+          currentIndex={currentPairIndex}
+          totalPairs={allHistoricalPairs.length}
+          onNavigate={handleSidePanelNavigate}
         />
       </div>
     );
@@ -768,8 +974,11 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         </div>
         <ToolCallSidePanel 
           isOpen={isSidePanelOpen} 
-          onClose={() => setIsSidePanelOpen(false)}
-          toolCallData={toolCallData}
+          onClose={() => { setIsSidePanelOpen(false); setSidePanelContent(null); setCurrentPairIndex(null); }}
+          content={sidePanelContent}
+          currentIndex={currentPairIndex}
+          totalPairs={allHistoricalPairs.length}
+          onNavigate={handleSidePanelNavigate}
         />
       </div>
     );
@@ -801,52 +1010,158 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {messages.map((message, index) => (
-                      <div 
-                        key={index} 
-                        ref={index === messages.length - 1 && message.role === 'assistant' ? latestMessageRef : null}
-                        className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                      >
-                        <div 
-                          className={`max-w-[85%] rounded-lg px-4 py-3 text-sm ${
-                            message.role === 'user' 
-                              ? 'bg-primary text-primary-foreground' 
-                              : 'bg-muted'
-                          }`}
-                        >
-                          <div className="whitespace-pre-wrap break-words">
-                            {message.type === 'tool_call' ? (
-                              <div className="font-mono text-xs">
-                                <div className="flex items-center gap-2 mb-1 text-muted-foreground">
-                                  <div className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10">
-                                    <div className="h-2 w-2 rounded-full bg-primary"></div>
+                    {/* Map over processed messages */}
+                    {processedMessages.map((item, index) => {
+                      // ---- Rendering Logic for Tool Sequences ----
+                      if (isToolSequence(item)) {
+                        // Group sequence items into pairs of [assistant, user]
+                        const pairs: { assistantCall: ApiMessage, userResult: ApiMessage }[] = [];
+                        for (let i = 0; i < item.items.length; i += 2) {
+                          if (item.items[i+1]) { // Ensure pair exists
+                            pairs.push({ assistantCall: item.items[i], userResult: item.items[i+1] });
+                          }
+                        }
+
+                        return (
+                          <div
+                            key={`seq-${index}`}
+                            ref={index === processedMessages.length - 1 ? latestMessageRef : null}
+                            className="border-l-2 border-blue-500 pl-4 ml-2 my-2 relative group"
+                          >
+                            {/* "Kortix Suna" label */}
+                            <span className="absolute -left-px top-1 -translate-x-full bg-blue-100 text-blue-700 text-xs font-semibold px-1.5 py-0.5 rounded z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                              Kortix Suna
+                            </span>
+                            <div className="space-y-1"> {/* Tighter spacing for previews */}
+                              {pairs.map((pair, pairIndex) => {
+                                // Parse assistant message content
+                                const assistantContent = pair.assistantCall.content || '';
+                                const xmlRegex = /<([a-zA-Z\-_]+)(?:\s+[^>]*)?>[\s\S]*?<\/\1>/;
+                                const xmlMatch = assistantContent.match(xmlRegex);
+                                const toolName = xmlMatch ? xmlMatch[1] : 'Tool';
+                                const preContent = xmlMatch ? assistantContent.substring(0, xmlMatch.index) : assistantContent;
+                                const postContent = xmlMatch ? assistantContent.substring(xmlMatch.index + xmlMatch[0].length) : '';
+
+                                return (
+                                  <div
+                                    key={`${index}-pair-${pairIndex}`}
+                                    // Render assistant's natural language + tool button + user result button
+                                    className="flex flex-col items-start space-y-1" // Arrange vertically
+                                  >
+                                    {/* Render pre-XML content if it exists */}
+                                    {preContent.trim() && (
+                                      <div className="max-w-[85%] rounded-lg px-3 py-2 text-sm bg-muted">
+                                        <div className="whitespace-pre-wrap break-words">
+                                          {preContent.trim()}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Render the clickable preview button for the tool */}
+                                    {xmlMatch && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-auto py-1.5 px-3 text-xs w-full sm:w-auto justify-start bg-muted hover:bg-muted/90 border-muted-foreground/20"
+                                        onClick={() => handleHistoricalToolClick(pair)}
+                                      >
+                                        <Terminal className="h-3 w-3 mr-1.5 flex-shrink-0" />
+                                        <span className="font-mono truncate mr-2">{toolName}</span>
+                                        <span className="ml-auto text-muted-foreground/70 flex items-center">
+                                          View Details <ExternalLink className="h-3 w-3 ml-1" />
+                                        </span>
+                                      </Button>
+                                    )}
+
+                                    {/* Render post-XML content if it exists (less common) */}
+                                    {postContent.trim() && (
+                                      <div className="max-w-[85%] rounded-lg px-3 py-2 text-sm bg-muted">
+                                        <div className="whitespace-pre-wrap break-words">
+                                          {postContent.trim()}
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Render user result button (or preview) - Currently simplified */}
+                                    {/* You might want a similar button style for consistency */}
+                                    <div className="flex justify-end w-full">
+                                      <div className="max-w-[85%] rounded-lg px-3 py-2 text-sm bg-green-100 text-green-900 font-mono text-xs">
+                                         Tool Result: {pair.userResult.content?.match(/<tool_result>\s*<([a-zA-Z\-_]+)/)?.[1] || 'Result'} (Click button above)
+                                         {/* Alternative: Make this a button too? */}
+                                         {/* <Button variant="outline" size="sm" ... onClick={() => handleHistoricalToolClick(pair)}> ... </Button> */}
+                                      </div>
+                                    </div>
                                   </div>
-                                  <span>Tool: {message.name}</span>
-                                </div>
-                                <div className="mt-1 p-3 bg-secondary/20 rounded-md overflow-x-auto">
-                                  {message.arguments}
-                                </div>
-                              </div>
-                            ) : message.role === 'tool' ? (
-                              <div className="font-mono text-xs">
-                                <div className="flex items-center gap-2 mb-1 text-muted-foreground">
-                                  <div className="flex h-4 w-4 items-center justify-center rounded-full bg-success/10">
-                                    <div className="h-2 w-2 rounded-full bg-success"></div>
-                                  </div>
-                                  <span>Tool Result: {message.name}</span>
-                                </div>
-                                <div className="mt-1 p-3 bg-success/5 rounded-md">
-                                  {message.content}
-                                </div>
-                              </div>
-                            ) : (
-                              message.content
-                            )}
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
-                      </div>
-                    ))}
-                    
+                        );
+                      }
+                      // ---- Rendering Logic for Regular Messages ----
+                      else {
+                        const message = item as ApiMessage; // Safe cast now due to type guard
+                        // Skip rendering standard tool role messages if they were part of a sequence handled above
+                        // Note: This check might be redundant if grouping is perfect, but adds safety.
+                        // We rely on the existing rendering for *structured* tool calls/results (message.type === 'tool_call', message.role === 'tool')
+                        // which are populated differently (likely via streaming updates) than the raw XML content.
+
+                        return (
+                          <div
+                            key={index} // Use the index from processedMessages
+                            ref={index === processedMessages.length - 1 && message.role === 'assistant' ? latestMessageRef : null} // Ref on the regular message div if it's last
+                            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                          >
+                            <div
+                              className={`max-w-[85%] rounded-lg px-4 py-3 text-sm ${
+                                message.role === 'user'
+                                  ? 'bg-primary text-primary-foreground'
+                                  : message.role === 'tool' // Style standard 'tool' role differently?
+                                    ? 'bg-purple-100' // Example: Different background for standard tool results
+                                    : 'bg-muted' // Default assistant or other roles
+                              }`}
+                            >
+                              <div className="whitespace-pre-wrap break-words">
+                                {/* Use existing logic for structured tool calls/results and normal messages */}
+                                {message.type === 'tool_call' && message.tool_call ? (
+                                  // Existing rendering for structured tool_call type
+                                  <div className="font-mono text-xs">
+                                    <div className="flex items-center gap-2 mb-1 text-muted-foreground">
+                                      <div className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10">
+                                        <div className="h-2 w-2 rounded-full bg-primary"></div> {/* Maybe pulse if active? */}
+                                      </div>
+                                      <span>Tool Call: {message.tool_call.function.name}</span>
+                                    </div>
+                                    <div className="mt-1 p-3 bg-secondary/20 rounded-md overflow-x-auto">
+                                      {message.tool_call.function.arguments}
+                                    </div>
+                                  </div>
+                                ) : message.role === 'tool' ? (
+                                  // Existing rendering for standard 'tool' role messages
+                                  <div className="font-mono text-xs">
+                                    <div className="flex items-center gap-2 mb-1 text-muted-foreground">
+                                      <div className="flex h-4 w-4 items-center justify-center rounded-full bg-success/10">
+                                        <div className="h-2 w-2 rounded-full bg-success"></div>
+                                      </div>
+                                      <span>Tool Result: {message.name || 'Unknown Tool'}</span>
+                                    </div>
+                                    <div className="mt-1 p-3 bg-success/5 rounded-md">
+                                      {/* Render content safely, handle potential objects */}
+                                      {typeof message.content === 'string' ? message.content : JSON.stringify(message.content)}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  // Default rendering for user messages or plain assistant messages
+                                  message.content
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
+                    })}
+                    {/* ---- End of Message Mapping ---- */}
+
                     {streamContent && (
                       <div 
                         ref={latestMessageRef}
@@ -946,10 +1261,13 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         </div>
       </div>
 
-      <ToolCallSidePanel 
-        isOpen={isSidePanelOpen} 
-        onClose={() => setIsSidePanelOpen(false)}
-        toolCallData={toolCallData}
+      <ToolCallSidePanel
+        isOpen={isSidePanelOpen}
+        onClose={() => { setIsSidePanelOpen(false); setSidePanelContent(null); setCurrentPairIndex(null); }}
+        content={sidePanelContent}
+        currentIndex={currentPairIndex}
+        totalPairs={allHistoricalPairs.length}
+        onNavigate={handleSidePanelNavigate}
       />
 
       {sandboxId && (
