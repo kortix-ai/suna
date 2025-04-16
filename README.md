@@ -13,9 +13,9 @@ Suna's powerful toolkit includes seamless browser automation to navigate the web
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue)](./license)
 [![Discord Follow](https://dcbadge.limes.pink/api/server/Py6pCBUUPw?style=flat)](https://discord.gg/Py6pCBUUPw)
 [![Twitter Follow](https://img.shields.io/twitter/follow/kortixai)](https://x.com/kortixai)
-[![GitHub Repo stars](https://img.shields.io/github/stars/kortix-ai/agentpress)](https://github.com/kortix-ai/agentpress)
-[![Issues](https://img.shields.io/github/issues/kortix-ai/agentpress
-)](https://github.com/kortix-ai/agentpress/labels/bug)
+[![GitHub Repo stars](https://img.shields.io/github/stars/kortix-ai/suna)](https://github.com/kortix-ai/suna)
+[![Issues](https://img.shields.io/github/issues/kortix-ai/suna
+)](https://github.com/kortix-ai/suna/labels/bug)
 </div>
 
 
@@ -148,8 +148,8 @@ You'll need the following components:
 
 1. **Clone the repository**:
 ```bash
-git clone https://github.com/kortix-ai/agentpress.git
-cd agentpress
+git clone https://github.com/kortix-ai/suna.git
+cd suna
 ```
 
 2. **Configure backend environment**:
