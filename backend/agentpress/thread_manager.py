@@ -325,16 +325,13 @@ Here are the XML tools available with examples:
                     return response_generator
                 else:
                     logger.debug("Processing non-streaming response")
-                    try:
-                        response = await self.response_processor.process_non_streaming_response(
-                            llm_response=llm_response,
-                            thread_id=thread_id,
-                            config=processor_config
-                        )
-                        return response
-                    except Exception as e:
-                        logger.error(f"Error in non-streaming response: {str(e)}", exc_info=True)
-                        raise
+                    # Return the async generator directly, don't await it
+                    response_generator = self.response_processor.process_non_streaming_response(
+                        llm_response=llm_response,
+                        thread_id=thread_id,
+                        config=processor_config
+                    )
+                    return response_generator # Return the generator
               
             except Exception as e:
                 logger.error(f"Error in run_thread: {str(e)}", exc_info=True)
