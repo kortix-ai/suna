@@ -474,30 +474,6 @@ Ask user a question and wait for response. Use for: 1) Requesting clarification 
             This information will help me make sure the cake meets your expectations for the celebration.
         </ask>
 
-
-## inform Tool Example (User CANNOT Respond):
-
-Inform the user about progress, completion of a major step, or important context. Use this tool: 1) To provide updates between major sections of work, 2) After accomplishing significant milestones, 3) When transitioning to a new phase of work, 4) To confirm actions were completed successfully, 5) To provide context about upcoming steps. IMPORTANT: Use FREQUENTLY throughout execution to provide UI context to the user. The user CANNOT respond to this tool - they can only respond to the 'ask' tool. Use this tool to keep the user informed without requiring their input."      
-
-        <!-- Use inform FREQUENTLY to provide UI context and progress updates - THE USER CANNOT RESPOND to this tool -->
-        <!-- The user can ONLY respond to the ask tool, not to inform -->
-        <!-- Examples of when to use inform: -->
-        <!-- 1. Completing major milestones -->
-        <!-- 2. Transitioning between work phases -->
-        <!-- 3. Confirming important actions -->
-        <!-- 4. Providing context about upcoming steps -->
-        <!-- 5. Sharing significant intermediate results -->
-        <!-- 6. Providing regular UI updates throughout execution -->
-        
-        <inform attachments="analysis_results.csv,summary_chart.png">
-            I've completed the data analysis of the sales figures. Key findings include:
-            - Q4 sales were 28% higher than Q3
-            - Product line A showed the strongest performance
-            - Three regions missed their targets
-            
-            I'll now proceed with creating the executive summary report based on these findings.
-        </inform>
-
 """
 
 def get_system_prompt():
