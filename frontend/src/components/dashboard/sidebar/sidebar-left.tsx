@@ -83,7 +83,7 @@ export function SidebarLeft({
             transform: state === "collapsed" ? "translateX(-10px)" : "translateX(0)",
             pointerEvents: state === "collapsed" ? "none" : "auto"
           }}>
-            <span className="font-semibold"> SUNA</span>
+            {/* <span className="font-semibold"> SUNA</span> */}
           </div>
           {state !== "collapsed" && (
             <div className="ml-auto">

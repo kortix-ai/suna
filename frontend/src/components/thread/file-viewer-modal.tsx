@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { FileRenderer } from "@/components/file-renderers";
 
 // Define API_URL
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
@@ -367,103 +368,18 @@ export function FileViewerModal({
     }
   };
 
-  // Render file content based on type
-  const renderFileContent = () => {
-    if (isLoadingContent) {
-      return (
-        <div className="space-y-3">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <Skeleton key={i} className="h-5 w-full" />
-          ))}
-        </div>
-      );
-    }
-    
-    if (!selectedFile) {
-      return (
-        <div className="flex flex-col items-center justify-center min-h-[400px] text-muted-foreground">
-          <File className="h-16 w-16 mb-4 opacity-30" />
-          <p className="text-sm font-medium">Select a file to view its contents</p>
-          <p className="text-sm text-muted-foreground mt-1">Choose a file from the sidebar to preview or edit</p>
-        </div>
-      );
-    }
-    
-    if (fileType === 'text' && fileContent) {
-      return (
-        <div className="w-full">
-          <pre className="text-sm font-mono whitespace-pre-wrap break-words leading-relaxed bg-muted/30 p-4 rounded-lg">
-            {fileContent}
-          </pre>
-        </div>
-      );
-    }
-    
-    if (fileType === 'image' && binaryFileUrl) {
-      return (
-        <div className="flex flex-col items-center justify-center min-h-[400px] bg-muted/30 rounded-lg p-6">
-          <img 
-            src={binaryFileUrl} 
-            alt={selectedFile} 
-            className="max-w-full object-contain rounded-md shadow-sm ring-1 ring-border/10" 
-          />
-        </div>
-      );
-    }
-    
-    if (fileType === 'pdf' && binaryFileUrl) {
-      return (
-        <div className="w-full h-[600px]">
-          <iframe 
-            src={binaryFileUrl} 
-            className="w-full h-full border-0 rounded-lg shadow-sm bg-white ring-1 ring-border/10" 
-            title={selectedFile}
-          />
-        </div>
-      );
-    }
-    
-    if (binaryFileUrl) {
-      return (
-        <div className="flex flex-col items-center justify-center min-h-[400px] gap-4 bg-muted/30 rounded-lg p-8">
-          <File className="h-24 w-24 opacity-40" />
-          <div className="text-center">
-            <p className="text-sm font-medium">Binary File</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              This file cannot be previewed in the browser
-            </p>
-          </div>
-          <Button
-            size="sm"
-            className="mt-2"
-            onClick={handleDownload}
-          >
-            <Download className="h-4 w-4 mr-2" />
-            Download File
-          </Button>
-        </div>
-      );
-    }
-    
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] text-muted-foreground">
-        <File className="h-16 w-16 mb-4 opacity-30" />
-        <p className="text-sm font-medium">No preview available</p>
-        <p className="text-sm text-muted-foreground mt-1">This file type cannot be previewed</p>
-      </div>
-    );
-  };
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[1000px] h-[85vh] max-h-[800px] flex flex-col p-0 gap-0">
+      <DialogContent 
+        className="sm:max-w-[90vw] md:max-w-[1200px] w-[95vw] h-[90vh] max-h-[900px] flex flex-col p-0 gap-0 overflow-hidden"
+      >
         <DialogHeader className="px-6 py-3 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
           <DialogTitle className="text-lg font-semibold">Workspace Files</DialogTitle>
         </DialogHeader>
         
         <div className="flex flex-col sm:flex-row h-full overflow-hidden divide-x divide-border">
           {/* File browser sidebar */}
-          <div className="w-full sm:w-80 flex flex-col h-full bg-muted/5">
+          <div className="w-full sm:w-[280px] lg:w-[320px] flex flex-col h-full bg-muted/5">
             {/* Breadcrumb navigation */}
             <div className="px-3 py-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
               {renderBreadcrumbs()}
@@ -582,13 +498,27 @@ export function FileViewerModal({
           <div className="w-full flex-1 flex flex-col h-full bg-muted/5">
             {/* File content */}
             <div className="flex-1 overflow-hidden">
-              <ScrollArea className="h-full">
-                <div className="p-4">
-                  {renderFileContent()}
+              {isLoadingContent ? (
+                <div className="p-4 space-y-3">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <Skeleton key={i} className="h-5 w-full" />
+                  ))}
                 </div>
-              </ScrollArea>
+              ) : !selectedFile ? (
+                <div className="flex flex-col items-center justify-center min-h-[400px] text-muted-foreground">
+                  <File className="h-16 w-16 mb-4 opacity-30" />
+                  <p className="text-sm font-medium">Select a file to view its contents</p>
+                  <p className="text-sm text-muted-foreground mt-1">Choose a file from the sidebar to preview or edit</p>
+                </div>
+              ) : (
+                <FileRenderer 
+                  content={fileContent} 
+                  binaryUrl={binaryFileUrl}
+                  fileName={selectedFile}
+                  className="h-full"
+                />
+              )}
             </div>
-
           </div>
         </div>
       </DialogContent>
