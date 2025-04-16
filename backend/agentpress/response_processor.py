@@ -1236,7 +1236,7 @@ class ResponseProcessor:
         # Always use xml_tag_name if it exists
         if "xml_tag_name" in tool_call:
             xml_tag_name = tool_call["xml_tag_name"]
-            return f"<tool_result> <{xml_tag_name}> {str(result)} </{xml_tag_name}>< /tool_result>"
+            return f"<tool_result> <{xml_tag_name}> {str(result)} </{xml_tag_name}> </tool_result>"
         
         # Non-XML tool, just return the function result
         function_name = tool_call["function_name"]
