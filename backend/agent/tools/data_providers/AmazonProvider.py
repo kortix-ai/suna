@@ -1,9 +1,9 @@
 from typing import Dict, Optional
 
-from agent.tools.api_services.APIServicesBase import APIServicesBase, EndpointSchema
+from agent.tools.data_providers.RapidDataProviderBase import RapidDataProviderBase, EndpointSchema
 
 
-class AmazonService(APIServicesBase):
+class AmazonProvider(RapidDataProviderBase):
     def __init__(self):
         endpoints: Dict[str, EndpointSchema] = {
             "search": {
@@ -107,9 +107,9 @@ class AmazonService(APIServicesBase):
 
 
 if __name__ == "__main__":
-    import os
-    os.environ["RAPID_API_KEY"] = "b5258e1150msh2e4f098fdeeda7fp1ac998jsncbc24fc76b95"
-    tool = AmazonService()
+    from dotenv import load_dotenv
+    load_dotenv()
+    tool = AmazonProvider()
 
     # Example for product search
     search_result = tool.call_endpoint(

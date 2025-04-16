@@ -1,8 +1,7 @@
 import os
 import json
 from uuid import uuid4
-from typing import Optional, List, Any
-from datetime import datetime, timezone
+from typing import Optional
 
 from agent.tools.message_tool import MessageTool
 from agent.tools.sb_deploy_tool import SandboxDeployTool
@@ -14,7 +13,7 @@ from agentpress.response_processor import ProcessorConfig
 from agent.tools.sb_shell_tool import SandboxShellTool
 from agent.tools.sb_files_tool import SandboxFilesTool
 from agent.tools.sb_browser_tool import SandboxBrowserTool
-from agent.tools.api_services_tool import APIServicesTool
+from agent.tools.data_providers_tool import DataProvidersTool
 from agent.prompt import get_system_prompt
 from sandbox.sandbox import create_sandbox, get_or_start_sandbox
 from utils.billing import check_billing_status, get_account_id_from_thread
@@ -74,7 +73,7 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
         thread_manager.add_tool(WebSearchTool)
     
     if os.getenv("RAPID_API_KEY"):
-        thread_manager.add_tool(APIServicesTool)
+        thread_manager.add_tool(DataProvidersTool)
 
     xml_examples = ""
     for tag_name, example in thread_manager.tool_registry.get_xml_examples().items():

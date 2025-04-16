@@ -1,29 +1,33 @@
 import json
 
 from agentpress.tool import Tool, ToolResult, openapi_schema, xml_schema
-from agent.tools.api_services.LinkedInService import LinkedInService
+from agent.tools.data_providers.LinkedinProvider import LinkedinProvider
+from agent.tools.data_providers.YahooFinanceProvider import YahooFinanceProvider
+from agent.tools.data_providers.AmazonProvider import AmazonProvider
 
-class APIServicesTool(Tool):
-    """Tool for making requests to various API services."""
+class DataProvidersTool(Tool):
+    """Tool for making requests to various data providers."""
 
     def __init__(self):
         super().__init__()
 
-        self.register_apis = {
-            "linkedin": LinkedInService()
+        self.register_data_providers = {
+            "linkedin": LinkedinProvider(),
+            "yahoo_finance": YahooFinanceProvider(),
+            "amazon": AmazonProvider()
         }
 
     @openapi_schema({
         "type": "function",
         "function": {
-            "name": "get_api_service_endpoints",
-            "description": "Get available endpoints for a specific API service",
+            "name": "get_data_provider_endpoints",
+            "description": "Get available endpoints for a specific data provider",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "service_name": {
                         "type": "string",
-                        "description": "The name of the API service (e.g., 'linkedin')"
+                        "description": "The name of the data provider (e.g., 'linkedin')"
                     }
                 },
                 "required": ["service_name"]
@@ -31,44 +35,44 @@ class APIServicesTool(Tool):
         }
     })
     @xml_schema(
-        tag_name="get-api-service-endpoints",
+        tag_name="get-data-provider-endpoints",
         mappings=[
             {"param_name": "service_name", "node_type": "attribute", "path": "."}
         ],
         example='''
 <!-- 
-The get-api-service-endpoints tool returns available endpoints for a specific API service.
+The get-data-provider-endpoints tool returns available endpoints for a specific data provider.
 Use this tool when you need to discover what endpoints are available.
 -->
 
 <!-- Example to get LinkedIn API endpoints -->
-<get-api-service-endpoints service_name="linkedin">
-</get-api-service-endpoints>
+<get-data-provider-endpoints service_name="linkedin">
+</get-data-provider-endpoints>
         '''
     )
-    async def get_api_service_endpoints(
+    async def get_data_provider_endpoints(
         self,
         service_name: str
     ) -> ToolResult:
         """
-        Get available endpoints for a specific API service.
+        Get available endpoints for a specific data provider.
         
         Parameters:
-        - service_name: The name of the API service (e.g., 'linkedin')
+        - service_name: The name of the data provider (e.g., 'linkedin')
         """
         try:
             if not service_name:
-                return self.fail_response("API name is required.")
+                return self.fail_response("Data provider name is required.")
                 
-            if service_name not in self.register_apis:
-                return self.fail_response(f"API '{service_name}' not found. Available APIs: {list(self.register_apis.keys())}")
+            if service_name not in self.register_data_providers:
+                return self.fail_response(f"Data provider '{service_name}' not found. Available data providers: {list(self.register_data_providers.keys())}")
                 
-            endpoints = self.register_apis[service_name].get_endpoints()
+            endpoints = self.register_data_providers[service_name].get_endpoints()
             return self.success_response(endpoints)
             
         except Exception as e:
             error_message = str(e)
-            simplified_message = f"Error getting API endpoints: {error_message[:200]}"
+            simplified_message = f"Error getting data provider endpoints: {error_message[:200]}"
             if len(error_message) > 200:
                 simplified_message += "..."
             return self.fail_response(simplified_message)
@@ -76,8 +80,8 @@ Use this tool when you need to discover what endpoints are available.
     @openapi_schema({
         "type": "function",
         "function": {
-            "name": "execute_api_call",
-            "description": "Execute a call to a specific API endpoint",
+            "name": "execute_data_provider_call",
+            "description": "Execute a call to a specific data provider endpoint",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -99,7 +103,7 @@ Use this tool when you need to discover what endpoints are available.
         }
     })
     @xml_schema(
-        tag_name="execute-api-call",
+        tag_name="execute-data-provider-call",
         mappings=[
             {"param_name": "service_name", "node_type": "attribute", "path": "service_name"},
             {"param_name": "route", "node_type": "attribute", "path": "route"},
@@ -107,30 +111,30 @@ Use this tool when you need to discover what endpoints are available.
         ],
         example='''
         <!-- 
-        The execute-api-call tool makes a request to a specific API endpoint.
-        Use this tool when you need to call an API endpoint with specific parameters.
-        The route must be a valid endpoint key obtained from get-api-service-endpoints tool!!
+        The execute-data-provider-call tool makes a request to a specific data provider endpoint.
+        Use this tool when you need to call an data provider endpoint with specific parameters.
+        The route must be a valid endpoint key obtained from get-data-provider-endpoints tool!!
         -->
         
         <!-- Example to call linkedIn service with the specific route person -->
-        <execute-api-call service_name="linkedin" route="person">
+        <execute-data-provider-call service_name="linkedin" route="person">
             {"link": "https://www.linkedin.com/in/johndoe/"}
-        </execute-api-call>
+        </execute-data-provider-call>
         '''
     )
-    async def execute_api_call(
+    async def execute_data_provider_call(
         self,
         service_name: str,
         route: str,
         payload: str # this actually a json string
     ) -> ToolResult:
         """
-        Execute a call to a specific API endpoint.
+        Execute a call to a specific data provider endpoint.
         
         Parameters:
-        - service_name: The name of the API service (e.g., 'linkedin')
+        - service_name: The name of the data provider (e.g., 'linkedin')
         - route: The key of the endpoint to call
-        - payload: The payload to send with the API call
+        - payload: The payload to send with the data provider call
         """
         try:
             payload = json.loads(payload)
@@ -141,24 +145,24 @@ Use this tool when you need to discover what endpoints are available.
             if not route:
                 return self.fail_response("route is required.")
                 
-            if service_name not in self.register_apis:
-                return self.fail_response(f"API '{service_name}' not found. Available APIs: {list(self.register_apis.keys())}")
+            if service_name not in self.register_data_providers:
+                return self.fail_response(f"API '{service_name}' not found. Available APIs: {list(self.register_data_providers.keys())}")
             
-            api_service = self.register_apis[service_name]
+            data_provider = self.register_data_providers[service_name]
             if route == service_name:
                 return self.fail_response(f"route '{route}' is the same as service_name '{service_name}'. YOU FUCKING IDIOT!")
             
-            if route not in api_service.get_endpoints().keys():
-                return self.fail_response(f"Endpoint '{route}' not found in {service_name} API.")
+            if route not in data_provider.get_endpoints().keys():
+                return self.fail_response(f"Endpoint '{route}' not found in {service_name} data provider.")
             
             
-            result = api_service.call_endpoint(route, payload)
+            result = data_provider.call_endpoint(route, payload)
             return self.success_response(result)
             
         except Exception as e:
             error_message = str(e)
             print(error_message)
-            simplified_message = f"Error executing API call: {error_message[:200]}"
+            simplified_message = f"Error executing data provider call: {error_message[:200]}"
             if len(error_message) > 200:
                 simplified_message += "..."
             return self.fail_response(simplified_message)
