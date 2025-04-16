@@ -1,5 +1,3 @@
-"use client";
-
 import { SectionHeader } from "@/components/home/section-header";
 import { siteConfig } from "@/lib/home";
 import { Github } from "lucide-react";
@@ -9,7 +7,7 @@ export function OpenSourceSection() {
   return (
     <section
       id="open-source"
-      className="flex flex-col items-center justify-center w-full relative pb-10"
+      className="flex flex-col items-center justify-center w-full relative pb-18"
     >
       <div className="w-full max-w-6xl mx-auto px-6">
         <SectionHeader>
@@ -17,7 +15,7 @@ export function OpenSourceSection() {
             100% Open Source
           </h2>
           <p className="text-muted-foreground text-center text-balance font-medium">
-            Suna is fully open source and free to use. Join our community and help shape the future of AI.
+            Suna is fully open source. Join our community and help shape the future of AI.
           </p>
         </SectionHeader>
 

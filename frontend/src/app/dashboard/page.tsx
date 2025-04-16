@@ -3,7 +3,7 @@
 import React, { useState, Suspense } from 'react';
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRouter } from 'next/navigation';
-import { ChatInput } from '@/components/chat/chat-input';
+import { ChatInput } from '@/components/thread/chat-input';
 import { createProject, addUserMessage, startAgent, createThread } from "@/lib/api";
 
 function DashboardContent() {
@@ -46,14 +46,14 @@ function DashboardContent() {
     <div className="flex flex-col items-center justify-center h-full w-full">
       <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[560px] max-w-[90%]">
         <div className="text-center mb-10">
-          <h1 className="text-4xl font-medium text-foreground mb-2">Hello.</h1>
-          <h2 className="text-2xl text-muted-foreground">What can I help with?</h2>
+          <h1 className="text-4xl font-medium text-foreground mb-2">Hey </h1>
+          <h2 className="text-2xl text-muted-foreground">What would you like Suna to do today?</h2>
         </div>
         
         <ChatInput 
           onSubmit={handleSubmit} 
           loading={isSubmitting}
-          placeholder="Ask anything..."
+          placeholder="Describe what you need help with..."
           value={inputValue}
           onChange={setInputValue}
         />
@@ -82,4 +82,4 @@ export default function DashboardPage() {
       <DashboardContent />
     </Suspense>
   );
-} 
+}

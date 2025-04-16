@@ -345,31 +345,23 @@ export const addUserMessage = async (threadId: string, content: string): Promise
   apiCache.invalidateThreadMessages(threadId);
 };
 
-export const getMessages = async (threadId: string, hideToolMsgs: boolean = false): Promise<Message[]> => {
+export const getMessages = async (threadId: string): Promise<Message[]> => {
   // Check if we already have a pending request
   const pendingRequest = fetchQueue.getQueuedMessages(threadId);
   if (pendingRequest) {
-    // Apply filter if needed when promise resolves
-    if (hideToolMsgs) {
-      return pendingRequest.then(messages => 
-        messages.filter((msg: Message) => msg.role !== 'tool')
-      );
-    }
     return pendingRequest;
   }
   
   // Check cache first
   const cached = apiCache.getThreadMessages(threadId);
   if (cached) {
-    // Apply filter if needed
-    return hideToolMsgs ? cached.filter((msg: Message) => msg.role !== 'tool') : cached;
+    return cached;
   }
   
   // Create and queue the promise
   const fetchPromise = (async () => {
     const supabase = createClient();
     
-    // Query all messages for the thread instead of using RPC
     const { data, error } = await supabase
       .from('messages')
       .select('*')
@@ -408,17 +400,8 @@ export const getMessages = async (threadId: string, hideToolMsgs: boolean = fals
     return messages;
   })();
   
-  // Add to queue
-  const queuedPromise = fetchQueue.setQueuedMessages(threadId, fetchPromise);
-  
-  // Apply filter if needed when promise resolves
-  if (hideToolMsgs) {
-    return queuedPromise.then(messages => 
-      messages.filter((msg: Message) => msg.role !== 'tool')
-    );
-  }
-  
-  return queuedPromise;
+  // Add to queue and return
+  return fetchQueue.setQueuedMessages(threadId, fetchPromise);
 };
 
 // Agent APIs
@@ -592,7 +575,7 @@ export const streamAgent = (agentRunId: string, callbacks: {
       
       if (!session?.access_token) {
         console.error('[STREAM] No auth token available');
-        callbacks.onError(new Error('Authentication required'));
+        callbacks.onError('Authentication required');
         callbacks.onClose();
         return;
       }
@@ -612,50 +595,77 @@ export const streamAgent = (agentRunId: string, callbacks: {
           const rawData = event.data;
           if (rawData.includes('"type":"ping"')) return;
           
+          // Skip empty messages
+          if (!rawData || rawData.trim() === '') return;
+          
           // Log raw data for debugging
           console.log(`[STREAM] Received data: ${rawData.substring(0, 100)}${rawData.length > 100 ? '...' : ''}`);
-          
-          // Skip empty messages
-          if (!rawData || rawData.trim() === '') {
-            console.debug('[STREAM] Received empty message, skipping');
+
+          let jsonData;
+          try {
+            jsonData = JSON.parse(rawData);
+          } catch (parseError) {
+            console.error('[STREAM] Failed to parse message:', parseError);
             return;
           }
-          
-          // Check if this is a status completion message
-          if (rawData.includes('"type":"status"') && rawData.includes('"status":"completed"')) {
-            console.log(`[STREAM] ⚠️ Detected completion status message: ${rawData}`);
+
+          // Handle stream errors and failures first
+          if (jsonData.status === 'error' || (jsonData.type === 'status' && jsonData.status === 'failed')) {
+            // Get a clean string version of any error message
+            const errorMessage = typeof jsonData.message === 'object'
+              ? JSON.stringify(jsonData.message)
+              : String(jsonData.message || 'Stream failed');
             
-            try {
-              // Explicitly call onMessage before closing the stream to ensure the message is processed
-              callbacks.onMessage(rawData);
-              
-              // Explicitly close the EventSource connection when we receive a completion message
-              if (eventSourceInstance && !isClosing) {
-                console.log(`[STREAM] ⚠️ Closing EventSource due to completion message for ${agentRunId}`);
-                isClosing = true;
+            // Only log to console if it's an unexpected error (not a known API error response)
+            if (jsonData.status !== 'error') {
+              console.error(`[STREAM] Stream error for ${agentRunId}:`, errorMessage);
+            }
+            
+            // Ensure we close the stream and prevent reconnection
+            if (!isClosing) {
+              isClosing = true;
+              if (eventSourceInstance) {
                 eventSourceInstance.close();
                 eventSourceInstance = null;
-                
-                // Explicitly call onClose here to ensure the client knows the stream is closed
-                setTimeout(() => {
-                  console.log(`[STREAM] 🚨 Explicitly calling onClose after completion for ${agentRunId}`);
-                  callbacks.onClose();
-                }, 0);
               }
-              
-              // Exit early to prevent duplicate message processing
-              return;
-            } catch (closeError) {
-              console.error(`[STREAM] ❌ Error while closing stream on completion: ${closeError}`);
-              // Continue with normal processing if there's an error during closure
+              callbacks.onError(errorMessage);
+              callbacks.onClose();
             }
+            return;
           }
-          
-          // Pass the raw data directly to onMessage for handling in the component
-          callbacks.onMessage(rawData);
+
+          // Handle completion status
+          if (jsonData.type === 'status' && jsonData.status === 'completed') {
+            console.log(`[STREAM] Completion message received for ${agentRunId}`);
+            
+            if (!isClosing) {
+              isClosing = true;
+              callbacks.onMessage(rawData);
+              if (eventSourceInstance) {
+                eventSourceInstance.close();
+                eventSourceInstance = null;
+              }
+              callbacks.onClose();
+            }
+            return;
+          }
+
+          // Pass other messages normally
+          if (!isClosing) {
+            callbacks.onMessage(rawData);
+          }
         } catch (error) {
-          console.error(`[STREAM] Error handling message:`, error);
-          callbacks.onError(error instanceof Error ? error : String(error));
+          console.error(`[STREAM] Error in message handler:`, error);
+          
+          if (!isClosing) {
+            isClosing = true;
+            if (eventSourceInstance) {
+              eventSourceInstance.close();
+              eventSourceInstance = null;
+            }
+            callbacks.onError(error instanceof Error ? error.message : 'Stream processing error');
+            callbacks.onClose();
+          }
         }
       };
       
@@ -663,7 +673,6 @@ export const streamAgent = (agentRunId: string, callbacks: {
         // Add detailed event logging
         console.log(`[STREAM] 🔍 EventSource onerror triggered for ${agentRunId}`, event);
         
-        // EventSource errors are often just connection closures
         // For clean closures (manual or completed), we don't need to log an error
         if (isClosing) {
           console.log(`[STREAM] EventSource closed as expected for ${agentRunId}`);
@@ -671,10 +680,10 @@ export const streamAgent = (agentRunId: string, callbacks: {
         }
         
         // Only log as error for unexpected closures
-        console.log(`[STREAM] EventSource connection closed for ${agentRunId}`);
+        console.error(`[STREAM] EventSource connection error/closed unexpectedly for ${agentRunId}`);
         
         if (!isClosing) {
-          console.log(`[STREAM] Handling connection close for ${agentRunId}`);
+          console.log(`[STREAM] Handling unexpected connection close for ${agentRunId}`);
           
           // Close the connection
           if (eventSourceInstance) {
@@ -682,8 +691,9 @@ export const streamAgent = (agentRunId: string, callbacks: {
             eventSourceInstance = null;
           }
           
-          // Then notify error (once)
+          // Then notify error and close (once)
           isClosing = true;
+          callbacks.onError(new Error('Stream connection closed unexpectedly.')); // Add error callback
           callbacks.onClose();
         }
       };

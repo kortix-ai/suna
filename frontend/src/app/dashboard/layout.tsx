@@ -1,28 +1,26 @@
-import DashboardLayout from "@/components/dashboard/DashboardLayout";
-import { createClient } from "@/lib/supabase/server";
+"use client"
 
-interface DashboardRootLayoutProps {
-  children: React.ReactNode;
+import { SidebarLeft } from "@/components/dashboard/sidebar/sidebar-left"
+import {
+  SidebarInset,
+  SidebarProvider,
+} from "@/components/ui/sidebar"
+
+interface DashboardLayoutProps {
+  children: React.ReactNode
 }
 
-export default async function DashboardRootLayout({
+export default function DashboardLayout({
   children,
-}: DashboardRootLayoutProps) {
-  // Get the current user via Supabase
-  const supabaseClient = await createClient();
-  const { data: { user } } = await supabaseClient.auth.getUser();
-  
-  // Get the personal account details
-  const { data: personalAccount } = await supabaseClient.rpc('get_personal_account');
-
+}: DashboardLayoutProps) {
   return (
-    <DashboardLayout
-      accountId={personalAccount?.account_id || user?.id}
-      userName={user?.user_metadata?.name || user?.email?.split('@')[0] || 'User'}
-      userEmail={user?.email}
-      rightPanelTitle="Suna's Computer"
-    >
-      {children}
-    </DashboardLayout>
-  );
+    <SidebarProvider>
+      <SidebarLeft />
+      <SidebarInset>
+        <div className="bg-background">
+          {children}
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
+  )
 } 

@@ -187,7 +187,7 @@ class SandboxFilesTool(SandboxToolsBase):
             end_line = replacement_line + self.SNIPPET_LINES + new_str.count('\n')
             snippet = '\n'.join(new_content.split('\n')[start_line:end_line + 1])
             
-            return self.success_response(f"Replacement successful. Snippet of changes:\n{snippet}")
+            return self.success_response(f"Replacement successful.")
             
         except Exception as e:
             return self.fail_response(f"Error replacing string: {str(e)}")
