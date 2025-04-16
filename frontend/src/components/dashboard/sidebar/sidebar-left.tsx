@@ -21,16 +21,21 @@ import {
 } from "@/components/ui/sidebar"
 import { useEffect, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger
+} from "@/components/ui/tooltip"
 
 // Only keep necessary data
 const navSecondaryItems = [
   {
-    title: "Careers",
+    title: "Hiring!",
     url: "https://www.kortix.ai/careers",
     icon: BookOpen,
   },
   {
-    title: "Book Demo",
+    title: "Book Enterprise Demo",
     url: "https://cal.com/marko-kraemer/15min",
     icon: CalendarClock,
   },
@@ -82,7 +87,12 @@ export function SidebarLeft({
           </div>
           {state !== "collapsed" && (
             <div className="ml-auto">
-              <SidebarTrigger className="h-8 w-8" />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <SidebarTrigger className="h-8 w-8" />
+                </TooltipTrigger>
+                <TooltipContent>Toggle sidebar</TooltipContent>
+              </Tooltip>
             </div>
           )}
         </div>
@@ -92,7 +102,12 @@ export function SidebarLeft({
         <NavSecondary items={navSecondaryItems} className="mt-auto" />
         {state === "collapsed" && (
           <div className="mt-2 flex justify-center">
-            <SidebarTrigger className="h-8 w-8" />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <SidebarTrigger className="h-8 w-8" />
+              </TooltipTrigger>
+              <TooltipContent>Expand sidebar</TooltipContent>
+            </Tooltip>
           </div>
         )}
       </SidebarContent>

@@ -21,7 +21,7 @@ export function ToolCallSidePanel({ isOpen, onClose, toolCallData }: ToolCallSid
   return (
     <div 
       className={`
-        ${isOpen ? 'w-full sm:w-[80%] md:w-[65%] lg:w-[50%] xl:w-[40%] 2xl:w-[30%] max-w-[800px]' : 'w-0'} 
+        ${isOpen ? 'w-full sm:w-[85%] md:w-[75%] lg:w-[60%] xl:w-[50%] 2xl:w-[40%] max-w-[1000px]' : 'w-0'} 
         border-l bg-sidebar h-screen flex flex-col 
         transition-all duration-300 ease-in-out overflow-hidden
         fixed sm:sticky top-0 right-0 z-30 

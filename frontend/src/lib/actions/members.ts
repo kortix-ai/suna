@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "../supabase/server";
 
 export async function removeTeamMember(prevState: any, formData: FormData) {
-    "use server";
+
 
     const userId = formData.get("userId") as string;
     const accountId = formData.get("accountId") as string;
@@ -27,7 +27,7 @@ export async function removeTeamMember(prevState: any, formData: FormData) {
 
 
 export async function updateTeamMemberRole(prevState: any, formData: FormData) {
-    "use server";
+
 
     const userId = formData.get("userId") as string;
     const accountId = formData.get("accountId") as string;

@@ -316,6 +316,17 @@ export function FileViewerModal({
             </div>
           );
         })}
+        
+        {/* Show selected file name in breadcrumb */}
+        {selectedFile && (
+          <div className="flex items-center min-w-fit">
+            <ChevronRight className="h-4 w-4 mx-1 text-muted-foreground opacity-50" />
+            <div className="flex items-center gap-1 h-7 px-2.5 text-sm font-medium bg-accent/30 rounded-md">
+              <File className="h-3.5 w-3.5 text-muted-foreground" />
+              <span>{selectedFile.split('/').pop()}</span>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -475,28 +486,49 @@ export function FileViewerModal({
                   </div>
                 ) : (
                   workspaceFiles.map((file, index) => (
-                    <Button
+                    <div
                       key={file.path}
-                      variant={selectedFile === file.path ? "secondary" : "ghost"}
-                      size="sm"
-                      className={`w-full justify-start h-9 text-sm font-normal transition-colors ${
-                        selectedFile === file.path 
-                          ? "bg-accent/50 hover:bg-accent/60" 
-                          : "hover:bg-accent/30"
-                      }`}
-                      onClick={() => handleFileClick(file)}
+                      className="relative group"
                     >
-                      {file.is_dir ? (
-                        selectedFile === file.path ? (
-                          <FolderOpen className="h-4 w-4 mr-2 flex-shrink-0 text-foreground" />
+                      <Button
+                        variant={selectedFile === file.path ? "secondary" : "ghost"}
+                        size="sm"
+                        className={`w-full justify-start h-9 text-sm font-normal transition-colors ${
+                          selectedFile === file.path 
+                            ? "bg-accent/50 hover:bg-accent/60" 
+                            : "hover:bg-accent/30"
+                        }`}
+                        onClick={() => handleFileClick(file)}
+                      >
+                        {file.is_dir ? (
+                          selectedFile === file.path ? (
+                            <FolderOpen className="h-4 w-4 mr-2 flex-shrink-0 text-foreground" />
+                          ) : (
+                            <Folder className="h-4 w-4 mr-2 flex-shrink-0 text-muted-foreground" />
+                          )
                         ) : (
-                          <Folder className="h-4 w-4 mr-2 flex-shrink-0 text-muted-foreground" />
-                        )
-                      ) : (
-                        <File className="h-4 w-4 mr-2 flex-shrink-0 text-muted-foreground" />
+                          <File className="h-4 w-4 mr-2 flex-shrink-0 text-muted-foreground" />
+                        )}
+                        <span className="truncate">{file.name}</span>
+                      </Button>
+                      
+                      {/* Show download button on hover for files */}
+                      {!file.is_dir && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedFile(file.path);
+                            handleDownload();
+                          }}
+                          title="Download file"
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                        </Button>
                       )}
-                      <span className="truncate">{file.name}</span>
-                    </Button>
+                    </div>
                   ))
                 )}
               </div>
@@ -548,27 +580,6 @@ export function FileViewerModal({
           
           {/* File content pane */}
           <div className="w-full flex-1 flex flex-col h-full bg-muted/5">
-            {/* File header */}
-            <div className="px-3 py-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <File className="h-4 w-4 text-muted-foreground" />
-                <h3 className="text-sm font-medium truncate">
-                  {selectedFile ? selectedFile.split('/').pop() : 'Select a file to view'}
-                </h3>
-              </div>
-              {selectedFile && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-8 px-3 gap-2"
-                  onClick={handleDownload}
-                >
-                  <Download className="h-4 w-4" />
-                  Download
-                </Button>
-              )}
-            </div>
-            
             {/* File content */}
             <div className="flex-1 overflow-hidden">
               <ScrollArea className="h-full">
@@ -578,8 +589,6 @@ export function FileViewerModal({
               </ScrollArea>
             </div>
 
-            {/* Empty footer to match left side height */}
-            <div className="px-2 py-2 border-t bg-muted/5 h-[44px]" />
           </div>
         </div>
       </DialogContent>

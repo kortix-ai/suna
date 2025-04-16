@@ -765,7 +765,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
           <div className="flex-1 flex flex-col relative overflow-hidden">
             <div 
               ref={messagesContainerRef}
-              className="flex-1 overflow-y-auto px-6 py-4 pb-[5.5rem]"
+              className="flex-1 overflow-y-auto px-6 py-4 pb-[0.5rem]"
               onScroll={handleScroll}
             >
               <div className="mx-auto max-w-3xl">

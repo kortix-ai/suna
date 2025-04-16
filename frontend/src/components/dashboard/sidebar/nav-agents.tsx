@@ -28,6 +28,11 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger
+} from "@/components/ui/tooltip"
 import { getProjects, getThreads } from "@/lib/api"
 import Link from "next/link"
 
@@ -76,14 +81,18 @@ export function NavAgents() {
     <SidebarGroup>
       <div className="flex justify-between items-center">
         <SidebarGroupLabel>Agents</SidebarGroupLabel>
-        <Link 
-          href="/dashboard" 
-          className="text-muted-foreground hover:text-foreground h-8 w-8 flex items-center justify-center rounded-md"
-          title="New Agent"
-        >
-          <Plus className="h-4 w-4" />
-          <span className="sr-only">New Agent</span>
-        </Link>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link 
+              href="/dashboard" 
+              className="text-muted-foreground hover:text-foreground h-8 w-8 flex items-center justify-center rounded-md"
+            >
+              <Plus className="h-4 w-4" />
+              <span className="sr-only">New Agent</span>
+            </Link>
+          </TooltipTrigger>
+          <TooltipContent>New Agent</TooltipContent>
+        </Tooltip>
       </div>
 
       <SidebarMenu className="overflow-y-auto max-h-[calc(100vh-200px)]">
@@ -102,15 +111,26 @@ export function NavAgents() {
           <>
             {agents.map((item, index) => (
               <SidebarMenuItem key={`agent-${index}`}>
-                <SidebarMenuButton 
-                  asChild
-                  tooltip={state === "collapsed" ? item.name : undefined}
-                >
-                  <Link href={item.url} title={item.name}>
-                    <MessagesSquare className="h-4 w-4" />
-                    <span>{item.name}</span>
-                  </Link>
-                </SidebarMenuButton>
+                {state === "collapsed" ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <SidebarMenuButton asChild>
+                        <Link href={item.url}>
+                          <MessagesSquare className="h-4 w-4" />
+                          <span>{item.name}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </TooltipTrigger>
+                    <TooltipContent>{item.name}</TooltipContent>
+                  </Tooltip>
+                ) : (
+                  <SidebarMenuButton asChild>
+                    <Link href={item.url}>
+                      <MessagesSquare className="h-4 w-4" />
+                      <span>{item.name}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                )}
                 {state !== "collapsed" && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
