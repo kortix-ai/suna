@@ -1,3 +1,4 @@
+import os
 import json
 from uuid import uuid4
 from typing import Optional, List, Any
@@ -13,10 +14,10 @@ from agentpress.response_processor import ProcessorConfig
 from agent.tools.sb_shell_tool import SandboxShellTool
 from agent.tools.sb_files_tool import SandboxFilesTool
 from agent.tools.sb_browser_tool import SandboxBrowserTool
+from agent.tools.api_services_tool import APIServicesTool
 from agent.prompt import get_system_prompt
-from sandbox.sandbox import daytona, create_sandbox, get_or_start_sandbox
+from sandbox.sandbox import create_sandbox, get_or_start_sandbox
 from utils.billing import check_billing_status, get_account_id_from_thread
-from utils.db import update_agent_run_status
 
 load_dotenv()
 
@@ -68,25 +69,18 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
     thread_manager.add_tool(SandboxBrowserTool, sandbox=sandbox, thread_id=thread_id, thread_manager=thread_manager)
     thread_manager.add_tool(SandboxDeployTool, sandbox=sandbox)
     thread_manager.add_tool(MessageTool)
-    thread_manager.add_tool(WebSearchTool)
+
+    if os.getenv("EXA_API_KEY"):
+        thread_manager.add_tool(WebSearchTool)
+    
+    if os.getenv("RAPID_API_KEY"):
+        thread_manager.add_tool(APIServicesTool)
 
     xml_examples = ""
     for tag_name, example in thread_manager.tool_registry.get_xml_examples().items():
         xml_examples += f"{example}\n"
 
     system_message = { "role": "system", "content": get_system_prompt() + "\n\n" + f"<tool_examples>\n{xml_examples}\n</tool_examples>" }
-
-    model_name = "anthropic/claude-3-7-sonnet-latest"
-    # model_name = "groq/llama-3.3-70b-versatile"
-    # model_name = "openrouter/qwen/qwen2.5-vl-72b-instruct"
-    # model_name = "bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0"         
-    # model_name = "anthropic/claude-3-5-sonnet-latest" 
-    # model_name = "anthropic/claude-3-7-sonnet-latest"
-    # model_name = "openai/gpt-4o"
-    # model_name = "groq/deepseek-r1-distill-llama-70b"
-    # model_name = "bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0"
-    # model_name = "bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0"
-    # model_name = "bedrock/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
 
     iteration_count = 0
     continue_execution = True
@@ -151,7 +145,7 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
             thread_id=thread_id,
             system_prompt=system_message,
             stream=stream,
-            llm_model=model_name,
+            llm_model=os.getenv("MODEL_TO_USE", "anthropic/claude-3-7-sonnet-latest"),
             llm_temperature=0,
             llm_max_tokens=128000,
             tool_choice="auto",
