@@ -1224,19 +1224,19 @@ class ResponseProcessor:
                 logger.error(f"Failed even with fallback message: {str(e2)}", exc_info=True)
 
     def _format_xml_tool_result(self, tool_call: Dict[str, Any], result: ToolResult) -> str:
-        """Format a tool result as an XML tag or plain text.
-        
+        """Format a tool result wrapped in a <tool_result> tag.
+
         Args:
             tool_call: The tool call that was executed
             result: The result of the tool execution
-            
+
         Returns:
-            String containing the formatted result
+            String containing the formatted result wrapped in <tool_result> tag
         """
         # Always use xml_tag_name if it exists
         if "xml_tag_name" in tool_call:
             xml_tag_name = tool_call["xml_tag_name"]
-            return f"<{xml_tag_name}> {str(result)} </{xml_tag_name}>"
+            return f"<tool_result><{xml_tag_name}> {str(result)} </{xml_tag_name}></tool_result>"
         
         # Non-XML tool, just return the function result
         function_name = tool_call["function_name"]

@@ -1,682 +1,424 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef, useContext } from "react";
-import { getProject, getMessages, getThread, addUserMessage, startAgent, stopAgent, getAgentRuns, streamAgent, type Message, type Project, type Thread, type AgentRun } from "@/lib/api";
-import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { ArrowDown, File } from 'lucide-react';
+import { addUserMessage, getMessages, startAgent, stopAgent, getAgentStatus, streamAgent, getAgentRuns, getProject, getThread } from '@/lib/api';
+import { toast } from 'sonner';
 import { Skeleton } from "@/components/ui/skeleton";
-import { SUPPORTED_XML_TAGS } from "@/lib/types/tool-calls";
-import { ToolCallsContext } from "@/app/providers";
-import { BillingErrorAlert } from "@/components/billing/BillingErrorAlert";
-import { useBillingError } from "@/hooks/useBillingError";
-import { MessageList } from "@/components/thread/message-list";
-import { ChatInput } from "@/components/thread/chat-input";
-import { ToolCallsSidebar } from "@/components/thread/tool-calls-sidebar";
-import { useToolsPanel } from "@/hooks/use-tools-panel";
-import { cn } from "@/lib/utils";
+import { ChatInput } from '@/components/thread/chat-input';
+import { FileViewerModal } from '@/components/thread/file-viewer-modal';
 
-interface AgentPageProps {
-  params: {
-    threadId: string;
+// Define a type for the params to make React.use() work properly
+type ThreadParams = { 
+  threadId: string;
+};
+
+interface ApiMessage {
+  role: string;
+  content: string;
+  type?: string;
+  name?: string;
+  arguments?: string;
+  tool_call?: {
+    id: string;
+    function: {
+      name: string;
+      arguments: string;
+    };
+    type: string;
+    index: number;
   };
 }
 
-// Parse XML tags in content
-function parseXMLTags(content: string): { parts: any[], openTags: Record<string, any> } {
-  const parts: any[] = [];
-  const openTags: Record<string, any> = {};
-  const tagStack: Array<{tagName: string, position: number}> = [];
-  
-  // Find all opening and closing tags
-  let currentPosition = 0;
-  
-  // Match opening tags with attributes like <tag-name attr="value">
-  const openingTagRegex = new RegExp(`<(${SUPPORTED_XML_TAGS.join('|')})\\s*([^>]*)>`, 'g');
-  // Match closing tags like </tag-name>
-  const closingTagRegex = new RegExp(`</(${SUPPORTED_XML_TAGS.join('|')})>`, 'g');
-  
-  let match: RegExpExecArray | null;
-  let matches: { regex: RegExp, match: RegExpExecArray, isOpening: boolean, position: number }[] = [];
-  
-  // Find all opening tags
-  while ((match = openingTagRegex.exec(content)) !== null) {
-    matches.push({ 
-      regex: openingTagRegex, 
-      match, 
-      isOpening: true, 
-      position: match.index 
-    });
-  }
-  
-  // Find all closing tags
-  while ((match = closingTagRegex.exec(content)) !== null) {
-    matches.push({ 
-      regex: closingTagRegex, 
-      match, 
-      isOpening: false, 
-      position: match.index 
-    });
-  }
-  
-  // Sort matches by their position in the content
-  matches.sort((a, b) => a.position - b.position);
-  
-  // Process matches in order
-  for (const { match, isOpening, position } of matches) {
-    const tagName = match[1];
-    const matchEnd = position + match[0].length;
-    
-    // Add text before this tag if needed
-    if (position > currentPosition) {
-      parts.push(content.substring(currentPosition, position));
-    }
-    
-    if (isOpening) {
-      // Parse attributes for opening tags
-      const attributesStr = match[2]?.trim();
-      const attributes: Record<string, string> = {};
-      
-      if (attributesStr) {
-        // Match attributes in format: name="value" or name='value'
-        const attrRegex = /(\w+)=["']([^"']*)["']/g;
-        let attrMatch;
-        while ((attrMatch = attrRegex.exec(attributesStr)) !== null) {
-          attributes[attrMatch[1]] = attrMatch[2];
-        }
-      }
-      
-      // Create tag object with unique ID
-      const parsedTag: any = {
-        tagName,
-        attributes,
-        content: '',
-        isClosing: false,
-        id: `${tagName}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-        rawMatch: match[0]
-      };
-      
-      // Add timestamp if not present
-      if (!parsedTag.timestamp) {
-        parsedTag.timestamp = Date.now();
-      }
-      
-      // Push to parts and track in stack
-      parts.push(parsedTag);
-      tagStack.push({ tagName, position: parts.length - 1 });
-      openTags[tagName] = parsedTag;
-      
-    } else {
-      // Handle closing tag
-      // Find the corresponding opening tag in the stack (last in, first out)
-      let foundOpeningTag = false;
-      
-      for (let i = tagStack.length - 1; i >= 0; i--) {
-        if (tagStack[i].tagName === tagName) {
-          const openTagIndex = tagStack[i].position;
-          const openTag = parts[openTagIndex] as any;
-          
-          // Get content between this opening and closing tag pair
-          const contentStart = position;
-          let tagContentStart = openTagIndex + 1;
-          let tagContentEnd = parts.length;
-          
-          // Mark that we need to capture content between these positions
-          let contentToCapture = '';
-          
-          // Collect all content parts between the opening and closing tags
-          for (let j = tagContentStart; j < tagContentEnd; j++) {
-            if (typeof parts[j] === 'string') {
-              contentToCapture += parts[j];
-            }
-          }
-          
-          // Try getting content directly from original text (most reliable approach)
-          const openTagMatch = openTag.rawMatch || '';
-          const openTagPosition = content.indexOf(openTagMatch, Math.max(0, openTagIndex > 0 ? currentPosition - 200 : 0));
-          if (openTagPosition >= 0) {
-            const openTagEndPosition = openTagPosition + openTagMatch.length;
-            // Only use if the positions make sense
-            if (openTagEndPosition > 0 && position > openTagEndPosition) {
-              // Get content and clean up excessive whitespace but preserve formatting
-              let extractedContent = content.substring(openTagEndPosition, position);
-              
-              // Trim leading newline if present
-              if (extractedContent.startsWith('\n')) {
-                extractedContent = extractedContent.substring(1);
-              }
-              
-              // Trim trailing newline if present
-              if (extractedContent.endsWith('\n')) {
-                extractedContent = extractedContent.substring(0, extractedContent.length - 1);
-              }
-              
-              contentToCapture = extractedContent;
-              
-              // Debug info in development
-              console.log(`[XML Parse] Extracted content for ${tagName}:`, contentToCapture);
-            }
-          }
-          
-          // Update opening tag with collected content
-          openTag.content = contentToCapture;
-          openTag.isClosing = true;
-          
-          // Remove all parts between the opening tag and this position
-          // because they're now captured in the tag's content
-          if (tagContentStart < tagContentEnd) {
-            parts.splice(tagContentStart, tagContentEnd - tagContentStart);
-          }
-          
-          // Remove this tag from the stack
-          tagStack.splice(i, 1);
-          // Remove from openTags
-          delete openTags[tagName];
-          
-          foundOpeningTag = true;
-          break;
-        }
-      }
-      
-      // If no corresponding opening tag found, add closing tag as text
-      if (!foundOpeningTag) {
-        parts.push(match[0]);
-      }
-    }
-    
-    currentPosition = matchEnd;
-  }
-  
-  // Add any remaining text
-  if (currentPosition < content.length) {
-    parts.push(content.substring(currentPosition));
-  }
-  
-  return { parts, openTags };
+interface ApiAgentRun {
+  id: string;
+  thread_id: string;
+  status: 'running' | 'completed' | 'stopped' | 'error';
+  started_at: string;
+  completed_at: string | null;
+  responses: ApiMessage[];
+  error: string | null;
 }
 
-// Chat container component to reduce duplication
-function ChatContainer({ 
-  children, 
-  messages, 
-  streamContent, 
-  isStreaming, 
-  isAgentRunning, 
-  agent, 
-  onSendMessage, 
-  isSending, 
-  conversation, 
-  onStopAgent,
-  userMessage,
-  setUserMessage 
-}: {
-  children?: React.ReactNode;
-  messages: Message[];
-  streamContent: string;
-  isStreaming: boolean;
-  isAgentRunning: boolean;
-  agent: Project | null;
-  onSendMessage: (message: string) => void;
-  isSending: boolean;
-  conversation: Thread | null;
-  onStopAgent: () => void;
-  userMessage: string;
-  setUserMessage: (message: string) => void;
-}) {
-  return (
-    <div className="flex flex-col h-[calc(100vh-5.5rem)] overflow-hidden">
-      {children}
-      <MessageList
-        messages={messages}
-        streamContent={streamContent}
-        isStreaming={isStreaming}
-        isAgentRunning={isAgentRunning}
-        agentName={agent?.name}
-      />
-      
-      <div className="sticky bottom-0 w-full bg-background/80 backdrop-blur-sm pt-2 pb-3 border-t border-zinc-200 dark:border-zinc-800">
-        <div className="w-full max-w-3xl mx-auto px-4">
-          <ChatInput
-            onSubmit={onSendMessage}
-            loading={isSending}
-            disabled={!conversation}
-            isAgentRunning={isAgentRunning}
-            onStopAgent={onStopAgent}
-            value={userMessage}
-            onChange={setUserMessage}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export default function AgentPage({ params }: AgentPageProps) {
-  const resolvedParams = React.use(params as any) as { threadId: string };
-  const { threadId } = resolvedParams;
+export default function ThreadPage({ params }: { params: Promise<ThreadParams> }) {
+  const unwrappedParams = React.use(params);
+  const threadId = unwrappedParams.threadId;
+  
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const initialMessage = searchParams.get('message');
-  const streamCleanupRef = useRef<(() => void) | null>(null);
-  const { showPanel } = useToolsPanel();
-  
-  // State
-  const [agent, setAgent] = useState<Project | null>(null);
-  const [conversation, setConversation] = useState<Thread | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [agentRuns, setAgentRuns] = useState<AgentRun[]>([]);
+  const [messages, setMessages] = useState<ApiMessage[]>([]);
+  const [newMessage, setNewMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<React.ReactNode | null>(null);
-  const [userMessage, setUserMessage] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [agentRunId, setAgentRunId] = useState<string | null>(null);
+  const [agentStatus, setAgentStatus] = useState<'idle' | 'running' | 'paused'>('idle');
   const [isStreaming, setIsStreaming] = useState(false);
-  const [streamContent, setStreamContent] = useState("");
-  const [currentAgentRunId, setCurrentAgentRunId] = useState<string | null>(null);
+  const [streamContent, setStreamContent] = useState('');
+  const [toolCallData, setToolCallData] = useState<{id?: string, name?: string, arguments?: string, index?: number} | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(null);
   
-  // Get tool calls context
-  const { toolCalls, setToolCalls } = useContext(ToolCallsContext);
-  const { billingError, handleBillingError, clearBillingError } = useBillingError();
-  
-  // Process messages and stream for tool calls
-  useEffect(() => {
-    // Extract tool calls from all messages
-    const allContent = [...messages.map(msg => msg.content), streamContent].filter(Boolean);
-    
-    // Create a new array of tags with a better deduplication strategy
-    const extractedTags: any[] = [];
-    const seenTagIds = new Set<string>();
-    
-    // Process content to extract tools
-    allContent.forEach((content, idx) => {
-      const { parts, openTags } = parseXMLTags(content);
-      
-      // Mark tool calls vs results based on position and sender
-      const isUserMessage = idx % 2 === 0;
-      
-      // Process all parts to mark as tool calls or results
-      parts.forEach(part => {
-        if (typeof part !== 'string') {
-          // Create a unique ID for this tag if not present
-          if (!part.id) {
-            part.id = `${part.tagName}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-          }
-          
-          // Add timestamp if not present
-          if (!part.timestamp) {
-            part.timestamp = Date.now();
-          }
-          
-          // Mark as tool call or result
-          part.isToolCall = !isUserMessage;
-          part.status = part.isClosing ? 'completed' : 'running';
-          
-          // Check if this is a browser-related tool and add VNC preview
-          if (part.tagName.includes('browser') && agent?.sandbox?.vnc_preview) {
-            part.vncPreview = agent.sandbox.vnc_preview + "/vnc_lite.html?password=" + agent.sandbox.pass;
-          }
-          
-          // Use ID for deduplication
-          if (!seenTagIds.has(part.id)) {
-            seenTagIds.add(part.id);
-            extractedTags.push(part);
-          }
-        }
-      });
-      
-      // Also add any open tags
-      Object.values(openTags).forEach(tag => {
-        // Create a unique ID for this tag if not present
-        if (!tag.id) {
-          tag.id = `${tag.tagName}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-        }
-        
-        // Add timestamp if not present
-        if (!tag.timestamp) {
-          tag.timestamp = Date.now();
-        }
-        
-        // Mark as tool call or result
-        tag.isToolCall = !isUserMessage;
-        tag.status = tag.isClosing ? 'completed' : 'running';
-        
-        // Check if this is a browser-related tool and add VNC preview
-        if (tag.tagName.includes('browser') && agent?.sandbox?.vnc_preview) {
-          tag.vncPreview = agent.sandbox.vnc_preview + "/vnc_lite.html?password=" + agent.sandbox.pass;
-        }
-        
-        // Use ID for deduplication
-        if (!seenTagIds.has(tag.id)) {
-          seenTagIds.add(tag.id);
-          extractedTags.push(tag);
-        }
-      });
-    });
-    
-    // Sort the tools by timestamp (oldest first)
-    extractedTags.sort((a, b) => {
-      if (a.timestamp && b.timestamp) {
-        return a.timestamp - b.timestamp;
-      }
-      return 0;
-    });
-    
-    // Try to pair tool calls with their results
-    const pairedTags: any[] = [];
-    const callsByTagName: Record<string, any[]> = {};
-    
-    // Group by tag name first
-    extractedTags.forEach(tag => {
-      if (!callsByTagName[tag.tagName]) {
-        callsByTagName[tag.tagName] = [];
-      }
-      callsByTagName[tag.tagName].push(tag);
-    });
-    
-    // For each tag type, try to pair calls with results
-    Object.values(callsByTagName).forEach(tagGroup => {
-      const toolCalls = tagGroup.filter(tag => tag.isToolCall);
-      const toolResults = tagGroup.filter(tag => !tag.isToolCall);
-      
-      // Try to match each tool call with a result
-      toolCalls.forEach(toolCall => {
-        // Find the nearest matching result (by timestamp)
-        const matchingResult = toolResults.find(result => 
-          !result.isPaired && result.attributes && 
-          Object.keys(toolCall.attributes).every(key => 
-            toolCall.attributes[key] === result.attributes[key]
-          )
-        );
-        
-        if (matchingResult) {
-          // Pair them
-          toolCall.resultTag = matchingResult;
-          toolCall.isPaired = true;
-          toolCall.status = 'completed';
-          matchingResult.isPaired = true;
-          
-          // Add to paired list
-          pairedTags.push(toolCall);
-        } else {
-          // No result yet, tool call is still running
-          toolCall.status = 'running';
-          pairedTags.push(toolCall);
-        }
-      });
-      
-      // Add any unpaired results
-      toolResults.filter(result => !result.isPaired).forEach(result => {
-        pairedTags.push(result);
-      });
-    });
-    
-    // Update tool calls in the shared context
-    setToolCalls(pairedTags);
-  }, [messages, streamContent, setToolCalls, agent]);
-  
-  // Load initial data
-  useEffect(() => {
-    async function loadData() {
-      setIsLoading(true);
-      setError(null);
-      
-      try {
-        // Check if we're creating a new conversation or using an existing one
-        if (threadId === 'new') {
-          router.push('/dashboard');
-          return;
-        } else {
-          // Load existing conversation (thread) data
-          const conversationData = await getThread(threadId);
-          setConversation(conversationData);
-          
-          if (conversationData && conversationData.project_id) {
-            // Load agent (project) data
-            const agentData = await getProject(conversationData.project_id);
-            setAgent(agentData);
-            
-            // Only load messages and agent runs if we have a valid thread
-            const messagesData = await getMessages(threadId);
-            setMessages(messagesData);
-            
-            const agentRunsData = await getAgentRuns(threadId);
-            setAgentRuns(agentRunsData);
-            
-            // Check if there's a running agent run
-            const runningAgent = agentRunsData.find(run => run.status === "running");
-            if (runningAgent) {
-              setCurrentAgentRunId(runningAgent.id);
-              handleStreamAgent(runningAgent.id);
-            }
-          }
-        }
-      } catch (err: any) {
-        console.error("Error loading conversation data:", err);
-        
-        // Handle permission errors specifically
-        if (err.code === '42501' && err.message?.includes('has_role_on_account')) {
-          setError("You don't have permission to access this conversation");
-        } else {
-          setError(err instanceof Error ? err.message : "An error occurred loading the conversation");
-        }
-      } finally {
-        setIsLoading(false);
-      }
+  const streamCleanupRef = useRef<(() => void) | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const initialLoadCompleted = useRef<boolean>(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const latestMessageRef = useRef<HTMLDivElement>(null);
+  const messagesLoadedRef = useRef(false);
+  const agentRunsCheckedRef = useRef(false);
+  const [showScrollButton, setShowScrollButton] = useState(false);
+  const [buttonOpacity, setButtonOpacity] = useState(0);
+  const [userHasScrolled, setUserHasScrolled] = useState(false);
+  const hasInitiallyScrolled = useRef<boolean>(false);
+  const [sandboxId, setSandboxId] = useState<string | null>(null);
+  const [fileViewerOpen, setFileViewerOpen] = useState(false);
+
+  const handleStreamAgent = useCallback(async (runId: string) => {
+    // Prevent multiple streams for the same run
+    if (streamCleanupRef.current && agentRunId === runId) {
+      console.log(`[PAGE] Stream already exists for run ${runId}, skipping`);
+      return;
     }
-    
-    loadData();
-    
-    // Clean up streaming on component unmount
-    return () => {
-      if (streamCleanupRef.current) {
-        streamCleanupRef.current();
-        streamCleanupRef.current = null;
-      }
-    };
-  }, [threadId, initialMessage, router]);
-  
-  // Handle streaming agent responses
-  const handleStreamAgent = useCallback((agentRunId: string) => {
-    // Clean up any existing stream first
+
+    // Clean up any existing stream
     if (streamCleanupRef.current) {
+      console.log(`[PAGE] Cleaning up existing stream before starting new one`);
       streamCleanupRef.current();
       streamCleanupRef.current = null;
     }
     
     setIsStreaming(true);
-    setStreamContent("");
+    setStreamContent('');
     
-    const cleanup = streamAgent(agentRunId, {
-      onMessage: (rawData: string) => {
+    console.log(`[PAGE] Setting up stream for agent run ${runId}`);
+    
+    // Start streaming the agent's responses with improved implementation
+    const cleanup = streamAgent(runId, {
+      onMessage: async (rawData: string) => {
         try {
-          // Handle data: prefix format (SSE standard)
+          // Update last message timestamp to track stream health
+          (window as any).lastStreamMessage = Date.now();
+          
+          // Log the raw data first for debugging
+          console.log(`[PAGE] Raw message data:`, rawData);
+          
           let processedData = rawData;
           let jsonData: {
             type?: string;
             status?: string;
             content?: string;
             message?: string;
+            name?: string;
+            arguments?: string;
+            tool_call?: {
+              id: string;
+              function: {
+                name: string;
+                arguments: string;
+              };
+              type: string;
+              index: number;
+            };
           } | null = null;
           
-          if (rawData.startsWith('data: ')) {
-            processedData = rawData.substring(6).trim();
-          }
-          
-          // Try to parse as JSON
           try {
             jsonData = JSON.parse(processedData);
             
-            // Handle status messages
-            if (jsonData?.type === 'status') {
-              // Handle billing limit reached
-              if (jsonData?.status === 'stopped' && jsonData?.message?.includes('Billing limit reached')) {
-                setIsStreaming(false);
-                setCurrentAgentRunId(null);
-                
-                // Use the billing error hook
-                handleBillingError({
-                  status: 402,
-                  data: {
-                    detail: {
-                      message: jsonData.message
-                    }
-                  }
-                });
-                
-                // Update agent runs and messages
-                if (threadId) {
-                  Promise.all([
-                    getMessages(threadId),
-                    getAgentRuns(threadId)
-                  ]).then(([updatedMsgs, updatedRuns]) => {
-                    setMessages(updatedMsgs);
-                    setAgentRuns(updatedRuns);
-                    setStreamContent("");
-                  }).catch(err => console.error("Failed to update after billing limit:", err));
-                }
-                
-                return;
+            // Handle error messages immediately and only once
+            if (jsonData?.status === 'error' && jsonData?.message) {
+              // Get a clean string version of the error, handling any nested objects
+              const errorMessage = typeof jsonData.message === 'object' 
+                ? JSON.stringify(jsonData.message)
+                : String(jsonData.message);
+
+              if (jsonData.status !== 'error') {
+                console.error('[PAGE] Error from stream:', errorMessage);
               }
               
-              if (jsonData?.status === 'completed') {
-                // Reset streaming on completion
-                setIsStreaming(false);
+              // Only show toast and cleanup if we haven't already
+              if (agentStatus === 'running') {
+                toast.error(errorMessage);
+                setAgentStatus('idle');
+                setAgentRunId(null);
                 
-                // Fetch updated messages
-                if (threadId) {
-                  getMessages(threadId)
-                    .then(updatedMsgs => {
-                      setMessages(updatedMsgs);
-                      setStreamContent("");
-                      
-                      // Also update agent runs
-                      return getAgentRuns(threadId);
-                    })
-                    .then(updatedRuns => {
-                      setAgentRuns(updatedRuns);
-                      setCurrentAgentRunId(null);
-                    })
-                    .catch(err => console.error("Failed to update after completion:", err));
+                // Clean up the stream
+                if (streamCleanupRef.current) {
+                  streamCleanupRef.current();
+                  streamCleanupRef.current = null;
                 }
-                
-                return;
               }
-              return; // Don't process other status messages further
+              return;
             }
-            
-            // Handle content messages
-            if (jsonData?.type === 'content' && jsonData?.content) {
-              setStreamContent(prev => prev + jsonData?.content);
+
+            // Handle completion status
+            if (jsonData?.type === 'status' && jsonData?.status === 'completed') {
+              console.log('[PAGE] Received completion status');
+              if (streamCleanupRef.current) {
+                streamCleanupRef.current();
+                streamCleanupRef.current = null;
+              }
+              setAgentStatus('idle');
+              setAgentRunId(null);
               return;
             }
           } catch (e) {
-            // If not valid JSON, just append the raw data
+            console.warn('[PAGE] Failed to parse message:', e);
           }
-          
-          // If we couldn't parse as special format, just append the raw data
-          if (!jsonData) {
-            setStreamContent(prev => prev + processedData);
-          }
+
+          // Continue with normal message processing...
+          // ... rest of the onMessage handler ...
         } catch (error) {
-          console.warn("Failed to process message:", error);
+          console.error('[PAGE] Error processing message:', error);
+          toast.error('Failed to process agent response');
         }
       },
       onError: (error: Error | string) => {
-        console.error("Streaming error:", error);
+        console.error('[PAGE] Streaming error:', error);
+        
+        // Show error toast and clean up state
+        toast.error(typeof error === 'string' ? error : error.message);
+        
+        // Clean up on error
+        streamCleanupRef.current = null;
         setIsStreaming(false);
-        setCurrentAgentRunId(null);
+        setAgentStatus('idle');
+        setAgentRunId(null);
+        setStreamContent('');  // Clear any partial content
       },
       onClose: async () => {
-        // Set UI state to not streaming
+        console.log('[PAGE] Stream connection closed');
+        
+        // Immediately set UI state to idle
+        setAgentStatus('idle');
         setIsStreaming(false);
         
+        // Reset tool call data
+        setToolCallData(null);
+        
         try {
-          // Update messages and agent runs
-          if (threadId) {
+          // Only check status if we still have an agent run ID
+          if (agentRunId) {
+            console.log(`[PAGE] Checking final status for agent run ${agentRunId}`);
+            const status = await getAgentStatus(agentRunId);
+            console.log(`[PAGE] Agent status: ${status.status}`);
+            
+            // Clear cleanup reference to prevent reconnection
+            streamCleanupRef.current = null;
+            
+            // Set agent run ID to null to prevent lingering state
+            setAgentRunId(null);
+            
+            // Fetch final messages first, then clear streaming content
+            console.log('[PAGE] Fetching final messages');
             const updatedMessages = await getMessages(threadId);
-            setMessages(updatedMessages);
             
-            const updatedAgentRuns = await getAgentRuns(threadId);
-            setAgentRuns(updatedAgentRuns);
+            // Update messages first
+            setMessages(updatedMessages as ApiMessage[]);
             
-            // Reset current agent run
-            setCurrentAgentRunId(null);
-            
-            // Clear streaming content after a short delay
-            setTimeout(() => {
-              setStreamContent("");
-            }, 50);
+            // Then clear streaming content
+            setStreamContent('');
           }
         } catch (err) {
-          console.error("Error checking final status:", err);
+          console.error('[PAGE] Error checking agent status:', err);
+          toast.error('Failed to verify agent status');
           
-          // If there was streaming content, add it as a message
-          if (streamContent) {
-            const assistantMessage: Message = {
-              type: 'assistant',
-              role: 'assistant',
-              content: streamContent + "\n\n[Connection to agent lost]",
-            };
-            setMessages(prev => [...prev, assistantMessage]);
-            setStreamContent("");
-          }
+          // Clear the agent run ID
+          setAgentRunId(null);
+          setStreamContent('');
         }
-        
-        // Clear cleanup reference
-        streamCleanupRef.current = null;
       }
     });
     
     // Store cleanup function
     streamCleanupRef.current = cleanup;
-  }, [threadId, conversation, handleBillingError]);
-  
-  // Handle sending a message
-  const handleSendMessage = async (message: string) => {
-    if (!message.trim() || isSending) return;
-    if (!conversation) return;
+  }, [threadId, agentRunId]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadData() {
+      // Only show loading state on the first load, not when switching tabs
+      if (!initialLoadCompleted.current) {
+        setIsLoading(true);
+      }
+      
+      setError(null);
+      
+      try {
+        if (!threadId) {
+          throw new Error('Thread ID is required');
+        }
+        
+        // First fetch the thread to get the project_id
+        const threadData = await getThread(threadId).catch(err => {
+          throw new Error('Failed to load thread data: ' + err.message);
+        });
+        
+        if (!isMounted) return;
+        
+        // Set the project ID from the thread data
+        if (threadData && threadData.project_id) {
+          setProjectId(threadData.project_id);
+        }
+        
+        // Fetch project details to get sandbox_id
+        if (threadData && threadData.project_id) {
+          const projectData = await getProject(threadData.project_id);
+          if (isMounted && projectData && projectData.sandbox) {
+            // Extract the sandbox ID correctly
+            setSandboxId(typeof projectData.sandbox === 'string' ? projectData.sandbox : projectData.sandbox.id);
+            
+            // Load messages only if not already loaded
+            if (!messagesLoadedRef.current) {
+              const messagesData = await getMessages(threadId);
+              if (isMounted) {
+                setMessages(messagesData as ApiMessage[]);
+                messagesLoadedRef.current = true;
+                
+                // Only scroll to bottom on initial page load
+                if (!hasInitiallyScrolled.current) {
+                  scrollToBottom('auto');
+                  hasInitiallyScrolled.current = true;
+                }
+              }
+            }
+
+            // Check for active agent runs only once per thread
+            if (!agentRunsCheckedRef.current) {
+              try {
+                // Get agent runs for this thread using the proper API function
+                const agentRuns = await getAgentRuns(threadId);
+                agentRunsCheckedRef.current = true;
+                
+                // Look for running agent runs
+                const activeRuns = agentRuns.filter(run => run.status === 'running');
+                if (activeRuns.length > 0 && isMounted) {
+                  // Sort by start time to get the most recent
+                  activeRuns.sort((a, b) => 
+                    new Date(b.started_at).getTime() - new Date(a.started_at).getTime()
+                  );
+                  
+                  // Set the current agent run
+                  const latestRun = activeRuns[0];
+                  if (latestRun) {
+                    setAgentRunId(latestRun.id);
+                    setAgentStatus('running');
+                    
+                    // Start streaming only on initial page load
+                    console.log('Starting stream for active run on initial page load');
+                    handleStreamAgent(latestRun.id);
+                  }
+                }
+              } catch (err) {
+                console.error('Error checking for active runs:', err);
+              }
+            }
+            
+            // Mark that we've completed the initial load
+            initialLoadCompleted.current = true;
+          }
+        }
+      } catch (err) {
+        console.error('Error loading thread data:', err);
+        if (isMounted) {
+          const errorMessage = err instanceof Error ? err.message : 'Failed to load thread';
+          setError(errorMessage);
+          toast.error(errorMessage);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      }
+    }
+    
+    loadData();
+
+    // Handle visibility changes for more responsive streaming
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && agentRunId && agentStatus === 'running') {
+        console.log('[PAGE] Page became visible, checking stream health');
+        
+        // Check if we've received any messages recently
+        const lastMessage = (window as any).lastStreamMessage || 0;
+        const now = Date.now();
+        const messageTimeout = 10000; // 10 seconds
+        
+        // Only reconnect if we haven't received messages in a while
+        if (!streamCleanupRef.current && (!lastMessage || (now - lastMessage > messageTimeout))) {
+          // Add a debounce to prevent rapid reconnections
+          const lastStreamAttempt = (window as any).lastStreamAttempt || 0;
+          
+          if (now - lastStreamAttempt > 5000) { // 5 second cooldown
+            console.log('[PAGE] Stream appears stale, reconnecting');
+            (window as any).lastStreamAttempt = now;
+            handleStreamAgent(agentRunId);
+          } else {
+            console.log('[PAGE] Skipping reconnect - too soon since last attempt');
+          }
+        } else {
+          console.log('[PAGE] Stream appears healthy, no reconnection needed');
+        }
+      }
+    };
+
+    // Add visibility change listener
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Cleanup function
+    return () => {
+      isMounted = false;
+      
+      // Remove visibility change listener
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      
+      // Properly clean up stream
+      if (streamCleanupRef.current) {
+        console.log('[PAGE] Cleaning up stream on unmount');
+        streamCleanupRef.current();
+        streamCleanupRef.current = null;
+      }
+      
+      // Reset component state to prevent memory leaks
+      console.log('[PAGE] Resetting component state on unmount');
+    };
+  }, [threadId, handleStreamAgent, agentRunId, agentStatus, isStreaming]);
+
+  const handleSubmitMessage = async (message: string) => {
+    if (!message.trim()) return;
     
     setIsSending(true);
-    setError(null); // Clear any previous errors
-    clearBillingError(); // Clear any previous billing errors
     
     try {
-      // Add user message optimistically to UI
-      const userMsg: Message = {
-        type: 'user',
+      // Add the message optimistically to the UI
+      const userMessage: ApiMessage = {
         role: 'user',
-        content: message,
+        content: message
       };
-      setMessages(prev => [...prev, userMsg]);
       
-      // Clear the input
-      setUserMessage("");
+      setMessages(prev => [...prev, userMessage]);
+      setNewMessage('');
+      scrollToBottom();
       
-      // Add user message to API and start agent
-      await addUserMessage(conversation.thread_id, message);
-      const agentResponse = await startAgent(conversation.thread_id);
+      // Send to the API and start agent in parallel
+      const [messageResult, agentResult] = await Promise.all([
+        addUserMessage(threadId, userMessage.content).catch(err => {
+          throw new Error('Failed to send message: ' + err.message);
+        }),
+        startAgent(threadId).catch(err => {
+          throw new Error('Failed to start agent: ' + err.message);
+        })
+      ]);
       
-      // Set current agent run ID and start streaming
-      if (agentResponse.agent_run_id) {
-        setCurrentAgentRunId(agentResponse.agent_run_id);
-        handleStreamAgent(agentResponse.agent_run_id);
-      }
-    } catch (err: any) {
-      console.error("Error sending message:", err);
+      setAgentRunId(agentResult.agent_run_id);
+      setAgentStatus('running');
       
-      // Handle billing errors with the hook
-      if (!handleBillingError(err)) {
-        // For non-billing errors, show a simpler error message
-        setError(
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>
-              {err instanceof Error ? err.message : "Failed to send message"}
-            </AlertDescription>
-          </Alert>
-        );
-      }
+      // Start streaming the agent's responses immediately
+      handleStreamAgent(agentResult.agent_run_id);
+    } catch (err) {
+      console.error('Error sending message:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to send message');
       
       // Remove the optimistically added message on error
       setMessages(prev => prev.slice(0, -1));
@@ -684,112 +426,270 @@ export default function AgentPage({ params }: AgentPageProps) {
       setIsSending(false);
     }
   };
-  
-  // Handle stopping the agent
-  const handleStopAgent = async () => {
-    try {
-      // Find the running agent run
-      const runningAgentId = currentAgentRunId || agentRuns.find(run => run.status === "running")?.id;
-      
-      if (!runningAgentId) {
-        console.warn("No running agent to stop");
-        return;
-      }
 
-      // Clean up stream first
+  const handleStopAgent = async () => {
+    if (!agentRunId) {
+      console.warn('[PAGE] No agent run ID to stop');
+      return;
+    }
+    
+    console.log(`[PAGE] Stopping agent run: ${agentRunId}`);
+    
+    try {
+      // First clean up the stream if it exists
       if (streamCleanupRef.current) {
+        console.log('[PAGE] Cleaning up stream connection');
         streamCleanupRef.current();
         streamCleanupRef.current = null;
       }
       
-      // Stop the agent
-      await stopAgent(runningAgentId);
-      
-      // Update UI state
+      // Mark as not streaming, but keep content visible during transition
       setIsStreaming(false);
-      setCurrentAgentRunId(null);
+      setAgentStatus('idle');
       
-      // Refresh agent runs and messages
-      if (conversation) {
-        const [updatedAgentRuns, updatedMessages] = await Promise.all([
-          getAgentRuns(conversation.thread_id),
-          getMessages(conversation.thread_id)
-        ]);
-        
-        setAgentRuns(updatedAgentRuns);
-        setMessages(updatedMessages);
-        setStreamContent("");
-      }
+      // Then stop the agent
+      console.log('[PAGE] Sending stop request to backend');
+      await stopAgent(agentRunId).catch(err => {
+        throw new Error('Failed to stop agent: ' + err.message);
+      });
+      
+      // Update UI
+      console.log('[PAGE] Agent stopped successfully');
+      toast.success('Agent stopped successfully');
+      
+      // Reset agent run ID
+      setAgentRunId(null);
+      
+      // Fetch final messages to get state from database
+      console.log('[PAGE] Fetching final messages after stop');
+      const updatedMessages = await getMessages(threadId);
+      
+      // Update messages first - cast to ApiMessage[] to fix type error
+      setMessages(updatedMessages as ApiMessage[]);
+      
+      // Then clear streaming content after a tiny delay for smooth transition
+      setTimeout(() => {
+        console.log('[PAGE] Clearing streaming content');
+        setStreamContent('');
+      }, 50);
     } catch (err) {
-      console.error("Error stopping agent:", err);
-      setError(err instanceof Error ? err.message : "Failed to stop agent");
+      console.error('[PAGE] Error stopping agent:', err);
+      toast.error(err instanceof Error ? err.message : 'Failed to stop agent');
+      
+      // Still update UI state to avoid being stuck
+      setAgentStatus('idle');
+      setIsStreaming(false);
+      setAgentRunId(null);
+      setStreamContent('');
     }
   };
-  
-  // Check if agent is running either from agent runs list or streaming state
-  const isAgentRunning = isStreaming || currentAgentRunId !== null || agentRuns.some(run => run.status === "running");
-  
-  // Render based on state
-  if (billingError) {
-    return (
-      <>
-        <BillingErrorAlert
-          message={billingError?.message}
-          currentUsage={billingError?.currentUsage}
-          limit={billingError?.limit}
-          accountId={conversation?.account_id}
-          onDismiss={clearBillingError}
-          isOpen={true}
-        />
-        <ChatContainer
-          messages={messages}
-          streamContent={streamContent}
-          isStreaming={isStreaming}
-          isAgentRunning={isAgentRunning}
-          agent={agent}
-          onSendMessage={handleSendMessage}
-          isSending={isSending}
-          conversation={conversation}
-          onStopAgent={handleStopAgent}
-          userMessage={userMessage}
-          setUserMessage={setUserMessage}
-        />
-      </>
+
+  // Auto-focus on textarea when component loads
+  useEffect(() => {
+    if (!isLoading && textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [isLoading]);
+
+  // Adjust textarea height based on content
+  useEffect(() => {
+    const adjustHeight = () => {
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+        textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+      }
+    };
+
+    adjustHeight();
+    
+    // Adjust on window resize too
+    window.addEventListener('resize', adjustHeight);
+    return () => window.removeEventListener('resize', adjustHeight);
+  }, [newMessage]);
+
+  // // Handle keyboard shortcuts
+  // const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  //   // Send on Enter (without Shift)
+  //   if (e.key === 'Enter' && !e.shiftKey) {
+  //     e.preventDefault();
+      
+  //     if (newMessage.trim() && !isSending && agentStatus !== 'running') {
+  //       handleSubmitMessage(newMessage);
+  //     }
+  //   }
+  // };
+
+  // Check if user has scrolled up from bottom
+  const handleScroll = () => {
+    if (!messagesContainerRef.current) return;
+    
+    const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+    const isScrolledUp = scrollHeight - scrollTop - clientHeight > 100;
+    
+    setShowScrollButton(isScrolledUp);
+    setButtonOpacity(isScrolledUp ? 1 : 0);
+    setUserHasScrolled(isScrolledUp);
+  };
+
+  // Scroll to bottom explicitly
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    messagesEndRef.current?.scrollIntoView({ behavior });
+  };
+
+  // Auto-scroll only when:
+  // 1. User sends a new message
+  // 2. Agent starts responding
+  // 3. User clicks the scroll button
+  useEffect(() => {
+    const isNewUserMessage = messages.length > 0 && messages[messages.length - 1]?.role === 'user';
+    
+    if ((isNewUserMessage || agentStatus === 'running') && !userHasScrolled) {
+      scrollToBottom();
+    }
+  }, [messages, agentStatus, userHasScrolled]);
+
+  // Make sure clicking the scroll button scrolls to bottom
+  const handleScrollButtonClick = () => {
+    scrollToBottom();
+    setUserHasScrolled(false);
+  };
+
+  // Remove unnecessary scroll effects
+  useEffect(() => {
+    if (!latestMessageRef.current || messages.length === 0) return;
+    
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setShowScrollButton(!entry?.isIntersecting);
+        setButtonOpacity(entry?.isIntersecting ? 0 : 1);
+      },
+      {
+        root: messagesContainerRef.current,
+        threshold: 0.1,
+      }
     );
-  }
-  
-  if (error) {
+    
+    observer.observe(latestMessageRef.current);
+    return () => observer.disconnect();
+  }, [messages, streamContent]);
+
+  // Update UI states when agent status changes
+  useEffect(() => {
+    // Scroll to bottom when agent starts responding, but only if user hasn't scrolled up manually
+    if (agentStatus === 'running' && !userHasScrolled) {
+      scrollToBottom();
+    }
+  }, [agentStatus, userHasScrolled]);
+
+  // Add synchronization effect to ensure agentRunId and agentStatus are in sync
+  useEffect(() => {
+    // If agentRunId is null, make sure agentStatus is 'idle'
+    if (agentRunId === null && agentStatus !== 'idle') {
+      console.log('[PAGE] Synchronizing agent status to idle because agentRunId is null');
+      setAgentStatus('idle');
+      setIsStreaming(false);
+    }
+    
+    // If we have an agentRunId but status is idle, check if it should be running
+    if (agentRunId !== null && agentStatus === 'idle') {
+      const checkAgentRunStatus = async () => {
+        try {
+          const status = await getAgentStatus(agentRunId);
+          if (status.status === 'running') {
+            console.log('[PAGE] Synchronizing agent status to running based on backend status');
+            setAgentStatus('running');
+            
+            // If not already streaming, start streaming
+            if (!isStreaming && !streamCleanupRef.current) {
+              console.log('[PAGE] Starting stream due to status synchronization');
+              handleStreamAgent(agentRunId);
+            }
+          } else {
+            // If the backend shows completed/stopped but we have an ID, reset it
+            console.log('[PAGE] Agent run is not running, resetting agentRunId');
+            setAgentRunId(null);
+          }
+        } catch (err) {
+          console.error('[PAGE] Error checking agent status for sync:', err);
+          // In case of error, reset to idle state
+          setAgentRunId(null);
+          setAgentStatus('idle');
+          setIsStreaming(false);
+        }
+      };
+      
+      checkAgentRunStatus();
+    }
+  }, [agentRunId, agentStatus, isStreaming, handleStreamAgent]);
+
+  // Add debug logging for agentStatus changes
+  useEffect(() => {
+    console.log(`[PAGE] 🔄 AgentStatus changed to: ${agentStatus}, isStreaming: ${isStreaming}, agentRunId: ${agentRunId}`);
+  }, [agentStatus, isStreaming, agentRunId]);
+
+  // Failsafe effect to ensure UI consistency
+  useEffect(() => {
+    // Force agentStatus to idle if not streaming or no agentRunId
+    if ((!isStreaming || agentRunId === null) && agentStatus !== 'idle') {
+      console.log('[PAGE] 🔒 FAILSAFE: Forcing agentStatus to idle because isStreaming is false or agentRunId is null');
+      setAgentStatus('idle');
+    }
+  }, [isStreaming, agentRunId, agentStatus]);
+
+  // Open the file viewer modal
+  const handleOpenFileViewer = () => {
+    setFileViewerOpen(true);
+  };
+
+  // Only show a full-screen loader on the very first load
+  if (isLoading && !initialLoadCompleted.current) {
     return (
-      <div className="flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center p-4">
-        <div className="w-full max-w-md mx-auto space-y-4 text-center">
-          <div className="p-6 rounded-xl bg-background/50 border border-border/40 shadow-[0_0_15px_rgba(0,0,0,0.03)] backdrop-blur-sm">
-            <div className="flex flex-col items-center gap-4">
-              <div className="h-12 w-12 rounded-full bg-destructive/10 flex items-center justify-center">
-                <AlertCircle className="h-6 w-6 text-destructive" />
+      <div className="flex h-[calc(100vh-4rem)] flex-col">
+        <div className="relative flex-1 flex flex-col">
+          <div className="absolute inset-0 overflow-y-auto px-6 py-4 pb-[5.5rem]">
+            <div className="mx-auto max-w-3xl">
+              <div className="space-y-4">
+                {/* User message skeleton */}
+                <div className="flex justify-end">
+                  <div className="max-w-[85%] rounded-lg bg-primary/10 px-4 py-3">
+                    <Skeleton className="h-4 w-32" />
+                  </div>
+                </div>
+                
+                {/* Assistant message skeleton */}
+                <div className="flex justify-start">
+                  <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3">
+                    <Skeleton className="h-4 w-48 mb-2" />
+                    <Skeleton className="h-4 w-40" />
+                  </div>
+                </div>
+                
+                {/* User message skeleton */}
+                <div className="flex justify-end">
+                  <div className="max-w-[85%] rounded-lg bg-primary/10 px-4 py-3">
+                    <Skeleton className="h-4 w-40" />
+                  </div>
+                </div>
+                
+                {/* Assistant message skeleton */}
+                <div className="flex justify-start">
+                  <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3">
+                    <Skeleton className="h-4 w-56 mb-2" />
+                    <Skeleton className="h-4 w-44" />
+                  </div>
+                </div>
               </div>
-              
-              <div className="space-y-2">
-                <h3 className="text-xl font-medium">Something went wrong</h3>
-                <p className="text-sm text-muted-foreground">
-                  {typeof error === 'string' ? error : 'An unexpected error occurred'}
-                </p>
-              </div>
-              
-              <div className="flex items-center gap-3 pt-2">
-                <Button 
-                  variant="outline" 
-                  onClick={() => router.push(`/dashboard/agents`)}
-                  className="rounded-lg border-border/40 shadow-[0_0_15px_rgba(0,0,0,0.03)]"
-                >
-                  Back to Agents
-                </Button>
-                <Button 
-                  variant="default"
-                  onClick={() => setError(null)}
-                  className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground shadow-[0_0_15px_rgba(var(--primary),0.15)]"
-                >
-                  Try Again
-                </Button>
+            </div>
+          </div>
+
+          {/* Input area skeleton */}
+          <div className="absolute inset-x-0 bottom-0 border-t bg-background/80 backdrop-blur-sm">
+            <div className="mx-auto max-w-3xl px-6 py-4">
+              <div className="relative">
+                <Skeleton className="h-[50px] w-full rounded-md" />
+                <div className="absolute right-2 bottom-2">
+                  <Skeleton className="h-8 w-8 rounded-full" />
+                </div>
               </div>
             </div>
           </div>
@@ -797,48 +697,192 @@ export default function AgentPage({ params }: AgentPageProps) {
       </div>
     );
   }
-  
-  if (isLoading || (!agent && threadId !== 'new')) {
+
+  if (error) {
     return (
-      <div className="space-y-4 mx-auto max-w-screen-lg px-4 py-6">
-        <div className="flex justify-between items-center">
-          <div>
-            <Skeleton className="h-6 w-40" />
-            <Skeleton className="h-4 w-56 mt-1.5" />
-          </div>
-        </div>
-        
-        <div className="space-y-3 mt-6">
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-16 w-full rounded-lg" />
-            ))}
-          </div>
-          <Skeleton className="h-10 w-full mt-4 rounded-lg" />
+      <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
+        <div className="flex w-full max-w-md flex-col items-center gap-4 rounded-lg border bg-card p-6 text-center">
+          <h2 className="text-lg font-semibold text-destructive">Error</h2>
+          <p className="text-sm text-muted-foreground">{error}</p>
+          <Button variant="outline" onClick={() => router.push(`/dashboard/projects/${projectId || ''}`)}>
+            Back to Project
+          </Button>
         </div>
       </div>
     );
   }
-  
+
+  // const projectName = project?.name || 'Loading...';
+
   return (
-    <div className={cn(
-      "transition-all duration-300",
-      showPanel && "pr-[400px]"
-    )}>
-      <ToolCallsSidebar />
-      <ChatContainer
-        messages={messages}
-        streamContent={streamContent}
-        isStreaming={isStreaming}
-        isAgentRunning={isAgentRunning}
-        agent={agent}
-        onSendMessage={handleSendMessage}
-        isSending={isSending}
-        conversation={conversation}
-        onStopAgent={handleStopAgent}
-        userMessage={userMessage}
-        setUserMessage={setUserMessage}
-      />
+    <div className="flex h-[calc(100vh-4rem)] flex-col">
+      <div className="relative flex-1 flex flex-col">
+        <div 
+          ref={messagesContainerRef}
+          className="absolute inset-0 overflow-y-auto px-6 py-4 pb-[5.5rem]" 
+          onScroll={handleScroll}
+        >
+          <div className="mx-auto max-w-3xl">
+            {messages.length === 0 && !streamContent ? (
+              <div className="flex h-full items-center justify-center">
+                <div className="flex flex-col items-center gap-1 text-center">
+                  <p className="text-sm text-muted-foreground">Send a message to start the conversation.</p>
+                  <p className="text-xs text-muted-foreground/60">The AI agent will respond automatically.</p>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {messages.map((message, index) => (
+                  <div 
+                    key={index} 
+                    ref={index === messages.length - 1 && message.role === 'assistant' ? latestMessageRef : null}
+                    className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div 
+                      className={`max-w-[85%] rounded-lg px-4 py-3 text-sm ${
+                        message.role === 'user' 
+                          ? 'bg-primary text-primary-foreground' 
+                          : 'bg-muted'
+                      }`}
+                    >
+                      <div className="whitespace-pre-wrap break-words">
+                        {message.type === 'tool_call' ? (
+                          <div className="font-mono text-xs">
+                            <div className="flex items-center gap-2 mb-1 text-muted-foreground">
+                              <div className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10">
+                                <div className="h-2 w-2 rounded-full bg-primary"></div>
+                              </div>
+                              <span>Tool: {message.name}</span>
+                            </div>
+                            <div className="mt-1 p-3 bg-secondary/20 rounded-md overflow-x-auto">
+                              {message.arguments}
+                            </div>
+                          </div>
+                        ) : message.role === 'tool' ? (
+                          <div className="font-mono text-xs">
+                            <div className="flex items-center gap-2 mb-1 text-muted-foreground">
+                              <div className="flex h-4 w-4 items-center justify-center rounded-full bg-success/10">
+                                <div className="h-2 w-2 rounded-full bg-success"></div>
+                              </div>
+                              <span>Tool Result: {message.name}</span>
+                            </div>
+                            <div className="mt-1 p-3 bg-success/5 rounded-md">
+                              {message.content}
+                            </div>
+                          </div>
+                        ) : (
+                          message.content
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                
+                {streamContent && (
+                  <div 
+                    ref={latestMessageRef}
+                    className="flex justify-start"
+                  >
+                    <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3 text-sm">
+                      <div className="whitespace-pre-wrap break-words">
+                        {toolCallData ? (
+                          <div className="font-mono text-xs">
+                            <div className="flex items-center gap-2 mb-1 text-muted-foreground">
+                              <div className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10">
+                                <div className="h-2 w-2 rounded-full bg-primary animate-pulse"></div>
+                              </div>
+                              <span>Tool: {toolCallData.name}</span>
+                            </div>
+                            <div className="mt-1 p-3 bg-secondary/20 rounded-md overflow-x-auto">
+                              {toolCallData.arguments || ''}
+                            </div>
+                          </div>
+                        ) : (
+                          streamContent
+                        )}
+                        {isStreaming && (
+                          <span className="inline-flex items-center ml-0.5">
+                            <span 
+                              className="inline-block h-4 w-0.5 bg-foreground/50 mx-px"
+                              style={{ 
+                                opacity: 0.7,
+                                animation: 'cursorBlink 1s ease-in-out infinite',
+                              }}
+                            />
+                            <style jsx global>{`
+                              @keyframes cursorBlink {
+                                0%, 100% { opacity: 1; }
+                                50% { opacity: 0; }
+                              }
+                            `}</style>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {agentStatus === 'running' && !streamContent && (
+                  <div className="flex justify-start">
+                    <div className="flex items-center gap-1.5 rounded-lg bg-muted px-4 py-3">
+                      <div className="h-1.5 w-1.5 rounded-full bg-foreground/50 animate-pulse" />
+                      <div className="h-1.5 w-1.5 rounded-full bg-foreground/50 animate-pulse delay-150" />
+                      <div className="h-1.5 w-1.5 rounded-full bg-foreground/50 animate-pulse delay-300" />
+                    </div>
+                  </div>
+                )}
+                
+                <div ref={messagesEndRef} />
+              </div>
+            )}
+          </div>
+          
+          <div 
+            className="sticky bottom-6 flex justify-center"
+            style={{ 
+              opacity: buttonOpacity,
+              transition: 'opacity 0.3s ease-in-out',
+              visibility: showScrollButton ? 'visible' : 'hidden'
+            }}
+          >
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm hover:bg-background"
+              onClick={handleScrollButtonClick}
+            >
+              <ArrowDown className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+
+        <div className="absolute inset-x-0 bottom-0 border-t bg-background/80 backdrop-blur-sm">
+          <div className="mx-auto max-w-3xl px-6 py-4">
+            <ChatInput
+              value={newMessage}
+              onChange={setNewMessage}
+              onSubmit={handleSubmitMessage}
+              placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
+              loading={isSending}
+              disabled={isSending}
+              isAgentRunning={agentStatus === 'running'}
+              onStopAgent={handleStopAgent}
+              autoFocus={!isLoading}
+              onFileBrowse={handleOpenFileViewer}
+              sandboxId={sandboxId || undefined}
+            />
+            
+            {/* File Viewer Modal */}
+            {sandboxId && (
+              <FileViewerModal
+                open={fileViewerOpen}
+                onOpenChange={setFileViewerOpen}
+                sandboxId={sandboxId}
+              />
+            )}
+          </div>
+        </div>
+      </div>
     </div>
   );
-}
+} 
