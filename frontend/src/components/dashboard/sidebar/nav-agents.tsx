@@ -166,21 +166,39 @@ export function NavAgents() {
     <SidebarGroup>
       <div className="flex justify-between items-center">
         <SidebarGroupLabel>Agents</SidebarGroupLabel>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Link 
-              href="/dashboard" 
-              className="text-muted-foreground hover:text-foreground h-8 w-8 flex items-center justify-center rounded-md"
-            >
-              <Plus className="h-4 w-4" />
-              <span className="sr-only">New Agent</span>
-            </Link>
-          </TooltipTrigger>
-          <TooltipContent>New Agent</TooltipContent>
-        </Tooltip>
+        {state !== "collapsed" ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Link 
+                href="/dashboard" 
+                className="text-muted-foreground hover:text-foreground h-8 w-8 flex items-center justify-center rounded-md"
+              >
+                <Plus className="h-4 w-4" />
+                <span className="sr-only">New Agent</span>
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent>New Agent</TooltipContent>
+          </Tooltip>
+        ) : null}
       </div>
 
       <SidebarMenu className="overflow-y-auto max-h-[calc(100vh-200px)]">
+        {state === "collapsed" && (
+          <SidebarMenuItem>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <SidebarMenuButton asChild>
+                  <Link href="/dashboard" className="flex items-center">
+                    <Plus className="h-4 w-4" />
+                    <span>New Agent</span>
+                  </Link>
+                </SidebarMenuButton>
+              </TooltipTrigger>
+              <TooltipContent>New Agent</TooltipContent>
+            </Tooltip>
+          </SidebarMenuItem>
+        )}
+        
         {isLoading ? (
           // Show skeleton loaders while loading
           Array.from({length: 3}).map((_, index) => (
