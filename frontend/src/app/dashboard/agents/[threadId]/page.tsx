@@ -4,7 +4,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { ArrowDown, File, Terminal, ExternalLink, User, CheckCircle, CircleDashed } from 'lucide-react';
+import {
+  ArrowDown, FileText, Terminal, ExternalLink, User, CheckCircle, CircleDashed,
+  FileEdit, Search, Globe, Code, MessageSquare, Folder, FileX, CloudUpload, Wrench, Cog
+} from 'lucide-react';
+import type { ElementType } from 'react';
 import { addUserMessage, getMessages, startAgent, stopAgent, getAgentStatus, streamAgent, getAgentRuns, getProject, getThread, updateProject } from '@/lib/api';
 import { toast } from 'sonner';
 import { Skeleton } from "@/components/ui/skeleton";
@@ -50,11 +54,88 @@ function isToolSequence(item: RenderItem): item is ToolSequence {
   return (item as ToolSequence).type === 'tool_sequence';
 }
 
+// Helper function to get an icon based on tool name
+const getToolIcon = (toolName: string): ElementType => {
+  // Ensure we handle null/undefined toolName gracefully
+  if (!toolName) return Cog;
+  
+  // Convert to lowercase for case-insensitive matching
+  const normalizedName = toolName.toLowerCase();
+  
+  switch (normalizedName) {
+    case 'create-file':
+    case 'str-replace':
+    case 'write-file':
+      return FileEdit;
+    case 'run_terminal_cmd':
+    case 'run_command':
+      return Terminal;
+    case 'web_search':
+      return Search;
+    case 'browse_url':
+      return Globe;
+    case 'call_api':
+      return Code;
+    case 'send_message':
+      return MessageSquare;
+    case 'list_dir':
+      return Folder;
+    case 'read_file':
+      return FileText;
+    case 'delete_file':
+      return FileX;
+    case 'deploy':
+      return CloudUpload;
+    default:
+      // Add logging for debugging unhandled tool types
+      console.log(`[PAGE] Using default icon for unknown tool type: ${toolName}`);
+      return Cog; // Default icon
+  }
+};
+
+// Helper function to extract a primary parameter from XML/arguments
+const extractPrimaryParam = (toolName: string, content: string | undefined): string | null => {
+  if (!content) return null;
+
+  try {
+    // Simple regex for common parameters - adjust as needed
+    let match: RegExpMatchArray | null = null;
+    switch (toolName?.toLowerCase()) {
+      case 'edit_file':
+      case 'read_file':
+      case 'delete_file':
+      case 'write_file':
+        match = content.match(/target_file=(?:"|')([^"|']+)(?:"|')/);
+        // Return just the filename part
+        return match ? match[1].split('/').pop() || match[1] : null;
+      case 'run_terminal_cmd':
+      case 'run_command':
+        match = content.match(/command=(?:"|')([^"|']+)(?:"|')/);
+        // Truncate long commands
+        return match ? (match[1].length > 30 ? match[1].substring(0, 27) + '...' : match[1]) : null;
+      case 'web_search':
+        match = content.match(/query=(?:"|')([^"|']+)(?:"|')/);
+        return match ? (match[1].length > 30 ? match[1].substring(0, 27) + '...' : match[1]) : null;
+      case 'browse_url':
+        match = content.match(/url=(?:"|')([^"|']+)(?:"|')/);
+        return match ? match[1] : null;
+      // Add more cases as needed for other tools
+      default:
+        return null;
+    }
+  } catch (e) {
+    console.warn("Error parsing tool parameters:", e);
+    return null;
+  }
+};
+
+// Flag to control whether tool result messages are rendered
+const SHOULD_RENDER_TOOL_RESULTS = false;
+
 // Function to group consecutive assistant tool call / user tool result pairs
 function groupMessages(messages: ApiMessage[]): RenderItem[] {
   const grouped: RenderItem[] = [];
   let i = 0;
-  const excludedTags = ['ask', 'inform']; // Tags to exclude from grouping
 
   while (i < messages.length) {
     const currentMsg = messages[i];
@@ -68,13 +149,6 @@ function groupMessages(messages: ApiMessage[]): RenderItem[] {
       const toolTagMatch = currentMsg.content?.match(/<([a-zA-Z\-_]+)(?:\s+[^>]*)?>/);
       if (toolTagMatch && nextMsg && nextMsg.role === 'user') {
         const expectedTag = toolTagMatch[1];
-        // *** Check if the tag is excluded ***
-        if (excludedTags.includes(expectedTag)) {
-          // If excluded, treat as a normal message and break potential sequence start
-          grouped.push(currentMsg);
-          i++;
-          continue;
-        }
 
         // Regex to check for <tool_result><tagname>...</tagname></tool_result>
         // Using 's' flag for dotall to handle multiline content within tags -> Replaced with [\s\S] to avoid ES target issues
@@ -95,11 +169,6 @@ function groupMessages(messages: ApiMessage[]): RenderItem[] {
               const nextToolTagMatch = potentialAssistant.content?.match(/<([a-zA-Z\-_]+)(?:\s+[^>]*)?>/);
               if (nextToolTagMatch && potentialUser && potentialUser.role === 'user') {
                 const nextExpectedTag = nextToolTagMatch[1];
-                // *** Check if the continuation tag is excluded ***
-                if (excludedTags.includes(nextExpectedTag)) {
-                  // If excluded, break the sequence
-                  break;
-                }
 
                 // Replaced dotall 's' flag with [\s\S]
                 const nextToolResultRegex = new RegExp(`^<tool_result>\\s*<(${nextExpectedTag})(?:\\s+[^>]*)?>[\\s\\S]*?</\\1>\\s*</tool_result>`);
@@ -1040,28 +1109,18 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                           <div
                             key={`seq-${index}`}
                             ref={index === processedMessages.length - 1 ? latestMessageRef : null}
-                            className="relative group pl-10"
+                            className="relative group pt-4 pb-2 border-t border-gray-100"
                           >
-                            {/* Left border for the sequence */}
-                            <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-blue-500/50" aria-hidden="true"></div>
-
-                            {/* Kortix Suna Label (Hover) */}
-                            <span className="absolute left-0 top-1 -translate-x-full bg-blue-100 text-blue-700 text-xs font-semibold px-1.5 py-0.5 rounded z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                              Kortix Suna
-                            </span>
-
-                            {/* Render Avatar & Name ONCE for the sequence */}
-                            <div className="absolute left-0 top-0 -translate-x-1/2 transform -translate-y-0 "> {/* Position avatar centered on the line */}
-                              <div className="flex-shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden border bg-background">
-                                <Image src="/kortix-symbol.svg" alt="Suna Logo" width={20} height={20} className="object-contain" />
+                            {/* Simplified header with logo and name */}
+                            <div className="flex items-center mb-2 text-sm gap-2">
+                              <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center overflow-hidden">
+                                <Image src="/kortix-symbol.svg" alt="Suna" width={16} height={16} className="object-contain" />
                               </div>
-                            </div>
-                            <div className="mb-1 ml-[-2.5rem]"> {/* Adjust margin to align name */}
-                               <span className="text-xs font-semibold">Suna</span>
+                              <span className="text-gray-700 font-medium">Suna</span>
                             </div>
 
                             {/* Container for the pairs within the sequence */}
-                            <div className="space-y-3">
+                            <div className="space-y-4">
                               {pairs.map((pair, pairIndex) => {
                                 // Parse assistant message content
                                 const assistantContent = pair.assistantCall.content || '';
@@ -1072,54 +1131,55 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                                 const postContent = xmlMatch ? assistantContent.substring(xmlMatch.index + xmlMatch[0].length).trim() : '';
                                 const userResultName = pair.userResult.content?.match(/<tool_result>\s*<([a-zA-Z\-_]+)/)?.[1] || 'Result';
 
+                                // Get icon and parameter for the tag
+                                const IconComponent = getToolIcon(toolName);
+                                const paramDisplay = extractPrimaryParam(toolName, assistantContent);
+
                                 return (
                                   <div key={`${index}-pair-${pairIndex}`} className="space-y-2">
-                                    {/* Assistant Content (No Avatar/Name here) */}
-                                    <div className="flex flex-col items-start space-y-2 flex-1">
-                                      {/* Pre-XML Content */}
+                                    {/* Tool execution content */}
+                                    <div className="space-y-1">
+                                      {/* First show any text content before the tool call */}
                                       {preContent && (
-                                        <div className="w-full rounded-lg bg-muted p-3 text-sm">
-                                          <div className="whitespace-pre-wrap break-words">
-                                            {preContent}
-                                          </div>
-                                        </div>
+                                        <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">
+                                          {preContent}
+                                        </p>
                                       )}
-
-                                      {/* Tool Call Button */}
+                                      
+                                      {/* Clickable Tool Tag */}
                                       {xmlMatch && (
-                                        <Button
-                                          variant="outline"
-                                          size="sm"
-                                          className="h-auto py-1.5 px-3 text-xs w-full sm:w-auto justify-start bg-background hover:bg-muted/50 border-muted-foreground/20 shadow-sm"
+                                        <button
                                           onClick={() => handleHistoricalToolClick(pair)}
+                                          className="inline-flex items-center gap-1.5 py-0.5 px-2 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
                                         >
-                                          <Terminal className="h-3 w-3 mr-1.5 flex-shrink-0" />
-                                          <span className="font-mono truncate mr-2">{toolName}</span>
-                                          <span className="ml-auto text-muted-foreground/70 flex items-center">
-                                            View Details <ExternalLink className="h-3 w-3 ml-1" />
+                                          <IconComponent className="h-3.5 w-3.5 text-gray-500 flex-shrink-0" />
+                                          <span className="font-mono text-xs text-gray-700">
+                                            {toolName}
                                           </span>
-                                        </Button>
+                                          {paramDisplay && (
+                                            <span className="ml-1 text-gray-500 truncate" title={paramDisplay}>
+                                              {paramDisplay}
+                                            </span>
+                                          )}
+                                        </button>
                                       )}
 
                                       {/* Post-XML Content (Less Common) */}
                                       {postContent && (
-                                        <div className="w-full rounded-lg bg-muted p-3 text-sm">
-                                          <div className="whitespace-pre-wrap break-words">
-                                            {postContent}
-                                          </div>
-                                        </div>
+                                        <p className="text-sm text-gray-800 whitespace-pre-wrap break-words">
+                                          {postContent}
+                                        </p>
                                       )}
                                     </div>
 
-                                    {/* User Tool Result Part */}
-                                    <div className="flex justify-start">
-                                      <div className="flex items-center gap-2 rounded-md bg-green-100/60 border border-green-200/80 px-2.5 py-1 text-xs font-mono text-green-900 shadow-sm">
-                                        <CheckCircle className="h-3.5 w-3.5 flex-shrink-0 text-green-600" />
-                                        <span>{userResultName} Result Received</span>
-                                        {/* Optional: Add a button to show result details here too? */}
-                                        {/* <Button variant="ghost" size="xs" onClick={() => handleHistoricalToolClick(pair)}>(details)</Button> */}
+                                    {/* Simple tool result indicator */}
+                                    {SHOULD_RENDER_TOOL_RESULTS && userResultName && (
+                                      <div className="ml-4 flex items-center gap-1.5 text-xs text-gray-500">
+                                        <CheckCircle className="h-3 w-3 text-green-600" />
+                                        <span className="font-mono">{userResultName} completed</span>
                                       </div>
-                                    </div>
+                                    )}
+
                                   </div>
                                 );
                               })}
@@ -1137,65 +1197,86 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                           <div
                             key={index} // Use the index from processedMessages
                             ref={index === processedMessages.length - 1 && message.role !== 'user' ? latestMessageRef : null} // Ref on the regular message div if it's last (and not user)
-                            className={`flex items-start gap-3 ${message.role === 'user' ? 'justify-end pl-12' : 'justify-start'}`}
+                            className={`${message.role === 'user' ? 'text-right py-1' : 'py-2'} ${index > 0 ? 'border-t border-gray-100' : ''}`} // Add top border between messages
                           >
                             {/* Avatar (User = Right, Assistant/Tool = Left) */}
                             {message.role === 'user' ? (
                               // User bubble comes first in flex-end
-                              <>
-                                <div className="flex-1 space-y-1 flex justify-end">
-                                  {/* User message bubble */}
-                                  <div className="max-w-[85%] rounded-lg bg-primary text-primary-foreground p-3 text-sm shadow-sm">
-                                    <div className="whitespace-pre-wrap break-words">
-                                      {message.content}
-                                    </div>
-                                  </div>
-                                </div>
-                              </>
+                              <div className="max-w-[85%] ml-auto text-sm text-gray-800 whitespace-pre-wrap break-words">
+                                {message.content}
+                              </div>
                             ) : (
                               // Assistant / Tool bubble on the left
-                              <>
-                                {/* Assistant Avatar */}
-                                <div className="flex-shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden border">
-                                  <Image src="/kortix-symbol.svg" alt="Suna Logo" width={20} height={20} className="object-contain" />
-                                </div>
-                                {/* Content Bubble */}
-                                <div className="flex-1 space-y-1">
-                                  <span className="text-xs font-semibold">Suna</span>
-                                  <div className={`max-w-[85%] rounded-lg p-3 text-sm shadow-sm ${message.role === 'tool' ? 'bg-purple-100/60 border border-purple-200/80' : 'bg-muted'}`}>
-                                    <div className="whitespace-pre-wrap break-words">
-                                      {/* Use existing logic for structured tool calls/results and normal messages */}
-                                      {message.type === 'tool_call' && message.tool_call ? (
-                                        // Existing rendering for structured tool_call type
-                                        <div className="font-mono text-xs space-y-1.5">
-                                          <div className="flex items-center gap-1.5 text-muted-foreground">
-                                            <CircleDashed className="h-3.5 w-3.5 animate-spin animation-duration-2000" />
-                                            <span>Tool Call: {message.tool_call.function.name}</span>
-                                          </div>
-                                          <div className="mt-1 p-2 bg-background/50 rounded-md overflow-x-auto border">
-                                            {message.tool_call.function.arguments}
-                                          </div>
-                                        </div>
-                                      ) : message.role === 'tool' ? (
-                                        // Existing rendering for standard 'tool' role messages
-                                        <div className="font-mono text-xs space-y-1.5">
-                                          <div className="flex items-center gap-1.5 text-purple-800">
-                                            <CheckCircle className="h-3.5 w-3.5 text-purple-600" />
-                                            <span>Tool Result: {message.name || 'Unknown Tool'}</span>
-                                          </div>
-                                          <div className="mt-1 p-2 bg-background/50 rounded-md overflow-x-auto border">
-                                            {/* Render content safely, handle potential objects */}
-                                            {typeof message.content === 'string' ? message.content : JSON.stringify(message.content)}
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        // Default rendering for plain assistant messages
-                                        message.content
-                                      )}
-                                    </div>
+                              <div>
+                                {/* Simplified header with logo and name */}
+                                <div className="flex items-center mb-2 text-sm gap-2">
+                                  <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center overflow-hidden">
+                                    <Image src="/kortix-symbol.svg" alt="Suna" width={16} height={16} className="object-contain" />
                                   </div>
+                                  <span className="text-gray-700 font-medium">Suna</span>
                                 </div>
-                              </>
+
+                                {/* Message content */}
+                                {message.type === 'tool_call' && message.tool_call ? (
+                                  // Clickable Tool Tag (Live)
+                                  <div className="space-y-2">
+                                    {(() => { // IIFE for scope
+                                      const toolName = message.tool_call.function.name;
+                                      const IconComponent = getToolIcon(toolName);
+                                      const paramDisplay = extractPrimaryParam(toolName, message.tool_call.function.arguments);
+                                      return (
+                                        <button
+                                          className="inline-flex items-center gap-1.5 py-0.5 px-2 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
+                                          onClick={() => {
+                                            if (message.tool_call) {
+                                              setSidePanelContent({
+                                                id: message.tool_call.id,
+                                                name: message.tool_call.function.name,
+                                                arguments: message.tool_call.function.arguments,
+                                                index: message.tool_call.index
+                                              });
+                                              setIsSidePanelOpen(true);
+                                            }
+                                          }}
+                                        >
+                                          <IconComponent className="h-3.5 w-3.5 text-gray-500 flex-shrink-0 animate-spin animation-duration-2000" />
+                                          <span className="font-mono text-xs text-gray-700">
+                                            {toolName}
+                                          </span>
+                                          {paramDisplay && (
+                                            <span className="ml-1 text-gray-500 truncate" title={paramDisplay}>
+                                              {paramDisplay}
+                                            </span>
+                                          )}
+                                        </button>
+                                      );
+                                    })()}
+                                    <pre className="text-xs font-mono overflow-x-auto my-1 p-2 bg-gray-50 border border-gray-100 rounded-sm">
+                                      {message.tool_call.function.arguments}
+                                    </pre>
+                                  </div>
+                                ) : (message.role === 'tool' && SHOULD_RENDER_TOOL_RESULTS) ? (
+                                  // Clean tool result UI
+                                  <div className="space-y-2">
+                                    <div className="flex items-center justify-between py-1 group">
+                                      <div className="flex items-center gap-2">
+                                        <CheckCircle className="h-4 w-4 text-gray-400" />
+                                        <span className="font-mono text-sm text-gray-700">
+                                          {message.name || 'Unknown Tool'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <pre className="text-xs font-mono overflow-x-auto my-1 p-2 bg-gray-50 border border-gray-100 rounded-sm">
+                                      {typeof message.content === 'string' ? message.content : JSON.stringify(message.content, null, 2)}
+                                    </pre>
+                                  </div>
+                                ) : (
+                                  // Plain text message
+                                  <div className="max-w-[85%] text-sm text-gray-800 whitespace-pre-wrap break-words">
+                                    {message.content}
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </div>
                         );
@@ -1205,58 +1286,79 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                     
                     {streamContent && (
                       <div 
-                        ref={latestMessageRef}
-                        className="flex items-start gap-3 justify-start" // Assistant streaming style
+                        ref={latestMessageRef} 
+                        className="py-2 border-t border-gray-100" // Assistant streaming style
                       >
-                        {/* Assistant Avatar */}
-                        <div className="flex-shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden border">
-                          <Image src="/kortix-symbol.svg" alt="Suna Logo" width={20} height={20} className="object-contain" />
+                        {/* Simplified header with logo and name */}
+                        <div className="flex items-center mb-2 text-sm gap-2">
+                          <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center overflow-hidden">
+                            <Image src="/kortix-symbol.svg" alt="Suna" width={16} height={16} className="object-contain" />
+                          </div>
+                          <span className="text-gray-700 font-medium">Suna</span>
                         </div>
-                        {/* Content Bubble */}
-                        <div className="flex-1 space-y-1">
-                          <span className="text-xs font-semibold">Suna</span>
-                          <div className="max-w-[85%] rounded-lg bg-muted p-3 text-sm shadow-sm">
-                            <div className="whitespace-pre-wrap break-words">
-                              {toolCallData ? (
-                                // Streaming Tool Call
-                                <div className="font-mono text-xs space-y-1.5">
-                                  <div className="flex items-center gap-1.5 text-muted-foreground">
-                                    <CircleDashed className="h-3.5 w-3.5 animate-spin animation-duration-2000" />
-                                    <span>Tool Call: {toolCallData.name}</span>
-                                  </div>
-                                  <div className="mt-1 p-2 bg-background/50 rounded-md overflow-x-auto border">
-                                    {toolCallData.arguments || ''}
-                                  </div>
-                                </div>
-                              ) : (
-                                // Streaming Text Content
-                                streamContent
-                              )}
-                              {/* Blinking Cursor */}
+                        
+                        <div className="space-y-2">
+                          {toolCallData ? (
+                            // Clickable Tool Tag (Streaming)
+                            <div className="space-y-2">
+                              {(() => { // IIFE for scope
+                                const toolName = toolCallData.name;
+                                const IconComponent = getToolIcon(toolName);
+                                const paramDisplay = extractPrimaryParam(toolName, toolCallData.arguments);
+                                return (
+                                  <button
+                                    className="inline-flex items-center gap-1.5 py-0.5 px-2 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
+                                    onClick={() => {
+                                      if (toolCallData) {
+                                        setSidePanelContent(toolCallData);
+                                        setIsSidePanelOpen(true);
+                                      }
+                                    }}
+                                  >
+                                    <CircleDashed className="h-3.5 w-3.5 text-gray-500 flex-shrink-0 animate-spin animation-duration-2000" />
+                                    <span className="font-mono text-xs text-gray-700">
+                                      {toolName}
+                                    </span>
+                                    {paramDisplay && (
+                                      <span className="ml-1 text-gray-500 truncate" title={paramDisplay}>
+                                        {paramDisplay}
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              })()}
+                              <pre className="text-xs font-mono overflow-x-auto my-1 p-2 bg-gray-50 border border-gray-100 rounded-sm">
+                                {toolCallData.arguments || ''}
+                              </pre>
+                            </div>
+                          ) : (
+                            // Simple text streaming
+                            <div className="text-sm text-gray-800 whitespace-pre-wrap break-words max-w-[85%]">
+                              {streamContent}
                               {isStreaming && (
-                                <span className="inline-block h-4 w-0.5 bg-foreground/50 ml-0.5 -mb-1 animate-pulse" />
+                                <span className="inline-block h-4 w-0.5 bg-gray-400 ml-0.5 -mb-1 animate-pulse" />
                               )}
                             </div>
-                          </div>
+                          )}
                         </div>
                       </div>
                     )}
                     
                     {/* Loading indicator (three dots) */}
                     {agentStatus === 'running' && !streamContent && !toolCallData && (
-                      <div className="flex items-start gap-3 justify-start"> {/* Assistant style */}
-                        <div className="flex-shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden border">
-                          <Image src="/kortix-symbol.svg" alt="Suna Logo" width={20} height={20} className="object-contain" />
-                        </div>
-                        <div className="flex-1 space-y-1">
-                          <span className="text-xs font-semibold">Suna</span>
-                          <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3 text-sm shadow-sm">
-                            <div className="flex items-center gap-1.5">
-                              <div className="h-1.5 w-1.5 rounded-full bg-foreground/50 animate-pulse" />
-                              <div className="h-1.5 w-1.5 rounded-full bg-foreground/50 animate-pulse delay-150" />
-                              <div className="h-1.5 w-1.5 rounded-full bg-foreground/50 animate-pulse delay-300" />
-                            </div>
+                      <div className="py-2 border-t border-gray-100">
+                        {/* Simplified header with logo and name */}
+                        <div className="flex items-center mb-2 text-sm gap-2">
+                          <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center overflow-hidden">
+                            <Image src="/kortix-symbol.svg" alt="Suna" width={16} height={16} className="object-contain" />
                           </div>
+                          <span className="text-gray-700 font-medium">Suna</span>
+                        </div>
+                        
+                        <div className="flex items-center gap-1.5 py-1">
+                          <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse" />
+                          <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse delay-150" />
+                          <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse delay-300" />
                         </div>
                       </div>
                     )}
