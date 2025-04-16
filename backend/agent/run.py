@@ -80,8 +80,6 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
     for tag_name, example in thread_manager.tool_registry.get_xml_examples().items():
         xml_examples += f"{example}\n"
 
-    system_message = { "role": "system", "content": get_system_prompt() + "\n\n" + f"<tool_examples>\n{xml_examples}\n</tool_examples>" }
-
     iteration_count = 0
     continue_execution = True
     
@@ -109,24 +107,46 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
                 print(f"Last message was from assistant, stopping execution")
                 continue_execution = False
                 break
-        # Get the latest message from messages table that its tpye is browser_state
-        
+
+        # Define Processor Config FIRST
+        processor_config = ProcessorConfig(
+            xml_tool_calling=True,
+            native_tool_calling=False,
+            execute_tools=True,
+            execute_on_stream=True,
+            tool_execution_strategy="parallel",
+            xml_adding_strategy="user_message"
+        )
+
+        # Construct System Message Conditionally
+        base_system_prompt_content = get_system_prompt()
+        system_message_content = base_system_prompt_content
+
+        # Conditionally add XML examples based on the config
+        if processor_config.xml_tool_calling:
+            # Use the already loaded xml_examples from outside the loop
+            if xml_examples:
+                system_message_content += "\n\n" + f"<tool_examples>\n{xml_examples}\n</tool_examples>"
+
+        system_message = { "role": "system", "content": system_message_content }
+
+        # Handle Temporary Message (Browser State)
         latest_browser_state = await client.table('messages').select('*').eq('thread_id', thread_id).eq('type', 'browser_state').order('created_at', desc=True).limit(1).execute()
         temporary_message = None
         if latest_browser_state.data and len(latest_browser_state.data) > 0:
             try:
                 content = json.loads(latest_browser_state.data[0]["content"])
-                screenshot_base64 = content["screenshot_base64"]
+                screenshot_base64 = content.get("screenshot_base64") # Use .get() for safety
                 # Create a copy of the browser state without screenshot
                 browser_state = content.copy()
                 browser_state.pop('screenshot_base64', None)
-                browser_state.pop('screenshot_url', None) 
+                browser_state.pop('screenshot_url', None)
                 browser_state.pop('screenshot_url_base64', None)
                 temporary_message = { "role": "user", "content": [] }
                 if browser_state:
                     temporary_message["content"].append({
                         "type": "text",
-                        "text": f"The following is the current state of the browser:\n{browser_state}"
+                        "text": f"The following is the current state of the browser:\n{json.dumps(browser_state, indent=2)}" # Pretty print browser state
                     })
                 if screenshot_base64:
                     temporary_message["content"].append({
@@ -136,14 +156,15 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
                             }
                     })
                 else:
-                    print("@@@@@ THIS TIME NO SCREENSHOT!!")
+                    print("No screenshot found in the latest browser state message.")
             except Exception as e:
                 print(f"Error parsing browser state: {e}")
                 # print(latest_browser_state.data[0])
 
+        # Run Thread
         response = await thread_manager.run_thread(
             thread_id=thread_id,
-            system_prompt=system_message,
+            system_prompt=system_message, # Pass the constructed message
             stream=stream,
             llm_model=os.getenv("MODEL_TO_USE", "anthropic/claude-3-7-sonnet-latest"),
             llm_temperature=0,
@@ -151,16 +172,10 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
             tool_choice="auto",
             max_xml_tool_calls=1,
             temporary_message=temporary_message,
-            processor_config=ProcessorConfig(
-                xml_tool_calling=True,
-                native_tool_calling=False,
-                execute_tools=True,
-                execute_on_stream=True,
-                tool_execution_strategy="parallel",
-                xml_adding_strategy="user_message"
-            ),
+            processor_config=processor_config, # Pass the config object
             native_max_auto_continues=native_max_auto_continues,
-            include_xml_examples=True,
+            # Explicitly set include_xml_examples to False here
+            include_xml_examples=False,
         )
             
         if isinstance(response, dict) and "status" in response and response["status"] == "error":
