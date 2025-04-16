@@ -1,43 +1,100 @@
 'use client';
 
-import { Check, CreditCard } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { SubmitButton } from "@/components/ui/submit-button";
-import { setupNewSubscription } from "@/lib/actions/billing";
 import { createClient } from "@/lib/supabase/client";
 import { useEffect, useState } from "react";
+import { cn } from "@/lib/utils";
+import { motion } from "motion/react";
+import { setupNewSubscription } from "@/lib/actions/billing";
+import { SubmitButton } from "@/components/ui/submit-button";
+import { Button } from "@/components/ui/button";
 
 export const SUBSCRIPTION_PLANS = {
   FREE: 'price_1RDQbOG6l1KZGqIrgrYzMbnL',
-  BASIC: 'price_1RC2PYG6l1KZGqIrpbzFB9Lp', // Example price ID
+  BASIC: 'price_1RC2PYG6l1KZGqIrpbzFB9Lp',
   PRO: 'price_1RDQWqG6l1KZGqIrChli4Ys4'
 } as const;
 
-const PLAN_DETAILS = {
-  [SUBSCRIPTION_PLANS.FREE]: {
-    name: 'Free',
-    limit: 100,
-    price: 0
+// Custom pricing data with cloud prices
+const cloudPricingItems = [
+  {
+    name: "Free",
+    price: "$0",
+    description: "For individual use and exploration",
+    buttonText: "Get Started",
+    buttonColor: "bg-primary text-white",
+    isPopular: false,
+    hours: "1 hour",
+    features: [
+      "1 hour usage per month",
+      "Basic features",
+      "Community support",
+      "Single user",
+      "Standard response time",
+      "Public templates only",
+    ],
   },
-  [SUBSCRIPTION_PLANS.BASIC]: {
-    name: 'Basic',
-    limit: 100,
-    price: 10
+  {
+    name: "Basic",
+    price: "$10",
+    description: "For professionals and small teams",
+    buttonText: "Upgrade Now",
+    buttonColor: "bg-black text-white dark:bg-white dark:text-black",
+    isPopular: true,
+    hours: "10 hours",
+    features: [
+      "10 hours usage per month",
+      "Priority support",
+      "Advanced features",
+      "3 team members",
+      "Custom integrations",
+      "API access",
+    ],
   },
-  [SUBSCRIPTION_PLANS.PRO]: {
-    name: 'Pro',
-    limit: 100,
-    price: 50
-  }
-} as const; 
+  {
+    name: "Pro",
+    price: "$50",
+    description: "For organizations with complex needs",
+    buttonText: "Upgrade Now",
+    buttonColor: "bg-primary text-white",
+    isPopular: false,
+    hours: "100 hours",
+    features: [
+      "100 hours usage per month",
+      "Dedicated support",
+      "SSO & advanced security",
+      "10 team members",
+      "Service level agreement",
+      "Custom AI model training",
+    ],
+  },
+];
 
 interface PlanComparisonProps {
   accountId?: string | null;
   returnUrl?: string;
-  isManaged?: boolean; // If true, uses SubmitButton, if false uses regular Button
+  isManaged?: boolean;
   onPlanSelect?: (planId: string) => void;
   className?: string;
 }
+
+// Price display animation component
+const PriceDisplay = ({ tier }: { tier: typeof cloudPricingItems[number] }) => {
+  return (
+    <motion.span
+      key={tier.price}
+      className="text-4xl font-semibold"
+      initial={{
+        opacity: 0,
+        x: 10,
+        filter: "blur(5px)",
+      }}
+      animate={{ opacity: 1, x: 0, filter: "blur(0px)" }}
+      transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+    >
+      {tier.price}
+    </motion.span>
+  );
+};
 
 export function PlanComparison({
   accountId,
@@ -60,10 +117,8 @@ export function PlanComparison({
           .eq('status', 'active')
           .single();
         
-        // Set to FREE plan if no active subscription found, otherwise use the subscription's plan
         setCurrentPlanId(data?.price_id || SUBSCRIPTION_PLANS.FREE);
       } else {
-        // Default to FREE plan if no accountId
         setCurrentPlanId(SUBSCRIPTION_PLANS.FREE);
       }
     }
@@ -72,96 +127,106 @@ export function PlanComparison({
   }, [accountId]);
 
   return (
-    <div className={`grid grid-cols-3 gap-4 ${className}`}>
-      {Object.entries(PLAN_DETAILS).map(([planId, plan]) => {
-        const isCurrentPlan = currentPlanId === planId;
-        const isRecommended = planId === SUBSCRIPTION_PLANS.BASIC;
+    <div className={cn("grid min-[650px]:grid-cols-2 min-[900px]:grid-cols-3 gap-4 w-full max-w-6xl mx-auto", className)}>
+      {cloudPricingItems.map((tier) => {
+        const isCurrentPlan = currentPlanId === SUBSCRIPTION_PLANS[tier.name.toUpperCase() as keyof typeof SUBSCRIPTION_PLANS];
         
         return (
-          <div 
-            key={planId}
-            className={`relative rounded-xl p-4 border-2 transition-all ${
-              isCurrentPlan 
-                ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/10' 
-                : isRecommended
-                ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/10'
-                : 'border-border'
-            }`}
+          <div
+            key={tier.name}
+            className={cn(
+              "rounded-xl bg-background border border-border p-6 flex flex-col gap-6",
+              isCurrentPlan && "ring-2 ring-primary"
+            )}
           >
-            {isRecommended && (
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-indigo-500 text-white px-3 py-1 rounded-full text-xs font-medium">
-                Recommended
-              </div>
-            )}
-            {isCurrentPlan && (
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-blue-500 text-white px-3 py-1 rounded-full text-xs font-medium">
-                Current Plan
-              </div>
-            )}
-            
-            <div className="text-center mb-4">
-              <h3 className="text-lg font-semibold mb-1">{plan.name}</h3>
-              <div className="flex items-baseline justify-center gap-1">
-                <span className="text-2xl font-bold">${plan.price}</span>
-                <span className="text-muted-foreground">/mo</span>
-              </div>
-            </div>
-            
-            <div className="space-y-2 mb-4">
+            <div className="space-y-2">
               <div className="flex items-center gap-2">
-                <Check className="h-4 w-4 text-green-500" />
-                <span className="text-sm">{plan.limit} hours/month</span>
+                <h3 className="text-lg font-medium">{tier.name}</h3>
+                {tier.isPopular && (
+                  <span className="bg-primary text-primary-foreground text-xs font-medium px-2 py-0.5 rounded-full">
+                    Popular
+                  </span>
+                )}
+                {isCurrentPlan && (
+                  <span className="bg-secondary text-secondary-foreground text-xs font-medium px-2 py-0.5 rounded-full">
+                    Current Plan
+                  </span>
+                )}
               </div>
-              {/* Add more features as needed */}
+              <div className="flex items-baseline">
+                <PriceDisplay tier={tier} />
+                <span className="text-muted-foreground ml-2">
+                  {tier.price !== "$0" ? "/month" : ""}
+                </span>
+              </div>
+              <p className="text-muted-foreground">{tier.description}</p>
+              <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium bg-secondary/10 text-secondary">
+                {tier.hours}/month
+              </div>
             </div>
 
             {!isCurrentPlan && accountId && (
-              <form>
+              <form className="mt-2">
                 <input type="hidden" name="accountId" value={accountId} />
                 <input type="hidden" name="returnUrl" value={returnUrl} />
-                <input type="hidden" name="planId" value={planId} />
+                <input type="hidden" name="planId" value={SUBSCRIPTION_PLANS[tier.name.toUpperCase() as keyof typeof SUBSCRIPTION_PLANS]} />
                 {isManaged ? (
-                  <SubmitButton 
-                    pendingText="Loading..." 
+                  <SubmitButton
+                    pendingText="Loading..."
                     formAction={setupNewSubscription}
-                    className={`w-full ${
-                      isRecommended 
-                        ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white shadow-lg hover:shadow-xl'
-                        : ''
-                    }`}
-                    variant={isRecommended ? 'default' : 'outline'}
-                  >
-                    {isRecommended ? (
-                      <>
-                        <CreditCard className="mr-2 h-4 w-4" />
-                        Upgrade Now
-                      </>
-                    ) : (
-                      'Select Plan'
+                    className={cn(
+                      "w-full h-10 rounded-full font-medium transition-colors",
+                      tier.buttonColor
                     )}
+                  >
+                    {tier.buttonText}
                   </SubmitButton>
                 ) : (
-                  <Button 
-                    className={`w-full ${
-                      isRecommended 
-                        ? 'bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white shadow-lg hover:shadow-xl'
-                        : ''
-                    }`}
-                    variant={isRecommended ? 'default' : 'outline'}
-                    onClick={() => onPlanSelect?.(planId)}
-                  >
-                    {isRecommended ? (
-                      <>
-                        <CreditCard className="mr-2 h-4 w-4" />
-                        Upgrade Now
-                      </>
-                    ) : (
-                      'Select Plan'
+                  <Button
+                    className={cn(
+                      "w-full h-10 rounded-full font-medium transition-colors",
+                      tier.buttonColor
                     )}
+                    onClick={() => onPlanSelect?.(SUBSCRIPTION_PLANS[tier.name.toUpperCase() as keyof typeof SUBSCRIPTION_PLANS])}
+                  >
+                    {tier.buttonText}
                   </Button>
                 )}
               </form>
             )}
+
+            <div className="space-y-4">
+              {tier.name !== "Free" && (
+                <p className="text-sm text-muted-foreground">
+                  Everything in {tier.name === "Basic" ? "Free" : "Basic"} +
+                </p>
+              )}
+              <ul className="space-y-3">
+                {tier.features.map((feature) => (
+                  <li key={feature} className="flex items-center gap-2 text-muted-foreground">
+                    <div className="size-5 rounded-full bg-primary/10 flex items-center justify-center">
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 12 12"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="text-primary"
+                      >
+                        <path
+                          d="M2.5 6L5 8.5L9.5 4"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    </div>
+                    <span className="text-sm">{feature}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           </div>
         );
       })}

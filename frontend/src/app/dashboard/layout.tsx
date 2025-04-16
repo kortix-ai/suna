@@ -1,3 +1,5 @@
+"use client"
+
 import { SidebarLeft } from "@/components/dashboard/sidebar/sidebar-left"
 import {
   SidebarInset,
@@ -11,15 +13,25 @@ import {
   BreadcrumbPage,
 } from "@/components/ui/breadcrumb"
 import { Separator } from "@/components/ui/separator"
-import { SidebarRight } from "@/components/dashboard/sidebar/sidebar-right"
+import { Button } from "@/components/ui/button"
+import { Copy } from "lucide-react"
+import { usePathname } from "next/navigation"
+import { toast } from "sonner"
 
 interface DashboardLayoutProps {
   children: React.ReactNode
 }
 
-export default async function DashboardLayout({
+export default function DashboardLayout({
   children,
 }: DashboardLayoutProps) {
+  const pathname = usePathname()
+  
+  const copyCurrentUrl = () => {
+    const url = window.location.origin + pathname
+    navigator.clipboard.writeText(url)
+    toast.success("URL copied to clipboard")
+  }
 
   return (
     <SidebarProvider>
@@ -28,19 +40,21 @@ export default async function DashboardLayout({
         <header className="bg-background sticky top-0 flex h-14 shrink-0 items-center gap-2">
           <div className="flex flex-1 items-center gap-2 px-3">
             <SidebarTrigger />
-            {/* <Separator
-              orientation="vertical"
-              className="mr-2 data-[orientation=vertical]:h-4"
-            />
-            <Breadcrumb>
-              <BreadcrumbList>
-                <BreadcrumbItem>
-                  <BreadcrumbPage className="line-clamp-1">
-                    AGENTS
-                  </BreadcrumbPage>
-                </BreadcrumbItem>
-              </BreadcrumbList>
-            </Breadcrumb> */}
+          </div>
+          
+          <div className="absolute left-1/2 -translate-x-1/2 text-sm font-medium tracking-wide uppercase text-muted-foreground">
+            Dynamic Page Title
+          </div>
+          
+          <div className="flex items-center pr-4">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={copyCurrentUrl}
+              className="h-9 w-9"
+            >
+              <Copy className="h-4 w-4" />
+            </Button>
           </div>
         </header>
         <div className="bg-background">
