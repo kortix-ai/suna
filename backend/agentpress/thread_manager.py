@@ -7,14 +7,15 @@ This module provides comprehensive conversation management, including:
 - Tool registration and execution
 - LLM interaction with streaming support
 - Error handling and cleanup
+- Context summarization to manage token limits
 """
 
 import json
-import uuid
-from typing import List, Dict, Any, Optional, Type, Union, AsyncGenerator, Tuple, Callable, Literal
+from typing import List, Dict, Any, Optional, Type, Union, AsyncGenerator, Literal
 from services.llm import make_llm_api_call
-from agentpress.tool import Tool, ToolResult
+from agentpress.tool import Tool
 from agentpress.tool_registry import ToolRegistry
+from agentpress.context_manager import ContextManager
 from agentpress.response_processor import (
     ResponseProcessor, 
     ProcessorConfig    
@@ -34,13 +35,16 @@ class ThreadManager:
     """
 
     def __init__(self):
-        """Initialize ThreadManager."""
+        """Initialize ThreadManager.
+    
+        """
         self.db = DBConnection()
         self.tool_registry = ToolRegistry()
         self.response_processor = ResponseProcessor(
             tool_registry=self.tool_registry,
             add_message_callback=self.add_message
         )
+        self.context_manager = ContextManager()
 
     def add_tool(self, tool_class: Type[Tool], function_names: Optional[List[str]] = None, **kwargs):
         """Add a tool to the ThreadManager."""
@@ -87,6 +91,9 @@ class ThreadManager:
 
     async def get_llm_messages(self, thread_id: str) -> List[Dict[str, Any]]:
         """Get all messages for a thread.
+        
+        This method uses the SQL function which handles context truncation
+        by considering summary messages.
         
         Args:
             thread_id: The ID of the thread to get messages for.
@@ -220,7 +227,41 @@ Here are the XML tools available with examples:
                 # 1. Get messages from thread for LLM call
                 messages = await self.get_llm_messages(thread_id)
                 
-                # 2. Prepare messages for LLM call + add temporary message if it exists
+                # 2. Check token count before proceeding
+                # Use litellm to count tokens in the messages
+                token_count = 0
+                try:
+                    from litellm import token_counter
+                    token_count = token_counter(model=llm_model, messages=[system_prompt] + messages)
+                    token_threshold = self.context_manager.token_threshold
+                    logger.info(f"Thread {thread_id} token count: {token_count}/{token_threshold} ({(token_count/token_threshold)*100:.1f}%)")
+                    
+                    # If we're over the threshold, summarize the thread
+                    if token_count >= token_threshold:
+                        logger.info(f"Thread token count ({token_count}) exceeds threshold ({token_threshold}), summarizing...")
+                        
+                        # Create summary using context manager
+                        summarized = await self.context_manager.check_and_summarize_if_needed(
+                            thread_id=thread_id,
+                            add_message_callback=self.add_message,
+                            model=llm_model,
+                            force=True  # Force summarization
+                        )
+                        
+                        if summarized:
+                            # If summarization was successful, get the updated messages 
+                            # This will now include the summary message and only messages after it
+                            logger.info("Summarization complete, fetching updated messages with summary")
+                            messages = await self.get_llm_messages(thread_id)
+                            # Recount tokens after summarization
+                            new_token_count = token_counter(model=llm_model, messages=[system_prompt] + messages)
+                            logger.info(f"After summarization: token count reduced from {token_count} to {new_token_count}")
+                        else:
+                            logger.warning("Summarization failed or wasn't needed - proceeding with original messages")
+                except Exception as e:
+                    logger.error(f"Error counting tokens or summarizing: {str(e)}")
+                
+                # 3. Prepare messages for LLM call + add temporary message if it exists
                 prepared_messages = [system_prompt]
                 
                 # Find the last user message index
@@ -242,19 +283,19 @@ Here are the XML tools available with examples:
                         prepared_messages.append(temp_msg)
                         logger.debug("Added temporary message to the end of prepared messages")
 
-                # 3. Create or use processor config - this is now redundant since we handle it above
+                # 4. Create or use processor config - this is now redundant since we handle it above
                 # but kept for consistency and clarity
                 logger.debug(f"Processor config: XML={processor_config.xml_tool_calling}, Native={processor_config.native_tool_calling}, " 
                        f"Execute tools={processor_config.execute_tools}, Strategy={processor_config.tool_execution_strategy}, "
                        f"XML limit={processor_config.max_xml_tool_calls}")
 
-                # 4. Prepare tools for LLM call
+                # 5. Prepare tools for LLM call
                 openapi_tool_schemas = None
                 if processor_config.native_tool_calling:
                     openapi_tool_schemas = self.tool_registry.get_openapi_schemas()
                     logger.debug(f"Retrieved {len(openapi_tool_schemas) if openapi_tool_schemas else 0} OpenAPI tool schemas")
 
-                # 5. Make LLM API call
+                # 6. Make LLM API call
                 logger.debug("Making LLM API call")
                 try:
                     llm_response = await make_llm_api_call(
@@ -272,7 +313,7 @@ Here are the XML tools available with examples:
                     logger.error(f"Failed to make LLM API call: {str(e)}", exc_info=True)
                     raise
 
-                # 6. Process LLM response using the ResponseProcessor
+                # 7. Process LLM response using the ResponseProcessor
                 if stream:
                     logger.debug("Processing streaming response")
                     response_generator = self.response_processor.process_streaming_response(
