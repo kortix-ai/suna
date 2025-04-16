@@ -393,6 +393,7 @@ export const getMessages = async (threadId: string): Promise<Message[]> => {
       .select('*')
       .eq('thread_id', threadId)
       .neq('type', 'cost')
+      .neq('type', 'summary')
       .order('created_at', { ascending: true });
     
     if (error) {
