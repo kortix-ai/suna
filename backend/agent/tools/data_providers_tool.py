@@ -4,6 +4,7 @@ from agentpress.tool import Tool, ToolResult, openapi_schema, xml_schema
 from agent.tools.data_providers.LinkedinProvider import LinkedinProvider
 from agent.tools.data_providers.YahooFinanceProvider import YahooFinanceProvider
 from agent.tools.data_providers.AmazonProvider import AmazonProvider
+from agent.tools.data_providers.ZillowProvider import ZillowProvider
 
 class DataProvidersTool(Tool):
     """Tool for making requests to various data providers."""
@@ -14,7 +15,8 @@ class DataProvidersTool(Tool):
         self.register_data_providers = {
             "linkedin": LinkedinProvider(),
             "yahoo_finance": YahooFinanceProvider(),
-            "amazon": AmazonProvider()
+            "amazon": AmazonProvider(),
+            "zillow": ZillowProvider()
         }
 
     @openapi_schema({
