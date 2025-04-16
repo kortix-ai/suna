@@ -84,6 +84,74 @@ class MessageTool(Tool):
     @openapi_schema({
         "type": "function",
         "function": {
+            "name": "inform",
+            "description": "Inform the user about progress, completion of a major step, or important context. Use this tool: 1) To provide updates between major sections of work, 2) After accomplishing significant milestones, 3) When transitioning to a new phase of work, 4) To confirm actions were completed successfully, 5) To provide context about upcoming steps. IMPORTANT: Use sparingly - only for meaningful updates, not routine actions. This does not require user response and allows continued execution.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "Information to present to the user. Include: 1) Clear statement of what has been accomplished or what is happening, 2) Relevant context or impact, 3) Brief indication of next steps if applicable."
+                    },
+                    "attachments": {
+                        "anyOf": [
+                            {"type": "string"},
+                            {"items": {"type": "string"}, "type": "array"}
+                        ],
+                        "description": "(Optional) List of files or URLs to attach to the information. Include when: 1) Information relates to specific files or resources, 2) Showing intermediate results or outputs, 3) Providing supporting documentation. Always use relative paths to /workspace directory."
+                    }
+                },
+                "required": ["text"]
+            }
+        }
+    })
+    @xml_schema(
+        tag_name="inform",
+        mappings=[
+            {"param_name": "text", "node_type": "content", "path": "."},
+            {"param_name": "attachments", "node_type": "attribute", "path": ".", "required": False}
+        ],
+        example='''
+        <!-- Use inform for meaningful progress updates -->
+        <!-- Examples of when to use inform: -->
+        <!-- 1. Completing major milestones -->
+        <!-- 2. Transitioning between work phases -->
+        <!-- 3. Confirming important actions -->
+        <!-- 4. Providing context for upcoming work -->
+        <!-- 5. Sharing significant intermediate results -->
+        
+        <inform attachments="analysis_results.csv,summary_chart.png">
+            I've completed the data analysis of the sales figures. Key findings include:
+            - Q4 sales were 28% higher than Q3
+            - Product line A showed the strongest performance
+            - Three regions missed their targets
+            
+            I'll now proceed with creating the executive summary report based on these findings.
+        </inform>
+        '''
+    )
+    async def inform(self, text: str, attachments: Optional[Union[str, List[str]]] = None) -> ToolResult:
+        """Inform the user about progress or important updates without requiring a response.
+        
+        Args:
+            text: The information to present to the user
+            attachments: Optional file paths or URLs to attach
+            
+        Returns:
+            ToolResult indicating the information was successfully sent
+        """
+        try:
+            # Convert single attachment to list for consistent handling
+            if attachments and isinstance(attachments, str):
+                attachments = [attachments]
+                
+            return self.success_response({"status": "Information sent"})
+        except Exception as e:
+            return self.fail_response(f"Error informing user: {str(e)}")
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
             "name": "complete",
             "description": "A special tool to indicate you have completed all tasks and are about to enter complete state. Use ONLY when: 1) All tasks in todo.md are marked complete [x], 2) The user's original request has been fully addressed, 3) There are no pending actions or follow-ups required, 4) You've delivered all final outputs and results to the user. IMPORTANT: This is the ONLY way to properly terminate execution. Never use this tool unless ALL tasks are complete and verified. Always ensure you've provided all necessary outputs and references before using this tool.",
             "parameters": {
@@ -133,5 +201,12 @@ if __name__ == "__main__":
             attachments="summary.pdf"
         )
         print("Question result:", ask_result)
+        
+        # Test inform
+        inform_result = await message_tool.inform(
+            text="Completed analysis of data. Processing results now.",
+            attachments="analysis.pdf"
+        )
+        print("Inform result:", inform_result)
     
     asyncio.run(test_message_tool())
