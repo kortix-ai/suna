@@ -46,16 +46,21 @@ export default function LeftSidebar({
       try {
         const projectsData = await getProjects();
         const agentsList = [];
+        const seenThreadIds = new Set(); // Track unique thread IDs
         
         for (const project of projectsData) {
           const threads = await getThreads(project.id);
           if (threads && threads.length > 0) {
             // For each thread in the project, create an agent entry
             for (const thread of threads) {
-              agentsList.push({
-                name: `${project.name} - ${thread.thread_id.slice(0, 4)}`,
-                href: `/dashboard/agents/${thread.thread_id}`
-              });
+              // Only add if we haven't seen this thread ID before
+              if (!seenThreadIds.has(thread.thread_id)) {
+                seenThreadIds.add(thread.thread_id);
+                agentsList.push({
+                  name: `${project.name} - ${thread.thread_id.slice(0, 4)}`,
+                  href: `/dashboard/agents/${thread.thread_id}`
+                });
+              }
             }
           }
         }

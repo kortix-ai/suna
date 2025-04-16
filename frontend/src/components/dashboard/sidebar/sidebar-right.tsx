@@ -3,7 +3,6 @@ import { Plus } from "lucide-react"
 
 import { Calendars } from "@/components/dashboard/sidebar/calendars"
 import { DatePicker } from "@/components/dashboard/sidebar/date-picker"
-import { NavUser } from "@/components/dashboard/sidebar/nav-user"
 import {
   Sidebar,
   SidebarContent,
@@ -49,7 +48,6 @@ export function SidebarRight({
       {...props}
     >
       <SidebarHeader className="border-sidebar-border h-16 border-b">
-        <NavUser user={data.user} />
       </SidebarHeader>
       <SidebarContent>
         <DatePicker />

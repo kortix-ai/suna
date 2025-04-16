@@ -345,31 +345,23 @@ export const addUserMessage = async (threadId: string, content: string): Promise
   apiCache.invalidateThreadMessages(threadId);
 };
 
-export const getMessages = async (threadId: string, hideToolMsgs: boolean = false): Promise<Message[]> => {
+export const getMessages = async (threadId: string): Promise<Message[]> => {
   // Check if we already have a pending request
   const pendingRequest = fetchQueue.getQueuedMessages(threadId);
   if (pendingRequest) {
-    // Apply filter if needed when promise resolves
-    if (hideToolMsgs) {
-      return pendingRequest.then(messages => 
-        messages.filter((msg: Message) => msg.role !== 'tool')
-      );
-    }
     return pendingRequest;
   }
   
   // Check cache first
   const cached = apiCache.getThreadMessages(threadId);
   if (cached) {
-    // Apply filter if needed
-    return hideToolMsgs ? cached.filter((msg: Message) => msg.role !== 'tool') : cached;
+    return cached;
   }
   
   // Create and queue the promise
   const fetchPromise = (async () => {
     const supabase = createClient();
     
-    // Query all messages for the thread instead of using RPC
     const { data, error } = await supabase
       .from('messages')
       .select('*')
@@ -408,17 +400,8 @@ export const getMessages = async (threadId: string, hideToolMsgs: boolean = fals
     return messages;
   })();
   
-  // Add to queue
-  const queuedPromise = fetchQueue.setQueuedMessages(threadId, fetchPromise);
-  
-  // Apply filter if needed when promise resolves
-  if (hideToolMsgs) {
-    return queuedPromise.then(messages => 
-      messages.filter((msg: Message) => msg.role !== 'tool')
-    );
-  }
-  
-  return queuedPromise;
+  // Add to queue and return
+  return fetchQueue.setQueuedMessages(threadId, fetchPromise);
 };
 
 // Agent APIs

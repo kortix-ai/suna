@@ -687,30 +687,34 @@ export default function AgentPage({ params }: AgentPageProps) {
       // Find the running agent run
       const runningAgentId = currentAgentRunId || agentRuns.find(run => run.status === "running")?.id;
       
-      if (runningAgentId) {
-        // Clean up stream first
-        if (streamCleanupRef.current) {
-          streamCleanupRef.current();
-          streamCleanupRef.current = null;
-        }
+      if (!runningAgentId) {
+        console.warn("No running agent to stop");
+        return;
+      }
+
+      // Clean up stream first
+      if (streamCleanupRef.current) {
+        streamCleanupRef.current();
+        streamCleanupRef.current = null;
+      }
+      
+      // Stop the agent
+      await stopAgent(runningAgentId);
+      
+      // Update UI state
+      setIsStreaming(false);
+      setCurrentAgentRunId(null);
+      
+      // Refresh agent runs and messages
+      if (conversation) {
+        const [updatedAgentRuns, updatedMessages] = await Promise.all([
+          getAgentRuns(conversation.thread_id),
+          getMessages(conversation.thread_id)
+        ]);
         
-        // Then stop the agent
-        await stopAgent(runningAgentId);
-        setIsStreaming(false);
-        setCurrentAgentRunId(null);
-        
-        // Refresh agent runs
-        if (conversation) {
-          const updatedAgentRuns = await getAgentRuns(conversation.thread_id);
-          setAgentRuns(updatedAgentRuns);
-          
-          // Also refresh messages to get any partial responses
-          const updatedMessages = await getMessages(conversation.thread_id);
-          setMessages(updatedMessages);
-          
-          // Clear streaming content
-          setStreamContent("");
-        }
+        setAgentRuns(updatedAgentRuns);
+        setMessages(updatedMessages);
+        setStreamContent("");
       }
     } catch (err) {
       console.error("Error stopping agent:", err);
@@ -752,23 +756,39 @@ export default function AgentPage({ params }: AgentPageProps) {
   
   if (error) {
     return (
-      <div className="max-w-2xl mx-auto py-6 space-y-4">
-        {typeof error === 'string' ? (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Error</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        ) : (
-          error
-        )}
-        <div className="flex space-x-3">
-          <Button variant="outline" onClick={() => router.push(`/dashboard/agents`)}>
-            Back to Agents
-          </Button>
-          <Button variant="outline" onClick={() => setError(null)}>
-            Dismiss
-          </Button>
+      <div className="flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center p-4">
+        <div className="w-full max-w-md mx-auto space-y-4 text-center">
+          <div className="p-6 rounded-xl bg-background/50 border border-border/40 shadow-[0_0_15px_rgba(0,0,0,0.03)] backdrop-blur-sm">
+            <div className="flex flex-col items-center gap-4">
+              <div className="h-12 w-12 rounded-full bg-destructive/10 flex items-center justify-center">
+                <AlertCircle className="h-6 w-6 text-destructive" />
+              </div>
+              
+              <div className="space-y-2">
+                <h3 className="text-xl font-medium">Something went wrong</h3>
+                <p className="text-sm text-muted-foreground">
+                  {typeof error === 'string' ? error : 'An unexpected error occurred'}
+                </p>
+              </div>
+              
+              <div className="flex items-center gap-3 pt-2">
+                <Button 
+                  variant="outline" 
+                  onClick={() => router.push(`/dashboard/agents`)}
+                  className="rounded-lg border-border/40 shadow-[0_0_15px_rgba(0,0,0,0.03)]"
+                >
+                  Back to Agents
+                </Button>
+                <Button 
+                  variant="default"
+                  onClick={() => setError(null)}
+                  className="rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground shadow-[0_0_15px_rgba(var(--primary),0.15)]"
+                >
+                  Try Again
+                </Button>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );

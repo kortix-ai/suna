@@ -15,6 +15,8 @@ import {
   Settings,
   User,
   AudioWaveform,
+  Sun,
+  Moon,
 } from "lucide-react"
 import { useAccounts } from "@/hooks/use-accounts"
 import NewTeamForm from "@/components/basejump/new-team-form"
@@ -49,6 +51,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { createClient } from "@/lib/supabase/client"
+import { useTheme } from "next-themes"
 
 export function NavUserWithTeams({
   user,
@@ -63,6 +66,7 @@ export function NavUserWithTeams({
   const { isMobile } = useSidebar()
   const { data: accounts } = useAccounts()
   const [showNewTeamDialog, setShowNewTeamDialog] = React.useState(false)
+  const { theme, setTheme } = useTheme()
   
   // Prepare personal account and team accounts
   const personalAccount = React.useMemo(() => accounts?.find(account => account.personal_account), [accounts])
@@ -274,6 +278,13 @@ export function NavUserWithTeams({
                     <Settings className="mr-2 h-4 w-4" />
                     Settings
                   </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => setTheme(theme === "light" ? "dark" : "light")}>
+                  <div className="flex items-center gap-2">
+                    <Sun className="mr-2 h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+                    <Moon className="absolute mr-2 h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+                    <span>Theme</span>
+                  </div>
                 </DropdownMenuItem>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />

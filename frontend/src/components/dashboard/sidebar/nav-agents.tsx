@@ -10,6 +10,7 @@ import {
   Plus,
   MessagesSquare,
 } from "lucide-react"
+import { toast } from "sonner"
 
 import {
   DropdownMenu,
@@ -41,16 +42,21 @@ export function NavAgents() {
       try {
         const projectsData = await getProjects()
         const agentsList = []
+        const seenThreadIds = new Set() // Track unique thread IDs
         
         for (const project of projectsData) {
           const threads = await getThreads(project.id)
           if (threads && threads.length > 0) {
             // For each thread in the project, create an agent entry
             for (const thread of threads) {
-              agentsList.push({
-                name: project.name,
-                url: `/dashboard/agents/${thread.thread_id}`
-              })
+              // Only add if we haven't seen this thread ID before
+              if (!seenThreadIds.has(thread.thread_id)) {
+                seenThreadIds.add(thread.thread_id)
+                agentsList.push({
+                  name: `${project.name} - ${thread.thread_id.slice(0, 4)}`,
+                  url: `/dashboard/agents/${thread.thread_id}`
+                })
+              }
             }
           }
         }
@@ -66,9 +72,6 @@ export function NavAgents() {
     loadAgents()
   }, [])
 
-  // Get only the latest 20 agents for the sidebar
-  const recentAgents = agents.slice(0, 20)
-
   return (
     <SidebarGroup>
       <div className="flex justify-between items-center">
@@ -83,7 +86,7 @@ export function NavAgents() {
         </Link>
       </div>
 
-      <SidebarMenu>
+      <SidebarMenu className="overflow-y-auto max-h-[calc(100vh-200px)]">
         {isLoading ? (
           // Show skeleton loaders while loading
           Array.from({length: 3}).map((_, index) => (
@@ -94,10 +97,10 @@ export function NavAgents() {
               </SidebarMenuButton>
             </SidebarMenuItem>
           ))
-        ) : recentAgents.length > 0 ? (
-          // Show agents
+        ) : agents.length > 0 ? (
+          // Show all agents
           <>
-            {recentAgents.map((item, index) => (
+            {agents.map((item, index) => (
               <SidebarMenuItem key={`agent-${index}`}>
                 <SidebarMenuButton 
                   asChild
@@ -121,7 +124,10 @@ export function NavAgents() {
                       side={isMobile ? "bottom" : "right"}
                       align={isMobile ? "end" : "start"}
                     >
-                      <DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => {
+                        navigator.clipboard.writeText(window.location.origin + item.url)
+                        toast.success("Link copied to clipboard")
+                      }}>
                         <LinkIcon className="text-muted-foreground" />
                         <span>Copy Link</span>
                       </DropdownMenuItem>
@@ -141,21 +147,6 @@ export function NavAgents() {
                 )}
               </SidebarMenuItem>
             ))}
-            
-            {agents.length > 20 && (
-              <SidebarMenuItem>
-                <SidebarMenuButton 
-                  asChild 
-                  className="text-sidebar-foreground/70"
-                  tooltip={state === "collapsed" ? "See all agents" : undefined}
-                >
-                  <Link href="/dashboard/agents">
-                    <MoreHorizontal className="h-4 w-4" />
-                    <span>See all agents</span>
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            )}
           </>
         ) : (
           // Empty state

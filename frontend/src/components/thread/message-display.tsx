@@ -1,18 +1,20 @@
 'use client';
 
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, Code, Eye, EyeOff } from 'lucide-react';
+import { Maximize2, Terminal, FileText } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ParsedTag, SUPPORTED_XML_TAGS } from "@/lib/types/tool-calls";
-import { getComponentForTag } from "@/components/thread/tool-components";
 import { motion } from "motion/react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import Image from "next/image";
+import { useTheme } from "next-themes";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 interface MessageDisplayProps {
   content: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'tool';
   isStreaming?: boolean;
+  showIdentifier?: boolean;
+  isPartOfChain?: boolean;
 }
 
 // Full implementation of XML tag parsing
@@ -187,183 +189,216 @@ function parseXMLTags(content: string): { parts: (string | ParsedTag)[], openTag
 interface MessageContentProps {
   content: string;
   maxHeight?: number;
+  role: 'user' | 'assistant' | 'tool';
+  isPartOfChain?: boolean;
 }
 
-export function MessageContent({ content, maxHeight = 300 }: MessageContentProps) {
-  const { parts, openTags } = parseXMLTags(content);
-  const [expanded, setExpanded] = useState(false);
-  const [showRawXml, setShowRawXml] = useState(false);
-  
-  const hasXmlTags = parts.some(part => typeof part !== 'string');
-  const isLongContent = content.length > 1000 || (parts.length > 0 && parts.some(p => typeof p !== 'string'));
-  
+function ToolHeader({ icon: Icon, label }: { icon: any, label: string }) {
   return (
-    <div>
-      <div 
-        className={cn(
-          "whitespace-pre-wrap overflow-hidden transition-all duration-200",
-          !expanded && isLongContent && "max-h-[300px]"
-        )}
-        style={{ maxHeight: !expanded && isLongContent ? maxHeight : 'none' }}
-      >
-        {showRawXml ? (
-          <pre className="p-2 bg-muted/30 rounded-md text-xs overflow-x-auto">
-            {content}
-          </pre>
-        ) : (
-          <>
-            {parts.map((part, index) => {
-              if (typeof part === 'string') {
-                return (
-                  <React.Fragment key={index}>
-                    {part.split('\n').map((line, i) => (
-                      <React.Fragment key={i}>
-                        {line}
-                        {i < part.split('\n').length - 1 && <br />}
-                      </React.Fragment>
-                    ))}
-                  </React.Fragment>
-                );
-              } else {
-                const ToolComponent = getComponentForTag(part);
-                return (
-                  <div 
-                    key={index} 
-                    className="my-2 rounded-md border border-border/30 overflow-hidden"
-                  >
-                    <div className="bg-muted/20 px-2 py-1 text-xs font-medium border-b border-border/20 flex items-center justify-between">
-                      <span>{part.tagName}</span>
-                      <Badge variant="outline" className="text-[10px] h-4 px-1.5 bg-transparent">Tool</Badge>
-                    </div>
-                    <div className="p-2">
-                      <ToolComponent key={index} tag={part} mode="compact" />
-                    </div>
-                  </div>
-                );
-              }
-            })}
-          </>
-        )}
-      </div>
-      
-      {isLongContent && !expanded && (
-        <div className="h-12 bg-gradient-to-t from-background to-transparent -mt-12 relative"></div>
-      )}
-      
-      {(isLongContent || hasXmlTags) && (
-        <div className="flex items-center space-x-2 mt-2 text-xs text-muted-foreground">
-          {isLongContent && (
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="h-5 px-2 text-xs flex items-center gap-1 rounded-md hover:bg-muted/40"
-              onClick={() => setExpanded(!expanded)}
-            >
-              {expanded ? (
-                <>
-                  <ChevronUp className="h-3 w-3" />
-                  Show less
-                </>
-              ) : (
-                <>
-                  <ChevronDown className="h-3 w-3" />
-                  Show more
-                </>
-              )}
-            </Button>
-          )}
-          
-          {hasXmlTags && (
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              className="h-5 px-2 text-xs flex items-center gap-1 rounded-md hover:bg-muted/40"
-              onClick={() => setShowRawXml(!showRawXml)}
-            >
-              {showRawXml ? (
-                <>
-                  <EyeOff className="h-3 w-3" />
-                  Hide XML
-                </>
-              ) : (
-                <>
-                  <Code className="h-3 w-3" />
-                  Show XML
-                </>
-              )}
-            </Button>
-          )}
-        </div>
-      )}
+    <div className="flex items-center gap-2 text-muted-foreground">
+      <Icon className="h-3.5 w-3.5" />
+      <span className="text-xs font-medium">{label}</span>
     </div>
   );
 }
 
-export function MessageDisplay({ content, role, isStreaming = false }: MessageDisplayProps) {
+function CodeBlock({ content, filename }: { content: string, filename?: string }) {
   return (
-    <div className="w-full max-w-screen-lg mb-4 px-4">
-      {role === "user" && (
-        <div className="text-xs text-muted-foreground mb-1.5 font-medium">You</div>
+    <div className="font-mono text-sm">
+      {filename && (
+        <div className="flex items-center justify-between px-4 py-2 border-b border-border/30 bg-background/50 rounded-t-xl">
+          <span className="text-xs text-muted-foreground font-medium">{filename}</span>
+          <div className="flex gap-1.5">
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted/30 font-medium">Diff</span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-muted/30 font-medium">Original</span>
+            <span className="text-[10px] px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">Modified</span>
+          </div>
+        </div>
       )}
-      
-      {role === "assistant" && (
-        <div className="text-xs text-muted-foreground mb-1.5 font-medium">Suna</div>
-      )}
-      
-      <div 
-        className={cn(
-          "max-w-[90%]",
-          role === "user" ? "bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800" : 
-                           "bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800",
-          "rounded-lg p-3 shadow-sm"
-        )}
-      >
-        <MessageContent content={content} />
-        {isStreaming && (
-          <span 
-            className="inline-block h-4 w-0.5 bg-foreground/50 mx-px"
-            style={{ 
-              opacity: 0.7,
-              animation: 'cursorBlink 1s ease-in-out infinite',
-            }}
-          />
-        )}
-        <style jsx global>{`
-          @keyframes cursorBlink {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0; }
-          }
-        `}</style>
+      <div className="p-4 bg-muted/[0.02] rounded-b-xl">
+        <pre className="whitespace-pre-wrap text-[13px] leading-relaxed">{content}</pre>
       </div>
     </div>
+  );
+}
+
+export function MessageContent({ content, maxHeight = 300, role, isPartOfChain }: MessageContentProps) {
+  const { parts } = parseXMLTags(content);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const isTool = role === 'tool';
+  
+  return (
+    <>
+      <div className={cn(
+        "w-full",
+        isPartOfChain && "pl-6 border-l border-border/20"
+      )}>
+        <div className={cn(
+          "w-full overflow-hidden rounded-xl border border-border/40 bg-background/50 backdrop-blur-sm shadow-[0_0_15px_rgba(0,0,0,0.03)]",
+          isTool && "font-mono text-[13px]"
+        )}>
+          {parts.map((part, index) => {
+            if (typeof part === 'string') {
+              return (
+                <div key={index} className="p-4">
+                  {part.split('\n').map((line, i) => (
+                    <React.Fragment key={i}>
+                      <span className="leading-relaxed">{line}</span>
+                      {i < part.split('\n').length - 1 && <br />}
+                    </React.Fragment>
+                  ))}
+                </div>
+              );
+            } else {
+              const isCreateFile = part.tagName === 'create-file';
+              const isExecuteCommand = part.tagName === 'execute-command';
+              
+              return (
+                <div key={index}>
+                  <div className="px-4 py-2 border-b border-border/30">
+                    {isCreateFile && (
+                      <ToolHeader 
+                        icon={FileText} 
+                        label={`Creating file ${part.attributes.file_path || ''}`} 
+                      />
+                    )}
+                    {isExecuteCommand && (
+                      <ToolHeader 
+                        icon={Terminal} 
+                        label="Executing command" 
+                      />
+                    )}
+                    {!isCreateFile && !isExecuteCommand && (
+                      <ToolHeader 
+                        icon={Terminal} 
+                        label={part.tagName} 
+                      />
+                    )}
+                  </div>
+                  
+                  <CodeBlock 
+                    content={part.content}
+                    filename={isCreateFile ? part.attributes.file_path : undefined}
+                  />
+                </div>
+              );
+            }
+          })}
+        </div>
+      </div>
+
+      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+        <SheetContent side="right" className="w-[600px] sm:w-[800px] bg-background">
+          <SheetHeader>
+            <SheetTitle className="text-left">
+              {isTool ? 'Command Output' : 'Message Content'}
+            </SheetTitle>
+          </SheetHeader>
+          <div className="mt-4 overflow-y-auto max-h-[calc(100vh-8rem)] px-2">
+            <CodeBlock content={content} />
+          </div>
+        </SheetContent>
+      </Sheet>
+    </>
+  );
+}
+
+export function MessageDisplay({ content, role, isStreaming = false, showIdentifier = false, isPartOfChain = false }: MessageDisplayProps) {
+  const isUser = role === 'user';
+  const { theme } = useTheme();
+
+  return (
+    <motion.div 
+      className={cn(
+        "w-full px-4 py-3 flex flex-col",
+        isUser ? "bg-transparent" : "bg-muted/[0.03]",
+        isStreaming && "animate-pulse",
+        isPartOfChain && "pt-0"
+      )}
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+    >
+      <div className="w-full max-w-5xl mx-auto relative">
+        {!isUser && showIdentifier && (
+          <motion.div 
+            className="flex items-center gap-2 mb-2"
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, delay: 0.1 }}
+          >
+            <div className="flex items-center bg-background rounded-full size-8 flex-shrink-0 justify-center shadow-[0_0_10px_rgba(0,0,0,0.05)] border border-border">
+              <Image
+                src="/kortix-symbol.svg"
+                alt="Suna"
+                width={16}
+                height={16}
+                className={theme === 'dark' ? 'invert' : ''}
+              />
+            </div>
+            <span className="text-sm font-medium">Suna</span>
+          </motion.div>
+        )}
+        <MessageContent 
+          content={content} 
+          role={role} 
+          isPartOfChain={isPartOfChain}
+        />
+      </div>
+    </motion.div>
   );
 }
 
 export function ThinkingIndicator() {
+  const { theme } = useTheme();
+  
   return (
-    <div className="w-full max-w-screen-lg mb-4 px-4">
-      <div className="text-xs text-muted-foreground mb-1.5 font-medium">Suna</div>
-      
-      <div className="max-w-[90%] bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-lg p-3 shadow-sm">
-        <div className="flex items-center space-x-1.5">
-          <motion.div
-            animate={{ scale: [0.8, 1, 0.8] }}
-            transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
-            className="w-1.5 h-1.5 bg-muted-foreground/40 rounded-full"
-          />
-          <motion.div
-            animate={{ scale: [0.8, 1, 0.8] }}
-            transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut", delay: 0.2 }}
-            className="w-1.5 h-1.5 bg-muted-foreground/40 rounded-full"
-          />
-          <motion.div
-            animate={{ scale: [0.8, 1, 0.8] }}
-            transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut", delay: 0.4 }}
-            className="w-1.5 h-1.5 bg-muted-foreground/40 rounded-full"
-          />
+    <motion.div 
+      className="w-full px-4 py-3 flex flex-col bg-muted/[0.03]"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+    >
+      <div className="w-full max-w-5xl mx-auto">
+        <motion.div 
+          className="flex items-center gap-2 mb-2"
+          initial={{ opacity: 0, y: 5 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2, delay: 0.1 }}
+        >
+          <div className="flex items-center bg-background rounded-full size-8 flex-shrink-0 justify-center shadow-[0_0_10px_rgba(0,0,0,0.05)] border border-border">
+            <Image
+              src="/kortix-symbol.svg"
+              alt="Suna"
+              width={16}
+              height={16}
+              className={theme === 'dark' ? 'invert' : ''}
+            />
+          </div>
+          <span className="text-sm font-medium">Suna</span>
+        </motion.div>
+        
+        <div className="w-full overflow-hidden rounded-xl border border-border/40 bg-background/50 backdrop-blur-sm shadow-[0_0_15px_rgba(0,0,0,0.03)]">
+          <div className="p-4">
+            <div className="flex gap-1.5">
+              {[0, 1, 2].map((index) => (
+                <motion.div
+                  key={index}
+                  className="w-2 h-2 bg-primary/40 rounded-full"
+                  animate={{ y: [0, -5, 0] }}
+                  transition={{
+                    duration: 0.6,
+                    repeat: Infinity,
+                    delay: index * 0.2,
+                    ease: "easeInOut",
+                  }}
+                />
+              ))}
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
