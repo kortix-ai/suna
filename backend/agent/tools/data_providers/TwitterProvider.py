@@ -1,4 +1,4 @@
-from typing import Dict, Optional
+from typing import Dict
 
 from agent.tools.data_providers.RapidDataProviderBase import RapidDataProviderBase, EndpointSchema
 
