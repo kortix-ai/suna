@@ -3,7 +3,7 @@ import json
 from uuid import uuid4
 from typing import Optional
 
-from agent.tools.message_tool import MessageTool
+# from agent.tools.message_tool import MessageTool
 from agent.tools.sb_deploy_tool import SandboxDeployTool
 from agent.tools.web_search_tool import WebSearchTool
 from dotenv import load_dotenv
@@ -59,7 +59,8 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
             'sandbox': {
                 'id': sandbox_id,
                 'pass': sandbox_pass,
-                'vnc_preview': str(sandbox.get_preview_link(6080))
+                'vnc_preview': sandbox.get_preview_link(6080),
+                'sandbox_url': sandbox.get_preview_link(8080)
             }
         }).eq('project_id', project_id).execute()
     
@@ -67,8 +68,8 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
     thread_manager.add_tool(SandboxFilesTool, sandbox=sandbox)
     thread_manager.add_tool(SandboxBrowserTool, sandbox=sandbox, thread_id=thread_id, thread_manager=thread_manager)
     thread_manager.add_tool(SandboxDeployTool, sandbox=sandbox)
-    thread_manager.add_tool(MessageTool)
-
+    # thread_manager.add_tool(MessageTool) -> we are just doing this via prompt as there is no need to call it as a tool
+ 
     if os.getenv("EXA_API_KEY"):
         thread_manager.add_tool(WebSearchTool)
     

@@ -200,6 +200,7 @@ class ThreadManager:
                         # Create or append to content
                         if isinstance(system_prompt['content'], str):
                             examples_content = """
+--- XML TOOL CALLING --- 
 
 In this environment you have access to a set of tools you can use to answer the user's question. The tools are specified in XML format.
 {{ FORMATTING INSTRUCTIONS }}
