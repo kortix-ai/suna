@@ -1,5 +1,4 @@
 import json
-from typing import Dict, Any, Optional
 
 from agentpress.tool import Tool, ToolResult, openapi_schema, xml_schema
 from agent.tools.api_services.LinkedInService import LinkedInService
