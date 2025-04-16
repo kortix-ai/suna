@@ -176,7 +176,7 @@ export function NavUserWithTeams({
             </DropdownMenuTrigger>
             <DropdownMenuContent
               className="w-(--radix-dropdown-menu-trigger-width) min-w-56 rounded-lg"
-              side={isMobile ? "bottom" : "right"}
+              side={isMobile ? "bottom" : "top"}
               align="start"
               sideOffset={4}
             >

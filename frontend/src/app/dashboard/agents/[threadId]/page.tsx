@@ -9,6 +9,9 @@ import { toast } from 'sonner';
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChatInput } from '@/components/thread/chat-input';
 import { FileViewerModal } from '@/components/thread/file-viewer-modal';
+import { SiteHeader } from "@/components/thread/thread-site-header"
+import { ToolCallSidePanel } from "@/components/thread/tool-call-side-panel";
+import { useSidebar } from "@/components/ui/sidebar";
 
 // Define a type for the params to make React.use() work properly
 type ThreadParams = { 
@@ -30,16 +33,6 @@ interface ApiMessage {
     type: string;
     index: number;
   };
-}
-
-interface ApiAgentRun {
-  id: string;
-  thread_id: string;
-  status: 'running' | 'completed' | 'stopped' | 'error';
-  started_at: string;
-  completed_at: string | null;
-  responses: ApiMessage[];
-  error: string | null;
 }
 
 export default function ThreadPage({ params }: { params: Promise<ThreadParams> }) {
@@ -73,6 +66,47 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const hasInitiallyScrolled = useRef<boolean>(false);
   const [sandboxId, setSandboxId] = useState<string | null>(null);
   const [fileViewerOpen, setFileViewerOpen] = useState(false);
+  const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
+
+  // Access the state and controls for the main SidebarLeft
+  const { state: leftSidebarState, setOpen: setLeftSidebarOpen } = useSidebar();
+
+  // Handler to toggle the right side panel (ToolCallSidePanel)
+  const toggleSidePanel = useCallback(() => {
+    setIsSidePanelOpen(prevIsOpen => !prevIsOpen);
+  }, []);
+
+  // Effect to enforce exclusivity: Close left sidebar if right panel opens
+  useEffect(() => {
+    if (isSidePanelOpen && leftSidebarState !== 'collapsed') {
+      // Run this update as an effect after the right panel state is set to true
+      setLeftSidebarOpen(false);
+    }
+  }, [isSidePanelOpen, leftSidebarState, setLeftSidebarOpen]);
+
+  // Effect to enforce exclusivity: Close the right panel if the left sidebar is opened
+  useEffect(() => {
+    if (leftSidebarState === 'expanded' && isSidePanelOpen) {
+      setIsSidePanelOpen(false);
+    }
+  }, [leftSidebarState, isSidePanelOpen]);
+
+  // Effect for CMD+I keyboard shortcut
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Use CMD on Mac, CTRL on others
+      if ((event.metaKey || event.ctrlKey) && event.key === 'i') {
+        event.preventDefault(); // Prevent default browser action (e.g., italics)
+        toggleSidePanel();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    // Cleanup listener on component unmount
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [toggleSidePanel]); // Dependency: the toggle function
 
   const handleStreamAgent = useCallback(async (runId: string) => {
     // Prevent multiple streams for the same run
@@ -185,6 +219,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         setAgentStatus('idle');
         setAgentRunId(null);
         setStreamContent('');  // Clear any partial content
+        setToolCallData(null); // Clear tool call data on error
       },
       onClose: async () => {
         console.log('[PAGE] Stream connection closed');
@@ -218,6 +253,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
             
             // Then clear streaming content
             setStreamContent('');
+            setToolCallData(null); // Also clear tool call data when stream closes normally
           }
         } catch (err) {
           console.error('[PAGE] Error checking agent status:', err);
@@ -644,34 +680,32 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   // Only show a full-screen loader on the very first load
   if (isLoading && !initialLoadCompleted.current) {
     return (
-      <div className="flex h-[calc(100vh-4rem)] flex-col">
-        <div className="relative flex-1 flex flex-col">
-          <div className="absolute inset-0 overflow-y-auto px-6 py-4 pb-[5.5rem]">
-            <div className="mx-auto max-w-3xl">
-              <div className="space-y-4">
-                {/* User message skeleton */}
+      <div className="flex h-screen">
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <SiteHeader 
+            threadId={threadId} 
+            onViewFiles={() => setFileViewerOpen(true)} 
+            onToggleSidePanel={toggleSidePanel}
+          />
+          <div className="flex flex-1 overflow-hidden">
+            <div className="flex-1 overflow-y-auto px-6 py-4 pb-[5.5rem]">
+              <div className="mx-auto max-w-3xl space-y-4">
                 <div className="flex justify-end">
                   <div className="max-w-[85%] rounded-lg bg-primary/10 px-4 py-3">
                     <Skeleton className="h-4 w-32" />
                   </div>
                 </div>
-                
-                {/* Assistant message skeleton */}
                 <div className="flex justify-start">
                   <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3">
                     <Skeleton className="h-4 w-48 mb-2" />
                     <Skeleton className="h-4 w-40" />
                   </div>
                 </div>
-                
-                {/* User message skeleton */}
                 <div className="flex justify-end">
                   <div className="max-w-[85%] rounded-lg bg-primary/10 px-4 py-3">
                     <Skeleton className="h-4 w-40" />
                   </div>
                 </div>
-                
-                {/* Assistant message skeleton */}
                 <div className="flex justify-start">
                   <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3">
                     <Skeleton className="h-4 w-56 mb-2" />
@@ -681,208 +715,227 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
               </div>
             </div>
           </div>
-
-          {/* Input area skeleton */}
-          <div className="absolute inset-x-0 bottom-0 border-t bg-background/80 backdrop-blur-sm">
-            <div className="mx-auto max-w-3xl px-6 py-4">
-              <div className="relative">
-                <Skeleton className="h-[50px] w-full rounded-md" />
-                <div className="absolute right-2 bottom-2">
-                  <Skeleton className="h-8 w-8 rounded-full" />
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
+        <ToolCallSidePanel 
+          isOpen={isSidePanelOpen} 
+          onClose={() => setIsSidePanelOpen(false)}
+          toolCallData={toolCallData}
+        />
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="flex h-[calc(100vh-4rem)] items-center justify-center">
-        <div className="flex w-full max-w-md flex-col items-center gap-4 rounded-lg border bg-card p-6 text-center">
-          <h2 className="text-lg font-semibold text-destructive">Error</h2>
-          <p className="text-sm text-muted-foreground">{error}</p>
-          <Button variant="outline" onClick={() => router.push(`/dashboard/projects/${projectId || ''}`)}>
-            Back to Project
-          </Button>
+      <div className="flex h-screen">
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <SiteHeader 
+            threadId={threadId} 
+            onViewFiles={() => setFileViewerOpen(true)} 
+            onToggleSidePanel={toggleSidePanel}
+          />
+          <div className="flex flex-1 items-center justify-center p-4">
+            <div className="flex w-full max-w-md flex-col items-center gap-4 rounded-lg border bg-card p-6 text-center">
+              <h2 className="text-lg font-semibold text-destructive">Error</h2>
+              <p className="text-sm text-muted-foreground">{error}</p>
+              <Button variant="outline" onClick={() => router.push(`/dashboard/projects/${projectId || ''}`)}>
+                Back to Project
+              </Button>
+            </div>
+          </div>
         </div>
+        <ToolCallSidePanel 
+          isOpen={isSidePanelOpen} 
+          onClose={() => setIsSidePanelOpen(false)}
+          toolCallData={toolCallData}
+        />
       </div>
     );
   }
 
-  // const projectName = project?.name || 'Loading...';
-
   return (
-    <div className="flex h-[calc(100vh-4rem)] flex-col">
-      <div className="relative flex-1 flex flex-col">
-        <div 
-          ref={messagesContainerRef}
-          className="absolute inset-0 overflow-y-auto px-6 py-4 pb-[5.5rem]" 
-          onScroll={handleScroll}
-        >
-          <div className="mx-auto max-w-3xl">
-            {messages.length === 0 && !streamContent ? (
-              <div className="flex h-full items-center justify-center">
-                <div className="flex flex-col items-center gap-1 text-center">
-                  <p className="text-sm text-muted-foreground">Send a message to start the conversation.</p>
-                  <p className="text-xs text-muted-foreground/60">The AI agent will respond automatically.</p>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {messages.map((message, index) => (
-                  <div 
-                    key={index} 
-                    ref={index === messages.length - 1 && message.role === 'assistant' ? latestMessageRef : null}
-                    className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                  >
-                    <div 
-                      className={`max-w-[85%] rounded-lg px-4 py-3 text-sm ${
-                        message.role === 'user' 
-                          ? 'bg-primary text-primary-foreground' 
-                          : 'bg-muted'
-                      }`}
-                    >
-                      <div className="whitespace-pre-wrap break-words">
-                        {message.type === 'tool_call' ? (
-                          <div className="font-mono text-xs">
-                            <div className="flex items-center gap-2 mb-1 text-muted-foreground">
-                              <div className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10">
-                                <div className="h-2 w-2 rounded-full bg-primary"></div>
-                              </div>
-                              <span>Tool: {message.name}</span>
-                            </div>
-                            <div className="mt-1 p-3 bg-secondary/20 rounded-md overflow-x-auto">
-                              {message.arguments}
-                            </div>
-                          </div>
-                        ) : message.role === 'tool' ? (
-                          <div className="font-mono text-xs">
-                            <div className="flex items-center gap-2 mb-1 text-muted-foreground">
-                              <div className="flex h-4 w-4 items-center justify-center rounded-full bg-success/10">
-                                <div className="h-2 w-2 rounded-full bg-success"></div>
-                              </div>
-                              <span>Tool Result: {message.name}</span>
-                            </div>
-                            <div className="mt-1 p-3 bg-success/5 rounded-md">
-                              {message.content}
-                            </div>
-                          </div>
-                        ) : (
-                          message.content
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                
-                {streamContent && (
-                  <div 
-                    ref={latestMessageRef}
-                    className="flex justify-start"
-                  >
-                    <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3 text-sm">
-                      <div className="whitespace-pre-wrap break-words">
-                        {toolCallData ? (
-                          <div className="font-mono text-xs">
-                            <div className="flex items-center gap-2 mb-1 text-muted-foreground">
-                              <div className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10">
-                                <div className="h-2 w-2 rounded-full bg-primary animate-pulse"></div>
-                              </div>
-                              <span>Tool: {toolCallData.name}</span>
-                            </div>
-                            <div className="mt-1 p-3 bg-secondary/20 rounded-md overflow-x-auto">
-                              {toolCallData.arguments || ''}
-                            </div>
-                          </div>
-                        ) : (
-                          streamContent
-                        )}
-                        {isStreaming && (
-                          <span className="inline-flex items-center ml-0.5">
-                            <span 
-                              className="inline-block h-4 w-0.5 bg-foreground/50 mx-px"
-                              style={{ 
-                                opacity: 0.7,
-                                animation: 'cursorBlink 1s ease-in-out infinite',
-                              }}
-                            />
-                            <style jsx global>{`
-                              @keyframes cursorBlink {
-                                0%, 100% { opacity: 1; }
-                                50% { opacity: 0; }
-                              }
-                            `}</style>
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                {agentStatus === 'running' && !streamContent && (
-                  <div className="flex justify-start">
-                    <div className="flex items-center gap-1.5 rounded-lg bg-muted px-4 py-3">
-                      <div className="h-1.5 w-1.5 rounded-full bg-foreground/50 animate-pulse" />
-                      <div className="h-1.5 w-1.5 rounded-full bg-foreground/50 animate-pulse delay-150" />
-                      <div className="h-1.5 w-1.5 rounded-full bg-foreground/50 animate-pulse delay-300" />
-                    </div>
-                  </div>
-                )}
-                
-                <div ref={messagesEndRef} />
-              </div>
-            )}
-          </div>
-          
-          <div 
-            className="sticky bottom-6 flex justify-center"
-            style={{ 
-              opacity: buttonOpacity,
-              transition: 'opacity 0.3s ease-in-out',
-              visibility: showScrollButton ? 'visible' : 'hidden'
-            }}
-          >
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm hover:bg-background"
-              onClick={handleScrollButtonClick}
+    <div className="flex h-screen">
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <SiteHeader 
+          threadId={threadId} 
+          onViewFiles={() => setFileViewerOpen(true)} 
+          onToggleSidePanel={toggleSidePanel}
+        />
+        <div className="flex flex-1 overflow-hidden">
+          <div className="flex-1 flex flex-col relative overflow-hidden">
+            <div 
+              ref={messagesContainerRef}
+              className="flex-1 overflow-y-auto px-6 py-4 pb-[5.5rem]"
+              onScroll={handleScroll}
             >
-              <ArrowDown className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
+              <div className="mx-auto max-w-3xl">
+                {messages.length === 0 && !streamContent ? (
+                  <div className="flex h-full items-center justify-center">
+                    <div className="flex flex-col items-center gap-1 text-center">
+                      <p className="text-sm text-muted-foreground">Send a message to start the conversation.</p>
+                      <p className="text-xs text-muted-foreground/60">The AI agent will respond automatically.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {messages.map((message, index) => (
+                      <div 
+                        key={index} 
+                        ref={index === messages.length - 1 && message.role === 'assistant' ? latestMessageRef : null}
+                        className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                      >
+                        <div 
+                          className={`max-w-[85%] rounded-lg px-4 py-3 text-sm ${
+                            message.role === 'user' 
+                              ? 'bg-primary text-primary-foreground' 
+                              : 'bg-muted'
+                          }`}
+                        >
+                          <div className="whitespace-pre-wrap break-words">
+                            {message.type === 'tool_call' ? (
+                              <div className="font-mono text-xs">
+                                <div className="flex items-center gap-2 mb-1 text-muted-foreground">
+                                  <div className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10">
+                                    <div className="h-2 w-2 rounded-full bg-primary"></div>
+                                  </div>
+                                  <span>Tool: {message.name}</span>
+                                </div>
+                                <div className="mt-1 p-3 bg-secondary/20 rounded-md overflow-x-auto">
+                                  {message.arguments}
+                                </div>
+                              </div>
+                            ) : message.role === 'tool' ? (
+                              <div className="font-mono text-xs">
+                                <div className="flex items-center gap-2 mb-1 text-muted-foreground">
+                                  <div className="flex h-4 w-4 items-center justify-center rounded-full bg-success/10">
+                                    <div className="h-2 w-2 rounded-full bg-success"></div>
+                                  </div>
+                                  <span>Tool Result: {message.name}</span>
+                                </div>
+                                <div className="mt-1 p-3 bg-success/5 rounded-md">
+                                  {message.content}
+                                </div>
+                              </div>
+                            ) : (
+                              message.content
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    
+                    {streamContent && (
+                      <div 
+                        ref={latestMessageRef}
+                        className="flex justify-start"
+                      >
+                        <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3 text-sm">
+                          <div className="whitespace-pre-wrap break-words">
+                            {toolCallData ? (
+                              <div className="font-mono text-xs">
+                                <div className="flex items-center gap-2 mb-1 text-muted-foreground">
+                                  <div className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10">
+                                    <div className="h-2 w-2 rounded-full bg-primary animate-pulse"></div>
+                                  </div>
+                                  <span>Tool: {toolCallData.name}</span>
+                                </div>
+                                <div className="mt-1 p-3 bg-secondary/20 rounded-md overflow-x-auto">
+                                  {toolCallData.arguments || ''}
+                                </div>
+                              </div>
+                            ) : (
+                              streamContent
+                            )}
+                            {isStreaming && (
+                              <span className="inline-flex items-center ml-0.5">
+                                <span 
+                                  className="inline-block h-4 w-0.5 bg-foreground/50 mx-px"
+                                  style={{ 
+                                    opacity: 0.7,
+                                    animation: 'cursorBlink 1s ease-in-out infinite',
+                                  }}
+                                />
+                                <style jsx global>{`
+                                  @keyframes cursorBlink {
+                                    0%, 100% { opacity: 1; }
+                                    50% { opacity: 0; }
+                                  }
+                                `}</style>
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {agentStatus === 'running' && !streamContent && (
+                      <div className="flex justify-start">
+                        <div className="flex items-center gap-1.5 rounded-lg bg-muted px-4 py-3">
+                          <div className="h-1.5 w-1.5 rounded-full bg-foreground/50 animate-pulse" />
+                          <div className="h-1.5 w-1.5 rounded-full bg-foreground/50 animate-pulse delay-150" />
+                          <div className="h-1.5 w-1.5 rounded-full bg-foreground/50 animate-pulse delay-300" />
+                        </div>
+                      </div>
+                    )}
+                    
+                    <div ref={messagesEndRef} />
+                  </div>
+                )}
+              </div>
+              
+              <div 
+                className="sticky bottom-6 flex justify-center"
+                style={{ 
+                  opacity: buttonOpacity,
+                  transition: 'opacity 0.3s ease-in-out',
+                  visibility: showScrollButton ? 'visible' : 'hidden'
+                }}
+              >
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-8 w-8 rounded-full bg-background/80 backdrop-blur-sm hover:bg-background"
+                  onClick={handleScrollButtonClick}
+                >
+                  <ArrowDown className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
 
-        <div className="absolute inset-x-0 bottom-0 border-t bg-background/80 backdrop-blur-sm">
-          <div className="mx-auto max-w-3xl px-6 py-4">
-            <ChatInput
-              value={newMessage}
-              onChange={setNewMessage}
-              onSubmit={handleSubmitMessage}
-              placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
-              loading={isSending}
-              disabled={isSending}
-              isAgentRunning={agentStatus === 'running'}
-              onStopAgent={handleStopAgent}
-              autoFocus={!isLoading}
-              onFileBrowse={handleOpenFileViewer}
-              sandboxId={sandboxId || undefined}
-            />
-            
-            {/* File Viewer Modal */}
-            {sandboxId && (
-              <FileViewerModal
-                open={fileViewerOpen}
-                onOpenChange={setFileViewerOpen}
-                sandboxId={sandboxId}
-              />
-            )}
+            <div className="bg-sidebar backdrop-blur-sm">
+              <div className="mx-auto max-w-3xl px-6 py-2">
+                <ChatInput
+                  value={newMessage}
+                  onChange={setNewMessage}
+                  onSubmit={handleSubmitMessage}
+                  placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
+                  loading={isSending}
+                  disabled={isSending}
+                  isAgentRunning={agentStatus === 'running'}
+                  onStopAgent={handleStopAgent}
+                  autoFocus={!isLoading}
+                  onFileBrowse={handleOpenFileViewer}
+                  sandboxId={sandboxId || undefined}
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>
+
+      <ToolCallSidePanel 
+        isOpen={isSidePanelOpen} 
+        onClose={() => setIsSidePanelOpen(false)}
+        toolCallData={toolCallData}
+      />
+
+      {sandboxId && (
+        <FileViewerModal
+          open={fileViewerOpen}
+          onOpenChange={setFileViewerOpen}
+          sandboxId={sandboxId}
+        />
+      )}
     </div>
   );
 } 

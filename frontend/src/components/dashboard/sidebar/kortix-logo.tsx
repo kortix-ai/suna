@@ -1,12 +1,10 @@
 "use client"
 
 import Image from "next/image"
-import { useSidebar } from "@/components/ui/sidebar"
 import { useTheme } from "next-themes"
 import { useEffect, useState } from "react"
 
 export function KortixLogo() {
-  const { state } = useSidebar()
   const { theme } = useTheme()
   const [mounted, setMounted] = useState(false)
   
@@ -16,7 +14,7 @@ export function KortixLogo() {
   }, [])
   
   return (
-    <div className="flex items-center">
+    <div className="flex h-6 w-6 items-center justify-center flex-shrink-0">
       <Image
         src="/kortix-symbol.svg"
         alt="Kortix"

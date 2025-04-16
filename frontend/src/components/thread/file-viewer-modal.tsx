@@ -12,11 +12,14 @@ import {
   Download,
   ChevronRight,
   Home,
-  ArrowLeft
+  ArrowLeft,
+  Save
 } from "lucide-react";
 import { listSandboxFiles, getSandboxFileContent, type FileInfo } from "@/lib/api";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 
 // Define API_URL
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
@@ -279,41 +282,33 @@ export function FileViewerModal({
 
   // Render breadcrumb navigation
   const renderBreadcrumbs = () => {
-    if (currentPath === "/workspace") {
-      return (
-        <div className="text-sm font-medium">/workspace</div>
-      );
-    }
-    
     const parts = currentPath.split('/').filter(Boolean);
     const isInWorkspace = parts[0] === 'workspace';
     const pathParts = isInWorkspace ? parts.slice(1) : parts;
     
     return (
-      <div className="flex items-center overflow-x-auto whitespace-nowrap py-1 text-sm">
+      <div className="flex items-center overflow-x-auto whitespace-nowrap text-sm gap-1">
         <Button 
           variant="ghost" 
           size="sm" 
-          className="h-6 px-2 text-xs"
+          className="h-7 px-2.5 text-sm font-medium hover:bg-accent min-w-fit"
           onClick={goHome}
         >
-          <Home className="h-3 w-3 mr-1" />
           workspace
         </Button>
         
         {pathParts.map((part, index) => {
-          // Build the path up to this part
           const pathUpToHere = isInWorkspace 
             ? `/workspace/${pathParts.slice(0, index + 1).join('/')}` 
             : `/${pathParts.slice(0, index + 1).join('/')}`;
             
           return (
-            <div key={index} className="flex items-center">
-              <ChevronRight className="h-3 w-3 mx-1 text-muted-foreground" />
+            <div key={index} className="flex items-center min-w-fit">
+              <ChevronRight className="h-4 w-4 mx-1 text-muted-foreground opacity-50" />
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 px-2 text-xs"
+                className="h-7 px-2.5 text-sm font-medium hover:bg-accent"
                 onClick={() => navigateToFolder(pathUpToHere)}
               >
                 {part}
@@ -325,13 +320,49 @@ export function FileViewerModal({
     );
   };
 
+  // Function to download file content
+  const handleDownload = async () => {
+    if (!selectedFile) return;
+    
+    try {
+      let content: string | Blob;
+      let filename = selectedFile.split('/').pop() || 'download';
+      
+      if (fileType === 'text' && fileContent) {
+        // For text files, use the text content
+        content = new Blob([fileContent], { type: 'text/plain' });
+      } else if (binaryFileUrl) {
+        // For binary files, fetch the content from the URL
+        const response = await fetch(binaryFileUrl);
+        content = await response.blob();
+      } else {
+        throw new Error('No content available for download');
+      }
+      
+      // Create download link
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      toast.success('File downloaded successfully');
+    } catch (error) {
+      console.error('Download failed:', error);
+      toast.error('Failed to download file');
+    }
+  };
+
   // Render file content based on type
   const renderFileContent = () => {
     if (isLoadingContent) {
       return (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {[1, 2, 3, 4, 5].map((i) => (
-            <Skeleton key={i} className="h-4 w-full" />
+            <Skeleton key={i} className="h-5 w-full" />
           ))}
         </div>
       );
@@ -339,17 +370,18 @@ export function FileViewerModal({
     
     if (!selectedFile) {
       return (
-        <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-          <File className="h-10 w-10 mb-2 opacity-30" />
-          <p className="text-sm">Select a file to view its contents</p>
+        <div className="flex flex-col items-center justify-center min-h-[400px] text-muted-foreground">
+          <File className="h-16 w-16 mb-4 opacity-30" />
+          <p className="text-sm font-medium">Select a file to view its contents</p>
+          <p className="text-sm text-muted-foreground mt-1">Choose a file from the sidebar to preview or edit</p>
         </div>
       );
     }
     
     if (fileType === 'text' && fileContent) {
       return (
-        <div className="flex flex-col h-full">
-          <pre className="text-xs font-mono whitespace-pre-wrap break-words overflow-auto flex-1 max-h-full">
+        <div className="w-full">
+          <pre className="text-sm font-mono whitespace-pre-wrap break-words leading-relaxed bg-muted/30 p-4 rounded-lg">
             {fileContent}
           </pre>
         </div>
@@ -358,11 +390,11 @@ export function FileViewerModal({
     
     if (fileType === 'image' && binaryFileUrl) {
       return (
-        <div className="flex flex-col items-center justify-center h-full">
+        <div className="flex flex-col items-center justify-center min-h-[400px] bg-muted/30 rounded-lg p-6">
           <img 
             src={binaryFileUrl} 
             alt={selectedFile} 
-            className="max-w-full max-h-full object-contain"
+            className="max-w-full object-contain rounded-md shadow-sm ring-1 ring-border/10" 
           />
         </div>
       );
@@ -370,80 +402,139 @@ export function FileViewerModal({
     
     if (fileType === 'pdf' && binaryFileUrl) {
       return (
-        <iframe 
-          src={binaryFileUrl} 
-          className="w-full h-full border-0" 
-          title={selectedFile}
-        />
+        <div className="w-full h-[600px]">
+          <iframe 
+            src={binaryFileUrl} 
+            className="w-full h-full border-0 rounded-lg shadow-sm bg-white ring-1 ring-border/10" 
+            title={selectedFile}
+          />
+        </div>
       );
     }
     
     if (binaryFileUrl) {
       return (
-        <div className="flex flex-col items-center justify-center h-full gap-4">
-          <File className="h-16 w-16 opacity-50" />
-          <p className="text-sm text-center">This is a binary file and cannot be previewed</p>
-          <a
-            href={binaryFileUrl}
-            download={selectedFile.split('/').pop()}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium"
+        <div className="flex flex-col items-center justify-center min-h-[400px] gap-4 bg-muted/30 rounded-lg p-8">
+          <File className="h-24 w-24 opacity-40" />
+          <div className="text-center">
+            <p className="text-sm font-medium">Binary File</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              This file cannot be previewed in the browser
+            </p>
+          </div>
+          <Button
+            size="sm"
+            className="mt-2"
+            onClick={handleDownload}
           >
-            <Download className="h-4 w-4" />
+            <Download className="h-4 w-4 mr-2" />
             Download File
-          </a>
+          </Button>
         </div>
       );
     }
     
     return (
-      <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-        <File className="h-10 w-10 mb-2 opacity-30" />
-        <p className="text-sm">No preview available</p>
+      <div className="flex flex-col items-center justify-center min-h-[400px] text-muted-foreground">
+        <File className="h-16 w-16 mb-4 opacity-30" />
+        <p className="text-sm font-medium">No preview available</p>
+        <p className="text-sm text-muted-foreground mt-1">This file type cannot be previewed</p>
       </div>
     );
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[900px] h-[80vh] max-h-[700px] flex flex-col p-0">
-        <DialogHeader className="p-4 border-b">
-          <DialogTitle>Workspace Files</DialogTitle>
+      <DialogContent className="sm:max-w-[1000px] h-[85vh] max-h-[800px] flex flex-col p-0 gap-0">
+        <DialogHeader className="px-6 py-3 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <DialogTitle className="text-lg font-semibold">Workspace Files</DialogTitle>
         </DialogHeader>
         
-        <div className="flex flex-col sm:flex-row h-full overflow-hidden">
+        <div className="flex flex-col sm:flex-row h-full overflow-hidden divide-x divide-border">
           {/* File browser sidebar */}
-          <div className="w-full sm:w-64 border-r flex flex-col h-full">
-            <div className="p-2 flex items-center justify-between border-b">
+          <div className="w-full sm:w-80 flex flex-col h-full bg-muted/5">
+            {/* Breadcrumb navigation */}
+            <div className="px-3 py-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+              {renderBreadcrumbs()}
+            </div>
+            
+            {/* File tree */}
+            <ScrollArea className="flex-1">
+              <div className="p-2 space-y-0.5">
+                {isLoadingFiles ? (
+                  <div className="p-4 space-y-2">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <Skeleton key={i} className="h-9 w-full" />
+                    ))}
+                  </div>
+                ) : workspaceFiles.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-[300px] text-muted-foreground p-6">
+                    <Folder className="h-12 w-12 mb-4 opacity-40" />
+                    <p className="text-sm font-medium text-center">This folder is empty</p>
+                    <p className="text-sm text-center text-muted-foreground mt-1">Upload files or create new ones to get started</p>
+                  </div>
+                ) : (
+                  workspaceFiles.map((file, index) => (
+                    <Button
+                      key={file.path}
+                      variant={selectedFile === file.path ? "secondary" : "ghost"}
+                      size="sm"
+                      className={`w-full justify-start h-9 text-sm font-normal transition-colors ${
+                        selectedFile === file.path 
+                          ? "bg-accent/50 hover:bg-accent/60" 
+                          : "hover:bg-accent/30"
+                      }`}
+                      onClick={() => handleFileClick(file)}
+                    >
+                      {file.is_dir ? (
+                        selectedFile === file.path ? (
+                          <FolderOpen className="h-4 w-4 mr-2 flex-shrink-0 text-foreground" />
+                        ) : (
+                          <Folder className="h-4 w-4 mr-2 flex-shrink-0 text-muted-foreground" />
+                        )
+                      ) : (
+                        <File className="h-4 w-4 mr-2 flex-shrink-0 text-muted-foreground" />
+                      )}
+                      <span className="truncate">{file.name}</span>
+                    </Button>
+                  ))
+                )}
+              </div>
+            </ScrollArea>
+
+            {/* Navigation controls */}
+            <div className="px-2 py-2 border-t bg-muted/5 flex items-center justify-between">
               <div className="flex items-center gap-1">
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7"
+                  className="h-8 w-8 hover:bg-accent"
                   onClick={goBack}
                   disabled={historyIndex === 0}
                   title="Go back"
                 >
-                  <ArrowLeft className="h-3.5 w-3.5" />
+                  <ArrowLeft className="h-4 w-4" />
                 </Button>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7"
+                  className="h-8 w-8 hover:bg-accent"
                   onClick={goHome}
                   title="Home directory"
                 >
-                  <Home className="h-3.5 w-3.5" />
+                  <Home className="h-4 w-4" />
                 </Button>
               </div>
-              <div className="flex gap-1">
+              
+              <div>
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7"
+                  className="h-8 w-8 hover:bg-accent"
                   onClick={handleFileUpload}
                   title="Upload file"
                 >
-                  <Upload className="h-3.5 w-3.5" />
+                  <Upload className="h-4 w-4" />
                 </Button>
                 <input
                   type="file"
@@ -453,69 +544,42 @@ export function FileViewerModal({
                 />
               </div>
             </div>
-            
-            <div className="px-2 py-1 border-b">
-              {renderBreadcrumbs()}
-            </div>
-            
-            <div className="flex-1 overflow-y-auto">
-              {isLoadingFiles ? (
-                <div className="p-4 space-y-2">
-                  {[1, 2, 3, 4, 5].map((i) => (
-                    <Skeleton key={i} className="h-6 w-full" />
-                  ))}
-                </div>
-              ) : workspaceFiles.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-muted-foreground p-4">
-                  <Folder className="h-8 w-8 mb-2 opacity-50" />
-                  <p className="text-xs text-center">This folder is empty</p>
-                </div>
-              ) : (
-                <div className="p-1">
-                  {workspaceFiles.map((file) => (
-                    <Button
-                      key={file.path}
-                      variant={selectedFile === file.path ? "secondary" : "ghost"}
-                      size="sm"
-                      className="w-full justify-start h-8 mb-1 text-xs"
-                      onClick={() => handleFileClick(file)}
-                    >
-                      {file.is_dir ? (
-                        <Folder className="h-3.5 w-3.5 mr-2 flex-shrink-0" />
-                      ) : (
-                        <File className="h-3.5 w-3.5 mr-2 flex-shrink-0" />
-                      )}
-                      <span className="truncate">{file.name}</span>
-                    </Button>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
           
           {/* File content pane */}
-          <div className="flex-1 flex flex-col h-full overflow-hidden">
-            <div className="flex items-center justify-between border-b p-2">
-              <h3 className="text-sm font-medium truncate">
-                {selectedFile ? selectedFile.split('/').pop() : 'Select a file to view'}
-              </h3>
-              {selectedFile && binaryFileUrl && (
-                <div className="flex gap-1">
-                  <a
-                    href={binaryFileUrl}
-                    download={selectedFile.split('/').pop()}
-                    className="inline-flex items-center justify-center h-8 w-8 rounded-md text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
-                    title="Download file"
-                  >
-                    <Download className="h-4 w-4" />
-                  </a>
-                </div>
+          <div className="w-full flex-1 flex flex-col h-full bg-muted/5">
+            {/* File header */}
+            <div className="px-3 py-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <File className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-sm font-medium truncate">
+                  {selectedFile ? selectedFile.split('/').pop() : 'Select a file to view'}
+                </h3>
+              </div>
+              {selectedFile && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 px-3 gap-2"
+                  onClick={handleDownload}
+                >
+                  <Download className="h-4 w-4" />
+                  Download
+                </Button>
               )}
             </div>
             
-            <div className="flex-1 overflow-auto p-4 bg-muted/30">
-              {renderFileContent()}
+            {/* File content */}
+            <div className="flex-1 overflow-hidden">
+              <ScrollArea className="h-full">
+                <div className="p-4">
+                  {renderFileContent()}
+                </div>
+              </ScrollArea>
             </div>
+
+            {/* Empty footer to match left side height */}
+            <div className="px-2 py-2 border-t bg-muted/5 h-[44px]" />
           </div>
         </div>
       </DialogContent>
