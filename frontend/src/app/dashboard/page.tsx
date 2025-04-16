@@ -4,7 +4,7 @@ import React, { useState, Suspense } from 'react';
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRouter } from 'next/navigation';
 import { ChatInput } from '@/components/thread/chat-input';
-import { createProject, addUserMessage, startAgent, createThread } from "@/lib/api";
+import { createProject, addUserMessage, startAgent, createThread, generateThreadName } from "@/lib/api";
 
 function DashboardContent() {
   const [inputValue, setInputValue] = useState("");
@@ -17,11 +17,12 @@ function DashboardContent() {
     setIsSubmitting(true);
     
     try {
-      // 1. Create a new project with the message as the name
+      // Generate a name for the project using GPT
+      const projectName = await generateThreadName(message);
+      
+      // 1. Create a new project with the GPT-generated name
       const newAgent = await createProject({
-        name: message.trim().length > 50 
-          ? message.trim().substring(0, 47) + "..." 
-          : message.trim(),
+        name: projectName,
         description: "",
       });
       

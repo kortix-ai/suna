@@ -51,6 +51,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const [streamContent, setStreamContent] = useState('');
   const [toolCallData, setToolCallData] = useState<{id?: string, name?: string, arguments?: string, index?: number} | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState<string>('Project');
   
   const streamCleanupRef = useRef<(() => void) | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
@@ -67,6 +68,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const [sandboxId, setSandboxId] = useState<string | null>(null);
   const [fileViewerOpen, setFileViewerOpen] = useState(false);
   const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
+  const initialLayoutAppliedRef = useRef(false);
 
   // Access the state and controls for the main SidebarLeft
   const { state: leftSidebarState, setOpen: setLeftSidebarOpen } = useSidebar();
@@ -90,6 +92,19 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
       setIsSidePanelOpen(false);
     }
   }, [leftSidebarState, isSidePanelOpen]);
+
+  // Auto-close left sidebar and open tool call side panel on page load
+  useEffect(() => {
+    // Only apply the initial layout once and only on first mount
+    if (!initialLayoutAppliedRef.current) {
+      // Close the left sidebar when page loads
+      setLeftSidebarOpen(false);
+      
+      // Mark that we've applied the initial layout
+      initialLayoutAppliedRef.current = true;
+    }
+    // Empty dependency array ensures this only runs once on mount
+  }, []);
 
   // Effect for CMD+I keyboard shortcut
   useEffect(() => {
@@ -304,6 +319,11 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
           if (isMounted && projectData && projectData.sandbox) {
             // Extract the sandbox ID correctly
             setSandboxId(typeof projectData.sandbox === 'string' ? projectData.sandbox : projectData.sandbox.id);
+            
+            // Set project name from project data
+            if (projectData.name) {
+              setProjectName(projectData.name);
+            }
             
             // Load messages only if not already loaded
             if (!messagesLoadedRef.current) {
@@ -684,6 +704,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         <div className="flex-1 flex flex-col overflow-hidden">
           <SiteHeader 
             threadId={threadId} 
+            projectName={projectName}
             onViewFiles={() => setFileViewerOpen(true)} 
             onToggleSidePanel={toggleSidePanel}
           />
@@ -731,6 +752,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         <div className="flex-1 flex flex-col overflow-hidden">
           <SiteHeader 
             threadId={threadId} 
+            projectName={projectName}
             onViewFiles={() => setFileViewerOpen(true)} 
             onToggleSidePanel={toggleSidePanel}
           />
@@ -758,6 +780,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
       <div className="flex-1 flex flex-col overflow-hidden">
         <SiteHeader 
           threadId={threadId} 
+          projectName={projectName}
           onViewFiles={() => setFileViewerOpen(true)} 
           onToggleSidePanel={toggleSidePanel}
         />

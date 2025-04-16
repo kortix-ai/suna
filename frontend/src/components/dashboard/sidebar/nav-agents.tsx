@@ -36,6 +36,14 @@ import {
 import { getProjects, getThreads } from "@/lib/api"
 import Link from "next/link"
 
+// Define a type to handle potential database schema/API response differences
+type ProjectResponse = {
+  id: string;
+  project_id?: string;
+  name: string;
+  [key: string]: any; // Allow other properties
+}
+
 export function NavAgents() {
   const { isMobile, state } = useSidebar()
   const [agents, setAgents] = useState<{name: string, url: string}[]>([])
@@ -45,23 +53,38 @@ export function NavAgents() {
   useEffect(() => {
     async function loadAgents() {
       try {
-        const projectsData = await getProjects()
-        const agentsList = []
-        const seenThreadIds = new Set() // Track unique thread IDs
+        // Get all projects
+        const projectsData = await getProjects() as ProjectResponse[]
+        console.log("Projects data:", projectsData)
         
+        const agentsList = []
+        
+        // Get all threads at once
+        const allThreads = await getThreads() 
+        console.log("All threads:", allThreads)
+        
+        // For each project, find its matching threads
         for (const project of projectsData) {
-          const threads = await getThreads(project.id)
-          if (threads && threads.length > 0) {
-            // For each thread in the project, create an agent entry
-            for (const thread of threads) {
-              // Only add if we haven't seen this thread ID before
-              if (!seenThreadIds.has(thread.thread_id)) {
-                seenThreadIds.add(thread.thread_id)
-                agentsList.push({
-                  name: `${project.name} - ${thread.thread_id.slice(0, 4)}`,
-                  url: `/dashboard/agents/${thread.thread_id}`
-                })
-              }
+          console.log("Processing project:", project)
+          
+          // Get the project ID (handle potential different field names)
+          const projectId = project.id || project.project_id
+          
+          // Match threads that belong to this project
+          const projectThreads = allThreads.filter(thread => 
+            thread.project_id === projectId
+          )
+          
+          console.log(`Found ${projectThreads.length} threads for project ${project.name}:`, projectThreads)
+          
+          if (projectThreads.length > 0) {
+            // For each thread in this project, create an agent entry
+            for (const thread of projectThreads) {
+              agentsList.push({
+                name: project.name || 'Unnamed Project',
+                url: `/dashboard/agents/${thread.thread_id}`
+              })
+              console.log(`Added agent with name: ${project.name} and thread: ${thread.thread_id}`)
             }
           }
         }

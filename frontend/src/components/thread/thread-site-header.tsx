@@ -13,11 +13,12 @@ import {
 
 interface ThreadSiteHeaderProps {
   threadId: string
+  projectName: string
   onViewFiles: () => void
   onToggleSidePanel: () => void
 }
 
-export function SiteHeader({ threadId, onViewFiles, onToggleSidePanel }: ThreadSiteHeaderProps) {
+export function SiteHeader({ threadId, projectName, onViewFiles, onToggleSidePanel }: ThreadSiteHeaderProps) {
   const pathname = usePathname()
   
   const copyCurrentUrl = () => {
@@ -29,11 +30,9 @@ export function SiteHeader({ threadId, onViewFiles, onToggleSidePanel }: ThreadS
   return (
     <header className="bg-background sticky top-0 flex h-14 shrink-0 items-center gap-2 z-20 border-b w-full">
       <div className="flex flex-1 items-center gap-2 px-3">
-        {/* SidebarTrigger will be moved to SidebarLeft */}
-      </div>
-      
-      <div className="absolute left-1/2 -translate-x-1/2 text-sm font-medium tracking-wide uppercase text-muted-foreground">
-        Thread {threadId}
+        <div className="text-sm font-medium tracking-wide uppercase text-muted-foreground">
+          {projectName}
+        </div>
       </div>
       
       <div className="flex items-center gap-1 pr-4">

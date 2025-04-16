@@ -85,7 +85,7 @@ class MessageTool(Tool):
         "type": "function",
         "function": {
             "name": "inform",
-            "description": "Inform the user about progress, completion of a major step, or important context. Use this tool: 1) To provide updates between major sections of work, 2) After accomplishing significant milestones, 3) When transitioning to a new phase of work, 4) To confirm actions were completed successfully, 5) To provide context about upcoming steps. IMPORTANT: Use sparingly - only for meaningful updates, not routine actions. This does not require user response and allows continued execution.",
+            "description": "Inform the user about progress, completion of a major step, or important context. Use this tool: 1) To provide updates between major sections of work, 2) After accomplishing significant milestones, 3) When transitioning to a new phase of work, 4) To confirm actions were completed successfully, 5) To provide context about upcoming steps. IMPORTANT: Use sparingly - only for meaningful updates, not routine actions. This does not allow user response and allows continued execution.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -112,7 +112,7 @@ class MessageTool(Tool):
             {"param_name": "attachments", "node_type": "attribute", "path": ".", "required": False}
         ],
         example='''
-        <!-- Use inform for meaningful progress updates -->
+        <!-- Use inform for meaningful progress updates, you can not get user response with this tool. -->
         <!-- Examples of when to use inform: -->
         <!-- 1. Completing major milestones -->
         <!-- 2. Transitioning between work phases -->
