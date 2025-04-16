@@ -59,7 +59,7 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
             'sandbox': {
                 'id': sandbox_id,
                 'pass': sandbox_pass,
-                'vnc_preview': sandbox.get_preview_link(6080)
+                'vnc_preview': str(sandbox.get_preview_link(6080))
             }
         }).eq('project_id', project_id).execute()
     
