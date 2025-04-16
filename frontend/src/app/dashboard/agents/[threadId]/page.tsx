@@ -13,6 +13,9 @@ import { BillingErrorAlert } from "@/components/billing/BillingErrorAlert";
 import { useBillingError } from "@/hooks/useBillingError";
 import { MessageList } from "@/components/thread/message-list";
 import { ChatInput } from "@/components/thread/chat-input";
+import { ToolCallsSidebar } from "@/components/thread/tool-calls-sidebar";
+import { useToolsPanel } from "@/hooks/use-tools-panel";
+import { cn } from "@/lib/utils";
 
 interface AgentPageProps {
   params: {
@@ -256,6 +259,7 @@ export default function AgentPage({ params }: AgentPageProps) {
   const searchParams = useSearchParams();
   const initialMessage = searchParams.get('message');
   const streamCleanupRef = useRef<(() => void) | null>(null);
+  const { showPanel } = useToolsPanel();
   
   // State
   const [agent, setAgent] = useState<Project | null>(null);
@@ -817,18 +821,24 @@ export default function AgentPage({ params }: AgentPageProps) {
   }
   
   return (
-    <ChatContainer
-      messages={messages}
-      streamContent={streamContent}
-      isStreaming={isStreaming}
-      isAgentRunning={isAgentRunning}
-      agent={agent}
-      onSendMessage={handleSendMessage}
-      isSending={isSending}
-      conversation={conversation}
-      onStopAgent={handleStopAgent}
-      userMessage={userMessage}
-      setUserMessage={setUserMessage}
-    />
+    <div className={cn(
+      "transition-all duration-300",
+      showPanel && "pr-[400px]"
+    )}>
+      <ToolCallsSidebar />
+      <ChatContainer
+        messages={messages}
+        streamContent={streamContent}
+        isStreaming={isStreaming}
+        isAgentRunning={isAgentRunning}
+        agent={agent}
+        onSendMessage={handleSendMessage}
+        isSending={isSending}
+        conversation={conversation}
+        onStopAgent={handleStopAgent}
+        userMessage={userMessage}
+        setUserMessage={setUserMessage}
+      />
+    </div>
   );
 }

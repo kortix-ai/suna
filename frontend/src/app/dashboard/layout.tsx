@@ -11,6 +11,7 @@ import {
   BreadcrumbPage,
 } from "@/components/ui/breadcrumb"
 import { Separator } from "@/components/ui/separator"
+import { SidebarRight } from "@/components/dashboard/sidebar/sidebar-right"
 
 interface DashboardLayoutProps {
   children: React.ReactNode
