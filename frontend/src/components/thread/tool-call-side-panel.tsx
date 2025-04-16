@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { X, Package, Info } from "lucide-react"; // Added Info icon
+import { X, Package, Info } from "lucide-react"; 
 
 // Define the structure for tool call data based on page.tsx state
 interface ToolCallData {
