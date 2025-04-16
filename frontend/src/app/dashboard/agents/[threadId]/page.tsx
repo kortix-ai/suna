@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { ArrowDown, File, Terminal, ExternalLink, SkipBack, SkipForward } from 'lucide-react';
-import { addUserMessage, getMessages, startAgent, stopAgent, getAgentStatus, streamAgent, getAgentRuns, getProject, getThread } from '@/lib/api';
+import { ArrowDown, File, Terminal, ExternalLink, User, CheckCircle, CircleDashed } from 'lucide-react';
+import { addUserMessage, getMessages, startAgent, stopAgent, getAgentStatus, streamAgent, getAgentRuns, getProject, getThread, updateProject } from '@/lib/api';
 import { toast } from 'sonner';
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChatInput } from '@/components/thread/chat-input';
@@ -53,6 +54,8 @@ function isToolSequence(item: RenderItem): item is ToolSequence {
 function groupMessages(messages: ApiMessage[]): RenderItem[] {
   const grouped: RenderItem[] = [];
   let i = 0;
+  const excludedTags = ['ask', 'inform']; // Tags to exclude from grouping
+
   while (i < messages.length) {
     const currentMsg = messages[i];
     const nextMsg = i + 1 < messages.length ? messages[i + 1] : null;
@@ -65,6 +68,14 @@ function groupMessages(messages: ApiMessage[]): RenderItem[] {
       const toolTagMatch = currentMsg.content?.match(/<([a-zA-Z\-_]+)(?:\s+[^>]*)?>/);
       if (toolTagMatch && nextMsg && nextMsg.role === 'user') {
         const expectedTag = toolTagMatch[1];
+        // *** Check if the tag is excluded ***
+        if (excludedTags.includes(expectedTag)) {
+          // If excluded, treat as a normal message and break potential sequence start
+          grouped.push(currentMsg);
+          i++;
+          continue;
+        }
+
         // Regex to check for <tool_result><tagname>...</tagname></tool_result>
         // Using 's' flag for dotall to handle multiline content within tags -> Replaced with [\s\S] to avoid ES target issues
         const toolResultRegex = new RegExp(`^<tool_result>\\s*<(${expectedTag})(?:\\s+[^>]*)?>[\\s\\S]*?</\\1>\\s*</tool_result>`);
@@ -84,6 +95,12 @@ function groupMessages(messages: ApiMessage[]): RenderItem[] {
               const nextToolTagMatch = potentialAssistant.content?.match(/<([a-zA-Z\-_]+)(?:\s+[^>]*)?>/);
               if (nextToolTagMatch && potentialUser && potentialUser.role === 'user') {
                 const nextExpectedTag = nextToolTagMatch[1];
+                // *** Check if the continuation tag is excluded ***
+                if (excludedTags.includes(nextExpectedTag)) {
+                  // If excluded, break the sequence
+                  break;
+                }
+
                 // Replaced dotall 's' flag with [\s\S]
                 const nextToolResultRegex = new RegExp(`^<tool_result>\\s*<(${nextExpectedTag})(?:\\s+[^>]*)?>[\\s\\S]*?</\\1>\\s*</tool_result>`);
 
@@ -165,6 +182,11 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   // Handler to toggle the right side panel (ToolCallSidePanel)
   const toggleSidePanel = useCallback(() => {
     setIsSidePanelOpen(prevIsOpen => !prevIsOpen);
+  }, []);
+
+  // Function to handle project renaming from SiteHeader
+  const handleProjectRenamed = useCallback((newName: string) => {
+    setProjectName(newName);
   }, []);
 
   // Effect to enforce exclusivity: Close left sidebar if right panel opens
@@ -712,18 +734,6 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     return () => window.removeEventListener('resize', adjustHeight);
   }, [newMessage]);
 
-  // // Handle keyboard shortcuts
-  // const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-  //   // Send on Enter (without Shift)
-  //   if (e.key === 'Enter' && !e.shiftKey) {
-  //     e.preventDefault();
-      
-  //     if (newMessage.trim() && !isSending && agentStatus !== 'running') {
-  //       handleSubmitMessage(newMessage);
-  //     }
-  //   }
-  // };
-
   // Check if user has scrolled up from bottom
   const handleScroll = () => {
     if (!messagesContainerRef.current) return;
@@ -908,6 +918,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
           <SiteHeader 
             threadId={threadId} 
             projectName={projectName}
+            projectId={projectId}
             onViewFiles={() => setFileViewerOpen(true)} 
             onToggleSidePanel={toggleSidePanel}
           />
@@ -959,6 +970,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
           <SiteHeader 
             threadId={threadId} 
             projectName={projectName}
+            projectId={projectId}
             onViewFiles={() => setFileViewerOpen(true)} 
             onToggleSidePanel={toggleSidePanel}
           />
@@ -990,8 +1002,10 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         <SiteHeader 
           threadId={threadId} 
           projectName={projectName}
+          projectId={projectId}
           onViewFiles={() => setFileViewerOpen(true)} 
           onToggleSidePanel={toggleSidePanel}
+          onProjectRenamed={handleProjectRenamed}
         />
         <div className="flex flex-1 overflow-hidden">
           <div className="flex-1 flex flex-col relative overflow-hidden">
@@ -1009,7 +1023,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                     </div>
                   </div>
                 ) : (
-                  <div className="space-y-4">
+                  <div className="space-y-6">
                     {/* Map over processed messages */}
                     {processedMessages.map((item, index) => {
                       // ---- Rendering Logic for Tool Sequences ----
@@ -1017,7 +1031,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                         // Group sequence items into pairs of [assistant, user]
                         const pairs: { assistantCall: ApiMessage, userResult: ApiMessage }[] = [];
                         for (let i = 0; i < item.items.length; i += 2) {
-                          if (item.items[i+1]) { // Ensure pair exists
+                          if (item.items[i+1]) {
                             pairs.push({ assistantCall: item.items[i], userResult: item.items[i+1] });
                           }
                         }
@@ -1026,69 +1040,84 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                           <div
                             key={`seq-${index}`}
                             ref={index === processedMessages.length - 1 ? latestMessageRef : null}
-                            className="border-l-2 border-blue-500 pl-4 ml-2 my-2 relative group"
+                            className="relative group pl-10"
                           >
-                            {/* "Kortix Suna" label */}
-                            <span className="absolute -left-px top-1 -translate-x-full bg-blue-100 text-blue-700 text-xs font-semibold px-1.5 py-0.5 rounded z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                            {/* Left border for the sequence */}
+                            <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-blue-500/50" aria-hidden="true"></div>
+
+                            {/* Kortix Suna Label (Hover) */}
+                            <span className="absolute left-0 top-1 -translate-x-full bg-blue-100 text-blue-700 text-xs font-semibold px-1.5 py-0.5 rounded z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
                               Kortix Suna
                             </span>
-                            <div className="space-y-1"> {/* Tighter spacing for previews */}
+
+                            {/* Render Avatar & Name ONCE for the sequence */}
+                            <div className="absolute left-0 top-0 -translate-x-1/2 transform -translate-y-0 "> {/* Position avatar centered on the line */}
+                              <div className="flex-shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden border bg-background">
+                                <Image src="/kortix-symbol.svg" alt="Suna Logo" width={20} height={20} className="object-contain" />
+                              </div>
+                            </div>
+                            <div className="mb-1 ml-[-2.5rem]"> {/* Adjust margin to align name */}
+                               <span className="text-xs font-semibold">Suna</span>
+                            </div>
+
+                            {/* Container for the pairs within the sequence */}
+                            <div className="space-y-3">
                               {pairs.map((pair, pairIndex) => {
                                 // Parse assistant message content
                                 const assistantContent = pair.assistantCall.content || '';
                                 const xmlRegex = /<([a-zA-Z\-_]+)(?:\s+[^>]*)?>[\s\S]*?<\/\1>/;
                                 const xmlMatch = assistantContent.match(xmlRegex);
                                 const toolName = xmlMatch ? xmlMatch[1] : 'Tool';
-                                const preContent = xmlMatch ? assistantContent.substring(0, xmlMatch.index) : assistantContent;
-                                const postContent = xmlMatch ? assistantContent.substring(xmlMatch.index + xmlMatch[0].length) : '';
+                                const preContent = xmlMatch ? assistantContent.substring(0, xmlMatch.index).trim() : assistantContent.trim();
+                                const postContent = xmlMatch ? assistantContent.substring(xmlMatch.index + xmlMatch[0].length).trim() : '';
+                                const userResultName = pair.userResult.content?.match(/<tool_result>\s*<([a-zA-Z\-_]+)/)?.[1] || 'Result';
 
                                 return (
-                                  <div
-                                    key={`${index}-pair-${pairIndex}`}
-                                    // Render assistant's natural language + tool button + user result button
-                                    className="flex flex-col items-start space-y-1" // Arrange vertically
-                                  >
-                                    {/* Render pre-XML content if it exists */}
-                                    {preContent.trim() && (
-                                      <div className="max-w-[85%] rounded-lg px-3 py-2 text-sm bg-muted">
-                                        <div className="whitespace-pre-wrap break-words">
-                                          {preContent.trim()}
+                                  <div key={`${index}-pair-${pairIndex}`} className="space-y-2">
+                                    {/* Assistant Content (No Avatar/Name here) */}
+                                    <div className="flex flex-col items-start space-y-2 flex-1">
+                                      {/* Pre-XML Content */}
+                                      {preContent && (
+                                        <div className="w-full rounded-lg bg-muted p-3 text-sm">
+                                          <div className="whitespace-pre-wrap break-words">
+                                            {preContent}
+                                          </div>
                                         </div>
-                                      </div>
-                                    )}
+                                      )}
 
-                                    {/* Render the clickable preview button for the tool */}
-                                    {xmlMatch && (
-                                      <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="h-auto py-1.5 px-3 text-xs w-full sm:w-auto justify-start bg-muted hover:bg-muted/90 border-muted-foreground/20"
-                                        onClick={() => handleHistoricalToolClick(pair)}
-                                      >
-                                        <Terminal className="h-3 w-3 mr-1.5 flex-shrink-0" />
-                                        <span className="font-mono truncate mr-2">{toolName}</span>
-                                        <span className="ml-auto text-muted-foreground/70 flex items-center">
-                                          View Details <ExternalLink className="h-3 w-3 ml-1" />
-                                        </span>
-                                      </Button>
-                                    )}
+                                      {/* Tool Call Button */}
+                                      {xmlMatch && (
+                                        <Button
+                                          variant="outline"
+                                          size="sm"
+                                          className="h-auto py-1.5 px-3 text-xs w-full sm:w-auto justify-start bg-background hover:bg-muted/50 border-muted-foreground/20 shadow-sm"
+                                          onClick={() => handleHistoricalToolClick(pair)}
+                                        >
+                                          <Terminal className="h-3 w-3 mr-1.5 flex-shrink-0" />
+                                          <span className="font-mono truncate mr-2">{toolName}</span>
+                                          <span className="ml-auto text-muted-foreground/70 flex items-center">
+                                            View Details <ExternalLink className="h-3 w-3 ml-1" />
+                                          </span>
+                                        </Button>
+                                      )}
 
-                                    {/* Render post-XML content if it exists (less common) */}
-                                    {postContent.trim() && (
-                                      <div className="max-w-[85%] rounded-lg px-3 py-2 text-sm bg-muted">
-                                        <div className="whitespace-pre-wrap break-words">
-                                          {postContent.trim()}
+                                      {/* Post-XML Content (Less Common) */}
+                                      {postContent && (
+                                        <div className="w-full rounded-lg bg-muted p-3 text-sm">
+                                          <div className="whitespace-pre-wrap break-words">
+                                            {postContent}
+                                          </div>
                                         </div>
-                                      </div>
-                                    )}
+                                      )}
+                                    </div>
 
-                                    {/* Render user result button (or preview) - Currently simplified */}
-                                    {/* You might want a similar button style for consistency */}
-                                    <div className="flex justify-end w-full">
-                                      <div className="max-w-[85%] rounded-lg px-3 py-2 text-sm bg-green-100 text-green-900 font-mono text-xs">
-                                         Tool Result: {pair.userResult.content?.match(/<tool_result>\s*<([a-zA-Z\-_]+)/)?.[1] || 'Result'} (Click button above)
-                                         {/* Alternative: Make this a button too? */}
-                                         {/* <Button variant="outline" size="sm" ... onClick={() => handleHistoricalToolClick(pair)}> ... </Button> */}
+                                    {/* User Tool Result Part */}
+                                    <div className="flex justify-start">
+                                      <div className="flex items-center gap-2 rounded-md bg-green-100/60 border border-green-200/80 px-2.5 py-1 text-xs font-mono text-green-900 shadow-sm">
+                                        <CheckCircle className="h-3.5 w-3.5 flex-shrink-0 text-green-600" />
+                                        <span>{userResultName} Result Received</span>
+                                        {/* Optional: Add a button to show result details here too? */}
+                                        {/* <Button variant="ghost" size="xs" onClick={() => handleHistoricalToolClick(pair)}>(details)</Button> */}
                                       </div>
                                     </div>
                                   </div>
@@ -1101,122 +1130,136 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                       // ---- Rendering Logic for Regular Messages ----
                       else {
                         const message = item as ApiMessage; // Safe cast now due to type guard
-                        // Skip rendering standard tool role messages if they were part of a sequence handled above
-                        // Note: This check might be redundant if grouping is perfect, but adds safety.
                         // We rely on the existing rendering for *structured* tool calls/results (message.type === 'tool_call', message.role === 'tool')
                         // which are populated differently (likely via streaming updates) than the raw XML content.
 
                         return (
                           <div
                             key={index} // Use the index from processedMessages
-                            ref={index === processedMessages.length - 1 && message.role === 'assistant' ? latestMessageRef : null} // Ref on the regular message div if it's last
-                            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                            ref={index === processedMessages.length - 1 && message.role !== 'user' ? latestMessageRef : null} // Ref on the regular message div if it's last (and not user)
+                            className={`flex items-start gap-3 ${message.role === 'user' ? 'justify-end pl-12' : 'justify-start'}`}
                           >
-                            <div
-                              className={`max-w-[85%] rounded-lg px-4 py-3 text-sm ${
-                                message.role === 'user'
-                                  ? 'bg-primary text-primary-foreground'
-                                  : message.role === 'tool' // Style standard 'tool' role differently?
-                                    ? 'bg-purple-100' // Example: Different background for standard tool results
-                                    : 'bg-muted' // Default assistant or other roles
-                              }`}
-                            >
-                              <div className="whitespace-pre-wrap break-words">
-                                {/* Use existing logic for structured tool calls/results and normal messages */}
-                                {message.type === 'tool_call' && message.tool_call ? (
-                                  // Existing rendering for structured tool_call type
-                                  <div className="font-mono text-xs">
-                                    <div className="flex items-center gap-2 mb-1 text-muted-foreground">
-                                      <div className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10">
-                                        <div className="h-2 w-2 rounded-full bg-primary"></div> {/* Maybe pulse if active? */}
-                                      </div>
-                                      <span>Tool Call: {message.tool_call.function.name}</span>
-                                    </div>
-                                    <div className="mt-1 p-3 bg-secondary/20 rounded-md overflow-x-auto">
-                                      {message.tool_call.function.arguments}
+                            {/* Avatar (User = Right, Assistant/Tool = Left) */}
+                            {message.role === 'user' ? (
+                              // User bubble comes first in flex-end
+                              <>
+                                <div className="flex-1 space-y-1 flex justify-end">
+                                  {/* User message bubble */}
+                                  <div className="max-w-[85%] rounded-lg bg-primary text-primary-foreground p-3 text-sm shadow-sm">
+                                    <div className="whitespace-pre-wrap break-words">
+                                      {message.content}
                                     </div>
                                   </div>
-                                ) : message.role === 'tool' ? (
-                                  // Existing rendering for standard 'tool' role messages
-                                  <div className="font-mono text-xs">
-                                    <div className="flex items-center gap-2 mb-1 text-muted-foreground">
-                                      <div className="flex h-4 w-4 items-center justify-center rounded-full bg-success/10">
-                                        <div className="h-2 w-2 rounded-full bg-success"></div>
-                                      </div>
-                                      <span>Tool Result: {message.name || 'Unknown Tool'}</span>
-                                    </div>
-                                    <div className="mt-1 p-3 bg-success/5 rounded-md">
-                                      {/* Render content safely, handle potential objects */}
-                                      {typeof message.content === 'string' ? message.content : JSON.stringify(message.content)}
+                                </div>
+                              </>
+                            ) : (
+                              // Assistant / Tool bubble on the left
+                              <>
+                                {/* Assistant Avatar */}
+                                <div className="flex-shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden border">
+                                  <Image src="/kortix-symbol.svg" alt="Suna Logo" width={20} height={20} className="object-contain" />
+                                </div>
+                                {/* Content Bubble */}
+                                <div className="flex-1 space-y-1">
+                                  <span className="text-xs font-semibold">Suna</span>
+                                  <div className={`max-w-[85%] rounded-lg p-3 text-sm shadow-sm ${message.role === 'tool' ? 'bg-purple-100/60 border border-purple-200/80' : 'bg-muted'}`}>
+                                    <div className="whitespace-pre-wrap break-words">
+                                      {/* Use existing logic for structured tool calls/results and normal messages */}
+                                      {message.type === 'tool_call' && message.tool_call ? (
+                                        // Existing rendering for structured tool_call type
+                                        <div className="font-mono text-xs space-y-1.5">
+                                          <div className="flex items-center gap-1.5 text-muted-foreground">
+                                            <CircleDashed className="h-3.5 w-3.5 animate-spin animation-duration-2000" />
+                                            <span>Tool Call: {message.tool_call.function.name}</span>
+                                          </div>
+                                          <div className="mt-1 p-2 bg-background/50 rounded-md overflow-x-auto border">
+                                            {message.tool_call.function.arguments}
+                                          </div>
+                                        </div>
+                                      ) : message.role === 'tool' ? (
+                                        // Existing rendering for standard 'tool' role messages
+                                        <div className="font-mono text-xs space-y-1.5">
+                                          <div className="flex items-center gap-1.5 text-purple-800">
+                                            <CheckCircle className="h-3.5 w-3.5 text-purple-600" />
+                                            <span>Tool Result: {message.name || 'Unknown Tool'}</span>
+                                          </div>
+                                          <div className="mt-1 p-2 bg-background/50 rounded-md overflow-x-auto border">
+                                            {/* Render content safely, handle potential objects */}
+                                            {typeof message.content === 'string' ? message.content : JSON.stringify(message.content)}
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        // Default rendering for plain assistant messages
+                                        message.content
+                                      )}
                                     </div>
                                   </div>
-                                ) : (
-                                  // Default rendering for user messages or plain assistant messages
-                                  message.content
-                                )}
-                              </div>
-                            </div>
+                                </div>
+                              </>
+                            )}
                           </div>
                         );
                       }
                     })}
                     {/* ---- End of Message Mapping ---- */}
-
+                    
                     {streamContent && (
                       <div 
                         ref={latestMessageRef}
-                        className="flex justify-start"
+                        className="flex items-start gap-3 justify-start" // Assistant streaming style
                       >
-                        <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3 text-sm">
-                          <div className="whitespace-pre-wrap break-words">
-                            {toolCallData ? (
-                              <div className="font-mono text-xs">
-                                <div className="flex items-center gap-2 mb-1 text-muted-foreground">
-                                  <div className="flex h-4 w-4 items-center justify-center rounded-full bg-primary/10">
-                                    <div className="h-2 w-2 rounded-full bg-primary animate-pulse"></div>
+                        {/* Assistant Avatar */}
+                        <div className="flex-shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden border">
+                          <Image src="/kortix-symbol.svg" alt="Suna Logo" width={20} height={20} className="object-contain" />
+                        </div>
+                        {/* Content Bubble */}
+                        <div className="flex-1 space-y-1">
+                          <span className="text-xs font-semibold">Suna</span>
+                          <div className="max-w-[85%] rounded-lg bg-muted p-3 text-sm shadow-sm">
+                            <div className="whitespace-pre-wrap break-words">
+                              {toolCallData ? (
+                                // Streaming Tool Call
+                                <div className="font-mono text-xs space-y-1.5">
+                                  <div className="flex items-center gap-1.5 text-muted-foreground">
+                                    <CircleDashed className="h-3.5 w-3.5 animate-spin animation-duration-2000" />
+                                    <span>Tool Call: {toolCallData.name}</span>
                                   </div>
-                                  <span>Tool: {toolCallData.name}</span>
+                                  <div className="mt-1 p-2 bg-background/50 rounded-md overflow-x-auto border">
+                                    {toolCallData.arguments || ''}
+                                  </div>
                                 </div>
-                                <div className="mt-1 p-3 bg-secondary/20 rounded-md overflow-x-auto">
-                                  {toolCallData.arguments || ''}
-                                </div>
-                              </div>
-                            ) : (
-                              streamContent
-                            )}
-                            {isStreaming && (
-                              <span className="inline-flex items-center ml-0.5">
-                                <span 
-                                  className="inline-block h-4 w-0.5 bg-foreground/50 mx-px"
-                                  style={{ 
-                                    opacity: 0.7,
-                                    animation: 'cursorBlink 1s ease-in-out infinite',
-                                  }}
-                                />
-                                <style jsx global>{`
-                                  @keyframes cursorBlink {
-                                    0%, 100% { opacity: 1; }
-                                    50% { opacity: 0; }
-                                  }
-                                `}</style>
-                              </span>
-                            )}
+                              ) : (
+                                // Streaming Text Content
+                                streamContent
+                              )}
+                              {/* Blinking Cursor */}
+                              {isStreaming && (
+                                <span className="inline-block h-4 w-0.5 bg-foreground/50 ml-0.5 -mb-1 animate-pulse" />
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
                     )}
                     
-                    {agentStatus === 'running' && !streamContent && (
-                      <div className="flex justify-start">
-                        <div className="flex items-center gap-1.5 rounded-lg bg-muted px-4 py-3">
-                          <div className="h-1.5 w-1.5 rounded-full bg-foreground/50 animate-pulse" />
-                          <div className="h-1.5 w-1.5 rounded-full bg-foreground/50 animate-pulse delay-150" />
-                          <div className="h-1.5 w-1.5 rounded-full bg-foreground/50 animate-pulse delay-300" />
+                    {/* Loading indicator (three dots) */}
+                    {agentStatus === 'running' && !streamContent && !toolCallData && (
+                      <div className="flex items-start gap-3 justify-start"> {/* Assistant style */}
+                        <div className="flex-shrink-0 w-7 h-7 rounded-full bg-muted flex items-center justify-center overflow-hidden border">
+                          <Image src="/kortix-symbol.svg" alt="Suna Logo" width={20} height={20} className="object-contain" />
+                        </div>
+                        <div className="flex-1 space-y-1">
+                          <span className="text-xs font-semibold">Suna</span>
+                          <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3 text-sm shadow-sm">
+                            <div className="flex items-center gap-1.5">
+                              <div className="h-1.5 w-1.5 rounded-full bg-foreground/50 animate-pulse" />
+                              <div className="h-1.5 w-1.5 rounded-full bg-foreground/50 animate-pulse delay-150" />
+                              <div className="h-1.5 w-1.5 rounded-full bg-foreground/50 animate-pulse delay-300" />
+                            </div>
+                          </div>
                         </div>
                       </div>
                     )}
-                    
-                    <div ref={messagesEndRef} />
                   </div>
                 )}
               </div>
@@ -1261,8 +1304,8 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         </div>
       </div>
 
-      <ToolCallSidePanel
-        isOpen={isSidePanelOpen}
+      <ToolCallSidePanel 
+        isOpen={isSidePanelOpen} 
         onClose={() => { setIsSidePanelOpen(false); setSidePanelContent(null); setCurrentPairIndex(null); }}
         content={sidePanelContent}
         currentIndex={currentPairIndex}

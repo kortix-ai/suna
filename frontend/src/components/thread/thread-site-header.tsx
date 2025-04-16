@@ -65,12 +65,17 @@ export function SiteHeader({
     
     if (editName !== projectName) {
       try {
-        await updateProject(projectId, { name: editName })
-        onProjectRenamed?.(editName)
-        toast.success("Project renamed successfully")
+        const updatedProject = await updateProject(projectId, { name: editName })
+        if (updatedProject) {
+          onProjectRenamed?.(editName)
+          toast.success("Project renamed successfully")
+        } else {
+          throw new Error("Failed to update project")
+        }
       } catch (error) {
-        console.error("Failed to rename project:", error)
-        toast.error("Failed to rename project")
+        const errorMessage = error instanceof Error ? error.message : "Failed to rename project"
+        console.error("Failed to rename project:", errorMessage)
+        toast.error(errorMessage)
         setEditName(projectName)
       }
     }
@@ -119,7 +124,7 @@ export function SiteHeader({
           </div>
         ) : (
           <div 
-            className="text-sm font-medium tracking-wide uppercase text-muted-foreground hover:text-foreground cursor-pointer flex items-center"
+            className="text-sm font-medium text-muted-foreground hover:text-foreground cursor-pointer flex items-center"
             onClick={startEditing}
             title="Click to rename project"
           >

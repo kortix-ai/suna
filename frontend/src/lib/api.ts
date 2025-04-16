@@ -231,7 +231,33 @@ export const updateProject = async (projectId: string, data: Partial<Project>): 
     .select()
     .single();
   
-  if (error) throw error;
+  if (error) {
+    console.error('Error updating project:', error);
+    throw error;
+  }
+  
+  if (!updatedData) {
+    throw new Error('No data returned from update');
+  }
+
+  // Invalidate cache after successful update
+  apiCache.projects.delete(projectId);
+  apiCache.projects.delete('all');
+  
+  // Dispatch a custom event to notify components about the project change
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('project-updated', { 
+      detail: { 
+        projectId, 
+        updatedData: {
+          id: updatedData.project_id || updatedData.id,
+          name: updatedData.name,
+          description: updatedData.description
+        }
+      } 
+    }));
+  }
+  
   return updatedData;
 };
 
