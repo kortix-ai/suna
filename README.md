@@ -139,7 +139,7 @@ You'll need the following components:
 6. **RapidAPI API Key** (Optional):
    - To enable API services like LinkedIn, and others, you'll need a RapidAPI key
    - Each service requires individual activation in your RapidAPI account:
-     1. Locate the service's `base_url` in its corresponding file (e.g., `"https://linkedin-data-scraper.p.rapidapi.com"` in [`backend/agent/tools/api_services/LinkedInService.py`](backend/agent/tools/api_services/LinkedInService.py))
+     1. Locate the service's `base_url` in its corresponding file (e.g., `"https://linkedin-data-scraper.p.rapidapi.com"` in [`backend/agent/tools/data_providers/LinkedinProvider.py`](backend/agent/tools/data_providers/LinkedinProvider.py))
      2. Visit that specific API on the RapidAPI marketplace
      3. Subscribe to the service (many offer free tiers with limited requests)
      4. Once subscribed, the service will be available to your agent through the API Services tool

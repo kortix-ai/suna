@@ -1,9 +1,9 @@
 from typing import Dict
 
-from agent.tools.api_services.APIServicesBase import APIServicesBase, EndpointSchema
+from agent.tools.data_providers.RapidDataProviderBase import RapidDataProviderBase, EndpointSchema
 
 
-class LinkedInService(APIServicesBase):
+class LinkedinProvider(RapidDataProviderBase):
     def __init__(self):
         endpoints: Dict[str, EndpointSchema] = {
             "person": {
@@ -238,9 +238,9 @@ class LinkedInService(APIServicesBase):
 
 
 if __name__ == "__main__":
-    import os
-    os.environ["RAPID_API_KEY"] = ""
-    tool = LinkedInService()
+    from dotenv import load_dotenv
+    load_dotenv()
+    tool = LinkedinProvider()
 
     result = tool.call_endpoint(
         route="comments_from_recent_activity",

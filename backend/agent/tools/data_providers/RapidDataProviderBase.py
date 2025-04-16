@@ -11,7 +11,7 @@ class EndpointSchema(TypedDict):
     payload: Dict[str, Any]
 
 
-class APIServicesBase:
+class RapidDataProviderBase:
     def __init__(self, base_url: str, endpoints: Dict[str, EndpointSchema]):
         self.base_url = base_url
         self.endpoints = endpoints
