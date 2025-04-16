@@ -135,6 +135,14 @@ You'll need the following components:
 
 5. **Search API Key** (Optional):
    - For enhanced search capabilities, obtain an [Exa API key](https://dashboard.exa.ai/playground)
+  
+6. **RapidAPI API Key** (Optional):
+   - To enable API services like LinkedIn, and others, you'll need a RapidAPI key
+   - Each service requires individual activation in your RapidAPI account:
+     1. Locate the service's `base_url` in its corresponding file (e.g., `"https://linkedin-data-scraper.p.rapidapi.com"` in [`backend/agent/tools/api_services/LinkedInService.py`](backend/agent/tools/api_services/LinkedInService.py))
+     2. Visit that specific API on the RapidAPI marketplace
+     3. Subscribe to the service (many offer free tiers with limited requests)
+     4. Once subscribed, the service will be available to your agent through the API Services tool
 
 ### Installation Steps
 
@@ -181,6 +189,7 @@ MODEL_TO_USE="gpt-4o"
 
 # Optional but recommended
 EXA_API_KEY=your_exa_api_key  # Optional
+RAPID_API_KEY=
 ```
 
 3. **Set up Supabase database**:
