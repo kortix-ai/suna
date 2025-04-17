@@ -9,7 +9,7 @@ import {
   FileEdit, Search, Globe, Code, MessageSquare, Folder, FileX, CloudUpload, Wrench, Cog
 } from 'lucide-react';
 import type { ElementType } from 'react';
-import { addUserMessage, getMessages, startAgent, stopAgent, getAgentStatus, streamAgent, getAgentRuns, getProject, getThread, updateProject } from '@/lib/api';
+import { addUserMessage, getMessages, startAgent, stopAgent, getAgentStatus, streamAgent, getAgentRuns, getProject, getThread, updateProject, Project } from '@/lib/api';
 import { toast } from 'sonner';
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChatInput } from '@/components/thread/chat-input';
@@ -224,7 +224,6 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const [toolCallData, setToolCallData] = useState<ToolCallData | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>('Project');
-  
   const streamCleanupRef = useRef<(() => void) | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const initialLoadCompleted = useRef<boolean>(false);
@@ -237,6 +236,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const [buttonOpacity, setButtonOpacity] = useState(0);
   const [userHasScrolled, setUserHasScrolled] = useState(false);
   const hasInitiallyScrolled = useRef<boolean>(false);
+  const [project, setProject] = useState<Project | null>(null);
   const [sandboxId, setSandboxId] = useState<string | null>(null);
   const [fileViewerOpen, setFileViewerOpen] = useState(false);
   const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
@@ -551,6 +551,9 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         if (threadData && threadData.project_id) {
           const projectData = await getProject(threadData.project_id);
           if (isMounted && projectData && projectData.sandbox) {
+            // Store the full project object
+            setProject(projectData);
+            
             // Extract the sandbox ID correctly
             setSandboxId(typeof projectData.sandbox === 'string' ? projectData.sandbox : projectData.sandbox.id);
             
@@ -1027,6 +1030,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
           currentIndex={currentPairIndex}
           totalPairs={allHistoricalPairs.length}
           onNavigate={handleSidePanelNavigate}
+          project={project}
         />
       </div>
     );
@@ -1060,6 +1064,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
           currentIndex={currentPairIndex}
           totalPairs={allHistoricalPairs.length}
           onNavigate={handleSidePanelNavigate}
+          project={project}
         />
       </div>
     );
@@ -1413,6 +1418,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         currentIndex={currentPairIndex}
         totalPairs={allHistoricalPairs.length}
         onNavigate={handleSidePanelNavigate}
+        project={project}
       />
 
       {sandboxId && (
