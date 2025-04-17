@@ -296,6 +296,8 @@ class ThreadManager:
                     response_generator = self.response_processor.process_streaming_response(
                         llm_response=llm_response,
                         thread_id=thread_id,
+                        prompt_messages=prepared_messages,
+                        llm_model=llm_model,
                         config=processor_config
                     )
                     
@@ -306,55 +308,91 @@ class ThreadManager:
                     response_generator = self.response_processor.process_non_streaming_response(
                         llm_response=llm_response,
                         thread_id=thread_id,
+                        prompt_messages=prepared_messages,
+                        llm_model=llm_model,
                         config=processor_config
                     )
                     return response_generator # Return the generator
               
             except Exception as e:
-                logger.error(f"Error in run_thread: {str(e)}", exc_info=True)
-                return {
-                    "status": "error",
-                    "message": str(e)
-                }
+                logger.error(f"Error in _run_once: {str(e)}", exc_info=True)
+                # For generators, we need to yield an error structure if returning a generator is expected
+                async def error_generator():
+                    yield {
+                        "type": "error",
+                        "message": f"Error during LLM call or setup: {str(e)}"
+                    }
+                return error_generator()
         
         # Define a wrapper generator that handles auto-continue logic
         async def auto_continue_wrapper():
-            nonlocal auto_continue, auto_continue_count
+            nonlocal auto_continue, auto_continue_count, temporary_message
+            
+            current_temp_message = temporary_message # Use a local copy for the first run
             
             while auto_continue and (native_max_auto_continues == 0 or auto_continue_count < native_max_auto_continues):
                 # Reset auto_continue for this iteration
                 auto_continue = False
                 
                 # Run the thread once
-                response_gen = await _run_once(temporary_message if auto_continue_count == 0 else None)
+                # Pass current_temp_message, which is only set for the first iteration
+                response_gen = await _run_once(temp_msg=current_temp_message) 
                 
-                # Handle error responses
-                if isinstance(response_gen, dict) and "status" in response_gen and response_gen["status"] == "error":
+                # Clear the temporary message after the first run
+                current_temp_message = None 
+                
+                # Handle error responses (checking if it's an error dict, which _run_once might return directly)
+                if isinstance(response_gen, dict) and response_gen.get("status") == "error":
                     yield response_gen
                     return
+                    
+                # Check if it's the error generator from _run_once exception handling
+                # Need a way to check if it's the specific error generator or just inspect the first item
+                first_chunk = None
+                try:
+                    first_chunk = await anext(response_gen)
+                except StopAsyncIteration:
+                    # Empty generator, possibly due to an issue before yielding.
+                    logger.warning("Response generator was empty.")
+                    break 
+                except Exception as e:
+                    logger.error(f"Error getting first chunk from generator: {e}")
+                    yield {"type": "error", "message": f"Error processing response: {e}"}
+                    break
+
+                if first_chunk and first_chunk.get('type') == 'error' and "Error during LLM call" in first_chunk.get('message', ''):
+                    yield first_chunk
+                    return # Stop processing if setup failed
+
+                # Yield the first chunk if it wasn't an error
+                if first_chunk:
+                     yield first_chunk
                 
-                # Process each chunk
+                # Process remaining chunks
                 async for chunk in response_gen:
                     # Check if this is a finish reason chunk with tool_calls or xml_tool_limit_reached
                     if chunk.get('type') == 'finish':
-                        if chunk.get('finish_reason') == 'tool_calls':
+                        finish_reason = chunk.get('finish_reason')
+                        if finish_reason == 'tool_calls':
                             # Only auto-continue if enabled (max > 0)
                             if native_max_auto_continues > 0:
                                 logger.info(f"Detected finish_reason='tool_calls', auto-continuing ({auto_continue_count + 1}/{native_max_auto_continues})")
                                 auto_continue = True
                                 auto_continue_count += 1
-                                # Don't yield the finish chunk to avoid confusing the client
-                                continue
-                        elif chunk.get('finish_reason') == 'xml_tool_limit_reached':
+                                # Don't yield the finish chunk to avoid confusing the client during auto-continue
+                                continue 
+                        elif finish_reason == 'xml_tool_limit_reached':
                             # Don't auto-continue if XML tool limit was reached
                             logger.info(f"Detected finish_reason='xml_tool_limit_reached', stopping auto-continue")
                             auto_continue = False
                             # Still yield the chunk to inform the client
+                        
+                        # Yield other finish reasons normally
                     
-                    # Otherwise just yield the chunk normally
+                    # Yield the chunk normally
                     yield chunk
                 
-                # If not auto-continuing, we're done
+                # If not auto-continuing, we're done with the loop
                 if not auto_continue:
                     break
                 
