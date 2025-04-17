@@ -1223,43 +1223,6 @@ export function ToolCallSidePanel({
             </Button>
           </div>
           <div className="flex-1 p-4 overflow-y-auto">
-            {/* Navigation Controls - Conditionally Rendered */} 
-            {showNavigation && (
-              <div className="mb-6 pb-4 border-b">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-muted-foreground">
-                    Step {currentIndex + 1} of {totalPairs}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={() => onNavigate(currentIndex - 1)}
-                      disabled={currentIndex === 0}
-                      className="h-7 w-7"
-                    >
-                      <SkipBack className="h-4 w-4" />
-                    </Button>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
-                      onClick={() => onNavigate(currentIndex + 1)}
-                      disabled={currentIndex === totalPairs - 1}
-                      className="h-7 w-7"
-                    >
-                      <SkipForward className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-                <Slider
-                  value={[currentIndex]} // Slider value is an array
-                  max={totalPairs - 1}
-                  step={1}
-                  onValueChange={(value) => onNavigate(value[0])} // onValueChange gives an array
-                />
-              </div>
-            )}
-
             {content ? (
               // ---- Render Historical Pair ----
               'type' in content && content.type === 'historical' ? (
@@ -1366,6 +1329,43 @@ export function ToolCallSidePanel({
               </div>
             )}
           </div>
+
+          {/* Navigation Controls moved to bottom, just above TodoPanel */} 
+          {showNavigation && (
+            <div className="px-4 pt-2 pb-2 border-t">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium text-muted-foreground">
+                  Step {currentIndex + 1} of {totalPairs}
+                </span>
+                <div className="flex items-center gap-1">
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={() => onNavigate(currentIndex - 1)}
+                    disabled={currentIndex === 0}
+                    className="h-7 w-7"
+                  >
+                    <SkipBack className="h-4 w-4" />
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={() => onNavigate(currentIndex + 1)}
+                    disabled={currentIndex === totalPairs - 1}
+                    className="h-7 w-7"
+                  >
+                    <SkipForward className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <Slider
+                value={[currentIndex]} // Slider value is an array
+                max={totalPairs - 1}
+                step={1}
+                onValueChange={(value) => onNavigate(value[0])} // onValueChange gives an array
+              />
+            </div>
+          )}
 
           {/* Todo Panel at the bottom of side panel */}
           {sandboxId && (

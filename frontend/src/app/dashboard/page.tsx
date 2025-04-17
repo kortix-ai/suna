@@ -4,7 +4,8 @@ import React, { useState, Suspense } from 'react';
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRouter } from 'next/navigation';
 import { ChatInput } from '@/components/thread/chat-input';
-import { createProject, addUserMessage, startAgent, createThread, generateThreadName } from "@/lib/api";
+import { createProject, addUserMessage, startAgent, createThread } from "@/lib/api";
+import { generateThreadName } from "@/lib/actions/threads";
 
 function DashboardContent() {
   const [inputValue, setInputValue] = useState("");
