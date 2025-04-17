@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Body
 from fastapi.responses import StreamingResponse
 import asyncio
 import json
@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import uuid
 from typing import Optional, List, Dict, Any
 import jwt
+from pydantic import BaseModel
 
 from agentpress.thread_manager import ThreadManager
 from services.supabase import DBConnection
@@ -15,7 +16,14 @@ from agent.run import run_agent
 from utils.auth_utils import get_current_user_id, get_user_id_from_stream_auth, verify_thread_access
 from utils.logger import logger
 from utils.billing import check_billing_status, get_account_id_from_thread
-from utils.db import update_agent_run_status
+# Removed duplicate import of update_agent_run_status from utils.db as it's defined locally
+
+# Define request model for starting agent
+class AgentStartRequest(BaseModel):
+    model_name: Optional[str] = "anthropic/claude-3-7-sonnet-latest"
+    enable_thinking: Optional[bool] = False
+    reasoning_effort: Optional[str] = 'low'
+    stream: Optional[bool] = False # Add stream option, default to False
 
 # Initialize shared resources
 router = APIRouter()
@@ -236,11 +244,15 @@ async def _cleanup_agent_run(agent_run_id: str):
         # Non-fatal error, can continue
 
 @router.post("/thread/{thread_id}/agent/start")
-async def start_agent(thread_id: str, user_id: str = Depends(get_current_user_id)):
-    """Start an agent for a specific thread in the background."""
-    logger.info(f"Starting new agent for thread: {thread_id}")
+async def start_agent(
+    thread_id: str,
+    body: AgentStartRequest = Body(...), # Accept request body
+    user_id: str = Depends(get_current_user_id)
+):
+    """Start an agent for a specific thread in the background with dynamic settings."""
+    logger.info(f"Starting new agent for thread: {thread_id} with model: {body.model_name}, thinking: {body.enable_thinking}, effort: {body.reasoning_effort}, stream: {body.stream}")
     client = await db.client
-    
+
     # Verify user has access to this thread
     await verify_thread_access(client, thread_id, user_id)
     
@@ -291,11 +303,20 @@ async def start_agent(thread_id: str, user_id: str = Depends(get_current_user_id
     except Exception as e:
         logger.warning(f"Failed to register agent run in Redis, continuing without Redis tracking: {str(e)}")
     
-    # Run the agent in the background
+    # Run the agent in the background, passing the dynamic settings
     task = asyncio.create_task(
-        run_agent_background(agent_run_id, thread_id, instance_id, project_id)
+        run_agent_background(
+            agent_run_id=agent_run_id,
+            thread_id=thread_id,
+            instance_id=instance_id,
+            project_id=project_id,
+            model_name=body.model_name,
+            enable_thinking=body.enable_thinking,
+            reasoning_effort=body.reasoning_effort,
+            stream=body.stream # Pass stream parameter
+        )
     )
-    
+
     # Set a callback to clean up when task is done
     task.add_done_callback(
         lambda _: asyncio.create_task(
@@ -420,11 +441,20 @@ async def stream_agent_run(
         }
     )
 
-async def run_agent_background(agent_run_id: str, thread_id: str, instance_id: str, project_id: str):
+async def run_agent_background(
+    agent_run_id: str,
+    thread_id: str,
+    instance_id: str,
+    project_id: str,
+    model_name: str, # Add model_name parameter
+    enable_thinking: Optional[bool], # Add enable_thinking parameter
+    reasoning_effort: Optional[str], # Add reasoning_effort parameter
+    stream: bool # Add stream parameter
+):
     """Run the agent in the background and handle status updates."""
-    logger.debug(f"Starting background agent run: {agent_run_id} for thread: {thread_id} (instance: {instance_id})")
+    logger.debug(f"Starting background agent run: {agent_run_id} for thread: {thread_id} (instance: {instance_id}) with model: {model_name}, stream: {stream}")
     client = await db.client
-    
+
     # Tracking variables
     total_responses = 0
     start_time = datetime.now(timezone.utc)
@@ -538,11 +568,18 @@ async def run_agent_background(agent_run_id: str, thread_id: str, instance_id: s
         logger.warning(f"No stop signal checker for agent run: {agent_run_id} - pubsub unavailable")
     
     try:
-        # Run the agent
+        # Run the agent, passing the dynamic settings
         logger.debug(f"Initializing agent generator for thread: {thread_id} (instance: {instance_id})")
-        agent_gen = run_agent(thread_id, stream=True, 
-                      thread_manager=thread_manager, project_id=project_id)
-        
+        agent_gen = run_agent(
+            thread_id=thread_id,
+            project_id=project_id,
+            stream=stream, # Pass stream parameter from API request
+            thread_manager=thread_manager,
+            model_name=model_name, # Pass model_name
+            enable_thinking=enable_thinking, # Pass enable_thinking
+            reasoning_effort=reasoning_effort # Pass reasoning_effort
+        )
+
         # Collect all responses to save to database
         all_responses = []
         
