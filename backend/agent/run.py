@@ -23,7 +23,7 @@ load_dotenv()
 async def run_agent(
     thread_id: str,
     project_id: str,
-    stream: bool = True,
+    stream: bool, # Accept stream parameter from caller (api.py)
     thread_manager: Optional[ThreadManager] = None,
     native_max_auto_continues: int = 25,
     max_iterations: int = 150,
@@ -180,7 +180,7 @@ async def run_agent(
         response = await thread_manager.run_thread(
             thread_id=thread_id,
             system_prompt=system_message, # Pass the constructed message
-            stream=stream,
+            stream=stream, # Pass the stream parameter received by run_agent
             llm_model=model_name, # Use the passed model_name
             llm_temperature=1, # Example temperature
             llm_max_tokens=max_tokens, # Use the determined value
@@ -295,7 +295,8 @@ async def test_agent():
         
         if not user_message.strip():
             print("\n🔄 Running agent...\n")
-            await process_agent_response(thread_id, project_id, thread_manager)
+            # Pass stream=True explicitly when calling from test_agent
+            await process_agent_response(thread_id, project_id, thread_manager, stream=True)
             continue
             
         # Add the user message to the thread
@@ -310,19 +311,40 @@ async def test_agent():
         )
         
         print("\n🔄 Running agent...\n")
-        await process_agent_response(thread_id, project_id, thread_manager)
-    
+        # Pass stream=True explicitly when calling from test_agent
+        await process_agent_response(thread_id, project_id, thread_manager, stream=True)
+
     print("\n👋 Test completed. Goodbye!")
 
-async def process_agent_response(thread_id: str, project_id: str, thread_manager: ThreadManager):
-    """Process the streaming response from the agent."""
+async def process_agent_response(
+    thread_id: str,
+    project_id: str,
+    thread_manager: ThreadManager,
+    stream: bool = True, # Add stream parameter, default to True for testing
+    model_name: str = "anthropic/claude-3-7-sonnet-latest", # Add model_name with default
+    enable_thinking: Optional[bool] = False,             # Add enable_thinking
+    reasoning_effort: Optional[str] = 'low'              # Add reasoning_effort
+):
+    """Process the streaming response from the agent, passing model/thinking parameters."""
     chunk_counter = 0
     current_response = ""
     tool_call_counter = 0  # Track number of tool calls
-    
-    async for chunk in run_agent(thread_id=thread_id, project_id=project_id, stream=True, thread_manager=thread_manager, native_max_auto_continues=25):
+
+    # Pass the received parameters to the run_agent call
+    agent_generator = run_agent(
+        thread_id=thread_id,
+        project_id=project_id,
+        stream=stream, # Pass the stream parameter here
+        thread_manager=thread_manager,
+        native_max_auto_continues=25,
+        model_name=model_name,
+        enable_thinking=enable_thinking,
+        reasoning_effort=reasoning_effort
+    )
+
+    async for chunk in agent_generator:
         chunk_counter += 1
-        
+
         if chunk.get('type') == 'content' and 'content' in chunk:
             current_response += chunk.get('content', '')
             # Print the response as it comes in

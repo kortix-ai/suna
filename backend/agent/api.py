@@ -23,6 +23,7 @@ class AgentStartRequest(BaseModel):
     model_name: Optional[str] = "anthropic/claude-3-7-sonnet-latest"
     enable_thinking: Optional[bool] = False
     reasoning_effort: Optional[str] = 'low'
+    stream: Optional[bool] = False # Add stream option, default to False
 
 # Initialize shared resources
 router = APIRouter()
@@ -249,9 +250,9 @@ async def start_agent(
     user_id: str = Depends(get_current_user_id)
 ):
     """Start an agent for a specific thread in the background with dynamic settings."""
-    logger.info(f"Starting new agent for thread: {thread_id} with model: {body.model_name}, thinking: {body.enable_thinking}, effort: {body.reasoning_effort}")
+    logger.info(f"Starting new agent for thread: {thread_id} with model: {body.model_name}, thinking: {body.enable_thinking}, effort: {body.reasoning_effort}, stream: {body.stream}")
     client = await db.client
-    
+
     # Verify user has access to this thread
     await verify_thread_access(client, thread_id, user_id)
     
@@ -311,7 +312,8 @@ async def start_agent(
             project_id=project_id,
             model_name=body.model_name,
             enable_thinking=body.enable_thinking,
-            reasoning_effort=body.reasoning_effort
+            reasoning_effort=body.reasoning_effort,
+            stream=body.stream # Pass stream parameter
         )
     )
 
@@ -446,12 +448,13 @@ async def run_agent_background(
     project_id: str,
     model_name: str, # Add model_name parameter
     enable_thinking: Optional[bool], # Add enable_thinking parameter
-    reasoning_effort: Optional[str] # Add reasoning_effort parameter
+    reasoning_effort: Optional[str], # Add reasoning_effort parameter
+    stream: bool # Add stream parameter
 ):
     """Run the agent in the background and handle status updates."""
-    logger.debug(f"Starting background agent run: {agent_run_id} for thread: {thread_id} (instance: {instance_id}) with model: {model_name}")
+    logger.debug(f"Starting background agent run: {agent_run_id} for thread: {thread_id} (instance: {instance_id}) with model: {model_name}, stream: {stream}")
     client = await db.client
-    
+
     # Tracking variables
     total_responses = 0
     start_time = datetime.now(timezone.utc)
@@ -570,7 +573,7 @@ async def run_agent_background(
         agent_gen = run_agent(
             thread_id=thread_id,
             project_id=project_id,
-            stream=True,
+            stream=stream, # Pass stream parameter from API request
             thread_manager=thread_manager,
             model_name=model_name, # Pass model_name
             enable_thinking=enable_thinking, # Pass enable_thinking
