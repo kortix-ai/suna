@@ -1,10 +1,23 @@
 'use client';
 
+import React from 'react';
 import {Separator} from "@/components/ui/separator";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-export default function TeamSettingsPage({children, params: {accountSlug}}: {children: React.ReactNode, params: {accountSlug: string}}) {
+type LayoutParams = {
+  accountSlug: string;
+};
+
+export default function TeamSettingsLayout({
+  children, 
+  params
+}: {
+  children: React.ReactNode, 
+  params: Promise<LayoutParams>
+}) {
+    const unwrappedParams = React.use(params);
+    const { accountSlug } = unwrappedParams;
     const pathname = usePathname();
     const items = [
         { name: "Account", href: `/dashboard/${accountSlug}/settings` },

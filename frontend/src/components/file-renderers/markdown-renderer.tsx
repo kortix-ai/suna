@@ -20,12 +20,16 @@ export function MarkdownRenderer({ content, className }: MarkdownRendererProps) 
         <ReactMarkdown
           rehypePlugins={[rehypeRaw, rehypeSanitize]}
           components={{
-            code({ node, inline, className, children, ...props }) {
+            code(props) {
+              const { className, children, ...rest } = props;
               const match = /language-(\w+)/.exec(className || "");
               
-              if (inline) {
+              // Check if it's an inline code block by examining the node type
+              const isInline = !className || !match;
+              
+              if (isInline) {
                 return (
-                  <code className={className} {...props}>
+                  <code className={className} {...rest}>
                     {children}
                   </code>
                 );

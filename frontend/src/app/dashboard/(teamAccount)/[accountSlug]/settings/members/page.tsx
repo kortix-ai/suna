@@ -1,16 +1,58 @@
+'use client';
+
+import React from 'react';
 import {createClient} from "@/lib/supabase/server";
 import ManageTeamMembers from "@/components/basejump/manage-team-members";
 import ManageTeamInvitations from "@/components/basejump/manage-team-invitations";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 
-export default async function TeamMembersPage({params: {accountSlug}}: {params: {accountSlug: string}}) {
-    const supabaseClient = await createClient();
-    const {data: teamAccount} = await supabaseClient.rpc('get_account_by_slug', {
-        slug: accountSlug
-    });
+type AccountParams = {
+  accountSlug: string;
+};
 
-    if (teamAccount.account_role !== 'owner') {
+export default function TeamMembersPage({ params }: { params: Promise<AccountParams> }) {
+    const unwrappedParams = React.use(params);
+    const { accountSlug } = unwrappedParams;
+    
+    // Use an effect to load team account data
+    const [teamAccount, setTeamAccount] = React.useState<any>(null);
+    const [loading, setLoading] = React.useState(true);
+    const [error, setError] = React.useState<string | null>(null);
+    
+    React.useEffect(() => {
+        async function loadData() {
+            try {
+                const supabaseClient = await createClient();
+                const {data} = await supabaseClient.rpc('get_account_by_slug', {
+                    slug: accountSlug
+                });
+                setTeamAccount(data);
+                setLoading(false);
+            } catch (err) {
+                setError("Failed to load team data");
+                setLoading(false);
+                console.error(err);
+            }
+        }
+        
+        loadData();
+    }, [accountSlug]);
+    
+    if (loading) {
+        return <div>Loading...</div>;
+    }
+    
+    if (error) {
+        return (
+            <Alert variant="destructive" className="border-red-300 dark:border-red-800 rounded-xl">
+                <AlertTitle>Error</AlertTitle>
+                <AlertDescription>{error}</AlertDescription>
+            </Alert>
+        );
+    }
+
+    if (!teamAccount || teamAccount.account_role !== 'owner') {
         return (
             <Alert variant="destructive" className="border-red-300 dark:border-red-800 rounded-xl">
                 <AlertTitle>Access Denied</AlertTitle>
