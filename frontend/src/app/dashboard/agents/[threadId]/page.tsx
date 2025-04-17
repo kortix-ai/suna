@@ -1458,7 +1458,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                     {streamContent && (
                       <div 
                         ref={latestMessageRef} 
-                        className="py-2 border-t border-gray-100" // Assistant streaming style
+                        className="py-2 border-t border-gray-100"
                       >
                         {/* Simplified header with logo and name */}
                         <div className="flex items-center mb-2 text-sm gap-2">
@@ -1503,12 +1503,192 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                               </pre>
                             </div>
                           ) : (
-                            // Simple text streaming
+                            // Enhanced text streaming with XML parsing
                             <div className="text-sm text-gray-800 whitespace-pre-wrap break-words max-w-[85%]">
-                              {streamContent}
-                              {isStreaming && (
-                                <span className="inline-block h-4 w-0.5 bg-gray-400 ml-0.5 -mb-1 animate-pulse" />
-                              )}
+                              {(() => {
+                                const content = streamContent;
+                                
+                                // Tokenize the content to properly render XML and text
+                                const renderStreamContent = () => {
+                                  // RegExp for matching both opening and closing tags
+                                  const tagRegex = /<(?!inform\b)([a-zA-Z\-_]+)(?:\s+[^>]*)?(?:\/)?>/g;
+                                  const closingTagRegex = /<\/([a-zA-Z\-_]+)>/g;
+                                  
+                                  // Build a map of tag states
+                                  const openTags: Record<string, { count: number, positions: number[] }> = {};
+                                  
+                                  // Track all opening tags
+                                  let match;
+                                  while ((match = tagRegex.exec(content)) !== null) {
+                                    const tagName = match[1];
+                                    if (!openTags[tagName]) {
+                                      openTags[tagName] = { count: 0, positions: [] };
+                                    }
+                                    openTags[tagName].count++;
+                                    openTags[tagName].positions.push(match.index);
+                                  }
+                                  
+                                  // Subtract all closing tags
+                                  while ((match = closingTagRegex.exec(content)) !== null) {
+                                    const tagName = match[1];
+                                    if (openTags[tagName]) {
+                                      openTags[tagName].count--;
+                                    }
+                                  }
+                                  
+                                  // Find incomplete tags (those with count > 0)
+                                  const incompleteTags = Object.entries(openTags)
+                                    .filter(([_, data]) => data.count > 0)
+                                    .map(([tag, data]) => ({ 
+                                      tag, 
+                                      // Use the last position for this incomplete tag
+                                      position: data.positions[data.positions.length - data.count] 
+                                    }))
+                                    .sort((a, b) => a.position - b.position);
+                                  
+                                  // If there are no incomplete tags, render normally
+                                  if (incompleteTags.length === 0) {
+                                    return (
+                                      <div>
+                                        {parseNormalXmlContent(content)}
+                                        {isStreaming && (
+                                          <span className="inline-block h-4 w-0.5 bg-gray-400 ml-0.5 -mb-1 animate-pulse" />
+                                        )}
+                                      </div>
+                                    );
+                                  }
+                                  
+                                  // Handle incomplete tags
+                                  const segments = [];
+                                  let lastPosition = 0;
+                                  
+                                  // Process each incomplete tag in sequence
+                                  for (const { tag, position } of incompleteTags) {
+                                    // Add content before this incomplete tag
+                                    if (position > lastPosition) {
+                                      const segmentContent = content.substring(lastPosition, position);
+                                      segments.push(
+                                        <div key={`seg-${lastPosition}`}>
+                                          {parseNormalXmlContent(segmentContent)}
+                                        </div>
+                                      );
+                                    }
+                                    
+                                    // Find the opening tag and extract attributes for param display
+                                    const openingTagMatch = new RegExp(`<${tag}([^>]*)>`, 'g');
+                                    openingTagMatch.lastIndex = position;
+                                    const tagMatch = openingTagMatch.exec(content);
+                                    const tagAttributes = tagMatch ? tagMatch[1] : '';
+                                    
+                                    // Add the incomplete tag button
+                                    const IconComponent = getToolIcon(tag);
+                                    const paramDisplay = extractPrimaryParam(tag, tagAttributes);
+                                    
+                                    segments.push(
+                                      <div key={`tag-${position}`} className="space-y-2 my-2">
+                                        <button
+                                          className="inline-flex items-center gap-1.5 py-0.5 px-2 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
+                                        >
+                                          <CircleDashed className="h-3.5 w-3.5 text-gray-500 flex-shrink-0 animate-spin animation-duration-2000" />
+                                          <span className="font-mono text-xs text-gray-700">
+                                            {tag}
+                                          </span>
+                                          {paramDisplay && (
+                                            <span className="ml-1 text-gray-500 truncate" title={paramDisplay}>
+                                              {paramDisplay}
+                                            </span>
+                                          )}
+                                        </button>
+                                        <div className="my-1 flex items-center">
+                                          <span className="inline-block h-4 w-4 text-gray-400">
+                                            <CircleDashed className="h-4 w-4 animate-spin" />
+                                          </span>
+                                          <span className="ml-2 text-xs text-gray-500">Processing...</span>
+                                        </div>
+                                      </div>
+                                    );
+                                    
+                                    // Move past this tag's position
+                                    lastPosition = position + (tagMatch ? tagMatch[0].length : 0);
+                                  }
+                                  
+                                  // Add any remaining content after the last incomplete tag
+                                  if (lastPosition < content.length) {
+                                    const remainingContent = content.substring(lastPosition);
+                                    segments.push(
+                                      <div key={`remaining-${lastPosition}`}>
+                                        {parseNormalXmlContent(remainingContent)}
+                                        {isStreaming && (
+                                          <span className="inline-block h-4 w-0.5 bg-gray-400 ml-0.5 -mb-1 animate-pulse" />
+                                        )}
+                                      </div>
+                                    );
+                                  }
+                                  
+                                  return <>{segments}</>;
+                                };
+                                
+                                // Helper to parse normal XML content (fully formed tags)
+                                const parseNormalXmlContent = (text: string) => {
+                                  if (!text) return null;
+                                  
+                                  // Find all complete XML tags
+                                  const segments = [];
+                                  let lastIndex = 0;
+                                  
+                                  // Regex for complete XML tags
+                                  const completeXmlRegex = /<(?!inform\b)([a-zA-Z\-_]+)(?:\s+[^>]*)?>[\s\S]*?<\/\1>|<(?!inform\b)([a-zA-Z\-_]+)(?:\s+[^>]*)?\/>/g;
+                                  let xmlMatch;
+                                  
+                                  while ((xmlMatch = completeXmlRegex.exec(text)) !== null) {
+                                    // Add text before this XML
+                                    if (xmlMatch.index > lastIndex) {
+                                      segments.push(
+                                        <span key={`text-${lastIndex}`}>
+                                          {text.substring(lastIndex, xmlMatch.index)}
+                                        </span>
+                                      );
+                                    }
+                                    
+                                    // Add the complete XML tag as a button
+                                    const tagName = xmlMatch[1] || xmlMatch[2];
+                                    const IconComponent = getToolIcon(tagName);
+                                    const paramDisplay = extractPrimaryParam(tagName, xmlMatch[0]);
+                                    
+                                    segments.push(
+                                      <button
+                                        key={`xml-${xmlMatch.index}`}
+                                        className="inline-flex items-center gap-1.5 py-0.5 px-2 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200 my-1"
+                                      >
+                                        <IconComponent className="h-3.5 w-3.5 text-gray-500 flex-shrink-0" />
+                                        <span className="font-mono text-xs text-gray-700">
+                                          {tagName}
+                                        </span>
+                                        {paramDisplay && (
+                                          <span className="ml-1 text-gray-500 truncate" title={paramDisplay}>
+                                            {paramDisplay}
+                                          </span>
+                                        )}
+                                      </button>
+                                    );
+                                    
+                                    lastIndex = xmlMatch.index + xmlMatch[0].length;
+                                  }
+                                  
+                                  // Add any remaining text
+                                  if (lastIndex < text.length) {
+                                    segments.push(
+                                      <span key={`text-${lastIndex}`}>
+                                        {text.substring(lastIndex)}
+                                      </span>
+                                    );
+                                  }
+                                  
+                                  return segments.length > 0 ? segments : text;
+                                };
+                                
+                                return renderStreamContent();
+                              })()}
                             </div>
                           )}
                         </div>
