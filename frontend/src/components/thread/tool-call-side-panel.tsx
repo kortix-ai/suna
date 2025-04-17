@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { X, Package, Info, Terminal, CheckCircle, SkipBack, SkipForward, MonitorPlay, FileSymlink, FileDiff, FileEdit, Search, Globe, ExternalLink, Database, Code, ListFilter } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { Project } from "@/lib/api";
+import { TodoPanel } from "./todo-panel";
 
 // Define the structure for LIVE tool call data (from streaming)
 export interface ToolCallData {
@@ -1186,6 +1187,9 @@ export function ToolCallSidePanel({
   // Get VNC preview URL from project if available
   const vncPreviewUrl = project?.sandbox?.vnc_preview;
 
+  // Get the sandbox ID from project for todo.md fetching
+  const sandboxId = project?.sandbox?.id || null;
+
   return (
     <div 
       className={`
@@ -1352,6 +1356,14 @@ export function ToolCallSidePanel({
               </div>
             )}
           </div>
+
+          {/* Todo Panel at the bottom of side panel */}
+          {sandboxId && (
+            <TodoPanel
+              sandboxId={sandboxId}
+              isSidePanelOpen={isOpen}
+            />
+          )}
         </>
       )}
     </div>
