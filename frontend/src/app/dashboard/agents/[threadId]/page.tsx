@@ -9,7 +9,7 @@ import {
   FileEdit, Search, Globe, Code, MessageSquare, Folder, FileX, CloudUpload, Wrench, Cog
 } from 'lucide-react';
 import type { ElementType } from 'react';
-import { addUserMessage, getMessages, startAgent, stopAgent, getAgentStatus, streamAgent, getAgentRuns, getProject, getThread, updateProject } from '@/lib/api';
+import { addUserMessage, getMessages, startAgent, stopAgent, getAgentStatus, streamAgent, getAgentRuns, getProject, getThread, updateProject, Project } from '@/lib/api';
 import { toast } from 'sonner';
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChatInput } from '@/components/thread/chat-input';
@@ -17,6 +17,7 @@ import { FileViewerModal } from '@/components/thread/file-viewer-modal';
 import { SiteHeader } from "@/components/thread/thread-site-header"
 import { ToolCallSidePanel, SidePanelContent, ToolCallData } from "@/components/thread/tool-call-side-panel";
 import { useSidebar } from "@/components/ui/sidebar";
+import { TodoPanel } from '@/components/thread/todo-panel';
 
 // Define a type for the params to make React.use() work properly
 type ThreadParams = { 
@@ -224,7 +225,6 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const [toolCallData, setToolCallData] = useState<ToolCallData | null>(null);
   const [projectId, setProjectId] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>('Project');
-  
   const streamCleanupRef = useRef<(() => void) | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const initialLoadCompleted = useRef<boolean>(false);
@@ -237,6 +237,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const [buttonOpacity, setButtonOpacity] = useState(0);
   const [userHasScrolled, setUserHasScrolled] = useState(false);
   const hasInitiallyScrolled = useRef<boolean>(false);
+  const [project, setProject] = useState<Project | null>(null);
   const [sandboxId, setSandboxId] = useState<string | null>(null);
   const [fileViewerOpen, setFileViewerOpen] = useState(false);
   const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
@@ -362,6 +363,9 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
             message?: string;
             name?: string;
             arguments?: string;
+            finish_reason?: string;
+            function_name?: string;
+            xml_tag_name?: string;
             tool_call?: {
               id: string;
               function: {
@@ -373,7 +377,10 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
             };
           } | null = null;
           
-          let currentLiveToolCall: ToolCallData | null = null;
+          // Handle data: prefix format (SSE standard)
+          if (processedData.startsWith('data: ')) {
+            processedData = processedData.substring(6).trim();
+          }
           
           try {
             jsonData = JSON.parse(processedData);
@@ -415,11 +422,74 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
               setAgentRunId(null);
               return;
             }
+            
+            // Handle finish message
+            if (jsonData?.type === 'finish') {
+              console.log(`[PAGE] Received finish message with reason: ${jsonData.finish_reason}`);
+              // If there's a specific finish reason, handle it
+              if (jsonData.finish_reason === 'xml_tool_limit_reached') {
+                // Potentially show a toast notification
+                toast.info('Tool execution limit reached. The agent will continue with available information.');
+              }
+              return;
+            }
+
+            // Handle content type messages (text from the agent)
+            if (jsonData?.type === 'content' && jsonData?.content) {
+              console.log('[PAGE] Adding content to stream:', jsonData.content);
+              setStreamContent(prev => prev + jsonData.content);
+              return;
+            }
+            
+            // Handle tool status messages
+            if (jsonData?.type === 'tool_status') {
+              console.log(`[PAGE] Tool status: ${jsonData.status} for ${jsonData.function_name}`);
+              
+              // Update UI based on tool status
+              if (jsonData.status === 'started') {
+                // Could show a loading indicator for the specific tool
+                const toolInfo = {
+                  id: jsonData.xml_tag_name || `tool-${Date.now()}`,
+                  name: jsonData.function_name || 'unknown',
+                  arguments: '{}',
+                  index: 0,
+                };
+                
+                setToolCallData(toolInfo);
+                // Optionally add to stream content to show tool execution
+                setStreamContent(prev => 
+                  prev + `\n\nExecuting tool: ${jsonData.function_name}\n`
+                );
+              } else if (jsonData.status === 'completed') {
+                // Update UI to show tool completion
+                setToolCallData(null);
+                // Optionally add to stream content
+                setStreamContent(prev => 
+                  prev + `\nTool execution completed: ${jsonData.function_name}\n`
+                );
+              }
+              return;
+            }
+            
+            // Handle tool result messages
+            if (jsonData?.type === 'tool_result') {
+              console.log('[PAGE] Received tool result for:', jsonData.function_name);
+              
+              // Clear the tool data since execution is complete
+              setSidePanelContent(null);
+              setToolCallData(null);
+              
+              // Add tool result to the stream content for visibility
+              setStreamContent(prev => 
+                prev + `\nReceived result from ${jsonData.function_name}\n`
+              );
+              return;
+            }
 
             // --- Handle Live Tool Call Updates for Side Panel ---
             if (jsonData?.type === 'tool_call' && jsonData.tool_call) {
               console.log('[PAGE] Received tool_call update:', jsonData.tool_call);
-              currentLiveToolCall = {
+              const currentLiveToolCall: ToolCallData = {
                 id: jsonData.tool_call.id,
                 name: jsonData.tool_call.function.name,
                 arguments: jsonData.tool_call.function.arguments,
@@ -428,25 +498,28 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
               setToolCallData(currentLiveToolCall); // Keep for stream content rendering
               setCurrentPairIndex(null); // Live data means not viewing a historical pair
               setSidePanelContent(currentLiveToolCall); // Update side panel
+              
+              // Add to stream content so it's visible
+              setStreamContent(prev => 
+                prev + `\nCalling tool: ${currentLiveToolCall.name}\n`
+              );
+              
               if (!isSidePanelOpen) {
                 // Optionally auto-open side panel? Maybe only if user hasn't closed it recently.
                 // setIsSidePanelOpen(true);
               }
-            } else if (jsonData?.type === 'tool_result') {
-              // When tool result comes in, clear the live tool from side panel?
-              // Or maybe wait until stream end?
-              console.log('[PAGE] Received tool_result, clearing live tool from side panel');
-              setSidePanelContent(null);
-              setToolCallData(null);
-              // Don't necessarily clear currentPairIndex here, user might want to navigate back
+              return;
             }
-            // --- End Side Panel Update Logic ---
+            
+            // If we reach here and have JSON data but it's not a recognized type,
+            // log it for debugging purposes
+            console.log('[PAGE] Unhandled message type:', jsonData?.type);
+            
           } catch (e) {
-            console.warn('[PAGE] Failed to parse message:', e);
+            // If JSON parsing fails, treat it as raw text content
+            console.warn('[PAGE] Failed to parse as JSON, treating as raw content:', e);
+            setStreamContent(prev => prev + processedData);
           }
-
-          // Continue with normal message processing...
-          // ... rest of the onMessage handler ...
         } catch (error) {
           console.error('[PAGE] Error processing message:', error);
           toast.error('Failed to process agent response');
@@ -551,6 +624,9 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         if (threadData && threadData.project_id) {
           const projectData = await getProject(threadData.project_id);
           if (isMounted && projectData && projectData.sandbox) {
+            // Store the full project object
+            setProject(projectData);
+            
             // Extract the sandbox ID correctly
             setSandboxId(typeof projectData.sandbox === 'string' ? projectData.sandbox : projectData.sandbox.id);
             
@@ -1027,6 +1103,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
           currentIndex={currentPairIndex}
           totalPairs={allHistoricalPairs.length}
           onNavigate={handleSidePanelNavigate}
+          project={project}
         />
       </div>
     );
@@ -1060,6 +1137,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
           currentIndex={currentPairIndex}
           totalPairs={allHistoricalPairs.length}
           onNavigate={handleSidePanelNavigate}
+          project={project}
         />
       </div>
     );
@@ -1387,6 +1465,15 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
 
             <div className="bg-sidebar backdrop-blur-sm">
               <div className="mx-auto max-w-3xl px-6 py-2">
+                {/* Show Todo panel above chat input when side panel is closed */}
+                {!isSidePanelOpen && sandboxId && (
+                  <TodoPanel
+                    sandboxId={sandboxId}
+                    isSidePanelOpen={isSidePanelOpen}
+                    className="mb-3"
+                  />
+                )}
+                
                 <ChatInput
                   value={newMessage}
                   onChange={setNewMessage}
@@ -1413,6 +1500,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         currentIndex={currentPairIndex}
         totalPairs={allHistoricalPairs.length}
         onNavigate={handleSidePanelNavigate}
+        project={project}
       />
 
       {sandboxId && (
