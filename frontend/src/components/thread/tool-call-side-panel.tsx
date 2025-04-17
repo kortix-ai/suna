@@ -174,6 +174,8 @@ function StrReplaceToolView({ assistantContent, userContent }: { assistantConten
         oldParts: { text: string; highlighted: boolean }[];
         newParts: { text: string; highlighted: boolean }[];
       };
+      // Add a unique key for React rendering
+      key: string;
     };
     
     const diff: DiffLine[] = [];
@@ -194,6 +196,7 @@ function StrReplaceToolView({ assistantContent, userContent }: { assistantConten
           oldIndex,
           newIndex,
           oldContent: oldLine,
+          key: `unchanged-${oldIndex}-${newIndex}`
         });
         oldIndex++;
         newIndex++;
@@ -256,7 +259,8 @@ function StrReplaceToolView({ assistantContent, userContent }: { assistantConten
           highlights: {
             oldParts,
             newParts
-          }
+          },
+          key: `modified-${oldIndex}-${newIndex}`
         });
         
         oldIndex++;
@@ -270,7 +274,8 @@ function StrReplaceToolView({ assistantContent, userContent }: { assistantConten
         diff.push({
           type: 'added',
           newIndex,
-          newContent: newLine
+          newContent: newLine,
+          key: `added-${newIndex}`
         });
         newIndex++;
       } else if (newLine === null) {
@@ -278,7 +283,8 @@ function StrReplaceToolView({ assistantContent, userContent }: { assistantConten
         diff.push({
           type: 'removed',
           oldIndex,
-          oldContent: oldLine
+          oldContent: oldLine,
+          key: `removed-${oldIndex}`
         });
         oldIndex++;
       } else {
@@ -297,7 +303,8 @@ function StrReplaceToolView({ assistantContent, userContent }: { assistantConten
               diff.push({
                 type: 'added',
                 newIndex: newIndex + i,
-                newContent: newLines[newIndex + i]
+                newContent: newLines[newIndex + i],
+                key: `added-lookahead-${newIndex + i}`
               });
             }
             foundMatch = true;
@@ -314,7 +321,8 @@ function StrReplaceToolView({ assistantContent, userContent }: { assistantConten
                 diff.push({
                   type: 'removed',
                   oldIndex: oldIndex + i,
-                  oldContent: oldLines[oldIndex + i]
+                  oldContent: oldLines[oldIndex + i],
+                  key: `removed-lookahead-${oldIndex + i}`
                 });
               }
               foundMatch = true;
@@ -329,12 +337,14 @@ function StrReplaceToolView({ assistantContent, userContent }: { assistantConten
           diff.push({
             type: 'removed',
             oldIndex,
-            oldContent: oldLine
+            oldContent: oldLine,
+            key: `removed-nomatch-${oldIndex}`
           });
           diff.push({
             type: 'added',
             newIndex,
-            newContent: newLine
+            newContent: newLine,
+            key: `added-nomatch-${newIndex}`
           });
           oldIndex++;
           newIndex++;
@@ -1185,7 +1195,7 @@ export function ToolCallSidePanel({
   const showNavigation = isHistoricalPair(content) && totalPairs > 1 && currentIndex !== null;
   
   // Get VNC preview URL from project if available
-  const vncPreviewUrl = project?.sandbox?.vnc_preview;
+  const vncPreviewUrl = project?.sandbox?.vnc_preview ? `${project.sandbox.vnc_preview}/vnc_lite.html?password=${project?.sandbox?.pass}` : undefined;
 
   // Get the sandbox ID from project for todo.md fetching
   const sandboxId = project?.sandbox?.id || null;
