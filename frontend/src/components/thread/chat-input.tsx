@@ -3,9 +3,17 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Send, Square, Loader2, File, Upload, X } from "lucide-react";
+import { Send, Square, Loader2, File, Upload, X, Paperclip, FileText } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 // Define API_URL
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
@@ -48,6 +56,7 @@ export function ChatInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
   
   // Allow controlled or uncontrolled usage
   const isControlled = value !== undefined && onChange !== undefined;
@@ -137,13 +146,43 @@ export function ChatInput({
     }
   };
 
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+    
+    if (!sandboxId || !e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
+    
+    const files = Array.from(e.dataTransfer.files);
+    await uploadFiles(files);
+  };
+
   const processFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (!sandboxId || !event.target.files || event.target.files.length === 0) return;
     
+    const files = Array.from(event.target.files);
+    await uploadFiles(files);
+    
+    // Reset the input
+    event.target.value = '';
+  };
+
+  const uploadFiles = async (files: File[]) => {
     try {
       setIsUploading(true);
       
-      const files = Array.from(event.target.files);
       const newUploadedFiles: UploadedFile[] = [];
       
       for (const file of files) {
@@ -198,8 +237,6 @@ export function ChatInput({
       toast.error(typeof error === 'string' ? error : (error instanceof Error ? error.message : "Failed to upload file"));
     } finally {
       setIsUploading(false);
-      // Reset the input
-      event.target.value = '';
     }
   };
 
@@ -213,31 +250,87 @@ export function ChatInput({
     setUploadedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
+  const getFileIcon = (fileName: string) => {
+    const extension = fileName.split('.').pop()?.toLowerCase();
+    
+    switch(extension) {
+      case 'pdf':
+        return <FileText className="h-4 w-4 text-red-500" />;
+      case 'doc':
+      case 'docx':
+        return <FileText className="h-4 w-4 text-blue-500" />;
+      case 'xls':
+      case 'xlsx':
+        return <FileText className="h-4 w-4 text-green-500" />;
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'gif':
+      case 'svg':
+        return <FileText className="h-4 w-4 text-purple-500" />;
+      default:
+        return <FileText className="h-4 w-4 text-gray-500" />;
+    }
+  };
+
   return (
-    <div className="w-full">
-      <form onSubmit={handleSubmit} className="relative">
+    <div 
+      className={cn(
+        "w-full border rounded-lg transition-all duration-200 shadow-sm",
+        uploadedFiles.length > 0 ? "border-border" : "border-input",
+        isDraggingOver ? "border-primary border-dashed bg-primary/5" : ""
+      )}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <AnimatePresence>
         {uploadedFiles.length > 0 && (
-          <div className="mb-2 space-y-1">
-            {uploadedFiles.map((file, index) => (
-              <div key={index} className="p-2 bg-secondary/20 rounded-md flex items-center justify-between">
-                <div className="flex items-center text-sm">
-                  <File className="h-4 w-4 mr-2 text-primary" />
-                  <span className="font-medium">{file.name}</span>
-                  <span className="text-xs text-muted-foreground ml-2">
+          <motion.div 
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="px-3 pt-3 overflow-hidden"
+          >
+            <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1 pb-2">
+              {uploadedFiles.map((file, index) => (
+                <motion.div 
+                  key={index}
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  transition={{ duration: 0.15 }}
+                  className="px-2 py-1 bg-secondary/20 rounded-full flex items-center gap-1.5 group border border-secondary/30 hover:border-secondary/50 transition-colors text-sm"
+                >
+                  {getFileIcon(file.name)}
+                  <span className="font-medium truncate max-w-[120px]">{file.name}</span>
+                  <span className="text-xs text-muted-foreground flex-shrink-0">
                     ({formatFileSize(file.size)})
                   </span>
-                </div>
-                <Button 
-                  type="button" 
-                  variant="ghost" 
-                  size="icon" 
-                  className="h-6 w-6"
-                  onClick={() => removeUploadedFile(index)}
-                >
-                  <X className="h-3 w-3" />
-                </Button>
-              </div>
-            ))}
+                  <Button 
+                    type="button" 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-4 w-4 ml-0.5 rounded-full p-0 hover:bg-secondary/50"
+                    onClick={() => removeUploadedFile(index)}
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                </motion.div>
+              ))}
+            </div>
+            <div className="h-px bg-border/40 my-2 mx-1" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="relative">
+        {isDraggingOver && (
+          <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+            <div className="flex flex-col items-center">
+              <Upload className="h-6 w-6 text-primary mb-2" />
+              <p className="text-sm font-medium text-primary">Drop files to upload</p>
+            </div>
           </div>
         )}
         
@@ -251,28 +344,44 @@ export function ChatInput({
               ? "Agent is thinking..." 
               : placeholder
           }
-          className="min-h-[50px] max-h-[200px] pr-20 resize-none"
+          className={cn(
+            "min-h-[50px] max-h-[200px] pr-24 resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 bg-white",
+            isDraggingOver ? "opacity-20" : "",
+            isAgentRunning ? "rounded-t-lg" : "rounded-lg"
+          )}
           disabled={loading || (disabled && !isAgentRunning)}
           rows={1}
         />
         
-        <div className="absolute right-2 bottom-2 flex items-center space-x-1">
+        <div className="absolute right-2 bottom-2 flex items-center space-x-1.5">
           {/* Upload file button */}
-          <Button 
-            type="button"
-            onClick={handleFileUpload}
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 rounded-full"
-            disabled={loading || (disabled && !isAgentRunning) || isUploading}
-            aria-label="Upload files"
-          >
-            {isUploading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Upload className="h-4 w-4" />
-            )}
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  type="button"
+                  onClick={handleFileUpload}
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    "h-8 w-8 rounded-full transition-all hover:bg-primary/10 hover:text-primary",
+                    isUploading && "text-primary"
+                  )}
+                  disabled={loading || (disabled && !isAgentRunning) || isUploading}
+                  aria-label="Upload files"
+                >
+                  {isUploading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Paperclip className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <p>Attach files</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           
           {/* Hidden file input */}
           <input
@@ -285,51 +394,77 @@ export function ChatInput({
           
           {/* File browser button */}
           {onFileBrowse && (
-            <Button 
-              type="button"
-              onClick={onFileBrowse}
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 rounded-full"
-              disabled={loading || (disabled && !isAgentRunning)}
-              aria-label="Browse files"
-            >
-              <File className="h-4 w-4" />
-            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    type="button"
+                    onClick={onFileBrowse}
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 rounded-full transition-all hover:bg-primary/10 hover:text-primary"
+                    disabled={loading || (disabled && !isAgentRunning)}
+                    aria-label="Browse files"
+                  >
+                    <File className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p>Browse workspace files</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
           
-          <Button 
-            type={isAgentRunning ? 'button' : 'submit'}
-            onClick={isAgentRunning ? onStopAgent : undefined}
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 rounded-full"
-            disabled={((!inputValue.trim() && uploadedFiles.length === 0) && !isAgentRunning) || loading || (disabled && !isAgentRunning)}
-            aria-label={isAgentRunning ? 'Stop agent' : 'Send message'}
-          >
-            {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : isAgentRunning ? (
-              <Square className="h-4 w-4" />
-            ) : (
-              <Send className="h-4 w-4" />
-            )}
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  type="submit"
+                  onClick={isAgentRunning ? onStopAgent : handleSubmit}
+                  variant={isAgentRunning ? "destructive" : "default"}
+                  size="icon"
+                  className={cn(
+                    "h-8 w-8 rounded-full",
+                    !isAgentRunning && "bg-primary hover:bg-primary/90",
+                    isAgentRunning && "bg-destructive hover:bg-destructive/90"
+                  )}
+                  disabled={((!inputValue.trim() && uploadedFiles.length === 0) && !isAgentRunning) || loading || (disabled && !isAgentRunning)}
+                  aria-label={isAgentRunning ? 'Stop agent' : 'Send message'}
+                >
+                  {loading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : isAgentRunning ? (
+                    <Square className="h-4 w-4" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <p>{isAgentRunning ? 'Stop agent' : 'Send message'}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
-      </form>
+      </div>
 
       {isAgentRunning && (
-        <div className="mt-2 flex items-center justify-center gap-2">
-          <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+        <motion.div 
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="py-2 px-3 flex items-center justify-center bg-white border-t rounded-b-lg"
+        >
+          <div className="text-xs text-muted-foreground flex items-center gap-2">
             <span className="inline-flex items-center">
-              <Loader2 className="h-3 w-3 animate-spin mr-1" />
+              <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
               Agent is thinking...
             </span>
-            <span className="text-muted-foreground/60 border-l pl-1.5">
-              Press <kbd className="inline-flex items-center justify-center p-0.5 bg-muted border rounded text-xs"><Square className="h-2.5 w-2.5" /></kbd> to stop
+            <span className="text-muted-foreground/60 border-l pl-2">
+              Press <kbd className="inline-flex items-center justify-center p-0.5 mx-1 bg-muted border rounded text-xs"><Square className="h-2.5 w-2.5" /></kbd> to stop
             </span>
           </div>
-        </div>
+        </motion.div>
       )}
     </div>
   );

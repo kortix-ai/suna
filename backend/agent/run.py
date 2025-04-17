@@ -4,6 +4,7 @@ from uuid import uuid4
 from typing import Optional
 
 # from agent.tools.message_tool import MessageTool
+from agent.tools.message_tool import MessageTool
 from agent.tools.sb_deploy_tool import SandboxDeployTool
 from agent.tools.web_search_tool import WebSearchTool
 from dotenv import load_dotenv
@@ -20,7 +21,7 @@ from utils.billing import check_billing_status, get_account_id_from_thread
 
 load_dotenv()
 
-async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread_manager: Optional[ThreadManager] = None, native_max_auto_continues: int = 25, max_iterations: int = 150):
+async def run_agent(thread_id: str, project_id: str, sandbox, stream: bool = True, thread_manager: Optional[ThreadManager] = None, native_max_auto_continues: int = 25, max_iterations: int = 150):
     """Run the development agent with specified configuration."""
     
     if not thread_manager:
@@ -32,43 +33,13 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
     if not account_id:
         raise ValueError("Could not determine account ID for thread")
 
-    # Initial billing check
-    can_run, message, subscription = await check_billing_status(client, account_id)
-    if not can_run:
-        error_msg = f"Billing limit reached: {message}"
-        # Yield a special message to indicate billing limit reached
-        yield {
-            "type": "status",
-            "status": "stopped",
-            "message": error_msg
-        }
-        raise Exception(message)
-
-    ## probably want to move to api.py
-    project = await client.table('projects').select('*').eq('project_id', project_id).execute()
-    if project.data[0].get('sandbox', {}).get('id'):
-        sandbox_id = project.data[0]['sandbox']['id']
-        sandbox_pass = project.data[0]['sandbox']['pass']
-        sandbox = await get_or_start_sandbox(sandbox_id)
-    else:
-        sandbox_pass = str(uuid4())
-        sandbox = create_sandbox(sandbox_pass)
-        print(f"\033[91m{sandbox.get_preview_link(6080)}/vnc_lite.html?password={sandbox_pass}\033[0m")
-        sandbox_id = sandbox.id
-        await client.table('projects').update({
-            'sandbox': {
-                'id': sandbox_id,
-                'pass': sandbox_pass,
-                'vnc_preview': sandbox.get_preview_link(6080),
-                'sandbox_url': sandbox.get_preview_link(8080)
-            }
-        }).eq('project_id', project_id).execute()
+    # Note: Billing checks are now done in api.py before this function is called
     
     thread_manager.add_tool(SandboxShellTool, sandbox=sandbox)
     thread_manager.add_tool(SandboxFilesTool, sandbox=sandbox)
     thread_manager.add_tool(SandboxBrowserTool, sandbox=sandbox, thread_id=thread_id, thread_manager=thread_manager)
     thread_manager.add_tool(SandboxDeployTool, sandbox=sandbox)
-    # thread_manager.add_tool(MessageTool) -> we are just doing this via prompt as there is no need to call it as a tool
+    thread_manager.add_tool(MessageTool) # we are just doing this via prompt as there is no need to call it as a tool
  
     if os.getenv("EXA_API_KEY"):
         thread_manager.add_tool(WebSearchTool)
@@ -89,7 +60,7 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
         iteration_count += 1
         print(f"Running iteration {iteration_count}...")
 
-        # Billing check on each iteration
+        # Billing check on each iteration - still needed within the iterations
         can_run, message, subscription = await check_billing_status(client, account_id)
         if not can_run:
             error_msg = f"Billing limit reached: {message}"
@@ -109,8 +80,8 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
                 print(f"Last message was from assistant, stopping execution")
                 continue_execution = False
                 break
+            
         # Get the latest message from messages table that its tpye is browser_state
-        
         latest_browser_state = await client.table('messages').select('*').eq('thread_id', thread_id).eq('type', 'browser_state').order('created_at', desc=True).limit(1).execute()
         temporary_message = None
         if latest_browser_state.data and len(latest_browser_state.data) > 0:
@@ -289,7 +260,12 @@ async def process_agent_response(thread_id: str, project_id: str, thread_manager
     current_response = ""
     tool_call_counter = 0  # Track number of tool calls
     
-    async for chunk in run_agent(thread_id=thread_id, project_id=project_id, stream=True, thread_manager=thread_manager, native_max_auto_continues=25):
+    # Create a test sandbox for processing
+    sandbox_pass = str(uuid4())
+    sandbox = create_sandbox(sandbox_pass)
+    print(f"\033[91mTest sandbox created: {sandbox.get_preview_link(6080)}/vnc_lite.html?password={sandbox_pass}\033[0m")
+    
+    async for chunk in run_agent(thread_id=thread_id, project_id=project_id, sandbox=sandbox, stream=True, thread_manager=thread_manager, native_max_auto_continues=25):
         chunk_counter += 1
         
         if chunk.get('type') == 'content' and 'content' in chunk:

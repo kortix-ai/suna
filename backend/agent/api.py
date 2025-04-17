@@ -16,6 +16,7 @@ from utils.auth_utils import get_current_user_id, get_user_id_from_stream_auth, 
 from utils.logger import logger
 from utils.billing import check_billing_status, get_account_id_from_thread
 from utils.db import update_agent_run_status
+from sandbox.sandbox import create_sandbox, get_or_start_sandbox
 
 # Initialize shared resources
 router = APIRouter()
@@ -268,6 +269,26 @@ async def start_agent(thread_id: str, user_id: str = Depends(get_current_user_id
     if active_run_id:
         logger.info(f"Stopping existing agent run {active_run_id} before starting new one")
         await stop_agent_run(active_run_id)
+
+    # Initialize or get sandbox for this project
+    project = await client.table('projects').select('*').eq('project_id', project_id).execute()
+    if project.data[0].get('sandbox', {}).get('id'):
+        sandbox_id = project.data[0]['sandbox']['id']
+        sandbox_pass = project.data[0]['sandbox']['pass']
+        sandbox = await get_or_start_sandbox(sandbox_id)
+    else:
+        sandbox_pass = str(uuid.uuid4())
+        sandbox = create_sandbox(sandbox_pass)
+        logger.info(f"Created new sandbox with preview: {sandbox.get_preview_link(6080)}/vnc_lite.html?password={sandbox_pass}")
+        sandbox_id = sandbox.id
+        await client.table('projects').update({
+            'sandbox': {
+                'id': sandbox_id,
+                'pass': sandbox_pass,
+                'vnc_preview': sandbox.get_preview_link(6080),
+                'sandbox_url': sandbox.get_preview_link(8080)
+            }
+        }).eq('project_id', project_id).execute()
     
     agent_run = await client.table('agent_runs').insert({
         "thread_id": thread_id,
@@ -293,7 +314,7 @@ async def start_agent(thread_id: str, user_id: str = Depends(get_current_user_id
     
     # Run the agent in the background
     task = asyncio.create_task(
-        run_agent_background(agent_run_id, thread_id, instance_id, project_id)
+        run_agent_background(agent_run_id, thread_id, instance_id, project_id, sandbox)
     )
     
     # Set a callback to clean up when task is done
@@ -420,7 +441,7 @@ async def stream_agent_run(
         }
     )
 
-async def run_agent_background(agent_run_id: str, thread_id: str, instance_id: str, project_id: str):
+async def run_agent_background(agent_run_id: str, thread_id: str, instance_id: str, project_id: str, sandbox):
     """Run the agent in the background and handle status updates."""
     logger.debug(f"Starting background agent run: {agent_run_id} for thread: {thread_id} (instance: {instance_id})")
     client = await db.client
@@ -541,7 +562,8 @@ async def run_agent_background(agent_run_id: str, thread_id: str, instance_id: s
         # Run the agent
         logger.debug(f"Initializing agent generator for thread: {thread_id} (instance: {instance_id})")
         agent_gen = run_agent(thread_id, stream=True, 
-                      thread_manager=thread_manager, project_id=project_id)
+                      thread_manager=thread_manager, project_id=project_id, 
+                      sandbox=sandbox)
         
         # Collect all responses to save to database
         all_responses = []
@@ -569,7 +591,7 @@ async def run_agent_background(agent_run_id: str, thread_id: str, instance_id: s
         # Signal all done if we weren't stopped
         if not stop_signal_received:
             duration = (datetime.now(timezone.utc) - start_time).total_seconds()
-            logger.info(f"Agent run completed successfully: {agent_run_id} (duration: {duration:.2f}s, total responses: {total_responses}, instance: {instance_id})")
+            logger.info(f"Thread Run Response completed successfully: {agent_run_id} (duration: {duration:.2f}s, total responses: {total_responses}, instance: {instance_id})")
             
             # Add completion message to the stream
             completion_message = {

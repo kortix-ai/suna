@@ -83,8 +83,18 @@ class ThreadManager:
         }
         
         try:
-            result = await client.table('messages').insert(data_to_insert).execute()
+            # Add returning='representation' to get the inserted row data including the id
+            result = await client.table('messages').insert(data_to_insert, returning='representation').execute()
             logger.info(f"Successfully added message to thread {thread_id}")
+
+            print(f"MESSAGE RESULT: {result}")
+            
+            # Check the structure of result.data before accessing
+            if result.data and len(result.data) > 0 and isinstance(result.data[0], dict) and 'message_id' in result.data[0]:
+                return result.data[0]['message_id']
+            else:
+                logger.error(f"Insert operation failed or did not return expected data structure for thread {thread_id}. Result data: {result.data}")
+                return None
         except Exception as e:
             logger.error(f"Failed to add message to thread {thread_id}: {str(e)}", exc_info=True)
             raise
@@ -130,8 +140,6 @@ class ThreadManager:
                         if isinstance(tool_call, dict) and 'function' in tool_call:
                             # Ensure function.arguments is a string
                             if 'arguments' in tool_call['function'] and not isinstance(tool_call['function']['arguments'], str):
-                                # Log and fix the issue
-                                # logger.warning(f"Found non-string arguments in tool_call, converting to string")
                                 tool_call['function']['arguments'] = json.dumps(tool_call['function']['arguments'])
 
             return messages

@@ -15,12 +15,9 @@ import { FileViewerModal } from '@/components/thread/file-viewer-modal';
 import { SiteHeader } from "@/components/thread/thread-site-header"
 import { ToolCallSidePanel, SidePanelContent, ToolCallData } from "@/components/thread/tool-call-side-panel";
 import { useSidebar } from "@/components/ui/sidebar";
-import { TodoPanel } from '@/components/thread/todo-panel';
 
-// Import types and utils
 import { ApiMessage, ThreadParams, isToolSequence } from '@/components/thread/types';
 import { getToolIcon, extractPrimaryParam, groupMessages, SHOULD_RENDER_TOOL_RESULTS } from '@/components/thread/utils';
-
 
 export default function ThreadPage({ params }: { params: Promise<ThreadParams> }) {
   const unwrappedParams = React.use(params);
@@ -180,15 +177,6 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
             finish_reason?: string;
             function_name?: string;
             xml_tag_name?: string;
-            tool_call?: {
-              id: string;
-              function: {
-                name: string;
-                arguments: string;
-              };
-              type: string;
-              index: number;
-            };
           } | null = null;
           
           // Handle data: prefix format (SSE standard)
@@ -288,26 +276,6 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
               return;
             }
 
-            // --- Handle Live Tool Call Updates for Side Panel ---
-            if (jsonData?.type === 'tool_call' && jsonData.tool_call) {
-              console.log('[PAGE] Received tool_call update:', jsonData.tool_call);
-              const currentLiveToolCall: ToolCallData = {
-                id: jsonData.tool_call.id,
-                name: jsonData.tool_call.function.name,
-                arguments: jsonData.tool_call.function.arguments,
-                index: jsonData.tool_call.index,
-              };
-              setToolCallData(currentLiveToolCall); // Keep for stream content rendering
-              setCurrentPairIndex(null); // Live data means not viewing a historical pair
-              setSidePanelContent(currentLiveToolCall); // Update side panel
-              
-              if (!isSidePanelOpen) {
-                // Optionally auto-open side panel? Maybe only if user hasn't closed it recently.
-                // setIsSidePanelOpen(true);
-              }
-              return;
-            }
-            
             // If we reach here and have JSON data but it's not a recognized type,
             // log it for debugging purposes
             console.log('[PAGE] Unhandled message type:', jsonData?.type);
@@ -554,7 +522,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     };
   }, [threadId, handleStreamAgent, agentRunId, agentStatus, isStreaming]);
 
-  const handleSubmitMessage = async (message: string) => {
+  const handleSubmitMessage = useCallback(async (message: string) => {
     if (!message.trim()) return;
     
     setIsSending(true);
@@ -594,9 +562,9 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     } finally {
       setIsSending(false);
     }
-  };
+  }, [threadId, handleStreamAgent]);
 
-  const handleStopAgent = async () => {
+  const handleStopAgent = useCallback(async () => {
     if (!agentRunId) {
       console.warn('[PAGE] No agent run ID to stop');
       return;
@@ -651,7 +619,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
       setAgentRunId(null);
       setStreamContent('');
     }
-  };
+  }, [agentRunId, threadId]);
 
   // Auto-focus on textarea when component loads
   useEffect(() => {
@@ -794,9 +762,9 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   }, [isStreaming, agentRunId, agentStatus]);
 
   // Open the file viewer modal
-  const handleOpenFileViewer = () => {
+  const handleOpenFileViewer = useCallback(() => {
     setFileViewerOpen(true);
-  };
+  }, []);
 
   // Click handler for historical tool previews
   const handleHistoricalToolClick = (pair: { assistantCall: ApiMessage, userResult: ApiMessage }) => {
@@ -1109,7 +1077,6 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                                   <div className="space-y-2">
                                     {(() => { // IIFE for scope
                                       const toolName = message.tool_call.function.name;
-                                      const IconComponent = getToolIcon(toolName);
                                       const paramDisplay = extractPrimaryParam(toolName, message.tool_call.function.arguments);
                                       return (
                                         <button
@@ -1217,12 +1184,14 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                           </div>
                         );
                       }
+
                     })}
                     {/* ---- End of Message Mapping ---- */}
                     
+                    {/* ---- Rendering Logic for Streaming ---- */}
                     {streamContent && (
-                      <div 
-                        ref={latestMessageRef} 
+                      <div
+                        ref={latestMessageRef}
                         className="py-2 border-t border-gray-100"
                       >
                         {/* Simplified header with logo and name */}
@@ -1480,11 +1449,13 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                     )}
                   </div>
                 )}
+                {/* Empty div for scrolling - MOVED HERE */}
+                <div ref={messagesEndRef} />
               </div>
-              
-              <div 
+
+              <div
                 className="sticky bottom-6 flex justify-center"
-                style={{ 
+                style={{
                   opacity: buttonOpacity,
                   transition: 'opacity 0.3s ease-in-out',
                   visibility: showScrollButton ? 'visible' : 'hidden'
@@ -1501,16 +1472,16 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
               </div>
             </div>
 
-            <div className="bg-sidebar backdrop-blur-sm">
+            <div>
               <div className="mx-auto max-w-3xl px-6 py-2">
                 {/* Show Todo panel above chat input when side panel is closed */}
-                {!isSidePanelOpen && sandboxId && (
+                {/* {!isSidePanelOpen && sandboxId && (
                   <TodoPanel
                     sandboxId={sandboxId}
                     isSidePanelOpen={isSidePanelOpen}
                     className="mb-3"
                   />
-                )}
+                )} */}
                 
                 <ChatInput
                   value={newMessage}

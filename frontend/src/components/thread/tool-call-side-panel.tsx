@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { X, Package, Info, Terminal, CheckCircle, SkipBack, SkipForward, MonitorPlay, FileSymlink, FileDiff, FileEdit, Search, Globe, ExternalLink, Database, Code, ListFilter } from "lucide-react";
+import { X, Package, Info, Terminal, CheckCircle, SkipBack, SkipForward, MonitorPlay, FileSymlink, FileDiff, FileEdit, Search, Globe, ExternalLink, Database, Code, ListFilter, Rocket, Laptop, Command, ArrowUpCircle } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { Project } from "@/lib/api";
 import { TodoPanel } from "./todo-panel";
@@ -93,37 +93,77 @@ function CommandToolView({ assistantContent, userContent }: { assistantContent?:
   const isSuccessful = exitCode === 0;
   
   return (
-    <div className="border border-muted rounded-md overflow-hidden">
-      {/* Terminal header */}
-      <div className="bg-gray-900 p-2 flex items-center gap-2">
-        <div className="h-3 w-3 rounded-full bg-red-500"></div>
-        <div className="h-3 w-3 rounded-full bg-yellow-500"></div>
-        <div className="h-3 w-3 rounded-full bg-green-500"></div>
-        <span className="text-xs text-slate-400 ml-2 flex-1">Terminal</span>
+    <div className="border rounded-md overflow-hidden">
+      <div className="flex items-center p-2 bg-muted justify-between">
+        <div className="flex items-center">
+          <Terminal className="h-4 w-4 mr-2 text-muted-foreground" />
+          <span className="text-sm font-medium">Terminal</span>
+        </div>
         {exitCode !== null && (
-          <span className={`text-xs px-2 py-0.5 rounded ${isSuccessful ? 'bg-green-900/30 text-green-400' : 'bg-red-900/30 text-red-400'}`}>
+          <span className={`text-xs flex items-center ${isSuccessful ? 'text-green-600' : 'text-red-600'}`}>
+            <span className="h-1.5 w-1.5 rounded-full mr-1.5 animate-pulse bg-current"></span>
             Exit: {exitCode}
           </span>
         )}
       </div>
       
-      {/* Unified terminal output area */}
-      <div className="bg-black font-mono text-xs p-3 text-slate-300 whitespace-pre-wrap max-h-[500px] overflow-y-auto">
+      <div className="px-4 py-2 border-t border-b bg-muted/50 flex justify-between items-center">
         {command && (
-          <>
-            <span className="text-green-400">user@workspace:~$ </span>
-            <span className="text-slate-200">{command}</span>
-            {output && (
-              <>
-                <div className="pt-1 pb-2"></div>
-                <div className="text-slate-300">{output}</div>
+          <div className="text-xs font-mono truncate flex items-center space-x-2">
+            <span className="text-muted-foreground">Command:</span>
+            <span className="bg-muted px-2 py-0.5 rounded">{command}</span>
+          </div>
+        )}
+      </div>
+      
+      <div className={`terminal-container overflow-auto max-h-[500px] ${output ? 'bg-muted/10' : 'bg-muted/5'}`}>
+        <div className="p-4 font-mono text-sm space-y-3">
+          {command && output && (
+            <>
+              <div className="flex items-start">
+                <span className="text-emerald-600 dark:text-emerald-400 shrink-0 mr-2">$</span>
+                <span className="font-semibold">{command}</span>
+              </div>
+              
+              <div className="text-muted-foreground whitespace-pre-wrap break-all text-sm">
+                {output}
+              </div>
               </>
             )}
-            {!output && <div className="animate-pulse mt-1">■</div>}
-          </>
-        )}
-        {!command && <span className="text-gray-500">No command available</span>}
+          
+          {command && !output && (
+            <div className="text-center p-6">
+              <div className="animate-pulse flex justify-center">
+                <div className="h-1 w-1 mx-0.5 bg-muted-foreground rounded-full"></div>
+                <div className="h-1 w-1 mx-0.5 bg-muted-foreground rounded-full animation-delay-200"></div>
+                <div className="h-1 w-1 mx-0.5 bg-muted-foreground rounded-full animation-delay-500"></div>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">Command running...</p>
+            </div>
+          )}
+          
+          {!command && !output && (
+            <div className="text-center p-6">
+              <Terminal className="h-6 w-6 mx-auto mb-2 text-muted-foreground opacity-40" />
+              <p className="text-muted-foreground">No command available</p>
       </div>
+          )}
+        </div>
+      </div>
+      
+      {isSuccessful && output && (
+        <div className="border-t px-4 py-2 bg-green-50 dark:bg-green-950/10 flex items-center">
+          <CheckCircle className="h-4 w-4 text-green-600 mr-2" />
+          <span className="text-xs text-green-700 dark:text-green-400">Command completed successfully</span>
+        </div>
+      )}
+      
+      {exitCode !== null && !isSuccessful && (
+        <div className="border-t px-4 py-2 bg-red-50 dark:bg-red-950/10 flex items-center">
+          <X className="h-4 w-4 text-red-600 mr-2" />
+          <span className="text-xs text-red-700 dark:text-red-400">Command failed with exit code {exitCode}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -563,6 +603,11 @@ function getUnifiedToolView(toolName: string | undefined, assistantContent: stri
   
   const lowerToolName = toolName.toLowerCase();
   
+  // Check for deploy commands first
+  if (lowerToolName === 'deploy' || (assistantContent && assistantContent.includes('<deploy'))) {
+    return <DeployToolView assistantContent={assistantContent} userContent={userContent} />;
+  }
+  
   if (lowerToolName === 'execute-command' || (assistantContent && assistantContent.includes('<execute-command>'))) {
     return <CommandToolView assistantContent={assistantContent} userContent={userContent} />;
   }
@@ -786,7 +831,303 @@ function WebSearchToolView({ assistantContent, userContent }: { assistantContent
   // Check if search was successful
   const isSuccess = userContent?.includes('success=True');
   
-  // Get raw output without trying to parse as JSON
+  // Parse search results to a more structured format
+  const parseSearchResults = (): Array<{title: string, url: string, snippet?: string, publishedDate?: string}> => {
+    if (!userContent) return [];
+    
+    try {
+      // Extract the results section
+      const outputMatch = userContent.match(/output='([\s\S]*?)(?='\))/);
+      if (!outputMatch || !outputMatch[1]) return [];
+      
+      const output = outputMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+      
+      // Try to extract search results from the output
+      const results: Array<{title: string, url: string, snippet?: string, publishedDate?: string}> = [];
+      
+      // Try to parse as JSON first
+      try {
+        if (output.trim().startsWith('{') || output.trim().startsWith('[')) {
+          const parsedOutput = JSON.parse(output);
+          
+          // Handle array of results - this is the most common format
+          if (Array.isArray(parsedOutput)) {
+            return parsedOutput
+              .map(item => {
+                // Handle variations in field names (capitalized and lowercase)
+                const title = item.Title || item.title || '';
+                let url = item.URL || item.Url || item.url || '';
+                const snippet = item.Snippet || item.snippet || item.Description || item.description || '';
+                const publishedDate = item["Published Date"] || item.publishedDate || item.Date || item.date || '';
+                
+                // Clean up URLs - sometimes they are quoted or have URL: prefix
+                if (url && typeof url === 'string') {
+                  url = cleanUrl(url);
+                }
+                
+                // Skip entries without a real URL
+                if (!url || url === '"' || url === "'") return null;
+                
+                return {
+                  title: cleanTitle(title) || extractTitleFromUrl(url),
+                  url: url,
+                  snippet: typeof snippet === 'string' ? snippet : '',
+                  publishedDate: typeof publishedDate === 'string' ? publishedDate : ''
+                };
+              })
+              .filter(Boolean) // Remove null entries
+              .filter((item, index, self) => 
+                // Remove duplicates based on URL
+                index === self.findIndex((t) => t.url === item.url)
+              );
+          }
+          
+          // Handle object with results array
+          if (parsedOutput.results && Array.isArray(parsedOutput.results)) {
+            return parsedOutput.results
+              .map(item => {
+                const title = item.Title || item.title || '';
+                let url = item.URL || item.Url || item.url || '';
+                url = cleanUrl(url);
+                
+                // Skip entries without a real URL
+                if (!url || url === '"' || url === "'") return null;
+                
+                return {
+                  title: cleanTitle(title) || extractTitleFromUrl(url),
+                  url: url,
+                  snippet: item.Snippet || item.snippet || item.Description || item.description || '',
+                  publishedDate: item["Published Date"] || item.publishedDate || item.Date || item.date || ''
+                };
+              })
+              .filter(Boolean) // Remove null entries
+              .filter((item, index, self) => 
+                index === self.findIndex((t) => t.url === item.url)
+              );
+          }
+        }
+      } catch (e) {
+        console.log('JSON parsing failed, trying text parsing');
+      }
+      
+      // Fallback to text parsing for non-JSON or parsing errors
+      // First, try to detect if the output is in a specific format but not valid JSON
+      
+      // Handle cases where JSON is malformed but recognizable
+      // For instance, missing quotes around property names or values
+      if (output.includes('"Title"') || output.includes('"URL"')) {
+        // Try to extract title/URL pairs using regex
+        const urlRegex = /"URL":\s*"?([^",\n]+)"?,?/gi;
+        const titleRegex = /"Title":\s*"([^"]+)"/gi;
+        
+        let urlMatch;
+        let titleMatch;
+        
+        // Extract all URLs
+        const urls: {url: string, index: number}[] = [];
+        while ((urlMatch = urlRegex.exec(output)) !== null) {
+          if (urlMatch[1] && urlMatch[1].trim()) {
+            urls.push({
+              url: cleanUrl(urlMatch[1]),
+              index: urlMatch.index
+            });
+          }
+        }
+        
+        // Extract all titles
+        const titles: {title: string, index: number}[] = [];
+        while ((titleMatch = titleRegex.exec(output)) !== null) {
+          if (titleMatch[1] && titleMatch[1].trim()) {
+            titles.push({
+              title: cleanTitle(titleMatch[1]),
+              index: titleMatch.index
+            });
+          }
+        }
+        
+        // Match titles with URLs by proximity
+        urls.forEach(urlItem => {
+          let nearestTitle = '';
+          let minDistance = Infinity;
+          
+          titles.forEach(titleItem => {
+            const distance = Math.abs(titleItem.index - urlItem.index);
+            if (distance < minDistance) {
+              minDistance = distance;
+              nearestTitle = titleItem.title;
+            }
+          });
+          
+          if (urlItem.url && !results.some(r => r.url === urlItem.url)) {
+            results.push({
+              title: nearestTitle || extractTitleFromUrl(urlItem.url),
+              url: urlItem.url,
+              snippet: ''
+            });
+          }
+        });
+        
+        if (results.length > 0) {
+          return results;
+        }
+      }
+      
+      // General URL pattern fallback
+      const urlPattern = /(https?:\/\/[^\s"'<>]+)/g;
+      const urlMatches = [...output.matchAll(urlPattern)];
+      
+      if (urlMatches.length > 0) {
+        // For each URL, try to find a title nearby
+        for (let i = 0; i < urlMatches.length; i++) {
+          const url = cleanUrl(urlMatches[i][0]);
+          
+          // Skip if we already have this URL
+          if (results.some(r => r.url === url)) continue;
+          
+          // Get context around URL (10 lines before and after)
+          const urlIndex = output.indexOf(urlMatches[i][0]);
+          const startContextIndex = Math.max(0, output.lastIndexOf('\n', urlIndex - 200));
+          const endContextIndex = Math.min(output.length, output.indexOf('\n', urlIndex + 200));
+          const context = output.substring(startContextIndex, endContextIndex);
+          
+          // Try to find a title in the context
+          let title = '';
+          
+          // Look for something that looks like a title (text followed by the URL)
+          const lines = context.split('\n');
+          for (let j = 0; j < lines.length; j++) {
+            const line = lines[j].trim();
+            
+            // Skip empty lines or lines that contain the URL
+            if (!line || line.includes(url)) continue;
+            
+            // If line looks like a title (not a URL, reasonable length)
+            if (!line.includes('http') && line.length > 5 && line.length < 100) {
+              title = cleanTitle(line);
+              break;
+            }
+          }
+          
+          if (url && !results.some(r => r.url === url)) {
+            results.push({
+              title: title || extractTitleFromUrl(url),
+              url: url,
+              snippet: ''
+            });
+          }
+        }
+      }
+      
+      return results;
+    } catch (e) {
+      console.error("Failed to parse search results", e);
+      return [];
+    }
+  };
+  
+  // Clean up a title
+  const cleanTitle = (title: string): string => {
+    if (!title) return '';
+    
+    // Remove surrounding quotes
+    let cleaned = title.replace(/^["'](.+)["']$/g, '$1');
+    
+    // Remove URL: prefix if accidentally included
+    cleaned = cleaned.replace(/^URL:\s*/i, '');
+    
+    // Remove "title" or "Title" prefix
+    cleaned = cleaned.replace(/^(title|Title):\s*/i, '');
+    
+    // Remove leading/trailing spaces
+    cleaned = cleaned.trim();
+    
+    return cleaned;
+  };
+  
+  // Clean up a URL
+  const cleanUrl = (url: string): string => {
+    if (!url) return '';
+    
+    // Remove quotes
+    let cleaned = url.replace(/^["'](.+)["']$/g, '$1');
+    
+    // Remove "URL:" prefix
+    cleaned = cleaned.replace(/^URL:\s*/i, '');
+    
+    // Remove trailing commas, quotes, brackets
+    cleaned = cleaned.replace(/[,"'\]\}]+$/, '');
+    
+    // Remove any trailing whitespace
+    cleaned = cleaned.trim();
+    
+    return cleaned;
+  };
+  
+  // Extract a title from a URL if no title is available
+  const extractTitleFromUrl = (url: string): string => {
+    try {
+      const urlObj = new URL(url);
+      
+      // Get the domain name first
+      const domain = urlObj.hostname.replace('www.', '');
+      
+      // Get the path without the domain, clean it up and make it presentable
+      let path = urlObj.pathname;
+      if (path === '/' || !path) {
+        // If it's just the homepage, use the domain name
+        return domain.charAt(0).toUpperCase() + domain.slice(1);
+      }
+      
+      // Remove trailing slashes, split by slashes and get the last meaningful segment
+      path = path.replace(/\/+$/, '');
+      const segments = path.split('/').filter(s => s.length > 0);
+      if (segments.length > 0) {
+        // Get the last segment, replace dashes and underscores with spaces, and capitalize
+        const lastSegment = segments[segments.length - 1]
+          .replace(/[-_]/g, ' ')
+          .replace(/\.([a-z]+)$/, '') // Remove file extensions
+          .trim();
+          
+        if (lastSegment.length > 0) {
+          return lastSegment.charAt(0).toUpperCase() + lastSegment.slice(1);
+        }
+      }
+      
+      // Fallback to domain name
+      return domain.charAt(0).toUpperCase() + domain.slice(1);
+    } catch (e) {
+      // If URL parsing fails, extract something that looks like a title
+      const matches = url.match(/https?:\/\/(?:www\.)?([^\/]+)/);
+      return matches ? matches[1] : url.substring(0, 30);
+    }
+  };
+  
+  // Format a human-readable date
+  const formatDate = (dateString: string): string => {
+    if (!dateString) return '';
+    
+    try {
+      const date = new Date(dateString);
+      // Check if it's a valid date
+      if (isNaN(date.getTime())) return '';
+      
+      // Only show if it's within the last 3 years or in the future
+      const now = new Date();
+      const threeYearsAgo = new Date();
+      threeYearsAgo.setFullYear(now.getFullYear() - 3);
+      
+      if (date < threeYearsAgo) return '';
+      
+      return date.toLocaleDateString(undefined, { year: 'numeric', month: 'short' });
+    } catch (e) {
+      return '';
+    }
+  };
+  
+  const searchResults = parseSearchResults();
+  const hasResults = searchResults.length > 0;
+  
+  // Get raw output for fallback
   const getRawOutput = (): string => {
     if (!userContent) return "";
     
@@ -794,7 +1135,7 @@ function WebSearchToolView({ assistantContent, userContent }: { assistantContent
       // Extract the results section
       const outputMatch = userContent.match(/output='([\s\S]*?)(?='\))/);
       if (outputMatch && outputMatch[1]) {
-        return outputMatch[1];
+        return outputMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
       }
       return "";
     } catch (e) {
@@ -805,6 +1146,28 @@ function WebSearchToolView({ assistantContent, userContent }: { assistantContent
   
   const rawOutput = getRawOutput();
   
+  // Format a URL for display
+  const formatUrl = (url: string): string => {
+    try {
+      const urlObj = new URL(url);
+      let formattedUrl = urlObj.hostname.replace('www.', '');
+      
+      // Add path if it's not just the root
+      if (urlObj.pathname && urlObj.pathname !== '/') {
+        // Limit path length
+        const path = urlObj.pathname.length > 25 
+          ? urlObj.pathname.substring(0, 25) + '...' 
+          : urlObj.pathname;
+        formattedUrl += path;
+      }
+      
+      return formattedUrl;
+    } catch (e) {
+      // Return a shortened version of the URL if parsing fails
+      return url.length > 40 ? url.substring(0, 40) + '...' : url;
+    }
+  };
+  
   return (
     <div className="border rounded-md overflow-hidden">
       <div className="flex items-center p-2 bg-muted justify-between">
@@ -814,22 +1177,61 @@ function WebSearchToolView({ assistantContent, userContent }: { assistantContent
         </div>
       </div>
       
-      <div className="px-3 py-2 border-t border-b bg-muted/50">
+      <div className="px-4 py-3 border-t border-b bg-muted/50">
         <div className="flex items-center">
           <div className="text-sm font-medium mr-2">Query:</div>
-          <div className="text-sm font-mono bg-muted py-1 px-2 rounded flex-1">{query}</div>
+          <div className="text-sm bg-muted py-1 px-3 rounded-md flex-1">{query}</div>
+        </div>
+        <div className="mt-1.5 text-xs text-muted-foreground">
+          {hasResults ? `Found ${searchResults.length} results` : 'No results found'}
         </div>
       </div>
       
       <div className="overflow-auto bg-muted/20 max-h-[500px]">
-        {rawOutput ? (
-          <pre className="text-xs font-mono p-3 whitespace-pre-wrap break-all">
+        {hasResults ? (
+          <div className="divide-y">
+            {searchResults.map((result, idx) => (
+              <div key={idx} className="p-4 space-y-1.5">
+                <div className="flex flex-col">
+                  <div className="text-xs text-emerald-600 dark:text-emerald-400 truncate flex items-center">
+                    <span className="truncate">{formatUrl(result.url)}</span>
+                    {result.publishedDate && (
+                      <span className="text-muted-foreground ml-2 whitespace-nowrap">
+                        {formatDate(result.publishedDate)}
+                      </span>
+                    )}
+                  </div>
+                  <a 
+                    href={result.url} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline font-medium"
+                  >
+                    {result.title}
+                  </a>
+                </div>
+                {result.snippet && (
+                  <p className="text-sm text-muted-foreground line-clamp-2">
+                    {result.snippet}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : rawOutput ? (
+          <div className="p-4">
+            <div className="text-sm mb-2 text-muted-foreground">
+              Showing raw search results:
+            </div>
+            <pre className="text-xs font-mono bg-muted/30 p-3 rounded whitespace-pre-wrap break-all">
             {rawOutput}
           </pre>
+          </div>
         ) : (
-          <div className="p-4 text-center text-muted-foreground">
-            <Search className="h-5 w-5 mx-auto mb-2 opacity-50" />
-            <p className="text-sm">{isSuccess ? "No results found" : "Search results unavailable"}</p>
+          <div className="p-6 text-center text-muted-foreground">
+            <Search className="h-6 w-6 mx-auto mb-2 opacity-50" />
+            <p className="text-sm font-medium">No results found</p>
+            <p className="text-xs mt-1">Try a different search query</p>
           </div>
         )}
       </div>
@@ -841,22 +1243,102 @@ function WebSearchToolView({ assistantContent, userContent }: { assistantContent
 function WebCrawlToolView({ assistantContent, userContent }: { assistantContent?: string; userContent?: string }) {
   if (!assistantContent) return <div>No content available</div>;
   
-  // Extract URL
+  // Extract URL from assistantContent
   const urlMatch = assistantContent.match(/url=["']([\s\S]*?)["']/);
   const url = urlMatch ? urlMatch[1] : "";
   
   // Check if crawl was successful
   const isSuccess = userContent?.includes('success=True');
   
-  // Get raw output without trying to parse as JSON
+  // Parse crawled content - keep it simple with just title, url, and text
+  const parseCrawlResult = (): { title: string; url: string; text: string; } | null => {
+    if (!userContent) return null;
+    
+    try {
+      // Extract the output section
+      const outputMatch = userContent.match(/output='([\s\S]*?)(?='\))/);
+      if (!outputMatch || !outputMatch[1]) return null;
+      
+      const output = outputMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+      
+      // Try to parse as JSON
+      try {
+        if (output.trim().startsWith('{') || output.trim().startsWith('[')) {
+          const parsedOutput = JSON.parse(output);
+          
+          // Handle array with one item (common format)
+          if (Array.isArray(parsedOutput) && parsedOutput.length > 0) {
+            const item = parsedOutput[0];
+            return {
+              title: item.Title || item.title || '',
+              url: cleanUrl(item.URL || item.Url || item.url || ''),
+              text: item.Text || item.text || item.Content || item.content || ''
+            };
+          }
+          
+          // Handle single object
+          if (!Array.isArray(parsedOutput)) {
+            return {
+              title: parsedOutput.Title || parsedOutput.title || '',
+              url: cleanUrl(parsedOutput.URL || parsedOutput.Url || parsedOutput.url || ''),
+              text: parsedOutput.Text || parsedOutput.text || parsedOutput.Content || parsedOutput.content || ''
+            };
+          }
+        }
+      } catch (e) {
+        console.log('JSON parsing failed');
+      }
+      
+      // If JSON parsing fails, just return the raw text
+      return {
+        title: url,
+        url: url,
+        text: output
+      };
+    } catch (e) {
+      console.error("Failed to parse crawl result", e);
+      return null;
+    }
+  };
+  
+  // Clean up a URL
+  const cleanUrl = (url: string): string => {
+    if (!url) return '';
+    
+    // Remove quotes
+    let cleaned = url.replace(/^["'](.+)["']$/g, '$1');
+    
+    // Remove "URL:" prefix
+    cleaned = cleaned.replace(/^URL:\s*/i, '');
+    
+    // Remove trailing commas, quotes, brackets
+    cleaned = cleaned.replace(/[,"'\]\}]+$/, '');
+    
+    // Remove any trailing whitespace
+    cleaned = cleaned.trim();
+    
+    return cleaned;
+  };
+  
+  // Format clean URL for display
+  const formatUrl = (url: string): string => {
+    try {
+      const urlObj = new URL(url);
+      return urlObj.hostname + (urlObj.pathname !== '/' ? urlObj.pathname : '');
+    } catch (e) {
+      return url;
+    }
+  };
+  
+  // Get raw output for fallback
   const getRawOutput = (): string => {
     if (!userContent) return "";
     
     try {
-      // Extract the results section
+      // Extract the output section
       const outputMatch = userContent.match(/output='([\s\S]*?)(?='\))/);
       if (outputMatch && outputMatch[1]) {
-        return outputMatch[1];
+        return outputMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
       }
       return "";
     } catch (e) {
@@ -865,6 +1347,7 @@ function WebCrawlToolView({ assistantContent, userContent }: { assistantContent?
     }
   };
   
+  const crawlData = parseCrawlResult();
   const rawOutput = getRawOutput();
   
   return (
@@ -872,33 +1355,49 @@ function WebCrawlToolView({ assistantContent, userContent }: { assistantContent?
       <div className="flex items-center p-2 bg-muted justify-between">
         <div className="flex items-center">
           <Globe className="h-4 w-4 mr-2 text-muted-foreground" />
-          <span className="text-sm font-medium">Webpage Content</span>
+          <span className="text-sm font-medium">Web Content</span>
         </div>
       </div>
       
-      <div className="px-3 py-2 border-t border-b bg-muted/50">
-        <div className="flex items-center truncate">
+      <div className="px-4 py-3 border-t border-b bg-muted/50">
           <a 
-            href={url} 
+          href={crawlData?.url || url} 
             target="_blank" 
             rel="noopener noreferrer"
-            className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+          className="text-blue-600 hover:underline flex items-center gap-1 text-sm font-medium"
           >
-            {url.length > 50 ? `${url.substring(0, 50)}...` : url}
-            <ExternalLink className="h-3 w-3" />
+          {formatUrl(crawlData?.url || url)}
+          <ExternalLink className="h-3.5 w-3.5" />
           </a>
-        </div>
       </div>
       
       <div className="overflow-auto bg-muted/20 max-h-[500px]">
-        {rawOutput ? (
-          <pre className="text-xs font-mono p-3 whitespace-pre-wrap break-all">
+        {crawlData ? (
+          <div className="p-4">
+            {crawlData.title && crawlData.title !== url && (
+              <h3 className="text-base font-semibold mb-3">{crawlData.title}</h3>
+            )}
+            
+            <div className="space-y-2 text-sm">
+              {crawlData.text.split('\n').map((paragraph, idx) => (
+                paragraph.trim() ? (
+                  <p key={idx} className="text-muted-foreground">
+                    {paragraph}
+                  </p>
+                ) : null
+              ))}
+            </div>
+          </div>
+        ) : rawOutput ? (
+          <div className="p-4">
+            <pre className="text-xs font-mono bg-muted/30 p-3 rounded whitespace-pre-wrap break-all">
             {rawOutput}
           </pre>
+          </div>
         ) : (
-          <div className="p-4 text-center text-muted-foreground">
-            <Globe className="h-5 w-5 mx-auto mb-2 opacity-50" />
-            <p className="text-sm">{isSuccess ? "No content extracted" : "Webpage content unavailable"}</p>
+          <div className="p-6 text-center text-muted-foreground">
+            <Globe className="h-6 w-6 mx-auto mb-2 opacity-50" />
+            <p className="text-sm font-medium">{isSuccess ? "No content extracted" : "Webpage content unavailable"}</p>
           </div>
         )}
       </div>
@@ -1182,6 +1681,94 @@ function DataProviderCallView({ assistantContent, userContent }: { assistantCont
   );
 }
 
+// Component for deploy tool
+function DeployToolView({ assistantContent, userContent }: { assistantContent?: string; userContent?: string }) {
+  if (!assistantContent) return <div>No content available</div>;
+  
+  // Extract project name
+  const nameMatch = assistantContent.match(/name=["']([\s\S]*?)["']/);
+  const projectName = nameMatch ? nameMatch[1] : "unknown";
+  
+  // Extract directory path
+  const dirMatch = assistantContent.match(/directory_path=["']([\s\S]*?)["']/);
+  const directory = dirMatch ? dirMatch[1] : "unknown";
+  
+  // Check if operation was successful
+  const isSuccess = userContent?.includes('Success!') || userContent?.includes('Deployment complete!') || userContent?.includes('Successfully created');
+  
+  // Extract deployment URL from the response
+  const extractDeploymentUrl = (): string | null => {
+    if (!userContent) return null;
+    
+    // Try to find the URL pattern in the output
+    const urlMatch = userContent.match(/https:\/\/[a-zA-Z0-9-]+\.pages\.dev/);
+    return urlMatch ? urlMatch[0] : null;
+  };
+  
+  const deploymentUrl = extractDeploymentUrl();
+  
+  return (
+    <div className="border rounded-md overflow-hidden">
+      <div className="flex items-center p-3 bg-muted justify-between">
+        <div className="flex items-center">
+          <Rocket className="h-5 w-5 mr-2 text-primary" />
+          <span className="text-base font-medium">Deployment</span>
+        </div>
+        {isSuccess && (
+          <span className="text-sm text-green-600 flex items-center">
+            <CheckCircle className="h-4 w-4 mr-1" /> Deployed
+          </span>
+        )}
+      </div>
+      
+      <div className="p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-medium">Project:</div>
+          <div className="text-sm font-mono">{projectName}</div>
+        </div>
+        <div className="flex items-center justify-between">
+          <div className="text-sm font-medium">Directory:</div>
+          <div className="text-sm font-mono">{directory}</div>
+        </div>
+      </div>
+      
+      {deploymentUrl && (
+        <div className="p-4 bg-green-50 dark:bg-green-950/20 space-y-4">
+          <div className="space-y-1">
+            <div className="text-sm font-medium text-green-700 dark:text-green-300">Deployment URL:</div>
+            <a 
+              href={deploymentUrl} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:underline flex items-center gap-1 break-all"
+            >
+              {deploymentUrl}
+              <ExternalLink className="h-4 w-4 flex-shrink-0" />
+            </a>
+          </div>
+          
+          <div className="text-sm text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 p-3 rounded-md flex items-start gap-2">
+            <Info className="h-4 w-4 mt-0.5 flex-shrink-0" />
+            <span>It may take a few minutes before the site becomes reachable.</span>
+          </div>
+          
+          <div className="flex justify-end">
+            <a 
+              href={deploymentUrl} 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-9 px-4 py-2"
+            >
+              Visit Site
+              <ExternalLink className="h-4 w-4 ml-1" />
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ToolCallSidePanel({
   isOpen,
   onClose,
@@ -1199,11 +1786,43 @@ export function ToolCallSidePanel({
 
   // Get the sandbox ID from project for todo.md fetching
   const sandboxId = project?.sandbox?.id || null;
-
+  
+  // Get tool name for display
+  const getToolName = (): { name: string, icon: React.ReactNode } => {
+    if (isHistoricalPair(content)) {
+      const toolName = content.assistantCall.name || '';
+      
+      if (toolName.toLowerCase() === 'deploy') {
+        return { name: 'DEPLOY', icon: <Rocket className="h-4 w-4" /> };
+      }
+      
+      if (toolName.toLowerCase().includes('command')) {
+        return { name: 'EXECUTE', icon: <Terminal className="h-4 w-4" /> };
+      }
+      
+      return { name: toolName.toUpperCase(), icon: <Command className="h-4 w-4" /> };
+    }
+    
+    if (content && 'name' in content) {
+      const toolName = content.name || '';
+      
+      if (toolName.toLowerCase() === 'deploy') {
+        return { name: 'DEPLOY', icon: <Rocket className="h-4 w-4" /> };
+      }
+      
+      if (toolName.toLowerCase().includes('command')) {
+        return { name: 'EXECUTE', icon: <Terminal className="h-4 w-4" /> };
+      }
+      
+      return { name: toolName.toUpperCase(), icon: <Command className="h-4 w-4" /> };
+    }
+    
+    return { name: '', icon: null };
+  };  
   return (
     <div 
       className={`
-        ${isOpen ? 'w-full sm:w-[85%] md:w-[75%] lg:w-[60%] xl:w-[50%] 2xl:w-[40%] max-w-[1000px]' : 'w-0'} 
+        ${isOpen ? 'w-full sm:w-[100%] md:w-[45%] lg:w-[42.5%] xl:w-[40%] 2xl:w-[35%] max-w-[800px]' : 'w-0'} 
         border-l bg-sidebar h-screen flex flex-col 
         transition-all duration-300 ease-in-out overflow-hidden
         fixed sm:sticky top-0 right-0 z-30 
@@ -1212,27 +1831,29 @@ export function ToolCallSidePanel({
       {/* Ensure content doesn't render or is hidden when closed to prevent layout shifts */}
       {isOpen && (
         <>
-          <div className="flex items-center justify-between p-4 shrink-0">
+          <div className="bg-muted/30 backdrop-blur-sm sticky top-0 z-10">
+            <div className="flex items-center justify-between px-5 py-3">
+              <div className="flex flex-col">
             <h2 className="text-lg font-semibold flex items-center gap-2">
-              <Info className="h-5 w-5" /> 
-              Suna´s Computer
+                  <Laptop className="h-5 w-5 text-primary" /> 
+                  <span>Suna's Computer</span>
             </h2>
-            <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8">
+              </div>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="icon" onClick={onClose} className="h-8 w-8 rounded-full">
               <X className="h-4 w-4" />
               <span className="sr-only">Close Panel</span>
             </Button>
+          </div>
+            </div>
+            
+            {/* Tool name display - Vercel-style minimalist */}
           </div>
           <div className="flex-1 p-4 overflow-y-auto">
             {content ? (
               // ---- Render Historical Pair ----
               'type' in content && content.type === 'historical' ? (
                 <div className="space-y-6">
-                  {/* Tool name header */}
-                  <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground border-b pb-3">
-                    <Terminal className="h-4 w-4" />
-                    <span>{content.assistantCall.name || 'Tool Call'}</span>
-                  </div>
-                
                   {/* Unified tool view - shows request and result together */}
                   {getUnifiedToolView(
                     content.assistantCall.name, 
@@ -1334,9 +1955,29 @@ export function ToolCallSidePanel({
           {showNavigation && (
             <div className="px-4 pt-2 pb-2 border-t">
               <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-1.5">
+                  {currentIndex + 1 === totalPairs ? (
+                    <div className="flex items-center">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30 mr-1.5">
+                        <CheckCircle className="h-3 w-3 text-green-600" />
+                      </span>
+                      <span className="text-sm font-medium">
+                        {totalPairs > 1 ? 
+                          `Completed ${totalPairs} steps` : 
+                          "Step completed"}
+                      </span>
+                    </div>
+                  ) : (
+                    <>
                 <span className="text-sm font-medium text-muted-foreground">
-                  Step {currentIndex + 1} of {totalPairs}
+                        Step {currentIndex + 1}
                 </span>
+                      <span className="text-xs text-muted-foreground/70 font-mono">
+                        of {totalPairs}
+                      </span>
+                    </>
+                  )}
+                </div>
                 <div className="flex items-center gap-1">
                   <Button 
                     variant="ghost" 
@@ -1358,22 +1999,34 @@ export function ToolCallSidePanel({
                   </Button>
                 </div>
               </div>
+              
+              <div className="relative">
               <Slider
-                value={[currentIndex]} // Slider value is an array
+                  value={[currentIndex]} 
                 max={totalPairs - 1}
                 step={1}
-                onValueChange={(value) => onNavigate(value[0])} // onValueChange gives an array
-              />
+                  onValueChange={(value) => onNavigate(value[0])}
+                  className={currentIndex + 1 === totalPairs ? "accent-green-600" : ""}
+                />
+                
+                {/* Progress markers */}
+                {totalPairs > 3 && (
+                  <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 flex justify-between pointer-events-none">
+                    <div className="w-1 h-1 rounded-full bg-muted-foreground/40"></div>
+                    <div className="w-1 h-1 rounded-full bg-muted-foreground/40"></div>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
           {/* Todo Panel at the bottom of side panel */}
-          {sandboxId && (
+          {/* {sandboxId && (
             <TodoPanel
               sandboxId={sandboxId}
               isSidePanelOpen={isOpen}
             />
-          )}
+          )} */}
         </>
       )}
     </div>

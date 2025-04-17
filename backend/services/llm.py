@@ -247,7 +247,7 @@ async def test_openrouter():
         # Test with standard OpenRouter model
         print("\n--- Testing standard OpenRouter model ---")
         response = await make_llm_api_call(
-            model_name="openrouter/openai/gpt-3.5-turbo",
+            model_name="openrouter/openai/gpt-4o-mini",
             messages=test_messages,
             temperature=0.7,
             max_tokens=100
