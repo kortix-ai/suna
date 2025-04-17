@@ -198,32 +198,6 @@ class ThreadManager:
                 if max_xml_tool_calls > 0:
                     processor_config.max_xml_tool_calls = max_xml_tool_calls
                 
-                # Add XML examples to system prompt if requested
-                if include_xml_examples and processor_config.xml_tool_calling:
-                    xml_examples = self.tool_registry.get_xml_examples()
-                    if xml_examples:
-                        # logger.debug(f"Adding {len(xml_examples)} XML examples to system prompt")
-                        
-                        # Create or append to content
-                        if isinstance(system_prompt['content'], str):
-                            examples_content = """
---- XML TOOL CALLING --- 
-
-In this environment you have access to a set of tools you can use to answer the user's question. The tools are specified in XML format.
-{{ FORMATTING INSTRUCTIONS }}
-String and scalar parameters should be specified as attributes, while content goes between tags.
-Note that spaces for string values are not stripped. The output is parsed with regular expressions.
-
-Here are the XML tools available with examples:
-"""
-                            for tag_name, example in xml_examples.items():
-                                examples_content += f"<{tag_name}> Example: {example}\n"
-                            
-                            system_prompt['content'] += examples_content
-                        else:
-                            # If content is not a string (might be a list or dict), log a warning
-                            logger.warning("System prompt content is not a string, cannot add XML examples")
-                
                 # 1. Get messages from thread for LLM call
                 messages = await self.get_llm_messages(thread_id)
                 
@@ -325,16 +299,13 @@ Here are the XML tools available with examples:
                     return response_generator
                 else:
                     logger.debug("Processing non-streaming response")
-                    try:
-                        response = await self.response_processor.process_non_streaming_response(
-                            llm_response=llm_response,
-                            thread_id=thread_id,
-                            config=processor_config
-                        )
-                        return response
-                    except Exception as e:
-                        logger.error(f"Error in non-streaming response: {str(e)}", exc_info=True)
-                        raise
+                    # Return the async generator directly, don't await it
+                    response_generator = self.response_processor.process_non_streaming_response(
+                        llm_response=llm_response,
+                        thread_id=thread_id,
+                        config=processor_config
+                    )
+                    return response_generator # Return the generator
               
             except Exception as e:
                 logger.error(f"Error in run_thread: {str(e)}", exc_info=True)

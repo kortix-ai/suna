@@ -14,6 +14,7 @@ from typing import Union, Dict, Any, Optional, AsyncGenerator, List
 import os
 import json
 import asyncio
+import time  # Added for timestamp
 from openai import OpenAIError
 import litellm
 from utils.logger import logger
@@ -25,6 +26,9 @@ litellm.modify_params=True
 MAX_RETRIES = 3
 RATE_LIMIT_DELAY = 30
 RETRY_DELAY = 5
+
+# Define debug log directory relative to this file's location
+DEBUG_LOG_DIR = os.path.join(os.path.dirname(__file__), '..', 'debug_logs') # Assumes backend/debug_logs
 
 class LLMError(Exception):
     """Base exception for LLM-related errors."""
@@ -208,15 +212,116 @@ async def make_llm_api_call(
         model_id=model_id
     )
     
+    # Apply Anthropic prompt caching (minimal implementation)
+    if params["model"].startswith("anthropic/"):
+        logger.debug("Applying minimal Anthropic prompt caching.")
+        messages = params["messages"] # Direct reference
+
+        # 1. Process the first message if it's a system prompt with string content
+        if messages and messages[0].get("role") == "system":
+            content = messages[0].get("content")
+            if isinstance(content, str):
+                messages[0]["content"] = [
+                    {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}
+                ]
+                logger.debug("Applied cache_control to system message.")
+                modified = True
+            elif not isinstance(content, list):
+                 logger.warning("System message content is not a string or list, skipping cache_control.")
+            # else: content is already a list, do nothing
+
+        # 2. Find and process the last user message
+        last_user_idx = -1
+        for i in range(len(messages) - 1, -1, -1):
+            if messages[i].get("role") == "user":
+                last_user_idx = i
+                break
+
+        if last_user_idx != -1:
+            last_user_message = messages[last_user_idx]
+            content = last_user_message.get("content")
+            applied_to_user = False
+
+            if isinstance(content, str):
+                last_user_message["content"] = [
+                    {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}
+                ]
+                logger.debug(f"Applied cache_control to last user message (string content, index {last_user_idx}).")
+                applied_to_user = True
+            elif isinstance(content, list):
+                # Modify text blocks within the list directly
+                found_text_block = False
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "text":
+                        # Add cache_control if not already present (avoids adding it multiple times)
+                        if "cache_control" not in item:
+                           item["cache_control"] = {"type": "ephemeral"}
+                           found_text_block = True # Mark modification only if added
+                
+                if found_text_block:
+                    logger.debug(f"Applied cache_control to text part(s) of last user message (list content, index {last_user_idx}).")
+                    applied_to_user = True
+                # else: No text block found or cache_control already present, do nothing
+            else:
+                logger.warning(f"Last user message (index {last_user_idx}) content is not a string or list ({type(content)}), skipping cache_control.")
+            
+            if applied_to_user:
+                modified = True
+
+    # --- Debug Logging Setup ---
+    # Initialize log path to None, it will be set only if logging is enabled
+    response_log_path = None
+    enable_debug_logging = os.environ.get('ENABLE_LLM_DEBUG_LOGGING', 'false').lower() == 'true'
+
+    if enable_debug_logging:
+        try:
+            os.makedirs(DEBUG_LOG_DIR, exist_ok=True)
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            # Use a unique ID or counter if calls can happen in the same second
+            # For simplicity, using timestamp only for now
+            request_log_path = os.path.join(DEBUG_LOG_DIR, f"llm_request_{timestamp}.json")
+            response_log_path = os.path.join(DEBUG_LOG_DIR, f"llm_response_{timestamp}.json") # Set here if enabled
+
+            # Log the request parameters just before the attempt loop
+            logger.debug(f"Logging LLM request parameters to {request_log_path}")
+            with open(request_log_path, 'w') as f:
+                # Use default=str for potentially non-serializable items in params if needed
+                json.dump(params, f, indent=2, default=str)
+
+        except Exception as log_err:
+            logger.error(f"Failed to set up or write LLM debug request log: {log_err}", exc_info=True)
+            # Reset response path to None if setup failed, even if logging was enabled
+            response_log_path = None
+    else:
+        logger.debug("LLM debug logging is disabled via environment variable.")
+    # --- End Debug Logging Setup ---
+
     last_error = None
     for attempt in range(MAX_RETRIES):
         try:
             logger.debug(f"Attempt {attempt + 1}/{MAX_RETRIES}")
-            # logger.debug(f"API request parameters: {json.dumps(params, indent=2)}")
             
             response = await litellm.acompletion(**params)
             logger.debug(f"Successfully received API response from {model_name}")
-            logger.debug(f"Response: {response}")
+            
+            # --- Debug Logging Response ---
+            if response_log_path: # Only log if request logging setup succeeded
+                try:
+                    logger.debug(f"Logging LLM response object to {response_log_path}")
+                    # Check if it's a streaming response (AsyncGenerator)
+                    if isinstance(response, AsyncGenerator):
+                         with open(response_log_path, 'w') as f:
+                            json.dump({"status": "streaming_response", "message": "Full response logged chunk by chunk where consumed."}, f, indent=2)
+                    else:
+                         # Assume it's a LiteLLM ModelResponse object, convert to dict
+                         response_dict = response.dict()
+                         with open(response_log_path, 'w') as f:
+                             # Use default=str for potentially non-serializable items like datetime
+                             json.dump(response_dict, f, indent=2, default=str)
+                except Exception as log_err:
+                    logger.error(f"Failed to write LLM debug response log: {log_err}", exc_info=True)
+            # --- End Debug Logging Response ---
+            
             return response
             
         except (litellm.exceptions.RateLimitError, OpenAIError, json.JSONDecodeError) as e:
