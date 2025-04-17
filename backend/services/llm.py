@@ -28,7 +28,7 @@ RATE_LIMIT_DELAY = 30
 RETRY_DELAY = 5
 
 # Define debug log directory relative to this file's location
-DEBUG_LOG_DIR = os.path.join(os.path.dirname(__file__), '..', 'debug_logs') # Assumes backend/debug_logs
+DEBUG_LOG_DIR = os.path.join(os.path.dirname(__file__), 'debug_logs')
 
 class LLMError(Exception):
     """Base exception for LLM-related errors."""
@@ -86,7 +86,10 @@ def prepare_params(
     api_base: Optional[str] = None,
     stream: bool = False,
     top_p: Optional[float] = None,
-    model_id: Optional[str] = None
+    model_id: Optional[str] = None,
+    # Add parameters for thinking/reasoning
+    enable_thinking: Optional[bool] = None,
+    reasoning_effort: Optional[str] = None
 ) -> Dict[str, Any]:
     """Prepare parameters for the API call."""
     params = {
@@ -156,6 +159,24 @@ def prepare_params(
             params["model_id"] = "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
             logger.debug(f"Auto-set model_id for Claude 3.7 Sonnet: {params['model_id']}")
 
+    # --- Add Anthropic Thinking/Reasoning Effort ---
+    # Determine if thinking should be enabled based on the passed parameter
+    use_thinking = enable_thinking if enable_thinking is not None else False
+
+    # Check if the model is Anthropic
+    is_anthropic = "sonnet-3-7" in model_name.lower() or "anthropic" in model_name.lower()
+
+    # Add reasoning_effort parameter if enabled and applicable
+    if is_anthropic and use_thinking:
+        # Determine reasoning effort based on the passed parameter, defaulting to 'low'
+        effort_level = reasoning_effort if reasoning_effort else 'low'
+        
+        params["reasoning_effort"] = effort_level
+        logger.info(f"Anthropic thinking enabled with reasoning_effort='{effort_level}'")
+
+        # Anthropic requires temperature=1 when thinking/reasoning_effort is enabled
+        params["temperature"] = 1.0
+
     return params
 
 async def make_llm_api_call(
@@ -170,7 +191,10 @@ async def make_llm_api_call(
     api_base: Optional[str] = None,
     stream: bool = False,
     top_p: Optional[float] = None,
-    model_id: Optional[str] = None
+    model_id: Optional[str] = None,
+    # Add parameters for thinking/reasoning
+    enable_thinking: Optional[bool] = None,
+    reasoning_effort: Optional[str] = None
 ) -> Union[Dict[str, Any], AsyncGenerator]:
     """
     Make an API call to a language model using LiteLLM.
@@ -209,7 +233,10 @@ async def make_llm_api_call(
         api_base=api_base,
         stream=stream,
         top_p=top_p,
-        model_id=model_id
+        model_id=model_id,
+        # Add parameters for thinking/reasoning
+        enable_thinking=enable_thinking,
+        reasoning_effort=reasoning_effort
     )
     
     # Apply Anthropic prompt caching (minimal implementation)
@@ -272,15 +299,19 @@ async def make_llm_api_call(
     # Initialize log path to None, it will be set only if logging is enabled
     response_log_path = None
     enable_debug_logging = os.environ.get('ENABLE_LLM_DEBUG_LOGGING', 'false').lower() == 'true'
+    # enable_debug_logging = True
 
     if enable_debug_logging:
         try:
             os.makedirs(DEBUG_LOG_DIR, exist_ok=True)
+            # save the model name too 
+            model_name = params["model"]
+            
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             # Use a unique ID or counter if calls can happen in the same second
             # For simplicity, using timestamp only for now
-            request_log_path = os.path.join(DEBUG_LOG_DIR, f"llm_request_{timestamp}.json")
-            response_log_path = os.path.join(DEBUG_LOG_DIR, f"llm_response_{timestamp}.json") # Set here if enabled
+            request_log_path = os.path.join(DEBUG_LOG_DIR, f"llm_request_{timestamp}_{model_name}.json")
+            response_log_path = os.path.join(DEBUG_LOG_DIR, f"llm_response_{timestamp}_{model_name}.json") # Set here if enabled
 
             # Log the request parameters just before the attempt loop
             logger.debug(f"Logging LLM request parameters to {request_log_path}")
@@ -300,7 +331,7 @@ async def make_llm_api_call(
     for attempt in range(MAX_RETRIES):
         try:
             logger.debug(f"Attempt {attempt + 1}/{MAX_RETRIES}")
-            
+            # print(params)
             response = await litellm.acompletion(**params)
             logger.debug(f"Successfully received API response from {model_name}")
             
