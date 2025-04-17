@@ -41,8 +41,8 @@ export const siteConfig = {
   ],
   links: {
     email: "support@kortix.ai",
-    twitter: "https://twitter.com/kortixai",
-    // discord: "https://discord.gg/kortixai",
+    twitter: "https://x.com/kortixai",
+    discord: "https://discord.gg/kortixai",
     github: "https://github.com/Kortix-ai/Suna",
     instagram: "https://instagram.com/kortixai",
   },
@@ -52,7 +52,6 @@ export const siteConfig = {
       { id: 2, name: "Use Cases", href: "#use-cases" },
       { id: 3, name: "Open Source", href: "#open-source" },
       { id: 4, name: "Pricing", href: "#pricing" },
-      // { id: 5, name: "Contact", href: "#cta" },
     ],
   },
   hero: {
@@ -1012,28 +1011,25 @@ export const siteConfig = {
     {
       title: "Kortix",
       links: [
-        { id: 1, title: "About", url: "#" },
-        { id: 2, title: "Team", url: "#" },
-        { id: 3, title: "Blog", url: "#" },
-        { id: 4, title: "Careers", url: "#" },
+        { id: 1, title: "About", url: "https://kortix.ai" },
+        { id: 3, title: "Contact", url: "contact@kortix.ai" },
+        { id: 4, title: "Careers", url: "https://kortix.ai/careers" },
       ],
     },
     {
       title: "Resources",
       links: [
-        { id: 5, title: "Documentation", url: "#" },
-        { id: 6, title: "API Reference", url: "#" },
-        { id: 7, title: "Community", url: "#" },
+        { id: 5, title: "Documentation", url: "https://github.com/Kortix-ai/Suna" },
+        { id: 7, title: "Discord", url: "https://discord.gg/Py6pCBUUPw" },
         { id: 8, title: "GitHub", url: "https://github.com/Kortix-ai/Suna" },
       ],
     },
     {
       title: "Legal",
       links: [
-        { id: 9, title: "Privacy", url: "#" },
-        { id: 10, title: "Terms", url: "#" },
-        { id: 11, title: "License", url: "#" },
-        { id: 12, title: "Contact", url: "#" },
+        { id: 9, title: "Privacy Policy", url: "https://suna.so/legal/privacy" },
+        { id: 10, title: "Terms of Service", url: "https://suna.so/legal/terms" },
+        { id: 11, title: "License Apache 2.0", url: "https://github.com/Kortix-ai/Suna/blob/main/LICENSE" },
       ],
     },
   ],
