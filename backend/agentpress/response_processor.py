@@ -155,6 +155,10 @@ class ResponseProcessor:
                 if hasattr(chunk, 'choices') and chunk.choices:
                     delta = chunk.choices[0].delta if hasattr(chunk.choices[0], 'delta') else None
                     
+                    # Check for and log Anthropic thinking content
+                    if delta and hasattr(delta, 'reasoning_content') and delta.reasoning_content:
+                        logger.info(f"[THINKING]: {delta.reasoning_content}")
+                    
                     # Process content chunk
                     if delta and hasattr(delta, 'content') and delta.content:
                         chunk_content = delta.content
