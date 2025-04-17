@@ -59,8 +59,8 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
             'sandbox': {
                 'id': sandbox_id,
                 'pass': sandbox_pass,
-                'vnc_preview': sandbox.get_preview_link(6080),
-                'sandbox_url': sandbox.get_preview_link(8080)
+                'vnc_preview': str(sandbox.get_preview_link(6080)),  # Convert to string
+                'sandbox_url': str(sandbox.get_preview_link(8080))   # Convert to string
             }
         }).eq('project_id', project_id).execute()
     
@@ -161,14 +161,22 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
                 print(f"Error parsing browser state: {e}")
                 # print(latest_browser_state.data[0])
 
+        # Determine model and max tokens
+        model_to_use = os.getenv("MODEL_TO_USE", "anthropic/claude-3-7-sonnet-latest")
+        max_tokens = None
+        if model_to_use == "anthropic/claude-3-7-sonnet-latest":
+            max_tokens = 64000
+
         # Run Thread
         response = await thread_manager.run_thread(
             thread_id=thread_id,
             system_prompt=system_message, # Pass the constructed message
             stream=stream,
-            llm_model=os.getenv("MODEL_TO_USE", "anthropic/claude-3-7-sonnet-latest"),
-            llm_temperature=0,
-            llm_max_tokens=64000,
+            # stream=False,
+            llm_model=model_to_use,
+            # llm_temperature=0.1,
+            llm_temperature=1,
+            llm_max_tokens=max_tokens, # Use the determined value
             tool_choice="auto",
             max_xml_tool_calls=1,
             temporary_message=temporary_message,
