@@ -69,6 +69,7 @@ async def run_conversation_turn(model: str, messages: list, user_prompt: str | l
     # Convert response object to dict and print as indented JSON
     try:
         print(json.dumps(response.dict(), indent=2))
+        print(response._hidden_params)
     except Exception as e:
         print(f"Could not format response as JSON: {e}")
         print(response) # Fallback to printing the raw object if conversion fails
@@ -139,6 +140,7 @@ async def main(model_name: str, reasoning_effort: str = "medium"):
 if __name__ == "__main__":
     # Select the model to test
     model = "anthropic/claude-3-7-sonnet-latest"
+    # model = "groq/llama-3.3-70b-versatile"
     # model = "openai/gpt-4o-mini"
     # model = "openai/gpt-4.1-2025-04-14" # Placeholder if needed
 

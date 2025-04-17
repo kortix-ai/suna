@@ -64,7 +64,6 @@ account_id).limit(1).execute()
         thread_result = await client.table('threads').insert({
             'project_id': project_id,
             'account_id': account_id
-            # 'name': f"Test Run - News Report - {asyncio.get_event_loop().time()}" # Removed name field
         }).execute()
 
         if not thread_result.data:

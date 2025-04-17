@@ -90,8 +90,20 @@ async def run_streaming_conversation_turn(model: str, messages: list, user_promp
                 # Stream to stdout in real-time
                 print(chunk_content, end="", flush=True)
 
-    print("--------------------------------")
     print() # Newline after streaming finishes
+
+    # Print hidden params if available
+    try:
+        print("--- Hidden Params ---")
+        print(stream_response._hidden_params)
+        print("--- End Hidden Params ---")
+    except AttributeError:
+        print("(_hidden_params attribute not found on stream response object)")
+    except Exception as e:
+        print(f"Could not print _hidden_params: {e}")
+
+    print("--------------------------------")
+    print() # Add another newline for separation
     
     # Create a complete response object with the full content
     final_response = {
