@@ -447,14 +447,21 @@ class ResponseProcessor:
                             continue
                 
                 # Add assistant message with accumulated content
+                # Start with base message data
                 message_data = {
                     "role": "assistant",
-                    "content": accumulated_content,
-                    "tool_calls": complete_native_tool_calls if config.native_tool_calling and complete_native_tool_calls else None
+                    "content": accumulated_content
+                    # tool_calls key is initially omitted
                 }
+
+                # Conditionally add tool_calls if they exist and native calling is enabled
+                if config.native_tool_calling and complete_native_tool_calls:
+                    message_data["tool_calls"] = complete_native_tool_calls
+
+                # Add the message (tool_calls will only be present if added above)
                 await self.add_message(
-                    thread_id=thread_id, 
-                    type="assistant", 
+                    thread_id=thread_id,
+                    type="assistant",
                     content=message_data,
                     is_llm_message=True
                 )
@@ -657,14 +664,22 @@ class ResponseProcessor:
                                 })
             
             # Add assistant message FIRST - always do this regardless of finish_reason
+            # Start with base message data
             message_data = {
                 "role": "assistant",
-                "content": content,
-                "tool_calls": native_tool_calls if config.native_tool_calling and 'native_tool_calls' in locals() else None
+                "content": content
+                # tool_calls key is initially omitted
             }
+
+            # Conditionally add tool_calls if they exist and native calling is enabled
+            # Use 'native_tool_calls' in locals() check for safety as before
+            if config.native_tool_calling and 'native_tool_calls' in locals() and native_tool_calls:
+                 message_data["tool_calls"] = native_tool_calls
+
+            # Add the message
             await self.add_message(
-                thread_id=thread_id, 
-                type="assistant", 
+                thread_id=thread_id,
+                type="assistant",
                 content=message_data,
                 is_llm_message=True
             )
