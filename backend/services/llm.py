@@ -86,7 +86,10 @@ def prepare_params(
     api_base: Optional[str] = None,
     stream: bool = False,
     top_p: Optional[float] = None,
-    model_id: Optional[str] = None
+    model_id: Optional[str] = None,
+    # Add parameters for thinking/reasoning
+    enable_thinking: Optional[bool] = None,
+    reasoning_effort: Optional[str] = None
 ) -> Dict[str, Any]:
     """Prepare parameters for the API call."""
     params = {
@@ -157,17 +160,19 @@ def prepare_params(
             logger.debug(f"Auto-set model_id for Claude 3.7 Sonnet: {params['model_id']}")
 
     # --- Add Anthropic Thinking/Reasoning Effort ---
-    # Read environment variables for thinking/reasoning
-    enable_thinking_env = os.environ.get('ENABLE_THINKING', 'false').lower() == 'true'
+    # Determine if thinking should be enabled based on the passed parameter
+    use_thinking = enable_thinking if enable_thinking is not None else False
 
     # Check if the model is Anthropic
     is_anthropic = "sonnet-3-7" in model_name.lower() or "anthropic" in model_name.lower()
 
     # Add reasoning_effort parameter if enabled and applicable
-    if is_anthropic and enable_thinking_env:
-        reasoning_effort_env = os.environ.get('REASONING_EFFORT', 'low') # Default to 'low'
-        params["reasoning_effort"] = reasoning_effort_env
-        logger.info(f"Anthropic thinking enabled with reasoning_effort='{reasoning_effort_env}'")
+    if is_anthropic and use_thinking:
+        # Determine reasoning effort based on the passed parameter, defaulting to 'low'
+        effort_level = reasoning_effort if reasoning_effort else 'low'
+        
+        params["reasoning_effort"] = effort_level
+        logger.info(f"Anthropic thinking enabled with reasoning_effort='{effort_level}'")
 
         # Anthropic requires temperature=1 when thinking/reasoning_effort is enabled
         params["temperature"] = 1.0
@@ -186,7 +191,10 @@ async def make_llm_api_call(
     api_base: Optional[str] = None,
     stream: bool = False,
     top_p: Optional[float] = None,
-    model_id: Optional[str] = None
+    model_id: Optional[str] = None,
+    # Add parameters for thinking/reasoning
+    enable_thinking: Optional[bool] = None,
+    reasoning_effort: Optional[str] = None
 ) -> Union[Dict[str, Any], AsyncGenerator]:
     """
     Make an API call to a language model using LiteLLM.
@@ -225,7 +233,10 @@ async def make_llm_api_call(
         api_base=api_base,
         stream=stream,
         top_p=top_p,
-        model_id=model_id
+        model_id=model_id,
+        # Add parameters for thinking/reasoning
+        enable_thinking=enable_thinking,
+        reasoning_effort=reasoning_effort
     )
     
     # Apply Anthropic prompt caching (minimal implementation)

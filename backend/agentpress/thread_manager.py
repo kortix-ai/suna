@@ -154,9 +154,10 @@ class ThreadManager:
         native_max_auto_continues: int = 25,
         max_xml_tool_calls: int = 0,
         include_xml_examples: bool = False,
+        enable_thinking: Optional[bool] = False, # Add enable_thinking parameter
+        reasoning_effort: Optional[str] = 'low' # Add reasoning_effort parameter
     ) -> Union[Dict[str, Any], AsyncGenerator]:
         """Run a conversation thread with LLM integration and tool execution.
-        
         Args:
             thread_id: The ID of the thread to run
             system_prompt: System message to set the assistant's behavior
@@ -279,7 +280,9 @@ class ThreadManager:
                         max_tokens=llm_max_tokens,
                         tools=openapi_tool_schemas,
                         tool_choice=tool_choice if processor_config.native_tool_calling else None,
-                        stream=stream
+                        stream=stream,
+                        enable_thinking=enable_thinking, # Pass enable_thinking
+                        reasoning_effort=reasoning_effort # Pass reasoning_effort
                     )
                     logger.debug("Successfully received raw LLM API response stream/object")
 

@@ -20,9 +20,19 @@ from utils.billing import check_billing_status, get_account_id_from_thread
 
 load_dotenv()
 
-async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread_manager: Optional[ThreadManager] = None, native_max_auto_continues: int = 25, max_iterations: int = 150):
+async def run_agent(
+    thread_id: str,
+    project_id: str,
+    stream: bool = True,
+    thread_manager: Optional[ThreadManager] = None,
+    native_max_auto_continues: int = 25,
+    max_iterations: int = 150,
+    model_name: str = "anthropic/claude-3-7-sonnet-latest", # Add model_name parameter with default
+    enable_thinking: Optional[bool] = False, # Add enable_thinking parameter
+    reasoning_effort: Optional[str] = 'low' # Add reasoning_effort parameter
+):
     """Run the development agent with specified configuration."""
-    
+
     if not thread_manager:
         thread_manager = ThreadManager()
     client = await thread_manager.db.client
@@ -161,31 +171,29 @@ async def run_agent(thread_id: str, project_id: str, stream: bool = True, thread
                 print(f"Error parsing browser state: {e}")
                 # print(latest_browser_state.data[0])
 
-        # Determine model and max tokens
-        model_to_use = os.getenv("MODEL_TO_USE", "anthropic/claude-3-7-sonnet-latest")
+        # Determine max tokens based on the passed model_name
         max_tokens = None
-        if model_to_use == "anthropic/claude-3-7-sonnet-latest":
-            max_tokens = 64000
+        if model_name == "anthropic/claude-3-7-sonnet-latest":
+            max_tokens = 64000 # Example: Set max tokens for a specific model
 
-        # Run Thread
+        # Run Thread, passing the dynamic settings
         response = await thread_manager.run_thread(
             thread_id=thread_id,
             system_prompt=system_message, # Pass the constructed message
             stream=stream,
-            # stream=False,
-            llm_model=model_to_use,
-            # llm_temperature=0.1,
-            llm_temperature=1,
+            llm_model=model_name, # Use the passed model_name
+            llm_temperature=1, # Example temperature
             llm_max_tokens=max_tokens, # Use the determined value
             tool_choice="auto",
             max_xml_tool_calls=1,
             temporary_message=temporary_message,
             processor_config=processor_config, # Pass the config object
             native_max_auto_continues=native_max_auto_continues,
-            # Explicitly set include_xml_examples to False here
-            include_xml_examples=False,
+            include_xml_examples=False, # Explicitly set include_xml_examples to False here
+            enable_thinking=enable_thinking, # Pass enable_thinking
+            reasoning_effort=reasoning_effort # Pass reasoning_effort
         )
-            
+
         if isinstance(response, dict) and "status" in response and response["status"] == "error":
             yield response 
             break
