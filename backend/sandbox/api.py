@@ -151,9 +151,11 @@ async def list_files(
         
         for file in files:
             # Convert file information to our model
+            # Ensure forward slashes are used for paths, regardless of OS
+            full_path = f"{path.rstrip('/')}/{file.name}" if path != '/' else f"/{file.name}"
             file_info = FileInfo(
                 name=file.name,
-                path=os.path.join(path, file.name),
+                path=full_path, # Use the constructed path
                 is_dir=file.is_dir,
                 size=file.size,
                 mod_time=str(file.mod_time),
