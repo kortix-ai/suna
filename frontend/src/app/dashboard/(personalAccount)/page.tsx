@@ -15,7 +15,7 @@ export default function PersonalAccountPage() {
   
   // Use client-side navigation instead of server redirect
   useEffect(() => {
-    router.replace('/dashboard/(personalAccount)');
+    router.replace('/dashboard');
   }, [router]);
   
   // Return a minimal loading state until redirect happens
