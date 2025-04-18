@@ -678,302 +678,284 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
               </div>
             ) : (
               <div className="space-y-6">
-                {messages.map((message, index) => {
-                  const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
-                  const parsedMetadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
-                  const key = message.message_id || `msg-${index}`;
+                {(() => {
+                  // Group messages logic
+                  type MessageGroup = {
+                    type: 'user' | 'assistant_group';
+                    messages: UnifiedMessage[];
+                    key: string;
+                  };
+                  const groupedMessages: MessageGroup[] = [];
+                  let currentGroup: MessageGroup | null = null;
 
-                  switch(message.type) {
-                     case 'user':
-                    return (
-                         <div key={key} className="flex justify-end">
-                           <div className="max-w-[85%] rounded-lg bg-primary/10 px-4 py-3 text-sm">
-                             {parsedContent.content}
+                  messages.forEach((message, index) => {
+                    const messageType = message.type;
+                    const key = message.message_id || `msg-${index}`;
+
+                    if (messageType === 'user') {
+                      if (currentGroup) {
+                        groupedMessages.push(currentGroup);
+                      }
+                      groupedMessages.push({ type: 'user', messages: [message], key });
+                      currentGroup = null;
+                    } else if (messageType === 'assistant' || messageType === 'tool') {
+                       // Assistant or tool message, add to the current assistant group or start a new one
+                      if (currentGroup && currentGroup.type === 'assistant_group') {
+                        currentGroup.messages.push(message);
+                      } else {
+                        if (currentGroup) { // End previous (user) group
+                          groupedMessages.push(currentGroup);
+                        }
+                        currentGroup = { type: 'assistant_group', messages: [message], key };
+                      }
+                    } else if (messageType !== 'status') {
+                       // Handle unknown/other non-status types if necessary
+                       console.warn("Encountered unhandled message type during grouping:", messageType);
+                       if (currentGroup) {
+                         groupedMessages.push(currentGroup);
+                       }
+                       // Optionally render as a separate block or skip
+                       currentGroup = null;
+                    }
+                    // 'status' messages are implicitly ignored by not being handled
+                  });
+
+                  if (currentGroup) {
+                    groupedMessages.push(currentGroup);
+                  }
+                  
+                  // Render grouped messages
+                  return groupedMessages.map((group, groupIndex) => {
+                    if (group.type === 'user') {
+                      const message = group.messages[0];
+                      const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
+                      return (
+                        <div key={group.key} className="flex justify-end">
+                          <div className="max-w-[85%] rounded-lg bg-primary/10 px-4 py-3 text-sm">
+                            {parsedContent.content}
+                          </div>
+                        </div>
+                      );
+                    } else if (group.type === 'assistant_group') {
+                      return (
+                        <div key={group.key} ref={groupIndex === groupedMessages.length - 1 ? latestMessageRef : null}>
+                          <div className="flex items-start gap-3">
+                            <div className="flex-shrink-0 w-5 h-5 mt-2 rounded-full flex items-center justify-center overflow-hidden bg-gray-200">
+                              <Image src="/kortix-symbol.svg" alt="Suna" width={14} height={14} className="object-contain"/>
+                            </div>
+                            <div className="flex-1 space-y-2">
+                              <div className="max-w-[90%] rounded-lg bg-muted px-4 py-3 text-sm">
+                                <div className="space-y-3">
+                                  {(() => {
+                                    // Pre-process to map tool results to their calls for easier lookup
+                                    const toolResultsMap = new Map<string | null, UnifiedMessage[]>();
+                                    group.messages.forEach(msg => {
+                                      if (msg.type === 'tool') {
+                                        const meta = safeJsonParse<ParsedMetadata>(msg.metadata, {});
+                                        const assistantId = meta.assistant_message_id || null;
+                                        if (!toolResultsMap.has(assistantId)) {
+                                          toolResultsMap.set(assistantId, []);
+                                        }
+                                        toolResultsMap.get(assistantId)?.push(msg);
+                                      }
+                                    });
+                                    
+                                    const renderedToolResultIds = new Set<string>();
+                                    const elements: React.ReactNode[] = [];
+
+                                    group.messages.forEach((message, msgIndex) => {
+                                      if (message.type === 'assistant') {
+                                        const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
+                                        const msgKey = message.message_id || `submsg-assistant-${msgIndex}`;
+
+                                        const xmlRegex = /<(?!inform\b)([a-zA-Z\-_]+)(?:\s+[^>]*)?>(?:[\s\S]*?)<\/\1>|<(?!inform\b)([a-zA-Z\-_]+)(?:\s+[^>]*)?\/>/g;
+                                        let lastIndex = 0;
+                                        const contentParts: React.ReactNode[] = [];
+                                        let match;
+
+                                        if (!parsedContent.content) return; // Skip empty assistant messages
+
+                                        while ((match = xmlRegex.exec(parsedContent.content)) !== null) {
+                                          // Add text before the tag
+                                          if (match.index > lastIndex) {
+                                            contentParts.push(
+                                              <span key={`text-${lastIndex}`} className="whitespace-pre-wrap break-words">
+                                                {parsedContent.content.substring(lastIndex, match.index)}
+                                              </span>
+                                            );
+                                          }
+
+                                          const rawXml = match[0];
+                                          const toolName = match[1] || match[2];
+                                          const IconComponent = getToolIcon(toolName);
+                                          const paramDisplay = extractPrimaryParam(toolName, rawXml);
+                                          const toolCallKey = `tool-${match.index}`;
+
+                                          // Find corresponding tool result (assuming order or simple 1:1 for now)
+                                          const potentialResults = toolResultsMap.get(message.message_id || null) || [];
+                                          const toolResult = potentialResults.find(r => !renderedToolResultIds.has(r.message_id!)); // Find first available result
+
+                                          if (toolName === 'ask') {
+                                            // Render <ask> tag content as plain text
+                                            contentParts.push(
+                                              <span key={`ask-${match.index}`} className="whitespace-pre-wrap break-words">
+                                                {rawXml.match(/<ask>([\s\S]*?)<\/ask>/i)?.[1] || rawXml} 
+                                              </span>
+                                            );
+                                          } else {
+                                            // Render tool button AND its result icon inline
+                                            contentParts.push(
+                                              <button                                                  
+                                                key={toolCallKey} // Use the tool call key for the button
+                                                onClick={() => handleToolClick(message.message_id, toolName)}
+                                                className="inline-flex items-center gap-1.5 py-0.5 px-2 my-0.5 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
+                                              >
+                                                <IconComponent className="h-3.5 w-3.5 text-gray-500 flex-shrink-0" />
+                                                <span className="font-mono text-xs text-gray-700">{toolName}</span>
+                                                {paramDisplay && <span className="ml-1 text-gray-500 truncate max-w-[150px]" title={paramDisplay}>{paramDisplay}</span>}
+                                                {/* Render status icon directly inside the button if result exists */}
+                                                {toolResult && (() => {
+                                                   renderedToolResultIds.add(toolResult.message_id!); // Still need to mark as rendered
+                                                   const toolResultContent = safeJsonParse<ParsedContent>(toolResult.content, {});
+                                                   let displayContent = '';
+                                                   if (typeof toolResultContent.content === 'string') {
+                                                       // Simplified parsing just to check success/failure
+                                                       if (toolResultContent.content.includes('<tool_result>')) {
+                                                           const toolMatch = toolResultContent.content.match(/<tool_result>([\s\S]*?)<\/tool_result>/i);
+                                                           displayContent = toolMatch?.[1]?.trim() || toolResultContent.content;
+                                                       } else {
+                                                           displayContent = toolResultContent.content;
+                                                       }
+                                                   }
+                                                   const toolSuccess = !(
+                                                       displayContent.includes('error') || 
+                                                       displayContent.includes('failed') || 
+                                                       displayContent.includes('failure') ||
+                                                       displayContent.includes('success=False')
+                                                   );
+                                                   const statusIcon = toolSuccess 
+                                                       ? <CheckCircle className="h-3.5 w-3.5 text-green-500 ml-1.5 flex-shrink-0" /> // Adjusted margin
+                                                       : <AlertTriangle className="h-3.5 w-3.5 text-amber-500 ml-1.5 flex-shrink-0" />; // Adjusted margin
+                                                   return statusIcon;
+                                                 })()}
+                                              </button>
+                                            );
+                                          }
+                                          lastIndex = xmlRegex.lastIndex;
+                                        }
+
+                                        // Add text after the last tag
+                                        if (lastIndex < parsedContent.content.length) {
+                                          contentParts.push(
+                                            <span key={`text-${lastIndex}`} className="whitespace-pre-wrap break-words">
+                                              {parsedContent.content.substring(lastIndex)}
+                                            </span>
+                                          );
+                                        }
+                                        // Add the processed assistant message parts to the main elements array
+                                        if (contentParts.length > 0) {
+                                            elements.push(<div key={msgKey}>{contentParts}</div>);
+                                        }
+                                      }
+                                    });
+
+                                    // Render all collected elements for the group
+                                    return elements;
+                                  })()}
+
+                                  {/* Streaming content placeholder within the last assistant group */} 
+                                  {groupIndex === groupedMessages.length - 1 && (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
+                                    <div className="mt-2"> 
+                                      {(() => {
+                                          let detectedTag: string | null = null;
+                                          let tagStartIndex = -1;
+                                          if (streamingTextContent) {
+                                              for (const tag of HIDE_STREAMING_XML_TAGS) {
+                                                  const openingTagPattern = `<${tag}`;
+                                                  const index = streamingTextContent.indexOf(openingTagPattern);
+                                                  if (index !== -1) {
+                                                      detectedTag = tag;
+                                                      tagStartIndex = index;
+                                                      break;
+                                                  }
+                                              }
+                                          }
+
+                                          const textToRender = streamingTextContent || '';
+                                          const textBeforeTag = detectedTag ? textToRender.substring(0, tagStartIndex) : textToRender;
+                                          const showCursor = (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && !detectedTag;
+
+                                          return (
+                                            <>
+                                              {textBeforeTag && (
+                                                <span className="whitespace-pre-wrap break-words">{textBeforeTag}</span>
+                                              )}
+                                              {showCursor && (
+                                                 <span className="inline-block h-4 w-0.5 bg-gray-400 ml-0.5 -mb-1 animate-pulse" />
+                                               )}
+
+                                              {/* Render detected streaming tag (placeholder) */}
+                                              {detectedTag && (
+                                                 <div className="mt-1">
+                                                   <button
+                                                      className="inline-flex items-center gap-1.5 py-0.5 px-2 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
+                                                    >
+                                                      <CircleDashed className="h-3.5 w-3.5 text-gray-500 flex-shrink-0 animate-spin animation-duration-2000" />
+                                                      <span className="font-mono text-xs text-gray-700">{detectedTag}</span>
+                                                    </button>
+                                                  </div>
+                                              )}
+
+                                              {/* Render fully parsed streaming tool call (placeholder) */}
+                                              {streamingToolCall && !detectedTag && (
+                                                <div className="mt-1">
+                                                  {(() => {
+                                                    const toolName = streamingToolCall.name || streamingToolCall.xml_tag_name || 'Tool';
+                                                    const IconComponent = getToolIcon(toolName);
+                                                    const paramDisplay = extractPrimaryParam(toolName, streamingToolCall.arguments || '');
+                                                    return (
+                                                      <button
+                                                        className="inline-flex items-center gap-1.5 py-0.5 px-2 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
+                                                      >
+                                                        <CircleDashed className="h-3.5 w-3.5 text-gray-500 flex-shrink-0 animate-spin animation-duration-2000" />
+                                                        <span className="font-mono text-xs text-gray-700">{toolName}</span>
+                                                        {paramDisplay && <span className="ml-1 text-gray-500 truncate" title={paramDisplay}>{paramDisplay}</span>}
+                                                      </button>
+                                                    );
+                                                  })()}
+                                                </div>
+                                              )}
+                                            </>
+                                          );
+                                      })()}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           </div>
-                       );
-
-                     case 'assistant':
-                       const xmlRegex = /<(?!inform\b)([a-zA-Z\-_]+)(?:\s+[^>]*)?>(?:[\s\S]*?)<\/\1>|<(?!inform\b)([a-zA-Z\-_]+)(?:\s+[^>]*)?\/>/g;
-                       let lastIndex = 0;
-                       const contentParts: React.ReactNode[] = [];
-                       let match;
-
-                       if (!parsedContent.content) {
-                         return parsedContent.content;
-                       }
-
-                       while ((match = xmlRegex.exec(parsedContent.content)) !== null) {
-                           if (match.index > lastIndex) {
-                             contentParts.push(
-                               <span key={`text-${lastIndex}`}>
-                                 {parsedContent.content.substring(lastIndex, match.index)}
-                               </span>
-                             );
-                           }
-
-                           const rawXml = match[0];
-                           const toolName = match[1] || match[2];
-                           const IconComponent = getToolIcon(toolName);
-                           const paramDisplay = extractPrimaryParam(toolName, rawXml);
-                           
-                           // --- ADD LOGGING HERE ---
-                           console.log(`[RENDER] Rendering tool button for Assistant Msg ID: ${message.message_id}, Tool: ${toolName}`);
-                           // --- END LOGGING ---
-                           
-                           // Extract arguments from XML
-                           let toolArgs = {};
-                           try {
-                             // Extract attributes as an object
-                             if (rawXml.includes(' ')) {  // Only if attributes exist
-                               const attrSection = rawXml.match(/<[^>]+\s+([^>]+)>/);
-                               if (attrSection && attrSection[1]) {
-                                 const attrStr = attrSection[1].trim();
-                                 const attrRegex = /(\w+)=["']([^"']*)["']/g;
-                                 let attrMatch;
-                                 while ((attrMatch = attrRegex.exec(attrStr)) !== null) {
-                                   toolArgs[attrMatch[1]] = attrMatch[2];
-                                 }
-                               }
-                             }
-                           } catch (e) {
-                             console.error("Error parsing XML attributes:", e);
-                           }
-                           
-                           contentParts.push(
-                             <button
-                               key={`tool-${match.index}`}
-                               // Pass assistant message ID and tool name
-                               onClick={() => handleToolClick(message.message_id, toolName)}
-                               className="inline-flex items-center gap-1.5 py-0.5 px-2 my-0.5 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
-                             >
-                               <IconComponent className="h-3.5 w-3.5 text-gray-500 flex-shrink-0" />
-                               <span className="font-mono text-xs text-gray-700">{toolName}</span>
-                               {paramDisplay && <span className="ml-1 text-gray-500 truncate" title={paramDisplay}>{paramDisplay}</span>}
-                             </button>
-                           );
-                           lastIndex = xmlRegex.lastIndex;
-                       }
-
-                       if (lastIndex < parsedContent.content.length) {
-                         contentParts.push(
-                           <span key={`text-${lastIndex}`}>
-                             {parsedContent.content.substring(lastIndex)}
-                           </span>
-                         );
-                       }
-
-                       return (
-                         <div key={key} ref={index === messages.length - 1 ? latestMessageRef : null}>
-                           <div className="flex items-start gap-3">
-                              <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center overflow-hidden bg-gray-200">
-                                <Image src="/kortix-symbol.svg" alt="Suna" width={14} height={14} className="object-contain"/>
-                              </div>
-                             <div className="flex-1 space-y-2">
-                               <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3 text-sm">
-                                  <div className="whitespace-pre-wrap break-words">
-                                    {contentParts.length > 0 ? contentParts : parsedContent.content}
-                          </div>
-                      </div>
-                    </div>
-                  </div>
-                      </div>
-                     );
-
-                    case 'tool':
-                       const toolResultContent = safeJsonParse<ParsedContent>(message.content, {});
-                       let toolNameForResult = toolResultContent.name || 'Tool';
-                       
-                       // Try to get the assistant message ID this result belongs to
-                       const associatedAssistantId = parsedMetadata.assistant_message_id;
-                       
-                       // Extract content from XML format if available
-                       let displayContent = '';
-                       let toolSuccess = true; // Default to success
-                       
-                       if (typeof toolResultContent.content === 'string') {
-                         if (toolResultContent.content.includes('<tool_result>')) {
-                           const toolMatch = toolResultContent.content.match(/<tool_result>([\s\S]*?)<\/tool_result>/i);
-                           if (toolMatch && toolMatch[1]) {
-                             // Further extract inner tool content
-                             const innerMatch = toolMatch[1].match(/<([a-zA-Z\-_]+)>([\s\S]*?)<\/\1>/i);
-                             if (innerMatch) {
-                               const innerToolName = innerMatch[1];
-                               displayContent = innerMatch[2].trim();
-                               
-                               // Update the tool name if we found a more specific one
-                               if (innerToolName && innerToolName !== 'tool_result') {
-                                 toolNameForResult = innerToolName;
-                               }
-                             } else {
-                               displayContent = toolMatch[1].trim();
-                             }
-                           }
-                         } else {
-                           // Default to raw content if not in tool_result format
-                           displayContent = toolResultContent.content;
-                         }
-                       }
-                       
-                       // Check for errors or failures in the content
-                       toolSuccess = !(
-                         displayContent.includes('error') || 
-                         displayContent.includes('failed') || 
-                         displayContent.includes('failure') ||
-                         displayContent.includes('success=False')
-                       );
-                       
-                       // Format the tool result display
-                       let statusIcon = toolSuccess 
-                         ? <CheckCircle className="h-3 w-3 text-green-600 flex-shrink-0" />
-                         : <AlertTriangle className="h-3 w-3 text-amber-500 flex-shrink-0" />;
-                         
-                       let statusClass = toolSuccess 
-                         ? "text-green-600" 
-                         : "text-amber-500";
-                         
-                       // Truncate display content if it's too long
-                       const maxDisplayLength = 50;
-                       const truncatedContent = displayContent && displayContent.length > maxDisplayLength
-                         ? `${displayContent.substring(0, maxDisplayLength)}...`
-                         : displayContent;
-
-                       return (
-                         <div key={key} className="ml-8 my-2 pl-4 border-l border-dashed border-gray-300 py-1">
-                           <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                             {statusIcon}
-                             <span className={`font-medium ${statusClass}`}>
-                               {toolNameForResult} {toolSuccess ? 'completed' : 'failed'}
-                             </span>
-                             {associatedAssistantId && (
-                               <span className="text-xs text-gray-400 ml-1">
-                                 • linked to {associatedAssistantId.substring(0, 6)}
-                               </span>
-                             )}
-                             {truncatedContent && (
-                               <span className="text-xs text-gray-400 ml-1 truncate max-w-[200px]" title={displayContent}>
-                                 {truncatedContent}
-                               </span>
-                             )}
-                           </div>
-                         </div>
-                       );
-
-                    case 'status':
-                        return null;
-
-                   default:
-                      console.warn("Rendering unknown message type:", message.type);
-                      return (
-                        <div key={key} className="text-center text-red-500 text-xs">
-                          Unsupported message type: {message.type}
-                                </div>
-                              );
-                  }
-                })}
-                {(streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
-                  <div ref={latestMessageRef}>
-                    <div className="flex items-start gap-3">
-                       <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center overflow-hidden bg-gray-200">
-                         <Image src="/kortix-symbol.svg" alt="Suna" width={14} height={14} className="object-contain"/>
-                       </div>
-                      <div className="flex-1 space-y-2">
-                        <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3 text-sm">
-                          {(() => {
-                            let detectedTag: string | null = null;
-                            let tagStartIndex = -1;
-
-                            if (streamingTextContent) {
-                              for (const tag of HIDE_STREAMING_XML_TAGS) {
-                                const openingTagPattern = `<${tag}`; // Check for <tagname or <tagname>
-                                const index = streamingTextContent.indexOf(openingTagPattern);
-                                if (index !== -1) {
-                                  // Found an opening tag from the list
-                                  detectedTag = tag;
-                                  tagStartIndex = index;
-                                  break; // Stop after finding the first one
-                                }
-                              }
-                            }
-
-                            if (detectedTag && tagStartIndex !== -1) {
-                              // Render text before the tag and the preview button
-                              const textBeforeTag = streamingTextContent.substring(0, tagStartIndex);
-                              const IconComponent = getToolIcon(detectedTag);
-                              // Note: We don't have parsed args here, just the name
-                              return (
-                                <>
-                                  {textBeforeTag && (
-                                     <span className="whitespace-pre-wrap break-words">
-                                       {textBeforeTag}
-                                     </span>
-                                   )}
-                                  <div className="mt-2">
-                                    <button
-                                       className="inline-flex items-center gap-1.5 py-0.5 px-2 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
-                                     >
-                                       <CircleDashed className="h-3.5 w-3.5 text-gray-500 flex-shrink-0 animate-spin animation-duration-2000" />
-                                       <span className="font-mono text-xs text-gray-700">{detectedTag}</span>
-                                       {/* No paramDisplay available here easily */}
-                                     </button>
-                                   </div>
-                                </>
-                              );
-                            } else {
-                              // Render normally: full text + blinking cursor
-                              // And potentially the fully parsed tool call from the hook
-                              return (
-                                <>
-                                  {streamingTextContent && (
-                                    <span className="whitespace-pre-wrap break-words">
-                                      {streamingTextContent}
-                                    </span>
-                                  )}
-                                  {(streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && !detectedTag && (
-                                     <span className="inline-block h-4 w-0.5 bg-gray-400 ml-0.5 -mb-1 animate-pulse" />
-                                   )}
-                                  {/* Render fully parsed tool call if available AND no hidden tag detected */} 
-                                  {streamingToolCall && !detectedTag && (
-                                     <div className="mt-2">
-                                       {(() => {
-                                          const toolName = streamingToolCall.name || streamingToolCall.xml_tag_name || 'Tool';
-                                          const IconComponent = getToolIcon(toolName);
-                                          const paramDisplay = extractPrimaryParam(toolName, streamingToolCall.arguments || '');
-                                          return (
-                                        <button
-                                                   className="inline-flex items-center gap-1.5 py-0.5 px-2 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
-                                               >
-                                                       <CircleDashed className="h-3.5 w-3.5 text-gray-500 flex-shrink-0 animate-spin animation-duration-2000" />
-                                                       <span className="font-mono text-xs text-gray-700">{toolName}</span>
-                                                       {paramDisplay && <span className="ml-1 text-gray-500 truncate" title={paramDisplay}>{paramDisplay}</span>}
-                                        </button>
-                                      );
-                                    })()}
-                                  </div>
-                                )}
-                                </>
-                              );
-                            }
-                          })()}
                         </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                {agentStatus === 'running' && !streamingTextContent && !streamingToolCall && messages.length > 0 && messages[messages.length-1].type === 'user' && (
-                     <div ref={latestMessageRef}>
+                      );
+                    }
+                    return null; // Should not happen
+                  });
+                })()}
+                 {/* Render thinking indicator ONLY if agent is running AND the last group wasn't assistant OR there are no messages yet */}
+                 {agentStatus === 'running' && !streamingTextContent && !streamingToolCall &&
+                   (messages.length === 0 || messages[messages.length - 1].type === 'user') && (
+                      <div ref={latestMessageRef}>
                          <div className="flex items-start gap-3">
                              <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center overflow-hidden bg-gray-200">
                                <Image src="/kortix-symbol.svg" alt="Suna" width={14} height={14} className="object-contain"/>
                              </div>
-                        <div className="flex items-center gap-1.5 py-1">
+                        <div className="flex items-center gap-1.5 py-1 mt-3"> {/* Adjusted padding/margin */}
                           <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse" />
                           <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse delay-150" />
                           <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse delay-300" />
-                                 </div>
+                         </div>
                         </div>
                       </div>
-                    )}
+                  )}
               </div>
             )}
             <div ref={messagesEndRef} className="h-1" />

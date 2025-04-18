@@ -3,6 +3,7 @@ import { X, SkipBack, SkipForward } from "lucide-react";
 import { Project } from "@/lib/api";
 import { getToolIcon } from "@/components/thread/utils";
 import React from "react";
+import { Slider } from "@/components/ui/slider";
 
 // Simple input interface
 export interface ToolCallInput {
@@ -20,9 +21,10 @@ export interface ToolCallInput {
 
 // Helper function to format timestamp
 function formatTimestamp(isoString?: string): string {
-  if (!isoString) return 'No timestamp';
+  if (!isoString) return '';
   try {
-    return new Date(isoString).toLocaleString();
+    const date = new Date(isoString);
+    return isNaN(date.getTime()) ? 'Invalid date' : date.toLocaleString();
   } catch (e) {
     return 'Invalid date';
   }
@@ -119,12 +121,14 @@ export function ToolCallSidePanel({
   
   const currentToolCall = toolCalls[currentIndex];
   const totalCalls = toolCalls.length;
+  const currentToolName = currentToolCall?.assistantCall?.name || 'Tool Call';
+  const CurrentToolIcon = getToolIcon(currentToolName === 'Tool Call' ? 'unknown' : currentToolName);
   
   const renderContent = () => {
     if (!currentToolCall) {
       return (
-        <div className="flex items-center justify-center h-full">
-          <p className="text-sm text-muted-foreground">No tool call selected</p>
+        <div className="flex items-center justify-center h-full p-4">
+          <p className="text-sm text-muted-foreground text-center">No tool call details available.</p>
         </div>
       );
     }
@@ -135,17 +139,17 @@ export function ToolCallSidePanel({
         assistantContent={currentToolCall.assistantCall.content}
         assistantTimestamp={currentToolCall.assistantCall.timestamp}
         toolContent={currentToolCall.toolResult?.content}
-        isSuccess={currentToolCall.toolResult?.isSuccess}
+        isSuccess={currentToolCall.toolResult?.isSuccess ?? true}
         toolTimestamp={currentToolCall.toolResult?.timestamp}
       />
     );
   };
   
   return (
-    <div className="fixed inset-y-0 right-0 w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[600px] bg-background border-l flex flex-col z-10">
-      <div className="p-4 flex items-center justify-between">
-        <h3 className="text-sm font-medium">Tool Details</h3>
-        <Button variant="ghost" size="icon" onClick={onClose}>
+    <div className="fixed inset-y-0 right-0 w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[600px] bg-background border-l flex flex-col z-10 shadow-lg">
+      <div className="p-4 flex items-center justify-between border-b">
+        <h3 className="text-sm font-semibold">Tool Details</h3>
+        <Button variant="ghost" size="icon" onClick={onClose} className="text-muted-foreground hover:text-foreground">
           <X className="h-4 w-4" />
         </Button>
       </div>
@@ -153,26 +157,26 @@ export function ToolCallSidePanel({
         {renderContent()}
       </div>
       {totalCalls > 1 && (
-        <div className="p-4 border-t flex items-center justify-between">
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => onNavigate(currentIndex - 1)} 
-            disabled={currentIndex === 0}
-          >
-            <SkipBack className="h-4 w-4 mr-2" /> Previous
-          </Button>
-          <span className="text-xs text-muted-foreground">
-            {currentIndex + 1} of {totalCalls}
-          </span>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => onNavigate(currentIndex + 1)}
-            disabled={currentIndex === totalCalls - 1}
-          >
-            Next <SkipForward className="h-4 w-4 ml-2" />
-          </Button>
+        <div className="p-4 border-t bg-muted/30 space-y-3">
+          <div className="flex justify-between items-center gap-4">
+             <div className="flex items-center gap-2 min-w-0">
+               <CurrentToolIcon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+               <span className="text-xs font-medium text-foreground truncate" title={currentToolName}>
+                 {currentToolName}
+               </span>
+             </div>
+            <span className="text-xs text-muted-foreground flex-shrink-0">
+              Step {currentIndex + 1} of {totalCalls}
+            </span>
+          </div>
+          <Slider
+            min={0}
+            max={totalCalls - 1}
+            step={1}
+            value={[currentIndex]}
+            onValueChange={([newValue]) => onNavigate(newValue)}
+            className="w-full [&>span:first-child]:h-1.5 [&>span:first-child>span]:h-1.5"
+          />
         </div>
       )}
     </div>
