@@ -13,21 +13,30 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ChatInput } from '@/components/thread/chat-input';
 import { FileViewerModal } from '@/components/thread/file-viewer-modal';
 import { SiteHeader } from "@/components/thread/thread-site-header"
-import { ToolCallSidePanel, SidePanelContent, ToolCallData } from "@/components/thread/tool-call-side-panel";
+import { ToolCallSidePanel, ToolCallInput } from "@/components/thread/tool-call-side-panel";
 import { useSidebar } from "@/components/ui/sidebar";
-import { useAgentStream, AgentStreamStatus } from '@/hooks/useAgentStream';
+import { useAgentStream } from '@/hooks/useAgentStream';
 
 import { UnifiedMessage, ParsedContent, ParsedMetadata, ThreadParams } from '@/components/thread/types';
 import { getToolIcon, extractPrimaryParam, safeJsonParse } from '@/components/thread/utils';
 
 // Extend the base Message type with the expected database fields
 interface ApiMessageType extends BaseApiMessageType {
-  id?: string;
+  message_id?: string;
   thread_id?: string;
   is_llm_message?: boolean;
   metadata?: string;
   created_at?: string;
   updated_at?: string;
+}
+
+// Add a simple interface for streaming tool calls
+interface StreamingToolCall {
+  id?: string;
+  name?: string;
+  arguments?: string;
+  index?: number;
+  xml_tag_name?: string;
 }
 
 export default function ThreadPage({ params }: { params: Promise<ThreadParams> }) {
@@ -43,7 +52,8 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const [agentRunId, setAgentRunId] = useState<string | null>(null);
   const [agentStatus, setAgentStatus] = useState<'idle' | 'running' | 'connecting' | 'error'>('idle');
   const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
-  const [sidePanelContent, setSidePanelContent] = useState<SidePanelContent | null>(null);
+  const [toolCalls, setToolCalls] = useState<ToolCallInput[]>([]);
+  const [currentToolIndex, setCurrentToolIndex] = useState<number>(0);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -66,6 +76,10 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
 
   const toggleSidePanel = useCallback(() => {
     setIsSidePanelOpen(prevIsOpen => !prevIsOpen);
+  }, []);
+
+  const handleSidePanelNavigate = useCallback((newIndex: number) => {
+    setCurrentToolIndex(newIndex);
   }, []);
 
   const handleProjectRenamed = useCallback((newName: string) => {
@@ -103,6 +117,12 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   }, [toggleSidePanel]);
 
   const handleNewMessageFromStream = useCallback((message: UnifiedMessage) => {
+    // Log the ID of the message received from the stream
+    console.log(`[STREAM HANDLER] Received message: ID=${message.message_id}, Type=${message.type}`);
+    if (!message.message_id) {
+        console.warn(`[STREAM HANDLER] Received message is missing ID: Type=${message.type}, Content=${message.content?.substring(0, 50)}...`);
+    }
+    
     setMessages(prev => {
       const messageExists = prev.some(m => m.message_id === message.message_id);
       if (messageExists) {
@@ -113,7 +133,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     });
   }, []);
 
-  const handleStreamStatusChange = useCallback((hookStatus: AgentStreamStatus) => {
+  const handleStreamStatusChange = useCallback((hookStatus: string) => {
     console.log(`[PAGE] Hook status changed: ${hookStatus}`);
     switch(hookStatus) {
       case 'idle':
@@ -197,22 +217,71 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         if (!messagesLoadedRef.current) {
           const messagesData = await getMessages(threadId);
           if (isMounted) {
-            // Map API message type to UnifiedMessage type using a safe conversion function
-            const unifiedMessages = (messagesData || []).map((msg: ApiMessageType) => {
-              return {
-                message_id: msg.id || null,
-                thread_id: msg.thread_id || threadId,
-                type: (msg.type || 'system') as "user" | "assistant" | "tool" | "status" | "system", 
-                is_llm_message: Boolean(msg.is_llm_message),
-                content: msg.content || '',
-                metadata: msg.metadata || '{}',
-                created_at: msg.created_at || new Date().toISOString(),
-                updated_at: msg.updated_at || new Date().toISOString()
-              } as UnifiedMessage;
+            // Log raw messages fetched from API
+            console.log('[PAGE] Raw messages fetched:', messagesData);
+            
+            // Map API message type to UnifiedMessage type
+            const unifiedMessages = (messagesData || [])
+              .filter(msg => msg.type !== 'status') // Filter out status messages early
+              .map((msg: ApiMessageType, index: number) => {
+                console.log(`[MAP ${index}] Processing raw message:`, msg);
+                const messageId = msg.message_id;
+                console.log(`[MAP ${index}] Accessed msg.message_id:`, messageId);
+                if (!messageId && msg.type !== 'status') { 
+                  console.warn(`[MAP ${index}] Non-status message fetched from API is missing ID: Type=${msg.type}`);
+                }
+                const threadIdMapped = msg.thread_id || threadId;
+                console.log(`[MAP ${index}] Accessed msg.thread_id (using fallback):`, threadIdMapped);
+                const typeMapped = (msg.type || 'system') as UnifiedMessage['type'];
+                console.log(`[MAP ${index}] Accessed msg.type (using fallback):`, typeMapped);
+                const isLlmMessageMapped = Boolean(msg.is_llm_message);
+                console.log(`[MAP ${index}] Accessed msg.is_llm_message:`, isLlmMessageMapped);
+                const contentMapped = msg.content || '';
+                console.log(`[MAP ${index}] Accessed msg.content (using fallback):`, contentMapped.substring(0, 50) + '...');
+                const metadataMapped = msg.metadata || '{}';
+                console.log(`[MAP ${index}] Accessed msg.metadata (using fallback):`, metadataMapped);
+                const createdAtMapped = msg.created_at || new Date().toISOString();
+                console.log(`[MAP ${index}] Accessed msg.created_at (using fallback):`, createdAtMapped);
+                const updatedAtMapped = msg.updated_at || new Date().toISOString();
+                console.log(`[MAP ${index}] Accessed msg.updated_at (using fallback):`, updatedAtMapped);
+
+                return {
+                  message_id: messageId || null, 
+                  thread_id: threadIdMapped,
+                  type: typeMapped, 
+                  is_llm_message: isLlmMessageMapped,
+                  content: contentMapped,
+                  metadata: metadataMapped,
+                  created_at: createdAtMapped,
+                  updated_at: updatedAtMapped
+                };
             });
-            const filteredMessages = unifiedMessages.filter(m => m.type !== 'status');
-            setMessages(filteredMessages);
-            console.log('[PAGE] Loaded Messages:', filteredMessages.length)
+            
+            setMessages(unifiedMessages); // Set the filtered and mapped messages
+            console.log('[PAGE] Loaded Messages (excluding status):', unifiedMessages.length)
+            
+            // Debug loaded messages
+            const assistantMessages = unifiedMessages.filter(m => m.type === 'assistant');
+            const toolMessages = unifiedMessages.filter(m => m.type === 'tool');
+            
+            console.log('[PAGE] Assistant messages:', assistantMessages.length);
+            console.log('[PAGE] Tool messages:', toolMessages.length);
+            
+            // Check if tool messages have associated assistant messages
+            toolMessages.forEach(toolMsg => {
+              try {
+                const metadata = JSON.parse(toolMsg.metadata);
+                if (metadata.assistant_message_id) {
+                  const hasAssociated = assistantMessages.some(
+                    assMsg => assMsg.message_id === metadata.assistant_message_id
+                  );
+                  console.log(`[PAGE] Tool message ${toolMsg.message_id} references assistant ${metadata.assistant_message_id} - found: ${hasAssociated}`);
+                }
+              } catch (e) {
+                console.error("Error parsing tool message metadata:", e);
+              }
+            });
+            
             messagesLoadedRef.current = true;
             if (!hasInitiallyScrolled.current) {
               scrollToBottom('auto');
@@ -362,64 +431,122 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const handleToolClick = useCallback((message: UnifiedMessage, toolInfo: { name: string, args: any, xml: string } | null) => {
     if (!toolInfo) return;
 
-    console.log("Tool Clicked:", toolInfo.name, "Message ID:", message.message_id);
+    const assistantMessageId = message.message_id;
+    console.log("Tool Clicked:", toolInfo.name, "Assistant Message ID:", assistantMessageId);
+    console.log("Clicked assistant message content:", message.content);
+
+    if (!assistantMessageId) {
+      console.warn("Warning: Clicked assistant message has a null ID. Matching tool result will likely fail.");
+    }
     
-    // Find the corresponding tool result message that has this assistant message's ID in its metadata
+    // Find the corresponding tool result message for this assistant message
     const resultMessage = messages.find(m => {
-      if (m.type !== 'tool') return false;
+      if (m.type !== 'tool' || !m.metadata) return false;
       
-      // Parse the metadata to get the assistant_message_id
-      const parsedMetadata = safeJsonParse<ParsedMetadata>(m.metadata, {});
-      
-      // Direct matching by assistant_message_id is the most reliable way
-      if (message.message_id && parsedMetadata.assistant_message_id === message.message_id) {
-        return true;
+      try {
+        const metadata = JSON.parse(m.metadata);
+        // Ensure both IDs exist for a valid comparison
+        return assistantMessageId && metadata.assistant_message_id === assistantMessageId;
+      } catch (e) {
+        console.error("Error parsing metadata for tool message:", m.message_id, e);
+        return false;
       }
-      
-      // For XML tools, match by tool name as fallback
-      if (!message.message_id && toolInfo.name) {
-        const parsedContent = safeJsonParse<ParsedContent>(m.content, {});
-        
-        // Check if the tool result contains this tool name
-        if (typeof parsedContent.content === 'string' && 
-            parsedContent.content.includes(`<${toolInfo.name}>`)) {
-          return true;
-        }
-      }
-      
-      return false;
     });
+
+    let toolCall: ToolCallInput;
 
     if (resultMessage) {
       console.log("Found matching tool result:", resultMessage.message_id);
-    } else {
-      console.log("No matching tool result found for assistant message:", message.message_id);
-    }
-
-    const resultContent = resultMessage ? resultMessage.content : null;
-    const parsedResultContent = resultContent ? safeJsonParse<ParsedContent>(resultContent, {}) : null;
-    const displayResultContent = parsedResultContent?.content || resultContent;
-
-    // Create HistoricalToolPair format for the side panel
-    setSidePanelContent({
-      type: 'historical',
-      assistantCall: {
-        name: toolInfo.name,
-        content: toolInfo.xml || (typeof toolInfo.args === 'string' ? toolInfo.args : JSON.stringify(toolInfo.args, null, 2))
-      },
-      userResult: {
-        name: parsedResultContent?.name || toolInfo.name,
-        content: displayResultContent
+      console.log("Tool result content:", resultMessage.content);
+      console.log("Tool result metadata:", resultMessage.metadata);
+      
+      let isSuccess = true; // Default to success
+      try {
+        // Basic check in content for failure keywords
+        const toolContent = resultMessage.content?.toLowerCase() || '';
+        isSuccess = !(toolContent.includes('failed') || 
+                      toolContent.includes('error') || 
+                      toolContent.includes('failure'));
+      } catch (e) {
+        console.error("Error checking tool success status:", e);
       }
-    });
+
+      toolCall = {
+        assistantCall: {
+          name: toolInfo.name,
+          content: message.content // Store the original assistant message content
+        },
+        toolResult: {
+          content: resultMessage.content,
+          isSuccess: isSuccess
+        }
+      };
+    } else {
+      console.log(`No matching tool result found for assistant message ID: ${assistantMessageId}`);
+      // Log details of available tool messages for debugging
+      const availableToolResults = messages
+        .filter(m => m.type === 'tool')
+        .map(m => {
+          let assistantId = 'unknown';
+          try {
+            if (m.metadata) {
+              const meta = JSON.parse(m.metadata);
+              assistantId = meta.assistant_message_id || 'missing';
+            }
+          } catch { }
+          return { tool_msg_id: m.message_id, links_to_assistant_id: assistantId };
+        });
+      console.log("Available tool results in state:", availableToolResults);
+
+      toolCall = {
+        assistantCall: {
+          name: toolInfo.name,
+          content: message.content
+        },
+        toolResult: {
+          content: `No matching tool result found for assistant message ID: ${assistantMessageId}. See console logs for details.`,
+          isSuccess: false
+        }
+      };
+    }
     
+    setToolCalls([toolCall]); // Display only the clicked tool call
+    setCurrentToolIndex(0);
     setIsSidePanelOpen(true);
   }, [messages]);
+
+  // Handle streaming tool calls
+  const handleStreamingToolCall = useCallback((toolCall: StreamingToolCall | null) => {
+    if (!toolCall) return;
+    
+    const newToolCall: ToolCallInput = {
+      assistantCall: {
+        name: toolCall.name || toolCall.xml_tag_name || 'Unknown Tool',
+        content: toolCall.arguments || ''
+      }
+    };
+    
+    setToolCalls([newToolCall]);
+    setCurrentToolIndex(0);
+    setIsSidePanelOpen(true);
+  }, []);
+
+  // Update useEffect to handle streaming tool calls
+  useEffect(() => {
+    if (streamingToolCall) {
+      handleStreamingToolCall(streamingToolCall);
+    }
+  }, [streamingToolCall, handleStreamingToolCall]);
+
+  const mainContentStyle = {
+    marginRight: isSidePanelOpen ? "384px" : "0",
+    transition: "margin-right 0.2s ease-in-out"
+  };
 
   if (isLoading && !initialLoadCompleted.current) {
     return (
       <div className="flex h-screen">
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className={`flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out ${isSidePanelOpen ? 'mr-[90%] sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[600px]' : ''}`}>
           <SiteHeader 
             threadId={threadId} 
             projectName={projectName}
@@ -427,30 +554,28 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
             onViewFiles={handleOpenFileViewer} 
             onToggleSidePanel={toggleSidePanel}
           />
-          <div className="flex flex-1 overflow-hidden">
-            <div className="flex-1 overflow-y-auto px-6 py-4 pb-[5.5rem]">
-              <div className="mx-auto max-w-3xl space-y-4">
-                <div className="flex justify-end">
-                  <div className="max-w-[85%] rounded-lg bg-primary/10 px-4 py-3">
-                    <Skeleton className="h-4 w-32" />
-                  </div>
+          <div className="flex-1 overflow-y-auto px-6 py-4 pb-[5.5rem]">
+            <div className="mx-auto max-w-3xl space-y-4">
+              <div className="flex justify-end">
+                <div className="max-w-[85%] rounded-lg bg-primary/10 px-4 py-3">
+                  <Skeleton className="h-4 w-32" />
                 </div>
-                <div className="flex justify-start">
-                  <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3">
-                    <Skeleton className="h-4 w-48 mb-2" />
-                    <Skeleton className="h-4 w-40" />
-                  </div>
+              </div>
+              <div className="flex justify-start">
+                <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3">
+                  <Skeleton className="h-4 w-48 mb-2" />
+                  <Skeleton className="h-4 w-40" />
                 </div>
-                <div className="flex justify-end">
-                  <div className="max-w-[85%] rounded-lg bg-primary/10 px-4 py-3">
-                    <Skeleton className="h-4 w-40" />
-                  </div>
+              </div>
+              <div className="flex justify-end">
+                <div className="max-w-[85%] rounded-lg bg-primary/10 px-4 py-3">
+                  <Skeleton className="h-4 w-40" />
                 </div>
-                <div className="flex justify-start">
-                  <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3">
-                    <Skeleton className="h-4 w-56 mb-2" />
-                    <Skeleton className="h-4 w-44" />
-                  </div>
+              </div>
+              <div className="flex justify-start">
+                <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3">
+                  <Skeleton className="h-4 w-56 mb-2" />
+                  <Skeleton className="h-4 w-44" />
                 </div>
               </div>
             </div>
@@ -459,11 +584,10 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         <ToolCallSidePanel 
           isOpen={isSidePanelOpen} 
           onClose={() => setIsSidePanelOpen(false)}
-          content={sidePanelContent}
-          project={project}
+          toolCalls={[]}
           currentIndex={0}
-          totalPairs={0}
-          onNavigate={() => {}}
+          onNavigate={handleSidePanelNavigate}
+          project={project}
         />
       </div>
     );
@@ -472,7 +596,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   if (error) {
     return (
       <div className="flex h-screen">
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className={`flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out ${isSidePanelOpen ? 'mr-[90%] sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[600px]' : ''}`}>
           <SiteHeader 
             threadId={threadId} 
             projectName={projectName}
@@ -493,11 +617,10 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         <ToolCallSidePanel 
           isOpen={isSidePanelOpen} 
           onClose={() => setIsSidePanelOpen(false)}
-          content={sidePanelContent}
-          project={project}
+          toolCalls={[]}
           currentIndex={0}
-          totalPairs={0}
-          onNavigate={() => {}}
+          onNavigate={handleSidePanelNavigate}
+          project={project}
         />
       </div>
     );
@@ -505,7 +628,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
 
   return (
     <div className="flex h-screen">
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className={`flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out ${isSidePanelOpen ? 'mr-[90%] sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[600px]' : ''}`}>
         <SiteHeader 
           threadId={threadId} 
           projectName={projectName}
@@ -514,256 +637,258 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
           onToggleSidePanel={toggleSidePanel}
           onProjectRenamed={handleProjectRenamed}
         />
-        <div className="flex flex-1 overflow-hidden">
-          <div className="flex-1 flex flex-col relative overflow-hidden">
-            <div 
-              ref={messagesContainerRef}
-              className="flex-1 overflow-y-auto px-6 py-4 pb-[0.5rem]"
-              onScroll={handleScroll}
-            >
-              <div className="mx-auto max-w-3xl">
-                {messages.length === 0 && !streamingTextContent && !streamingToolCall && agentStatus === 'idle' ? (
-                  <div className="flex h-full items-center justify-center">
-                    <div className="text-center text-muted-foreground">Send a message to start.</div>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    {messages.map((message, index) => {
-                      const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
-                      const parsedMetadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
-                      const key = message.message_id || `msg-${index}`;
+        <div 
+          ref={messagesContainerRef}
+          className="flex-1 overflow-y-auto px-6 py-4 pb-[0.5rem]"
+          onScroll={handleScroll}
+        >
+          <div className="mx-auto max-w-3xl">
+            {messages.length === 0 && !streamingTextContent && !streamingToolCall && agentStatus === 'idle' ? (
+              <div className="flex h-full items-center justify-center">
+                <div className="text-center text-muted-foreground">Send a message to start.</div>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {messages.map((message, index) => {
+                  const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
+                  const parsedMetadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
+                  const key = message.message_id || `msg-${index}`;
 
-                      switch(message.type) {
-                         case 'user':
-                        return (
-                             <div key={key} className="flex justify-end">
-                               <div className="max-w-[85%] rounded-lg bg-primary/10 px-4 py-3 text-sm">
-                                 {parsedContent.content}
-                                </div>
-                              </div>
-                           );
+                  switch(message.type) {
+                     case 'user':
+                    return (
+                         <div key={key} className="flex justify-end">
+                           <div className="max-w-[85%] rounded-lg bg-primary/10 px-4 py-3 text-sm">
+                             {parsedContent.content}
+                            </div>
+                          </div>
+                       );
 
-                         case 'assistant':
-                           const xmlRegex = /<(?!inform\b)([a-zA-Z\-_]+)(?:\s+[^>]*)?>(?:[\s\S]*?)<\/\1>|<(?!inform\b)([a-zA-Z\-_]+)(?:\s+[^>]*)?\/>/g;
-                           let lastIndex = 0;
-                           const contentParts: React.ReactNode[] = [];
-                           let match;
+                     case 'assistant':
+                       const xmlRegex = /<(?!inform\b)([a-zA-Z\-_]+)(?:\s+[^>]*)?>(?:[\s\S]*?)<\/\1>|<(?!inform\b)([a-zA-Z\-_]+)(?:\s+[^>]*)?\/>/g;
+                       let lastIndex = 0;
+                       const contentParts: React.ReactNode[] = [];
+                       let match;
 
-                           if (!parsedContent.content) {
-                             return parsedContent.content;
-                           }
+                       if (!parsedContent.content) {
+                         return parsedContent.content;
+                       }
 
-                           while ((match = xmlRegex.exec(parsedContent.content)) !== null) {
-                               if (match.index > lastIndex) {
-                                 contentParts.push(
-                                   <span key={`text-${lastIndex}`}>
-                                     {parsedContent.content.substring(lastIndex, match.index)}
-                                   </span>
-                                 );
-                               }
-
-                               const rawXml = match[0];
-                               const toolName = match[1] || match[2];
-                               const IconComponent = getToolIcon(toolName);
-                               const paramDisplay = extractPrimaryParam(toolName, rawXml);
-                               
-                               // Extract arguments from XML
-                               let toolArgs = {};
-                               try {
-                                 // Extract attributes as an object
-                                 if (rawXml.includes(' ')) {  // Only if attributes exist
-                                   const attrSection = rawXml.match(/<[^>]+\s+([^>]+)>/);
-                                   if (attrSection && attrSection[1]) {
-                                     const attrStr = attrSection[1].trim();
-                                     const attrRegex = /(\w+)=["']([^"']*)["']/g;
-                                     let attrMatch;
-                                     while ((attrMatch = attrRegex.exec(attrStr)) !== null) {
-                                       toolArgs[attrMatch[1]] = attrMatch[2];
-                                     }
-                                   }
-                                 }
-                               } catch (e) {
-                                 console.error("Error parsing XML attributes:", e);
-                               }
-                               
-                               contentParts.push(
-                                 <button
-                                   key={`tool-${match.index}`}
-                                   onClick={() => handleToolClick(message, { 
-                                     name: toolName, 
-                                     args: toolArgs, 
-                                     xml: rawXml 
-                                   })}
-                                   className="inline-flex items-center gap-1.5 py-0.5 px-2 my-0.5 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
-                                 >
-                                   <IconComponent className="h-3.5 w-3.5 text-gray-500 flex-shrink-0" />
-                                   <span className="font-mono text-xs text-gray-700">{toolName}</span>
-                                   {paramDisplay && <span className="ml-1 text-gray-500 truncate" title={paramDisplay}>{paramDisplay}</span>}
-                                 </button>
-                               );
-                               lastIndex = xmlRegex.lastIndex;
-                           }
-
-                           if (lastIndex < parsedContent.content.length) {
+                       while ((match = xmlRegex.exec(parsedContent.content)) !== null) {
+                           if (match.index > lastIndex) {
                              contentParts.push(
                                <span key={`text-${lastIndex}`}>
-                                 {parsedContent.content.substring(lastIndex)}
+                                 {parsedContent.content.substring(lastIndex, match.index)}
                                </span>
                              );
                            }
 
-                           return (
-                             <div key={key} ref={index === messages.length - 1 ? latestMessageRef : null}>
-                               <div className="flex items-start gap-3">
-                                  <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center overflow-hidden bg-gray-200">
-                                    <Image src="/kortix-symbol.svg" alt="Suna" width={14} height={14} className="object-contain"/>
-                                  </div>
-                                 <div className="flex-1 space-y-2">
-                                   <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3 text-sm">
-                                      <div className="whitespace-pre-wrap break-words">
-                                        {contentParts.length > 0 ? contentParts : parsedContent.content}
-                              </div>
-                          </div>
-                          </div>
-                        </div>
-                            </div>
-                           );
-
-                          case 'tool':
-                             const toolResultContent = safeJsonParse<ParsedContent>(message.content, {});
-                             let toolNameForResult = toolResultContent.name || 'Tool';
-                             
-                             // Try to get the assistant message ID this result belongs to
-                             const associatedAssistantId = parsedMetadata.assistant_message_id;
-                             
-                             // Extract content from XML format if available
-                             let displayContent = '';
-                             let toolSuccess = true; // Default to success
-                             
-                             if (typeof toolResultContent.content === 'string') {
-                               if (toolResultContent.content.includes('<tool_result>')) {
-                                 const toolMatch = toolResultContent.content.match(/<tool_result>([\s\S]*?)<\/tool_result>/i);
-                                 if (toolMatch && toolMatch[1]) {
-                                   // Further extract inner tool content
-                                   const innerMatch = toolMatch[1].match(/<([a-zA-Z\-_]+)>([\s\S]*?)<\/\1>/i);
-                                   if (innerMatch) {
-                                     const innerToolName = innerMatch[1];
-                                     displayContent = innerMatch[2].trim();
-                                     
-                                     // Update the tool name if we found a more specific one
-                                     if (innerToolName && innerToolName !== 'tool_result') {
-                                       toolNameForResult = innerToolName;
-                                     }
-                                   } else {
-                                     displayContent = toolMatch[1].trim();
-                                   }
+                           const rawXml = match[0];
+                           const toolName = match[1] || match[2];
+                           const IconComponent = getToolIcon(toolName);
+                           const paramDisplay = extractPrimaryParam(toolName, rawXml);
+                           
+                           // --- ADD LOGGING HERE ---
+                           console.log(`[RENDER] Rendering tool button for Assistant Msg ID: ${message.message_id}, Tool: ${toolName}`);
+                           // --- END LOGGING ---
+                           
+                           // Extract arguments from XML
+                           let toolArgs = {};
+                           try {
+                             // Extract attributes as an object
+                             if (rawXml.includes(' ')) {  // Only if attributes exist
+                               const attrSection = rawXml.match(/<[^>]+\s+([^>]+)>/);
+                               if (attrSection && attrSection[1]) {
+                                 const attrStr = attrSection[1].trim();
+                                 const attrRegex = /(\w+)=["']([^"']*)["']/g;
+                                 let attrMatch;
+                                 while ((attrMatch = attrRegex.exec(attrStr)) !== null) {
+                                   toolArgs[attrMatch[1]] = attrMatch[2];
                                  }
-                               } else {
-                                 // Default to raw content if not in tool_result format
-                                 displayContent = toolResultContent.content;
                                }
                              }
-                             
-                             // Check for errors or failures in the content
-                             toolSuccess = !(
-                               displayContent.includes('error') || 
-                               displayContent.includes('failed') || 
-                               displayContent.includes('failure') ||
-                               displayContent.includes('success=False')
-                             );
-                             
-                             // Format the tool result display
-                             let statusIcon = toolSuccess 
-                               ? <CheckCircle className="h-3 w-3 text-green-600 flex-shrink-0" />
-                               : <AlertTriangle className="h-3 w-3 text-amber-500 flex-shrink-0" />;
+                           } catch (e) {
+                             console.error("Error parsing XML attributes:", e);
+                           }
+                           
+                           contentParts.push(
+                             <button
+                               key={`tool-${match.index}`}
+                               onClick={() => handleToolClick(message, { 
+                                 name: toolName, 
+                                 args: toolArgs, 
+                                 xml: rawXml 
+                               })}
+                               className="inline-flex items-center gap-1.5 py-0.5 px-2 my-0.5 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
+                             >
+                               <IconComponent className="h-3.5 w-3.5 text-gray-500 flex-shrink-0" />
+                               <span className="font-mono text-xs text-gray-700">{toolName}</span>
+                               {paramDisplay && <span className="ml-1 text-gray-500 truncate" title={paramDisplay}>{paramDisplay}</span>}
+                             </button>
+                           );
+                           lastIndex = xmlRegex.lastIndex;
+                       }
+
+                       if (lastIndex < parsedContent.content.length) {
+                         contentParts.push(
+                           <span key={`text-${lastIndex}`}>
+                             {parsedContent.content.substring(lastIndex)}
+                           </span>
+                         );
+                       }
+
+                       return (
+                         <div key={key} ref={index === messages.length - 1 ? latestMessageRef : null}>
+                           <div className="flex items-start gap-3">
+                              <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center overflow-hidden bg-gray-200">
+                                <Image src="/kortix-symbol.svg" alt="Suna" width={14} height={14} className="object-contain"/>
+                              </div>
+                             <div className="flex-1 space-y-2">
+                               <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3 text-sm">
+                                  <div className="whitespace-pre-wrap break-words">
+                                    {contentParts.length > 0 ? contentParts : parsedContent.content}
+                          </div>
+                      </div>
+                    </div>
+                  </div>
+                      </div>
+                     );
+
+                    case 'tool':
+                       const toolResultContent = safeJsonParse<ParsedContent>(message.content, {});
+                       let toolNameForResult = toolResultContent.name || 'Tool';
+                       
+                       // Try to get the assistant message ID this result belongs to
+                       const associatedAssistantId = parsedMetadata.assistant_message_id;
+                       
+                       // Extract content from XML format if available
+                       let displayContent = '';
+                       let toolSuccess = true; // Default to success
+                       
+                       if (typeof toolResultContent.content === 'string') {
+                         if (toolResultContent.content.includes('<tool_result>')) {
+                           const toolMatch = toolResultContent.content.match(/<tool_result>([\s\S]*?)<\/tool_result>/i);
+                           if (toolMatch && toolMatch[1]) {
+                             // Further extract inner tool content
+                             const innerMatch = toolMatch[1].match(/<([a-zA-Z\-_]+)>([\s\S]*?)<\/\1>/i);
+                             if (innerMatch) {
+                               const innerToolName = innerMatch[1];
+                               displayContent = innerMatch[2].trim();
                                
-                             let statusClass = toolSuccess 
-                               ? "text-green-600" 
-                               : "text-amber-500";
-                               
-                             // Truncate display content if it's too long
-                             const maxDisplayLength = 50;
-                             const truncatedContent = displayContent && displayContent.length > maxDisplayLength
-                               ? `${displayContent.substring(0, maxDisplayLength)}...`
-                               : displayContent;
+                               // Update the tool name if we found a more specific one
+                               if (innerToolName && innerToolName !== 'tool_result') {
+                                 toolNameForResult = innerToolName;
+                               }
+                             } else {
+                               displayContent = toolMatch[1].trim();
+                             }
+                           }
+                         } else {
+                           // Default to raw content if not in tool_result format
+                           displayContent = toolResultContent.content;
+                         }
+                       }
+                       
+                       // Check for errors or failures in the content
+                       toolSuccess = !(
+                         displayContent.includes('error') || 
+                         displayContent.includes('failed') || 
+                         displayContent.includes('failure') ||
+                         displayContent.includes('success=False')
+                       );
+                       
+                       // Format the tool result display
+                       let statusIcon = toolSuccess 
+                         ? <CheckCircle className="h-3 w-3 text-green-600 flex-shrink-0" />
+                         : <AlertTriangle className="h-3 w-3 text-amber-500 flex-shrink-0" />;
+                         
+                       let statusClass = toolSuccess 
+                         ? "text-green-600" 
+                         : "text-amber-500";
+                         
+                       // Truncate display content if it's too long
+                       const maxDisplayLength = 50;
+                       const truncatedContent = displayContent && displayContent.length > maxDisplayLength
+                         ? `${displayContent.substring(0, maxDisplayLength)}...`
+                         : displayContent;
 
-                             return (
-                               <div key={key} className="ml-8 my-2 pl-4 border-l border-dashed border-gray-300 py-1">
-                                 <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                                   {statusIcon}
-                                   <span className={`font-medium ${statusClass}`}>
-                                     {toolNameForResult} {toolSuccess ? 'completed' : 'failed'}
-                                   </span>
-                                   {associatedAssistantId && (
-                                     <span className="text-xs text-gray-400 ml-1">
-                                       • linked to {associatedAssistantId.substring(0, 6)}
-                                     </span>
-                                   )}
-                                   {truncatedContent && (
-                                     <span className="text-xs text-gray-400 ml-1 truncate max-w-[200px]" title={displayContent}>
-                                       {truncatedContent}
-                                     </span>
-                                   )}
-                                 </div>
-                               </div>
-                             );
+                       return (
+                         <div key={key} className="ml-8 my-2 pl-4 border-l border-dashed border-gray-300 py-1">
+                           <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                             {statusIcon}
+                             <span className={`font-medium ${statusClass}`}>
+                               {toolNameForResult} {toolSuccess ? 'completed' : 'failed'}
+                             </span>
+                             {associatedAssistantId && (
+                               <span className="text-xs text-gray-400 ml-1">
+                                 • linked to {associatedAssistantId.substring(0, 6)}
+                               </span>
+                             )}
+                             {truncatedContent && (
+                               <span className="text-xs text-gray-400 ml-1 truncate max-w-[200px]" title={displayContent}>
+                                 {truncatedContent}
+                               </span>
+                             )}
+                           </div>
+                         </div>
+                       );
 
-                          case 'status':
-                              return null;
+                    case 'status':
+                        return null;
 
-                         default:
-                            console.warn("Rendering unknown message type:", message.type);
-                            return (
-                              <div key={key} className="text-center text-red-500 text-xs">
-                                Unsupported message type: {message.type}
-                                      </div>
-                                    );
-                      }
-                    })}
-                    {(streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
-                      <div ref={latestMessageRef}>
-                        <div className="flex items-start gap-3">
-                           <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center overflow-hidden bg-gray-200">
-                             <Image src="/kortix-symbol.svg" alt="Suna" width={14} height={14} className="object-contain"/>
-                                      </div>
-                          <div className="flex-1 space-y-2">
-                            <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3 text-sm">
-                               {streamingTextContent && (
-                                 <span className="whitespace-pre-wrap break-words">
-                                   {streamingTextContent}
-                                        </span>
-                               )}
-                               {(streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && <span className="inline-block h-4 w-0.5 bg-gray-400 ml-0.5 -mb-1 animate-pulse" />}
+                   default:
+                      console.warn("Rendering unknown message type:", message.type);
+                      return (
+                        <div key={key} className="text-center text-red-500 text-xs">
+                          Unsupported message type: {message.type}
+                                </div>
+                              );
+                  }
+                })}
+                {(streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
+                  <div ref={latestMessageRef}>
+                    <div className="flex items-start gap-3">
+                       <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center overflow-hidden bg-gray-200">
+                         <Image src="/kortix-symbol.svg" alt="Suna" width={14} height={14} className="object-contain"/>
+                                </div>
+                      <div className="flex-1 space-y-2">
+                        <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3 text-sm">
+                           {streamingTextContent && (
+                             <span className="whitespace-pre-wrap break-words">
+                               {streamingTextContent}
+                                    </span>
+                           )}
+                           {(streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && <span className="inline-block h-4 w-0.5 bg-gray-400 ml-0.5 -mb-1 animate-pulse" />}
 
-                               {streamingToolCall && (
-                                  <div className="mt-2">
-                                     {(() => {
-                                        const toolName = streamingToolCall.name || streamingToolCall.xml_tag_name || 'Tool';
-                                        const IconComponent = getToolIcon(toolName);
-                                        const paramDisplay = extractPrimaryParam(toolName, streamingToolCall.arguments || '');
-                                        return (
-                                      <button
-                                                 className="inline-flex items-center gap-1.5 py-0.5 px-2 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
-                                             >
+                           {streamingToolCall && (
+                              <div className="mt-2">
+                                 {(() => {
+                                    const toolName = streamingToolCall.name || streamingToolCall.xml_tag_name || 'Tool';
+                                    const IconComponent = getToolIcon(toolName);
+                                    const paramDisplay = extractPrimaryParam(toolName, streamingToolCall.arguments || '');
+                                    return (
+                                  <button
+                                             className="inline-flex items-center gap-1.5 py-0.5 px-2 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
+                                         >
                                                  <CircleDashed className="h-3.5 w-3.5 text-gray-500 flex-shrink-0 animate-spin animation-duration-2000" />
                                                  <span className="font-mono text-xs text-gray-700">{toolName}</span>
                                                  {paramDisplay && <span className="ml-1 text-gray-500 truncate" title={paramDisplay}>{paramDisplay}</span>}
-                                      </button>
-                                    );
-                              })()}
-                            </div>
-                          )}
+                                  </button>
+                                );
+                          })()}
                         </div>
+                      )}
+                    </div>
+                  </div>
                       </div>
-                          </div>
-                        </div>
-                    )}
-                    {agentStatus === 'running' && !streamingTextContent && !streamingToolCall && messages.length > 0 && messages[messages.length-1].type === 'user' && (
-                         <div ref={latestMessageRef}>
-                             <div className="flex items-start gap-3">
-                                 <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center overflow-hidden bg-gray-200">
-                                   <Image src="/kortix-symbol.svg" alt="Suna" width={14} height={14} className="object-contain"/>
-                                 </div>
+                    </div>
+                )}
+                {agentStatus === 'running' && !streamingTextContent && !streamingToolCall && messages.length > 0 && messages[messages.length-1].type === 'user' && (
+                     <div ref={latestMessageRef}>
+                         <div className="flex items-start gap-3">
+                             <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center overflow-hidden bg-gray-200">
+                               <Image src="/kortix-symbol.svg" alt="Suna" width={14} height={14} className="object-contain"/>
+                             </div>
                         <div className="flex items-center gap-1.5 py-1">
                           <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse" />
                           <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse delay-150" />
@@ -772,38 +897,36 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                         </div>
                       </div>
                     )}
-                  </div>
-                )}
-                <div ref={messagesEndRef} className="h-1" />
               </div>
+            )}
+            <div ref={messagesEndRef} className="h-1" />
+          </div>
 
-              <div
-                className="sticky bottom-6 flex justify-center transition-opacity duration-300"
-                style={{ opacity: showScrollButton ? 1 : 0, visibility: showScrollButton ? 'visible' : 'hidden' }}
-              >
-                <Button variant="outline" size="icon" className="h-8 w-8 rounded-full" onClick={handleScrollButtonClick}>
-                  <ArrowDown className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
+          <div
+            className="sticky bottom-6 flex justify-center transition-opacity duration-300"
+            style={{ opacity: showScrollButton ? 1 : 0, visibility: showScrollButton ? 'visible' : 'hidden' }}
+          >
+            <Button variant="outline" size="icon" className="h-8 w-8 rounded-full" onClick={handleScrollButtonClick}>
+              <ArrowDown className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
 
-            <div>
-              <div className="mx-auto max-w-3xl px-6 py-2">
-                <ChatInput
-                  value={newMessage}
-                  onChange={setNewMessage}
-                  onSubmit={handleSubmitMessage}
-                  placeholder="Ask Suna anything..."
-                  loading={isSending}
-                  disabled={isSending || agentStatus === 'running' || agentStatus === 'connecting'}
-                  isAgentRunning={agentStatus === 'running' || agentStatus === 'connecting'}
-                  onStopAgent={handleStopAgent}
-                  autoFocus={!isLoading}
-                  onFileBrowse={handleOpenFileViewer}
-                  sandboxId={sandboxId || undefined}
-                />
-              </div>
-            </div>
+        <div>
+          <div className="mx-auto max-w-3xl px-6 py-2">
+            <ChatInput
+              value={newMessage}
+              onChange={setNewMessage}
+              onSubmit={handleSubmitMessage}
+              placeholder="Ask Suna anything..."
+              loading={isSending}
+              disabled={isSending || agentStatus === 'running' || agentStatus === 'connecting'}
+              isAgentRunning={agentStatus === 'running' || agentStatus === 'connecting'}
+              onStopAgent={handleStopAgent}
+              autoFocus={!isLoading}
+              onFileBrowse={handleOpenFileViewer}
+              sandboxId={sandboxId || undefined}
+            />
           </div>
         </div>
       </div>
@@ -811,11 +934,10 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
       <ToolCallSidePanel 
         isOpen={isSidePanelOpen} 
         onClose={() => setIsSidePanelOpen(false)}
-        content={sidePanelContent}
+        toolCalls={toolCalls}
+        currentIndex={currentToolIndex}
+        onNavigate={handleSidePanelNavigate}
         project={project}
-        currentIndex={0}
-        totalPairs={0}
-        onNavigate={() => {}}
       />
 
       {sandboxId && (

@@ -324,6 +324,8 @@ export const getMessages = async (threadId: string): Promise<Message[]> => {
     console.error('Error fetching messages:', error);
     throw new Error(`Error getting messages: ${error.message}`);
   }
+
+  console.log('[API] Messages fetched:', data);
   
   // Cache the result
   apiCache.setThreadMessages(threadId, data || []);

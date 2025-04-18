@@ -10,19 +10,9 @@ import { toast } from 'sonner';
 import { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/components/thread/types';
 import { safeJsonParse } from '@/components/thread/utils';
 
-// Define the possible statuses for the stream hook
-export type AgentStreamStatus = 
-  | 'idle'         // No active stream or agent run
-  | 'connecting'   // Verifying agent status and initiating stream
-  | 'streaming'    // Actively receiving messages
-  | 'completed'    // Stream finished successfully, agent run completed
-  | 'stopped'      // Stream stopped by user action
-  | 'error'        // An error occurred during streaming or connection
-  | 'agent_not_running'; // Agent run provided was not in a running state
-
 // Define the structure returned by the hook
 export interface UseAgentStreamResult {
-  status: AgentStreamStatus;
+  status: string;
   textContent: string;
   toolCall: ParsedContent | null;
   error: string | null;
@@ -34,14 +24,14 @@ export interface UseAgentStreamResult {
 // Define the callbacks the hook consumer can provide
 export interface AgentStreamCallbacks {
   onMessage: (message: UnifiedMessage) => void; // Callback for complete messages
-  onStatusChange?: (status: AgentStreamStatus) => void; // Optional: Notify on internal status changes
+  onStatusChange?: (status: string) => void; // Optional: Notify on internal status changes
   onError?: (error: string) => void; // Optional: Notify on errors
-  onClose?: (finalStatus: AgentStreamStatus) => void; // Optional: Notify when streaming definitively ends
+  onClose?: (finalStatus: string) => void; // Optional: Notify when streaming definitively ends
 }
 
 export function useAgentStream(callbacks: AgentStreamCallbacks): UseAgentStreamResult {
   const [agentRunId, setAgentRunId] = useState<string | null>(null);
-  const [status, setStatus] = useState<AgentStreamStatus>('idle');
+  const [status, setStatus] = useState<string>('idle');
   const [textContent, setTextContent] = useState<string>('');
   const [toolCall, setToolCall] = useState<ParsedContent | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -50,22 +40,32 @@ export function useAgentStream(callbacks: AgentStreamCallbacks): UseAgentStreamR
   const isMountedRef = useRef<boolean>(true);
   const currentRunIdRef = useRef<string | null>(null); // Ref to track the run ID being processed
   
+  // Helper function to map backend status to frontend status string
+  const mapAgentStatus = (backendStatus: string): string => {
+    switch(backendStatus) {
+      case 'completed': return 'completed';
+      case 'stopped': return 'stopped';
+      case 'failed': return 'failed';
+      default: return 'error';
+    }
+  };
+
   // Internal function to update status and notify consumer
-  const updateStatus = useCallback((newStatus: AgentStreamStatus) => {
+  const updateStatus = useCallback((newStatus: string) => {
     if (isMountedRef.current) {
       setStatus(newStatus);
       callbacks.onStatusChange?.(newStatus);
       if (newStatus === 'error' && error) {
         callbacks.onError?.(error);
       }
-      if (['completed', 'stopped', 'error', 'agent_not_running'].includes(newStatus)) {
+      if (['completed', 'stopped', 'failed', 'error', 'agent_not_running'].includes(newStatus)) {
         callbacks.onClose?.(newStatus);
       }
     }
   }, [callbacks, error]); // Include error dependency
 
   // Function to handle finalization of a stream (completion, stop, error)
-  const finalizeStream = useCallback((finalStatus: AgentStreamStatus, runId: string | null = agentRunId) => {
+  const finalizeStream = useCallback((finalStatus: string, runId: string | null = agentRunId) => {
     if (!isMountedRef.current) return;
     
     console.log(`[useAgentStream] Finalizing stream for ${runId} with status: ${finalStatus}`);
@@ -224,14 +224,14 @@ export function useAgentStream(callbacks: AgentStreamCallbacks): UseAgentStreamR
         if (!isMountedRef.current) return; // Check mount status again after async call
         
         if (agentStatus.status === 'running') {
-          console.warn(`[useAgentStream] Stream error for ${runId}, but agent is still running. Attempting reconnect.`);
-          // Consider adding a delay or backoff here
-          // For now, just finalize with error and let the user retry or handle reconnection logic outside
-           finalizeStream('error', runId);
+          console.warn(`[useAgentStream] Stream error for ${runId}, but agent is still running. Finalizing with error.`);
+           finalizeStream('error', runId); // Stream failed, even if agent might still be running backend-side
            toast.warning("Stream interrupted. Agent might still be running.");
         } else {
-          console.log(`[useAgentStream] Stream error for ${runId}, agent status is ${agentStatus.status}. Finalizing stream.`);
-          finalizeStream(agentStatus.status === 'completed' ? 'completed' : 'error', runId);
+           // Map backend terminal status to hook terminal status
+           const finalStatus = mapAgentStatus(agentStatus.status);
+           console.log(`[useAgentStream] Stream error for ${runId}, agent status is ${agentStatus.status}. Finalizing stream as ${finalStatus}.`);
+           finalizeStream(finalStatus, runId);
         }
       })
       .catch(statusError => {
@@ -246,10 +246,11 @@ export function useAgentStream(callbacks: AgentStreamCallbacks): UseAgentStreamR
                                 
         if (isNotFoundError) {
            console.log(`[useAgentStream] Agent run ${runId} not found after stream error. Finalizing.`);
-           finalizeStream('agent_not_running', runId); // Use a specific status
+           // Revert to agent_not_running for this specific case
+           finalizeStream('agent_not_running', runId);
         } else {
            // For other status check errors, finalize with the original stream error
-           finalizeStream('error', runId);
+           finalizeStream('error', runId); 
         }
       });
 
@@ -281,16 +282,15 @@ export function useAgentStream(callbacks: AgentStreamCallbacks): UseAgentStreamR
          
          console.log(`[useAgentStream] Agent status after stream close for ${runId}: ${agentStatus.status}`);
          if (agentStatus.status === 'running') {
-           // This case is tricky. The stream closed, but the agent is running.
-           // Could be a temporary network issue, or the backend stream terminated prematurely.
-           console.warn(`[useAgentStream] Stream closed for ${runId}, but agent is still running. Reconnection logic needed or signal error.`);
+           console.warn(`[useAgentStream] Stream closed for ${runId}, but agent is still running. Finalizing with error.`);
            setError('Stream closed unexpectedly while agent was running.');
            finalizeStream('error', runId); // Finalize as error for now
-           // Optionally: Implement automatic reconnection attempts here or notify parent component.
            toast.warning("Stream disconnected. Agent might still be running.");
          } else {
-           // Agent is not running (completed, stopped, error). Finalize accordingly.
-           finalizeStream(agentStatus.status === 'completed' ? 'completed' : 'error', runId);
+           // Map backend terminal status to hook terminal status
+           const finalStatus = mapAgentStatus(agentStatus.status);
+           console.log(`[useAgentStream] Stream closed for ${runId}, agent status is ${agentStatus.status}. Finalizing stream as ${finalStatus}.`);
+           finalizeStream(finalStatus, runId);
          }
        })
        .catch(err => {
@@ -305,11 +305,12 @@ export function useAgentStream(callbacks: AgentStreamCallbacks): UseAgentStreamR
                                   
           if (isNotFoundError) {
              console.log(`[useAgentStream] Agent run ${runId} not found after stream close. Finalizing.`);
-             finalizeStream('agent_not_running', runId); // Use specific status
-          } else {
-             // For other errors checking status, finalize with generic error
+             // Revert to agent_not_running for this specific case
+             finalizeStream('agent_not_running', runId);
+           } else {
+              // For other errors checking status, finalize with generic error
              finalizeStream('error', runId);
-          }
+           }
        });
 
   }, [status, finalizeStream]); // Include status
