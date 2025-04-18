@@ -432,7 +432,15 @@ export const getMessages = async (threadId: string): Promise<Message[]> => {
 };
 
 // Agent APIs
-export const startAgent = async (threadId: string): Promise<{ agent_run_id: string }> => {
+export const startAgent = async (
+  threadId: string, 
+  options?: {
+    model_name?: string;
+    enable_thinking?: boolean;
+    reasoning_effort?: string;
+    stream?: boolean;
+  }
+): Promise<{ agent_run_id: string }> => {
   try {
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
@@ -454,6 +462,7 @@ export const startAgent = async (threadId: string): Promise<{ agent_run_id: stri
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
       },
+      body: JSON.stringify(options || {}),
     });
     
     if (!response.ok) {

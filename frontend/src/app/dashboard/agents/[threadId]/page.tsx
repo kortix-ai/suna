@@ -522,47 +522,54 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     };
   }, [threadId, handleStreamAgent, agentRunId, agentStatus, isStreaming]);
 
-  const handleSubmitMessage = useCallback(async (message: string) => {
-    if (!message.trim()) return;
+  const handleSubmitMessage = async (message: string, options?: { model_name?: string; enable_thinking?: boolean }) => {
+    if (agentStatus === 'running') {
+      if (agentRunId && onStopAgent) {
+        onStopAgent();
+      }
+      return;
+    }
     
     setIsSending(true);
+    setAgentStatus('running');
+    setSidePanelContent(null);
+    setCurrentPairIndex(null);
     
     try {
-      // Add the message optimistically to the UI
-      const userMessage: ApiMessage = {
-        role: 'user',
-        content: message
-      };
+      // First, add user message to the thread
+      await addUserMessage(threadId, message);
       
-      setMessages(prev => [...prev, userMessage]);
+      // Then fetch updated messages to include the user message
+      const updatedMessages = await getMessages(threadId);
+      setMessages(updatedMessages as ApiMessage[]);
+      
+      // Clear any input
       setNewMessage('');
-      scrollToBottom();
       
-      // Send to the API and start agent in parallel
-      const [messageResult, agentResult] = await Promise.all([
-        addUserMessage(threadId, userMessage.content).catch(err => {
-          throw new Error('Failed to send message: ' + err.message);
-        }),
-        startAgent(threadId).catch(err => {
-          throw new Error('Failed to start agent: ' + err.message);
-        })
-      ]);
+      // Start the agent
+      console.log('[SUBMIT] Starting agent');
+      const { agent_run_id } = await startAgent(threadId, {
+        model_name: options?.model_name,
+        enable_thinking: options?.enable_thinking,
+        stream: true
+      });
       
-      setAgentRunId(agentResult.agent_run_id);
-      setAgentStatus('running');
+      // Set agent run ID and start streaming
+      console.log(`[SUBMIT] Agent started with ID: ${agent_run_id}`);
+      setAgentRunId(agent_run_id);
+      handleStreamAgent(agent_run_id);
       
-      // Start streaming the agent's responses immediately
-      handleStreamAgent(agentResult.agent_run_id);
-    } catch (err) {
-      console.error('Error sending message:', err);
-      toast.error(err instanceof Error ? err.message : 'Failed to send message');
-      
-      // Remove the optimistically added message on error
-      setMessages(prev => prev.slice(0, -1));
+      // Scroll to the bottom after sending the message
+      setTimeout(() => scrollToBottom(), 100);
+    } catch (error) {
+      console.error('[SUBMIT] Error submitting message:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error sending message';
+      toast.error(errorMessage);
+      setAgentStatus('idle');
     } finally {
       setIsSending(false);
     }
-  }, [threadId, handleStreamAgent]);
+  };
 
   const handleStopAgent = useCallback(async () => {
     if (!agentRunId) {

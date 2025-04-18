@@ -118,6 +118,8 @@ async def run_agent(
             except Exception as e:
                 print(f"Error parsing browser state: {e}")
                 # print(latest_browser_state.data[0])
+        
+        max_tokens = 64000 if "sonnet" in model_name.lower() else None
 
         response = await thread_manager.run_thread(
             thread_id=thread_id,
@@ -125,7 +127,7 @@ async def run_agent(
             stream=stream,
             llm_model=model_name,
             llm_temperature=0,
-            llm_max_tokens=64000,
+            llm_max_tokens=max_tokens,
             tool_choice="auto",
             max_xml_tool_calls=1,
             temporary_message=temporary_message,

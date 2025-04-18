@@ -27,6 +27,12 @@ db = None
 # In-memory storage for active agent runs and their responses
 active_agent_runs: Dict[str, List[Any]] = {}
 
+MODEL_NAME_ALIASES = {
+    "sonnet-3.7": "anthropic/claude-3-7-sonnet-latest",
+    "gpt-4.1": "openai/gpt-4.1-2025-04-14",
+    "gemini-flash-2.5": "openrouter/google/gemini-2.5-flash-preview",
+}
+
 class AgentStartRequest(BaseModel):
     model_name: Optional[str] = "anthropic/claude-3-7-sonnet-latest"
     enable_thinking: Optional[bool] = False
@@ -331,7 +337,7 @@ async def start_agent(
             instance_id=instance_id,
             project_id=project_id,
             sandbox=sandbox,
-            model_name=body.model_name,
+            model_name=MODEL_NAME_ALIASES.get(body.model_name, body.model_name), 
             enable_thinking=body.enable_thinking,
             reasoning_effort=body.reasoning_effort,
             stream=body.stream # Pass stream parameter
