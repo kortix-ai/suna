@@ -83,8 +83,18 @@ class ThreadManager:
         }
         
         try:
-            result = await client.table('messages').insert(data_to_insert).execute()
+            # Add returning='representation' to get the inserted row data including the id
+            result = await client.table('messages').insert(data_to_insert, returning='representation').execute()
             logger.info(f"Successfully added message to thread {thread_id}")
+
+            print(f"MESSAGE RESULT: {result}")
+            
+            # Check the structure of result.data before accessing
+            if result.data and len(result.data) > 0 and isinstance(result.data[0], dict) and 'message_id' in result.data[0]:
+                return result.data[0]['message_id']
+            else:
+                logger.error(f"Insert operation failed or did not return expected data structure for thread {thread_id}. Result data: {result.data}")
+                return None
         except Exception as e:
             logger.error(f"Failed to add message to thread {thread_id}: {str(e)}", exc_info=True)
             raise
@@ -130,8 +140,6 @@ class ThreadManager:
                         if isinstance(tool_call, dict) and 'function' in tool_call:
                             # Ensure function.arguments is a string
                             if 'arguments' in tool_call['function'] and not isinstance(tool_call['function']['arguments'], str):
-                                # Log and fix the issue
-                                # logger.warning(f"Found non-string arguments in tool_call, converting to string")
                                 tool_call['function']['arguments'] = json.dumps(tool_call['function']['arguments'])
 
             return messages
@@ -154,10 +162,9 @@ class ThreadManager:
         native_max_auto_continues: int = 25,
         max_xml_tool_calls: int = 0,
         include_xml_examples: bool = False,
-        enable_thinking: Optional[bool] = False, # Add enable_thinking parameter
-        reasoning_effort: Optional[str] = 'low' # Add reasoning_effort parameter
     ) -> Union[Dict[str, Any], AsyncGenerator]:
         """Run a conversation thread with LLM integration and tool execution.
+        
         Args:
             thread_id: The ID of the thread to run
             system_prompt: System message to set the assistant's behavior
@@ -198,6 +205,32 @@ class ThreadManager:
                 # Apply max_xml_tool_calls if specified and not already set
                 if max_xml_tool_calls > 0:
                     processor_config.max_xml_tool_calls = max_xml_tool_calls
+                
+                # Add XML examples to system prompt if requested
+                if include_xml_examples and processor_config.xml_tool_calling:
+                    xml_examples = self.tool_registry.get_xml_examples()
+                    if xml_examples:
+                        # logger.debug(f"Adding {len(xml_examples)} XML examples to system prompt")
+                        
+                        # Create or append to content
+                        if isinstance(system_prompt['content'], str):
+                            examples_content = """
+--- XML TOOL CALLING --- 
+
+In this environment you have access to a set of tools you can use to answer the user's question. The tools are specified in XML format.
+{{ FORMATTING INSTRUCTIONS }}
+String and scalar parameters should be specified as attributes, while content goes between tags.
+Note that spaces for string values are not stripped. The output is parsed with regular expressions.
+
+Here are the XML tools available with examples:
+"""
+                            for tag_name, example in xml_examples.items():
+                                examples_content += f"<{tag_name}> Example: {example}\n"
+                            
+                            system_prompt['content'] += examples_content
+                        else:
+                            # If content is not a string (might be a list or dict), log a warning
+                            logger.warning("System prompt content is not a string, cannot add XML examples")
                 
                 # 1. Get messages from thread for LLM call
                 messages = await self.get_llm_messages(thread_id)
@@ -280,9 +313,7 @@ class ThreadManager:
                         max_tokens=llm_max_tokens,
                         tools=openapi_tool_schemas,
                         tool_choice=tool_choice if processor_config.native_tool_calling else None,
-                        stream=stream,
-                        enable_thinking=enable_thinking, # Pass enable_thinking
-                        reasoning_effort=reasoning_effort # Pass reasoning_effort
+                        stream=stream
                     )
                     logger.debug("Successfully received raw LLM API response stream/object")
 
@@ -296,103 +327,68 @@ class ThreadManager:
                     response_generator = self.response_processor.process_streaming_response(
                         llm_response=llm_response,
                         thread_id=thread_id,
-                        prompt_messages=prepared_messages,
-                        llm_model=llm_model,
                         config=processor_config
                     )
                     
                     return response_generator
                 else:
                     logger.debug("Processing non-streaming response")
-                    # Return the async generator directly, don't await it
-                    response_generator = self.response_processor.process_non_streaming_response(
-                        llm_response=llm_response,
-                        thread_id=thread_id,
-                        prompt_messages=prepared_messages,
-                        llm_model=llm_model,
-                        config=processor_config
-                    )
-                    return response_generator # Return the generator
+                    try:
+                        response = await self.response_processor.process_non_streaming_response(
+                            llm_response=llm_response,
+                            thread_id=thread_id,
+                            config=processor_config
+                        )
+                        return response
+                    except Exception as e:
+                        logger.error(f"Error in non-streaming response: {str(e)}", exc_info=True)
+                        raise
               
             except Exception as e:
-                logger.error(f"Error in _run_once: {str(e)}", exc_info=True)
-                # For generators, we need to yield an error structure if returning a generator is expected
-                async def error_generator():
-                    yield {
-                        "type": "error",
-                        "message": f"Error during LLM call or setup: {str(e)}"
-                    }
-                return error_generator()
+                logger.error(f"Error in run_thread: {str(e)}", exc_info=True)
+                return {
+                    "status": "error",
+                    "message": str(e)
+                }
         
         # Define a wrapper generator that handles auto-continue logic
         async def auto_continue_wrapper():
-            nonlocal auto_continue, auto_continue_count, temporary_message
-            
-            current_temp_message = temporary_message # Use a local copy for the first run
+            nonlocal auto_continue, auto_continue_count
             
             while auto_continue and (native_max_auto_continues == 0 or auto_continue_count < native_max_auto_continues):
                 # Reset auto_continue for this iteration
                 auto_continue = False
                 
                 # Run the thread once
-                # Pass current_temp_message, which is only set for the first iteration
-                response_gen = await _run_once(temp_msg=current_temp_message) 
+                response_gen = await _run_once(temporary_message if auto_continue_count == 0 else None)
                 
-                # Clear the temporary message after the first run
-                current_temp_message = None 
-                
-                # Handle error responses (checking if it's an error dict, which _run_once might return directly)
-                if isinstance(response_gen, dict) and response_gen.get("status") == "error":
+                # Handle error responses
+                if isinstance(response_gen, dict) and "status" in response_gen and response_gen["status"] == "error":
                     yield response_gen
                     return
-                    
-                # Check if it's the error generator from _run_once exception handling
-                # Need a way to check if it's the specific error generator or just inspect the first item
-                first_chunk = None
-                try:
-                    first_chunk = await anext(response_gen)
-                except StopAsyncIteration:
-                    # Empty generator, possibly due to an issue before yielding.
-                    logger.warning("Response generator was empty.")
-                    break 
-                except Exception as e:
-                    logger.error(f"Error getting first chunk from generator: {e}")
-                    yield {"type": "error", "message": f"Error processing response: {e}"}
-                    break
-
-                if first_chunk and first_chunk.get('type') == 'error' and "Error during LLM call" in first_chunk.get('message', ''):
-                    yield first_chunk
-                    return # Stop processing if setup failed
-
-                # Yield the first chunk if it wasn't an error
-                if first_chunk:
-                     yield first_chunk
                 
-                # Process remaining chunks
+                # Process each chunk
                 async for chunk in response_gen:
                     # Check if this is a finish reason chunk with tool_calls or xml_tool_limit_reached
                     if chunk.get('type') == 'finish':
-                        finish_reason = chunk.get('finish_reason')
-                        if finish_reason == 'tool_calls':
+                        if chunk.get('finish_reason') == 'tool_calls':
                             # Only auto-continue if enabled (max > 0)
                             if native_max_auto_continues > 0:
                                 logger.info(f"Detected finish_reason='tool_calls', auto-continuing ({auto_continue_count + 1}/{native_max_auto_continues})")
                                 auto_continue = True
                                 auto_continue_count += 1
-                                # Don't yield the finish chunk to avoid confusing the client during auto-continue
-                                continue 
-                        elif finish_reason == 'xml_tool_limit_reached':
+                                # Don't yield the finish chunk to avoid confusing the client
+                                continue
+                        elif chunk.get('finish_reason') == 'xml_tool_limit_reached':
                             # Don't auto-continue if XML tool limit was reached
                             logger.info(f"Detected finish_reason='xml_tool_limit_reached', stopping auto-continue")
                             auto_continue = False
                             # Still yield the chunk to inform the client
-                        
-                        # Yield other finish reasons normally
                     
-                    # Yield the chunk normally
+                    # Otherwise just yield the chunk normally
                     yield chunk
                 
-                # If not auto-continuing, we're done with the loop
+                # If not auto-continuing, we're done
                 if not auto_continue:
                     break
                 

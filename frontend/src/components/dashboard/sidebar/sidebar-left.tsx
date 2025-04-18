@@ -5,6 +5,7 @@ import {
   BookOpen,
   CalendarClock,
 } from "lucide-react"
+import Link from "next/link"
 
 import { NavAgents } from "@/components/dashboard/sidebar/nav-agents"
 import { NavUserWithTeams } from "@/components/dashboard/sidebar/nav-user-with-teams"
@@ -77,7 +78,9 @@ export function SidebarLeft({
     <Sidebar collapsible="icon" className="border-r-0 bg-background/95 backdrop-blur-sm" {...props}>
       <SidebarHeader className="px-2 py-2">
         <div className="flex h-[40px] items-center px-1 relative">
-          <KortixLogo />
+          <Link href="/dashboard">
+            <KortixLogo />
+          </Link>
           {state !== "collapsed" && (
             <div className="ml-2 transition-all duration-200 ease-in-out whitespace-nowrap">
               {/* <span className="font-semibold"> SUNA</span> */}

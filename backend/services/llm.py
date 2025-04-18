@@ -14,7 +14,6 @@ from typing import Union, Dict, Any, Optional, AsyncGenerator, List
 import os
 import json
 import asyncio
-import time  # Added for timestamp
 from openai import OpenAIError
 import litellm
 from utils.logger import logger
@@ -26,9 +25,6 @@ litellm.modify_params=True
 MAX_RETRIES = 3
 RATE_LIMIT_DELAY = 30
 RETRY_DELAY = 5
-
-# Define debug log directory relative to this file's location
-DEBUG_LOG_DIR = os.path.join(os.path.dirname(__file__), 'debug_logs')
 
 class LLMError(Exception):
     """Base exception for LLM-related errors."""
@@ -86,10 +82,7 @@ def prepare_params(
     api_base: Optional[str] = None,
     stream: bool = False,
     top_p: Optional[float] = None,
-    model_id: Optional[str] = None,
-    # Add parameters for thinking/reasoning
-    enable_thinking: Optional[bool] = None,
-    reasoning_effort: Optional[str] = None
+    model_id: Optional[str] = None
 ) -> Dict[str, Any]:
     """Prepare parameters for the API call."""
     params = {
@@ -159,24 +152,6 @@ def prepare_params(
             params["model_id"] = "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
             logger.debug(f"Auto-set model_id for Claude 3.7 Sonnet: {params['model_id']}")
 
-    # --- Add Anthropic Thinking/Reasoning Effort ---
-    # Determine if thinking should be enabled based on the passed parameter
-    use_thinking = enable_thinking if enable_thinking is not None else False
-
-    # Check if the model is Anthropic
-    is_anthropic = "sonnet-3-7" in model_name.lower() or "anthropic" in model_name.lower()
-
-    # Add reasoning_effort parameter if enabled and applicable
-    if is_anthropic and use_thinking:
-        # Determine reasoning effort based on the passed parameter, defaulting to 'low'
-        effort_level = reasoning_effort if reasoning_effort else 'low'
-        
-        params["reasoning_effort"] = effort_level
-        logger.info(f"Anthropic thinking enabled with reasoning_effort='{effort_level}'")
-
-        # Anthropic requires temperature=1 when thinking/reasoning_effort is enabled
-        params["temperature"] = 1.0
-
     return params
 
 async def make_llm_api_call(
@@ -191,10 +166,7 @@ async def make_llm_api_call(
     api_base: Optional[str] = None,
     stream: bool = False,
     top_p: Optional[float] = None,
-    model_id: Optional[str] = None,
-    # Add parameters for thinking/reasoning
-    enable_thinking: Optional[bool] = None,
-    reasoning_effort: Optional[str] = None
+    model_id: Optional[str] = None
 ) -> Union[Dict[str, Any], AsyncGenerator]:
     """
     Make an API call to a language model using LiteLLM.
@@ -233,126 +205,18 @@ async def make_llm_api_call(
         api_base=api_base,
         stream=stream,
         top_p=top_p,
-        model_id=model_id,
-        # Add parameters for thinking/reasoning
-        enable_thinking=enable_thinking,
-        reasoning_effort=reasoning_effort
+        model_id=model_id
     )
     
-    # Apply Anthropic prompt caching (minimal implementation)
-    if params["model"].startswith("anthropic/"):
-        logger.debug("Applying minimal Anthropic prompt caching.")
-        messages = params["messages"] # Direct reference
-
-        # 1. Process the first message if it's a system prompt with string content
-        if messages and messages[0].get("role") == "system":
-            content = messages[0].get("content")
-            if isinstance(content, str):
-                messages[0]["content"] = [
-                    {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}
-                ]
-                logger.debug("Applied cache_control to system message.")
-                modified = True
-            elif not isinstance(content, list):
-                 logger.warning("System message content is not a string or list, skipping cache_control.")
-            # else: content is already a list, do nothing
-
-        # 2. Find and process the last user message
-        last_user_idx = -1
-        for i in range(len(messages) - 1, -1, -1):
-            if messages[i].get("role") == "user":
-                last_user_idx = i
-                break
-
-        if last_user_idx != -1:
-            last_user_message = messages[last_user_idx]
-            content = last_user_message.get("content")
-            applied_to_user = False
-
-            if isinstance(content, str):
-                last_user_message["content"] = [
-                    {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}
-                ]
-                logger.debug(f"Applied cache_control to last user message (string content, index {last_user_idx}).")
-                applied_to_user = True
-            elif isinstance(content, list):
-                # Modify text blocks within the list directly
-                found_text_block = False
-                for item in content:
-                    if isinstance(item, dict) and item.get("type") == "text":
-                        # Add cache_control if not already present (avoids adding it multiple times)
-                        if "cache_control" not in item:
-                           item["cache_control"] = {"type": "ephemeral"}
-                           found_text_block = True # Mark modification only if added
-                
-                if found_text_block:
-                    logger.debug(f"Applied cache_control to text part(s) of last user message (list content, index {last_user_idx}).")
-                    applied_to_user = True
-                # else: No text block found or cache_control already present, do nothing
-            else:
-                logger.warning(f"Last user message (index {last_user_idx}) content is not a string or list ({type(content)}), skipping cache_control.")
-            
-            if applied_to_user:
-                modified = True
-
-    # --- Debug Logging Setup ---
-    # Initialize log path to None, it will be set only if logging is enabled
-    response_log_path = None
-    enable_debug_logging = os.environ.get('ENABLE_LLM_DEBUG_LOGGING', 'false').lower() == 'true'
-    # enable_debug_logging = True
-
-    if enable_debug_logging:
-        try:
-            os.makedirs(DEBUG_LOG_DIR, exist_ok=True)
-            # save the model name too 
-            model_name = params["model"]
-            
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            # Use a unique ID or counter if calls can happen in the same second
-            # For simplicity, using timestamp only for now
-            request_log_path = os.path.join(DEBUG_LOG_DIR, f"llm_request_{timestamp}_{model_name}.json")
-            response_log_path = os.path.join(DEBUG_LOG_DIR, f"llm_response_{timestamp}_{model_name}.json") # Set here if enabled
-
-            # Log the request parameters just before the attempt loop
-            logger.debug(f"Logging LLM request parameters to {request_log_path}")
-            with open(request_log_path, 'w') as f:
-                # Use default=str for potentially non-serializable items in params if needed
-                json.dump(params, f, indent=2, default=str)
-
-        except Exception as log_err:
-            logger.error(f"Failed to set up or write LLM debug request log: {log_err}", exc_info=True)
-            # Reset response path to None if setup failed, even if logging was enabled
-            response_log_path = None
-    else:
-        logger.debug("LLM debug logging is disabled via environment variable.")
-    # --- End Debug Logging Setup ---
-
     last_error = None
     for attempt in range(MAX_RETRIES):
         try:
             logger.debug(f"Attempt {attempt + 1}/{MAX_RETRIES}")
-            # print(params)
+            # logger.debug(f"API request parameters: {json.dumps(params, indent=2)}")
+            
             response = await litellm.acompletion(**params)
             logger.debug(f"Successfully received API response from {model_name}")
-            
-            # --- Debug Logging Response ---
-            if response_log_path: # Only log if request logging setup succeeded
-                try:
-                    logger.debug(f"Logging LLM response object to {response_log_path}")
-                    # Check if it's a streaming response (AsyncGenerator)
-                    if isinstance(response, AsyncGenerator):
-                         with open(response_log_path, 'w') as f:
-                            json.dump({"status": "streaming_response", "message": "Full response logged chunk by chunk where consumed."}, f, indent=2)
-                    else:
-                         # Assume it's a LiteLLM ModelResponse object, convert to dict
-                         response_dict = response.dict()
-                         with open(response_log_path, 'w') as f:
-                             # Use default=str for potentially non-serializable items like datetime
-                             json.dump(response_dict, f, indent=2, default=str)
-                except Exception as log_err:
-                    logger.error(f"Failed to write LLM debug response log: {log_err}", exc_info=True)
-            # --- End Debug Logging Response ---
-            
+            logger.debug(f"Response: {response}")
             return response
             
         except (litellm.exceptions.RateLimitError, OpenAIError, json.JSONDecodeError) as e:
@@ -383,7 +247,7 @@ async def test_openrouter():
         # Test with standard OpenRouter model
         print("\n--- Testing standard OpenRouter model ---")
         response = await make_llm_api_call(
-            model_name="openrouter/openai/gpt-3.5-turbo",
+            model_name="openrouter/openai/gpt-4o-mini",
             messages=test_messages,
             temperature=0.7,
             max_tokens=100

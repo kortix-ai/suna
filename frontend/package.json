@@ -75,6 +75,7 @@
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
     "@types/diff": "^7.0.2",
+    "@types/lodash": "^4.17.16",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",

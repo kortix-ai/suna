@@ -95,8 +95,6 @@ class ResponseProcessor:
         self,
         llm_response: AsyncGenerator,
         thread_id: str,
-        prompt_messages: List[Dict[str, Any]],
-        llm_model: str,
         config: ProcessorConfig = ProcessorConfig(),
     ) -> AsyncGenerator:
         """Process a streaming LLM response, handling tool calls and execution.
@@ -104,8 +102,6 @@ class ResponseProcessor:
         Args:
             llm_response: Streaming response from the LLM
             thread_id: ID of the conversation thread
-            prompt_messages: List of messages sent to the LLM (the prompt)
-            llm_model: The name of the LLM model used
             config: Configuration for parsing and execution
             
         Yields:
@@ -148,6 +144,9 @@ class ResponseProcessor:
         # if config.max_xml_tool_calls > 0:
         #     logger.info(f"XML tool call limit enabled: {config.max_xml_tool_calls}")
 
+        accumulated_cost = 0
+        accumulated_token_count = 0
+        
         try:
             # Generate a unique ID for this response run
             thread_run_id = str(uuid.uuid4())
@@ -169,17 +168,22 @@ class ResponseProcessor:
                 if hasattr(chunk, 'choices') and chunk.choices:
                     delta = chunk.choices[0].delta if hasattr(chunk.choices[0], 'delta') else None
                     
-                    # Check for and log Anthropic thinking content
-                    if delta and hasattr(delta, 'reasoning_content') and delta.reasoning_content:
-                        logger.info(f"[THINKING]: {delta.reasoning_content}")
-                        accumulated_content += delta.reasoning_content # Append reasoning to main content
-                    
                     # Process content chunk
                     if delta and hasattr(delta, 'content') and delta.content:
                         chunk_content = delta.content
                         accumulated_content += chunk_content
                         current_xml_content += chunk_content
 
+                        # Calculate cost using prompt and completion
+                        try:
+                            cost = completion_cost(model=chunk.model, prompt=accumulated_content, completion=chunk_content)
+                            tcount = token_counter(model=chunk.model, messages=[{"role": "user", "content": accumulated_content}])
+                            accumulated_cost += cost
+                            accumulated_token_count += tcount
+                            logger.debug(f"Cost: {cost:.6f}, Token count: {tcount}")
+                        except Exception as e:
+                            logger.error(f"Error calculating cost: {str(e)}")
+                        
                         # Check if we've reached the XML tool call limit before yielding content
                         if config.max_xml_tool_calls > 0 and xml_tool_call_count >= config.max_xml_tool_calls:
                             # We've reached the limit, don't yield any more content
@@ -344,7 +348,7 @@ class ResponseProcessor:
                 
                 # If we've reached the XML tool call limit, stop streaming
                 if finish_reason == "xml_tool_limit_reached":
-                    logger.info("Stopping stream processing after loop due to XML tool call limit")
+                    logger.info("Stopping stream due to XML tool call limit")
                     break
 
             # After streaming completes or is stopped due to limit, wait for any remaining tool executions
@@ -458,17 +462,11 @@ class ResponseProcessor:
                             continue
                 
                 # Add assistant message with accumulated content
-                # Start with base message data
                 message_data = {
                     "role": "assistant",
-                    "content": accumulated_content
-                    # tool_calls key is initially omitted
+                    "content": accumulated_content,
+                    "tool_calls": complete_native_tool_calls if config.native_tool_calling and complete_native_tool_calls else None
                 }
-
-                # Conditionally add tool_calls if they exist and native calling is enabled
-                if config.native_tool_calling and complete_native_tool_calls:
-                    message_data["tool_calls"] = complete_native_tool_calls
-
                 last_assistant_message_id = await self.add_message(
                     thread_id=thread_id, 
                     type="assistant", 
@@ -606,22 +604,17 @@ class ResponseProcessor:
             # )
 
 
-
     async def process_non_streaming_response(
         self,
         llm_response: Any,
         thread_id: str,
-        prompt_messages: List[Dict[str, Any]],
-        llm_model: str,
-        config: ProcessorConfig = ProcessorConfig(),
-    ) -> AsyncGenerator:
+        config: ProcessorConfig = ProcessorConfig()
+    ) -> AsyncGenerator[Dict[str, Any], None]:
         """Process a non-streaming LLM response, handling tool calls and execution.
         
         Args:
             llm_response: Response from the LLM
             thread_id: ID of the conversation thread
-            prompt_messages: List of messages sent to the LLM (the prompt)
-            llm_model: The name of the LLM model used
             config: Configuration for parsing and execution
             
         Yields:
@@ -709,53 +702,18 @@ class ResponseProcessor:
                                 })
             
             # Add assistant message FIRST - always do this regardless of finish_reason
-            # Start with base message data
             message_data = {
                 "role": "assistant",
-                "content": content
-                # tool_calls key is initially omitted
+                "content": content,
+                "tool_calls": native_tool_calls if config.native_tool_calling and 'native_tool_calls' in locals() else None
             }
-
-            # Conditionally add tool_calls if they exist and native calling is enabled
-            # Use 'native_tool_calls' in locals() check for safety as before
-            if config.native_tool_calling and 'native_tool_calls' in locals() and native_tool_calls:
-                 message_data["tool_calls"] = native_tool_calls
-
-            # Add the message
-            await self.add_message(
-                thread_id=thread_id,
-                type="assistant",
+            assistant_message_id = await self.add_message(
+                thread_id=thread_id, 
+                type="assistant", 
                 content=message_data,
                 is_llm_message=True
             )
             
-            # Calculate and store cost AFTER adding the main assistant message
-            if content or tool_calls: # Calculate cost if there's content or tool calls
-                try:
-                    # Use the full response object for potentially more accurate cost calculation
-                    # Pass model explicitly as it might not be reliably in response_object for all providers
-                    # First check if response_cost is directly available in _hidden_params
-                    if hasattr(llm_response, '_hidden_params') and 'response_cost' in llm_response._hidden_params and llm_response._hidden_params['response_cost'] != 0.0:
-                        final_cost = llm_response._hidden_params['response_cost']
-                    else:
-                        # Fall back to calculating cost if direct cost not available
-                        final_cost = completion_cost(
-                            completion_response=llm_response,
-                            model=llm_model, 
-                            call_type="completion" # Assuming 'completion' type for this context
-                        )
-                    
-                    if final_cost is not None and final_cost > 0:
-                        logger.info(f"Calculated final cost for non-stream: {final_cost}")
-                        await self.add_message(
-                            thread_id=thread_id,
-                            type="cost",
-                            content={"cost": final_cost},
-                            is_llm_message=False # Cost is metadata
-                        )
-                except Exception as e:
-                    logger.error(f"Error calculating final cost for non-stream: {str(e)}")
-
             # Yield content first
             yield {
                 "type": "content", 
