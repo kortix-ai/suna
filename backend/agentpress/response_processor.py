@@ -98,6 +98,8 @@ class ResponseProcessor:
         llm_response: AsyncGenerator,
         thread_id: str,
         config: ProcessorConfig = ProcessorConfig(),
+        prompt_messages: Optional[List[Dict[str, Any]]] = None,
+        llm_model: Optional[str] = None
     ) -> AsyncGenerator:
         """Process a streaming LLM response, handling tool calls and execution.
         
@@ -105,6 +107,8 @@ class ResponseProcessor:
             llm_response: Streaming response from the LLM
             thread_id: ID of the conversation thread
             config: Configuration for parsing and execution
+            prompt_messages: List of messages used for cost calculation
+            llm_model: Name of the LLM model used for cost calculation
             
         Yields:
             Formatted chunks of the response including content and tool results
@@ -175,15 +179,20 @@ class ResponseProcessor:
                         accumulated_content += chunk_content
                         current_xml_content += chunk_content
 
-                        # Calculate cost using prompt and completion
-                        try:
-                            cost = completion_cost(model=chunk.model, prompt=accumulated_content, completion=chunk_content)
-                            tcount = token_counter(model=chunk.model, messages=[{"role": "user", "content": accumulated_content}])
-                            accumulated_cost += cost
-                            accumulated_token_count += tcount
-                            logger.debug(f"Cost: {cost:.6f}, Token count: {tcount}")
-                        except Exception as e:
-                            logger.error(f"Error calculating cost: {str(e)}")
+                        # Process reasoning content if present (Anthropic)
+                        if hasattr(delta, 'reasoning_content') and delta.reasoning_content:
+                            logger.info(f"[THINKING]: {delta.reasoning_content}")
+                            accumulated_content += delta.reasoning_content # Append reasoning to main content
+
+                        # Calculate cost using prompt and completion - MOVED AFTER MESSAGE SAVE
+                        # try:
+                        #     cost = completion_cost(model=chunk.model, prompt=accumulated_content, completion=chunk_content)
+                        #     tcount = token_counter(model=chunk.model, messages=[{"role": "user", "content": accumulated_content}])
+                        #     accumulated_cost += cost
+                        #     accumulated_token_count += tcount
+                        #     logger.debug(f"Cost: {cost:.6f}, Token count: {tcount}")
+                        # except Exception as e:
+                        #     logger.error(f"Error calculating cost: {str(e)}")
                         
                         # Check if we've reached the XML tool call limit before yielding content
                         if config.max_xml_tool_calls > 0 and xml_tool_call_count >= config.max_xml_tool_calls:
@@ -489,6 +498,35 @@ class ResponseProcessor:
                         "thread_run_id": thread_run_id
                     }
                 
+                # --- Cost Calculation (moved here) ---
+                if prompt_messages and llm_model and accumulated_content:
+                    try:
+                        cost = completion_cost(
+                            model=llm_model,
+                            messages=prompt_messages,
+                            completion=accumulated_content
+                        )
+                        token_count = token_counter(
+                            model=llm_model,
+                            messages=prompt_messages + [{"role": "assistant", "content": accumulated_content}]
+                        )
+                        await self.add_message(
+                            thread_id=thread_id,
+                            type="cost",
+                            content={
+                                "cost": cost,
+                                "prompt_tokens": token_count - token_counter(model=llm_model, messages=[{"role": "assistant", "content": accumulated_content}]), # Approx
+                                "completion_tokens": token_counter(model=llm_model, messages=[{"role": "assistant", "content": accumulated_content}]), # Approx
+                                "total_tokens": token_count,
+                                "model_name": llm_model
+                            },
+                            is_llm_message=False
+                        )
+                        logger.info(f"Calculated cost for streaming response: {cost:.6f} using model {llm_model}")
+                    except Exception as e:
+                        logger.error(f"Error calculating cost: {str(e)}")
+                # --- End Cost Calculation ---
+
                 # --- Process All Tool Calls Now --- 
                 if config.execute_tools:
                     final_tool_calls_to_process = []
@@ -626,23 +664,24 @@ class ResponseProcessor:
             yield {"type": "error", "message": str(e), "thread_run_id": thread_run_id if 'thread_run_id' in locals() else None}
         
         finally:
-            # Yield a finish signal including the final assistant message ID
-            if last_assistant_message_id:
-                # Yield the overall run end signal
+            # Yield the detected finish reason if one exists and wasn't suppressed
+            if finish_reason and finish_reason != "xml_tool_limit_reached":
                 yield {
-                    "type": "thread_run_end",
-                    "thread_run_id": thread_run_id
-                }
-            else:
-                # Yield the overall run end signal
-                yield {
-                    "type": "thread_run_end",
+                    "type": "finish",
+                    "finish_reason": finish_reason,
                     "thread_run_id": thread_run_id if 'thread_run_id' in locals() else None
                 }
-            
+
+            # Yield a finish signal including the final assistant message ID
+            # Ensure thread_run_id is defined, even if an early error occurred
+            run_id = thread_run_id if 'thread_run_id' in locals() else str(uuid.uuid4()) # Fallback ID if needed
+            yield {
+                "type": "thread_run_end",
+                "thread_run_id": run_id
+            }
+
+            # Remove old cost calculation code
             pass
-            # track the cost and token count
-            # todo: there is a bug as it adds every chunk to db because finally will run every time even in yield
             # await self.add_message(
             #     thread_id=thread_id, 
             #     type="cost", 
@@ -658,7 +697,9 @@ class ResponseProcessor:
         self,
         llm_response: Any,
         thread_id: str,
-        config: ProcessorConfig = ProcessorConfig()
+        config: ProcessorConfig = ProcessorConfig(),
+        prompt_messages: Optional[List[Dict[str, Any]]] = None,
+        llm_model: Optional[str] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Process a non-streaming LLM response, handling tool calls and execution.
         
@@ -666,6 +707,8 @@ class ResponseProcessor:
             llm_response: Response from the LLM
             thread_id: ID of the conversation thread
             config: Configuration for parsing and execution
+            prompt_messages: List of messages used for cost calculation
+            llm_model: Name of the LLM model used for cost calculation
             
         Yields:
             Formatted response including content and tool results
@@ -861,6 +904,50 @@ class ResponseProcessor:
                     "thread_run_id": thread_run_id
                 }
                     
+            # --- Cost Calculation (moved here) ---
+            if prompt_messages and llm_model:
+                cost = None
+                # Attempt to get cost from LiteLLM response first
+                if hasattr(llm_response, '_hidden_params') and 'response_cost' in llm_response._hidden_params:
+                    cost = llm_response._hidden_params['response_cost']
+                    logger.info(f"Using pre-calculated cost from LiteLLM: {cost:.6f}")
+
+                # If no pre-calculated cost, calculate manually
+                if cost is None:
+                    try:
+                        cost = completion_cost(
+                            model=llm_model,
+                            messages=prompt_messages,
+                            completion=content # Use extracted content
+                        )
+                        logger.info(f"Manually calculated cost for non-streaming response: {cost:.6f} using model {llm_model}")
+                    except Exception as e:
+                        logger.error(f"Error calculating cost: {str(e)}")
+
+                # Add cost message if cost was determined
+                if cost is not None:
+                    try:
+                        # Approximate token counts
+                        completion_tokens = token_counter(model=llm_model, messages=[{"role": "assistant", "content": content}])
+                        prompt_tokens = token_counter(model=llm_model, messages=prompt_messages)
+                        total_tokens = prompt_tokens + completion_tokens
+
+                        await self.add_message(
+                            thread_id=thread_id,
+                            type="cost",
+                            content={
+                                "cost": cost,
+                                "prompt_tokens": prompt_tokens,
+                                "completion_tokens": completion_tokens,
+                                "total_tokens": total_tokens,
+                                "model_name": llm_model
+                            },
+                            is_llm_message=False
+                        )
+                    except Exception as e:
+                         logger.error(f"Error saving cost message: {str(e)}")
+            # --- End Cost Calculation ---
+
         except Exception as e:
             logger.error(f"Error processing response: {str(e)}", exc_info=True)
             yield {"type": "error", "message": str(e), "thread_run_id": thread_run_id if 'thread_run_id' in locals() else None}

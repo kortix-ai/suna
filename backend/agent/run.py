@@ -21,7 +21,18 @@ from utils.billing import check_billing_status, get_account_id_from_thread
 
 load_dotenv()
 
-async def run_agent(thread_id: str, project_id: str, sandbox, stream: bool = True, thread_manager: Optional[ThreadManager] = None, native_max_auto_continues: int = 25, max_iterations: int = 150):
+async def run_agent(
+    thread_id: str,
+    project_id: str,
+    sandbox,
+    stream: bool,
+    thread_manager: Optional[ThreadManager] = None,
+    native_max_auto_continues: int = 25,
+    max_iterations: int = 150,
+    model_name: str = "anthropic/claude-3-7-sonnet-latest",
+    enable_thinking: Optional[bool] = False,
+    reasoning_effort: Optional[str] = 'low'
+):
     """Run the development agent with specified configuration."""
     
     if not thread_manager:
@@ -112,7 +123,7 @@ async def run_agent(thread_id: str, project_id: str, sandbox, stream: bool = Tru
             thread_id=thread_id,
             system_prompt=system_message,
             stream=stream,
-            llm_model=os.getenv("MODEL_TO_USE", "anthropic/claude-3-7-sonnet-latest"),
+            llm_model=model_name,
             llm_temperature=0,
             llm_max_tokens=64000,
             tool_choice="auto",
@@ -128,6 +139,8 @@ async def run_agent(thread_id: str, project_id: str, sandbox, stream: bool = Tru
             ),
             native_max_auto_continues=native_max_auto_continues,
             include_xml_examples=True,
+            enable_thinking=enable_thinking,
+            reasoning_effort=reasoning_effort
         )
             
         if isinstance(response, dict) and "status" in response and response["status"] == "error":
@@ -250,7 +263,15 @@ async def test_agent():
     
     print("\n👋 Test completed. Goodbye!")
 
-async def process_agent_response(thread_id: str, project_id: str, thread_manager: ThreadManager):
+async def process_agent_response(
+    thread_id: str,
+    project_id: str,
+    thread_manager: ThreadManager,
+    stream: bool = True,
+    model_name: str = "anthropic/claude-3-7-sonnet-latest",
+    enable_thinking: Optional[bool] = False,
+    reasoning_effort: Optional[str] = 'low'
+):
     """Process the streaming response from the agent."""
     chunk_counter = 0
     current_response = ""
@@ -259,9 +280,19 @@ async def process_agent_response(thread_id: str, project_id: str, thread_manager
     # Create a test sandbox for processing
     sandbox_pass = str(uuid4())
     sandbox = create_sandbox(sandbox_pass)
-    print(f"\033[91mTest sandbox created: {sandbox.get_preview_link(6080)}/vnc_lite.html?password={sandbox_pass}\033[0m")
+    print(f"\033[91mTest sandbox created: {str(sandbox.get_preview_link(6080))}/vnc_lite.html?password={sandbox_pass}\033[0m")
     
-    async for chunk in run_agent(thread_id=thread_id, project_id=project_id, sandbox=sandbox, stream=True, thread_manager=thread_manager, native_max_auto_continues=25):
+    async for chunk in run_agent(
+        thread_id=thread_id,
+        project_id=project_id,
+        sandbox=sandbox,
+        stream=stream,
+        thread_manager=thread_manager,
+        native_max_auto_continues=25,
+        model_name=model_name,
+        enable_thinking=enable_thinking,
+        reasoning_effort=reasoning_effort
+    ):
         chunk_counter += 1
         
         if chunk.get('type') == 'content' and 'content' in chunk:

@@ -162,6 +162,8 @@ class ThreadManager:
         native_max_auto_continues: int = 25,
         max_xml_tool_calls: int = 0,
         include_xml_examples: bool = False,
+        enable_thinking: Optional[bool] = False,
+        reasoning_effort: Optional[str] = 'low'
     ) -> Union[Dict[str, Any], AsyncGenerator]:
         """Run a conversation thread with LLM integration and tool execution.
         
@@ -179,6 +181,8 @@ class ThreadManager:
                                       finish_reason="tool_calls" (0 disables auto-continue)
             max_xml_tool_calls: Maximum number of XML tool calls to allow (0 = no limit)
             include_xml_examples: Whether to include XML tool examples in the system prompt
+            enable_thinking: Whether to enable thinking before making a decision
+            reasoning_effort: The effort level for reasoning
             
         Returns:
             An async generator yielding response chunks or error dict
@@ -313,7 +317,9 @@ Here are the XML tools available with examples:
                         max_tokens=llm_max_tokens,
                         tools=openapi_tool_schemas,
                         tool_choice=tool_choice if processor_config.native_tool_calling else None,
-                        stream=stream
+                        stream=stream,
+                        enable_thinking=enable_thinking,
+                        reasoning_effort=reasoning_effort
                     )
                     logger.debug("Successfully received raw LLM API response stream/object")
 
@@ -327,7 +333,9 @@ Here are the XML tools available with examples:
                     response_generator = self.response_processor.process_streaming_response(
                         llm_response=llm_response,
                         thread_id=thread_id,
-                        config=processor_config
+                        config=processor_config,
+                        prompt_messages=prepared_messages,
+                        llm_model=llm_model
                     )
                     
                     return response_generator
@@ -338,7 +346,9 @@ Here are the XML tools available with examples:
                         response_generator = self.response_processor.process_non_streaming_response(
                             llm_response=llm_response,
                             thread_id=thread_id,
-                            config=processor_config
+                            config=processor_config,
+                            prompt_messages=prepared_messages,
+                            llm_model=llm_model
                         )
                         return response_generator # Return the generator
                     except Exception as e:

@@ -17,6 +17,8 @@ import asyncio
 from openai import OpenAIError
 import litellm
 from utils.logger import logger
+from datetime import datetime
+import traceback
 
 # litellm.set_verbose=True
 litellm.modify_params=True
@@ -82,7 +84,9 @@ def prepare_params(
     api_base: Optional[str] = None,
     stream: bool = False,
     top_p: Optional[float] = None,
-    model_id: Optional[str] = None
+    model_id: Optional[str] = None,
+    enable_thinking: Optional[bool] = False,
+    reasoning_effort: Optional[str] = 'low'
 ) -> Dict[str, Any]:
     """Prepare parameters for the API call."""
     params = {
@@ -211,6 +215,16 @@ def prepare_params(
             else:
                 logger.warning(f"Last user message (index {last_user_idx}) content is not a string or list ({type(content)}), skipping cache_control.")
 
+    # Add reasoning_effort for Anthropic models if enabled
+    use_thinking = enable_thinking if enable_thinking is not None else False
+    is_anthropic = "anthropic" in effective_model_name.lower() or "claude" in effective_model_name.lower()
+
+    if is_anthropic and use_thinking:
+        effort_level = reasoning_effort if reasoning_effort else 'low'
+        params["reasoning_effort"] = effort_level
+        params["temperature"] = 1.0 # Required by Anthropic when reasoning_effort is used
+        logger.info(f"Anthropic thinking enabled with reasoning_effort='{effort_level}'")
+
     return params
 
 async def make_llm_api_call(
@@ -225,7 +239,9 @@ async def make_llm_api_call(
     api_base: Optional[str] = None,
     stream: bool = False,
     top_p: Optional[float] = None,
-    model_id: Optional[str] = None
+    model_id: Optional[str] = None,
+    enable_thinking: Optional[bool] = False,
+    reasoning_effort: Optional[str] = 'low'
 ) -> Union[Dict[str, Any], AsyncGenerator]:
     """
     Make an API call to a language model using LiteLLM.
@@ -243,6 +259,8 @@ async def make_llm_api_call(
         stream: Whether to stream the response
         top_p: Top-p sampling parameter
         model_id: Optional ARN for Bedrock inference profiles
+        enable_thinking: Whether to enable thinking
+        reasoning_effort: Level of reasoning effort
         
     Returns:
         Union[Dict[str, Any], AsyncGenerator]: API response or stream
@@ -251,7 +269,7 @@ async def make_llm_api_call(
         LLMRetryError: If API call fails after retries
         LLMError: For other API-related errors
     """
-    logger.debug(f"Making LLM API call to model: {model_name}")
+    logger.debug(f"Making LLM API call to model: {model_name} (Thinking: {enable_thinking}, Effort: {reasoning_effort})")
     params = prepare_params(
         messages=messages,
         model_name=model_name,
@@ -264,7 +282,9 @@ async def make_llm_api_call(
         api_base=api_base,
         stream=stream,
         top_p=top_p,
-        model_id=model_id
+        model_id=model_id,
+        enable_thinking=enable_thinking,
+        reasoning_effort=reasoning_effort
     )
     
     last_error = None
