@@ -1,9 +1,18 @@
 import { Button } from "@/components/ui/button";
-import { X, SkipBack, SkipForward } from "lucide-react";
+import { X } from "lucide-react";
 import { Project } from "@/lib/api";
 import { getToolIcon } from "@/components/thread/utils";
 import React from "react";
 import { Slider } from "@/components/ui/slider";
+
+// Import tool view components from the tool-views directory
+import { CommandToolView } from "./tool-views/CommandToolView";
+import { StrReplaceToolView } from "./tool-views/StrReplaceToolView";
+import { GenericToolView } from "./tool-views/GenericToolView";
+import { FileOperationToolView } from "./tool-views/FileOperationToolView";
+import { BrowserToolView } from "./tool-views/BrowserToolView";
+import { WebSearchToolView } from "./tool-views/WebSearchToolView";
+import { WebCrawlToolView } from "./tool-views/WebCrawlToolView";
 
 // Simple input interface
 export interface ToolCallInput {
@@ -19,85 +28,118 @@ export interface ToolCallInput {
   };
 }
 
-// Helper function to format timestamp
-function formatTimestamp(isoString?: string): string {
-  if (!isoString) return '';
-  try {
-    const date = new Date(isoString);
-    return isNaN(date.getTime()) ? 'Invalid date' : date.toLocaleString();
-  } catch (e) {
-    return 'Invalid date';
-  }
-}
-
-// Simplified generic tool view
-function GenericToolView({ 
-  name, 
-  assistantContent, 
-  toolContent, 
-  isSuccess = true, 
-  assistantTimestamp, 
-  toolTimestamp 
-}: { 
-  name?: string; 
-  assistantContent?: string; 
-  toolContent?: string;
-  isSuccess?: boolean;
-  assistantTimestamp?: string;
-  toolTimestamp?: string;
-}) {
-  const toolName = name || 'Unknown Tool';
+// Get the specialized tool view component based on the tool name
+function getToolView(
+  toolName: string | undefined, 
+  assistantContent: string | undefined, 
+  toolContent: string | undefined,
+  assistantTimestamp: string | undefined,
+  toolTimestamp: string | undefined,
+  isSuccess: boolean = true,
+  project?: Project
+) {
+  if (!toolName) return null;
   
-  return (
-    <div className="space-y-4 p-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
-            {React.createElement(getToolIcon(toolName), { className: "h-4 w-4" })}
-          </div>
-          <div>
-            <h4 className="text-sm font-medium">{toolName}</h4>
-          </div>
-        </div>
-        
-        {toolContent && (
-          <div className={`px-2 py-1 rounded-full text-xs ${
-            isSuccess ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-          }`}>
-            {isSuccess ? 'Success' : 'Failed'}
-          </div>
-        )}
-      </div>
+  const normalizedToolName = toolName.toLowerCase();
+  
+  switch (normalizedToolName) {
+    case 'execute-command':
+      return (
+        <CommandToolView 
+          assistantContent={assistantContent}
+          toolContent={toolContent}
+          assistantTimestamp={assistantTimestamp}
+          toolTimestamp={toolTimestamp}
+          isSuccess={isSuccess}
+        />
+      );
+    case 'str-replace':
+      return (
+        <StrReplaceToolView
+          assistantContent={assistantContent}
+          toolContent={toolContent}
+          assistantTimestamp={assistantTimestamp}
+          toolTimestamp={toolTimestamp}
+          isSuccess={isSuccess}
+        />
+      );
+    case 'create-file':
+    case 'full-file-rewrite':
+    case 'delete-file':
+      return (
+        <FileOperationToolView 
+          assistantContent={assistantContent}
+          toolContent={toolContent}
+          assistantTimestamp={assistantTimestamp}
+          toolTimestamp={toolTimestamp}
+          isSuccess={isSuccess}
+          name={normalizedToolName}
+        />
+      );
+    case 'browser-navigate':
+    case 'browser-click':
+    case 'browser-extract':
+    case 'browser-fill':
+    case 'browser-wait':
+      return (
+        <BrowserToolView
+          name={normalizedToolName}
+          assistantContent={assistantContent}
+          toolContent={toolContent}
+          assistantTimestamp={assistantTimestamp}
+          toolTimestamp={toolTimestamp}
+          isSuccess={isSuccess}
+          project={project}
+        />
+      );
+    case 'web-search':
+      return (
+        <WebSearchToolView
+          assistantContent={assistantContent}
+          toolContent={toolContent}
+          assistantTimestamp={assistantTimestamp}
+          toolTimestamp={toolTimestamp}
+          isSuccess={isSuccess}
+        />
+      );
+    case 'web-crawl':
+      return (
+        <WebCrawlToolView
+          assistantContent={assistantContent}
+          toolContent={toolContent}
+          assistantTimestamp={assistantTimestamp}
+          toolTimestamp={toolTimestamp}
+          isSuccess={isSuccess}
+        />
+      );
+    default:
+      // Check if it's a browser operation
+      if (normalizedToolName.startsWith('browser-')) {
+        return (
+          <BrowserToolView
+            name={toolName}
+            assistantContent={assistantContent}
+            toolContent={toolContent}
+            assistantTimestamp={assistantTimestamp}
+            toolTimestamp={toolTimestamp}
+            isSuccess={isSuccess}
+            project={project}
+          />
+        );
+      }
       
-      {/* Assistant Message */}
-      <div className="space-y-1">
-        <div className="flex justify-between items-center">
-          <div className="text-xs font-medium text-muted-foreground">Assistant Message</div>
-          {assistantTimestamp && (
-            <div className="text-xs text-muted-foreground">{formatTimestamp(assistantTimestamp)}</div>
-          )}
-        </div>
-        <div className="rounded-md border bg-muted/50 p-3">
-          <pre className="text-xs overflow-auto whitespace-pre-wrap break-words">{assistantContent}</pre>
-        </div>
-      </div>
-      
-      {/* Tool Result */}
-      {toolContent && (
-        <div className="space-y-1">
-          <div className="flex justify-between items-center">
-            <div className="text-xs font-medium text-muted-foreground">Tool Result</div>
-            {toolTimestamp && (
-              <div className="text-xs text-muted-foreground">{formatTimestamp(toolTimestamp)}</div>
-            )}
-          </div>
-          <div className={`rounded-md border p-3 ${isSuccess ? 'bg-muted/50' : 'bg-red-50'}`}>
-            <pre className="text-xs overflow-auto whitespace-pre-wrap break-words">{toolContent}</pre>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+      // Fallback to generic view
+      return (
+        <GenericToolView 
+          name={toolName}
+          assistantContent={assistantContent}
+          toolContent={toolContent}
+          assistantTimestamp={assistantTimestamp}
+          toolTimestamp={toolTimestamp}
+          isSuccess={isSuccess}
+        />
+      );
+  }
 }
 
 interface ToolCallSidePanelProps {
@@ -133,22 +175,22 @@ export function ToolCallSidePanel({
       );
     }
     
-    return (
-      <GenericToolView 
-        name={currentToolCall.assistantCall.name}
-        assistantContent={currentToolCall.assistantCall.content}
-        assistantTimestamp={currentToolCall.assistantCall.timestamp}
-        toolContent={currentToolCall.toolResult?.content}
-        isSuccess={currentToolCall.toolResult?.isSuccess ?? true}
-        toolTimestamp={currentToolCall.toolResult?.timestamp}
-      />
+    // Get the specific tool view based on the tool name
+    return getToolView(
+      currentToolCall.assistantCall.name,
+      currentToolCall.assistantCall.content,
+      currentToolCall.toolResult?.content,
+      currentToolCall.assistantCall.timestamp,
+      currentToolCall.toolResult?.timestamp,
+      currentToolCall.toolResult?.isSuccess ?? true,
+      project
     );
   };
   
   return (
     <div className="fixed inset-y-0 right-0 w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[600px] bg-background border-l flex flex-col z-10">
       <div className="p-4 flex items-center justify-between">
-        <h3 className="text-sm font-semibold">Tool Details</h3>
+        <h3 className="text-sm font-semibold">Suna&apos;s Computer</h3>
         <Button variant="ghost" size="icon" onClick={onClose} className="text-muted-foreground hover:text-foreground">
           <X className="h-4 w-4" />
         </Button>
