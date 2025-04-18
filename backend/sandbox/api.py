@@ -195,3 +195,48 @@ async def read_file(
     except Exception as e:
         logger.error(f"Error reading file in sandbox {sandbox_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/project/{project_id}/sandbox/ensure-active")
+async def ensure_project_sandbox_active(
+    project_id: str,
+    user_id: str = Depends(get_current_user_id)
+):
+    """
+    Ensure that a project's sandbox is active and running.
+    Checks the sandbox status and starts it if it's not running.
+    """
+    client = await db.client
+    
+    # Find the project and sandbox information
+    project_result = await client.table('projects').select('*').eq('project_id', project_id).execute()
+    
+    if not project_result.data or len(project_result.data) == 0:
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    project_data = project_result.data[0]
+    account_id = project_data.get('account_id')
+    
+    # Verify account membership
+    if account_id:
+        account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', account_id).execute()
+        if not (account_user_result.data and len(account_user_result.data) > 0):
+            raise HTTPException(status_code=403, detail="Not authorized to access this project")
+    
+    # Check if project has a sandbox
+    sandbox_id = project_data.get('sandbox', {}).get('id')
+    if not sandbox_id:
+        raise HTTPException(status_code=404, detail="No sandbox found for this project")
+    
+    try:
+        # Get or start sandbox instance
+        logger.info(f"Ensuring sandbox {sandbox_id} is active for project {project_id}")
+        sandbox = await get_or_start_sandbox(sandbox_id)
+        
+        return {
+            "status": "success", 
+            "sandbox_id": sandbox_id,
+            "message": "Sandbox is active"
+        }
+    except Exception as e:
+        logger.error(f"Error ensuring sandbox is active for project {project_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

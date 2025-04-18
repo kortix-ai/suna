@@ -176,6 +176,33 @@ export const getProject = async (projectId: string): Promise<Project> => {
     .single();
   
   if (error) throw error;
+
+  // If project has a sandbox, ensure it's started
+  if (data.sandbox?.id) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        console.log(`Ensuring sandbox is active for project ${projectId}...`);
+        const response = await fetch(`${API_URL}/project/${projectId}/sandbox/ensure-active`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => 'No error details available');
+          console.warn(`Failed to ensure sandbox is active: ${response.status} ${response.statusText}`, errorText);
+        } else {
+          console.log('Sandbox activation successful');
+        }
+      }
+    } catch (sandboxError) {
+      console.warn('Failed to ensure sandbox is active:', sandboxError);
+      // Non-blocking error - continue with the project data
+    }
+  }
   
   // Cache the result
   apiCache.setProject(projectId, data);

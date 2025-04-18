@@ -1,8 +1,6 @@
 import os
-import requests
-from time import sleep
 
-from daytona_sdk import Daytona, DaytonaConfig, CreateSandboxParams, SessionExecuteRequest, Sandbox
+from daytona_sdk import Daytona, DaytonaConfig, CreateSandboxParams, Sandbox
 from daytona_api_client.models.workspace_state import WorkspaceState
 from dotenv import load_dotenv
 
