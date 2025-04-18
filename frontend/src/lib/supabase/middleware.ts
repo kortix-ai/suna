@@ -71,7 +71,7 @@ export const validateSession = async (request: NextRequest) => {
     // https://supabase.com/docs/guides/auth/server-side/nextjs
     const { data: { user } } = await supabase.auth.getUser();
 
-    const protectedRoutes = ['/invitation'];
+    const protectedRoutes = ['/dashboard', '/invitation'];
 
     if (!user && protectedRoutes.some(path => request.nextUrl.pathname.startsWith(path))) {
       // redirect to /auth
