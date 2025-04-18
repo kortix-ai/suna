@@ -100,7 +100,6 @@ export function SidebarLeft({
       </SidebarHeader>
       <SidebarContent>
         <NavAgents />
-        <NavSecondary items={navSecondaryItems} className="mt-auto" />
         {state === "collapsed" && (
           <div className="mt-2 flex justify-center">
             <Tooltip>
@@ -113,6 +112,7 @@ export function SidebarLeft({
         )}
       </SidebarContent>
       <SidebarFooter>
+        <NavSecondary items={navSecondaryItems} className="mt-auto" />
         <NavUserWithTeams user={user} />
       </SidebarFooter>
       <SidebarRail />
