@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from uuid import uuid4
 from typing import Optional
 
@@ -72,14 +73,16 @@ async def run_agent(thread_id: str, project_id: str, sandbox, stream: bool = Tru
             }
             break
         
-        # Check for termination signals in the messages
-        should_terminate, termination_reason = await check_for_termination_signals(client, thread_id)
-        if should_terminate:
-            print(f"Terminating execution: {termination_reason}")
-            continue_execution = False
-            break
+        # Check if last message is from assistant using direct Supabase query
+        latest_message = await client.table('messages').select('*').eq('thread_id', thread_id).order('created_at', desc=True).limit(1).execute()  
+        if latest_message.data and len(latest_message.data) > 0:
+            message_type = latest_message.data[0].get('type')
+            if message_type == 'assistant':
+                print(f"Last message was from assistant, stopping execution")
+                continue_execution = False
+                break
             
-        # Get the latest browser state message if available
+        # Get the latest message from messages table that its tpye is browser_state
         latest_browser_state = await client.table('messages').select('*').eq('thread_id', thread_id).eq('type', 'browser_state').order('created_at', desc=True).limit(1).execute()
         temporary_message = None
         if latest_browser_state.data and len(latest_browser_state.data) > 0:
@@ -110,178 +113,70 @@ async def run_agent(thread_id: str, project_id: str, sandbox, stream: bool = Tru
                 print(f"Error parsing browser state: {e}")
                 # print(latest_browser_state.data[0])
 
-        try:
-            # Track if we see ask or complete tool calls
-            last_tool_call = None
-            response = await thread_manager.run_thread(
-                thread_id=thread_id,
-                system_prompt=system_message,
-                stream=stream,
-                llm_model=os.getenv("MODEL_TO_USE", "anthropic/claude-3-7-sonnet-latest"),
-                llm_temperature=0,
-                llm_max_tokens=64000,
-                tool_choice="auto",
-                max_xml_tool_calls=1,
-                temporary_message=temporary_message,
-                processor_config=ProcessorConfig(
-                    xml_tool_calling=True,
-                    native_tool_calling=False,
-                    execute_tools=True,
-                    execute_on_stream=True,
-                    tool_execution_strategy="parallel",
-                    xml_adding_strategy="user_message"
-                ),
-                native_max_auto_continues=native_max_auto_continues,
-                include_xml_examples=True,
-            )
-                
-            if isinstance(response, dict) and "status" in response and response["status"] == "error":
-                yield response 
-                break
-                
-            try:
-                # Store XML content across chunks for better detection
-                accumulated_xml_content = ""
-                
-                async for chunk in response:
-                    # Check if this is a tool call chunk for ask or complete
-                    if chunk.get('type') == 'tool_call':
-                        tool_call = chunk.get('tool_call', {})
-                        function_name = tool_call.get('function', {}).get('name', '')
-                        if function_name in ['ask', 'complete']:
-                            last_tool_call = function_name
-                            print(f"Detected native tool call: {function_name}")
-                            
-                    # Check for XML versions like <ask> or <complete> in content chunks
-                    elif chunk.get('type') == 'content' and 'content' in chunk:
-                        content = chunk.get('content', '')
-                        # Accumulate content for more reliable XML detection
-                        accumulated_xml_content += content
-                        
-                        # Check for complete XML tags
-                        if '<ask>' in accumulated_xml_content and '</ask>' in accumulated_xml_content:
-                            last_tool_call = 'ask'
-                            print(f"Detected XML ask tool")
-                            
-                        if '<complete>' in accumulated_xml_content and '</complete>' in accumulated_xml_content:
-                            last_tool_call = 'complete'
-                            print(f"Detected XML complete tool")
-                            
-                    # Check if content has a tool call completion status
-                    elif chunk.get('type') == 'tool_status':
-                        status = chunk.get('status')
-                        function_name = chunk.get('function_name', '')
-                        
-                        if status == 'completed' and function_name in ['ask', 'complete']:
-                            last_tool_call = function_name
-                            print(f"Detected completed tool call status for: {function_name}")
-                            
-                    # Check tool result messages for ask/complete tools
-                    elif chunk.get('type') == 'tool_result':
-                        function_name = chunk.get('name', '')
-                        if function_name in ['ask', 'complete']:
-                            last_tool_call = function_name
-                            print(f"Detected tool result for: {function_name}")
-                            
-                    # Always yield the chunk to the client
-                    yield chunk
-                    
-                    # Check if we should stop immediately after processing this chunk
-                    if last_tool_call in ['ask', 'complete']:
-                        print(f"Agent decided to stop with tool: {last_tool_call}")
-                        continue_execution = False
-                        
-                        # Add a clear status message to the database to signal termination
-                        await client.table('messages').insert({
-                            'thread_id': thread_id,
-                            'type': 'status',
-                            'content': json.dumps({
-                                "status_type": "agent_termination",
-                                "reason": f"Tool '{last_tool_call}' executed"
-                            }),
-                            'is_llm_message': False,
-                            'metadata': json.dumps({"termination_signal": True})
-                        }).execute()
-                        
-                        # We don't break here to ensure all chunks are yielded,
-                        # but the next iteration won't start due to continue_execution = False
-                
-            except Exception as stream_error:
-                print(f"Error during stream processing: {str(stream_error)}")
-                yield {
-                    "type": "status",
-                    "status": "error",
-                    "message": f"Stream processing error: {str(stream_error)}"
-                }
-                break
+        response = await thread_manager.run_thread(
+            thread_id=thread_id,
+            system_prompt=system_message,
+            stream=stream,
+            llm_model=os.getenv("MODEL_TO_USE", "anthropic/claude-3-7-sonnet-latest"),
+            llm_temperature=0,
+            llm_max_tokens=64000,
+            tool_choice="auto",
+            max_xml_tool_calls=1,
+            temporary_message=temporary_message,
+            processor_config=ProcessorConfig(
+                xml_tool_calling=True,
+                native_tool_calling=False,
+                execute_tools=True,
+                execute_on_stream=True,
+                tool_execution_strategy="parallel",
+                xml_adding_strategy="user_message"
+            ),
+            native_max_auto_continues=native_max_auto_continues,
+            include_xml_examples=True,
+        )
             
-            # Double-check termination condition after all chunks processed
-            if last_tool_call in ['ask', 'complete']:
-                print(f"Confirming termination after stream with tool: {last_tool_call}")
-                continue_execution = False
-        except Exception as e:
-            print(f"Error running thread manager: {str(e)}")
-            yield {
-                "type": "status",
-                "status": "error",
-                "message": f"Thread manager error: {str(e)}"
-            }
+        if isinstance(response, dict) and "status" in response and response["status"] == "error":
+            yield response 
             break
-
-async def check_for_termination_signals(client, thread_id):
-    """Check database for signals that should terminate the agent execution."""
-    try:
-        # Check the last message type first
-        latest_message = await client.table('messages').select('*').eq('thread_id', thread_id).order('created_at', desc=True).limit(1).execute()
-        if latest_message.data and len(latest_message.data) > 0:
-            message_type = latest_message.data[0].get('type')
             
-            # If last message is from assistant, stop execution
-            if message_type == 'assistant':
-                return True, "Last message was from assistant"
-                
-            # Check for tool-related termination signals
-            if message_type == 'tool':
+        # Track if we see ask or complete tool calls
+        last_tool_call = None
+        
+        async for chunk in response:
+            # print(f"CHUNK: {chunk}") # Uncomment for detailed chunk logging
+
+            # Check for XML versions like <ask> or <complete> in assistant content chunks
+            if chunk.get('type') == 'assistant' and 'content' in chunk:
                 try:
-                    content = json.loads(latest_message.data[0].get('content', '{}'))
-                    if content.get('name') in ['ask', 'complete']:
-                        return True, f"Tool '{content.get('name')}' was executed"
-                except:
-                    pass
-                    
-            # Check for special status messages with termination signals
-            if message_type == 'status':
-                try:
-                    content = json.loads(latest_message.data[0].get('content', '{}'))
-                    metadata = json.loads(latest_message.data[0].get('metadata', '{}'))
-                    
-                    # Check for explicit termination signal in metadata
-                    if metadata.get('termination_signal') == True:
-                        return True, "Explicit termination signal found"
+                    # The content field might be a JSON string or object
+                    content = chunk.get('content', '{}')
+                    if isinstance(content, str):
+                        assistant_content_json = json.loads(content)
+                    else:
+                        assistant_content_json = content
                         
-                    # Check for agent_termination status type
-                    if content.get('status_type') == 'agent_termination':
-                        return True, content.get('reason', 'Agent termination status found')
-                except:
-                    pass
+                    # The actual text content is nested within
+                    assistant_text = assistant_content_json.get('content', '')
+                    if isinstance(assistant_text, str): # Ensure it's a string
+                         # Check for the closing tags as they signal the end of the tool usage
+                        if '</ask>' in assistant_text or '</complete>' in assistant_text:
+                           xml_tool = 'ask' if '</ask>' in assistant_text else 'complete'
+                           last_tool_call = xml_tool
+                           print(f"Agent used XML tool: {xml_tool}")
+                except json.JSONDecodeError:
+                    # Handle cases where content might not be valid JSON
+                    print(f"Warning: Could not parse assistant content JSON: {chunk.get('content')}")
+                except Exception as e:
+                    print(f"Error processing assistant chunk: {e}")
                     
-        # Also look for specific ask/complete tool execution in recent messages
-        recent_tool_messages = await client.table('messages').select('*').eq('thread_id', thread_id).eq('type', 'tool').order('created_at', desc=True).limit(5).execute()
-        if recent_tool_messages.data:
-            for msg in recent_tool_messages.data:
-                try:
-                    content = json.loads(msg.get('content', '{}'))
-                    if isinstance(content, dict) and content.get('role') == 'tool':
-                        tool_name = content.get('name', '')
-                        if tool_name in ['ask', 'complete']:
-                            return True, f"Recent '{tool_name}' tool execution found"
-                except:
-                    continue
-                    
-        return False, None
-    except Exception as e:
-        print(f"Error checking for termination signals: {e}")
-        return False, None
+            yield chunk
+        
+        # Check if we should stop based on the last tool call
+        if last_tool_call in ['ask', 'complete']:
+            print(f"Agent decided to stop with tool: {last_tool_call}")
+            continue_execution = False
+
+
 
 # TESTING
 
@@ -376,7 +271,7 @@ async def process_agent_response(thread_id: str, project_id: str, thread_manager
     """Process the streaming response from the agent."""
     chunk_counter = 0
     current_response = ""
-    tool_call_counter = 0  # Track number of tool calls
+    tool_usage_counter = 0 # Renamed from tool_call_counter as we track usage via status
     
     # Create a test sandbox for processing
     sandbox_pass = str(uuid4())
@@ -385,74 +280,134 @@ async def process_agent_response(thread_id: str, project_id: str, thread_manager
     
     async for chunk in run_agent(thread_id=thread_id, project_id=project_id, sandbox=sandbox, stream=True, thread_manager=thread_manager, native_max_auto_continues=25):
         chunk_counter += 1
-        
-        if chunk.get('type') == 'content' and 'content' in chunk:
-            current_response += chunk.get('content', '')
-            # Print the response as it comes in
-            print(chunk.get('content', ''), end='', flush=True)
-        elif chunk.get('type') == 'tool_result':
-            # Add timestamp and format tool result nicely
-            tool_name = chunk.get('function_name', 'Tool')
-            result = chunk.get('result', '')
-            print(f"\n\n🛠️  TOOL RESULT [{tool_name}] → {result}")
-        elif chunk.get('type') == 'tool_call':
-            # Display native tool call chunks as they arrive
-            tool_call = chunk.get('tool_call', {})
-            
-            # Check if it's a meaningful part of the tool call to display
-            args = tool_call.get('function', {}).get('arguments', '')
-            
-            # Only show when we have substantial arguments or a function name
-            should_display = (
-                len(args) > 3 or  # More than just '{}'
-                tool_call.get('function', {}).get('name')  # Or we have a name
-            )
-            
-            if should_display:
-                tool_call_counter += 1
-                tool_name = tool_call.get('function', {}).get('name', 'Building...')
+        # print(f"CHUNK: {chunk}") # Uncomment for debugging
+
+        if chunk.get('type') == 'assistant':
+            # Try parsing the content JSON
+            try:
+                # Handle content as string or object
+                content = chunk.get('content', '{}')
+                if isinstance(content, str):
+                    content_json = json.loads(content)
+                else:
+                    content_json = content
                 
-                # Print tool call header with counter and tool name
-                print(f"\n🔧 TOOL CALL #{tool_call_counter} [{tool_name}]")
-                
-                # Try to parse and pretty print the arguments if they're JSON
-                try:
-                    # Check if it's complete JSON or just a fragment
-                    if args.strip().startswith('{') and args.strip().endswith('}'):
-                        args_obj = json.loads(args)
-                        # Only print non-empty args to reduce clutter
-                        if args_obj and args_obj != {}:
-                            # Format JSON with nice indentation and color indicators for readability
-                            print(f"  ARGS: {json.dumps(args_obj, indent=2)}")
+                actual_content = content_json.get('content', '')
+                # Print the actual assistant text content as it comes
+                if actual_content:
+                     # Check if it contains XML tool tags, if so, print the whole tag for context
+                    if '<' in actual_content and '>' in actual_content:
+                         # Avoid printing potentially huge raw content if it's not just text
+                         if len(actual_content) < 500: # Heuristic limit
+                            print(actual_content, end='', flush=True)
+                         else:
+                             # Maybe just print a summary if it's too long or contains complex XML
+                             if '</ask>' in actual_content: print("<ask>...</ask>", end='', flush=True)
+                             elif '</complete>' in actual_content: print("<complete>...</complete>", end='', flush=True)
+                             else: print("<tool_call>...</tool_call>", end='', flush=True) # Generic case
                     else:
-                        # Only print if there's actual content to show
-                        if args.strip():
-                            print(f"  ARGS: {args}")
+                        # Regular text content
+                         print(actual_content, end='', flush=True)
+                    current_response += actual_content # Accumulate only text part
+            except json.JSONDecodeError:
+                 # If content is not JSON (e.g., just a string chunk), print directly
+                 raw_content = chunk.get('content', '')
+                 print(raw_content, end='', flush=True)
+                 current_response += raw_content
+            except Exception as e:
+                 print(f"\nError processing assistant chunk: {e}\n")
+
+        elif chunk.get('type') == 'tool': # Updated from 'tool_result'
+            # Add timestamp and format tool result nicely
+            tool_name = "UnknownTool" # Try to get from metadata if available
+            result_content = "No content"
+            
+            # Parse metadata - handle both string and dict formats
+            metadata = chunk.get('metadata', {})
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
                 except json.JSONDecodeError:
-                    if args.strip():
-                        print(f"  ARGS: {args}")
+                    metadata = {}
+            
+            linked_assistant_msg_id = metadata.get('assistant_message_id')
+            parsing_details = metadata.get('parsing_details')
+            if parsing_details:
+                tool_name = parsing_details.get('xml_tag_name', 'UnknownTool') # Get name from parsing details
+
+            try:
+                # Content is a JSON string or object
+                content = chunk.get('content', '{}') 
+                if isinstance(content, str):
+                    content_json = json.loads(content)
+                else:
+                    content_json = content
                 
-                # Add a separator for visual clarity
-                print("  " + "-" * 40)
-                
-                # Return to the current content display
-                if current_response:
-                    print("\nContinuing response:", flush=True)
-                    print(current_response, end='', flush=True)
-        elif chunk.get('type') == 'tool_status':
+                # The actual tool result is nested inside content.content
+                tool_result_str = content_json.get('content', '')
+                 # Extract the actual tool result string (remove outer <tool_result> tag if present)
+                match = re.search(rf'<{tool_name}>(.*?)</{tool_name}>', tool_result_str, re.DOTALL)
+                if match:
+                    result_content = match.group(1).strip()
+                    # Try to parse the result string itself as JSON for pretty printing
+                    try:
+                        result_obj = json.loads(result_content)
+                        result_content = json.dumps(result_obj, indent=2)
+                    except json.JSONDecodeError:
+                         # Keep as string if not JSON
+                         pass
+                else:
+                     # Fallback if tag extraction fails
+                     result_content = tool_result_str
+
+            except json.JSONDecodeError:
+                result_content = chunk.get('content', 'Error parsing tool content')
+            except Exception as e:
+                result_content = f"Error processing tool chunk: {e}"
+
+            print(f"\n\n🛠️  TOOL RESULT [{tool_name}] → {result_content}")
+
+        elif chunk.get('type') == 'status':
             # Log tool status changes
-            status = chunk.get('status', '')
-            function_name = chunk.get('function_name', '')
-            if status and function_name:
-                status_emoji = "✅" if status == "completed" else "⏳" if status == "started" else "❌"
-                print(f"\n{status_emoji} TOOL {status.upper()}: {function_name}")
-        elif chunk.get('type') == 'finish':
-            # Just log finish reason to console but don't show to user
-            finish_reason = chunk.get('finish_reason', '')
-            if finish_reason:
-                print(f"\n📌 Finished: {finish_reason}")
+            try:
+                # Handle content as string or object
+                status_content = chunk.get('content', '{}')
+                if isinstance(status_content, str):
+                    status_content = json.loads(status_content)
+                
+                status_type = status_content.get('status_type')
+                function_name = status_content.get('function_name', '')
+                xml_tag_name = status_content.get('xml_tag_name', '') # Get XML tag if available
+                tool_name = xml_tag_name or function_name # Prefer XML tag name
+
+                if status_type == 'tool_started' and tool_name:
+                    tool_usage_counter += 1
+                    print(f"\n⏳ TOOL STARTING #{tool_usage_counter} [{tool_name}]")
+                    print("  " + "-" * 40)
+                    # Return to the current content display
+                    if current_response:
+                        print("\nContinuing response:", flush=True)
+                        print(current_response, end='', flush=True)
+                elif status_type == 'tool_completed' and tool_name:
+                     status_emoji = "✅"
+                     print(f"\n{status_emoji} TOOL COMPLETED: {tool_name}")
+                elif status_type == 'finish':
+                     finish_reason = status_content.get('finish_reason', '')
+                     if finish_reason:
+                         print(f"\n📌 Finished: {finish_reason}")
+                # else: # Print other status types if needed for debugging
+                #    print(f"\nℹ️ STATUS: {chunk.get('content')}")
+
+            except json.JSONDecodeError:
+                 print(f"\nWarning: Could not parse status content JSON: {chunk.get('content')}")
+            except Exception as e:
+                print(f"\nError processing status chunk: {e}")
+
+
+        # Removed elif chunk.get('type') == 'tool_call': block
     
-    print(f"\n\n✅ Agent run completed with {tool_call_counter} tool calls")
+    # Update final message
+    print(f"\n\n✅ Agent run completed with {tool_usage_counter} tool executions")
 
 if __name__ == "__main__":
     import asyncio

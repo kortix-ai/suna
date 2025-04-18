@@ -1309,6 +1309,12 @@ class ResponseProcessor:
         # Add the *actual* tool result message ID to the metadata if available and successful
         if context.result.success and tool_message_id:
             metadata["linked_tool_result_message_id"] = tool_message_id
+            
+        # <<< ADDED: Signal if this is a terminating tool >>>
+        if context.function_name in ['ask', 'complete']:
+            metadata["agent_should_terminate"] = True
+            logger.info(f"Marking tool status for '{context.function_name}' with termination signal.")
+        # <<< END ADDED >>>
 
         saved_message_obj = await self.add_message(
             thread_id=thread_id, type="status", content=content, is_llm_message=False, metadata=metadata
