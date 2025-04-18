@@ -31,7 +31,8 @@ async def run_agent(
     max_iterations: int = 150,
     model_name: str = "anthropic/claude-3-7-sonnet-latest",
     enable_thinking: Optional[bool] = False,
-    reasoning_effort: Optional[str] = 'low'
+    reasoning_effort: Optional[str] = 'low',
+    enable_context_manager: bool = True
 ):
     """Run the development agent with specified configuration."""
     
@@ -142,7 +143,8 @@ async def run_agent(
             native_max_auto_continues=native_max_auto_continues,
             include_xml_examples=True,
             enable_thinking=enable_thinking,
-            reasoning_effort=reasoning_effort
+            reasoning_effort=reasoning_effort,
+            enable_context_manager=enable_context_manager
         )
             
         if isinstance(response, dict) and "status" in response and response["status"] == "error":
@@ -272,7 +274,8 @@ async def process_agent_response(
     stream: bool = True,
     model_name: str = "anthropic/claude-3-7-sonnet-latest",
     enable_thinking: Optional[bool] = False,
-    reasoning_effort: Optional[str] = 'low'
+    reasoning_effort: Optional[str] = 'low',
+    enable_context_manager: bool = True
 ):
     """Process the streaming response from the agent."""
     chunk_counter = 0
@@ -293,7 +296,8 @@ async def process_agent_response(
         native_max_auto_continues=25,
         model_name=model_name,
         enable_thinking=enable_thinking,
-        reasoning_effort=reasoning_effort
+        reasoning_effort=reasoning_effort,
+        enable_context_manager=enable_context_manager
     ):
         chunk_counter += 1
         

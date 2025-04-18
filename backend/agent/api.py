@@ -37,7 +37,8 @@ class AgentStartRequest(BaseModel):
     model_name: Optional[str] = "anthropic/claude-3-7-sonnet-latest"
     enable_thinking: Optional[bool] = False
     reasoning_effort: Optional[str] = 'low'
-    stream: Optional[bool] = False # Default stream to False for API
+    stream: Optional[bool] = True
+    enable_context_manager: Optional[bool] = False
 
 def initialize(
     _thread_manager: ThreadManager,
@@ -256,7 +257,7 @@ async def start_agent(
     user_id: str = Depends(get_current_user_id)
 ):
     """Start an agent for a specific thread in the background."""
-    logger.info(f"Starting new agent for thread: {thread_id} with config: model={body.model_name}, thinking={body.enable_thinking}, effort={body.reasoning_effort}, stream={body.stream}")
+    logger.info(f"Starting new agent for thread: {thread_id} with config: model={body.model_name}, thinking={body.enable_thinking}, effort={body.reasoning_effort}, stream={body.stream}, context_manager={body.enable_context_manager}")
     client = await db.client
     
     # Verify user has access to this thread
@@ -340,7 +341,8 @@ async def start_agent(
             model_name=MODEL_NAME_ALIASES.get(body.model_name, body.model_name), 
             enable_thinking=body.enable_thinking,
             reasoning_effort=body.reasoning_effort,
-            stream=body.stream # Pass stream parameter
+            stream=body.stream,
+            enable_context_manager=body.enable_context_manager
         )
     )
     
@@ -477,10 +479,11 @@ async def run_agent_background(
     model_name: str,
     enable_thinking: Optional[bool],
     reasoning_effort: Optional[str],
-    stream: bool # Add stream parameter
+    stream: bool,
+    enable_context_manager: bool
 ):
     """Run the agent in the background and handle status updates."""
-    logger.debug(f"Starting background agent run: {agent_run_id} for thread: {thread_id} (instance: {instance_id}) with model={model_name}, thinking={enable_thinking}, effort={reasoning_effort}, stream={stream}")
+    logger.debug(f"Starting background agent run: {agent_run_id} for thread: {thread_id} (instance: {instance_id}) with model={model_name}, thinking={enable_thinking}, effort={reasoning_effort}, stream={stream}, context_manager={enable_context_manager}")
     client = await db.client
     
     # Tracking variables
@@ -601,12 +604,13 @@ async def run_agent_background(
         agent_gen = run_agent(
             thread_id=thread_id,
             project_id=project_id,
-            stream=stream, # Pass stream parameter from API request
+            stream=stream,
             thread_manager=thread_manager,
             sandbox=sandbox,
-            model_name=model_name, # Pass model_name
-            enable_thinking=enable_thinking, # Pass enable_thinking
-            reasoning_effort=reasoning_effort # Pass reasoning_effort
+            model_name=model_name,
+            enable_thinking=enable_thinking,
+            reasoning_effort=reasoning_effort,
+            enable_context_manager=enable_context_manager
         )
         
         # Collect all responses to save to database

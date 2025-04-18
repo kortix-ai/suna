@@ -163,7 +163,8 @@ class ThreadManager:
         max_xml_tool_calls: int = 0,
         include_xml_examples: bool = False,
         enable_thinking: Optional[bool] = False,
-        reasoning_effort: Optional[str] = 'low'
+        reasoning_effort: Optional[str] = 'low',
+        enable_context_manager: bool = True
     ) -> Union[Dict[str, Any], AsyncGenerator]:
         """Run a conversation thread with LLM integration and tool execution.
         
@@ -183,6 +184,7 @@ class ThreadManager:
             include_xml_examples: Whether to include XML tool examples in the system prompt
             enable_thinking: Whether to enable thinking before making a decision
             reasoning_effort: The effort level for reasoning
+            enable_context_manager: Whether to enable automatic context summarization.
             
         Returns:
             An async generator yielding response chunks or error dict
@@ -249,7 +251,7 @@ Here are the XML tools available with examples:
                     logger.info(f"Thread {thread_id} token count: {token_count}/{token_threshold} ({(token_count/token_threshold)*100:.1f}%)")
                     
                     # If we're over the threshold, summarize the thread
-                    if token_count >= token_threshold:
+                    if token_count >= token_threshold and enable_context_manager:
                         logger.info(f"Thread token count ({token_count}) exceeds threshold ({token_threshold}), summarizing...")
                         
                         # Create summary using context manager
@@ -270,6 +272,8 @@ Here are the XML tools available with examples:
                             logger.info(f"After summarization: token count reduced from {token_count} to {new_token_count}")
                         else:
                             logger.warning("Summarization failed or wasn't needed - proceeding with original messages")
+                    else:
+                        logger.info("Automatic summarization disabled. Skipping token count check and summarization.")
                 except Exception as e:
                     logger.error(f"Error counting tokens or summarizing: {str(e)}")
                 
