@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { FlickeringGrid } from "@/components/home/ui/flickering-grid";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { ArrowLeft } from "lucide-react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 
-export default function LegalPage() {
+function LegalContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -349,5 +349,14 @@ export default function LegalPage() {
         </div>
       </section>
     </main>
+  );
+}
+
+// Wrap the LegalContent component with Suspense to handle useSearchParams()
+export default function LegalPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
+      <LegalContent />
+    </Suspense>
   );
 }
