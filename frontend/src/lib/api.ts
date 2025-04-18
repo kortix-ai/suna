@@ -454,6 +454,7 @@ export const startAgent = async (threadId: string): Promise<{ agent_run_id: stri
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
       },
+      credentials: 'include',
     });
     
     if (!response.ok) {
@@ -519,6 +520,7 @@ export const getAgentStatus = async (agentRunId: string): Promise<AgentRun> => {
       headers: {
         'Authorization': `Bearer ${session.access_token}`,
       },
+      credentials: 'include',
     });
     
     if (!response.ok) {
@@ -562,6 +564,7 @@ export const getAgentRuns = async (threadId: string): Promise<AgentRun[]> => {
       headers: {
         'Authorization': `Bearer ${session.access_token}`,
       },
+      credentials: 'include',
     });
     
     if (!response.ok) {
