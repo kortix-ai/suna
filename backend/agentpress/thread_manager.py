@@ -194,6 +194,52 @@ class ThreadManager:
         logger.debug(f"Parameters: model={llm_model}, temperature={llm_temperature}, max_tokens={llm_max_tokens}")
         logger.debug(f"Auto-continue: max={native_max_auto_continues}, XML tool limit={max_xml_tool_calls}")
         
+        # Use a default config if none was provided (needed for XML examples check)
+        if processor_config is None:
+            processor_config = ProcessorConfig()
+
+        # Apply max_xml_tool_calls if specified and not already set in config
+        if max_xml_tool_calls > 0 and not processor_config.max_xml_tool_calls:
+            processor_config.max_xml_tool_calls = max_xml_tool_calls
+            
+        # Create a working copy of the system prompt to potentially modify
+        working_system_prompt = system_prompt.copy()
+
+        # Add XML examples to system prompt if requested, do this only ONCE before the loop
+        if include_xml_examples and processor_config.xml_tool_calling:
+            xml_examples = self.tool_registry.get_xml_examples()
+            if xml_examples:
+                examples_content = """
+--- XML TOOL CALLING ---
+
+In this environment you have access to a set of tools you can use to answer the user's question. The tools are specified in XML format.
+Format your tool calls using the specified XML tags. Place parameters marked as 'attribute' within the opening tag (e.g., `<tag attribute='value'>`). Place parameters marked as 'content' between the opening and closing tags. Place parameters marked as 'element' within their own child tags (e.g., `<tag><element>value</element></tag>`). Refer to the examples provided below for the exact structure of each tool.
+String and scalar parameters should be specified as attributes, while content goes between tags.
+Note that spaces for string values are not stripped. The output is parsed with regular expressions.
+
+Here are the XML tools available with examples:
+"""
+                for tag_name, example in xml_examples.items():
+                    examples_content += f"<{tag_name}> Example: {example}\\n"
+
+                system_content = working_system_prompt.get('content')
+
+                if isinstance(system_content, str):
+                    working_system_prompt['content'] += examples_content
+                    logger.debug("Appended XML examples to string system prompt content.")
+                elif isinstance(system_content, list):
+                    appended = False
+                    for item in working_system_prompt['content']: # Modify the copy
+                        if isinstance(item, dict) and item.get('type') == 'text' and 'text' in item:
+                            item['text'] += examples_content
+                            logger.debug("Appended XML examples to the first text block in list system prompt content.")
+                            appended = True
+                            break
+                    if not appended:
+                        logger.warning("System prompt content is a list but no text block found to append XML examples.")
+                else:
+                    logger.warning(f"System prompt content is of unexpected type ({type(system_content)}), cannot add XML examples.")
+        
         # Control whether we need to auto-continue due to tool_calls finish reason
         auto_continue = True
         auto_continue_count = 0
@@ -202,83 +248,46 @@ class ThreadManager:
         async def _run_once(temp_msg=None):
             try:
                 # Ensure processor_config is available in this scope
-                nonlocal processor_config
-                
-                # Use a default config if none was provided
-                if processor_config is None:
-                    processor_config = ProcessorConfig()
-                
-                # Apply max_xml_tool_calls if specified and not already set
-                if max_xml_tool_calls > 0:
-                    processor_config.max_xml_tool_calls = max_xml_tool_calls
-                
-                # Add XML examples to system prompt if requested
-                if include_xml_examples and processor_config.xml_tool_calling:
-                    xml_examples = self.tool_registry.get_xml_examples()
-                    if xml_examples:
-                        # logger.debug(f"Adding {len(xml_examples)} XML examples to system prompt")
-                        
-                        # Create or append to content
-                        if isinstance(system_prompt['content'], str):
-                            examples_content = """
---- XML TOOL CALLING --- 
-
-In this environment you have access to a set of tools you can use to answer the user's question. The tools are specified in XML format.
-{{ FORMATTING INSTRUCTIONS }}
-String and scalar parameters should be specified as attributes, while content goes between tags.
-Note that spaces for string values are not stripped. The output is parsed with regular expressions.
-
-Here are the XML tools available with examples:
-"""
-                            for tag_name, example in xml_examples.items():
-                                examples_content += f"<{tag_name}> Example: {example}\n"
-                            
-                            system_prompt['content'] += examples_content
-                        else:
-                            # If content is not a string (might be a list or dict), log a warning
-                            logger.warning("System prompt content is not a string, cannot add XML examples")
+                nonlocal processor_config 
+                # Note: processor_config is now guaranteed to exist due to check above
                 
                 # 1. Get messages from thread for LLM call
                 messages = await self.get_llm_messages(thread_id)
                 
                 # 2. Check token count before proceeding
-                # Use litellm to count tokens in the messages
                 token_count = 0
                 try:
                     from litellm import token_counter
-                    token_count = token_counter(model=llm_model, messages=[system_prompt] + messages)
+                    # Use the potentially modified working_system_prompt for token counting
+                    token_count = token_counter(model=llm_model, messages=[working_system_prompt] + messages) 
                     token_threshold = self.context_manager.token_threshold
                     logger.info(f"Thread {thread_id} token count: {token_count}/{token_threshold} ({(token_count/token_threshold)*100:.1f}%)")
                     
-                    # If we're over the threshold, summarize the thread
                     if token_count >= token_threshold and enable_context_manager:
                         logger.info(f"Thread token count ({token_count}) exceeds threshold ({token_threshold}), summarizing...")
-                        
-                        # Create summary using context manager
                         summarized = await self.context_manager.check_and_summarize_if_needed(
                             thread_id=thread_id,
                             add_message_callback=self.add_message,
                             model=llm_model,
-                            force=True  # Force summarization
+                            force=True
                         )
-                        
                         if summarized:
-                            # If summarization was successful, get the updated messages 
-                            # This will now include the summary message and only messages after it
                             logger.info("Summarization complete, fetching updated messages with summary")
                             messages = await self.get_llm_messages(thread_id)
-                            # Recount tokens after summarization
-                            new_token_count = token_counter(model=llm_model, messages=[system_prompt] + messages)
+                            # Recount tokens after summarization, using the modified prompt
+                            new_token_count = token_counter(model=llm_model, messages=[working_system_prompt] + messages) 
                             logger.info(f"After summarization: token count reduced from {token_count} to {new_token_count}")
                         else:
                             logger.warning("Summarization failed or wasn't needed - proceeding with original messages")
-                    else:
+                    elif not enable_context_manager: # Added condition for clarity
                         logger.info("Automatic summarization disabled. Skipping token count check and summarization.")
+
                 except Exception as e:
                     logger.error(f"Error counting tokens or summarizing: {str(e)}")
                 
                 # 3. Prepare messages for LLM call + add temporary message if it exists
-                prepared_messages = [system_prompt]
+                # Use the working_system_prompt which may contain the XML examples
+                prepared_messages = [working_system_prompt] 
                 
                 # Find the last user message index
                 last_user_index = -1
@@ -315,7 +324,7 @@ Here are the XML tools available with examples:
                 logger.debug("Making LLM API call")
                 try:
                     llm_response = await make_llm_api_call(
-                        prepared_messages,
+                        prepared_messages, # Pass the potentially modified messages
                         llm_model,
                         temperature=llm_temperature,
                         max_tokens=llm_max_tokens,
@@ -374,8 +383,9 @@ Here are the XML tools available with examples:
                 # Reset auto_continue for this iteration
                 auto_continue = False
                 
-                # Run the thread once
-                response_gen = await _run_once(temporary_message if auto_continue_count == 0 else None)
+                # Run the thread once, passing the potentially modified system prompt
+                # Pass temp_msg only on the first iteration
+                response_gen = await _run_once(temporary_message if auto_continue_count == 0 else None) 
                 
                 # Handle error responses
                 if isinstance(response_gen, dict) and "status" in response_gen and response_gen["status"] == "error":
@@ -418,7 +428,8 @@ Here are the XML tools available with examples:
         # If auto-continue is disabled (max=0), just run once
         if native_max_auto_continues == 0:
             logger.info("Auto-continue is disabled (native_max_auto_continues=0)")
-            return await _run_once(temporary_message)
+            # Pass the potentially modified system prompt and temp message
+            return await _run_once(temporary_message) 
         
         # Otherwise return the auto-continue wrapper generator
         return auto_continue_wrapper()
