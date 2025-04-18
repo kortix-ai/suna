@@ -29,12 +29,14 @@ interface FileViewerModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   sandboxId: string;
+  initialFilePath?: string | null;
 }
 
 export function FileViewerModal({ 
   open,
   onOpenChange,
-  sandboxId
+  sandboxId,
+  initialFilePath
 }: FileViewerModalProps) {
   const [workspaceFiles, setWorkspaceFiles] = useState<FileInfo[]>([]);
   const [isLoadingFiles, setIsLoadingFiles] = useState(false);
@@ -56,6 +58,51 @@ export function FileViewerModal({
       loadFilesAtPath(currentPath);
     }
   }, [open, sandboxId, currentPath]);
+
+  // Handle initial file path when provided
+  useEffect(() => {
+    if (open && sandboxId && initialFilePath) {
+      // Extract the directory path from the file path
+      const filePath = initialFilePath.startsWith('/workspace/') 
+        ? initialFilePath 
+        : `/workspace/${initialFilePath}`;
+      
+      const lastSlashIndex = filePath.lastIndexOf('/');
+      const directoryPath = lastSlashIndex > 0 ? filePath.substring(0, lastSlashIndex) : '/workspace';
+      const fileName = lastSlashIndex > 0 ? filePath.substring(lastSlashIndex + 1) : filePath;
+      
+      // First navigate to the directory
+      if (directoryPath !== currentPath) {
+        setCurrentPath(directoryPath);
+        setPathHistory(['/workspace', directoryPath]);
+        setHistoryIndex(1);
+        
+        // After directory is loaded, find and click the file
+        const findAndClickFile = async () => {
+          try {
+            const files = await listSandboxFiles(sandboxId, directoryPath);
+            const targetFile = files.find(f => f.path === filePath || f.name === fileName);
+            if (targetFile) {
+              // Wait a moment for the UI to update with the files
+              setTimeout(() => {
+                handleFileClick(targetFile);
+              }, 100);
+            }
+          } catch (error) {
+            console.error('Failed to load directory for initial file', error);
+          }
+        };
+        
+        findAndClickFile();
+      } else {
+        // If already in the right directory, just find and click the file
+        const targetFile = workspaceFiles.find(f => f.path === filePath || f.name === fileName);
+        if (targetFile) {
+          handleFileClick(targetFile);
+        }
+      }
+    }
+  }, [open, sandboxId, initialFilePath]);
 
   // Function to load files from a specific path
   const loadFilesAtPath = async (path: string) => {

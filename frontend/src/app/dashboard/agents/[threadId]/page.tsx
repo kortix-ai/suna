@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
-  ArrowDown, CheckCircle, CircleDashed, AlertTriangle, Info
+  ArrowDown, CheckCircle, CircleDashed, AlertTriangle, Info, File
 } from 'lucide-react';
 import { addUserMessage, getMessages, startAgent, stopAgent, getAgentRuns, getProject, getThread, updateProject, Project, Message as BaseApiMessageType } from '@/lib/api';
 import { toast } from 'sonner';
@@ -94,6 +94,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const [sandboxId, setSandboxId] = useState<string | null>(null);
   const [fileViewerOpen, setFileViewerOpen] = useState(false);
   const [projectName, setProjectName] = useState<string>('Project');
+  const [fileToView, setFileToView] = useState<string | null>(null);
 
   const initialLoadCompleted = useRef<boolean>(false);
   const messagesLoadedRef = useRef(false);
@@ -454,7 +455,14 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     console.log(`[PAGE] 🔄 Page AgentStatus: ${agentStatus}, Hook Status: ${streamHookStatus}, Target RunID: ${agentRunId || 'none'}, Hook RunID: ${currentHookRunId || 'none'}`);
   }, [agentStatus, streamHookStatus, agentRunId, currentHookRunId]);
 
-  const handleOpenFileViewer = useCallback(() => setFileViewerOpen(true), []);
+  const handleOpenFileViewer = useCallback((filePath?: string) => {
+    if (filePath) {
+      setFileToView(filePath);
+    } else {
+      setFileToView(null);
+    }
+    setFileViewerOpen(true);
+  }, []);
 
   const handleToolClick = useCallback((clickedAssistantMessageId: string | null, clickedToolName: string) => {
     if (!clickedAssistantMessageId) {
@@ -796,11 +804,54 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                                           const toolResult = potentialResults.find(r => !renderedToolResultIds.has(r.message_id!)); // Find first available result
 
                                           if (toolName === 'ask') {
-                                            // Render <ask> tag content as plain text
+                                            // Extract attachments from the XML attributes
+                                            const attachmentsMatch = rawXml.match(/attachments=["']([^"']*)["']/i);
+                                            const attachments = attachmentsMatch 
+                                              ? attachmentsMatch[1].split(',').map(a => a.trim())
+                                              : [];
+                                            
+                                            // Extract content from the ask tag
+                                            const contentMatch = rawXml.match(/<ask[^>]*>([\s\S]*?)<\/ask>/i);
+                                            const content = contentMatch ? contentMatch[1] : rawXml;
+
+                                            // Render <ask> tag content with attachment UI
                                             contentParts.push(
-                                              <span key={`ask-${match.index}`} className="whitespace-pre-wrap break-words">
-                                                {rawXml.match(/<ask>([\s\S]*?)<\/ask>/i)?.[1] || rawXml} 
-                                              </span>
+                                              <div key={`ask-${match.index}`} className="space-y-3">
+                                                <span className="whitespace-pre-wrap break-words">
+                                                  {content}
+                                                </span>
+                                                
+                                                {attachments.length > 0 && (
+                                                  <div className="mt-3 space-y-2">
+                                                    <div className="text-xs font-medium text-muted-foreground">Attachments:</div>
+                                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                                      {attachments.map((attachment, idx) => {
+                                                        // Determine file type & icon based on extension
+                                                        const extension = attachment.split('.').pop()?.toLowerCase();
+                                                        const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(extension || '');
+                                                        const isPdf = extension === 'pdf';
+                                                        const isMd = extension === 'md';
+                                                        
+                                                        let icon = <File className="h-4 w-4 text-gray-500" />;
+                                                        if (isImage) icon = <File className="h-4 w-4 text-purple-500" />;
+                                                        if (isPdf) icon = <File className="h-4 w-4 text-red-500" />;
+                                                        if (isMd) icon = <File className="h-4 w-4 text-blue-500" />;
+                                                        
+                                                        return (
+                                                          <button
+                                                            key={`attachment-${idx}`}
+                                                            onClick={() => handleOpenFileViewer(attachment)}
+                                                            className="flex items-center gap-1.5 py-1.5 px-2.5 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
+                                                          >
+                                                            {icon}
+                                                            <span className="font-mono text-xs text-gray-700 truncate">{attachment}</span>
+                                                          </button>
+                                                        );
+                                                      })}
+                                                    </div>
+                                                  </div>
+                                                )}
+                                              </div>
                                             );
                                           } else {
                                             // Render tool button AND its result icon inline
@@ -1004,6 +1055,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
           open={fileViewerOpen}
           onOpenChange={setFileViewerOpen}
           sandboxId={sandboxId}
+          initialFilePath={fileToView}
         />
       )}
     </div>
