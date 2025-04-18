@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
-import { Send, Square, Loader2, File, Upload, X, Paperclip, FileText, ChevronDown } from "lucide-react";
+import { Send, Square, Loader2, File, Upload, X, Paperclip, FileText, ChevronDown, Cpu } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import { AnimatePresence, motion } from "framer-motion";
@@ -26,7 +26,6 @@ const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
 // Local storage keys
 const STORAGE_KEY_MODEL = 'suna-preferred-model';
-const STORAGE_KEY_THINKING = 'suna-enable-thinking';
 
 interface ChatInputProps {
   onSubmit: (message: string, options?: { model_name?: string; enable_thinking?: boolean }) => void;
@@ -63,27 +62,18 @@ export function ChatInput({
 }: ChatInputProps) {
   const [inputValue, setInputValue] = useState(value || "");
   const [selectedModel, setSelectedModel] = useState("sonnet-3.7");
-  const [enableThinking, setEnableThinking] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   
-  // Load saved preferences from localStorage on mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
       try {
-        // Load selected model
         const savedModel = localStorage.getItem(STORAGE_KEY_MODEL);
         if (savedModel) {
           setSelectedModel(savedModel);
-        }
-        
-        // Load thinking preference
-        const savedThinking = localStorage.getItem(STORAGE_KEY_THINKING);
-        if (savedThinking === 'true') {
-          setEnableThinking(true);
         }
       } catch (error) {
         console.warn('Failed to load preferences from localStorage:', error);
@@ -91,24 +81,20 @@ export function ChatInput({
     }
   }, []);
   
-  // Allow controlled or uncontrolled usage
   const isControlled = value !== undefined && onChange !== undefined;
   
-  // Update local state if controlled and value changes
   useEffect(() => {
     if (isControlled && value !== inputValue) {
       setInputValue(value);
     }
   }, [value, isControlled, inputValue]);
 
-  // Auto-focus on textarea when component loads
   useEffect(() => {
     if (autoFocus && textareaRef.current) {
       textareaRef.current.focus();
     }
   }, [autoFocus]);
 
-  // Adjust textarea height based on content
   useEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
@@ -121,33 +107,14 @@ export function ChatInput({
 
     adjustHeight();
     
-    // Adjust on window resize too
     window.addEventListener('resize', adjustHeight);
     return () => window.removeEventListener('resize', adjustHeight);
   }, [inputValue]);
 
   const handleModelChange = (model: string) => {
     setSelectedModel(model);
-    // Save to localStorage
     if (typeof window !== 'undefined') {
       localStorage.setItem(STORAGE_KEY_MODEL, model);
-    }
-    
-    // Reset thinking when changing away from sonnet-3.7
-    if (model !== "sonnet-3.7") {
-      setEnableThinking(false);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem(STORAGE_KEY_THINKING, 'false');
-      }
-    }
-  };
-
-  const toggleThinking = () => {
-    const newValue = !enableThinking;
-    setEnableThinking(newValue);
-    // Save to localStorage
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(STORAGE_KEY_THINKING, newValue.toString());
     }
   };
 
@@ -162,7 +129,6 @@ export function ChatInput({
     
     let message = inputValue;
     
-    // Add file information to the message if files were uploaded
     if (uploadedFiles.length > 0) {
       const fileInfo = uploadedFiles.map(file => 
         `[Uploaded file: ${file.name} (${formatFileSize(file.size)}) at ${file.path}]`
@@ -170,16 +136,22 @@ export function ChatInput({
       message = message ? `${message}\n\n${fileInfo}` : fileInfo;
     }
     
+    let baseModelName = selectedModel;
+    let thinkingEnabled = false;
+    if (selectedModel === "sonnet-3.7-thinking") {
+      baseModelName = "sonnet-3.7";
+      thinkingEnabled = true;
+    }
+    
     onSubmit(message, {
-      model_name: selectedModel,
-      enable_thinking: enableThinking
+      model_name: baseModelName,
+      enable_thinking: thinkingEnabled
     });
     
     if (!isControlled) {
       setInputValue("");
     }
     
-    // Reset the uploaded files after sending
     setUploadedFiles([]);
   };
 
@@ -236,7 +208,6 @@ export function ChatInput({
     const files = Array.from(event.target.files);
     await uploadFiles(files);
     
-    // Reset the input
     event.target.value = '';
   };
 
@@ -252,11 +223,9 @@ export function ChatInput({
           continue;
         }
         
-        // Create a FormData object
         const formData = new FormData();
         formData.append('file', file);
         
-        // Upload to workspace root by default
         const uploadPath = `/workspace/${file.name}`;
         formData.append('path', uploadPath);
         
@@ -267,7 +236,6 @@ export function ChatInput({
           throw new Error('No access token available');
         }
         
-        // Upload using FormData
         const response = await fetch(`${API_URL}/sandboxes/${sandboxId}/files`, {
           method: 'POST',
           headers: {
@@ -280,7 +248,6 @@ export function ChatInput({
           throw new Error(`Upload failed: ${response.statusText}`);
         }
         
-        // Add to uploaded files
         newUploadedFiles.push({
           name: file.name,
           path: uploadPath,
@@ -290,7 +257,6 @@ export function ChatInput({
         toast.success(`File uploaded: ${file.name}`);
       }
       
-      // Update the uploaded files state
       setUploadedFiles(prev => [...prev, ...newUploadedFiles]);
       
     } catch (error) {
@@ -334,9 +300,9 @@ export function ChatInput({
     }
   };
 
-  // Map of model display names
-  const modelDisplayNames = {
+  const modelDisplayNames: { [key: string]: string } = {
     "sonnet-3.7": "Sonnet 3.7",
+    "sonnet-3.7-thinking": "Sonnet 3.7 (Thinking)",
     "gpt-4.1": "GPT-4.1",
     "gemini-flash-2.5": "Gemini Flash 2.5"
   };
@@ -393,54 +359,6 @@ export function ChatInput({
       </AnimatePresence>
 
       <div className="flex items-center px-3 py-3">
-        {/* Left side - Model selector and Think button */}
-        {!isAgentRunning && (
-          <div className="flex items-center gap-2 mr-3">
-            {/* Model selector button with dropdown */}
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  className="h-8 px-3 text-sm text-gray-300 gap-1 border-0 shadow-none bg-transparent hover:bg-gray-800"
-                >
-                  {modelDisplayNames[selectedModel as keyof typeof modelDisplayNames] || selectedModel}
-                  <ChevronDown className="h-3 w-3 ml-1 opacity-50" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="start" className="bg-gray-900 border-gray-800 text-gray-300">
-                <DropdownMenuItem onClick={() => handleModelChange("sonnet-3.7")} className="hover:bg-gray-800">
-                  Sonnet 3.7
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleModelChange("gpt-4.1")} className="hover:bg-gray-800">
-                  GPT-4.1
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleModelChange("gemini-flash-2.5")} className="hover:bg-gray-800">
-                  Gemini Flash 2.5
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            
-            {/* Think button - only for Sonnet 3.7 */}
-            {selectedModel === "sonnet-3.7" && (
-              <Button 
-                variant={enableThinking ? "default" : "outline"}
-                size="sm"
-                className={cn(
-                  "h-8 px-3 text-sm",
-                  enableThinking 
-                    ? "bg-gray-700 text-gray-200 hover:bg-gray-600" 
-                    : "text-gray-300 border-0 hover:bg-gray-800"
-                )}
-                onClick={toggleThinking}
-              >
-                Think
-              </Button>
-            )}
-          </div>
-        )}
-        
-        {/* Input field */}
         <div className="relative flex-1 flex items-center">
           <Textarea
             ref={textareaRef}
@@ -461,9 +379,68 @@ export function ChatInput({
           />
         </div>
         
-        {/* Right side buttons */}
         <div className="flex items-center gap-3 ml-3">
-          {/* Attachment button */}
+          {!isAgentRunning && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button 
+                        variant="ghost"
+                        size="icon"
+                        className={cn(
+                          "h-8 w-8 rounded-full p-0 hover:bg-gray-800",
+                          selectedModel === "sonnet-3.7" ? "text-purple-400" :
+                          selectedModel === "sonnet-3.7-thinking" ? "text-violet-400" :
+                          selectedModel === "gpt-4.1" ? "text-green-400" :
+                          selectedModel === "gemini-flash-2.5" ? "text-blue-400" :
+                          "text-gray-400"
+                        )}
+                        aria-label="Select model"
+                      >
+                        <Cpu className="h-5 w-5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="bg-gray-900 border-gray-800 text-gray-300">
+                      <DropdownMenuItem onClick={() => handleModelChange("sonnet-3.7")} className={cn(
+                        "hover:bg-gray-800 flex items-center justify-between",
+                        selectedModel === "sonnet-3.7" && "text-purple-400"
+                      )}>
+                        <span>Sonnet 3.7</span>
+                        {selectedModel === "sonnet-3.7" && <span className="ml-2">✓</span>}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleModelChange("sonnet-3.7-thinking")} className={cn(
+                        "hover:bg-gray-800 flex items-center justify-between",
+                        selectedModel === "sonnet-3.7-thinking" && "text-violet-400"
+                      )}>
+                        <span>Sonnet 3.7 (Thinking)</span>
+                        {selectedModel === "sonnet-3.7-thinking" && <span className="ml-2">✓</span>}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleModelChange("gpt-4.1")} className={cn(
+                        "hover:bg-gray-800 flex items-center justify-between",
+                        selectedModel === "gpt-4.1" && "text-green-400"
+                      )}>
+                        <span>GPT-4.1</span>
+                        {selectedModel === "gpt-4.1" && <span className="ml-2">✓</span>}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => handleModelChange("gemini-flash-2.5")} className={cn(
+                        "hover:bg-gray-800 flex items-center justify-between",
+                        selectedModel === "gemini-flash-2.5" && "text-blue-400"
+                      )}>
+                        <span>Gemini Flash 2.5</span>
+                        {selectedModel === "gemini-flash-2.5" && <span className="ml-2">✓</span>}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="bg-gray-900 text-gray-300 border-gray-800">
+                  <p>Model: {modelDisplayNames[selectedModel as keyof typeof modelDisplayNames] || selectedModel}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+          
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -492,7 +469,6 @@ export function ChatInput({
             </Tooltip>
           </TooltipProvider>
           
-          {/* Hidden file input */}
           <input
             type="file"
             ref={fileInputRef}
@@ -501,7 +477,6 @@ export function ChatInput({
             multiple
           />
           
-          {/* Send button */}
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
