@@ -152,6 +152,65 @@ def prepare_params(
             params["model_id"] = "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
             logger.debug(f"Auto-set model_id for Claude 3.7 Sonnet: {params['model_id']}")
 
+    # Apply Anthropic prompt caching (minimal implementation)
+    # Check model name *after* potential modifications (like adding bedrock/ prefix)
+    effective_model_name = params.get("model", model_name) # Use model from params if set, else original
+    if "claude" in effective_model_name.lower() or "anthropic" in effective_model_name.lower():
+        logger.debug("Applying minimal Anthropic prompt caching.")
+        messages = params["messages"] # Direct reference, modification affects params
+
+        # Ensure messages is a list
+        if not isinstance(messages, list):
+            logger.warning(f"Messages is not a list ({type(messages)}), skipping Anthropic cache control.")
+            return params # Return early if messages format is unexpected
+
+        # 1. Process the first message if it's a system prompt with string content
+        if messages and messages[0].get("role") == "system":
+            content = messages[0].get("content")
+            if isinstance(content, str):
+                # Wrap the string content in the required list structure
+                messages[0]["content"] = [
+                    {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}
+                ]
+                logger.debug("Applied cache_control to system message (converted from string).")
+            elif isinstance(content, list):
+                 # If content is already a list, check if the first text block needs cache_control
+                 for item in content:
+                     if isinstance(item, dict) and item.get("type") == "text":
+                         if "cache_control" not in item:
+                             item["cache_control"] = {"type": "ephemeral"}
+                             break # Apply to the first text block only for system prompt
+            else:
+                 logger.warning("System message content is not a string or list, skipping cache_control.")
+
+        # 2. Find and process the last user message
+        last_user_idx = -1
+        for i in range(len(messages) - 1, -1, -1):
+            if messages[i].get("role") == "user":
+                last_user_idx = i
+                break
+
+        if last_user_idx != -1:
+            last_user_message = messages[last_user_idx]
+            content = last_user_message.get("content")
+
+            if isinstance(content, str):
+                # Wrap the string content in the required list structure
+                last_user_message["content"] = [
+                    {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}
+                ]
+                logger.debug(f"Applied cache_control to last user message (string content, index {last_user_idx}).")
+            elif isinstance(content, list):
+                # Modify text blocks within the list directly
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "text":
+                        # Add cache_control if not already present
+                        if "cache_control" not in item:
+                           item["cache_control"] = {"type": "ephemeral"}
+
+            else:
+                logger.warning(f"Last user message (index {last_user_idx}) content is not a string or list ({type(content)}), skipping cache_control.")
+
     return params
 
 async def make_llm_api_call(
