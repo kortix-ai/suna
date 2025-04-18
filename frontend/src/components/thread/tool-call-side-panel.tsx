@@ -146,8 +146,8 @@ export function ToolCallSidePanel({
   };
   
   return (
-    <div className="fixed inset-y-0 right-0 w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[600px] bg-background border-l flex flex-col z-10 shadow-lg">
-      <div className="p-4 flex items-center justify-between border-b">
+    <div className="fixed inset-y-0 right-0 w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[600px] bg-background border-l flex flex-col z-10">
+      <div className="p-4 flex items-center justify-between">
         <h3 className="text-sm font-semibold">Tool Details</h3>
         <Button variant="ghost" size="icon" onClick={onClose} className="text-muted-foreground hover:text-foreground">
           <X className="h-4 w-4" />
