@@ -4,7 +4,7 @@
 
 (that acts on your behalf)
 
-![Suna Screenshot](docs/images/suna_screenshot.png)
+![Suna Screenshot](frontend/public/banner.png)
 
 Suna is a fully open source AI assistant that helps you accomplish real-world tasks with ease. Through natural conversation, Suna becomes your digital companion for research, data analysis, and everyday challenges—combining powerful capabilities with an intuitive interface that understands what you need and delivers results.
 
