@@ -112,7 +112,7 @@ export function SidebarLeft({
         )}
       </SidebarContent>
       <SidebarFooter>
-        <NavSecondary items={navSecondaryItems} className="mt-auto" />
+        <NavSecondary items={navSecondaryItems} className="" />
         <NavUserWithTeams user={user} />
       </SidebarFooter>
       <SidebarRail />

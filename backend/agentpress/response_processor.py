@@ -37,6 +37,7 @@ class ToolExecutionContext:
     xml_tag_name: Optional[str] = None
     error: Optional[Exception] = None
     assistant_message_id: Optional[str] = None
+    parsing_details: Optional[Dict[str, Any]] = None
 
 @dataclass
 class ProcessorConfig:
@@ -207,8 +208,9 @@ class ResponseProcessor:
                                 xml_chunks_buffer.append(xml_chunk)
                                 
                                 # Parse and extract the tool call
-                                tool_call = self._parse_xml_tool_call(xml_chunk)
-                                if tool_call:
+                                result = self._parse_xml_tool_call(xml_chunk)
+                                if result:
+                                    tool_call, parsing_details = result
                                     # Increment the XML tool call counter
                                     xml_tool_call_count += 1
                                     
@@ -216,7 +218,8 @@ class ResponseProcessor:
                                     context = self._create_tool_context(
                                         tool_call=tool_call,
                                         tool_index=tool_index,
-                                        assistant_message_id=last_assistant_message_id
+                                        assistant_message_id=last_assistant_message_id,
+                                        parsing_details=parsing_details
                                     )
                                     
                                     # Execute tool if needed, but in background
@@ -368,17 +371,11 @@ class ResponseProcessor:
                             result = execution["task"].result()
                             tool_call = execution["tool_call"]
                             tool_index = execution.get("tool_index", -1)
+                            context = execution["context"]
+                            context.result = result
                             
-                            # Store result for later processing AFTER assistant message is saved
-                            tool_results_buffer.append((tool_call, result, tool_index))
-                            
-                            # Get or create the context
-                            if "context" in execution:
-                                context = execution["context"]
-                                context.result = result
-                            else:
-                                context = self._create_tool_context(tool_call, tool_index, last_assistant_message_id)
-                                context.result = result
+                            # Store result and context for later processing AFTER assistant message is saved
+                            tool_results_buffer.append((tool_call, result, tool_index, context))
                             
                             # Skip yielding if already yielded during streaming
                             if tool_index in yielded_tool_indices:
@@ -399,6 +396,7 @@ class ResponseProcessor:
                         if "tool_call" in execution:
                             tool_call = execution["tool_call"]
                             tool_index = execution.get("tool_index", -1)
+                            context = execution.get("context")
                             
                             # Skip yielding if already yielded during streaming
                             if tool_index in yielded_tool_indices:
@@ -406,10 +404,10 @@ class ResponseProcessor:
                                 continue
                                 
                             # Get or create the context
-                            if "context" in execution:
-                                context = execution["context"]
+                            if context:
                                 context.error = e
                             else:
+                                # Create context if somehow missing (shouldn't happen)
                                 context = self._create_tool_context(tool_call, tool_index, last_assistant_message_id)
                                 context.error = e
                                 
@@ -505,53 +503,103 @@ class ResponseProcessor:
                             })
                     
                     # Gather XML tool calls from buffer (up to limit)
+                    parsed_xml_data = []
                     if config.xml_tool_calling:
                         xml_chunks = self._extract_xml_chunks(current_xml_content)
                         xml_chunks_buffer.extend(xml_chunks)
                         remaining_limit = config.max_xml_tool_calls - xml_tool_call_count if config.max_xml_tool_calls > 0 else len(xml_chunks_buffer)
                         xml_chunks_to_process = xml_chunks_buffer[:remaining_limit]
                         for chunk in xml_chunks_to_process:
-                            tc = self._parse_xml_tool_call(chunk)
-                            if tc: final_tool_calls_to_process.append(tc)
+                            parsed_result = self._parse_xml_tool_call(chunk)
+                            if parsed_result:
+                                tool_call, parsing_details = parsed_result
+                                final_tool_calls_to_process.append(tool_call)
+                                parsed_xml_data.append({'tool_call': tool_call, 'parsing_details': parsing_details})
                     
+                    # --- Combine native and XML tool data for result processing ---
+                    all_tool_data_map = {} # tool_index -> {'tool_call': ..., 'parsing_details': ...}
+
+                    # Add native tool data (no parsing details)
+                    native_tool_index = 0
+                    if config.native_tool_calling and complete_native_tool_calls:
+                         for tc in complete_native_tool_calls:
+                             all_tool_data_map[native_tool_index] = {
+                                 "tool_call": { # Reconstruct structure if needed for consistency
+                                     "function_name": tc["function"]["name"],
+                                     "arguments": tc["function"]["arguments"],
+                                     "id": tc["id"]
+                                 },
+                                 "parsing_details": None
+                             }
+                             native_tool_index += 1
+
+                    # Add XML tool data
+                    xml_tool_index = native_tool_index # Continue indexing
+                    for item in parsed_xml_data:
+                        all_tool_data_map[xml_tool_index] = item
+                        xml_tool_index += 1
+
                     # Get results (either from pending tasks or by executing now)
-                    tool_results_map = {} # tool_index -> (tool_call, result)
+                    tool_results_map = {} # tool_index -> (tool_call, result, context)
                     if config.execute_on_stream and pending_tool_executions:
                         logger.info(f"Waiting for {len(pending_tool_executions)} pending streamed tool executions")
                         tasks = {exec["tool_index"]: exec["task"] for exec in pending_tool_executions}
-                        tool_calls_by_index = {exec["tool_index"]: exec["tool_call"] for exec in pending_tool_executions}
+                        contexts_by_index = {exec["tool_index"]: exec["context"] for exec in pending_tool_executions}
                         done, _ = await asyncio.wait(tasks.values())
                         for idx, task in tasks.items():
+                            context = contexts_by_index[idx]
                             try:
                                 result = task.result()
-                                tool_results_map[idx] = (tool_calls_by_index[idx], result)
+                                tool_results_map[idx] = (context.tool_call, result, context)
                             except Exception as e:
                                 logger.error(f"Error getting result for streamed tool index {idx}: {e}")
-                                tool_results_map[idx] = (tool_calls_by_index[idx], ToolResult(success=False, output=f"Error: {e}"))
+                                error_result = ToolResult(success=False, output=f"Error: {e}")
+                                context.result = error_result
+                                tool_results_map[idx] = (context.tool_call, error_result, context)
                     elif final_tool_calls_to_process: # Execute tools now if not streamed
                         logger.info(f"Executing {len(final_tool_calls_to_process)} tools sequentially/parallelly")
+                        # We execute based on final_tool_calls_to_process list order
                         results_list = await self._execute_tools(final_tool_calls_to_process, config.tool_execution_strategy)
-                        # Map results back to original tool index if possible (difficult without original index)
-                        # For simplicity, we'll process them in the order returned
-                        current_tool_idx = 0 # Reset index for non-streamed execution results
+                        # Map results back using the all_tool_data_map order (assuming _execute_tools preserves order)
+                        current_tool_idx = 0
                         for tc, res in results_list:
-                            tool_results_map[current_tool_idx] = (tc, res)
-                            current_tool_idx += 1
-                            
+                           # Find the corresponding item in all_tool_data_map (tricky if order changes)
+                           # Assuming sequential mapping for now
+                           if current_tool_idx in all_tool_data_map:
+                               tool_data = all_tool_data_map[current_tool_idx]
+                               context = self._create_tool_context(
+                                   tool_call=tc,
+                                   tool_index=current_tool_idx,
+                                   assistant_message_id=last_assistant_message_id,
+                                   parsing_details=tool_data['parsing_details']
+                               )
+                               context.result = res
+                               tool_results_map[current_tool_idx] = (tc, res, context)
+                           else:
+                               logger.warning(f"Could not map result for tool index {current_tool_idx}")
+                           current_tool_idx += 1
+
                     # Now, process and yield each result sequentially
                     logger.info(f"Processing and yielding {len(tool_results_map)} tool results")
                     processed_tool_indices = set()
                     # We need a deterministic order, sort by index
                     for tool_idx in sorted(tool_results_map.keys()):
-                        tool_call, result = tool_results_map[tool_idx]
-                        context = self._create_tool_context(tool_call, tool_idx, last_assistant_message_id)
+                        tool_call, result, context = tool_results_map[tool_idx]
+                        # Ensure context result is updated (might be redundant but safe)
                         context.result = result
-                        
+
                         # Yield start status (even if streamed, yield again here for strict order)
                         yield self._yield_tool_started(context, thread_run_id)
-                        
-                        # Save result to DB and get ID
-                        tool_msg_id = await self._add_tool_result(thread_id, tool_call, result, config.xml_adding_strategy, assistant_message_id=last_assistant_message_id)
+
+                        # Save result to DB and get ID, passing parsing details from context
+                        tool_msg_id = await self._add_tool_result(
+                            thread_id,
+                            tool_call,
+                            result,
+                            config.xml_adding_strategy,
+                            assistant_message_id=last_assistant_message_id,
+                            parsing_details=context.parsing_details
+                        )
                         if tool_msg_id:
                              tool_result_message_ids[tool_idx] = tool_msg_id # Store for reference
                         else:
@@ -628,13 +676,13 @@ class ResponseProcessor:
             # Generate a unique ID for this thread run
             thread_run_id = str(uuid.uuid4())
             
-            tool_calls = []
+            # Store all tool data: {'tool_call': ..., 'parsing_details': ...}
+            all_tool_data = []
+            
             # Tool execution counter
             tool_index = 0
             # XML tool call counter
             xml_tool_call_count = 0
-            # Set to track yielded tool results
-            # yielded_tool_indices = set() # Not needed for non-streaming as we yield all at once
             
             # Store message IDs
             assistant_message_id = None
@@ -655,14 +703,15 @@ class ResponseProcessor:
                         
                         # Process XML tool calls
                         if config.xml_tool_calling:
-                            xml_tool_calls = self._parse_xml_tool_calls(content)
+                            # Use the helper that returns parsing details
+                            parsed_xml_data = self._parse_xml_tool_calls(content) # Returns List[{'tool_call': ..., 'parsing_details': ...}]
                             
                             # Apply XML tool call limit if configured
-                            if config.max_xml_tool_calls > 0 and len(xml_tool_calls) > config.max_xml_tool_calls:
-                                logger.info(f"Limiting XML tool calls from {len(xml_tool_calls)} to {config.max_xml_tool_calls}")
+                            if config.max_xml_tool_calls > 0 and len(parsed_xml_data) > config.max_xml_tool_calls:
+                                logger.info(f"Limiting XML tool calls from {len(parsed_xml_data)} to {config.max_xml_tool_calls}")
                                 
                                 # Truncate the content after the last XML tool call that will be processed
-                                if xml_tool_calls and config.max_xml_tool_calls > 0:
+                                if parsed_xml_data:
                                     # Get XML chunks that will be processed
                                     xml_chunks = self._extract_xml_chunks(content)[:config.max_xml_tool_calls]
                                     if xml_chunks:
@@ -674,27 +723,33 @@ class ResponseProcessor:
                                             content = content[:last_chunk_pos + len(last_chunk)]
                                             logger.info(f"Truncated content after XML tool call limit")
                                 
-                                # Limit the tool calls to process
-                                xml_tool_calls = xml_tool_calls[:config.max_xml_tool_calls]
+                                # Limit the tool data to process
+                                parsed_xml_data = parsed_xml_data[:config.max_xml_tool_calls]
                                 # Set a custom finish reason
                                 finish_reason = "xml_tool_limit_reached"
                             
-                            tool_calls.extend(xml_tool_calls)
-                            xml_tool_call_count = len(xml_tool_calls)
+                            all_tool_data.extend(parsed_xml_data)
+                            xml_tool_call_count = len(parsed_xml_data)
                     
                     # Extract native tool calls
                     if config.native_tool_calling and hasattr(response_message, 'tool_calls') and response_message.tool_calls:
-                        native_tool_calls = []
+                        native_tool_calls_for_message = [] # For saving assistant message
                         for tool_call in response_message.tool_calls:
                             if hasattr(tool_call, 'function'):
-                                tool_calls.append({
+                                # Create the tool_call structure for execution
+                                exec_tool_call = {
                                     "function_name": tool_call.function.name,
                                     "arguments": json.loads(tool_call.function.arguments) if isinstance(tool_call.function.arguments, str) else tool_call.function.arguments,
                                     "id": tool_call.id if hasattr(tool_call, 'id') else str(uuid.uuid4())
+                                }
+                                # Add to all_tool_data with None for parsing_details
+                                all_tool_data.append({
+                                    "tool_call": exec_tool_call,
+                                    "parsing_details": None
                                 })
                                 
                                 # Also save in native format for message creation
-                                native_tool_calls.append({
+                                native_tool_calls_for_message.append({
                                     "id": tool_call.id if hasattr(tool_call, 'id') else str(uuid.uuid4()),
                                     "type": "function",
                                     "function": {
@@ -707,7 +762,7 @@ class ResponseProcessor:
             message_data = {
                 "role": "assistant",
                 "content": content,
-                "tool_calls": native_tool_calls if config.native_tool_calling and 'native_tool_calls' in locals() else None
+                "tool_calls": native_tool_calls_for_message if config.native_tool_calling and 'native_tool_calls_for_message' in locals() else None
             }
             assistant_message_id = await self.add_message(
                 thread_id=thread_id, 
@@ -740,33 +795,51 @@ class ResponseProcessor:
                 }
             
             # Execute tools if needed - AFTER assistant message has been added
-            if config.execute_tools and tool_calls:
+            tool_calls_to_execute = [item['tool_call'] for item in all_tool_data]
+            if config.execute_tools and tool_calls_to_execute:
                 # Log tool execution strategy
-                logger.info(f"Executing {len(tool_calls)} tools with strategy: {config.tool_execution_strategy}")
+                logger.info(f"Executing {len(tool_calls_to_execute)} tools with strategy: {config.tool_execution_strategy}")
                 
                 # Execute tools with the specified strategy
                 tool_results = await self._execute_tools(
-                    tool_calls, 
+                    tool_calls_to_execute,
                     config.tool_execution_strategy
                 )
                 
-                for tool_call, result in tool_results:
-                    # Capture the message ID for this tool result
+                # Process results, matching them back to all_tool_data to get parsing_details
+                for i, (returned_tool_call, result) in enumerate(tool_results):
+                    # Assume order is preserved; get corresponding item from all_tool_data
+                    original_data = all_tool_data[i]
+                    tool_call_from_data = original_data['tool_call']
+                    parsing_details = original_data['parsing_details']
+                    
+                    # Sanity check (optional): Ensure returned_tool_call matches tool_call_from_data if needed
+                    if returned_tool_call != tool_call_from_data:
+                         logger.warning(f"Mismatch detected between returned tool call and original data at index {i}. Using original data.")
+                         # Decide how to handle mismatch - here we trust the original order and data
+                    
+                    # Capture the message ID for this tool result, passing parsing_details
                     message_id = await self._add_tool_result(
                         thread_id, 
-                        tool_call, 
+                        tool_call_from_data, # Use the original tool_call structure
                         result, 
                         config.xml_adding_strategy,
-                        assistant_message_id=assistant_message_id
+                        assistant_message_id=assistant_message_id,
+                        parsing_details=parsing_details
                     )
                     if message_id:
                         tool_result_message_ids[tool_index] = message_id
                         
-                    # Create context for tool result
-                    context = self._create_tool_context(tool_call, tool_index, assistant_message_id)
+                    # Create context for tool result (pass parsing_details here too if needed for yielding)
+                    context = self._create_tool_context(
+                        tool_call=tool_call_from_data, 
+                        tool_index=tool_index, 
+                        assistant_message_id=assistant_message_id,
+                        parsing_details=parsing_details
+                    )
                     context.result = result
                     
-                    # Yield tool execution result
+                    # Yield tool execution result (does not currently use parsing_details, but context has it)
                     yield self._yield_tool_result(context, tool_message_id=message_id, thread_run_id=thread_run_id)
                     
                     # Increment tool index for next tool
@@ -930,8 +1003,14 @@ class ResponseProcessor:
         
         return chunks
 
-    def _parse_xml_tool_call(self, xml_chunk: str) -> Optional[Dict[str, Any]]:
-        """Parse XML chunk into tool call format."""
+    def _parse_xml_tool_call(self, xml_chunk: str) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
+        """Parse XML chunk into tool call format and return parsing details.
+        
+        Returns:
+            Tuple of (tool_call, parsing_details) or None if parsing fails.
+            - tool_call: Dict with 'function_name', 'xml_tag_name', 'arguments'
+            - parsing_details: Dict with 'attributes', 'elements', 'text_content', 'root_content'
+        """
         try:
             # Extract tag name and validate
             tag_match = re.match(r'<([^\s>]+)', xml_chunk)
@@ -956,6 +1035,16 @@ class ResponseProcessor:
             params = {}
             remaining_chunk = xml_chunk
             
+            # --- Store detailed parsing info ---
+            parsing_details = {
+                "attributes": {},
+                "elements": {},
+                "text_content": None,
+                "root_content": None,
+                "raw_chunk": xml_chunk # Store the original chunk for reference
+            }
+            # ---
+            
             # Process each mapping
             for mapping in schema.mappings:
                 try:
@@ -965,6 +1054,7 @@ class ResponseProcessor:
                         value = self._extract_attribute(opening_tag, mapping.path)
                         if value is not None:
                             params[mapping.param_name] = value
+                            parsing_details["attributes"][mapping.path] = value # Store raw attribute
                             logger.info(f"Found attribute {mapping.path} -> {mapping.param_name}: {value}")
                 
                     elif mapping.node_type == "element":
@@ -972,23 +1062,24 @@ class ResponseProcessor:
                         content, remaining_chunk = self._extract_tag_content(remaining_chunk, mapping.path)
                         if content is not None:
                             params[mapping.param_name] = content.strip()
+                            parsing_details["elements"][mapping.path] = content.strip() # Store raw element content
                             logger.info(f"Found element {mapping.path} -> {mapping.param_name}")
                 
                     elif mapping.node_type == "text":
-                        if mapping.path == ".":
-                            # Extract root content
-                            content, _ = self._extract_tag_content(remaining_chunk, xml_tag_name)
-                            if content is not None:
-                                params[mapping.param_name] = content.strip()
-                                logger.info(f"Found text content for {mapping.param_name}")
+                        # Extract text content
+                        content, _ = self._extract_tag_content(remaining_chunk, xml_tag_name)
+                        if content is not None:
+                            params[mapping.param_name] = content.strip()
+                            parsing_details["text_content"] = content.strip() # Store raw text content
+                            logger.info(f"Found text content for {mapping.param_name}")
                 
                     elif mapping.node_type == "content":
-                        if mapping.path == ".":
-                            # Extract root content
-                            content, _ = self._extract_tag_content(remaining_chunk, xml_tag_name)
-                            if content is not None:
-                                params[mapping.param_name] = content.strip()
-                                logger.info(f"Found root content for {mapping.param_name}")
+                        # Extract root content
+                        content, _ = self._extract_tag_content(remaining_chunk, xml_tag_name)
+                        if content is not None:
+                            params[mapping.param_name] = content.strip()
+                            parsing_details["root_content"] = content.strip() # Store raw root content
+                            logger.info(f"Found root content for {mapping.param_name}")
                 
                 except Exception as e:
                     logger.error(f"Error processing mapping {mapping}: {e}")
@@ -1010,7 +1101,7 @@ class ResponseProcessor:
             }
             
             logger.info(f"Created tool call: {tool_call}")
-            return tool_call
+            return tool_call, parsing_details # Return both dicts
             
         except Exception as e:
             logger.error(f"Error parsing XML chunk: {e}")
@@ -1018,21 +1109,29 @@ class ResponseProcessor:
             return None
 
     def _parse_xml_tool_calls(self, content: str) -> List[Dict[str, Any]]:
-        """Parse XML tool calls from content string."""
-        tool_calls = []
+        """Parse XML tool calls from content string.
+        
+        Returns:
+            List of dictionaries, each containing {'tool_call': ..., 'parsing_details': ...}
+        """
+        parsed_data = []
         
         try:
             xml_chunks = self._extract_xml_chunks(content)
             
             for xml_chunk in xml_chunks:
-                tool_call = self._parse_xml_tool_call(xml_chunk)
-                if tool_call:
-                    tool_calls.append(tool_call)
+                result = self._parse_xml_tool_call(xml_chunk)
+                if result:
+                    tool_call, parsing_details = result
+                    parsed_data.append({
+                        "tool_call": tool_call,
+                        "parsing_details": parsing_details
+                    })
                     
         except Exception as e:
             logger.error(f"Error parsing XML tool calls: {e}", exc_info=True)
         
-        return tool_calls
+        return parsed_data
 
     # Tool execution methods
     async def _execute_tool(self, tool_call: Dict[str, Any]) -> ToolResult:
@@ -1194,7 +1293,8 @@ class ResponseProcessor:
         tool_call: Dict[str, Any], 
         result: ToolResult,
         strategy: Union[XmlAddingStrategy, str] = "assistant_message",
-        assistant_message_id: Optional[str] = None
+        assistant_message_id: Optional[str] = None,
+        parsing_details: Optional[Dict[str, Any]] = None
     ) -> Optional[str]: # Return the message ID
         """Add a tool result to the conversation thread based on the specified format.
         
@@ -1210,6 +1310,7 @@ class ResponseProcessor:
             strategy: How to add XML tool results to the conversation
                      ("user_message", "assistant_message", or "inline_edit")
             assistant_message_id: ID of the assistant message that generated this tool call
+            parsing_details: Detailed parsing info for XML calls (attributes, elements, etc.)
         """
         try:
             message_id = None # Initialize message_id
@@ -1219,6 +1320,12 @@ class ResponseProcessor:
             if assistant_message_id:
                 metadata["assistant_message_id"] = assistant_message_id
                 logger.info(f"Linking tool result to assistant message: {assistant_message_id}")
+            
+            # --- Add parsing details to metadata if available ---
+            if parsing_details:
+                metadata["parsing_details"] = parsing_details
+                logger.info("Adding parsing_details to tool result metadata")
+            # ---
             
             # Check if this is a native function call (has id field)
             if "id" in tool_call:
@@ -1268,7 +1375,7 @@ class ResponseProcessor:
             result_role = "user" if strategy == "user_message" else "assistant"
             
             # Create a context for consistent formatting
-            context = self._create_tool_context(tool_call, 0, assistant_message_id)
+            context = self._create_tool_context(tool_call, 0, assistant_message_id, parsing_details)
             context.result = result
             
             # Format the content using the formatting helper
@@ -1354,12 +1461,13 @@ class ResponseProcessor:
             "assistant_message_id": context.assistant_message_id if hasattr(context, "assistant_message_id") else None
         }
 
-    def _create_tool_context(self, tool_call: Dict[str, Any], tool_index: int, assistant_message_id: Optional[str] = None) -> ToolExecutionContext:
-        """Create a tool execution context with display name populated."""
+    def _create_tool_context(self, tool_call: Dict[str, Any], tool_index: int, assistant_message_id: Optional[str] = None, parsing_details: Optional[Dict[str, Any]] = None) -> ToolExecutionContext:
+        """Create a tool execution context with display name and parsing details populated."""
         context = ToolExecutionContext(
             tool_call=tool_call,
             tool_index=tool_index,
-            assistant_message_id=assistant_message_id
+            assistant_message_id=assistant_message_id,
+            parsing_details=parsing_details
         )
         
         # Set function_name and xml_tag_name fields
