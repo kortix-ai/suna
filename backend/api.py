@@ -11,7 +11,7 @@ import uuid
 
 # Import the agent API module
 from agent import api as agent_api
-from sandbox.api import router as sandbox_router
+from sandbox import api as sandbox_api
 
 # Load environment variables
 load_dotenv()
@@ -36,6 +36,9 @@ async def lifespan(app: FastAPI):
         instance_id  # Pass the instance_id to agent_api
     )
     
+    # Initialize the sandbox API with shared resources
+    sandbox_api.initialize(db)
+    
     # Initialize Redis before restoring agent runs
     from services import redis
     await redis.initialize_async()
@@ -56,17 +59,17 @@ app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["https://www.suna.so", "https://suna.so", "http://localhost:3000"],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 # Include the agent router with a prefix
 app.include_router(agent_api.router, prefix="/api")
 
 # Include the sandbox router with a prefix
-app.include_router(sandbox_router, prefix="/api")
+app.include_router(sandbox_api.router, prefix="/api")
 
 @app.get("/api/health-check")
 async def health_check():
