@@ -12,7 +12,7 @@ function DashboardContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
 
-  const handleSubmit = async (message: string) => {
+  const handleSubmit = async (message: string, options?: { model_name?: string; enable_thinking?: boolean }) => {
     if (!message.trim() || isSubmitting) return;
     
     setIsSubmitting(true);
@@ -34,7 +34,11 @@ function DashboardContent() {
       await addUserMessage(thread.thread_id, message.trim());
       
       // 4. Start the agent with the thread ID
-      const agentRun = await startAgent(thread.thread_id);
+      const agentRun = await startAgent(thread.thread_id, {
+        model_name: options?.model_name,
+        enable_thinking: options?.enable_thinking,
+        stream: true
+      });
       
       // 5. Navigate to the new agent's thread page
       router.push(`/dashboard/agents/${thread.thread_id}`);

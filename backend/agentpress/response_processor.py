@@ -96,10 +96,19 @@ class ResponseProcessor:
         self,
         llm_response: AsyncGenerator,
         thread_id: str,
+        prompt_messages: List[Dict[str, Any]],
+        llm_model: str,
         config: ProcessorConfig = ProcessorConfig(),
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Process a streaming LLM response, handling tool calls and execution.
         
+        Args:
+            llm_response: Streaming response from the LLM
+            thread_id: ID of the conversation thread
+            prompt_messages: List of messages sent to the LLM (the prompt)
+            llm_model: The name of the LLM model used
+            config: Configuration for parsing and execution
+            
         Yields:
             Complete message objects matching the DB schema, except for content chunks.
         """
@@ -144,8 +153,14 @@ class ResponseProcessor:
 
                 if hasattr(chunk, 'choices') and chunk.choices:
                     delta = chunk.choices[0].delta if hasattr(chunk.choices[0], 'delta') else None
+                    
+                    # Check for and log Anthropic thinking content
+                    if delta and hasattr(delta, 'reasoning_content') and delta.reasoning_content:
+                        logger.info(f"[THINKING]: {delta.reasoning_content}")
+                        # Append reasoning to main content to be saved in the final message
+                        accumulated_content += delta.reasoning_content
 
-                    # --- Process Content Chunk ---
+                    # Process content chunk
                     if delta and hasattr(delta, 'content') and delta.content:
                         chunk_content = delta.content
                         accumulated_content += chunk_content
@@ -263,8 +278,8 @@ class ResponseProcessor:
                                 tool_index += 1
 
                 if finish_reason == "xml_tool_limit_reached":
-                    logger.info("Stopping stream due to XML tool call limit")
-                    break # Exit the async for loop
+                    logger.info("Stopping stream processing after loop due to XML tool call limit")
+                    break
 
             # --- After Streaming Loop ---
 
@@ -529,10 +544,19 @@ class ResponseProcessor:
         self,
         llm_response: Any,
         thread_id: str,
+        prompt_messages: List[Dict[str, Any]],
+        llm_model: str,
         config: ProcessorConfig = ProcessorConfig()
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Process a non-streaming LLM response, handling tool calls and execution.
-
+        
+        Args:
+            llm_response: Response from the LLM
+            thread_id: ID of the conversation thread
+            prompt_messages: List of messages sent to the LLM (the prompt)
+            llm_model: The name of the LLM model used
+            config: Configuration for parsing and execution
+            
         Yields:
             Complete message objects matching the DB schema.
         """

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Body
 from fastapi.responses import StreamingResponse
 import asyncio
 import json
@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 import uuid
 from typing import Optional, List, Dict, Any
 import jwt
+from pydantic import BaseModel
 
 from agentpress.thread_manager import ThreadManager
 from services.supabase import DBConnection
@@ -25,6 +26,19 @@ db = None
 
 # In-memory storage for active agent runs and their responses
 active_agent_runs: Dict[str, List[Any]] = {}
+
+MODEL_NAME_ALIASES = {
+    "sonnet-3.7": "anthropic/claude-3-7-sonnet-latest",
+    "gpt-4.1": "openai/gpt-4.1-2025-04-14",
+    "gemini-flash-2.5": "openrouter/google/gemini-2.5-flash-preview",
+}
+
+class AgentStartRequest(BaseModel):
+    model_name: Optional[str] = "anthropic/claude-3-7-sonnet-latest"
+    enable_thinking: Optional[bool] = False
+    reasoning_effort: Optional[str] = 'low'
+    stream: Optional[bool] = True
+    enable_context_manager: Optional[bool] = False
 
 def initialize(
     _thread_manager: ThreadManager,
@@ -237,9 +251,13 @@ async def _cleanup_agent_run(agent_run_id: str):
         # Non-fatal error, can continue
 
 @router.post("/thread/{thread_id}/agent/start")
-async def start_agent(thread_id: str, user_id: str = Depends(get_current_user_id)):
+async def start_agent(
+    thread_id: str,
+    body: AgentStartRequest = Body(...), # Accept request body
+    user_id: str = Depends(get_current_user_id)
+):
     """Start an agent for a specific thread in the background."""
-    logger.info(f"Starting new agent for thread: {thread_id}")
+    logger.info(f"Starting new agent for thread: {thread_id} with config: model={body.model_name}, thinking={body.enable_thinking}, effort={body.reasoning_effort}, stream={body.stream}, context_manager={body.enable_context_manager}")
     client = await db.client
     
     # Verify user has access to this thread
@@ -314,7 +332,18 @@ async def start_agent(thread_id: str, user_id: str = Depends(get_current_user_id
     
     # Run the agent in the background
     task = asyncio.create_task(
-        run_agent_background(agent_run_id, thread_id, instance_id, project_id, sandbox)
+        run_agent_background(
+            agent_run_id=agent_run_id,
+            thread_id=thread_id,
+            instance_id=instance_id,
+            project_id=project_id,
+            sandbox=sandbox,
+            model_name=MODEL_NAME_ALIASES.get(body.model_name, body.model_name), 
+            enable_thinking=body.enable_thinking,
+            reasoning_effort=body.reasoning_effort,
+            stream=body.stream,
+            enable_context_manager=body.enable_context_manager
+        )
     )
     
     # Set a callback to clean up when task is done
@@ -441,9 +470,20 @@ async def stream_agent_run(
         }
     )
 
-async def run_agent_background(agent_run_id: str, thread_id: str, instance_id: str, project_id: str, sandbox):
+async def run_agent_background(
+    agent_run_id: str,
+    thread_id: str,
+    instance_id: str,
+    project_id: str,
+    sandbox,
+    model_name: str,
+    enable_thinking: Optional[bool],
+    reasoning_effort: Optional[str],
+    stream: bool,
+    enable_context_manager: bool
+):
     """Run the agent in the background and handle status updates."""
-    logger.debug(f"Starting background agent run: {agent_run_id} for thread: {thread_id} (instance: {instance_id})")
+    logger.debug(f"Starting background agent run: {agent_run_id} for thread: {thread_id} (instance: {instance_id}) with model={model_name}, thinking={enable_thinking}, effort={reasoning_effort}, stream={stream}, context_manager={enable_context_manager}")
     client = await db.client
     
     # Tracking variables
@@ -561,9 +601,17 @@ async def run_agent_background(agent_run_id: str, thread_id: str, instance_id: s
     try:
         # Run the agent
         logger.debug(f"Initializing agent generator for thread: {thread_id} (instance: {instance_id})")
-        agent_gen = run_agent(thread_id, stream=True, 
-                      thread_manager=thread_manager, project_id=project_id, 
-                      sandbox=sandbox)
+        agent_gen = run_agent(
+            thread_id=thread_id,
+            project_id=project_id,
+            stream=stream,
+            thread_manager=thread_manager,
+            sandbox=sandbox,
+            model_name=model_name,
+            enable_thinking=enable_thinking,
+            reasoning_effort=reasoning_effort,
+            enable_context_manager=enable_context_manager
+        )
         
         # Collect all responses to save to database
         all_responses = []
