@@ -744,22 +744,20 @@ export const createSandboxFile = async (sandboxId: string, filePath: string, con
       throw new Error('No access token available');
     }
 
-    // Determine if content is likely binary (contains non-printable characters)
-    const isProbablyBinary = /[\x00-\x08\x0E-\x1F\x80-\xFF]/.test(content) ||
-                            content.startsWith('data:') || 
-                            /^[A-Za-z0-9+/]*={0,2}$/.test(content);
+    // Use FormData to handle both text and binary content more reliably
+    const formData = new FormData();
+    formData.append('path', filePath);
     
+    // Create a Blob from the content string and append as a file
+    const blob = new Blob([content], { type: 'application/octet-stream' });
+    formData.append('file', blob, filePath.split('/').pop() || 'file');
+
     const response = await fetch(`${API_URL}/sandboxes/${sandboxId}/files`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify({
-        path: filePath,
-        content: content,
-        is_base64: isProbablyBinary
-      }),
+      body: formData,
     });
     
     if (!response.ok) {
@@ -771,6 +769,41 @@ export const createSandboxFile = async (sandboxId: string, filePath: string, con
     return response.json();
   } catch (error) {
     console.error('Failed to create sandbox file:', error);
+    throw error;
+  }
+};
+
+// Fallback method for legacy support using JSON
+export const createSandboxFileJson = async (sandboxId: string, filePath: string, content: string): Promise<void> => {
+  try {
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session?.access_token) {
+      throw new Error('No access token available');
+    }
+
+    const response = await fetch(`${API_URL}/sandboxes/${sandboxId}/files/json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        path: filePath,
+        content: content
+      }),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'No error details available');
+      console.error(`Error creating sandbox file (JSON): ${response.status} ${response.statusText}`, errorText);
+      throw new Error(`Error creating sandbox file: ${response.statusText} (${response.status})`);
+    }
+    
+    return response.json();
+  } catch (error) {
+    console.error('Failed to create sandbox file with JSON:', error);
     throw error;
   }
 };

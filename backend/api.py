@@ -11,7 +11,7 @@ import uuid
 
 # Import the agent API module
 from agent import api as agent_api
-from sandbox.api import router as sandbox_router
+from sandbox import api as sandbox_api
 
 # Load environment variables
 load_dotenv()
@@ -35,6 +35,9 @@ async def lifespan(app: FastAPI):
         db,
         instance_id  # Pass the instance_id to agent_api
     )
+    
+    # Initialize the sandbox API with shared resources
+    sandbox_api.initialize(db)
     
     # Initialize Redis before restoring agent runs
     from services import redis
@@ -66,7 +69,7 @@ app.add_middleware(
 app.include_router(agent_api.router, prefix="/api")
 
 # Include the sandbox router with a prefix
-app.include_router(sandbox_router, prefix="/api")
+app.include_router(sandbox_api.router, prefix="/api")
 
 @app.get("/api/health-check")
 async def health_check():
