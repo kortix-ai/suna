@@ -53,8 +53,10 @@ async def run_agent(
     thread_manager.add_tool(SandboxDeployTool, sandbox=sandbox)
     thread_manager.add_tool(MessageTool) # we are just doing this via prompt as there is no need to call it as a tool
  
-    if os.getenv("EXA_API_KEY"):
+    if os.getenv("TAVILY_API_KEY"):
         thread_manager.add_tool(WebSearchTool)
+    else:
+        print("TAVILY_API_KEY not found, WebSearchTool will not be available.")
     
     if os.getenv("RAPID_API_KEY"):
         thread_manager.add_tool(DataProvidersTool)

@@ -22,5 +22,5 @@ certifi==2024.2.2
 python-ripgrep==0.0.6
 daytona_sdk>=0.12.0
 boto3>=1.34.0
-exa-py>=1.9.1
 pydantic
+tavily-python>=0.5.4
