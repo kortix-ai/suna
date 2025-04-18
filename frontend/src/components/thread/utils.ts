@@ -4,10 +4,22 @@ import {
   FileEdit, Search, Globe, Code, MessageSquare, Folder, FileX, CloudUpload, Wrench, Cog,
   Network, FileSearch, FilePlus
 } from 'lucide-react';
-import { ApiMessage, RenderItem, ToolSequence, isToolSequence } from './types';
 
 // Flag to control whether tool result messages are rendered
 export const SHOULD_RENDER_TOOL_RESULTS = false;
+
+// Helper function to safely parse JSON strings from content/metadata
+export function safeJsonParse<T>(jsonString: string | undefined | null, fallback: T): T {
+  if (!jsonString) {
+    return fallback;
+  }
+  try {
+    return JSON.parse(jsonString);
+  } catch (e) {
+    // console.warn('Failed to parse JSON string:', jsonString, e); // Optional: log errors
+    return fallback;
+  }
+}
 
 // Helper function to get an icon based on tool name
 export const getToolIcon = (toolName: string): ElementType => {
@@ -89,6 +101,27 @@ export const extractPrimaryParam = (toolName: string, content: string | undefine
       return null;
     }
     
+    // Special handling for XML content - extract file_path from the actual attributes
+    if (content.startsWith('<') && content.includes('>')) {
+      const xmlAttrs = content.match(/<[^>]+\s+([^>]+)>/);
+      if (xmlAttrs && xmlAttrs[1]) {
+        const attrs = xmlAttrs[1].trim();
+        const filePathMatch = attrs.match(/file_path=["']([^"']+)["']/);
+        if (filePathMatch) {
+          return filePathMatch[1].split('/').pop() || filePathMatch[1];
+        }
+        
+        // Try to get command for execute-command
+        if (toolName?.toLowerCase() === 'execute-command') {
+          const commandMatch = attrs.match(/(?:command|cmd)=["']([^"']+)["']/);
+          if (commandMatch) {
+            const cmd = commandMatch[1];
+            return cmd.length > 30 ? cmd.substring(0, 27) + '...' : cmd;
+          }
+        }
+      }
+    }
+    
     // Simple regex for common parameters - adjust as needed
     let match: RegExpMatchArray | null = null;
     
@@ -136,79 +169,4 @@ export const extractPrimaryParam = (toolName: string, content: string | undefine
     console.warn("Error parsing tool parameters:", e);
     return null;
   }
-};
-
-// Function to group consecutive assistant tool call / user tool result pairs
-export function groupMessages(messages: ApiMessage[]): RenderItem[] {
-  const grouped: RenderItem[] = [];
-  let i = 0;
-
-  while (i < messages.length) {
-    const currentMsg = messages[i];
-    const nextMsg = i + 1 < messages.length ? messages[i + 1] : null;
-
-    let currentSequence: ApiMessage[] = [];
-
-    // Check if current message is the start of a potential sequence
-    if (currentMsg.role === 'assistant') {
-      // Regex to find the first XML-like tag: <tagname ...> or <tagname> or self-closing tags
-      const toolTagMatch = currentMsg.content?.match(/<(?!inform\b)([a-zA-Z\-_]+)(?:\s+[^>]*)?(?:\/)?>/);
-      if (toolTagMatch && nextMsg && nextMsg.role === 'user') {
-        const expectedTag = toolTagMatch[1];
-
-        // Regex to check for <tool_result><tagname>...</tagname></tool_result>
-        // Also handle self-closing tags in the response
-        const toolResultRegex = new RegExp(`^<tool_result>\\s*<(${expectedTag})(?:\\s+[^>]*)?(?:/>|>[\\s\\S]*?</\\1>)\\s*</tool_result>`);
-
-        if (nextMsg.content?.match(toolResultRegex)) {
-          // Found a pair, start a sequence
-          currentSequence.push(currentMsg);
-          currentSequence.push(nextMsg);
-          i += 2; // Move past this pair
-
-          // Check for continuation
-          while (i < messages.length) {
-            const potentialAssistant = messages[i];
-            const potentialUser = i + 1 < messages.length ? messages[i + 1] : null;
-
-            if (potentialAssistant.role === 'assistant') {
-              const nextToolTagMatch = potentialAssistant.content?.match(/<(?!inform\b)([a-zA-Z\-_]+)(?:\s+[^>]*)?(?:\/)?>/);
-              if (nextToolTagMatch && potentialUser && potentialUser.role === 'user') {
-                const nextExpectedTag = nextToolTagMatch[1];
-
-                // Also handle self-closing tags in the response
-                const nextToolResultRegex = new RegExp(`^<tool_result>\\s*<(${nextExpectedTag})(?:\\s+[^>]*)?(?:/>|>[\\s\\S]*?</\\1>)\\s*</tool_result>`);
-
-                if (potentialUser.content?.match(nextToolResultRegex)) {
-                  // Sequence continues
-                  currentSequence.push(potentialAssistant);
-                  currentSequence.push(potentialUser);
-                  i += 2; // Move past the added pair
-                } else {
-                  // Assistant/User message, but not a matching tool result pair - break sequence
-                  break;
-                }
-              } else {
-                // Assistant message without tool tag, or no following user message - break sequence
-                break;
-              }
-            } else {
-              // Not an assistant message - break sequence
-              break;
-            }
-          }
-          // Add the completed sequence to grouped results
-          grouped.push({ type: 'tool_sequence', items: currentSequence });
-          continue; // Continue the outer loop from the new 'i'
-        }
-      }
-    }
-
-    // If no sequence was started or continued, add the current message normally
-    if (currentSequence.length === 0) {
-       grouped.push(currentMsg);
-       i++; // Move to the next message
-    }
-  }
-  return grouped;
-} 
+}; 

@@ -1027,8 +1027,8 @@ export const siteConfig = {
     {
       title: "Legal",
       links: [
-        { id: 9, title: "Privacy Policy", url: "https://suna.so/legal/privacy" },
-        { id: 10, title: "Terms of Service", url: "https://suna.so/legal/terms" },
+        { id: 9, title: "Privacy Policy", url: "https://suna.so/legal?tab=privacy" },
+        { id: 10, title: "Terms of Service", url: "https://suna.so/legal?tab=terms" },
         { id: 11, title: "License Apache 2.0", url: "https://github.com/Kortix-ai/Suna/blob/main/LICENSE" },
       ],
     },

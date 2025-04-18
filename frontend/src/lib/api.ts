@@ -2,12 +2,11 @@ import { createClient } from '@/lib/supabase/client';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
-// Simple cache implementation
+// Simple cache implementation for non-agent data
 const apiCache = {
   projects: new Map(),
   threads: new Map(),
   threadMessages: new Map(),
-  agentRuns: new Map(),
   
   getProject: (projectId: string) => apiCache.projects.get(projectId),
   setProject: (projectId: string, data: any) => apiCache.projects.set(projectId, data),
@@ -21,58 +20,15 @@ const apiCache = {
   getThreadMessages: (threadId: string) => apiCache.threadMessages.get(threadId),
   setThreadMessages: (threadId: string, data: any) => apiCache.threadMessages.set(threadId, data),
   
-  getAgentRuns: (threadId: string) => apiCache.agentRuns.get(threadId),
-  setAgentRuns: (threadId: string, data: any) => apiCache.agentRuns.set(threadId, data),
-  
   // Helper to clear parts of the cache when data changes
   invalidateThreadMessages: (threadId: string) => apiCache.threadMessages.delete(threadId),
-  invalidateAgentRuns: (threadId: string) => apiCache.agentRuns.delete(threadId),
 };
 
-// Add a fetch queue system to prevent multiple simultaneous requests
-const fetchQueue = {
-  agentRuns: new Map<string, Promise<any>>(),
-  threads: new Map<string, Promise<any>>(),
-  messages: new Map<string, Promise<any>>(),
-  projects: new Map<string, Promise<any>>(),
-  
-  getQueuedAgentRuns: (threadId: string) => fetchQueue.agentRuns.get(threadId),
-  setQueuedAgentRuns: (threadId: string, promise: Promise<any>) => {
-    fetchQueue.agentRuns.set(threadId, promise);
-    // Auto-clean the queue after the promise resolves
-    promise.finally(() => {
-      fetchQueue.agentRuns.delete(threadId);
-    });
-    return promise;
-  },
-  
-  getQueuedThreads: (projectId: string) => fetchQueue.threads.get(projectId || 'all'),
-  setQueuedThreads: (projectId: string, promise: Promise<any>) => {
-    fetchQueue.threads.set(projectId || 'all', promise);
-    promise.finally(() => {
-      fetchQueue.threads.delete(projectId || 'all');
-    });
-    return promise;
-  },
-  
-  getQueuedMessages: (threadId: string) => fetchQueue.messages.get(threadId),
-  setQueuedMessages: (threadId: string, promise: Promise<any>) => {
-    fetchQueue.messages.set(threadId, promise);
-    promise.finally(() => {
-      fetchQueue.messages.delete(threadId);
-    });
-    return promise;
-  },
-  
-  getQueuedProjects: () => fetchQueue.projects.get('all'),
-  setQueuedProjects: (promise: Promise<any>) => {
-    fetchQueue.projects.set('all', promise);
-    promise.finally(() => {
-      fetchQueue.projects.delete('all');
-    });
-    return promise;
-  }
-};
+// Track active streams by agent run ID
+const activeStreams = new Map<string, EventSource>();
+
+// Track agent runs that have been confirmed as completed or not found
+const nonRunningAgentRuns = new Set<string>();
 
 export type Project = {
   id: string;
@@ -118,47 +74,35 @@ export type ToolCall = {
 
 // Project APIs
 export const getProjects = async (): Promise<Project[]> => {
-  // Check if we already have a pending request
-  const pendingRequest = fetchQueue.getQueuedProjects();
-  if (pendingRequest) {
-    return pendingRequest;
-  }
-  
   // Check cache first
   const cached = apiCache.getProjects();
   if (cached) {
     return cached;
   }
   
-  // Create and queue the promise
-  const fetchPromise = (async () => {
-    try {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from('projects')
-        .select('*');
-      
-      if (error) {
-        // Handle permission errors specifically
-        if (error.code === '42501' && error.message.includes('has_role_on_account')) {
-          console.error('Permission error: User does not have proper account access');
-          return []; // Return empty array instead of throwing
-        }
-        throw error;
+  try {
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('projects')
+      .select('*');
+    
+    if (error) {
+      // Handle permission errors specifically
+      if (error.code === '42501' && error.message.includes('has_role_on_account')) {
+        console.error('Permission error: User does not have proper account access');
+        return []; // Return empty array instead of throwing
       }
-      
-      // Cache the result
-      apiCache.setProjects(data || []);
-      return data || [];
-    } catch (err) {
-      console.error('Error fetching projects:', err);
-      // Return empty array for permission errors to avoid crashing the UI
-      return [];
+      throw error;
     }
-  })();
-  
-  // Add to queue and return
-  return fetchQueue.setQueuedProjects(fetchPromise);
+    
+    // Cache the result
+    apiCache.setProjects(data || []);
+    return data || [];
+  } catch (err) {
+    console.error('Error fetching projects:', err);
+    // Return empty array for permission errors to avoid crashing the UI
+    return [];
+  }
 };
 
 export const getProject = async (projectId: string): Promise<Project> => {
@@ -176,6 +120,33 @@ export const getProject = async (projectId: string): Promise<Project> => {
     .single();
   
   if (error) throw error;
+
+  // If project has a sandbox, ensure it's started
+  if (data.sandbox?.id) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        console.log(`Ensuring sandbox is active for project ${projectId}...`);
+        const response = await fetch(`${API_URL}/project/${projectId}/sandbox/ensure-active`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => 'No error details available');
+          console.warn(`Failed to ensure sandbox is active: ${response.status} ${response.statusText}`, errorText);
+        } else {
+          console.log('Sandbox activation successful');
+        }
+      }
+    } catch (sandboxError) {
+      console.warn('Failed to ensure sandbox is active:', sandboxError);
+      // Non-blocking error - continue with the project data
+    }
+  }
   
   // Cache the result
   apiCache.setProject(projectId, data);
@@ -273,38 +244,26 @@ export const deleteProject = async (projectId: string): Promise<void> => {
 
 // Thread APIs
 export const getThreads = async (projectId?: string): Promise<Thread[]> => {
-  // Check if we already have a pending request
-  const pendingRequest = fetchQueue.getQueuedThreads(projectId || 'all');
-  if (pendingRequest) {
-    return pendingRequest;
-  }
-  
   // Check cache first
   const cached = apiCache.getThreads(projectId || 'all');
   if (cached) {
     return cached;
   }
   
-  // Create and queue the promise
-  const fetchPromise = (async () => {
-    const supabase = createClient();
-    let query = supabase.from('threads').select('*');
-    
-    if (projectId) {
-      query = query.eq('project_id', projectId);
-    }
-    
-    const { data, error } = await query;
-    
-    if (error) throw error;
-    
-    // Cache the result
-    apiCache.setThreads(projectId || 'all', data || []);
-    return data || [];
-  })();
+  const supabase = createClient();
+  let query = supabase.from('threads').select('*');
   
-  // Add to queue and return
-  return fetchQueue.setQueuedThreads(projectId || 'all', fetchPromise);
+  if (projectId) {
+    query = query.eq('project_id', projectId);
+  }
+  
+  const { data, error } = await query;
+  
+  if (error) throw error;
+  
+  // Cache the result
+  apiCache.setThreads(projectId || 'all', data || []);
+  return data || [];
 };
 
 export const getThread = async (threadId: string): Promise<Thread> => {
@@ -372,63 +331,33 @@ export const addUserMessage = async (threadId: string, content: string): Promise
 };
 
 export const getMessages = async (threadId: string): Promise<Message[]> => {
-  // Check if we already have a pending request
-  const pendingRequest = fetchQueue.getQueuedMessages(threadId);
-  if (pendingRequest) {
-    return pendingRequest;
-  }
-  
   // Check cache first
   const cached = apiCache.getThreadMessages(threadId);
   if (cached) {
     return cached;
   }
   
-  // Create and queue the promise
-  const fetchPromise = (async () => {
-    const supabase = createClient();
-    
-    const { data, error } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('thread_id', threadId)
-      .neq('type', 'cost')
-      .neq('type', 'summary')
-      .order('created_at', { ascending: true });
-    
-    if (error) {
-      console.error('Error fetching messages:', error);
-      throw new Error(`Error getting messages: ${error.message}`);
-    }
-    
-    // Process the messages to the expected format
-    const messages = (data || []).map(msg => {
-      try {
-        // Parse the content from JSONB
-        const content = typeof msg.content === 'string' 
-          ? JSON.parse(msg.content) 
-          : msg.content;
-          
-        // Return in the format the app expects
-        return content;
-      } catch (e) {
-        console.error('Error parsing message content:', e, msg);
-        // Fallback for malformed messages
-        return {
-          role: msg.is_llm_message ? 'assistant' : 'user',
-          content: 'Error: Could not parse message content'
-        };
-      }
-    });
-    
-    // Cache the result
-    apiCache.setThreadMessages(threadId, messages);
-    
-    return messages;
-  })();
+  const supabase = createClient();
   
-  // Add to queue and return
-  return fetchQueue.setQueuedMessages(threadId, fetchPromise);
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('thread_id', threadId)
+    .neq('type', 'cost')
+    .neq('type', 'summary')
+    .order('created_at', { ascending: true });
+  
+  if (error) {
+    console.error('Error fetching messages:', error);
+    throw new Error(`Error getting messages: ${error.message}`);
+  }
+
+  console.log('[API] Messages fetched:', data);
+  
+  // Cache the result
+  apiCache.setThreadMessages(threadId, data || []);
+  
+  return data || [];
 };
 
 // Agent APIs
@@ -462,6 +391,9 @@ export const startAgent = async (
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
       },
+      // Add cache: 'no-store' to prevent caching
+      cache: 'no-store',
+      // Add the body, stringifying the options or an empty object
       body: JSON.stringify(options || {}),
     });
     
@@ -470,10 +402,6 @@ export const startAgent = async (
       console.error(`[API] Error starting agent: ${response.status} ${response.statusText}`, errorText);
       throw new Error(`Error starting agent: ${response.statusText} (${response.status})`);
     }
-    
-    // Invalidate relevant caches
-    apiCache.invalidateAgentRuns(threadId);
-    apiCache.invalidateThreadMessages(threadId);
     
     return response.json();
   } catch (error) {
@@ -489,6 +417,17 @@ export const startAgent = async (
 };
 
 export const stopAgent = async (agentRunId: string): Promise<void> => {
+  // Add to non-running set immediately to prevent reconnection attempts
+  nonRunningAgentRuns.add(agentRunId);
+  
+  // Close any existing stream
+  const existingStream = activeStreams.get(agentRunId);
+  if (existingStream) {
+    console.log(`[API] Closing existing stream for ${agentRunId} before stopping agent`);
+    existingStream.close();
+    activeStreams.delete(agentRunId);
+  }
+  
   const supabase = createClient();
   const { data: { session } } = await supabase.auth.getSession();
   
@@ -502,6 +441,8 @@ export const stopAgent = async (agentRunId: string): Promise<void> => {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${session.access_token}`,
     },
+    // Add cache: 'no-store' to prevent caching
+    cache: 'no-store',
   });
   
   if (!response.ok) {
@@ -510,56 +451,63 @@ export const stopAgent = async (agentRunId: string): Promise<void> => {
 };
 
 export const getAgentStatus = async (agentRunId: string): Promise<AgentRun> => {
-  console.log(`[API] ⚠️ Requesting agent status for ${agentRunId}`);
+  console.log(`[API] Requesting agent status for ${agentRunId}`);
+  
+  // If we already know this agent is not running, throw an error
+  if (nonRunningAgentRuns.has(agentRunId)) {
+    console.log(`[API] Agent run ${agentRunId} is known to be non-running, returning error`);
+    throw new Error(`Agent run ${agentRunId} is not running`);
+  }
   
   try {
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
     
     if (!session?.access_token) {
-      console.error('[API] ❌ No access token available for getAgentStatus');
+      console.error('[API] No access token available for getAgentStatus');
       throw new Error('No access token available');
     }
 
     const url = `${API_URL}/agent-run/${agentRunId}`;
-    console.log(`[API] 🔍 Fetching from: ${url}`);
+    console.log(`[API] Fetching from: ${url}`);
     
     const response = await fetch(url, {
       headers: {
         'Authorization': `Bearer ${session.access_token}`,
       },
+      // Add cache: 'no-store' to prevent caching
+      cache: 'no-store',
     });
     
     if (!response.ok) {
       const errorText = await response.text().catch(() => 'No error details available');
-      console.error(`[API] ❌ Error getting agent status: ${response.status} ${response.statusText}`, errorText);
+      console.error(`[API] Error getting agent status: ${response.status} ${response.statusText}`, errorText);
+      
+      // If we get a 404, add to non-running set
+      if (response.status === 404) {
+        nonRunningAgentRuns.add(agentRunId);
+      }
+      
       throw new Error(`Error getting agent status: ${response.statusText} (${response.status})`);
     }
     
     const data = await response.json();
-    console.log(`[API] ✅ Successfully got agent status:`, data);
+    console.log(`[API] Successfully got agent status:`, data);
+    
+    // If agent is not running, add to non-running set
+    if (data.status !== 'running') {
+      nonRunningAgentRuns.add(agentRunId);
+    }
+    
     return data;
   } catch (error) {
-    console.error('[API] ❌ Failed to get agent status:', error);
+    console.error('[API] Failed to get agent status:', error);
     throw error;
   }
 };
 
 export const getAgentRuns = async (threadId: string): Promise<AgentRun[]> => {
-  // Check if we already have a pending request for this thread ID
-  const pendingRequest = fetchQueue.getQueuedAgentRuns(threadId);
-  if (pendingRequest) {
-    return pendingRequest;
-  }
-  
-  // Check cache first
-  const cached = apiCache.getAgentRuns(threadId);
-  if (cached) {
-    return cached;
-  }
-  
-  // Create and queue the promise to prevent duplicate requests
-  const fetchPromise = (async () => {
+  try {
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
     
@@ -571,6 +519,8 @@ export const getAgentRuns = async (threadId: string): Promise<AgentRun[]> => {
       headers: {
         'Authorization': `Bearer ${session.access_token}`,
       },
+      // Add cache: 'no-store' to prevent caching
+      cache: 'no-store',
     });
     
     if (!response.ok) {
@@ -578,15 +528,11 @@ export const getAgentRuns = async (threadId: string): Promise<AgentRun[]> => {
     }
     
     const data = await response.json();
-    const agentRuns = data.agent_runs || [];
-    
-    // Cache the result
-    apiCache.setAgentRuns(threadId, agentRuns);
-    return agentRuns;
-  })();
-  
-  // Add to queue and return
-  return fetchQueue.setQueuedAgentRuns(threadId, fetchPromise);
+    return data.agent_runs || [];
+  } catch (error) {
+    console.error('Failed to get agent runs:', error);
+    throw error;
+  }
 };
 
 export const streamAgent = (agentRunId: string, callbacks: {
@@ -594,15 +540,58 @@ export const streamAgent = (agentRunId: string, callbacks: {
   onError: (error: Error | string) => void;
   onClose: () => void;
 }): () => void => {
-  let eventSourceInstance: EventSource | null = null;
-  let isClosing = false;
+  console.log(`[STREAM] streamAgent called for ${agentRunId}`);
   
-  console.log(`[STREAM] Setting up stream for agent run ${agentRunId}`);
+  // Check if this agent run is known to be non-running
+  if (nonRunningAgentRuns.has(agentRunId)) {
+    console.log(`[STREAM] Agent run ${agentRunId} is known to be non-running, not creating stream`);
+    // Notify the caller immediately
+    setTimeout(() => {
+      callbacks.onError(`Agent run ${agentRunId} is not running`);
+      callbacks.onClose();
+    }, 0);
+    
+    // Return a no-op cleanup function
+    return () => {};
+  }
   
-  const setupStream = async () => {
-    try {
-      if (isClosing) {
-        console.log(`[STREAM] Already closing, not setting up stream for ${agentRunId}`);
+  // Check if there's already an active stream for this agent run
+  const existingStream = activeStreams.get(agentRunId);
+  if (existingStream) {
+    console.log(`[STREAM] Stream already exists for ${agentRunId}, closing it first`);
+    existingStream.close();
+    activeStreams.delete(agentRunId);
+  }
+  
+  // Set up a new stream
+  try {
+    const setupStream = async () => {
+      // First verify the agent is actually running
+      try {
+        const status = await getAgentStatus(agentRunId);
+        if (status.status !== 'running') {
+          console.log(`[STREAM] Agent run ${agentRunId} is not running (status: ${status.status}), not creating stream`);
+          nonRunningAgentRuns.add(agentRunId);
+          callbacks.onError(`Agent run ${agentRunId} is not running (status: ${status.status})`);
+          callbacks.onClose();
+          return;
+        }
+      } catch (err) {
+        console.error(`[STREAM] Error verifying agent run ${agentRunId}:`, err);
+        
+        // Check if this is a "not found" error
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        const isNotFoundError = errorMessage.includes('not found') || 
+                               errorMessage.includes('404') || 
+                               errorMessage.includes('does not exist');
+        
+        if (isNotFoundError) {
+          console.log(`[STREAM] Agent run ${agentRunId} not found, not creating stream`);
+          nonRunningAgentRuns.add(agentRunId);
+        }
+        
+        callbacks.onError(errorMessage);
+        callbacks.onClose();
         return;
       }
       
@@ -620,19 +609,22 @@ export const streamAgent = (agentRunId: string, callbacks: {
       url.searchParams.append('token', session.access_token);
       
       console.log(`[STREAM] Creating EventSource for ${agentRunId}`);
-      eventSourceInstance = new EventSource(url.toString());
+      const eventSource = new EventSource(url.toString());
       
-      eventSourceInstance.onopen = () => {
+      // Store the EventSource in the active streams map
+      activeStreams.set(agentRunId, eventSource);
+      
+      eventSource.onopen = () => {
         console.log(`[STREAM] Connection opened for ${agentRunId}`);
       };
       
-      eventSourceInstance.onmessage = (event) => {
+      eventSource.onmessage = (event) => {
         try {
           const rawData = event.data;
           if (rawData.includes('"type":"ping"')) return;
           
-          // Log raw data for debugging
-          console.log(`[STREAM] Received data: ${rawData.substring(0, 100)}${rawData.length > 100 ? '...' : ''}`);
+          // Log raw data for debugging (truncated for readability)
+          console.log(`[STREAM] Received data for ${agentRunId}: ${rawData.substring(0, 100)}${rawData.length > 100 ? '...' : ''}`);
           
           // Skip empty messages
           if (!rawData || rawData.trim() === '') {
@@ -640,104 +632,133 @@ export const streamAgent = (agentRunId: string, callbacks: {
             return;
           }
           
-          // Check if this is a status completion message
-          if (rawData.includes('"type":"status"') && rawData.includes('"status":"completed"')) {
-            console.log(`[STREAM] ⚠️ Detected completion status message: ${rawData}`);
+          // Check for "Agent run not found" error
+          if (rawData.includes('Agent run') && rawData.includes('not found in active runs')) {
+            console.log(`[STREAM] Agent run ${agentRunId} not found in active runs, closing stream`);
             
-            try {
-              // Explicitly call onMessage before closing the stream to ensure the message is processed
-              callbacks.onMessage(rawData);
-              
-              // Explicitly close the EventSource connection when we receive a completion message
-              if (eventSourceInstance && !isClosing) {
-                console.log(`[STREAM] ⚠️ Closing EventSource due to completion message for ${agentRunId}`);
-                isClosing = true;
-                eventSourceInstance.close();
-                eventSourceInstance = null;
-                
-                // Explicitly call onClose here to ensure the client knows the stream is closed
-                setTimeout(() => {
-                  console.log(`[STREAM] 🚨 Explicitly calling onClose after completion for ${agentRunId}`);
-                  callbacks.onClose();
-                }, 0);
-              }
-              
-              // Exit early to prevent duplicate message processing
-              return;
-            } catch (closeError) {
-              console.error(`[STREAM] ❌ Error while closing stream on completion: ${closeError}`);
-              // Continue with normal processing if there's an error during closure
-            }
+            // Add to non-running set to prevent future reconnection attempts
+            nonRunningAgentRuns.add(agentRunId);
+            
+            // Notify about the error
+            callbacks.onError("Agent run not found in active runs");
+            
+            // Clean up
+            eventSource.close();
+            activeStreams.delete(agentRunId);
+            callbacks.onClose();
+            
+            return;
           }
           
-          // Pass the raw data directly to onMessage for handling in the component
+          // Check for completion messages
+          if (rawData.includes('"type":"status"') && rawData.includes('"status":"completed"')) {
+            console.log(`[STREAM] Detected completion status message for ${agentRunId}`);
+            
+            // Check for specific completion messages that indicate we should stop checking
+            if (rawData.includes('Run data not available for streaming') || 
+                rawData.includes('Stream ended with status: completed')) {
+              console.log(`[STREAM] Detected final completion message for ${agentRunId}, adding to non-running set`);
+              // Add to non-running set to prevent future reconnection attempts
+              nonRunningAgentRuns.add(agentRunId);
+            }
+            
+            // Notify about the message
+            callbacks.onMessage(rawData);
+            
+            // Clean up
+            eventSource.close();
+            activeStreams.delete(agentRunId);
+            callbacks.onClose();
+            
+            return;
+          }
+          
+          // Check for thread run end message
+          if (rawData.includes('"type":"status"') && rawData.includes('"status_type":"thread_run_end"')) {
+            console.log(`[STREAM] Detected thread run end message for ${agentRunId}`);
+            
+            // Add to non-running set
+            nonRunningAgentRuns.add(agentRunId);
+            
+            // Notify about the message
+            callbacks.onMessage(rawData);
+            
+            // Clean up
+            eventSource.close();
+            activeStreams.delete(agentRunId);
+            callbacks.onClose();
+            
+            return;
+          }
+          
+          // For all other messages, just pass them through
           callbacks.onMessage(rawData);
+          
         } catch (error) {
           console.error(`[STREAM] Error handling message:`, error);
           callbacks.onError(error instanceof Error ? error : String(error));
         }
       };
       
-      eventSourceInstance.onerror = (event) => {
-        // Add detailed event logging
-        console.log(`[STREAM] 🔍 EventSource onerror triggered for ${agentRunId}`, event);
+      eventSource.onerror = (event) => {
+        console.log(`[STREAM] EventSource error for ${agentRunId}:`, event);
         
-        // EventSource errors are often just connection closures
-        // For clean closures (manual or completed), we don't need to log an error
-        if (isClosing) {
-          console.log(`[STREAM] EventSource closed as expected for ${agentRunId}`);
-          return;
-        }
-        
-        // Only log as error for unexpected closures
-        console.log(`[STREAM] EventSource connection closed for ${agentRunId}`);
-        
-        if (!isClosing) {
-          console.log(`[STREAM] Handling connection close for ${agentRunId}`);
-          
-          // Close the connection
-          if (eventSourceInstance) {
-            eventSourceInstance.close();
-            eventSourceInstance = null;
-          }
-          
-          // Then notify error (once)
-          isClosing = true;
-          callbacks.onClose();
-        }
+        // Check if the agent is still running
+        getAgentStatus(agentRunId)
+          .then(status => {
+            if (status.status !== 'running') {
+              console.log(`[STREAM] Agent run ${agentRunId} is not running after error, closing stream`);
+              nonRunningAgentRuns.add(agentRunId);
+              eventSource.close();
+              activeStreams.delete(agentRunId);
+              callbacks.onClose();
+            } else {
+              console.log(`[STREAM] Agent run ${agentRunId} is still running after error, keeping stream open`);
+              // Let the browser handle reconnection for non-fatal errors
+            }
+          })
+          .catch(err => {
+            console.error(`[STREAM] Error checking agent status after stream error:`, err);
+            
+            // Check if this is a "not found" error
+            const errMsg = err instanceof Error ? err.message : String(err);
+            const isNotFoundErr = errMsg.includes('not found') || 
+                                 errMsg.includes('404') || 
+                                 errMsg.includes('does not exist');
+            
+            if (isNotFoundErr) {
+              console.log(`[STREAM] Agent run ${agentRunId} not found after error, closing stream`);
+              nonRunningAgentRuns.add(agentRunId);
+              eventSource.close();
+              activeStreams.delete(agentRunId);
+              callbacks.onClose();
+            }
+            
+            // For other errors, notify but don't close the stream
+            callbacks.onError(errMsg);
+          });
       };
-      
-    } catch (error) {
-      console.error(`[STREAM] Error setting up stream:`, error);
-      
-      if (!isClosing) {
-        isClosing = true;
-        callbacks.onError(error instanceof Error ? error : String(error));
-        callbacks.onClose();
+    };
+    
+    // Start the stream setup
+    setupStream();
+    
+    // Return a cleanup function
+    return () => {
+      console.log(`[STREAM] Cleanup called for ${agentRunId}`);
+      const stream = activeStreams.get(agentRunId);
+      if (stream) {
+        console.log(`[STREAM] Closing stream for ${agentRunId}`);
+        stream.close();
+        activeStreams.delete(agentRunId);
       }
-    }
-  };
-  
-  // Set up the stream once
-  setupStream();
-  
-  // Return cleanup function
-  return () => {
-    console.log(`[STREAM] Manual cleanup called for ${agentRunId}`);
-    
-    if (isClosing) {
-      console.log(`[STREAM] Already closing, ignoring duplicate cleanup for ${agentRunId}`);
-      return;
-    }
-    
-    isClosing = true;
-    
-    if (eventSourceInstance) {
-      console.log(`[STREAM] Manually closing EventSource for ${agentRunId}`);
-      eventSourceInstance.close();
-      eventSourceInstance = null;
-    }
-  };
+    };
+  } catch (error) {
+    console.error(`[STREAM] Error setting up stream for ${agentRunId}:`, error);
+    callbacks.onError(error instanceof Error ? error : String(error));
+    callbacks.onClose();
+    return () => {};
+  }
 };
 
 // Sandbox API Functions
@@ -750,22 +771,20 @@ export const createSandboxFile = async (sandboxId: string, filePath: string, con
       throw new Error('No access token available');
     }
 
-    // Determine if content is likely binary (contains non-printable characters)
-    const isProbablyBinary = /[\x00-\x08\x0E-\x1F\x80-\xFF]/.test(content) ||
-                            content.startsWith('data:') || 
-                            /^[A-Za-z0-9+/]*={0,2}$/.test(content);
+    // Use FormData to handle both text and binary content more reliably
+    const formData = new FormData();
+    formData.append('path', filePath);
     
+    // Create a Blob from the content string and append as a file
+    const blob = new Blob([content], { type: 'application/octet-stream' });
+    formData.append('file', blob, filePath.split('/').pop() || 'file');
+
     const response = await fetch(`${API_URL}/sandboxes/${sandboxId}/files`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify({
-        path: filePath,
-        content: content,
-        is_base64: isProbablyBinary
-      }),
+      body: formData,
     });
     
     if (!response.ok) {
@@ -777,6 +796,41 @@ export const createSandboxFile = async (sandboxId: string, filePath: string, con
     return response.json();
   } catch (error) {
     console.error('Failed to create sandbox file:', error);
+    throw error;
+  }
+};
+
+// Fallback method for legacy support using JSON
+export const createSandboxFileJson = async (sandboxId: string, filePath: string, content: string): Promise<void> => {
+  try {
+    const supabase = createClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session?.access_token) {
+      throw new Error('No access token available');
+    }
+
+    const response = await fetch(`${API_URL}/sandboxes/${sandboxId}/files/json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        path: filePath,
+        content: content
+      }),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'No error details available');
+      console.error(`Error creating sandbox file (JSON): ${response.status} ${response.statusText}`, errorText);
+      throw new Error(`Error creating sandbox file: ${response.statusText} (${response.status})`);
+    }
+    
+    return response.json();
+  } catch (error) {
+    console.error('Failed to create sandbox file with JSON:', error);
     throw error;
   }
 };
