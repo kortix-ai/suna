@@ -89,9 +89,8 @@ class ThreadManager:
 
             print(f"MESSAGE RESULT: {result}")
             
-            # Check the structure of result.data before accessing
             if result.data and len(result.data) > 0 and isinstance(result.data[0], dict) and 'message_id' in result.data[0]:
-                return result.data[0]['message_id']
+                return result.data[0]
             else:
                 logger.error(f"Insert operation failed or did not return expected data structure for thread {thread_id}. Result data: {result.data}")
                 return None
