@@ -2,12 +2,11 @@ import { createClient } from '@/lib/supabase/client';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
-// Simple cache implementation
+// Simple cache implementation for non-agent data
 const apiCache = {
   projects: new Map(),
   threads: new Map(),
   threadMessages: new Map(),
-  agentRuns: new Map(),
   
   getProject: (projectId: string) => apiCache.projects.get(projectId),
   setProject: (projectId: string, data: any) => apiCache.projects.set(projectId, data),
@@ -21,75 +20,15 @@ const apiCache = {
   getThreadMessages: (threadId: string) => apiCache.threadMessages.get(threadId),
   setThreadMessages: (threadId: string, data: any) => apiCache.threadMessages.set(threadId, data),
   
-  getAgentRuns: (threadId: string) => apiCache.agentRuns.get(threadId),
-  setAgentRuns: (threadId: string, data: any) => apiCache.agentRuns.set(threadId, data),
-  
   // Helper to clear parts of the cache when data changes
   invalidateThreadMessages: (threadId: string) => apiCache.threadMessages.delete(threadId),
-  invalidateAgentRuns: (threadId: string) => apiCache.agentRuns.delete(threadId),
-};
-
-// Add a fetch queue system to prevent multiple simultaneous requests
-const fetchQueue = {
-  agentRuns: new Map<string, Promise<any>>(),
-  threads: new Map<string, Promise<any>>(),
-  messages: new Map<string, Promise<any>>(),
-  projects: new Map<string, Promise<any>>(),
-  
-  getQueuedAgentRuns: (threadId: string) => fetchQueue.agentRuns.get(threadId),
-  setQueuedAgentRuns: (threadId: string, promise: Promise<any>) => {
-    fetchQueue.agentRuns.set(threadId, promise);
-    // Auto-clean the queue after the promise resolves
-    promise.finally(() => {
-      fetchQueue.agentRuns.delete(threadId);
-    });
-    return promise;
-  },
-  
-  getQueuedThreads: (projectId: string) => fetchQueue.threads.get(projectId || 'all'),
-  setQueuedThreads: (projectId: string, promise: Promise<any>) => {
-    fetchQueue.threads.set(projectId || 'all', promise);
-    promise.finally(() => {
-      fetchQueue.threads.delete(projectId || 'all');
-    });
-    return promise;
-  },
-  
-  getQueuedMessages: (threadId: string) => fetchQueue.messages.get(threadId),
-  setQueuedMessages: (threadId: string, promise: Promise<any>) => {
-    fetchQueue.messages.set(threadId, promise);
-    promise.finally(() => {
-      fetchQueue.messages.delete(threadId);
-    });
-    return promise;
-  },
-  
-  getQueuedProjects: () => fetchQueue.projects.get('all'),
-  setQueuedProjects: (promise: Promise<any>) => {
-    fetchQueue.projects.set('all', promise);
-    promise.finally(() => {
-      fetchQueue.projects.delete('all');
-    });
-    return promise;
-  }
 };
 
 // Track active streams by agent run ID
-const activeStreams = new Map<string, {
-  eventSource: EventSource;
-  lastMessageTime: number;
-  subscribers: Set<{
-    onMessage: (content: string) => void;
-    onError: (error: Error | string) => void;
-    onClose: () => void;
-  }>;
-}>();
+const activeStreams = new Map<string, EventSource>();
 
-// Track recent agent status requests to prevent duplicates
-const recentAgentStatusRequests = new Map<string, {
-  timestamp: number;
-  promise: Promise<AgentRun>;
-}>();
+// Track agent runs that have been confirmed as completed or not found
+const nonRunningAgentRuns = new Set<string>();
 
 export type Project = {
   id: string;
@@ -135,47 +74,35 @@ export type ToolCall = {
 
 // Project APIs
 export const getProjects = async (): Promise<Project[]> => {
-  // Check if we already have a pending request
-  const pendingRequest = fetchQueue.getQueuedProjects();
-  if (pendingRequest) {
-    return pendingRequest;
-  }
-  
   // Check cache first
   const cached = apiCache.getProjects();
   if (cached) {
     return cached;
   }
   
-  // Create and queue the promise
-  const fetchPromise = (async () => {
-    try {
-      const supabase = createClient();
-      const { data, error } = await supabase
-        .from('projects')
-        .select('*');
-      
-      if (error) {
-        // Handle permission errors specifically
-        if (error.code === '42501' && error.message.includes('has_role_on_account')) {
-          console.error('Permission error: User does not have proper account access');
-          return []; // Return empty array instead of throwing
-        }
-        throw error;
+  try {
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('projects')
+      .select('*');
+    
+    if (error) {
+      // Handle permission errors specifically
+      if (error.code === '42501' && error.message.includes('has_role_on_account')) {
+        console.error('Permission error: User does not have proper account access');
+        return []; // Return empty array instead of throwing
       }
-      
-      // Cache the result
-      apiCache.setProjects(data || []);
-      return data || [];
-    } catch (err) {
-      console.error('Error fetching projects:', err);
-      // Return empty array for permission errors to avoid crashing the UI
-      return [];
+      throw error;
     }
-  })();
-  
-  // Add to queue and return
-  return fetchQueue.setQueuedProjects(fetchPromise);
+    
+    // Cache the result
+    apiCache.setProjects(data || []);
+    return data || [];
+  } catch (err) {
+    console.error('Error fetching projects:', err);
+    // Return empty array for permission errors to avoid crashing the UI
+    return [];
+  }
 };
 
 export const getProject = async (projectId: string): Promise<Project> => {
@@ -290,38 +217,26 @@ export const deleteProject = async (projectId: string): Promise<void> => {
 
 // Thread APIs
 export const getThreads = async (projectId?: string): Promise<Thread[]> => {
-  // Check if we already have a pending request
-  const pendingRequest = fetchQueue.getQueuedThreads(projectId || 'all');
-  if (pendingRequest) {
-    return pendingRequest;
-  }
-  
   // Check cache first
   const cached = apiCache.getThreads(projectId || 'all');
   if (cached) {
     return cached;
   }
   
-  // Create and queue the promise
-  const fetchPromise = (async () => {
-    const supabase = createClient();
-    let query = supabase.from('threads').select('*');
-    
-    if (projectId) {
-      query = query.eq('project_id', projectId);
-    }
-    
-    const { data, error } = await query;
-    
-    if (error) throw error;
-    
-    // Cache the result
-    apiCache.setThreads(projectId || 'all', data || []);
-    return data || [];
-  })();
+  const supabase = createClient();
+  let query = supabase.from('threads').select('*');
   
-  // Add to queue and return
-  return fetchQueue.setQueuedThreads(projectId || 'all', fetchPromise);
+  if (projectId) {
+    query = query.eq('project_id', projectId);
+  }
+  
+  const { data, error } = await query;
+  
+  if (error) throw error;
+  
+  // Cache the result
+  apiCache.setThreads(projectId || 'all', data || []);
+  return data || [];
 };
 
 export const getThread = async (threadId: string): Promise<Thread> => {
@@ -389,43 +304,31 @@ export const addUserMessage = async (threadId: string, content: string): Promise
 };
 
 export const getMessages = async (threadId: string): Promise<Message[]> => {
-  // Check if we already have a pending request
-  const pendingRequest = fetchQueue.getQueuedMessages(threadId);
-  if (pendingRequest) {
-    return pendingRequest;
-  }
-  
   // Check cache first
   const cached = apiCache.getThreadMessages(threadId);
   if (cached) {
     return cached;
   }
   
-  // Create and queue the promise
-  const fetchPromise = (async () => {
-    const supabase = createClient();
-    
-    const { data, error } = await supabase
-      .from('messages')
-      .select('*')
-      .eq('thread_id', threadId)
-      .neq('type', 'cost')
-      .neq('type', 'summary')
-      .order('created_at', { ascending: true });
-    
-    if (error) {
-      console.error('Error fetching messages:', error);
-      throw new Error(`Error getting messages: ${error.message}`);
-    }
-    
-    // Cache the result
-    apiCache.setThreadMessages(threadId, data || []);
-    
-    return data || [];
-  })();
+  const supabase = createClient();
   
-  // Add to queue and return
-  return fetchQueue.setQueuedMessages(threadId, fetchPromise);
+  const { data, error } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('thread_id', threadId)
+    .neq('type', 'cost')
+    .neq('type', 'summary')
+    .order('created_at', { ascending: true });
+  
+  if (error) {
+    console.error('Error fetching messages:', error);
+    throw new Error(`Error getting messages: ${error.message}`);
+  }
+  
+  // Cache the result
+  apiCache.setThreadMessages(threadId, data || []);
+  
+  return data || [];
 };
 
 // Agent APIs
@@ -451,6 +354,8 @@ export const startAgent = async (threadId: string): Promise<{ agent_run_id: stri
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${session.access_token}`,
       },
+      // Add cache: 'no-store' to prevent caching
+      cache: 'no-store',
     });
     
     if (!response.ok) {
@@ -458,10 +363,6 @@ export const startAgent = async (threadId: string): Promise<{ agent_run_id: stri
       console.error(`[API] Error starting agent: ${response.status} ${response.statusText}`, errorText);
       throw new Error(`Error starting agent: ${response.statusText} (${response.status})`);
     }
-    
-    // Invalidate relevant caches
-    apiCache.invalidateAgentRuns(threadId);
-    apiCache.invalidateThreadMessages(threadId);
     
     return response.json();
   } catch (error) {
@@ -477,6 +378,17 @@ export const startAgent = async (threadId: string): Promise<{ agent_run_id: stri
 };
 
 export const stopAgent = async (agentRunId: string): Promise<void> => {
+  // Add to non-running set immediately to prevent reconnection attempts
+  nonRunningAgentRuns.add(agentRunId);
+  
+  // Close any existing stream
+  const existingStream = activeStreams.get(agentRunId);
+  if (existingStream) {
+    console.log(`[API] Closing existing stream for ${agentRunId} before stopping agent`);
+    existingStream.close();
+    activeStreams.delete(agentRunId);
+  }
+  
   const supabase = createClient();
   const { data: { session } } = await supabase.auth.getSession();
   
@@ -490,6 +402,8 @@ export const stopAgent = async (agentRunId: string): Promise<void> => {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${session.access_token}`,
     },
+    // Add cache: 'no-store' to prevent caching
+    cache: 'no-store',
   });
   
   if (!response.ok) {
@@ -498,16 +412,12 @@ export const stopAgent = async (agentRunId: string): Promise<void> => {
 };
 
 export const getAgentStatus = async (agentRunId: string): Promise<AgentRun> => {
-  console.log(`[API] ⚠️ Requesting agent status for ${agentRunId}`);
+  console.log(`[API] Requesting agent status for ${agentRunId}`);
   
-  // Check if we have a recent request for this agent run
-  const now = Date.now();
-  const recentRequest = recentAgentStatusRequests.get(agentRunId);
-  
-  // If we have a request from the last 2 seconds, reuse its promise
-  if (recentRequest && now - recentRequest.timestamp < 2000) {
-    console.log(`[API] 🔄 Reusing recent status request for ${agentRunId} from ${now - recentRequest.timestamp}ms ago`);
-    return recentRequest.promise;
+  // If we already know this agent is not running, throw an error
+  if (nonRunningAgentRuns.has(agentRunId)) {
+    console.log(`[API] Agent run ${agentRunId} is known to be non-running, returning error`);
+    throw new Error(`Agent run ${agentRunId} is not running`);
   }
   
   try {
@@ -515,69 +425,50 @@ export const getAgentStatus = async (agentRunId: string): Promise<AgentRun> => {
     const { data: { session } } = await supabase.auth.getSession();
     
     if (!session?.access_token) {
-      console.error('[API] ❌ No access token available for getAgentStatus');
+      console.error('[API] No access token available for getAgentStatus');
       throw new Error('No access token available');
     }
 
     const url = `${API_URL}/agent-run/${agentRunId}`;
-    console.log(`[API] 🔍 Fetching from: ${url}`);
+    console.log(`[API] Fetching from: ${url}`);
     
-    // Create the promise for this request
-    const requestPromise = (async () => {
-      const response = await fetch(url, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => 'No error details available');
-        console.error(`[API] ❌ Error getting agent status: ${response.status} ${response.statusText}`, errorText);
-        throw new Error(`Error getting agent status: ${response.statusText} (${response.status})`);
-      }
-      
-      const data = await response.json();
-      console.log(`[API] ✅ Successfully got agent status:`, data);
-      
-      // Clean up old entries after 5 seconds
-      setTimeout(() => {
-        const entry = recentAgentStatusRequests.get(agentRunId);
-        if (entry && entry.timestamp === now) {
-          recentAgentStatusRequests.delete(agentRunId);
-        }
-      }, 5000);
-      
-      return data;
-    })();
-    
-    // Store this request in our cache
-    recentAgentStatusRequests.set(agentRunId, {
-      timestamp: now,
-      promise: requestPromise
+    const response = await fetch(url, {
+      headers: {
+        'Authorization': `Bearer ${session.access_token}`,
+      },
+      // Add cache: 'no-store' to prevent caching
+      cache: 'no-store',
     });
     
-    return requestPromise;
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'No error details available');
+      console.error(`[API] Error getting agent status: ${response.status} ${response.statusText}`, errorText);
+      
+      // If we get a 404, add to non-running set
+      if (response.status === 404) {
+        nonRunningAgentRuns.add(agentRunId);
+      }
+      
+      throw new Error(`Error getting agent status: ${response.statusText} (${response.status})`);
+    }
+    
+    const data = await response.json();
+    console.log(`[API] Successfully got agent status:`, data);
+    
+    // If agent is not running, add to non-running set
+    if (data.status !== 'running') {
+      nonRunningAgentRuns.add(agentRunId);
+    }
+    
+    return data;
   } catch (error) {
-    console.error('[API] ❌ Failed to get agent status:', error);
+    console.error('[API] Failed to get agent status:', error);
     throw error;
   }
 };
 
 export const getAgentRuns = async (threadId: string): Promise<AgentRun[]> => {
-  // Check if we already have a pending request for this thread ID
-  const pendingRequest = fetchQueue.getQueuedAgentRuns(threadId);
-  if (pendingRequest) {
-    return pendingRequest;
-  }
-  
-  // Check cache first
-  const cached = apiCache.getAgentRuns(threadId);
-  if (cached) {
-    return cached;
-  }
-  
-  // Create and queue the promise to prevent duplicate requests
-  const fetchPromise = (async () => {
+  try {
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
     
@@ -589,6 +480,8 @@ export const getAgentRuns = async (threadId: string): Promise<AgentRun[]> => {
       headers: {
         'Authorization': `Bearer ${session.access_token}`,
       },
+      // Add cache: 'no-store' to prevent caching
+      cache: 'no-store',
     });
     
     if (!response.ok) {
@@ -596,15 +489,11 @@ export const getAgentRuns = async (threadId: string): Promise<AgentRun[]> => {
     }
     
     const data = await response.json();
-    const agentRuns = data.agent_runs || [];
-    
-    // Cache the result
-    apiCache.setAgentRuns(threadId, agentRuns);
-    return agentRuns;
-  })();
-  
-  // Add to queue and return
-  return fetchQueue.setQueuedAgentRuns(threadId, fetchPromise);
+    return data.agent_runs || [];
+  } catch (error) {
+    console.error('Failed to get agent runs:', error);
+    throw error;
+  }
 };
 
 export const streamAgent = (agentRunId: string, callbacks: {
@@ -612,41 +501,58 @@ export const streamAgent = (agentRunId: string, callbacks: {
   onError: (error: Error | string) => void;
   onClose: () => void;
 }): () => void => {
-  console.log(`[STREAM] streamAgent called for ${agentRunId}, active streams: ${Array.from(activeStreams.keys()).join(', ')}`);
+  console.log(`[STREAM] streamAgent called for ${agentRunId}`);
   
-  // Check if there's already an active stream for this agent run
-  let activeStream = activeStreams.get(agentRunId);
-  
-  // If we already have a stream, just add this subscriber
-  if (activeStream) {
-    console.log(`[STREAM] Reusing existing stream for ${agentRunId}, adding subscriber`);
-    activeStream.subscribers.add(callbacks);
+  // Check if this agent run is known to be non-running
+  if (nonRunningAgentRuns.has(agentRunId)) {
+    console.log(`[STREAM] Agent run ${agentRunId} is known to be non-running, not creating stream`);
+    // Notify the caller immediately
+    setTimeout(() => {
+      callbacks.onError(`Agent run ${agentRunId} is not running`);
+      callbacks.onClose();
+    }, 0);
     
-    // Return a cleanup function for this specific subscriber
-    return () => {
-      console.log(`[STREAM] Removing subscriber from ${agentRunId}`);
-      const stream = activeStreams.get(agentRunId);
-      if (stream) {
-        stream.subscribers.delete(callbacks);
-        
-        // If no subscribers remain, clean up the stream
-        if (stream.subscribers.size === 0) {
-          console.log(`[STREAM] No subscribers left for ${agentRunId}, closing stream`);
-          stream.eventSource.close();
-          activeStreams.delete(agentRunId);
-        }
-      }
-    };
+    // Return a no-op cleanup function
+    return () => {};
   }
   
-  // If no active stream exists, create a new one
-  console.log(`[STREAM] Creating new stream for ${agentRunId}`);
-  let isClosing = false;
+  // Check if there's already an active stream for this agent run
+  const existingStream = activeStreams.get(agentRunId);
+  if (existingStream) {
+    console.log(`[STREAM] Stream already exists for ${agentRunId}, closing it first`);
+    existingStream.close();
+    activeStreams.delete(agentRunId);
+  }
   
-  const setupStream = async () => {
-    try {
-      if (isClosing) {
-        console.log(`[STREAM] Already closing, not setting up stream for ${agentRunId}`);
+  // Set up a new stream
+  try {
+    const setupStream = async () => {
+      // First verify the agent is actually running
+      try {
+        const status = await getAgentStatus(agentRunId);
+        if (status.status !== 'running') {
+          console.log(`[STREAM] Agent run ${agentRunId} is not running (status: ${status.status}), not creating stream`);
+          nonRunningAgentRuns.add(agentRunId);
+          callbacks.onError(`Agent run ${agentRunId} is not running (status: ${status.status})`);
+          callbacks.onClose();
+          return;
+        }
+      } catch (err) {
+        console.error(`[STREAM] Error verifying agent run ${agentRunId}:`, err);
+        
+        // Check if this is a "not found" error
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        const isNotFoundError = errorMessage.includes('not found') || 
+                               errorMessage.includes('404') || 
+                               errorMessage.includes('does not exist');
+        
+        if (isNotFoundError) {
+          console.log(`[STREAM] Agent run ${agentRunId} not found, not creating stream`);
+          nonRunningAgentRuns.add(agentRunId);
+        }
+        
+        callbacks.onError(errorMessage);
+        callbacks.onClose();
         return;
       }
       
@@ -666,14 +572,8 @@ export const streamAgent = (agentRunId: string, callbacks: {
       console.log(`[STREAM] Creating EventSource for ${agentRunId}`);
       const eventSource = new EventSource(url.toString());
       
-      // Create and add to active streams map immediately
-      activeStream = {
-        eventSource,
-        lastMessageTime: Date.now(),
-        subscribers: new Set([callbacks])
-      };
-      
-      activeStreams.set(agentRunId, activeStream);
+      // Store the EventSource in the active streams map
+      activeStreams.set(agentRunId, eventSource);
       
       eventSource.onopen = () => {
         console.log(`[STREAM] Connection opened for ${agentRunId}`);
@@ -683,11 +583,6 @@ export const streamAgent = (agentRunId: string, callbacks: {
         try {
           const rawData = event.data;
           if (rawData.includes('"type":"ping"')) return;
-          
-          // Update last message time
-          if (activeStream) {
-            activeStream.lastMessageTime = Date.now();
-          }
           
           // Log raw data for debugging (truncated for readability)
           console.log(`[STREAM] Received data for ${agentRunId}: ${rawData.substring(0, 100)}${rawData.length > 100 ? '...' : ''}`);
@@ -700,199 +595,131 @@ export const streamAgent = (agentRunId: string, callbacks: {
           
           // Check for "Agent run not found" error
           if (rawData.includes('Agent run') && rawData.includes('not found in active runs')) {
-            console.log(`[STREAM] ⚠️ Agent run ${agentRunId} not found in active runs, closing stream`);
+            console.log(`[STREAM] Agent run ${agentRunId} not found in active runs, closing stream`);
             
-            // Notify subscribers about the error
-            const currentStream = activeStreams.get(agentRunId);
-            if (currentStream) {
-              currentStream.subscribers.forEach(subscriber => {
-                try {
-                  subscriber.onError("Agent run not found in active runs");
-                  subscriber.onClose();
-                } catch (subError) {
-                  console.error(`[STREAM] Error in subscriber notification for not found:`, subError);
-                }
-              });
-            }
+            // Add to non-running set to prevent future reconnection attempts
+            nonRunningAgentRuns.add(agentRunId);
             
-            // Clean up stream since agent is not found
-            if (!isClosing) {
-              cleanupStream();
-            }
+            // Notify about the error
+            callbacks.onError("Agent run not found in active runs");
+            
+            // Clean up
+            eventSource.close();
+            activeStreams.delete(agentRunId);
+            callbacks.onClose();
+            
             return;
           }
           
-          // Check for simple completion status message
+          // Check for completion messages
           if (rawData.includes('"type":"status"') && rawData.includes('"status":"completed"')) {
-            console.log(`[STREAM] ⚠️ Detected simple completion status message for ${agentRunId}, closing stream`);
+            console.log(`[STREAM] Detected completion status message for ${agentRunId}`);
             
-            // Notify all subscribers this is the final message
-            const currentStream = activeStreams.get(agentRunId);
-            if (currentStream) {
-              currentStream.subscribers.forEach(subscriber => {
-                try {
-                  subscriber.onMessage(rawData);
-                } catch (subError) {
-                  console.error(`[STREAM] Error in subscriber onMessage for completion:`, subError);
-                }
-              });
+            // Check for specific completion messages that indicate we should stop checking
+            if (rawData.includes('Run data not available for streaming') || 
+                rawData.includes('Stream ended with status: completed')) {
+              console.log(`[STREAM] Detected final completion message for ${agentRunId}, adding to non-running set`);
+              // Add to non-running set to prevent future reconnection attempts
+              nonRunningAgentRuns.add(agentRunId);
             }
             
-            // Clean up stream since agent is complete
-            if (!isClosing) {
-              cleanupStream();
-            }
+            // Notify about the message
+            callbacks.onMessage(rawData);
+            
+            // Clean up
+            eventSource.close();
+            activeStreams.delete(agentRunId);
+            callbacks.onClose();
+            
             return;
           }
           
-          // Check for completion status message
-          const isCompletionMessage = rawData.includes('"type":"status"') && 
-            (rawData.includes('"status":"completed"') || 
-             rawData.includes('"status_type":"thread_run_end"'));
-          
-          if (isCompletionMessage) {
-            console.log(`[STREAM] ⚠️ Detected completion status message for ${agentRunId}`);
+          // Check for thread run end message
+          if (rawData.includes('"type":"status"') && rawData.includes('"status_type":"thread_run_end"')) {
+            console.log(`[STREAM] Detected thread run end message for ${agentRunId}`);
+            
+            // Add to non-running set
+            nonRunningAgentRuns.add(agentRunId);
+            
+            // Notify about the message
+            callbacks.onMessage(rawData);
+            
+            // Clean up
+            eventSource.close();
+            activeStreams.delete(agentRunId);
+            callbacks.onClose();
+            
+            return;
           }
           
-          // Notify all subscribers about this message
-          const currentStream = activeStreams.get(agentRunId);
-          if (currentStream) {
-            currentStream.subscribers.forEach(subscriber => {
-              try {
-                subscriber.onMessage(rawData);
-              } catch (subError) {
-                console.error(`[STREAM] Error in subscriber onMessage:`, subError);
-                // Don't let subscriber errors affect other subscribers
-              }
-            });
-          }
+          // For all other messages, just pass them through
+          callbacks.onMessage(rawData);
           
-          // Handle completion message cleanup after delivering to subscribers
-          if (isCompletionMessage && !isClosing) {
-            console.log(`[STREAM] ⚠️ Closing stream due to completion message for ${agentRunId}`);
-            cleanupStream();
-          }
         } catch (error) {
           console.error(`[STREAM] Error handling message:`, error);
-          // Notify error without closing the stream to allow retries
-          const currentStream = activeStreams.get(agentRunId);
-          if (currentStream) {
-            currentStream.subscribers.forEach(subscriber => {
-              try {
-                subscriber.onError(error instanceof Error ? error : String(error));
-              } catch (subError) {
-                console.error(`[STREAM] Error in subscriber onError:`, subError);
-              }
-            });
-          }
+          callbacks.onError(error instanceof Error ? error : String(error));
         }
       };
       
       eventSource.onerror = (event) => {
-        console.log(`[STREAM] 🔍 EventSource error for ${agentRunId}:`, event);
+        console.log(`[STREAM] EventSource error for ${agentRunId}:`, event);
         
-        if (isClosing) {
-          console.log(`[STREAM] Error ignored because stream is closing for ${agentRunId}`);
-          return;
-        }
-        
-        // Check if we need to verify agent run status
-        const shouldVerifyAgentStatus = (event as any).target?.readyState === 2; // CLOSED
-        
-        if (shouldVerifyAgentStatus) {
-          console.log(`[STREAM] Connection closed, verifying if agent run ${agentRunId} still exists`);
-          
-          // Verify if the agent run still exists before reconnecting
-          getAgentStatus(agentRunId)
-            .then(status => {
-              if (status.status === 'running') {
-                console.log(`[STREAM] Agent run ${agentRunId} is still running, will attempt reconnection`);
-                // Don't clean up, let the page component handle reconnection
-              } else {
-                console.log(`[STREAM] Agent run ${agentRunId} is no longer running (${status.status}), cleaning up stream`);
-                cleanupStream();
-              }
-            })
-            .catch(err => {
-              console.error(`[STREAM] Error checking agent status after connection error:`, err);
-              
-              // If we get a 404 or similar error, the agent run doesn't exist
-              if (err.message && (
-                  err.message.includes('not found') || 
-                  err.message.includes('404') || 
-                  err.message.includes('does not exist')
-                )) {
-                console.log(`[STREAM] Agent run ${agentRunId} appears to not exist, cleaning up stream`);
-                cleanupStream();
-              } else {
-                // For other errors, we'll let the page component handle reconnection
-                console.log(`[STREAM] Network or other error checking agent status, will let page handle reconnection`);
-              }
-            });
-        } else {
-          // For other types of errors, we'll attempt to keep the stream alive
-          console.log(`[STREAM] Non-fatal error for ${agentRunId}, keeping stream alive`);
-        }
+        // Check if the agent is still running
+        getAgentStatus(agentRunId)
+          .then(status => {
+            if (status.status !== 'running') {
+              console.log(`[STREAM] Agent run ${agentRunId} is not running after error, closing stream`);
+              nonRunningAgentRuns.add(agentRunId);
+              eventSource.close();
+              activeStreams.delete(agentRunId);
+              callbacks.onClose();
+            } else {
+              console.log(`[STREAM] Agent run ${agentRunId} is still running after error, keeping stream open`);
+              // Let the browser handle reconnection for non-fatal errors
+            }
+          })
+          .catch(err => {
+            console.error(`[STREAM] Error checking agent status after stream error:`, err);
+            
+            // Check if this is a "not found" error
+            const errMsg = err instanceof Error ? err.message : String(err);
+            const isNotFoundErr = errMsg.includes('not found') || 
+                                 errMsg.includes('404') || 
+                                 errMsg.includes('does not exist');
+            
+            if (isNotFoundErr) {
+              console.log(`[STREAM] Agent run ${agentRunId} not found after error, closing stream`);
+              nonRunningAgentRuns.add(agentRunId);
+              eventSource.close();
+              activeStreams.delete(agentRunId);
+              callbacks.onClose();
+            }
+            
+            // For other errors, notify but don't close the stream
+            callbacks.onError(errMsg);
+          });
       };
-      
-    } catch (error) {
-      console.error(`[STREAM] Error setting up stream for ${agentRunId}:`, error);
-      
-      if (!isClosing) {
-        callbacks.onError(error instanceof Error ? error : String(error));
-        cleanupStream();
+    };
+    
+    // Start the stream setup
+    setupStream();
+    
+    // Return a cleanup function
+    return () => {
+      console.log(`[STREAM] Cleanup called for ${agentRunId}`);
+      const stream = activeStreams.get(agentRunId);
+      if (stream) {
+        console.log(`[STREAM] Closing stream for ${agentRunId}`);
+        stream.close();
+        activeStreams.delete(agentRunId);
       }
-    }
-  };
-  
-  const cleanupStream = () => {
-    if (isClosing) return;
-    isClosing = true;
-    
-    console.log(`[STREAM] Cleaning up stream for ${agentRunId}`);
-    
-    const stream = activeStreams.get(agentRunId);
-    if (stream) {
-      // Close the EventSource
-      stream.eventSource.close();
-      
-      // Notify all subscribers
-      stream.subscribers.forEach(subscriber => {
-        try {
-          subscriber.onClose();
-        } catch (error) {
-          console.error(`[STREAM] Error in subscriber onClose:`, error);
-        }
-      });
-      
-      // Remove from active streams
-      activeStreams.delete(agentRunId);
-    }
-  };
-  
-  // Setup the stream
-  setupStream();
-  
-  // Return cleanup function for this subscriber
-  return () => {
-    console.log(`[STREAM] Cleanup called for ${agentRunId}`);
-    
-    const stream = activeStreams.get(agentRunId);
-    if (stream) {
-      // Remove this subscriber
-      stream.subscribers.delete(callbacks);
-      
-      // If this was the last subscriber, clean up the entire stream
-      if (stream.subscribers.size === 0) {
-        console.log(`[STREAM] Last subscriber removed, closing stream for ${agentRunId}`);
-        if (!isClosing) {
-          cleanupStream();
-        }
-      } else {
-        console.log(`[STREAM] Subscriber removed, but ${stream.subscribers.size} still active for ${agentRunId}`);
-      }
-    }
-  };
+    };
+  } catch (error) {
+    console.error(`[STREAM] Error setting up stream for ${agentRunId}:`, error);
+    callbacks.onError(error instanceof Error ? error : String(error));
+    callbacks.onClose();
+    return () => {};
+  }
 };
 
 // Sandbox API Functions

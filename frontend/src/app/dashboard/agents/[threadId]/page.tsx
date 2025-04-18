@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import {
   ArrowDown, CheckCircle, CircleDashed, AlertTriangle, Info
 } from 'lucide-react';
-import { addUserMessage, getMessages, startAgent, stopAgent, getAgentStatus, streamAgent, getAgentRuns, getProject, getThread, updateProject, Project, Message as BaseApiMessageType } from '@/lib/api';
+import { addUserMessage, getMessages, startAgent, stopAgent, getAgentRuns, getProject, getThread, updateProject, Project, Message as BaseApiMessageType } from '@/lib/api';
 import { toast } from 'sonner';
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChatInput } from '@/components/thread/chat-input';
@@ -15,6 +15,7 @@ import { FileViewerModal } from '@/components/thread/file-viewer-modal';
 import { SiteHeader } from "@/components/thread/thread-site-header"
 import { ToolCallSidePanel, SidePanelContent, ToolCallData } from "@/components/thread/tool-call-side-panel";
 import { useSidebar } from "@/components/ui/sidebar";
+import { useAgentStream, AgentStreamStatus } from '@/hooks/useAgentStream';
 
 import { UnifiedMessage, ParsedContent, ParsedMetadata, ThreadParams } from '@/components/thread/types';
 import { getToolIcon, extractPrimaryParam, safeJsonParse } from '@/components/thread/utils';
@@ -40,14 +41,10 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [agentRunId, setAgentRunId] = useState<string | null>(null);
-  const [agentStatus, setAgentStatus] = useState<'idle' | 'running'>('idle');
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [streamingTextContent, setStreamingTextContent] = useState('');
-  const [streamingToolCall, setStreamingToolCall] = useState<ParsedContent | null>(null);
+  const [agentStatus, setAgentStatus] = useState<'idle' | 'running' | 'connecting' | 'error'>('idle');
   const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
   const [sidePanelContent, setSidePanelContent] = useState<SidePanelContent | null>(null);
 
-  const streamCleanupRef = useRef<(() => void) | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const latestMessageRef = useRef<HTMLDivElement>(null);
@@ -63,7 +60,6 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const initialLoadCompleted = useRef<boolean>(false);
   const messagesLoadedRef = useRef(false);
   const agentRunsCheckedRef = useRef(false);
-  const streamInitializedRef = useRef(false);
 
   const { state: leftSidebarState, setOpen: setLeftSidebarOpen } = useSidebar();
   const initialLayoutAppliedRef = useRef(false);
@@ -106,347 +102,72 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [toggleSidePanel]);
 
-  const handleStreamAgent = useCallback(async (runId: string) => {
-    if (!runId) return;
-    
-    // Set the agent run ID and status first to ensure UI shows running state
-    setAgentRunId(runId);
-    setAgentStatus('running');
-    
-    // Check if we already have an active stream for this run
-    if (streamCleanupRef.current && streamInitializedRef.current && agentRunId === runId) {
-      console.log(`[PAGE] Already streaming agent run ${runId}, not reconnecting`);
-      return;
-    }
-    
-    // Clean up any existing stream
-    if (streamCleanupRef.current) {
-      console.log(`[PAGE] Cleaning up existing stream before creating new one for ${runId}`);
-      streamCleanupRef.current();
-      streamCleanupRef.current = null;
-    }
-    
-    // Mark stream as initializing and show streaming state in UI
-    console.log(`[PAGE] Setting up stream for agent run ${runId}`);
-    streamInitializedRef.current = true;
-    setIsStreaming(true);
-    setStreamingTextContent('');
-    setStreamingToolCall(null);
-    
-    // Create the stream and get cleanup function
-    const cleanup = streamAgent(runId, {
-      onMessage: async (rawData: string) => {
-        try {
-          (window as any).lastStreamMessage = Date.now();
-          let processedData = rawData;
-          if (processedData.startsWith('data: ')) {
-            processedData = processedData.substring(6).trim();
-          }
-          if (!processedData) return;
-
-          // Handle special non-JSON completion message
-          if (processedData.includes('"type":"status"') && processedData.includes('"status":"completed"')) {
-            console.log('[PAGE] Received completion status message');
-            setIsStreaming(false);
-            setAgentStatus('idle');
-            setAgentRunId(null);
-            setStreamingTextContent('');
-            setStreamingToolCall(null);
-            streamInitializedRef.current = false;
-            return;
-          }
-
-          const message: UnifiedMessage = safeJsonParse(processedData, null);
-          if (!message) {
-             console.warn('[PAGE] Failed to parse streamed message:', processedData);
-             return;
-          }
-
-          console.log(`[PAGE] Received Streamed Message (Type: ${message.type}, ID: ${message.message_id}):`, message);
-
-          const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
-          const parsedMetadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
-
-          if (message.type === 'assistant' && parsedMetadata.stream_status === 'chunk' && parsedContent.content) {
-            setStreamingTextContent(prev => prev + parsedContent.content);
-          }
-          else if (message.type === 'assistant' && parsedMetadata.stream_status === 'complete') {
-            setStreamingTextContent('');
-            setStreamingToolCall(null);
-            
-            // Only add/replace message if it has a message_id
-            if (message.message_id) {
-              setMessages(prev => {
-                // Check if this message already exists in the array
-                const messageExists = prev.some(m => m.message_id === message.message_id);
-                if (messageExists) {
-                  // Replace the existing message
-                  return prev.map(m => m.message_id === message.message_id ? message : m);
-                } else {
-                  // Add as a new message
-                  return [...prev, message];
-                }
-              });
-            }
-          }
-          else if (message.type === 'tool') {
-            setStreamingToolCall(null);
-            
-            // Only add/replace if it has a message_id
-            if (message.message_id) {
-              setMessages(prev => {
-                // Check if this message already exists
-                const messageExists = prev.some(m => m.message_id === message.message_id);
-                if (messageExists) {
-                  // Replace the existing message
-                  return prev.map(m => m.message_id === message.message_id ? message : m);
-                } else {
-                  // Add as a new message
-                  return [...prev, message];
-                }
-              });
-            }
-          }
-          else if (message.type === 'status') {
-            switch(parsedContent.status_type) {
-               case 'tool_started':
-                   setStreamingToolCall({
-                       role: 'assistant',
-                       status_type: 'tool_started',
-                       name: parsedContent.function_name,
-                       arguments: parsedContent.arguments,
-                       xml_tag_name: parsedContent.xml_tag_name,
-                       tool_index: parsedContent.tool_index
-                   });
-                   if (isSidePanelOpen) {
-                     // Convert to ToolCallData format
-                     const toolCallData: ToolCallData = {
-                       id: message.message_id || undefined,
-                       name: parsedContent.function_name || parsedContent.xml_tag_name || 'Unknown Tool',
-                       arguments: parsedContent.arguments || '{}',
-                       index: parsedContent.tool_index
-                     };
-                     setSidePanelContent(toolCallData);
-                   }
-                   break;
-               case 'tool_completed':
-               case 'tool_failed':
-               case 'tool_error':
-                   if (streamingToolCall?.tool_index === parsedContent.tool_index) {
-                        setStreamingToolCall(null);
-                   }
-                   break;
-               case 'finish':
-                   console.log('[PAGE] Received finish status:', parsedContent.finish_reason);
-                   if (parsedContent.finish_reason === 'xml_tool_limit_reached') {
-                     // toast.info('Agent stopped due to tool limit.');
-                   }
-                   break;
-               case 'thread_run_start':
-                   // Ensure we're showing running state for new runs
-                   setAgentStatus('running');
-                   break;
-               case 'assistant_response_start':
-                   break;
-                case 'thread_run_end':
-                   console.log('[PAGE] Received thread run end status.');
-                   setIsStreaming(false);
-                   setAgentStatus('idle');
-                   setAgentRunId(null);
-                   setStreamingTextContent('');
-                   setStreamingToolCall(null);
-                   streamInitializedRef.current = false;
-                   break;
-                case 'error':
-                   console.error('[PAGE] Received error status:', parsedContent.message);
-                   toast.error(`Agent Error: ${parsedContent.message}`);
-                   setIsStreaming(false);
-                   setAgentStatus('idle');
-                   setAgentRunId(null);
-                   setStreamingTextContent('');
-                   setStreamingToolCall(null);
-                   streamInitializedRef.current = false;
-                   break;
-               default:
-                   console.warn('[PAGE] Unhandled status type:', parsedContent.status_type);
-           }
-          }
-          else if (message.type === 'user' || message.type === 'assistant' || message.type === 'system') {
-            // Handle other message types (user, assistant if not streaming, system)
-            if (message.message_id) {
-              setMessages(prev => {
-                // Check if message already exists
-                const messageExists = prev.some(m => m.message_id === message.message_id);
-                if (messageExists) {
-                  // Replace existing message
-                  return prev.map(m => m.message_id === message.message_id ? message : m);
-                } else {
-                  // Add new message
-                  return [...prev, message];
-                }
-              });
-            } else if (!parsedMetadata.stream_status) {
-              // Only add messages without IDs if they're not temporary streaming chunks
-              setMessages(prev => [...prev, message]);
-            }
-          }
-          else {
-            console.warn('[PAGE] Unhandled message type:', message.type);
-          }
-
-        } catch (error) {
-          console.error('[PAGE] Error processing streamed message:', error, rawData);
-        }
-      },
-      onError: (error: Error | string) => {
-        console.error('[PAGE] Streaming error:', error);
-        const errorMessage = typeof error === 'string' ? error : error.message;
-        
-        // Check if this is a "not found" error
-        const isNotFoundError = errorMessage.includes('not found') || 
-                               errorMessage.includes('does not exist');
-        
-        // Only show toast for errors that aren't "not found" errors
-        if (!isNotFoundError) {
-          toast.error(errorMessage);
-        }
-        
-        // Reset stream state
-        streamCleanupRef.current = null;
-        
-        // If this is a "not found" error, reset agent state immediately
-        if (isNotFoundError) {
-          console.log(`[PAGE] Agent run ${runId} not found, resetting state immediately`);
-          setIsStreaming(false);
-          setAgentStatus('idle');
-          setAgentRunId(null);
-          setStreamingTextContent('');
-          setStreamingToolCall(null);
-          streamInitializedRef.current = false;
-          return;
-        }
-        
-        // For other errors, check if agent is still running
-        if (agentRunId === runId) {
-          console.log(`[PAGE] Stream error for active agent ${runId}, checking if still running...`);
-          
-          getAgentStatus(runId).then(status => {
-            if (status.status === 'running') {
-              console.log(`[PAGE] Agent ${runId} still running after stream error, will reconnect shortly`);
-              // Give a short delay before reconnecting
-              setTimeout(() => {
-                if (agentRunId === runId) {
-                  streamInitializedRef.current = false;
-                  handleStreamAgent(runId);
-                }
-              }, 2000);
-            } else {
-              // Agent is no longer running, reset state
-              console.log(`[PAGE] Agent ${runId} not running after stream error, resetting state`);
-              setIsStreaming(false);
-              setAgentStatus('idle');
-              setAgentRunId(null);
-              setStreamingTextContent('');
-              setStreamingToolCall(null);
-              streamInitializedRef.current = false;
-            }
-          }).catch(err => {
-            console.error(`[PAGE] Error checking agent status after stream error:`, err);
-            // Reset on error checking status
-            setIsStreaming(false);
-            setAgentStatus('idle');
-            setAgentRunId(null);
-            setStreamingTextContent('');
-            setStreamingToolCall(null);
-            streamInitializedRef.current = false;
-          });
-        } else {
-          // This was not for the current agent run, just clean up
-          setIsStreaming(false);
-          streamInitializedRef.current = false;
-        }
-      },
-      onClose: async () => {
-        console.log('[PAGE] Stream connection closed by server.');
-        
-        // Check if agent is still running after stream close
-        if (agentStatus === 'running' && agentRunId === runId) {
-          console.log(`[PAGE] Stream closed for active agent ${runId}, checking if still running...`);
-          
-          try {
-            const status = await getAgentStatus(runId);
-            if (status.status === 'running') {
-              console.log(`[PAGE] Agent ${runId} still running after stream closed, will reconnect`);
-              // Stream closed but agent is still running - reconnect
-              setTimeout(() => {
-                if (agentRunId === runId) {
-                  console.log(`[PAGE] Reconnecting to running agent ${runId}`);
-                  streamInitializedRef.current = false;
-                  handleStreamAgent(runId);
-                }
-              }, 1000);
-              return;
-            } else {
-              console.log(`[PAGE] Agent ${runId} not running after stream closed (${status.status}), resetting state`);
-              // Agent is done, reset state
-              setIsStreaming(false);
-              setAgentStatus('idle');
-              setAgentRunId(null);
-              setStreamingTextContent('');
-              setStreamingToolCall(null);
-              streamCleanupRef.current = null;
-              streamInitializedRef.current = false;
-            }
-          } catch (err) {
-            console.error(`[PAGE] Error checking agent status after stream close:`, err);
-            
-            // Check if this is a "not found" error
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            const isNotFoundError = errorMessage.includes('not found') || 
-                                   errorMessage.includes('404') ||
-                                   errorMessage.includes('does not exist');
-            
-            if (isNotFoundError) {
-              console.log(`[PAGE] Agent run ${runId} not found after stream close, resetting state`);
-              // Reset all state since the agent run doesn't exist
-              setIsStreaming(false);
-              setAgentStatus('idle');
-              setAgentRunId(null);
-              setStreamingTextContent('');
-              setStreamingToolCall(null);
-              streamCleanupRef.current = null;
-              streamInitializedRef.current = false;
-              return;
-            }
-            
-            // For other errors, only reset streaming state but maintain agent status as running
-            setIsStreaming(false);
-            // Don't set agent status to idle here
-            setStreamingTextContent('');
-            setStreamingToolCall(null);
-            streamCleanupRef.current = null;
-            
-            // Try to reconnect after a short delay if agent is still marked as running
-            setTimeout(() => {
-              if (agentRunId === runId && agentStatus === 'running') {
-                console.log(`[PAGE] Attempting to reconnect after error checking status`);
-                streamInitializedRef.current = false;
-                handleStreamAgent(runId);
-              }
-            }, 2000);
-          }
-        } else {
-          // Normal cleanup for non-running agent
-          streamCleanupRef.current = null;
-          streamInitializedRef.current = false;
-        }
+  const handleNewMessageFromStream = useCallback((message: UnifiedMessage) => {
+    setMessages(prev => {
+      const messageExists = prev.some(m => m.message_id === message.message_id);
+      if (messageExists) {
+        return prev.map(m => m.message_id === message.message_id ? message : m);
+      } else {
+        return [...prev, message];
       }
     });
-    
-    // Store cleanup function
-    streamCleanupRef.current = cleanup;
+  }, []);
 
-  }, [threadId, agentRunId, agentStatus, isSidePanelOpen]);
+  const handleStreamStatusChange = useCallback((hookStatus: AgentStreamStatus) => {
+    console.log(`[PAGE] Hook status changed: ${hookStatus}`);
+    switch(hookStatus) {
+      case 'idle':
+      case 'completed':
+      case 'stopped':
+      case 'agent_not_running':
+        setAgentStatus('idle');
+        setAgentRunId(null);
+        break;
+      case 'connecting':
+        setAgentStatus('connecting');
+        break;
+      case 'streaming':
+        setAgentStatus('running');
+        break;
+      case 'error':
+        setAgentStatus('error');
+        break;
+    }
+  }, []);
+
+  const handleStreamError = useCallback((errorMessage: string) => {
+    console.error(`[PAGE] Stream hook error: ${errorMessage}`);
+    if (!errorMessage.toLowerCase().includes('not found') && 
+        !errorMessage.toLowerCase().includes('agent run is not running')) {
+        toast.error(`Stream Error: ${errorMessage}`);
+    }
+  }, []);
+  
+  const handleStreamClose = useCallback(() => {
+      console.log(`[PAGE] Stream hook closed with final status: ${agentStatus}`);
+  }, [agentStatus]);
+
+  const {
+    status: streamHookStatus,
+    textContent: streamingTextContent,
+    toolCall: streamingToolCall,
+    error: streamError,
+    agentRunId: currentHookRunId,
+    startStreaming,
+    stopStreaming,
+  } = useAgentStream({
+    onMessage: handleNewMessageFromStream,
+    onStatusChange: handleStreamStatusChange,
+    onError: handleStreamError,
+    onClose: handleStreamClose,
+  });
+
+  useEffect(() => {
+    if (agentRunId && agentRunId !== currentHookRunId) {
+      console.log(`[PAGE] Target agentRunId set to ${agentRunId}, initiating stream...`);
+      startStreaming(agentRunId);
+    }
+  }, [agentRunId, startStreaming]);
 
   useEffect(() => {
     let isMounted = true;
@@ -500,29 +221,24 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
           }
         }
 
-        // Check once for active agent run on initial load
         if (!agentRunsCheckedRef.current && isMounted) {
           try {
             console.log('[PAGE] Checking for active agent runs...');
             const agentRuns = await getAgentRuns(threadId);
-            
-            // Mark as checked immediately to prevent duplicate checks
             agentRunsCheckedRef.current = true;
-            
-            // Look for running agent
+
             const activeRun = agentRuns.find(run => run.status === 'running');
-            if (activeRun) {
+            if (activeRun && isMounted) {
               console.log('[PAGE] Found active run on load:', activeRun.id);
-              // Don't set agentRunId here, let handleStreamAgent do it
-              handleStreamAgent(activeRun.id);
+              setAgentRunId(activeRun.id);
             } else {
               console.log('[PAGE] No active agent runs found');
-              setAgentStatus('idle');
+              if (isMounted) setAgentStatus('idle');
             }
           } catch (err) {
             console.error('[PAGE] Error checking for active runs:', err);
             agentRunsCheckedRef.current = true;
-            setAgentStatus('idle');
+            if (isMounted) setAgentStatus('idle');
           }
         }
           
@@ -542,68 +258,14 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     
     loadData();
 
-    // Handle reconnection when tab visibility changes
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && agentRunId && agentStatus === 'running') {
-        const lastMessage = (window as any).lastStreamMessage || 0;
-        const now = Date.now();
-        const messageTimeout = 10000; // Reduced timeout for faster reconnection
-        
-        // If no recent messages and not already attempting to reconnect
-        if (now - lastMessage > messageTimeout && !streamInitializedRef.current) {
-          console.log('[PAGE] Tab became visible, stream appears stale. Verifying agent status...');
-          
-          getAgentStatus(agentRunId).then(status => {
-            if (status.status === 'running') {
-              console.log('[PAGE] Agent still running after visibility change, reconnecting');
-              handleStreamAgent(agentRunId);
-            } else {
-              console.log('[PAGE] Agent no longer running after visibility change');
-              setAgentStatus('idle');
-              setAgentRunId(null);
-            }
-          }).catch(err => {
-            console.error('[PAGE] Error checking agent status on visibility change:', err);
-            
-            // Check if this is a "not found" error
-            const errorMessage = err instanceof Error ? err.message : String(err);
-            const isNotFoundError = errorMessage.includes('not found') || 
-                                   errorMessage.includes('404') ||
-                                   errorMessage.includes('does not exist');
-            
-            if (isNotFoundError) {
-              console.log(`[PAGE] Agent run ${agentRunId} not found after visibility change, resetting state`);
-              // Reset all state since the agent run doesn't exist
-              setAgentStatus('idle');
-              setAgentRunId(null);
-              return;
-            }
-            
-            // For other errors, don't reset agent status - maintain as running
-          });
-        }
-      }
-    };
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
     return () => {
       isMounted = false;
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      if (streamCleanupRef.current) {
-        console.log('[PAGE] Cleaning up stream on unmount');
-        streamCleanupRef.current();
-        streamCleanupRef.current = null;
-        streamInitializedRef.current = false;
-      }
     };
-  }, [threadId, handleStreamAgent]);
+  }, [threadId]);
 
   const handleSubmitMessage = useCallback(async (message: string) => {
     if (!message.trim()) return;
     setIsSending(true);
-    setStreamingTextContent('');
-    setStreamingToolCall(null);
 
     const optimisticUserMessage: UnifiedMessage = {
       message_id: `temp-${Date.now()}`,
@@ -638,12 +300,8 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
 
       const agentResult = results[1].value;
       setMessages(prev => prev.filter(m => m.message_id !== optimisticUserMessage.message_id));
-      
-      // Reset stream for new agent run
-      streamInitializedRef.current = false;
-      
-      // Connect to the new agent run
-      handleStreamAgent(agentResult.agent_run_id);
+
+      setAgentRunId(agentResult.agent_run_id);
 
     } catch (err) {
       console.error('Error sending message or starting agent:', err);
@@ -652,39 +310,13 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     } finally {
       setIsSending(false);
     }
-  }, [threadId, handleStreamAgent]);
+  }, [threadId]);
 
   const handleStopAgent = useCallback(async () => {
-    if (!agentRunId) return;
-    console.log(`[PAGE] Stopping agent run: ${agentRunId}`);
-    
-    // Set UI state immediately
-    setIsStreaming(false);
+    console.log(`[PAGE] Requesting agent stop via hook.`);
     setAgentStatus('idle');
-    
-    // Store agent run ID for the API call
-    const runIdToStop = agentRunId;
-    
-    // Reset all state
-    setAgentRunId(null);
-    setStreamingTextContent('');
-    setStreamingToolCall(null);
-
-    // Clean up stream
-    if (streamCleanupRef.current) {
-      streamCleanupRef.current();
-      streamCleanupRef.current = null;
-      streamInitializedRef.current = false;
-    }
-      
-    try {
-      await stopAgent(runIdToStop);
-      toast.success('Agent stop request sent.');
-    } catch (err) {
-      console.error('[PAGE] Error stopping agent:', err);
-      toast.error(err instanceof Error ? err.message : 'Failed to stop agent');
-    }
-  }, [agentRunId]);
+    await stopStreaming();
+  }, [stopStreaming]);
 
   const handleScroll = () => {
     if (!messagesContainerRef.current) return;
@@ -721,85 +353,9 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     setUserHasScrolled(false);
   };
 
-  // Periodically check agent run status if not streaming
   useEffect(() => {
-    let checkInterval: NodeJS.Timeout | null = null;
-    
-    // If agent should be running but we're not streaming
-    if (agentRunId && agentStatus === 'running' && !isStreaming) {
-      console.warn('[PAGE] Agent running but not streaming. Setting up status check interval.');
-      
-      // Track consecutive completed responses
-      let consecutiveCompleted = 0;
-      const MAX_CONSECUTIVE_COMPLETED = 2;
-      
-      checkInterval = setInterval(async () => {
-        try {
-          console.log(`[PAGE] Checking status of agent run ${agentRunId}`);
-          const status = await getAgentStatus(agentRunId);
-          
-          // Check if the agent is still running
-          if (status.status === 'running') {
-            console.log('[PAGE] Agent confirmed running, reconnecting to stream');
-            consecutiveCompleted = 0; // Reset counter
-            // Force stream reconnection since agent is still running
-            if (!streamInitializedRef.current) {
-              handleStreamAgent(agentRunId);
-            }
-          } else {
-            console.log(`[PAGE] Agent no longer running (status: ${status.status}), incrementing completed counter`);
-            // Agent is not running anymore, increment counter
-            consecutiveCompleted++;
-            
-            if (consecutiveCompleted >= MAX_CONSECUTIVE_COMPLETED) {
-              console.log(`[PAGE] Agent confirmed ${status.status} after ${consecutiveCompleted} checks, resetting state`);
-              // Reset all state after confirming non-running status multiple times
-              setAgentRunId(null);
-              setAgentStatus('idle');
-              if (checkInterval) {
-                clearInterval(checkInterval);
-                checkInterval = null;
-              }
-            }
-          }
-        } catch (err) {
-          console.error('[PAGE] Error checking agent status:', err);
-          
-          // Check if this is a "not found" error
-          const errorMessage = err instanceof Error ? err.message : String(err);
-          const isNotFoundError = errorMessage.includes('not found') || 
-                                 errorMessage.includes('404') ||
-                                 errorMessage.includes('does not exist');
-          
-          if (isNotFoundError) {
-            console.log(`[PAGE] Agent run ${agentRunId} not found during status check, resetting state`);
-            // Reset all state since the agent run doesn't exist
-            setAgentRunId(null);
-            setAgentStatus('idle');
-            if (checkInterval) {
-              clearInterval(checkInterval);
-              checkInterval = null;
-            }
-            return;
-          }
-          
-          // For other errors, don't reset agent state to avoid flickering
-          // Just let next check try again
-        }
-      }, 8000); // Check every 8 seconds
-    }
-    
-    return () => {
-      if (checkInterval) {
-        clearInterval(checkInterval);
-      }
-    };
-  }, [agentRunId, agentStatus, isStreaming, handleStreamAgent]);
-
-  // Debug logging
-  useEffect(() => {
-    console.log(`[PAGE] 🔄 AgentStatus: ${agentStatus}, isStreaming: ${isStreaming}, agentRunId: ${agentRunId || 'none'}`);
-  }, [agentStatus, isStreaming, agentRunId]);
+    console.log(`[PAGE] 🔄 Page AgentStatus: ${agentStatus}, Hook Status: ${streamHookStatus}, Target RunID: ${agentRunId || 'none'}, Hook RunID: ${currentHookRunId || 'none'}`);
+  }, [agentStatus, streamHookStatus, agentRunId, currentHookRunId]);
 
   const handleOpenFileViewer = useCallback(() => setFileViewerOpen(true), []);
 
@@ -966,7 +522,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
               onScroll={handleScroll}
             >
               <div className="mx-auto max-w-3xl">
-                {messages.length === 0 && !streamingTextContent && !streamingToolCall ? (
+                {messages.length === 0 && !streamingTextContent && !streamingToolCall && agentStatus === 'idle' ? (
                   <div className="flex h-full items-center justify-center">
                     <div className="text-center text-muted-foreground">Send a message to start.</div>
                   </div>
@@ -1164,7 +720,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                                     );
                       }
                     })}
-                    {(streamingTextContent || streamingToolCall) && (
+                    {(streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
                       <div ref={latestMessageRef}>
                         <div className="flex items-start gap-3">
                            <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center overflow-hidden bg-gray-200">
@@ -1177,7 +733,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                                    {streamingTextContent}
                                         </span>
                                )}
-                               {isStreaming && <span className="inline-block h-4 w-0.5 bg-gray-400 ml-0.5 -mb-1 animate-pulse" />}
+                               {(streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && <span className="inline-block h-4 w-0.5 bg-gray-400 ml-0.5 -mb-1 animate-pulse" />}
 
                                {streamingToolCall && (
                                   <div className="mt-2">
@@ -1203,7 +759,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                         </div>
                     )}
                     {agentStatus === 'running' && !streamingTextContent && !streamingToolCall && messages.length > 0 && messages[messages.length-1].type === 'user' && (
-                         <div>
+                         <div ref={latestMessageRef}>
                              <div className="flex items-start gap-3">
                                  <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center overflow-hidden bg-gray-200">
                                    <Image src="/kortix-symbol.svg" alt="Suna" width={14} height={14} className="object-contain"/>
@@ -1239,8 +795,8 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                   onSubmit={handleSubmitMessage}
                   placeholder="Ask Suna anything..."
                   loading={isSending}
-                  disabled={isSending || agentStatus === 'running'}
-                  isAgentRunning={agentStatus === 'running'}
+                  disabled={isSending || agentStatus === 'running' || agentStatus === 'connecting'}
+                  isAgentRunning={agentStatus === 'running' || agentStatus === 'connecting'}
                   onStopAgent={handleStopAgent}
                   autoFocus={!isLoading}
                   onFileBrowse={handleOpenFileViewer}
