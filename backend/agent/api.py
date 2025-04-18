@@ -285,8 +285,8 @@ async def start_agent(thread_id: str, user_id: str = Depends(get_current_user_id
             'sandbox': {
                 'id': sandbox_id,
                 'pass': sandbox_pass,
-                'vnc_preview': sandbox.get_preview_link(6080),
-                'sandbox_url': sandbox.get_preview_link(8080)
+                'vnc_preview': str(sandbox.get_preview_link(6080)),
+                'sandbox_url': str(sandbox.get_preview_link(8080))
             }
         }).eq('project_id', project_id).execute()
     
