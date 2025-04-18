@@ -47,11 +47,7 @@ async def run_agent(thread_id: str, project_id: str, sandbox, stream: bool = Tru
     if os.getenv("RAPID_API_KEY"):
         thread_manager.add_tool(DataProvidersTool)
 
-    xml_examples = ""
-    for tag_name, example in thread_manager.tool_registry.get_xml_examples().items():
-        xml_examples += f"{example}\n"
-
-    system_message = { "role": "system", "content": get_system_prompt() + "\n\n" + f"<tool_examples>\n{xml_examples}\n</tool_examples>" }
+    system_message = { "role": "system", "content": get_system_prompt() }
 
     iteration_count = 0
     continue_execution = True
