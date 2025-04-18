@@ -9,19 +9,40 @@ export interface ToolCallInput {
   assistantCall: {
     content?: string;
     name?: string;
+    timestamp?: string;
   };
   toolResult?: {
     content?: string;
     isSuccess?: boolean;
+    timestamp?: string;
   };
 }
 
+// Helper function to format timestamp
+function formatTimestamp(isoString?: string): string {
+  if (!isoString) return 'No timestamp';
+  try {
+    return new Date(isoString).toLocaleString();
+  } catch (e) {
+    return 'Invalid date';
+  }
+}
+
 // Simplified generic tool view
-function GenericToolView({ name, assistantContent, toolContent, isSuccess = true }: { 
+function GenericToolView({ 
+  name, 
+  assistantContent, 
+  toolContent, 
+  isSuccess = true, 
+  assistantTimestamp, 
+  toolTimestamp 
+}: { 
   name?: string; 
   assistantContent?: string; 
   toolContent?: string;
   isSuccess?: boolean;
+  assistantTimestamp?: string;
+  toolTimestamp?: string;
 }) {
   const toolName = name || 'Unknown Tool';
   
@@ -48,7 +69,12 @@ function GenericToolView({ name, assistantContent, toolContent, isSuccess = true
       
       {/* Assistant Message */}
       <div className="space-y-1">
-        <div className="text-xs font-medium text-muted-foreground">Assistant Message</div>
+        <div className="flex justify-between items-center">
+          <div className="text-xs font-medium text-muted-foreground">Assistant Message</div>
+          {assistantTimestamp && (
+            <div className="text-xs text-muted-foreground">{formatTimestamp(assistantTimestamp)}</div>
+          )}
+        </div>
         <div className="rounded-md border bg-muted/50 p-3">
           <pre className="text-xs overflow-auto whitespace-pre-wrap break-words">{assistantContent}</pre>
         </div>
@@ -57,7 +83,12 @@ function GenericToolView({ name, assistantContent, toolContent, isSuccess = true
       {/* Tool Result */}
       {toolContent && (
         <div className="space-y-1">
-          <div className="text-xs font-medium text-muted-foreground">Tool Result</div>
+          <div className="flex justify-between items-center">
+            <div className="text-xs font-medium text-muted-foreground">Tool Result</div>
+            {toolTimestamp && (
+              <div className="text-xs text-muted-foreground">{formatTimestamp(toolTimestamp)}</div>
+            )}
+          </div>
           <div className={`rounded-md border p-3 ${isSuccess ? 'bg-muted/50' : 'bg-red-50'}`}>
             <pre className="text-xs overflow-auto whitespace-pre-wrap break-words">{toolContent}</pre>
           </div>
@@ -102,14 +133,16 @@ export function ToolCallSidePanel({
       <GenericToolView 
         name={currentToolCall.assistantCall.name}
         assistantContent={currentToolCall.assistantCall.content}
+        assistantTimestamp={currentToolCall.assistantCall.timestamp}
         toolContent={currentToolCall.toolResult?.content}
         isSuccess={currentToolCall.toolResult?.isSuccess}
+        toolTimestamp={currentToolCall.toolResult?.timestamp}
       />
     );
   };
   
   return (
-    <div className="fixed inset-y-0 right-0 w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[600px] bg-background border-l shadow-lg flex flex-col z-10">
+    <div className="fixed inset-y-0 right-0 w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[600px] bg-background border-l flex flex-col z-10">
       <div className="p-4 flex items-center justify-between">
         <h3 className="text-sm font-medium">Tool Details</h3>
         <Button variant="ghost" size="icon" onClick={onClose}>

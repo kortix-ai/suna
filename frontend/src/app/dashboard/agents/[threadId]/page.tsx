@@ -20,6 +20,34 @@ import { useAgentStream } from '@/hooks/useAgentStream';
 import { UnifiedMessage, ParsedContent, ParsedMetadata, ThreadParams } from '@/components/thread/types';
 import { getToolIcon, extractPrimaryParam, safeJsonParse } from '@/components/thread/utils';
 
+// Define the set of tags whose raw XML should be hidden during streaming
+const HIDE_STREAMING_XML_TAGS = new Set([
+  'execute-command',
+  'create-file',
+  'delete-file',
+  'full-file-rewrite',
+  'str-replace',
+  'browser-click-element',
+  'browser-close-tab',
+  'browser-drag-drop',
+  'browser-get-dropdown-options',
+  'browser-go-back',
+  'browser-input-text',
+  'browser-navigate-to',
+  'browser-scroll-down',
+  'browser-scroll-to-text',
+  'browser-scroll-up',
+  'browser-select-dropdown-option',
+  'browser-send-keys',
+  'browser-switch-tab',
+  'browser-wait',
+  'deploy',
+  'ask',
+  'complete',
+  'crawl-webpage',
+  'web-search'
+]);
+
 // Extend the base Message type with the expected database fields
 interface ApiMessageType extends BaseApiMessageType {
   message_id?: string;
@@ -71,6 +99,10 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const messagesLoadedRef = useRef(false);
   const agentRunsCheckedRef = useRef(false);
 
+  const handleProjectRenamed = useCallback((newName: string) => {
+    setProjectName(newName);
+  }, []);
+
   const { state: leftSidebarState, setOpen: setLeftSidebarOpen } = useSidebar();
   const initialLayoutAppliedRef = useRef(false);
 
@@ -80,10 +112,6 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
 
   const handleSidePanelNavigate = useCallback((newIndex: number) => {
     setCurrentToolIndex(newIndex);
-  }, []);
-
-  const handleProjectRenamed = useCallback((newName: string) => {
-    setProjectName(newName);
   }, []);
 
   useEffect(() => {
@@ -428,107 +456,113 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
 
   const handleOpenFileViewer = useCallback(() => setFileViewerOpen(true), []);
 
-  const handleToolClick = useCallback((message: UnifiedMessage, toolInfo: { name: string, args: any, xml: string } | null) => {
-    if (!toolInfo) return;
-
-    const assistantMessageId = message.message_id;
-    console.log("Tool Clicked:", toolInfo.name, "Assistant Message ID:", assistantMessageId);
-    console.log("Clicked assistant message content:", message.content);
-
-    if (!assistantMessageId) {
-      console.warn("Warning: Clicked assistant message has a null ID. Matching tool result will likely fail.");
+  const handleToolClick = useCallback((clickedAssistantMessageId: string | null, clickedToolName: string) => {
+    if (!clickedAssistantMessageId) {
+      console.warn("Clicked assistant message ID is null. Cannot open side panel.");
+      toast.warning("Cannot view details: Assistant message ID is missing.");
+      return;
     }
-    
-    // Find the corresponding tool result message for this assistant message
-    const resultMessage = messages.find(m => {
-      if (m.type !== 'tool' || !m.metadata) return false;
+
+    console.log("Tool Click Triggered. Assistant Message ID:", clickedAssistantMessageId, "Tool Name:", clickedToolName);
+
+    const historicalToolPairs: ToolCallInput[] = [];
+    const assistantMessages = messages.filter(m => m.type === 'assistant' && m.message_id);
+
+    assistantMessages.forEach(assistantMsg => {
+      // We need to parse the content to see if it actually contains tool calls
+      // For simplicity, we assume any assistant message *might* have a corresponding tool result
+      // A more robust solution would parse assistantMsg.content for tool XML
       
-      try {
-        const metadata = JSON.parse(m.metadata);
-        // Ensure both IDs exist for a valid comparison
-        return assistantMessageId && metadata.assistant_message_id === assistantMessageId;
-      } catch (e) {
-        console.error("Error parsing metadata for tool message:", m.message_id, e);
-        return false;
+      const resultMessage = messages.find(toolMsg => {
+        if (toolMsg.type !== 'tool' || !toolMsg.metadata || !assistantMsg.message_id) return false;
+        try {
+          const metadata = JSON.parse(toolMsg.metadata);
+          return metadata.assistant_message_id === assistantMsg.message_id;
+        } catch (e) {
+          return false;
+        }
+      });
+
+      if (resultMessage) {
+        // Try to get the specific tool name from the result metadata if possible,
+        // otherwise fallback to a generic name or the one passed from the click.
+        let toolNameForResult = clickedToolName; // Fallback
+        try {
+          const assistantContentParsed = safeJsonParse<{ tool_calls?: { name: string }[] }>(assistantMsg.content, {});
+          // A simple heuristic: if the assistant message content has tool_calls structure
+          if (assistantContentParsed.tool_calls && assistantContentParsed.tool_calls.length > 0) {
+            toolNameForResult = assistantContentParsed.tool_calls[0].name || clickedToolName;
+          }
+          // More advanced: parse the XML in assistant message content to find the tool name associated with this result
+        } catch {}
+
+        let isSuccess = true;
+        try {
+          const toolContent = resultMessage.content?.toLowerCase() || '';
+          isSuccess = !(toolContent.includes('failed') || 
+                        toolContent.includes('error') || 
+                        toolContent.includes('failure'));
+        } catch {}
+
+        historicalToolPairs.push({
+          assistantCall: {
+            name: toolNameForResult,
+            content: assistantMsg.content,
+            timestamp: assistantMsg.created_at
+          },
+          toolResult: {
+            content: resultMessage.content,
+            isSuccess: isSuccess,
+            timestamp: resultMessage.created_at
+          }
+        });
+      } else {
+        // Optionally handle assistant messages with tool calls but no result yet (or error in result)
+        // console.log(`No tool result found for assistant message: ${assistantMsg.message_id}`);
       }
     });
 
-    let toolCall: ToolCallInput;
+    if (historicalToolPairs.length === 0) {
+      console.warn("No historical tool pairs found to display.");
+      toast.info("No tool call details available to display.");
+      return;
+    }
 
-    if (resultMessage) {
-      console.log("Found matching tool result:", resultMessage.message_id);
-      console.log("Tool result content:", resultMessage.content);
-      console.log("Tool result metadata:", resultMessage.metadata);
-      
-      let isSuccess = true; // Default to success
-      try {
-        // Basic check in content for failure keywords
-        const toolContent = resultMessage.content?.toLowerCase() || '';
-        isSuccess = !(toolContent.includes('failed') || 
-                      toolContent.includes('error') || 
-                      toolContent.includes('failure'));
-      } catch (e) {
-        console.error("Error checking tool success status:", e);
-      }
+    // Find the index of the specific pair that was clicked
+    const clickedIndex = historicalToolPairs.findIndex(pair => 
+      pair.assistantCall.timestamp === messages.find(m => m.message_id === clickedAssistantMessageId)?.created_at
+    );
 
-      toolCall = {
-        assistantCall: {
-          name: toolInfo.name,
-          content: message.content // Store the original assistant message content
-        },
-        toolResult: {
-          content: resultMessage.content,
-          isSuccess: isSuccess
-        }
-      };
+    if (clickedIndex === -1) {
+      console.error("Could not find the clicked tool call pair in the generated list. Displaying the first one.");
+      setToolCalls(historicalToolPairs);
+      setCurrentToolIndex(0); // Fallback to the first item
     } else {
-      console.log(`No matching tool result found for assistant message ID: ${assistantMessageId}`);
-      // Log details of available tool messages for debugging
-      const availableToolResults = messages
-        .filter(m => m.type === 'tool')
-        .map(m => {
-          let assistantId = 'unknown';
-          try {
-            if (m.metadata) {
-              const meta = JSON.parse(m.metadata);
-              assistantId = meta.assistant_message_id || 'missing';
-            }
-          } catch { }
-          return { tool_msg_id: m.message_id, links_to_assistant_id: assistantId };
-        });
-      console.log("Available tool results in state:", availableToolResults);
-
-      toolCall = {
-        assistantCall: {
-          name: toolInfo.name,
-          content: message.content
-        },
-        toolResult: {
-          content: `No matching tool result found for assistant message ID: ${assistantMessageId}. See console logs for details.`,
-          isSuccess: false
-        }
-      };
+      setToolCalls(historicalToolPairs);
+      setCurrentToolIndex(clickedIndex);
     }
     
-    setToolCalls([toolCall]); // Display only the clicked tool call
-    setCurrentToolIndex(0);
     setIsSidePanelOpen(true);
+
   }, [messages]);
 
-  // Handle streaming tool calls
+  // Handle streaming tool calls - Temporarily disable opening side panel
   const handleStreamingToolCall = useCallback((toolCall: StreamingToolCall | null) => {
     if (!toolCall) return;
-    
-    const newToolCall: ToolCallInput = {
-      assistantCall: {
-        name: toolCall.name || toolCall.xml_tag_name || 'Unknown Tool',
-        content: toolCall.arguments || ''
-      }
-    };
-    
-    setToolCalls([newToolCall]);
-    setCurrentToolIndex(0);
-    setIsSidePanelOpen(true);
+    console.log("[STREAM] Received tool call:", toolCall.name || toolCall.xml_tag_name);
+    // --- Temporarily disable opening side panel for streaming calls ---
+    // const newToolCall: ToolCallInput = {
+    //   assistantCall: {
+    //     name: toolCall.name || toolCall.xml_tag_name || 'Unknown Tool',
+    //     content: toolCall.arguments || ''
+    //     // No timestamp available easily here
+    //   }
+    //   // No toolResult available yet
+    // };
+    // setToolCalls([newToolCall]);
+    // setCurrentToolIndex(0);
+    // setIsSidePanelOpen(true);
+    // --- End temporary disable ---
   }, []);
 
   // Update useEffect to handle streaming tool calls
@@ -537,11 +571,6 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
       handleStreamingToolCall(streamingToolCall);
     }
   }, [streamingToolCall, handleStreamingToolCall]);
-
-  const mainContentStyle = {
-    marginRight: isSidePanelOpen ? "384px" : "0",
-    transition: "margin-right 0.2s ease-in-out"
-  };
 
   if (isLoading && !initialLoadCompleted.current) {
     return (
@@ -714,11 +743,8 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                            contentParts.push(
                              <button
                                key={`tool-${match.index}`}
-                               onClick={() => handleToolClick(message, { 
-                                 name: toolName, 
-                                 args: toolArgs, 
-                                 xml: rawXml 
-                               })}
+                               // Pass assistant message ID and tool name
+                               onClick={() => handleToolClick(message.message_id, toolName)}
                                className="inline-flex items-center gap-1.5 py-0.5 px-2 my-0.5 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
                              >
                                <IconComponent className="h-3.5 w-3.5 text-gray-500 flex-shrink-0" />
@@ -850,38 +876,89 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                     <div className="flex items-start gap-3">
                        <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center overflow-hidden bg-gray-200">
                          <Image src="/kortix-symbol.svg" alt="Suna" width={14} height={14} className="object-contain"/>
-                                </div>
+                       </div>
                       <div className="flex-1 space-y-2">
                         <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3 text-sm">
-                           {streamingTextContent && (
-                             <span className="whitespace-pre-wrap break-words">
-                               {streamingTextContent}
-                                    </span>
-                           )}
-                           {(streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && <span className="inline-block h-4 w-0.5 bg-gray-400 ml-0.5 -mb-1 animate-pulse" />}
+                          {(() => {
+                            let detectedTag: string | null = null;
+                            let tagStartIndex = -1;
 
-                           {streamingToolCall && (
-                              <div className="mt-2">
-                                 {(() => {
-                                    const toolName = streamingToolCall.name || streamingToolCall.xml_tag_name || 'Tool';
-                                    const IconComponent = getToolIcon(toolName);
-                                    const paramDisplay = extractPrimaryParam(toolName, streamingToolCall.arguments || '');
-                                    return (
-                                  <button
-                                             className="inline-flex items-center gap-1.5 py-0.5 px-2 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
-                                         >
-                                                 <CircleDashed className="h-3.5 w-3.5 text-gray-500 flex-shrink-0 animate-spin animation-duration-2000" />
-                                                 <span className="font-mono text-xs text-gray-700">{toolName}</span>
-                                                 {paramDisplay && <span className="ml-1 text-gray-500 truncate" title={paramDisplay}>{paramDisplay}</span>}
-                                  </button>
-                                );
+                            if (streamingTextContent) {
+                              for (const tag of HIDE_STREAMING_XML_TAGS) {
+                                const openingTagPattern = `<${tag}`; // Check for <tagname or <tagname>
+                                const index = streamingTextContent.indexOf(openingTagPattern);
+                                if (index !== -1) {
+                                  // Found an opening tag from the list
+                                  detectedTag = tag;
+                                  tagStartIndex = index;
+                                  break; // Stop after finding the first one
+                                }
+                              }
+                            }
+
+                            if (detectedTag && tagStartIndex !== -1) {
+                              // Render text before the tag and the preview button
+                              const textBeforeTag = streamingTextContent.substring(0, tagStartIndex);
+                              const IconComponent = getToolIcon(detectedTag);
+                              // Note: We don't have parsed args here, just the name
+                              return (
+                                <>
+                                  {textBeforeTag && (
+                                     <span className="whitespace-pre-wrap break-words">
+                                       {textBeforeTag}
+                                     </span>
+                                   )}
+                                  <div className="mt-2">
+                                    <button
+                                       className="inline-flex items-center gap-1.5 py-0.5 px-2 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
+                                     >
+                                       <CircleDashed className="h-3.5 w-3.5 text-gray-500 flex-shrink-0 animate-spin animation-duration-2000" />
+                                       <span className="font-mono text-xs text-gray-700">{detectedTag}</span>
+                                       {/* No paramDisplay available here easily */}
+                                     </button>
+                                   </div>
+                                </>
+                              );
+                            } else {
+                              // Render normally: full text + blinking cursor
+                              // And potentially the fully parsed tool call from the hook
+                              return (
+                                <>
+                                  {streamingTextContent && (
+                                    <span className="whitespace-pre-wrap break-words">
+                                      {streamingTextContent}
+                                    </span>
+                                  )}
+                                  {(streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && !detectedTag && (
+                                     <span className="inline-block h-4 w-0.5 bg-gray-400 ml-0.5 -mb-1 animate-pulse" />
+                                   )}
+                                  {/* Render fully parsed tool call if available AND no hidden tag detected */} 
+                                  {streamingToolCall && !detectedTag && (
+                                     <div className="mt-2">
+                                       {(() => {
+                                          const toolName = streamingToolCall.name || streamingToolCall.xml_tag_name || 'Tool';
+                                          const IconComponent = getToolIcon(toolName);
+                                          const paramDisplay = extractPrimaryParam(toolName, streamingToolCall.arguments || '');
+                                          return (
+                                        <button
+                                                   className="inline-flex items-center gap-1.5 py-0.5 px-2 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
+                                               >
+                                                       <CircleDashed className="h-3.5 w-3.5 text-gray-500 flex-shrink-0 animate-spin animation-duration-2000" />
+                                                       <span className="font-mono text-xs text-gray-700">{toolName}</span>
+                                                       {paramDisplay && <span className="ml-1 text-gray-500 truncate" title={paramDisplay}>{paramDisplay}</span>}
+                                        </button>
+                                      );
+                                    })()}
+                                  </div>
+                                )}
+                                </>
+                              );
+                            }
                           })()}
                         </div>
-                      )}
-                    </div>
-                  </div>
                       </div>
                     </div>
+                  </div>
                 )}
                 {agentStatus === 'running' && !streamingTextContent && !streamingToolCall && messages.length > 0 && messages[messages.length-1].type === 'user' && (
                      <div ref={latestMessageRef}>
