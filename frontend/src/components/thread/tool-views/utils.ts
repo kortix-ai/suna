@@ -85,14 +85,51 @@ export function extractFilePath(content: string | undefined): string | null {
   }
   
   // Look for file_path in different formats
-  const filePathMatch = content.match(/file_path=["']([\s\S]*?)["']/);
-  if (filePathMatch) return filePathMatch[1];
+  const filePathMatch = content.match(/file_path=["']([\s\S]*?)["']/i) || 
+                       content.match(/target_file=["']([\s\S]*?)["']/i) ||
+                       content.match(/path=["']([\s\S]*?)["']/i);
+  if (filePathMatch) {
+    const path = filePathMatch[1].trim();
+    // Handle newlines and return first line if multiple lines
+    return cleanFilePath(path);
+  }
   
   // Look for file_path in XML-like tags
-  const xmlFilePathMatch = content.match(/<str-replace\s+file_path=["']([\s\S]*?)["']/);
-  if (xmlFilePathMatch) return xmlFilePathMatch[1];
+  const xmlFilePathMatch = content.match(/<str-replace\s+file_path=["']([\s\S]*?)["']/i) ||
+                          content.match(/<delete[^>]*file_path=["']([\s\S]*?)["']/i) ||
+                          content.match(/<delete-file[^>]*>([^<]+)<\/delete-file>/i);
+  if (xmlFilePathMatch) {
+    return cleanFilePath(xmlFilePathMatch[1]);
+  }
+  
+  // Look for file paths in delete operations in particular
+  if (content.toLowerCase().includes('delete') || content.includes('delete-file')) {
+    // Look for patterns like "Deleting file: path/to/file.txt"
+    const deletePathMatch = content.match(/(?:delete|remove|deleting)\s+(?:file|the file)?:?\s+["']?([\w\-./\\]+\.\w+)["']?/i);
+    if (deletePathMatch) return cleanFilePath(deletePathMatch[1]);
+    
+    // Look for isolated file paths with extensions 
+    const fileMatch = content.match(/["']?([\w\-./\\]+\.\w+)["']?/);
+    if (fileMatch) return cleanFilePath(fileMatch[1]);
+  }
   
   return null;
+}
+
+// Helper to clean and process a file path string, handling escaped chars
+function cleanFilePath(path: string): string {
+  if (!path) return path;
+  
+  // Handle escaped newlines and other escaped characters
+  return path
+    .replace(/\\n/g, '\n')    // Replace \n with actual newlines
+    .replace(/\\t/g, '\t')    // Replace \t with actual tabs
+    .replace(/\\r/g, '')      // Remove \r
+    .replace(/\\\\/g, '\\')   // Replace \\ with \
+    .replace(/\\"/g, '"')     // Replace \" with "
+    .replace(/\\'/g, "'")     // Replace \' with '
+    .split('\n')[0]           // Take only the first line if multiline
+    .trim();                  // Trim whitespace
 }
 
 // Helper to extract str-replace old and new strings
@@ -114,7 +151,26 @@ export function extractFileContent(content: string | undefined, toolType: 'creat
   
   const tagName = toolType === 'create-file' ? 'create-file' : 'full-file-rewrite';
   const contentMatch = content.match(new RegExp(`<${tagName}[^>]*>([\\s\\S]*?)<\\/${tagName}>`, 'i'));
-  return contentMatch ? contentMatch[1] : null;
+  
+  if (contentMatch && contentMatch[1]) {
+    return processFileContent(contentMatch[1]);
+  }
+  
+  return null;
+}
+
+// Helper to process and clean file content
+function processFileContent(content: string): string {
+  if (!content) return content;
+  
+  // Handle escaped characters
+  return content
+    .replace(/\\n/g, '\n')   // Replace \n with actual newlines
+    .replace(/\\t/g, '\t')   // Replace \t with actual tabs
+    .replace(/\\r/g, '')     // Remove \r
+    .replace(/\\\\/g, '\\')  // Replace \\ with \
+    .replace(/\\"/g, '"')    // Replace \" with "
+    .replace(/\\'/g, "'");   // Replace \' with '
 }
 
 // Helper to determine file type (for syntax highlighting)

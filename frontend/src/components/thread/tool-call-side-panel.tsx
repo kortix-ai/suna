@@ -9,9 +9,7 @@ import { Slider } from "@/components/ui/slider";
 import { CommandToolView } from "./tool-views/CommandToolView";
 import { StrReplaceToolView } from "./tool-views/StrReplaceToolView";
 import { GenericToolView } from "./tool-views/GenericToolView";
-import { CreateFileToolView } from "./tool-views/CreateFileToolView";
-import { FileRewriteToolView } from "./tool-views/FileRewriteToolView";
-import { DeleteFileToolView } from "./tool-views/DeleteFileToolView";
+import { FileOperationToolView } from "./tool-views/FileOperationToolView";
 import { BrowserToolView } from "./tool-views/BrowserToolView";
 import { WebSearchToolView } from "./tool-views/WebSearchToolView";
 import { WebCrawlToolView } from "./tool-views/WebCrawlToolView";
@@ -66,33 +64,32 @@ function getToolView(
         />
       );
     case 'create-file':
-      return (
-        <CreateFileToolView 
-          assistantContent={assistantContent}
-          toolContent={toolContent}
-          assistantTimestamp={assistantTimestamp}
-          toolTimestamp={toolTimestamp}
-          isSuccess={isSuccess}
-        />
-      );
     case 'full-file-rewrite':
-      return (
-        <FileRewriteToolView
-          assistantContent={assistantContent}
-          toolContent={toolContent}
-          assistantTimestamp={assistantTimestamp}
-          toolTimestamp={toolTimestamp}
-          isSuccess={isSuccess}
-        />
-      );
     case 'delete-file':
       return (
-        <DeleteFileToolView
+        <FileOperationToolView 
           assistantContent={assistantContent}
           toolContent={toolContent}
           assistantTimestamp={assistantTimestamp}
           toolTimestamp={toolTimestamp}
           isSuccess={isSuccess}
+          name={normalizedToolName}
+        />
+      );
+    case 'browser-navigate':
+    case 'browser-click':
+    case 'browser-extract':
+    case 'browser-fill':
+    case 'browser-wait':
+      return (
+        <BrowserToolView
+          name={normalizedToolName}
+          assistantContent={assistantContent}
+          toolContent={toolContent}
+          assistantTimestamp={assistantTimestamp}
+          toolTimestamp={toolTimestamp}
+          isSuccess={isSuccess}
+          project={project}
         />
       );
     case 'web-search':
@@ -105,7 +102,7 @@ function getToolView(
           isSuccess={isSuccess}
         />
       );
-    case 'crawl-webpage':
+    case 'web-crawl':
       return (
         <WebCrawlToolView
           assistantContent={assistantContent}
