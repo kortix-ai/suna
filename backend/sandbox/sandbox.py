@@ -1,6 +1,6 @@
 import os
 
-from daytona_sdk import Daytona, DaytonaConfig, CreateSandboxParams, Sandbox
+from daytona_sdk import Daytona, DaytonaConfig, CreateSandboxParams, Sandbox, SessionExecuteRequest
 from daytona_api_client.models.workspace_state import WorkspaceState
 from dotenv import load_dotenv
 
@@ -52,6 +52,9 @@ async def get_or_start_sandbox(sandbox_id: str):
                 # sleep(5)
                 # Refresh sandbox state after starting
                 sandbox = daytona.get_current_sandbox(sandbox_id)
+                
+                # Start supervisord in a session when restarting
+                start_supervisord_session(sandbox)
             except Exception as e:
                 logger.error(f"Error starting sandbox: {e}")
                 raise e
@@ -61,6 +64,23 @@ async def get_or_start_sandbox(sandbox_id: str):
         
     except Exception as e:
         logger.error(f"Error retrieving or starting sandbox: {str(e)}")
+        raise e
+
+def start_supervisord_session(sandbox: Sandbox):
+    """Start supervisord in a session."""
+    session_id = "supervisord-session"
+    try:
+        logger.info(f"Creating session {session_id} for supervisord")
+        sandbox.process.create_session(session_id)
+        
+        # Execute supervisord command
+        sandbox.process.execute_session_command(session_id, SessionExecuteRequest(
+            command="exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf",
+            var_async=True
+        ))
+        logger.info(f"Supervisord started in session {session_id}")
+    except Exception as e:
+        logger.error(f"Error starting supervisord session: {str(e)}")
         raise e
 
 def create_sandbox(password: str):
@@ -102,7 +122,8 @@ def create_sandbox(password: str):
     ))
     logger.info(f"Sandbox created with ID: {sandbox.id}")
     
-    # HTTP server is now started automatically by Docker
+    # Start supervisord in a session for new sandbox
+    start_supervisord_session(sandbox)
     
     logger.info(f"Sandbox environment successfully initialized")
     return sandbox
@@ -135,8 +156,8 @@ class SandboxToolsBase(Tool):
         vnc_url = self.sandbox.get_preview_link(6080)
         website_url = self.sandbox.get_preview_link(8080)
         
-        # logger.info(f"Sandbox VNC URL: {vnc_url}")
-        # logger.info(f"Sandbox Website URL: {website_url}")
+        logger.info(f"Sandbox VNC URL: {vnc_url}")
+        logger.info(f"Sandbox Website URL: {website_url}")
         
         if not SandboxToolsBase._urls_printed:
             print("\033[95m***")
