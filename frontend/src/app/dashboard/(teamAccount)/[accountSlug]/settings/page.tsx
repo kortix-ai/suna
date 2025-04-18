@@ -1,13 +1,51 @@
+'use client';
+
+import React from 'react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import EditTeamName from "@/components/basejump/edit-team-name";
 import EditTeamSlug from "@/components/basejump/edit-team-slug";
-import { createClient } from "@/lib/supabase/server";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {createClient} from "@/lib/supabase/server";
 
-export default async function TeamSettingsPage({ params: { accountSlug } }: { params: { accountSlug: string } }) {
-    const supabaseClient = await createClient();
-    const { data: teamAccount } = await supabaseClient.rpc('get_account_by_slug', {
-        slug: accountSlug
-    });
+type AccountParams = {
+  accountSlug: string;
+};
+
+export default function TeamSettingsPage({ params }: { params: Promise<AccountParams> }) {
+    const unwrappedParams = React.use(params);
+    const { accountSlug } = unwrappedParams;
+    
+    // Use an effect to load team account data
+    const [teamAccount, setTeamAccount] = React.useState<any>(null);
+    const [loading, setLoading] = React.useState(true);
+    const [error, setError] = React.useState<string | null>(null);
+    
+    React.useEffect(() => {
+        async function loadData() {
+            try {
+                const supabaseClient = await createClient();
+                const {data} = await supabaseClient.rpc('get_account_by_slug', {
+                    slug: accountSlug
+                });
+                setTeamAccount(data);
+                setLoading(false);
+            } catch (err) {
+                setError("Failed to load account data");
+                setLoading(false);
+                console.error(err);
+            }
+        }
+        
+        loadData();
+    }, [accountSlug]);
+    
+    if (loading) {
+        return <div>Loading...</div>;
+    }
+    
+    if (!teamAccount) {
+        return <div>Account not found</div>;
+    }
 
     return (
         <div className="space-y-6">

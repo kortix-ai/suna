@@ -1,15 +1,19 @@
+'use client';
+
 import { redirect } from 'next/navigation';
+import React from 'react';
 
-interface AccountRedirectProps {
-  params: {
-    accountSlug: string;
-  };
-}
+type AccountParams = {
+  accountSlug: string;
+};
 
-export default function AccountRedirect({
-  params,
-}: AccountRedirectProps) {
-  const { accountSlug } = params;
+export default function AccountRedirect({ 
+  params 
+}: { 
+  params: Promise<AccountParams> 
+}) {
+  const unwrappedParams = React.use(params);
+  const { accountSlug } = unwrappedParams;
   
   // Redirect to the settings page
   redirect(`/dashboard/${accountSlug}/settings`);
