@@ -75,6 +75,56 @@ export const siteConfig = {
     description: "Suna by Kortix – is a generalist AI Agent that acts on your behalf.",
     inputPlaceholder: "Ask Suna to...",
   },
+  cloudPricingItems: [
+    {
+      name: "Free",
+      price: "$0",
+      description: "For individual use and exploration",
+      buttonText: "Hire Suna",
+      buttonColor: "bg-secondary text-white",
+      isPopular: false,
+      hours: "10 minutes",
+      features: [
+        "10 minutes usage per month",
+        "Community support",
+        "Single user",
+        "Standard response time",
+      ],
+    },
+    {
+      name: "Pro",
+      price: "$29",
+      description: "For professionals and small teams",
+      buttonText: "Hire Suna",
+      buttonColor: "bg-primary text-white",
+      isPopular: true,
+      hours: "4 hours",
+      features: [
+        "5 hours usage per month",
+        "Priority support",
+        "Advanced features",
+        "5 team members",
+        "Custom integrations",
+      ],
+    },
+    {
+      name: "Enterprise",
+      price: "$199",
+      description: "For organizations with complex needs",
+      buttonText: "Contact Sales",
+      buttonColor: "bg-secondary text-white",
+      isPopular: false,
+      hours: "40 hours",
+      features: [
+        "40 hours usage per month",
+        "Dedicated support",
+        "SSO & advanced security",
+        "Unlimited team members",
+        "Service level agreement",
+        "Custom AI model training",
+      ],
+    },
+  ],
   companyShowcase: {
     companyLogos: [
       {

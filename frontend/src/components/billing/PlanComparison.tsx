@@ -7,67 +7,12 @@ import { motion } from "motion/react";
 import { setupNewSubscription } from "@/lib/actions/billing";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Button } from "@/components/ui/button";
-
+import { siteConfig } from "@/lib/home";
 export const SUBSCRIPTION_PLANS = {
   FREE: 'price_1RDQbOG6l1KZGqIrgrYzMbnL',
   BASIC: 'price_1RC2PYG6l1KZGqIrpbzFB9Lp',
   PRO: 'price_1RDQWqG6l1KZGqIrChli4Ys4'
 } as const;
-
-// Custom pricing data with cloud prices
-const cloudPricingItems = [
-  {
-    name: "Free",
-    price: "$0",
-    description: "For individual use and exploration",
-    buttonText: "Get Started",
-    buttonColor: "bg-primary text-white",
-    isPopular: false,
-    hours: "1 hour",
-    features: [
-      "1 hour usage per month",
-      "Basic features",
-      "Community support",
-      "Single user",
-      "Standard response time",
-      "Public templates only",
-    ],
-  },
-  {
-    name: "Basic",
-    price: "$10",
-    description: "For professionals and small teams",
-    buttonText: "Upgrade Now",
-    buttonColor: "bg-black text-white dark:bg-white dark:text-black",
-    isPopular: true,
-    hours: "10 hours",
-    features: [
-      "10 hours usage per month",
-      "Priority support",
-      "Advanced features",
-      "3 team members",
-      "Custom integrations",
-      "API access",
-    ],
-  },
-  {
-    name: "Pro",
-    price: "$50",
-    description: "For organizations with complex needs",
-    buttonText: "Upgrade Now",
-    buttonColor: "bg-primary text-white",
-    isPopular: false,
-    hours: "100 hours",
-    features: [
-      "100 hours usage per month",
-      "Dedicated support",
-      "SSO & advanced security",
-      "10 team members",
-      "Service level agreement",
-      "Custom AI model training",
-    ],
-  },
-];
 
 interface PlanComparisonProps {
   accountId?: string | null;
@@ -78,7 +23,7 @@ interface PlanComparisonProps {
 }
 
 // Price display animation component
-const PriceDisplay = ({ tier }: { tier: typeof cloudPricingItems[number] }) => {
+const PriceDisplay = ({ tier }: { tier: typeof siteConfig.cloudPricingItems[number] }) => {
   return (
     <motion.span
       key={tier.price}
@@ -128,7 +73,7 @@ export function PlanComparison({
 
   return (
     <div className={cn("grid min-[650px]:grid-cols-2 min-[900px]:grid-cols-3 gap-4 w-full max-w-6xl mx-auto", className)}>
-      {cloudPricingItems.map((tier) => {
+      {siteConfig.cloudPricingItems.map((tier) => {
         const isCurrentPlan = currentPlanId === SUBSCRIPTION_PLANS[tier.name.toUpperCase() as keyof typeof SUBSCRIPTION_PLANS];
         
         return (

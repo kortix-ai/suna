@@ -65,61 +65,6 @@ export function PricingSection() {
     "cloud",
   );
 
-  // Custom pricing data with cloud prices
-  const cloudPricingItems = [
-    {
-      name: "Free",
-      price: "$0",
-      description: "For individual use and exploration",
-      buttonText: "Hire Suna",
-      buttonColor: "bg-secondary text-white",
-      isPopular: false,
-      hours: "1 hour",
-      features: [
-        "1 hour usage per month",
-        "Basic features",
-        "Community support",
-        "Single user",
-        "Standard response time",
-        "Public templates only",
-      ],
-    },
-    {
-      name: "Pro",
-      price: "$29",
-      description: "For professionals and small teams",
-      buttonText: "Hire Suna",
-      buttonColor: "bg-primary text-white",
-      isPopular: true,
-      hours: "20 hours",
-      features: [
-        "20 hours usage per month",
-        "Priority support",
-        "Advanced features",
-        "5 team members",
-        "Custom integrations",
-        "API access",
-      ],
-    },
-    {
-      name: "Enterprise",
-      price: "$199",
-      description: "For organizations with complex needs",
-      buttonText: "Contact Sales",
-      buttonColor: "bg-secondary text-white",
-      isPopular: false,
-      hours: "Unlimited",
-      features: [
-        "Unlimited usage",
-        "Dedicated support",
-        "SSO & advanced security",
-        "Unlimited team members",
-        "Service level agreement",
-        "Custom AI model training",
-      ],
-    },
-  ];
-
   // Handle tab change
   const handleTabChange = (tab: "cloud" | "self-hosted") => {
     if (tab === "self-hosted") {
@@ -146,7 +91,7 @@ export function PricingSection() {
   const PriceDisplay = ({
     tier,
   }: {
-    tier: typeof cloudPricingItems[0];
+    tier: typeof siteConfig.cloudPricingItems[0];
   }) => {
     const price = tier.price;
 
@@ -322,7 +267,7 @@ export function PricingSection() {
 
         {deploymentType === "cloud" && (
           <div className="grid min-[650px]:grid-cols-2 min-[900px]:grid-cols-3 gap-4 w-full max-w-6xl mx-auto px-6">
-            {cloudPricingItems.map((tier) => (
+            {siteConfig.cloudPricingItems.map((tier) => (
               <div
                 key={tier.name}
                 className={cn(
