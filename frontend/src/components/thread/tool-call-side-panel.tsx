@@ -149,6 +149,8 @@ interface ToolCallSidePanelProps {
   currentIndex: number;
   onNavigate: (newIndex: number) => void;
   project?: Project;
+  renderAssistantMessage?: (assistantContent?: string, toolContent?: string) => React.ReactNode;
+  renderToolResult?: (toolContent?: string, isSuccess?: boolean) => React.ReactNode;
 }
 
 export function ToolCallSidePanel({
@@ -157,7 +159,9 @@ export function ToolCallSidePanel({
   toolCalls,
   currentIndex,
   onNavigate,
-  project
+  project,
+  renderAssistantMessage,
+  renderToolResult
 }: ToolCallSidePanelProps) {
   if (!isOpen) return null;
   
@@ -165,6 +169,26 @@ export function ToolCallSidePanel({
   const totalCalls = toolCalls.length;
   const currentToolName = currentToolCall?.assistantCall?.name || 'Tool Call';
   const CurrentToolIcon = getToolIcon(currentToolName === 'Tool Call' ? 'unknown' : currentToolName);
+  
+  // Determine if this is a streaming tool call
+  const isStreaming = currentToolCall?.toolResult?.content === "STREAMING";
+  
+  // Set up a pulse animation for streaming
+  const [dots, setDots] = React.useState('');
+  
+  React.useEffect(() => {
+    if (!isStreaming) return;
+    
+    // Create a loading animation with dots
+    const interval = setInterval(() => {
+      setDots(prev => {
+        if (prev === '...') return '';
+        return prev + '.';
+      });
+    }, 500);
+    
+    return () => clearInterval(interval);
+  }, [isStreaming]);
   
   const renderContent = () => {
     if (!currentToolCall) {
@@ -182,7 +206,7 @@ export function ToolCallSidePanel({
       currentToolCall.toolResult?.content,
       currentToolCall.assistantCall.timestamp,
       currentToolCall.toolResult?.timestamp,
-      currentToolCall.toolResult?.isSuccess ?? true,
+      isStreaming ? true : (currentToolCall.toolResult?.isSuccess ?? true),
       project
     );
   };
@@ -190,7 +214,11 @@ export function ToolCallSidePanel({
   return (
     <div className="fixed inset-y-0 right-0 w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[600px] bg-background border-l flex flex-col z-10">
       <div className="p-4 flex items-center justify-between">
-        <h3 className="text-sm font-semibold">Suna&apos;s Computer</h3>
+        <h3 className="text-sm font-semibold">
+          {isStreaming 
+            ? `Suna's Computer (Running${dots})` 
+            : "Suna's Computer"}
+        </h3>
         <Button variant="ghost" size="icon" onClick={onClose} className="text-muted-foreground hover:text-foreground">
           <X className="h-4 w-4" />
         </Button>
@@ -204,7 +232,7 @@ export function ToolCallSidePanel({
              <div className="flex items-center gap-2 min-w-0">
                <CurrentToolIcon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                <span className="text-xs font-medium text-foreground truncate" title={currentToolName}>
-                 {currentToolName}
+                 {currentToolName} {isStreaming && `(Running${dots})`}
                </span>
              </div>
             <span className="text-xs text-muted-foreground flex-shrink-0">

@@ -185,6 +185,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
   const [toolCalls, setToolCalls] = useState<ToolCallInput[]>([]);
   const [currentToolIndex, setCurrentToolIndex] = useState<number>(0);
+  const [autoOpenedPanel, setAutoOpenedPanel] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -263,6 +264,11 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         return [...prev, message];
       }
     });
+
+    // If we received a tool message, refresh the tool panel
+    if (message.type === 'tool') {
+      setAutoOpenedPanel(false);
+    }
   }, []);
 
   const handleStreamStatusChange = useCallback((hookStatus: string) => {
@@ -274,6 +280,8 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
       case 'agent_not_running':
         setAgentStatus('idle');
         setAgentRunId(null);
+        // Reset auto-opened state when agent completes to trigger tool detection
+        setAutoOpenedPanel(false);
         break;
       case 'connecting':
         setAgentStatus('connecting');
@@ -539,6 +547,10 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         
         console.log('[PAGE] Refetched messages after stop:', unifiedMessages.length);
         setMessages(unifiedMessages);
+        
+        // Clear auto-opened state to trigger tool detection with fresh messages
+        setAutoOpenedPanel(false);
+        
         scrollToBottom('smooth');
       }
     } catch (err) {
@@ -594,6 +606,82 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     setFileViewerOpen(true);
   }, []);
 
+  // Automatically detect and populate tool calls from messages
+  useEffect(() => {
+    // Skip if we've already auto-opened the panel or if it's already open
+    if (autoOpenedPanel || isSidePanelOpen) return;
+    
+    const historicalToolPairs: ToolCallInput[] = [];
+    const assistantMessages = messages.filter(m => m.type === 'assistant' && m.message_id);
+    
+    if (assistantMessages.length === 0) return;
+
+    assistantMessages.forEach(assistantMsg => {
+      const resultMessage = messages.find(toolMsg => {
+        if (toolMsg.type !== 'tool' || !toolMsg.metadata || !assistantMsg.message_id) return false;
+        try {
+          const metadata = JSON.parse(toolMsg.metadata);
+          return metadata.assistant_message_id === assistantMsg.message_id;
+        } catch (e) {
+          return false;
+        }
+      });
+
+      if (resultMessage) {
+        // Determine tool name from assistant message content
+        let toolName = 'unknown';
+        try {
+          // Try to extract tool name from content
+          const xmlMatch = assistantMsg.content.match(/<([a-zA-Z\-_]+)(?:\s+[^>]*)?>|<([a-zA-Z\-_]+)(?:\s+[^>]*)?\/>/);
+          if (xmlMatch) {
+            toolName = xmlMatch[1] || xmlMatch[2] || 'unknown';
+          } else {
+            // Fallback to checking for tool_calls JSON structure
+            const assistantContentParsed = safeJsonParse<{ tool_calls?: { name: string }[] }>(assistantMsg.content, {});
+            if (assistantContentParsed.tool_calls && assistantContentParsed.tool_calls.length > 0) {
+              toolName = assistantContentParsed.tool_calls[0].name || 'unknown';
+            }
+          }
+        } catch {}
+
+        let isSuccess = true;
+        try {
+          const toolContent = resultMessage.content?.toLowerCase() || '';
+          isSuccess = !(toolContent.includes('failed') || 
+                         toolContent.includes('error') || 
+                         toolContent.includes('failure'));
+        } catch {}
+
+        historicalToolPairs.push({
+          assistantCall: {
+            name: toolName,
+            content: assistantMsg.content,
+            timestamp: assistantMsg.created_at
+          },
+          toolResult: {
+            content: resultMessage.content,
+            isSuccess: isSuccess,
+            timestamp: resultMessage.created_at
+          }
+        });
+      }
+    });
+
+    if (historicalToolPairs.length > 0) {
+      setToolCalls(historicalToolPairs);
+      setCurrentToolIndex(historicalToolPairs.length - 1); // Set to the most recent tool call
+      setIsSidePanelOpen(true);
+      setAutoOpenedPanel(true);
+    }
+  }, [messages, autoOpenedPanel, isSidePanelOpen]);
+
+  // Reset auto-opened state when panel is closed
+  useEffect(() => {
+    if (!isSidePanelOpen) {
+      setAutoOpenedPanel(false);
+    }
+  }, [isSidePanelOpen]);
+
   const handleToolClick = useCallback((clickedAssistantMessageId: string | null, clickedToolName: string) => {
     if (!clickedAssistantMessageId) {
       console.warn("Clicked assistant message ID is null. Cannot open side panel.");
@@ -626,12 +714,17 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         // otherwise fallback to a generic name or the one passed from the click.
         let toolNameForResult = clickedToolName; // Fallback
         try {
-          const assistantContentParsed = safeJsonParse<{ tool_calls?: { name: string }[] }>(assistantMsg.content, {});
-          // A simple heuristic: if the assistant message content has tool_calls structure
-          if (assistantContentParsed.tool_calls && assistantContentParsed.tool_calls.length > 0) {
-            toolNameForResult = assistantContentParsed.tool_calls[0].name || clickedToolName;
+          // Try to extract tool name from content
+          const xmlMatch = assistantMsg.content.match(/<([a-zA-Z\-_]+)(?:\s+[^>]*)?>|<([a-zA-Z\-_]+)(?:\s+[^>]*)?\/>/);
+          if (xmlMatch) {
+            toolNameForResult = xmlMatch[1] || xmlMatch[2] || clickedToolName;
+          } else {
+            // Fallback to checking for tool_calls JSON structure
+            const assistantContentParsed = safeJsonParse<{ tool_calls?: { name: string }[] }>(assistantMsg.content, {});
+            if (assistantContentParsed.tool_calls && assistantContentParsed.tool_calls.length > 0) {
+              toolNameForResult = assistantContentParsed.tool_calls[0].name || clickedToolName;
+            }
           }
-          // More advanced: parse the XML in assistant message content to find the tool name associated with this result
         } catch {}
 
         let isSuccess = true;
@@ -681,6 +774,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     }
     
     setIsSidePanelOpen(true);
+    setAutoOpenedPanel(true);
 
   }, [messages]);
 
@@ -689,17 +783,54 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     if (!toolCall) return;
     console.log("[STREAM] Received tool call:", toolCall.name || toolCall.xml_tag_name);
     
-    // Now with Markdown support, we can enable the side panel for streaming calls
+    // Create a properly formatted tool call input for the streaming tool
+    // that matches the format of historical tool calls
+    const toolName = toolCall.name || toolCall.xml_tag_name || 'Unknown Tool';
+    const toolArguments = toolCall.arguments || '';
+    
+    // Format the arguments in a way that matches the expected XML format for each tool
+    // This ensures the specialized tool views render correctly
+    let formattedContent = toolArguments;
+    if (toolName.toLowerCase().includes('command') && !toolArguments.includes('<execute-command>')) {
+      formattedContent = `<execute-command>${toolArguments}</execute-command>`;
+    } else if (toolName.toLowerCase().includes('file') && !toolArguments.includes('<create-file>')) {
+      // For file operations, wrap with appropriate tag if not already wrapped
+      const fileOpTags = ['create-file', 'delete-file', 'full-file-rewrite'];
+      const matchingTag = fileOpTags.find(tag => toolName.toLowerCase().includes(tag));
+      if (matchingTag && !toolArguments.includes(`<${matchingTag}>`)) {
+        formattedContent = `<${matchingTag}>${toolArguments}</${matchingTag}>`;
+      }
+    }
+    
     const newToolCall: ToolCallInput = {
       assistantCall: {
-        name: toolCall.name || toolCall.xml_tag_name || 'Unknown Tool',
-        content: toolCall.arguments || '',
+        name: toolName,
+        content: formattedContent,
+        timestamp: new Date().toISOString()
+      },
+      // For streaming tool calls, provide empty content that indicates streaming
+      toolResult: {
+        content: "STREAMING",
+        isSuccess: true, 
         timestamp: new Date().toISOString()
       }
-      // No toolResult available yet for streaming calls
     };
     
-    setToolCalls([newToolCall]);
+    // Update the tool calls state to reflect the streaming tool
+    setToolCalls(prev => {
+      // If the same tool is already being streamed, update it instead of adding a new one
+      if (prev.length > 0 && prev[0].assistantCall.name === toolName) {
+        return [{
+          ...prev[0],
+          assistantCall: {
+            ...prev[0].assistantCall,
+            content: formattedContent
+          }
+        }];
+      }
+      return [newToolCall];
+    });
+    
     setCurrentToolIndex(0);
     setIsSidePanelOpen(true);
   }, []);
