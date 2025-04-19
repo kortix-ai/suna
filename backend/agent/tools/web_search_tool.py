@@ -278,7 +278,7 @@ class WebSearchTool(Tool):
                 formatted_result = {
                     "Title": item.get("title"),
                     "URL": item.get("url") or url,
-                    "Text": item.get("content") or item.get("text") or "",
+                    "Text":item.get("raw_content") or item.get("content") or item.get("text")
                 }
                 if item.get("published_date"):
                     formatted_result["Published Date"] = item["published_date"]
@@ -312,7 +312,8 @@ if __name__ == "__main__":
         """Test function for the webpage crawl tool"""
         search_tool = WebSearchTool()
         result = await search_tool.crawl_webpage(
-            url="https://google.com"
+            # url="https://google.com",
+            url = "https://www.wired.com/story/anthropic-benevolent-artificial-intelligence/",
         )
         print(result)
     
