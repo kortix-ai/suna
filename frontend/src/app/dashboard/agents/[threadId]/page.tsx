@@ -16,6 +16,7 @@ import { SiteHeader } from "@/components/thread/thread-site-header"
 import { ToolCallSidePanel, ToolCallInput } from "@/components/thread/tool-call-side-panel";
 import { useSidebar } from "@/components/ui/sidebar";
 import { useAgentStream } from '@/hooks/useAgentStream';
+import { Markdown } from '@/components/home/ui/markdown';
 
 import { UnifiedMessage, ParsedContent, ParsedMetadata, ThreadParams } from '@/components/thread/types';
 import { getToolIcon, extractPrimaryParam, safeJsonParse } from '@/components/thread/utils';
@@ -65,6 +66,108 @@ interface StreamingToolCall {
   arguments?: string;
   index?: number;
   xml_tag_name?: string;
+}
+
+// Render Markdown content while preserving XML tags that should be displayed as tool calls
+function renderMarkdownContent(content: string, handleToolClick: (assistantMessageId: string | null, toolName: string) => void, messageId: string | null, fileViewerHandler?: (filePath?: string) => void) {
+  const xmlRegex = /<(?!inform\b)([a-zA-Z\-_]+)(?:\s+[^>]*)?>(?:[\s\S]*?)<\/\1>|<(?!inform\b)([a-zA-Z\-_]+)(?:\s+[^>]*)?\/>/g;
+  let lastIndex = 0;
+  const contentParts: React.ReactNode[] = [];
+  let match;
+
+  // If no XML tags found, just return the full content as markdown
+  if (!content.match(xmlRegex)) {
+    return <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none">{content}</Markdown>;
+  }
+
+  while ((match = xmlRegex.exec(content)) !== null) {
+    // Add text before the tag as markdown
+    if (match.index > lastIndex) {
+      const textBeforeTag = content.substring(lastIndex, match.index);
+      contentParts.push(
+        <Markdown key={`md-${lastIndex}`} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none inline-block mr-1">{textBeforeTag}</Markdown>
+      );
+    }
+
+    const rawXml = match[0];
+    const toolName = match[1] || match[2];
+    const IconComponent = getToolIcon(toolName);
+    const paramDisplay = extractPrimaryParam(toolName, rawXml);
+    const toolCallKey = `tool-${match.index}`;
+
+    if (toolName === 'ask') {
+      // Extract attachments from the XML attributes
+      const attachmentsMatch = rawXml.match(/attachments=["']([^"']*)["']/i);
+      const attachments = attachmentsMatch 
+        ? attachmentsMatch[1].split(',').map(a => a.trim())
+        : [];
+      
+      // Extract content from the ask tag
+      const contentMatch = rawXml.match(/<ask[^>]*>([\s\S]*?)<\/ask>/i);
+      const askContent = contentMatch ? contentMatch[1] : '';
+
+      // Render <ask> tag content with attachment UI
+      contentParts.push(
+        <div key={`ask-${match.index}`} className="space-y-3">
+          <Markdown className="text-sm">{askContent}</Markdown>
+          
+          {attachments.length > 0 && (
+            <div className="mt-3 space-y-2">
+              <div className="text-xs font-medium text-muted-foreground">Attachments:</div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {attachments.map((attachment, idx) => {
+                  // Determine file type & icon based on extension
+                  const extension = attachment.split('.').pop()?.toLowerCase();
+                  const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(extension || '');
+                  const isPdf = extension === 'pdf';
+                  const isMd = extension === 'md';
+                  
+                  let icon = <File className="h-4 w-4 text-gray-500" />;
+                  if (isImage) icon = <File className="h-4 w-4 text-purple-500" />;
+                  if (isPdf) icon = <File className="h-4 w-4 text-red-500" />;
+                  if (isMd) icon = <File className="h-4 w-4 text-blue-500" />;
+                  
+                  return (
+                    <button
+                      key={`attachment-${idx}`}
+                      onClick={() => fileViewerHandler?.(attachment)}
+                      className="flex items-center gap-1.5 py-1.5 px-2.5 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
+                    >
+                      {icon}
+                      <span className="font-mono text-xs text-gray-700 truncate">{attachment}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    } else {
+      // Render tool button as a clickable element
+      contentParts.push(
+        <button                                                  
+          key={toolCallKey} 
+          onClick={() => handleToolClick(messageId, toolName)}
+          className="inline-flex items-center gap-1.5 py-0.5 px-2 my-0.5 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
+        >
+          <IconComponent className="h-3.5 w-3.5 text-gray-500 flex-shrink-0" />
+          <span className="font-mono text-xs text-gray-700">{toolName}</span>
+          {paramDisplay && <span className="ml-1 text-gray-500 truncate max-w-[150px]" title={paramDisplay}>{paramDisplay}</span>}
+        </button>
+      );
+    }
+    lastIndex = xmlRegex.lastIndex;
+  }
+
+  // Add text after the last tag
+  if (lastIndex < content.length) {
+    contentParts.push(
+      <Markdown key={`md-${lastIndex}`} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none">{content.substring(lastIndex)}</Markdown>
+    );
+  }
+
+  return contentParts;
 }
 
 export default function ThreadPage({ params }: { params: Promise<ThreadParams> }) {
@@ -581,23 +684,24 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
 
   }, [messages]);
 
-  // Handle streaming tool calls - Temporarily disable opening side panel
+  // Handle streaming tool calls
   const handleStreamingToolCall = useCallback((toolCall: StreamingToolCall | null) => {
     if (!toolCall) return;
     console.log("[STREAM] Received tool call:", toolCall.name || toolCall.xml_tag_name);
-    // --- Temporarily disable opening side panel for streaming calls ---
-    // const newToolCall: ToolCallInput = {
-    //   assistantCall: {
-    //     name: toolCall.name || toolCall.xml_tag_name || 'Unknown Tool',
-    //     content: toolCall.arguments || ''
-    //     // No timestamp available easily here
-    //   }
-    //   // No toolResult available yet
-    // };
-    // setToolCalls([newToolCall]);
-    // setCurrentToolIndex(0);
-    // setIsSidePanelOpen(true);
-    // --- End temporary disable ---
+    
+    // Now with Markdown support, we can enable the side panel for streaming calls
+    const newToolCall: ToolCallInput = {
+      assistantCall: {
+        name: toolCall.name || toolCall.xml_tag_name || 'Unknown Tool',
+        content: toolCall.arguments || '',
+        timestamp: new Date().toISOString()
+      }
+      // No toolResult available yet for streaming calls
+    };
+    
+    setToolCalls([newToolCall]);
+    setCurrentToolIndex(0);
+    setIsSidePanelOpen(true);
   }, []);
 
   // Update useEffect to handle streaming tool calls
@@ -606,6 +710,44 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
       handleStreamingToolCall(streamingToolCall);
     }
   }, [streamingToolCall, handleStreamingToolCall]);
+
+  // Process the assistant call data
+  const toolViewAssistant = useCallback((assistantContent?: string, toolContent?: string) => {
+    // This needs to stay simple as it's meant for the side panel tool call view
+    if (!assistantContent) return null;
+    
+    return (
+      <div className="space-y-1">
+        <div className="text-xs font-medium text-muted-foreground">Assistant Message</div>
+        <div className="rounded-md border bg-muted/50 p-3">
+          <Markdown className="text-xs prose prose-xs dark:prose-invert chat-markdown max-w-none">{assistantContent}</Markdown>
+        </div>
+      </div>
+    );
+  }, []);
+
+  // Process the tool result data
+  const toolViewResult = useCallback((toolContent?: string, isSuccess?: boolean) => {
+    if (!toolContent) return null;
+    
+    return (
+      <div className="space-y-1">
+        <div className="flex justify-between items-center">
+          <div className="text-xs font-medium text-muted-foreground">Tool Result</div>
+          <div className={`px-2 py-0.5 rounded-full text-xs ${
+            isSuccess 
+              ? 'bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300' 
+              : 'bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-300'
+          }`}>
+            {isSuccess ? 'Success' : 'Failed'}
+          </div>
+        </div>
+        <div className="rounded-md border bg-muted/50 p-3">
+          <Markdown className="text-xs prose prose-xs dark:prose-invert chat-markdown max-w-none">{toolContent}</Markdown>
+        </div>
+      </div>
+    );
+  }, []);
 
   if (isLoading && !initialLoadCompleted.current) {
     return (
@@ -775,8 +917,8 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                       
                       return (
                         <div key={group.key} className="flex justify-end">
-                          <div className="max-w-[85%] rounded-lg bg-primary/10 px-4 py-3 text-sm">
-                            {messageContent}
+                          <div className="max-w-[85%] rounded-lg bg-primary/10 px-4 py-3 w-full">
+                            <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none">{messageContent}</Markdown>
                           </div>
                         </div>
                       );
@@ -788,7 +930,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                               <Image src="/kortix-symbol.svg" alt="Suna" width={14} height={14} className="object-contain"/>
                             </div>
                             <div className="flex-1 space-y-2">
-                              <div className="max-w-[90%] rounded-lg bg-muted px-4 py-3 text-sm">
+                              <div className="max-w-[90%] w-full rounded-lg bg-muted px-4 py-3 text-sm">
                                 <div className="space-y-3">
                                   {(() => {
                                     // Pre-process to map tool results to their calls for easier lookup
@@ -812,137 +954,18 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                                         const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
                                         const msgKey = message.message_id || `submsg-assistant-${msgIndex}`;
 
-                                        const xmlRegex = /<(?!inform\b)([a-zA-Z\-_]+)(?:\s+[^>]*)?>(?:[\s\S]*?)<\/\1>|<(?!inform\b)([a-zA-Z\-_]+)(?:\s+[^>]*)?\/>/g;
-                                        let lastIndex = 0;
-                                        const contentParts: React.ReactNode[] = [];
-                                        let match;
-
                                         if (!parsedContent.content) return; // Skip empty assistant messages
 
-                                        while ((match = xmlRegex.exec(parsedContent.content)) !== null) {
-                                          // Add text before the tag
-                                          if (match.index > lastIndex) {
-                                            contentParts.push(
-                                              <span key={`text-${lastIndex}`} className="whitespace-pre-wrap break-words">
-                                                {parsedContent.content.substring(lastIndex, match.index)}
-                                              </span>
-                                            );
-                                          }
+                                        // Use the new rendering function instead of manual XML parsing
+                                        const renderedContent = renderMarkdownContent(
+                                          parsedContent.content, 
+                                          handleToolClick, 
+                                          message.message_id,
+                                          handleOpenFileViewer
+                                        );
 
-                                          const rawXml = match[0];
-                                          const toolName = match[1] || match[2];
-                                          const IconComponent = getToolIcon(toolName);
-                                          const paramDisplay = extractPrimaryParam(toolName, rawXml);
-                                          const toolCallKey = `tool-${match.index}`;
-
-                                          // Find corresponding tool result (assuming order or simple 1:1 for now)
-                                          const potentialResults = toolResultsMap.get(message.message_id || null) || [];
-                                          const toolResult = potentialResults.find(r => !renderedToolResultIds.has(r.message_id!)); // Find first available result
-
-                                          if (toolName === 'ask') {
-                                            // Extract attachments from the XML attributes
-                                            const attachmentsMatch = rawXml.match(/attachments=["']([^"']*)["']/i);
-                                            const attachments = attachmentsMatch 
-                                              ? attachmentsMatch[1].split(',').map(a => a.trim())
-                                              : [];
-                                            
-                                            // Extract content from the ask tag
-                                            const contentMatch = rawXml.match(/<ask[^>]*>([\s\S]*?)<\/ask>/i);
-                                            const content = contentMatch ? contentMatch[1] : rawXml;
-
-                                            // Render <ask> tag content with attachment UI
-                                            contentParts.push(
-                                              <div key={`ask-${match.index}`} className="space-y-3">
-                                                <span className="whitespace-pre-wrap break-words">
-                                                  {content}
-                                                </span>
-                                                
-                                                {attachments.length > 0 && (
-                                                  <div className="mt-3 space-y-2">
-                                                    <div className="text-xs font-medium text-muted-foreground">Attachments:</div>
-                                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                                      {attachments.map((attachment, idx) => {
-                                                        // Determine file type & icon based on extension
-                                                        const extension = attachment.split('.').pop()?.toLowerCase();
-                                                        const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(extension || '');
-                                                        const isPdf = extension === 'pdf';
-                                                        const isMd = extension === 'md';
-                                                        
-                                                        let icon = <File className="h-4 w-4 text-gray-500" />;
-                                                        if (isImage) icon = <File className="h-4 w-4 text-purple-500" />;
-                                                        if (isPdf) icon = <File className="h-4 w-4 text-red-500" />;
-                                                        if (isMd) icon = <File className="h-4 w-4 text-blue-500" />;
-                                                        
-                                                        return (
-                                                          <button
-                                                            key={`attachment-${idx}`}
-                                                            onClick={() => handleOpenFileViewer(attachment)}
-                                                            className="flex items-center gap-1.5 py-1.5 px-2.5 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
-                                                          >
-                                                            {icon}
-                                                            <span className="font-mono text-xs text-gray-700 truncate">{attachment}</span>
-                                                          </button>
-                                                        );
-                                                      })}
-                                                    </div>
-                                                  </div>
-                                                )}
-                                              </div>
-                                            );
-                                          } else {
-                                            // Render tool button AND its result icon inline
-                                            contentParts.push(
-                                              <button                                                  
-                                                key={toolCallKey} // Use the tool call key for the button
-                                                onClick={() => handleToolClick(message.message_id, toolName)}
-                                                className="inline-flex items-center gap-1.5 py-0.5 px-2 my-0.5 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
-                                              >
-                                                <IconComponent className="h-3.5 w-3.5 text-gray-500 flex-shrink-0" />
-                                                <span className="font-mono text-xs text-gray-700">{toolName}</span>
-                                                {paramDisplay && <span className="ml-1 text-gray-500 truncate max-w-[150px]" title={paramDisplay}>{paramDisplay}</span>}
-                                                {/* Render status icon directly inside the button if result exists */}
-                                                {toolResult && (() => {
-                                                   renderedToolResultIds.add(toolResult.message_id!); // Still need to mark as rendered
-                                                   const toolResultContent = safeJsonParse<ParsedContent>(toolResult.content, {});
-                                                   let displayContent = '';
-                                                   if (typeof toolResultContent.content === 'string') {
-                                                       // Simplified parsing just to check success/failure
-                                                       if (toolResultContent.content.includes('<tool_result>')) {
-                                                           const toolMatch = toolResultContent.content.match(/<tool_result>([\s\S]*?)<\/tool_result>/i);
-                                                           displayContent = toolMatch?.[1]?.trim() || toolResultContent.content;
-                                                       } else {
-                                                           displayContent = toolResultContent.content;
-                                                       }
-                                                   }
-                                                   const toolSuccess = !(
-                                                       displayContent.includes('error') || 
-                                                       displayContent.includes('failed') || 
-                                                       displayContent.includes('failure') ||
-                                                       displayContent.includes('success=False')
-                                                   );
-                                                   const statusIcon = toolSuccess 
-                                                       ? <CheckCircle className="h-3.5 w-3.5 text-green-500 ml-1.5 flex-shrink-0" /> // Adjusted margin
-                                                       : <AlertTriangle className="h-3.5 w-3.5 text-amber-500 ml-1.5 flex-shrink-0" />; // Adjusted margin
-                                                   return statusIcon;
-                                                 })()}
-                                              </button>
-                                            );
-                                          }
-                                          lastIndex = xmlRegex.lastIndex;
-                                        }
-
-                                        // Add text after the last tag
-                                        if (lastIndex < parsedContent.content.length) {
-                                          contentParts.push(
-                                            <span key={`text-${lastIndex}`} className="whitespace-pre-wrap break-words">
-                                              {parsedContent.content.substring(lastIndex)}
-                                            </span>
-                                          );
-                                        }
                                         // Add the processed assistant message parts to the main elements array
-                                        if (contentParts.length > 0) {
-                                            elements.push(<div key={msgKey}>{contentParts}</div>);
-                                        }
+                                        elements.push(<div key={msgKey}>{renderedContent}</div>);
                                       }
                                     });
 
@@ -975,7 +998,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                                           return (
                                             <>
                                               {textBeforeTag && (
-                                                <span className="whitespace-pre-wrap break-words">{textBeforeTag}</span>
+                                                <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none">{textBeforeTag}</Markdown>
                                               )}
                                               {showCursor && (
                                                  <span className="inline-block h-4 w-0.5 bg-gray-400 ml-0.5 -mb-1 animate-pulse" />
@@ -1088,6 +1111,8 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         currentIndex={currentToolIndex}
         onNavigate={handleSidePanelNavigate}
         project={project}
+        renderAssistantMessage={toolViewAssistant}
+        renderToolResult={toolViewResult}
       />
 
       {sandboxId && (

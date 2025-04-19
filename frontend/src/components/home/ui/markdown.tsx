@@ -34,7 +34,7 @@ const INITIAL_COMPONENTS: Partial<Components> = {
       return (
         <span
           className={cn(
-            "bg-primary-foreground rounded-sm px-1 font-mono text-sm",
+            "bg-primary-foreground dark:bg-zinc-800 dark:border dark:border-zinc-700 rounded-sm px-1 font-mono text-sm",
             className
           )}
           {...props}
@@ -55,6 +55,39 @@ const INITIAL_COMPONENTS: Partial<Components> = {
   pre: function PreComponent({ children }: any) {
     return <>{children}</>;
   },
+  ul: function UnorderedList({ children, ...props }: any) {
+    return <ul className="list-disc pl-5 my-2" {...props}>{children}</ul>;
+  },
+  ol: function OrderedList({ children, ...props }: any) {
+    return <ol className="list-decimal pl-5 my-2" {...props}>{children}</ol>;
+  },
+  li: function ListItem({ children, ...props }: any) {
+    return <li className="my-1" {...props}>{children}</li>;
+  },
+  h1: function H1({ children, ...props }: any) {
+    return <h1 className="text-2xl font-bold my-3" {...props}>{children}</h1>;
+  },
+  h2: function H2({ children, ...props }: any) {
+    return <h2 className="text-xl font-bold my-2" {...props}>{children}</h2>;
+  },
+  h3: function H3({ children, ...props }: any) {
+    return <h3 className="text-lg font-bold my-2" {...props}>{children}</h3>;
+  },
+  blockquote: function Blockquote({ children, ...props }: any) {
+    return <blockquote className="border-l-4 border-muted pl-4 italic my-2 dark:text-zinc-400 dark:border-zinc-600" {...props}>{children}</blockquote>;
+  },
+  a: function Anchor({ children, href, ...props }: any) {
+    return <a href={href} className="text-primary hover:underline dark:text-blue-400" target="_blank" rel="noopener noreferrer" {...props}>{children}</a>;
+  },
+  table: function Table({ children, ...props }: any) {
+    return <table className="w-full border-collapse my-3 text-sm" {...props}>{children}</table>;
+  },
+  th: function TableHeader({ children, ...props }: any) {
+    return <th className="border border-slate-300 dark:border-zinc-700 px-3 py-2 text-left font-semibold bg-slate-100 dark:bg-zinc-800" {...props}>{children}</th>;
+  },
+  td: function TableCell({ children, ...props }: any) {
+    return <td className="border border-slate-300 dark:border-zinc-700 px-3 py-2" {...props}>{children}</td>;
+  },
 };
 
 const MemoizedMarkdownBlock = memo(
@@ -66,7 +99,10 @@ const MemoizedMarkdownBlock = memo(
     components?: Partial<Components>;
   }) {
     return (
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+      <ReactMarkdown 
+        remarkPlugins={[remarkGfm]} 
+        components={components}
+      >
         {content}
       </ReactMarkdown>
     );
