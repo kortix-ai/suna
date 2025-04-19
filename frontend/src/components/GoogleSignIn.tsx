@@ -74,7 +74,11 @@ export default function GoogleSignIn({ returnUrl }: GoogleSignInProps) {
       });
 
       if (error) throw error;
-      window.location.href = returnUrl || "/dashboard";
+      
+      // Add a small delay before redirecting to ensure localStorage is properly saved
+      setTimeout(() => {
+        window.location.href = returnUrl || "/dashboard";
+      }, 100);
     } catch (error) {
       console.error('Error signing in with Google:', error);
       setIsLoading(false);
