@@ -310,8 +310,8 @@ export function ChatInput({
   return (
     <div 
       className={cn(
-        "w-full border rounded-xl transition-all duration-200 shadow-sm bg-[#1a1a1a] border-gray-800",
-        uploadedFiles.length > 0 ? "border-border" : "border-gray-800",
+        "w-full border rounded-xl transition-all duration-200 shadow-sm bg-white dark:bg-[#1a1a1a] border-gray-200 dark:border-gray-800",
+        uploadedFiles.length > 0 ? "border-border" : "border-gray-200 dark:border-gray-800",
         isDraggingOver ? "border-primary border-dashed bg-primary/5" : ""
       )}
       onDragOver={handleDragOver}
@@ -334,18 +334,18 @@ export function ChatInput({
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.9 }}
                   transition={{ duration: 0.15 }}
-                  className="px-2 py-1 bg-gray-800 rounded-full flex items-center gap-1.5 group border border-gray-700 hover:border-gray-600 transition-colors text-sm"
+                  className="px-2 py-1 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center gap-1.5 group border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 transition-colors text-sm"
                 >
                   {getFileIcon(file.name)}
-                  <span className="font-medium truncate max-w-[120px] text-gray-300">{file.name}</span>
-                  <span className="text-xs text-gray-400 flex-shrink-0">
+                  <span className="font-medium truncate max-w-[120px] text-gray-700 dark:text-gray-300">{file.name}</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-400 flex-shrink-0">
                     ({formatFileSize(file.size)})
                   </span>
                   <Button 
                     type="button" 
                     variant="ghost" 
                     size="icon" 
-                    className="h-4 w-4 ml-0.5 rounded-full p-0 hover:bg-gray-700"
+                    className="h-4 w-4 ml-0.5 rounded-full p-0 hover:bg-gray-200 dark:hover:bg-gray-700"
                     onClick={() => removeUploadedFile(index)}
                   >
                     <X className="h-3 w-3" />
@@ -353,7 +353,7 @@ export function ChatInput({
                 </motion.div>
               ))}
             </div>
-            <div className="h-px bg-gray-800 my-2 mx-1" />
+            <div className="h-px bg-gray-200 dark:bg-gray-800 my-2 mx-1" />
           </motion.div>
         )}
       </AnimatePresence>
@@ -371,7 +371,7 @@ export function ChatInput({
                 : placeholder
             }
             className={cn(
-              "min-h-[50px] py-3 px-4 text-gray-200 resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent w-full text-base",
+              "min-h-[50px] py-3 px-4 text-gray-700 dark:text-gray-200 resize-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent w-full text-base",
               isDraggingOver ? "opacity-20" : ""
             )}
             disabled={loading || (disabled && !isAgentRunning)}
@@ -390,7 +390,7 @@ export function ChatInput({
                         variant="ghost"
                         size="icon"
                         className={cn(
-                          "h-8 w-8 rounded-full p-0 hover:bg-gray-800",
+                          "h-8 w-8 rounded-full p-0 hover:bg-gray-100 dark:hover:bg-gray-800",
                           selectedModel === "sonnet-3.7" ? "text-purple-400" :
                           selectedModel === "sonnet-3.7-thinking" ? "text-violet-400" :
                           selectedModel === "gpt-4.1" ? "text-green-400" :
@@ -402,30 +402,30 @@ export function ChatInput({
                         <Cpu className="h-5 w-5" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="bg-gray-900 border-gray-800 text-gray-300">
+                    <DropdownMenuContent align="start" className="bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-300">
                       <DropdownMenuItem onClick={() => handleModelChange("sonnet-3.7")} className={cn(
-                        "hover:bg-gray-800 flex items-center justify-between",
+                        "hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-between",
                         selectedModel === "sonnet-3.7" && "text-purple-400"
                       )}>
                         <span>Sonnet 3.7</span>
                         {selectedModel === "sonnet-3.7" && <span className="ml-2">✓</span>}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleModelChange("sonnet-3.7-thinking")} className={cn(
-                        "hover:bg-gray-800 flex items-center justify-between",
+                        "hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-between",
                         selectedModel === "sonnet-3.7-thinking" && "text-violet-400"
                       )}>
                         <span>Sonnet 3.7 (Thinking)</span>
                         {selectedModel === "sonnet-3.7-thinking" && <span className="ml-2">✓</span>}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleModelChange("gpt-4.1")} className={cn(
-                        "hover:bg-gray-800 flex items-center justify-between",
+                        "hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-between",
                         selectedModel === "gpt-4.1" && "text-green-400"
                       )}>
                         <span>GPT-4.1</span>
                         {selectedModel === "gpt-4.1" && <span className="ml-2">✓</span>}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => handleModelChange("gemini-flash-2.5")} className={cn(
-                        "hover:bg-gray-800 flex items-center justify-between",
+                        "hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-between",
                         selectedModel === "gemini-flash-2.5" && "text-blue-400"
                       )}>
                         <span>Gemini Flash 2.5</span>
@@ -434,7 +434,7 @@ export function ChatInput({
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TooltipTrigger>
-                <TooltipContent side="top" className="bg-gray-900 text-gray-300 border-gray-800">
+                <TooltipContent side="top" className="bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-800">
                   <p>Model: {modelDisplayNames[selectedModel as keyof typeof modelDisplayNames] || selectedModel}</p>
                 </TooltipContent>
               </Tooltip>
@@ -450,7 +450,7 @@ export function ChatInput({
                   variant="ghost"
                   size="icon"
                   className={cn(
-                    "h-8 w-8 rounded-full p-0 text-gray-400 hover:bg-gray-800",
+                    "h-8 w-8 rounded-full p-0 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800",
                     isUploading && "text-blue-400"
                   )}
                   disabled={loading || (disabled && !isAgentRunning) || isUploading}
@@ -463,7 +463,7 @@ export function ChatInput({
                   )}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="top" className="bg-gray-900 text-gray-300 border-gray-800">
+              <TooltipContent side="top" className="bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-800">
                 <p>Attach files</p>
               </TooltipContent>
             </Tooltip>
@@ -487,7 +487,7 @@ export function ChatInput({
                   size="icon"
                   className={cn(
                     "h-10 w-10 rounded-full",
-                    !isAgentRunning && "bg-gray-700 hover:bg-gray-600 text-gray-200",
+                    !isAgentRunning && "bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200",
                     isAgentRunning && "bg-red-600 hover:bg-red-700"
                   )}
                   disabled={((!inputValue.trim() && uploadedFiles.length === 0) && !isAgentRunning) || loading || (disabled && !isAgentRunning)}
@@ -502,7 +502,7 @@ export function ChatInput({
                   )}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="top" className="bg-gray-900 text-gray-300 border-gray-800">
+              <TooltipContent side="top" className="bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-800">
                 <p>{isAgentRunning ? 'Stop agent' : 'Send message'}</p>
               </TooltipContent>
             </Tooltip>
@@ -514,15 +514,15 @@ export function ChatInput({
         <motion.div 
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="py-2 px-3 flex items-center justify-center bg-gray-800 border-t border-gray-700 rounded-b-xl"
+          className="py-2 px-3 flex items-center justify-center bg-gray-100 dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 rounded-b-xl"
         >
-          <div className="text-xs text-gray-400 flex items-center gap-2">
+          <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2">
             <span className="inline-flex items-center">
               <Loader2 className="h-3 w-3 animate-spin mr-1.5" />
               Agent is thinking...
             </span>
-            <span className="text-gray-500 border-l border-gray-700 pl-2">
-              Press <kbd className="inline-flex items-center justify-center p-0.5 mx-1 bg-gray-700 border border-gray-600 rounded text-xs"><Square className="h-2.5 w-2.5" /></kbd> to stop
+            <span className="text-gray-400 dark:text-gray-500 border-l border-gray-300 dark:border-gray-700 pl-2">
+              Press <kbd className="inline-flex items-center justify-center p-0.5 mx-1 bg-gray-200 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded text-xs"><Square className="h-2.5 w-2.5" /></kbd> to stop
             </span>
           </div>
         </motion.div>
