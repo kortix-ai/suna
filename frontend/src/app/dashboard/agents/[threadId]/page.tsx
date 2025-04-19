@@ -370,7 +370,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
       thread_id: threadId,
       type: 'user',
       is_llm_message: false,
-      content: JSON.stringify({ role: 'user', content: message }),
+      content: message,
       metadata: '{}',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -397,8 +397,6 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
       }
 
       const agentResult = results[1].value;
-      setMessages(prev => prev.filter(m => m.message_id !== optimisticUserMessage.message_id));
-
       setAgentRunId(agentResult.agent_run_id);
 
     } catch (err) {
@@ -414,7 +412,36 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     console.log(`[PAGE] Requesting agent stop via hook.`);
     setAgentStatus('idle');
     await stopStreaming();
-  }, [stopStreaming]);
+    
+    // Refetch messages after agent stop
+    try {
+      console.log('[PAGE] Refetching messages after agent stop');
+      const messagesData = await getMessages(threadId);
+      if (messagesData) {
+        // Map API message type to UnifiedMessage type
+        const unifiedMessages = (messagesData || [])
+          .filter(msg => msg.type !== 'status') // Filter out status messages
+          .map((msg: ApiMessageType, index: number) => {
+            return {
+              message_id: msg.message_id || null, 
+              thread_id: msg.thread_id || threadId,
+              type: (msg.type || 'system') as UnifiedMessage['type'], 
+              is_llm_message: Boolean(msg.is_llm_message),
+              content: msg.content || '',
+              metadata: msg.metadata || '{}',
+              created_at: msg.created_at || new Date().toISOString(),
+              updated_at: msg.updated_at || new Date().toISOString()
+            };
+          });
+        
+        console.log('[PAGE] Refetched messages after stop:', unifiedMessages.length);
+        setMessages(unifiedMessages);
+        scrollToBottom('smooth');
+      }
+    } catch (err) {
+      console.error('Error refetching messages after agent stop:', err);
+    }
+  }, [stopStreaming, threadId]);
 
   const handleScroll = () => {
     if (!messagesContainerRef.current) return;
@@ -736,11 +763,20 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                   return groupedMessages.map((group, groupIndex) => {
                     if (group.type === 'user') {
                       const message = group.messages[0];
-                      const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
+                      // Fix parsing of user message content - handle both formats
+                      const messageContent = (() => {
+                        try {
+                          const parsed = safeJsonParse<ParsedContent>(message.content, { content: message.content });
+                          return parsed.content || message.content;
+                        } catch {
+                          return message.content;
+                        }
+                      })();
+                      
                       return (
                         <div key={group.key} className="flex justify-end">
                           <div className="max-w-[85%] rounded-lg bg-primary/10 px-4 py-3 text-sm">
-                            {parsedContent.content}
+                            {messageContent}
                           </div>
                         </div>
                       );
@@ -992,18 +1028,22 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                   });
                 })()}
                  {/* Render thinking indicator ONLY if agent is running AND the last group wasn't assistant OR there are no messages yet */}
-                 {agentStatus === 'running' && !streamingTextContent && !streamingToolCall &&
+                 {(agentStatus === 'running' || agentStatus === 'connecting') && 
                    (messages.length === 0 || messages[messages.length - 1].type === 'user') && (
                       <div ref={latestMessageRef}>
                          <div className="flex items-start gap-3">
                              <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center overflow-hidden bg-gray-200">
                                <Image src="/kortix-symbol.svg" alt="Suna" width={14} height={14} className="object-contain"/>
                              </div>
-                        <div className="flex items-center gap-1.5 py-1 mt-3"> {/* Adjusted padding/margin */}
-                          <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse" />
-                          <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse delay-150" />
-                          <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse delay-300" />
-                         </div>
+                        <div className="flex-1 space-y-2">
+                          <div className="max-w-[90%] px-4 py-3 text-sm">
+                            <div className="flex items-center gap-1.5 py-1"> {/* Adjusted padding/margin */}
+                              <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse" />
+                              <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse delay-150" />
+                              <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse delay-300" />
+                            </div>
+                          </div>
+                        </div>
                         </div>
                       </div>
                   )}

@@ -61,7 +61,7 @@ export function FileViewerModal({
 
   // Handle initial file path when provided
   useEffect(() => {
-    if (open && sandboxId && initialFilePath) {
+    if (open && sandboxId && initialFilePath && typeof initialFilePath === 'string') {
       // Extract the directory path from the file path
       const filePath = initialFilePath.startsWith('/workspace/') 
         ? initialFilePath 
