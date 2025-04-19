@@ -43,7 +43,7 @@ if __name__ == "__main__":
     thread_manager.add_tool(MessageTool)
     
     # Conditionally register API-dependent tools
-    if os.getenv("EXA_API_KEY"):
+    if os.getenv("TAVILY_API_KEY"):
         thread_manager.add_tool(WebSearchTool)
         
     if os.getenv("RAPID_API_KEY"):

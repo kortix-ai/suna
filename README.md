@@ -104,7 +104,7 @@ You'll need the following components:
 - Daytona sandbox for secure agent execution
 - Python 3.11 for the API backend
 - API keys for LLM providers (OpenAI or Anthropic)
-- (Optional but recommended) EXA API key for enhanced search capabilities
+- (Optional but recommended) Tavily API key for enhanced search capabilities
 
 ### Prerequisites
 
@@ -134,7 +134,7 @@ You'll need the following components:
    - While other providers should work via [LiteLLM](https://github.com/BerriAI/litellm), OpenAI and Anthropic are recommended
 
 5. **Search API Key** (Optional):
-   - For enhanced search capabilities, obtain an [Exa API key](https://dashboard.exa.ai/playground)
+   - For enhanced search capabilities, obtain an [Tavily API key](https://tavily.com/)
   
 6. **RapidAPI API Key** (Optional):
    - To enable API services like LinkedIn, and others, you'll need a RapidAPI key
@@ -188,7 +188,7 @@ OPENAI_API_KEY=your_openai_api_key
 MODEL_TO_USE="gpt-4o"
 
 # Optional but recommended
-EXA_API_KEY=your_exa_api_key  # Optional
+TAVILY_API_KEY=your_tavily_api_key  # Optional
 RAPID_API_KEY=
 ```
 
