@@ -1,11 +1,10 @@
-# fly.toml app configuration file generated for backend-sparkling-sea-8773 on 2025-04-18T12:56:23+01:00
+# fly.toml app configuration file generated for backend-production-ogog on 2025-04-21T00:36:09+01:00
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-# Production app configuration
-app = 'backend-PRODUCTION'
-primary_region = 'cdg'
+app = 'backend-production-ogog'
+primary_region = 'bos'
 
 [build]
   dockerfile = 'docker/Dockerfile'
@@ -15,7 +14,7 @@ primary_region = 'cdg'
   force_https = true
   auto_stop_machines = 'stop'
   auto_start_machines = true
-  min_machines_running = 1 # Keep at least 1 machine running for production
+  min_machines_running = 1
   processes = ['app']
 
 [[vm]]

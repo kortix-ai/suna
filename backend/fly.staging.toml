@@ -1,10 +1,9 @@
-# fly.toml app configuration file generated for backend-sparkling-sea-8773 on 2025-04-18T12:56:23+01:00
+# fly.toml app configuration file generated for backend-staging-icy-mountain-363 on 2025-04-21T00:32:15+01:00
 #
 # See https://fly.io/docs/reference/configuration/ for information about how to use this file.
 #
 
-# Production app configuration
-app = 'backend-STAGING'
+app = 'backend-staging-icy-mountain-363'
 primary_region = 'cdg'
 
 [build]
@@ -15,7 +14,7 @@ primary_region = 'cdg'
   force_https = true
   auto_stop_machines = 'stop'
   auto_start_machines = true
-  min_machines_running = 1 # Keep at least 1 machine running for production
+  min_machines_running = 1
   processes = ['app']
 
 [[vm]]
