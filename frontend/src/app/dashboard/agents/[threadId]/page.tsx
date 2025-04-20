@@ -16,7 +16,7 @@ import { SiteHeader } from "@/components/thread/thread-site-header"
 import { ToolCallSidePanel, ToolCallInput } from "@/components/thread/tool-call-side-panel";
 import { useSidebar } from "@/components/ui/sidebar";
 import { useAgentStream } from '@/hooks/useAgentStream';
-import { Markdown } from '@/components/home/ui/markdown';
+import { Markdown } from '@/components/ui/markdown';
 import { cn } from "@/lib/utils";
 
 import { UnifiedMessage, ParsedContent, ParsedMetadata, ThreadParams } from '@/components/thread/types';
@@ -78,7 +78,7 @@ function renderMarkdownContent(content: string, handleToolClick: (assistantMessa
 
   // If no XML tags found, just return the full content as markdown
   if (!content.match(xmlRegex)) {
-    return <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none">{content}</Markdown>;
+    return <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words">{content}</Markdown>;
   }
 
   while ((match = xmlRegex.exec(content)) !== null) {
@@ -86,7 +86,7 @@ function renderMarkdownContent(content: string, handleToolClick: (assistantMessa
     if (match.index > lastIndex) {
       const textBeforeTag = content.substring(lastIndex, match.index);
       contentParts.push(
-        <Markdown key={`md-${lastIndex}`} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none inline-block mr-1">{textBeforeTag}</Markdown>
+        <Markdown key={`md-${lastIndex}`} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none inline-block mr-1 break-words">{textBeforeTag}</Markdown>
       );
     }
 
@@ -110,7 +110,7 @@ function renderMarkdownContent(content: string, handleToolClick: (assistantMessa
       // Render <ask> tag content with attachment UI
       contentParts.push(
         <div key={`ask-${match.index}`} className="space-y-3">
-          <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3">{askContent}</Markdown>
+          <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3">{askContent}</Markdown>
           
           {attachments.length > 0 && (
             <div className="mt-3 space-y-2">
@@ -172,7 +172,7 @@ function renderMarkdownContent(content: string, handleToolClick: (assistantMessa
   // Add text after the last tag
   if (lastIndex < content.length) {
     contentParts.push(
-      <Markdown key={`md-${lastIndex}`} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none">{content.substring(lastIndex)}</Markdown>
+      <Markdown key={`md-${lastIndex}`} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words">{content.substring(lastIndex)}</Markdown>
     );
   }
 
@@ -318,36 +318,17 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
       case 'completed':
       case 'stopped':
       case 'agent_not_running':
+      case 'error':
+      case 'failed':
         setAgentStatus('idle');
         setAgentRunId(null);
         // Reset auto-opened state when agent completes to trigger tool detection
         setAutoOpenedPanel(false);
         
-        // Refetch messages to ensure we have the final state after completion OR stopping
-        if (hookStatus === 'completed' || hookStatus === 'stopped') {
-          getMessages(threadId).then(messagesData => {
-            if (messagesData) {
-              console.log(`[PAGE] Refetched messages after ${hookStatus}:`, messagesData.length);
-              // Map API message type to UnifiedMessage type
-              const unifiedMessages = (messagesData || [])
-                .filter(msg => msg.type !== 'status') 
-                .map((msg: ApiMessageType) => ({
-                  message_id: msg.message_id || null, 
-                  thread_id: msg.thread_id || threadId,
-                  type: (msg.type || 'system') as UnifiedMessage['type'], 
-                  is_llm_message: Boolean(msg.is_llm_message),
-                  content: msg.content || '',
-                  metadata: msg.metadata || '{}',
-                  created_at: msg.created_at || new Date().toISOString(),
-                  updated_at: msg.updated_at || new Date().toISOString()
-                }));
-              
-              setMessages(unifiedMessages);
-              scrollToBottom('smooth');
-            }
-          }).catch(err => {
-            console.error(`Error refetching messages after ${hookStatus}:`, err);
-          });
+        // After terminal states, we should scroll to bottom to show latest messages
+        // The hook will already have refetched messages by this point
+        if (['completed', 'stopped', 'agent_not_running', 'error', 'failed'].includes(hookStatus)) {
+          scrollToBottom('smooth');
         }
         break;
       case 'connecting':
@@ -356,16 +337,8 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
       case 'streaming':
         setAgentStatus('running');
         break;
-      case 'error':
-        setAgentStatus('error');
-        // Handle errors by going back to idle state after a short delay
-        setTimeout(() => {
-          setAgentStatus('idle');
-          setAgentRunId(null);
-        }, 3000);
-        break;
     }
-  }, [threadId]);
+  }, []);
 
   const handleStreamError = useCallback((errorMessage: string) => {
     console.error(`[PAGE] Stream hook error: ${errorMessage}`);
@@ -609,39 +582,13 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const handleStopAgent = useCallback(async () => {
     console.log(`[PAGE] Requesting agent stop via hook.`);
     setAgentStatus('idle');
+    
+    // First stop the streaming and let the hook handle refetching
     await stopStreaming();
     
-    // Refetch messages after agent stop
-    try {
-      console.log('[PAGE] Refetching messages after agent stop');
-      const messagesData = await getMessages(threadId);
-      if (messagesData) {
-        // Map API message type to UnifiedMessage type
-        const unifiedMessages = (messagesData || [])
-          .filter(msg => msg.type !== 'status') // Filter out status messages
-          .map((msg: ApiMessageType) => ({
-            message_id: msg.message_id || null, 
-            thread_id: msg.thread_id || threadId,
-            type: (msg.type || 'system') as UnifiedMessage['type'], 
-            is_llm_message: Boolean(msg.is_llm_message),
-            content: msg.content || '',
-            metadata: msg.metadata || '{}',
-            created_at: msg.created_at || new Date().toISOString(),
-            updated_at: msg.updated_at || new Date().toISOString()
-          }));
-        
-        console.log('[PAGE] Refetched messages after stop:', unifiedMessages.length);
-        setMessages(unifiedMessages);
-        
-        // Clear auto-opened state to trigger tool detection with fresh messages
-        setAutoOpenedPanel(false);
-        
-        scrollToBottom('smooth');
-      }
-    } catch (err) {
-      console.error('Error refetching messages after agent stop:', err);
-    }
-  }, [stopStreaming, threadId]);
+    // We don't need to refetch messages here since the hook will do that
+    // The centralizing of refetching in the hook simplifies this logic
+  }, [stopStreaming]);
 
   const handleScroll = () => {
     if (!messagesContainerRef.current) return;
@@ -975,6 +922,46 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     }
   }, [projectName]);
 
+  // Add another useEffect to ensure messages are refreshed when agent status changes to idle
+  useEffect(() => {
+    if (agentStatus === 'idle' && streamHookStatus !== 'streaming' && streamHookStatus !== 'connecting') {
+      console.log('[PAGE] Agent status changed to idle, ensuring messages are up to date');
+      // Only do this if we're not in the initial loading state
+      if (!isLoading && initialLoadCompleted.current) {
+        // Double-check messages after a short delay to ensure we have latest content
+        const timer = setTimeout(() => {
+          getMessages(threadId).then(messagesData => {
+            if (messagesData) {
+              console.log(`[PAGE] Backup refetch completed with ${messagesData.length} messages`);
+              // Map API message type to UnifiedMessage type
+              const unifiedMessages = (messagesData || [])
+                .filter(msg => msg.type !== 'status') 
+                .map((msg: ApiMessageType) => ({
+                  message_id: msg.message_id || null, 
+                  thread_id: msg.thread_id || threadId,
+                  type: (msg.type || 'system') as UnifiedMessage['type'], 
+                  is_llm_message: Boolean(msg.is_llm_message),
+                  content: msg.content || '',
+                  metadata: msg.metadata || '{}',
+                  created_at: msg.created_at || new Date().toISOString(),
+                  updated_at: msg.updated_at || new Date().toISOString()
+                }));
+              
+              setMessages(unifiedMessages);
+              // Reset auto-opened panel to allow tool detection with fresh messages
+              setAutoOpenedPanel(false);
+              scrollToBottom('smooth');
+            }
+          }).catch(err => {
+            console.error('Error in backup message refetch:', err);
+          });
+        }, 1000);
+        
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [agentStatus, threadId, isLoading, streamHookStatus]);
+
   if (isLoading && !initialLoadCompleted.current) {
     return (
       <div className="flex h-screen">
@@ -1207,8 +1194,8 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                       return (
                         <div key={group.key} ref={groupIndex === groupedMessages.length - 1 ? latestMessageRef : null}>
                           <div className="flex items-start gap-3">
-                            <div className="flex-shrink-0 w-5 h-5 mt-2 rounded-md flex items-center justify-center overflow-hidden bg-primary/10">
-                              <Image src="/kortix-symbol.svg" alt="Suna" width={14} height={14} className="object-contain"/>
+                            <div className="flex-shrink-0 w-5 h-5 mt-2 rounded-md flex items-center justify-center overflow-hidden ml-auto mr-2">
+                              <Image src="/kortix-symbol.svg" alt="Kortix" width={14} height={14} className="object-contain invert dark:invert-0 opacity-70" />
                             </div>
                             <div className="flex-1">
                               <div className="inline-flex max-w-[90%] rounded-lg bg-muted/5 px-4 py-3 text-sm">

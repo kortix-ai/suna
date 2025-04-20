@@ -96,7 +96,7 @@ def create_sandbox(password: str):
         logger.debug("OPENAI_API_KEY configured for sandbox")
     
     sandbox = daytona.create(CreateSandboxParams(
-        image="adamcohenhillel/kortix-suna:0.0.13",
+        image="adamcohenhillel/kortix-suna:0.0.14",
         public=False,
         env_vars={
             "CHROME_PERSISTENT_SESSION": "true",

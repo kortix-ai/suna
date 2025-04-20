@@ -30,8 +30,7 @@
       "@/*": [
         "./src/*"
       ]
-    },
-    "strictNullChecks": true
+    }
   },
   "include": [
     "next-env.d.ts",

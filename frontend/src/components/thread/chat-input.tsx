@@ -327,14 +327,14 @@ export function ChatInput({
 
       <div 
         className={cn(
-          "flex items-end w-full rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-3 py-2 shadow-sm transition-all duration-200",
+          "flex items-end w-full rounded-lg border border-gray-200 dark:border-gray-900 bg-white dark:bg-black px-3 py-2 shadow-sm transition-all duration-200",
           isDraggingOver ? "border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-950/10" : ""
         )}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        <div className="relative flex-1 flex items-center overflow-hidden">
+        <div className="relative flex-1 flex items-center overflow-hidden dark:bg-black">
           <Textarea
             ref={textareaRef}
             value={value}
@@ -342,7 +342,7 @@ export function ChatInput({
             onKeyDown={handleKeyDown}
             placeholder={placeholder}
             className={cn(
-              "min-h-[24px] max-h-[200px] py-0 px-0 text-sm resize-none border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent w-full",
+              "min-h-[24px] max-h-[200px] py-0 px-0 text-sm resize-none border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent w-full dark:bg-black",
               isDraggingOver ? "opacity-40" : ""
             )}
             disabled={loading || (disabled && !isAgentRunning)}

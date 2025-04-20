@@ -9,7 +9,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Markdown } from "./markdown";
+import { Markdown } from "../../ui/markdown";
 import { useTextStream, type Mode } from "./response-stream";
 
 type ReasoningContextType = {

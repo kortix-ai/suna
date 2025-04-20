@@ -3,7 +3,7 @@ import { ToolViewProps } from "./types";
 import { formatTimestamp, getToolTitle } from "./utils";
 import { getToolIcon } from "../utils";
 import { CircleDashed, CheckCircle, AlertTriangle } from "lucide-react";
-import { Markdown } from "@/components/home/ui/markdown";
+import { Markdown } from "@/components/ui/markdown";
 import { cn } from "@/lib/utils";
 
 export function GenericToolView({ 
