@@ -103,14 +103,13 @@ export default function NotFound() {
               The page you're looking for doesn't exist or has been moved.
             </p>
           </div>
-
           <div className="flex items-center w-full max-w-xl gap-2 flex-wrap justify-center">
             <Link
               href="/"
               className="inline-flex h-12 md:h-14 items-center justify-center gap-2 rounded-full bg-primary text-white px-6 shadow-md hover:bg-primary/90 transition-all duration-200"
             >
-              <ArrowLeft className="size-4 md:size-5" />
-              <span className="font-medium">Return Home</span>
+              <ArrowLeft className="size-4 md:size-5 dark:text-black" />
+              <span className="font-medium dark:text-black">Return Home</span>
             </Link>
           </div>
 

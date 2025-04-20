@@ -295,6 +295,7 @@
   }
   html {
     scroll-behavior: smooth;
+    zoom: 100%;
   }
   body {
     @apply bg-background text-foreground;

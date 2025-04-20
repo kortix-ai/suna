@@ -96,7 +96,7 @@ export const siteConfig = {
       price: "$29",
       description: "For professionals and small teams",
       buttonText: "Hire Suna",
-      buttonColor: "bg-primary text-white",
+      buttonColor: "bg-primary text-white dark:text-black",
       isPopular: true,
       hours: "4 hours",
       features: [
@@ -1053,7 +1053,7 @@ export const siteConfig = {
     backgroundImage: "/holo.png",
     button: {
       text: "Hire Suna today",
-      href: "https://github.com/Kortix-ai/Suna",
+      href: "/auth",
     },
     subtext: "The generalist AI Agent that acts on your behalf",
   },
@@ -1062,7 +1062,7 @@ export const siteConfig = {
       title: "Kortix",
       links: [
         { id: 1, title: "About", url: "https://kortix.ai" },
-        { id: 3, title: "Contact", url: "contact@kortix.ai" },
+        { id: 3, title: "Contact", url: "mailto:hey@kortix.ai" },
         { id: 4, title: "Careers", url: "https://kortix.ai/careers" },
       ],
     },
