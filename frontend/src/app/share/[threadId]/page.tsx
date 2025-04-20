@@ -1,20 +1,20 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
-  ArrowDown, CheckCircle, CircleDashed, AlertTriangle, Info, File, ChevronRight, Play, Pause
+  ArrowDown, CircleDashed, Info, File, ChevronRight, Play, Pause
 } from 'lucide-react';
-import { getMessages, getAgentRuns, getProject, getThread, Project, Message as BaseApiMessageType } from '@/lib/api';
+import { getMessages, getProject, getThread, Project, Message as BaseApiMessageType } from '@/lib/api';
 import { toast } from 'sonner';
 import { Skeleton } from "@/components/ui/skeleton";
 import { FileViewerModal } from '@/components/thread/file-viewer-modal';
-import { SiteHeader } from "@/components/thread/thread-site-header";
+
 import { ToolCallSidePanel, ToolCallInput } from "@/components/thread/tool-call-side-panel";
 import { useAgentStream } from '@/hooks/useAgentStream';
-import { Markdown } from '@/components/home/ui/markdown';
+import { Markdown } from '@/components/ui/markdown';
 import { cn } from "@/lib/utils";
 
 import { UnifiedMessage, ParsedContent, ParsedMetadata, ThreadParams } from '@/components/thread/types';
