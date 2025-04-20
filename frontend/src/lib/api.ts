@@ -16,11 +16,10 @@ const apiCache = {
   
   getThreads: (projectId: string) => apiCache.threads.get(projectId || 'all'),
   setThreads: (projectId: string, data: any) => apiCache.threads.set(projectId || 'all', data),
+  invalidateThreads: (projectId: string) => apiCache.threads.delete(projectId || 'all'),
   
   getThreadMessages: (threadId: string) => apiCache.threadMessages.get(threadId),
   setThreadMessages: (threadId: string, data: any) => apiCache.threadMessages.set(threadId, data),
-  
-  // Helper to clear parts of the cache when data changes
   invalidateThreadMessages: (threadId: string) => apiCache.threadMessages.delete(threadId),
   
   // Functions to clear all cache
@@ -67,7 +66,8 @@ export type Project = {
 export type Thread = {
   thread_id: string;
   account_id: string | null;
-  project_id: string | null;
+  project_id?: string | null;
+  is_public?: boolean;
   created_at: string;
   updated_at: string;
   [key: string]: any; // Allow additional properties to handle database fields
@@ -151,58 +151,70 @@ export const getProject = async (projectId: string): Promise<Project> => {
   }
   
   const supabase = createClient();
-  const { data, error } = await supabase
-    .from('projects')
-    .select('*')
-    .eq('project_id', projectId)
-    .single();
   
-  if (error) throw error;
-
-  console.log('Raw project data from database:', data);
-
-  // If project has a sandbox, ensure it's started
-  if (data.sandbox?.id) {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.access_token) {
-        console.log(`Ensuring sandbox is active for project ${projectId}...`);
-        const response = await fetch(`${API_URL}/project/${projectId}/sandbox/ensure-active`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-          },
-        });
-        
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => 'No error details available');
-          console.warn(`Failed to ensure sandbox is active: ${response.status} ${response.statusText}`, errorText);
-        } else {
-          console.log('Sandbox activation successful');
-        }
+  try {
+    const { data, error } = await supabase
+      .from('projects')
+      .select('*')
+      .eq('project_id', projectId)
+      .single();
+    
+    if (error) {
+      // Handle the specific "no rows returned" error from Supabase
+      if (error.code === 'PGRST116') {
+        throw new Error(`Project not found or not accessible: ${projectId}`);
       }
-    } catch (sandboxError) {
-      console.warn('Failed to ensure sandbox is active:', sandboxError);
-      // Non-blocking error - continue with the project data
+      throw error;
     }
+
+    console.log('Raw project data from database:', data);
+
+    // If project has a sandbox, ensure it's started
+    if (data.sandbox?.id) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          console.log(`Ensuring sandbox is active for project ${projectId}...`);
+          const response = await fetch(`${API_URL}/project/${projectId}/sandbox/ensure-active`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => 'No error details available');
+            console.warn(`Failed to ensure sandbox is active: ${response.status} ${response.statusText}`, errorText);
+          } else {
+            console.log('Sandbox activation successful');
+          }
+        }
+      } catch (sandboxError) {
+        console.warn('Failed to ensure sandbox is active:', sandboxError);
+        // Non-blocking error - continue with the project data
+      }
+    }
+    
+    // Map database fields to our Project type
+    const mappedProject: Project = {
+      id: data.project_id,
+      name: data.name || '',
+      description: data.description || '',
+      account_id: data.account_id,
+      created_at: data.created_at,
+      sandbox: data.sandbox || { id: "", pass: "", vnc_preview: "", sandbox_url: "" }
+    };
+    
+    console.log('Mapped project data for frontend:', mappedProject);
+    
+    // Cache the result
+    apiCache.setProject(projectId, mappedProject);
+    return mappedProject;
+  } catch (error) {
+    console.error(`Error fetching project ${projectId}:`, error);
+    throw error;
   }
-  
-  // Map database fields to our Project type
-  const mappedProject: Project = {
-    id: data.project_id,
-    name: data.name || '',
-    description: data.description || '',
-    account_id: data.account_id,
-    created_at: data.created_at,
-    sandbox: data.sandbox || { id: "", pass: "", vnc_preview: "", sandbox_url: "" }
-  };
-  
-  console.log('Mapped project data for frontend:', mappedProject);
-  
-  // Cache the result
-  apiCache.setProject(projectId, mappedProject);
-  return mappedProject;
 };
 
 export const createProject = async (
@@ -1002,4 +1014,36 @@ export const getSandboxFileContent = async (sandboxId: string, path: string): Pr
 // Function to clear all API cache
 export const clearApiCache = () => {
   apiCache.clearAll();
+};
+
+export const updateThread = async (threadId: string, data: Partial<Thread>): Promise<Thread> => {
+  const supabase = createClient();
+  
+  // Format the data for update
+  const updateData = { ...data };
+  
+  // Update the thread
+  const { data: updatedThread, error } = await supabase
+    .from('threads')
+    .update(updateData)
+    .eq('thread_id', threadId)
+    .select()
+    .single();
+  
+  if (error) {
+    console.error('Error updating thread:', error);
+    throw new Error(`Error updating thread: ${error.message}`);
+  }
+  
+  // Invalidate thread cache if we're updating thread data
+  if (updatedThread.project_id) {
+    apiCache.invalidateThreads(updatedThread.project_id);
+  }
+  apiCache.invalidateThreads('all');
+  
+  return updatedThread;
+};
+
+export const toggleThreadPublicStatus = async (threadId: string, isPublic: boolean): Promise<Thread> => {
+  return updateThread(threadId, { is_public: isPublic });
 };

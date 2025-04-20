@@ -15,6 +15,7 @@ CREATE TABLE threads (
     thread_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     account_id UUID REFERENCES basejump.accounts(id) ON DELETE CASCADE,
     project_id UUID REFERENCES projects(project_id) ON DELETE CASCADE,
+    is_public BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
@@ -113,6 +114,7 @@ CREATE POLICY project_delete_policy ON projects
 CREATE POLICY thread_select_policy ON threads
     FOR SELECT
     USING (
+        is_public = TRUE OR
         basejump.has_role_on_account(account_id) = true OR 
         EXISTS (
             SELECT 1 FROM projects
@@ -163,6 +165,7 @@ CREATE POLICY agent_run_select_policy ON agent_runs
             LEFT JOIN projects ON threads.project_id = projects.project_id
             WHERE threads.thread_id = agent_runs.thread_id
             AND (
+                threads.is_public = TRUE OR
                 basejump.has_role_on_account(threads.account_id) = true OR 
                 basejump.has_role_on_account(projects.account_id) = true
             )
@@ -220,6 +223,7 @@ CREATE POLICY message_select_policy ON messages
             LEFT JOIN projects ON threads.project_id = projects.project_id
             WHERE threads.thread_id = messages.thread_id
             AND (
+                threads.is_public = TRUE OR
                 basejump.has_role_on_account(threads.account_id) = true OR 
                 basejump.has_role_on_account(projects.account_id) = true
             )
@@ -270,8 +274,8 @@ CREATE POLICY message_delete_policy ON messages
 
 -- Grant permissions to roles
 GRANT ALL PRIVILEGES ON TABLE projects TO authenticated, service_role;
-GRANT ALL PRIVILEGES ON TABLE threads TO authenticated, service_role;
-GRANT ALL PRIVILEGES ON TABLE messages TO authenticated, service_role;
+GRANT SELECT ON TABLE threads TO authenticated, anon, service_role;
+GRANT SELECT ON TABLE messages TO authenticated, anon, service_role;
 GRANT ALL PRIVILEGES ON TABLE agent_runs TO authenticated, service_role;
 
 -- Create a function that matches the Python get_messages behavior
@@ -286,12 +290,18 @@ DECLARE
     current_role TEXT;
     latest_summary_id UUID;
     latest_summary_time TIMESTAMP WITH TIME ZONE;
+    is_thread_public BOOLEAN;
 BEGIN
     -- Get current role
     SELECT current_user INTO current_role;
     
-    -- Skip access check for service_role
-    IF current_role = 'authenticated' THEN
+    -- Check if thread is public
+    SELECT is_public INTO is_thread_public
+    FROM threads
+    WHERE thread_id = p_thread_id;
+    
+    -- Skip access check for service_role or public threads
+    IF current_role = 'authenticated' AND NOT is_thread_public THEN
         -- Check if thread exists and user has access
         SELECT EXISTS (
             SELECT 1 FROM threads t
@@ -361,4 +371,4 @@ END;
 $$;
 
 -- Grant execute permissions
-GRANT EXECUTE ON FUNCTION get_llm_formatted_messages TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION get_llm_formatted_messages TO authenticated, anon, service_role;

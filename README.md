@@ -126,7 +126,7 @@ You'll need the following components:
    - Generate an API key from your account settings
    - Go to [Images](https://app.daytona.io/dashboard/images)
    - Click "Add Image"
-   - Enter `adamcohenhillel/kortix-suna:0.0.13` as the image name
+   - Enter `adamcohenhillel/kortix-suna:0.0.16` as the image name
    - Set `exec /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf` as the Entrypoint
 
 4. **LLM API Keys**:
@@ -251,3 +251,7 @@ python api.py
 ## License
 
 Kortix Suna is licensed under the Apache License, Version 2.0. See [LICENSE](./LICENSE) for the full license text.
+
+
+## Co-Creators:
+Adam Cohen Hillel, Marko Kraemer, Dom 

@@ -128,6 +128,11 @@ async def verify_thread_access(client, thread_id: str, user_id: str):
         raise HTTPException(status_code=404, detail="Thread not found")
     
     thread_data = thread_result.data[0]
+    
+    # Check if thread is public
+    if thread_data.get('is_public'):
+        return True
+        
     account_id = thread_data.get('account_id')
     # When using service role, we need to manually check account membership instead of using current_user_account_role
     if account_id:
