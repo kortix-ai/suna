@@ -417,10 +417,14 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         
         if (!isMounted) return;
         
+        console.log('[PAGE] Thread data loaded:', threadData);
+        
         if (threadData?.project_id) {
+          console.log('[PAGE] Getting project data for project_id:', threadData.project_id);
           const projectData = await getProject(threadData.project_id);
           if (isMounted && projectData) {
             console.log('[PAGE] Project data loaded:', projectData);
+            console.log('[PAGE] Project ID:', projectData.id);
             console.log('[PAGE] Project sandbox data:', projectData.sandbox);
             
             // Set project data
@@ -1089,7 +1093,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
           <SiteHeader 
             threadId={threadId} 
             projectName={projectName}
-            projectId={project?.id ?? null}
+            projectId={project?.id || ""}
             onViewFiles={handleOpenFileViewer} 
             onToggleSidePanel={toggleSidePanel}
           />
@@ -1109,7 +1113,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
           toolCalls={[]}
           currentIndex={0}
           onNavigate={handleSidePanelNavigate}
-          project={project}
+          project={project || undefined}
           agentStatus="error"
         />
       </div>
@@ -1122,7 +1126,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         <SiteHeader 
           threadId={threadId} 
           projectName={projectName}
-          projectId={project?.id ?? null}
+          projectId={project?.id || ""}
           onViewFiles={handleOpenFileViewer} 
           onToggleSidePanel={toggleSidePanel}
           onProjectRenamed={handleProjectRenamed}
@@ -1385,7 +1389,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         agentStatus={agentStatus}
         currentIndex={currentToolIndex}
         onNavigate={handleSidePanelNavigate}
-        project={project}
+        project={project || undefined}
         renderAssistantMessage={toolViewAssistant}
         renderToolResult={toolViewResult}
       />
@@ -1396,7 +1400,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
           onOpenChange={setFileViewerOpen}
           sandboxId={sandboxId}
           initialFilePath={fileToView}
-          project={project}
+          project={project || undefined}
         />
       )}
     </div>

@@ -22,6 +22,24 @@ const apiCache = {
   
   // Helper to clear parts of the cache when data changes
   invalidateThreadMessages: (threadId: string) => apiCache.threadMessages.delete(threadId),
+  
+  // Functions to clear all cache
+  clearAll: () => {
+    apiCache.projects.clear();
+    apiCache.threads.clear();
+    apiCache.threadMessages.clear();
+    console.log('[API] Cache cleared');
+  },
+  
+  clearProjects: () => {
+    apiCache.projects.clear();
+    console.log('[API] Projects cache cleared');
+  },
+  
+  clearThreads: () => {
+    apiCache.threads.clear();
+    console.log('[API] Threads cache cleared');
+  }
 };
 
 // Track active streams by agent run ID
@@ -36,20 +54,23 @@ export type Project = {
   description: string;
   account_id: string;
   created_at: string;
+  updated_at?: string;
   sandbox: {
     vnc_preview?: string;
     sandbox_url?: string;
     id?: string;
     pass?: string;
   };
+  [key: string]: any; // Allow additional properties to handle database fields
 }
 
 export type Thread = {
   thread_id: string;
   account_id: string | null;
-  project_id?: string | null;
+  project_id: string | null;
   created_at: string;
   updated_at: string;
+  [key: string]: any; // Allow additional properties to handle database fields
 }
 
 export type Message = {
@@ -78,6 +99,7 @@ export const getProjects = async (): Promise<Project[]> => {
   // Check cache first
   const cached = apiCache.getProjects();
   if (cached) {
+    console.log('[API] Returning cached projects:', cached.length);
     return cached;
   }
   
@@ -96,9 +118,24 @@ export const getProjects = async (): Promise<Project[]> => {
       throw error;
     }
     
+    console.log('[API] Raw projects from DB:', data?.length, data);
+    
+    // Map database fields to our Project type 
+    const mappedProjects: Project[] = (data || []).map(project => ({
+      id: project.project_id,
+      name: project.name || '',
+      description: project.description || '',
+      account_id: project.account_id,
+      created_at: project.created_at,
+      updated_at: project.updated_at,
+      sandbox: project.sandbox || { id: "", pass: "", vnc_preview: "", sandbox_url: "" }
+    }));
+    
+    console.log('[API] Mapped projects for frontend:', mappedProjects.length);
+    
     // Cache the result
-    apiCache.setProjects(data || []);
-    return data || [];
+    apiCache.setProjects(mappedProjects);
+    return mappedProjects;
   } catch (err) {
     console.error('Error fetching projects:', err);
     // Return empty array for permission errors to avoid crashing the UI
@@ -121,6 +158,8 @@ export const getProject = async (projectId: string): Promise<Project> => {
     .single();
   
   if (error) throw error;
+
+  console.log('Raw project data from database:', data);
 
   // If project has a sandbox, ensure it's started
   if (data.sandbox?.id) {
@@ -149,9 +188,21 @@ export const getProject = async (projectId: string): Promise<Project> => {
     }
   }
   
+  // Map database fields to our Project type
+  const mappedProject: Project = {
+    id: data.project_id,
+    name: data.name || '',
+    description: data.description || '',
+    account_id: data.account_id,
+    created_at: data.created_at,
+    sandbox: data.sandbox || { id: "", pass: "", vnc_preview: "", sandbox_url: "" }
+  };
+  
+  console.log('Mapped project data for frontend:', mappedProject);
+  
   // Cache the result
-  apiCache.setProject(projectId, data);
-  return data;
+  apiCache.setProject(projectId, mappedProject);
+  return mappedProject;
 };
 
 export const createProject = async (
@@ -196,6 +247,16 @@ export const createProject = async (
 
 export const updateProject = async (projectId: string, data: Partial<Project>): Promise<Project> => {
   const supabase = createClient();
+  
+  console.log('Updating project with ID:', projectId);
+  console.log('Update data:', data);
+  
+  // Sanity check to avoid update errors
+  if (!projectId || projectId === '') {
+    console.error('Attempted to update project with invalid ID:', projectId);
+    throw new Error('Cannot update project: Invalid project ID');
+  }
+  
   const { data: updatedData, error } = await supabase
     .from('projects')
     .update(data)
@@ -230,14 +291,14 @@ export const updateProject = async (projectId: string, data: Partial<Project>): 
     }));
   }
   
-  // Return formatted project data
+  // Return formatted project data - use same mapping as getProject
   return {
     id: updatedData.project_id,
     name: updatedData.name,
     description: updatedData.description || '',
     account_id: updatedData.account_id,
     created_at: updatedData.created_at,
-    sandbox: updatedData.sandbox || { id: "", pass: "", vnc_preview: "" }
+    sandbox: updatedData.sandbox || { id: "", pass: "", vnc_preview: "", sandbox_url: "" }
   };
 };
 
@@ -256,6 +317,7 @@ export const getThreads = async (projectId?: string): Promise<Thread[]> => {
   // Check cache first
   const cached = apiCache.getThreads(projectId || 'all');
   if (cached) {
+    console.log('[API] Returning cached threads:', cached.length, projectId ? `for project ${projectId}` : 'for all projects');
     return cached;
   }
   
@@ -263,16 +325,31 @@ export const getThreads = async (projectId?: string): Promise<Thread[]> => {
   let query = supabase.from('threads').select('*');
   
   if (projectId) {
+    console.log('[API] Filtering threads by project_id:', projectId);
     query = query.eq('project_id', projectId);
   }
   
   const { data, error } = await query;
   
-  if (error) throw error;
+  if (error) {
+    console.error('[API] Error fetching threads:', error);
+    throw error;
+  }
+  
+  console.log('[API] Raw threads from DB:', data?.length, data);
+  
+  // Map database fields to ensure consistency with our Thread type
+  const mappedThreads: Thread[] = (data || []).map(thread => ({
+    thread_id: thread.thread_id,
+    account_id: thread.account_id,
+    project_id: thread.project_id,
+    created_at: thread.created_at,
+    updated_at: thread.updated_at
+  }));
   
   // Cache the result
-  apiCache.setThreads(projectId || 'all', data || []);
-  return data || [];
+  apiCache.setThreads(projectId || 'all', mappedThreads);
+  return mappedThreads;
 };
 
 export const getThread = async (threadId: string): Promise<Thread> => {
@@ -920,4 +997,9 @@ export const getSandboxFileContent = async (sandboxId: string, path: string): Pr
     console.error('Failed to get sandbox file content:', error);
     throw error;
   }
+};
+
+// Function to clear all API cache
+export const clearApiCache = () => {
+  apiCache.clearAll();
 };

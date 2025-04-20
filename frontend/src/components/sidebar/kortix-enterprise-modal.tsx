@@ -39,15 +39,15 @@ export function KortixProcessModal() {
         <DialogTitle className="sr-only">Custom AI Employees for your Business.</DialogTitle>
         <div className="grid grid-cols-1 md:grid-cols-2 h-[800px] overflow-hidden">
           {/* Info Panel */}
-          <div className="p-8 md:p-12 flex flex-col bg-white dark:bg-black relative min-h-0">
+          <div className="p-8 flex flex-col bg-white dark:bg-black relative min-h-0">
             <div className="relative z-10 h-full flex flex-col">
-              <div className="mb-10">
+              <div className="mb-8 mt-0">
                 <Image 
                   src={isDarkMode ? "/kortix-logo-white.svg" : "/kortix-logo.svg"} 
                   alt="Kortix Logo" 
-                  width={80} 
-                  height={28} 
-                  className="h-8 w-auto"
+                  width={60} 
+                  height={21} 
+                  className="h-6 w-auto"
                 />
               </div>
               
@@ -117,7 +117,8 @@ export function KortixProcessModal() {
               </div>
             </div>
           </div>
-          <Cal 
+          <div className="bg-white dark:bg-[#171717]">
+            <Cal 
                 namespace="enterprise-demo"
                 calLink="team/kortix/enterprise-demo"
                 style={{width:"100%", height:"100%", overflow:"scroll"}}
@@ -126,6 +127,7 @@ export function KortixProcessModal() {
                   hideEventTypeDetails: "false",
                 }}
               />
+          </div>
 
         </div>
       </DialogContent>

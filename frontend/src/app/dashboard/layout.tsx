@@ -1,6 +1,6 @@
 "use client"
 
-import { SidebarLeft } from "@/components/dashboard/sidebar/sidebar-left"
+import { SidebarLeft } from "@/components/sidebar/sidebar-left"
 import {
   SidebarInset,
   SidebarProvider,

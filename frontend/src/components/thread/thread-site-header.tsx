@@ -66,6 +66,13 @@ export function SiteHeader({
     
     if (editName !== projectName) {
       try {
+        if (!projectId) {
+          toast.error("Cannot rename: Project ID is missing")
+          setEditName(projectName)
+          setIsEditing(false)
+          return
+        }
+        
         const updatedProject = await updateProject(projectId, { name: editName })
         if (updatedProject) {
           onProjectRenamed?.(editName)

@@ -34,87 +34,85 @@ import {
   TooltipContent,
   TooltipTrigger
 } from "@/components/ui/tooltip"
-import { getProjects, getThreads } from "@/lib/api"
+import { getProjects, getThreads, clearApiCache, Project, Thread } from "@/lib/api"
 import Link from "next/link"
 
-// Define a type to handle potential database schema/API response differences
-type ProjectResponse = {
-  id: string;
-  project_id?: string;
-  name: string;
-  updated_at?: string;
-  [key: string]: any; // Allow other properties
-}
-
-// Agent type with project ID for easier updating
-type Agent = {
-  projectId: string;
+// Thread with associated project info for display in sidebar
+type ThreadWithProject = {
   threadId: string;
-  name: string;
+  projectId: string;
+  projectName: string;
   url: string;
-  updatedAt: string; // Store updated_at for consistent sorting
+  updatedAt: string;
 }
 
 export function NavAgents() {
   const { isMobile, state } = useSidebar()
-  const [agents, setAgents] = useState<Agent[]>([])
+  const [threads, setThreads] = useState<ThreadWithProject[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [loadingAgentId, setLoadingAgentId] = useState<string | null>(null)
+  const [loadingThreadId, setLoadingThreadId] = useState<string | null>(null)
   const pathname = usePathname()
   const router = useRouter()
 
-  // Helper to sort agents by updated_at (most recent first)
-  const sortAgents = (agentsList: Agent[]): Agent[] => {
-    return [...agentsList].sort((a, b) => {
+  // Helper to sort threads by updated_at (most recent first)
+  const sortThreads = (threadsList: ThreadWithProject[]): ThreadWithProject[] => {
+    return [...threadsList].sort((a, b) => {
       return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
     });
   };
 
-  // Function to load agents data
-  const loadAgents = async (showLoading = true) => {
+  // Function to load threads data with associated projects
+  const loadThreadsWithProjects = async (showLoading = true) => {
     try {
       if (showLoading) {
         setIsLoading(true)
       }
       
       // Get all projects
-      const projectsData = await getProjects() as ProjectResponse[]
+      const projects = await getProjects() as Project[]
+      console.log("Projects loaded:", projects.length, projects.map(p => ({ id: p.id, name: p.name })));
+      
+      // Create a map of projects by ID for faster lookups
+      const projectsById = new Map<string, Project>();
+      projects.forEach(project => {
+        projectsById.set(project.id, project);
+      });
       
       // Get all threads at once
       const allThreads = await getThreads() 
+      console.log("Threads loaded:", allThreads.length, allThreads.map(t => ({ thread_id: t.thread_id, project_id: t.project_id })));
       
-      // For each project, find its matching threads
-      const agentsList: Agent[] = []
-      for (const project of projectsData) {
-        // Get the project ID (handle potential different field names)
-        const projectId = project.id || project.project_id || ''
+      // Create display objects for threads with their project info
+      const threadsWithProjects: ThreadWithProject[] = [];
+      
+      for (const thread of allThreads) {
+        const projectId = thread.project_id;
+        // Skip threads without a project ID
+        if (!projectId) continue;
         
-        // Get the updated_at timestamp (default to current time if not available)
-        const updatedAt = project.updated_at || new Date().toISOString()
-        
-        // Match threads that belong to this project
-        const projectThreads = allThreads.filter(thread => 
-          thread.project_id === projectId
-        )
-        
-        if (projectThreads.length > 0) {
-          // For each thread in this project, create an agent entry
-          for (const thread of projectThreads) {
-            agentsList.push({
-              projectId,
-              threadId: thread.thread_id,
-              name: project.name || 'Unnamed Project',
-              url: `/dashboard/agents/${thread.thread_id}`,
-              updatedAt: thread.updated_at || updatedAt // Use thread update time if available
-            })
-          }
+        // Get the associated project
+        const project = projectsById.get(projectId);
+        if (!project) {
+          console.log(`❌ Thread ${thread.thread_id} has project_id=${projectId} but no matching project found`);
+          continue;
         }
+        
+        console.log(`✅ Thread ${thread.thread_id} matched with project "${project.name}" (${projectId})`);
+        
+        // Add to our list
+        threadsWithProjects.push({
+          threadId: thread.thread_id,
+          projectId: projectId,
+          projectName: project.name || 'Unnamed Project',
+          url: `/dashboard/agents/${thread.thread_id}`,
+          updatedAt: thread.updated_at || project.updated_at || new Date().toISOString()
+        });
       }
       
-      // Set agents, ensuring consistent sort order
-      setAgents(sortAgents(agentsList))
+      // Set threads, ensuring consistent sort order
+      setThreads(sortThreads(threadsWithProjects))
     } catch (err) {
-      console.error("Error loading agents for sidebar:", err)
+      console.error("Error loading threads with projects:", err)
     } finally {
       if (showLoading) {
         setIsLoading(false)
@@ -122,10 +120,10 @@ export function NavAgents() {
     }
   }
 
-  // Load agents dynamically from the API on initial load
+  // Load threads dynamically from the API on initial load
   useEffect(() => {
-    loadAgents(true)
-  }, [])
+    loadThreadsWithProjects(true);
+  }, []);
 
   // Listen for project-updated events to update the sidebar without full reload
   useEffect(() => {
@@ -134,25 +132,23 @@ export function NavAgents() {
       if (customEvent.detail) {
         const { projectId, updatedData } = customEvent.detail;
         
-        // Update just the name for the agents with the matching project ID
-        // Don't update the timestamp here to prevent immediate re-sorting
-        setAgents(prevAgents => {
-          const updatedAgents = prevAgents.map(agent => 
-            agent.projectId === projectId 
+        // Update just the name for the threads with the matching project ID
+        setThreads(prevThreads => {
+          const updatedThreads = prevThreads.map(thread => 
+            thread.projectId === projectId 
               ? { 
-                  ...agent, 
-                  name: updatedData.name,
-                  // Keep the original updatedAt timestamp locally
+                  ...thread, 
+                  projectName: updatedData.name,
                 } 
-              : agent
+              : thread
           );
           
-          // Return the agents without re-sorting immediately
-          return updatedAgents;
+          // Return the threads without re-sorting immediately
+          return updatedThreads;
         });
         
         // Silently refresh in background to fetch updated timestamp and re-sort
-        setTimeout(() => loadAgents(false), 1000);
+        setTimeout(() => loadThreadsWithProjects(false), 1000);
       }
     }
 
@@ -167,13 +163,13 @@ export function NavAgents() {
 
   // Reset loading state when navigation completes (pathname changes)
   useEffect(() => {
-    setLoadingAgentId(null)
+    setLoadingThreadId(null)
   }, [pathname])
 
-  // Function to handle agent click with loading state
-  const handleAgentClick = (e: React.MouseEvent<HTMLAnchorElement>, threadId: string, url: string) => {
+  // Function to handle thread click with loading state
+  const handleThreadClick = (e: React.MouseEvent<HTMLAnchorElement>, threadId: string, url: string) => {
     e.preventDefault()
-    setLoadingAgentId(threadId)
+    setLoadingThreadId(threadId)
     router.push(url)
   }
 
@@ -224,41 +220,41 @@ export function NavAgents() {
               </SidebarMenuButton>
             </SidebarMenuItem>
           ))
-        ) : agents.length > 0 ? (
-          // Show all agents
+        ) : threads.length > 0 ? (
+          // Show all threads with project info
           <>
-            {agents.map((agent, index) => {
-              // Check if this agent is currently active
-              const isActive = pathname.includes(agent.threadId);
-              const isAgentLoading = loadingAgentId === agent.threadId;
+            {threads.map((thread) => {
+              // Check if this thread is currently active
+              const isActive = pathname?.includes(thread.threadId) || false;
+              const isThreadLoading = loadingThreadId === thread.threadId;
               
               return (
-                <SidebarMenuItem key={`agent-${agent.threadId}`}>
+                <SidebarMenuItem key={`thread-${thread.threadId}`}>
                   {state === "collapsed" ? (
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <SidebarMenuButton asChild className={isActive ? "bg-accent text-accent-foreground" : ""}>
-                          <Link href={agent.url} onClick={(e) => handleAgentClick(e, agent.threadId, agent.url)}>
-                            {isAgentLoading ? (
+                          <Link href={thread.url} onClick={(e) => handleThreadClick(e, thread.threadId, thread.url)}>
+                            {isThreadLoading ? (
                               <Loader2 className="h-4 w-4 animate-spin" />
                             ) : (
                               <MessagesSquare className="h-4 w-4" />
                             )}
-                            <span>{agent.name}</span>
+                            <span>{thread.projectName}</span>
                           </Link>
                         </SidebarMenuButton>
                       </TooltipTrigger>
-                      <TooltipContent>{agent.name}</TooltipContent>
+                      <TooltipContent>{thread.projectName}</TooltipContent>
                     </Tooltip>
                   ) : (
                     <SidebarMenuButton asChild className={isActive ? "bg-accent text-accent-foreground font-medium" : ""}>
-                      <Link href={agent.url} onClick={(e) => handleAgentClick(e, agent.threadId, agent.url)}>
-                        {isAgentLoading ? (
+                      <Link href={thread.url} onClick={(e) => handleThreadClick(e, thread.threadId, thread.url)}>
+                        {isThreadLoading ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
                           <MessagesSquare className="h-4 w-4" />
                         )}
-                        <span>{agent.name}</span>
+                        <span>{thread.projectName}</span>
                       </Link>
                     </SidebarMenuButton>
                   )}
@@ -276,14 +272,14 @@ export function NavAgents() {
                         align={isMobile ? "end" : "start"}
                       >
                         <DropdownMenuItem onClick={() => {
-                          navigator.clipboard.writeText(window.location.origin + agent.url)
+                          navigator.clipboard.writeText(window.location.origin + thread.url)
                           toast.success("Link copied to clipboard")
                         }}>
                           <LinkIcon className="text-muted-foreground" />
                           <span>Copy Link</span>
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild>
-                          <a href={agent.url} target="_blank" rel="noopener noreferrer">
+                          <a href={thread.url} target="_blank" rel="noopener noreferrer">
                             <ArrowUpRight className="text-muted-foreground" />
                             <span>Open in New Tab</span>
                           </a>
