@@ -3,10 +3,10 @@
 import * as React from "react"
 import Link from "next/link"
 
-import { NavAgents } from "@/components/dashboard/sidebar/nav-agents"
-import { NavUserWithTeams } from "@/components/dashboard/sidebar/nav-user-with-teams"
-import { KortixLogo } from "@/components/dashboard/sidebar/kortix-logo"
-import { CTACard } from "@/components/dashboard/sidebar/cta"
+import { NavAgents } from "@/components/sidebar/nav-agents"
+import { NavUserWithTeams } from "@/components/sidebar/nav-user-with-teams"
+import { KortixLogo } from "@/components/sidebar/kortix-logo"
+import { CTACard } from "@/components/sidebar/cta"
 import {
   Sidebar,
   SidebarContent,

@@ -5,16 +5,14 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
-  ArrowDown, CheckCircle, CircleDashed, AlertTriangle, Info, File, ChevronRight
+  ArrowDown, CheckCircle, CircleDashed, AlertTriangle, Info, File, ChevronRight, Play, Pause
 } from 'lucide-react';
-import { addUserMessage, getMessages, startAgent, stopAgent, getAgentRuns, getProject, getThread, updateProject, Project, Message as BaseApiMessageType } from '@/lib/api';
+import { getMessages, getAgentRuns, getProject, getThread, Project, Message as BaseApiMessageType } from '@/lib/api';
 import { toast } from 'sonner';
 import { Skeleton } from "@/components/ui/skeleton";
-import { ChatInput } from '@/components/thread/chat-input';
 import { FileViewerModal } from '@/components/thread/file-viewer-modal';
-import { SiteHeader } from "@/components/thread/thread-site-header"
+import { SiteHeader } from "@/components/thread/thread-site-header";
 import { ToolCallSidePanel, ToolCallInput } from "@/components/thread/tool-call-side-panel";
-import { useSidebar } from "@/components/ui/sidebar";
 import { useAgentStream } from '@/hooks/useAgentStream';
 import { Markdown } from '@/components/home/ui/markdown';
 import { cn } from "@/lib/utils";
@@ -185,16 +183,24 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   
   const router = useRouter();
   const [messages, setMessages] = useState<UnifiedMessage[]>([]);
-  const [newMessage, setNewMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [agentRunId, setAgentRunId] = useState<string | null>(null);
   const [agentStatus, setAgentStatus] = useState<'idle' | 'running' | 'connecting' | 'error'>('idle');
-  const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
+  const [isSidePanelOpen, setIsSidePanelOpen] = useState(true);
   const [toolCalls, setToolCalls] = useState<ToolCallInput[]>([]);
   const [currentToolIndex, setCurrentToolIndex] = useState<number>(0);
   const [autoOpenedPanel, setAutoOpenedPanel] = useState(false);
+  
+  // Playback control states
+  const [visibleMessages, setVisibleMessages] = useState<UnifiedMessage[]>([]);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
+  const [playbackSpeed, setPlaybackSpeed] = useState(0.5); // reduced from 2 to 0.5 seconds between messages
+  const [toolPlaybackIndex, setToolPlaybackIndex] = useState(-1);
+  const [streamingText, setStreamingText] = useState("");
+  const [isStreamingText, setIsStreamingText] = useState(false);
+  const [currentToolCall, setCurrentToolCall] = useState<StreamingToolCall | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -217,9 +223,6 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     setProjectName(newName);
   }, []);
 
-  const { state: leftSidebarState, setOpen: setLeftSidebarOpen } = useSidebar();
-  const initialLayoutAppliedRef = useRef(false);
-
   const userClosedPanelRef = useRef(false);
   
   // Initialize as if user already closed panel to prevent auto-opening
@@ -227,67 +230,29 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     userClosedPanelRef.current = true;
   }, []);
 
+  // Define togglePlayback and resetPlayback functions explicitly
+  const togglePlayback = useCallback(() => {
+    setIsPlaying(prev => !prev);
+  }, []);
+
+  const resetPlayback = useCallback(() => {
+    setIsPlaying(false);
+    setCurrentMessageIndex(0);
+    setVisibleMessages([]);
+    setToolPlaybackIndex(-1);
+    setStreamingText("");
+    setIsStreamingText(false);
+    setCurrentToolCall(null);
+  }, []);
+
   const toggleSidePanel = useCallback(() => {
-    setIsSidePanelOpen(prevIsOpen => {
-      const newState = !prevIsOpen;
-      if (!newState) {
-        userClosedPanelRef.current = true;
-      } else {
-        // Close left sidebar when opening side panel
-        setLeftSidebarOpen(false);
-      }
-      return newState;
-    });
-  }, [setLeftSidebarOpen]);
+    setIsSidePanelOpen(prev => !prev);
+  }, []);
 
   const handleSidePanelNavigate = useCallback((newIndex: number) => {
     setCurrentToolIndex(newIndex);
+    console.log(`Tool panel manually set to index ${newIndex}`);
   }, []);
-
-  useEffect(() => {
-    if (!initialLayoutAppliedRef.current) {
-      setLeftSidebarOpen(false);
-      initialLayoutAppliedRef.current = true;
-    }
-  }, [setLeftSidebarOpen]);
-
-  // Update keyboard shortcut handlers to manage both panels
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      // CMD+I for ToolCall SidePanel
-      if ((event.metaKey || event.ctrlKey) && event.key === 'i') {
-        event.preventDefault();
-        // If side panel is already open, just close it
-        if (isSidePanelOpen) {
-          setIsSidePanelOpen(false);
-          userClosedPanelRef.current = true;
-        } else {
-          // Open side panel and ensure left sidebar is closed
-          setIsSidePanelOpen(true);
-          setLeftSidebarOpen(false);
-        }
-      }
-      
-      // CMD+B for Left Sidebar
-      if ((event.metaKey || event.ctrlKey) && event.key === 'b') {
-        event.preventDefault();
-        // If left sidebar is expanded, collapse it
-        if (leftSidebarState === 'expanded') {
-          setLeftSidebarOpen(false);
-        } else {
-          // Otherwise expand the left sidebar and close the side panel
-          setLeftSidebarOpen(true);
-          if (isSidePanelOpen) {
-            setIsSidePanelOpen(false);
-            userClosedPanelRef.current = true;
-          }
-        }
-      }
-    };
-    
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleSidePanel, isSidePanelOpen, leftSidebarState, setLeftSidebarOpen]);
 
   const handleNewMessageFromStream = useCallback((message: UnifiedMessage) => {
     // Log the ID of the message received from the stream
@@ -379,6 +344,214 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
       console.log(`[PAGE] Stream hook closed with final status: ${agentStatus}`);
   }, [agentStatus]);
 
+  // Streaming text function
+  const streamText = useCallback((text: string, onComplete: () => void) => {
+    if (!text || !isPlaying) {
+      onComplete();
+      return () => {};
+    }
+    
+    setIsStreamingText(true);
+    setStreamingText("");
+    
+    // Define regex to find tool calls in text
+    const toolCallRegex = /<([a-zA-Z\-_]+)(?:\s+[^>]*)?>(?:[\s\S]*?)<\/\1>|<([a-zA-Z\-_]+)(?:\s+[^>]*)?\/>/g;
+    
+    // Split text into chunks (handling tool calls as special chunks)
+    const chunks: { text: string; isTool: boolean; toolName?: string }[] = [];
+    let lastIndex = 0;
+    let match;
+    
+    while ((match = toolCallRegex.exec(text)) !== null) {
+      // Add text before the tool call
+      if (match.index > lastIndex) {
+        chunks.push({
+          text: text.substring(lastIndex, match.index),
+          isTool: false
+        });
+      }
+      
+      // Add the tool call
+      const toolName = match[1] || match[2];
+      chunks.push({
+        text: match[0],
+        isTool: true,
+        toolName
+      });
+      
+      lastIndex = toolCallRegex.lastIndex;
+    }
+    
+    // Add any remaining text after the last tool call
+    if (lastIndex < text.length) {
+      chunks.push({
+        text: text.substring(lastIndex),
+        isTool: false
+      });
+    }
+    
+    let currentIndex = 0;
+    let chunkIndex = 0;
+    let currentText = '';
+    let isPaused = false;
+    
+    const processNextCharacter = () => {
+      if (!isPlaying || isPaused) {
+        setTimeout(processNextCharacter, 100); // Check again after a short delay
+        return;
+      }
+      
+      if (chunkIndex >= chunks.length) {
+        // All chunks processed, we're done
+        setIsStreamingText(false);
+        
+        // Update visible messages with the complete message
+        const currentMessage = messages[currentMessageIndex];
+        setVisibleMessages(prev => {
+          const lastMessage = prev[prev.length - 1];
+          if (lastMessage?.message_id === currentMessage.message_id) {
+            // Replace the streaming message with the complete one
+            return [...prev.slice(0, -1), currentMessage];
+          } else {
+            // Add the complete message
+            return [...prev, currentMessage];
+          }
+        });
+        
+        onComplete();
+        return;
+      }
+      
+      const currentChunk = chunks[chunkIndex];
+      
+      // If this is a tool call chunk and we're at the start of it
+      if (currentChunk.isTool && currentIndex === 0) {
+        // For tool calls, check if they should be hidden during streaming
+        if (currentChunk.toolName && HIDE_STREAMING_XML_TAGS.has(currentChunk.toolName)) {
+          // Instead of showing the XML, create a tool call object
+          const toolCall: StreamingToolCall = {
+            name: currentChunk.toolName,
+            arguments: currentChunk.text,
+            xml_tag_name: currentChunk.toolName
+          };
+          
+          setCurrentToolCall(toolCall);
+          setIsSidePanelOpen(true);
+          setCurrentToolIndex(toolPlaybackIndex + 1);
+          setToolPlaybackIndex(prev => prev + 1);
+          
+          // Pause streaming briefly while showing the tool
+          isPaused = true;
+          setTimeout(() => {
+            isPaused = false;
+            setCurrentToolCall(null);
+            chunkIndex++; // Move to next chunk
+            currentIndex = 0; // Reset index for next chunk
+            processNextCharacter();
+          }, 500); // Reduced from 1500ms to 500ms pause for tool display
+          
+          return;
+        }
+      }
+      
+      // Handle normal text streaming for non-tool chunks or visible tool chunks
+      if (currentIndex < currentChunk.text.length) {
+        // Dynamically adjust typing speed for a more realistic effect
+        const baseDelay = 5; // Reduced from 15ms to 5ms
+        let typingDelay = baseDelay;
+        
+        // Add more delay for punctuation to make it feel more natural
+        const char = currentChunk.text[currentIndex];
+        if (".!?,;:".includes(char)) {
+          typingDelay = baseDelay + Math.random() * 100 + 50; // Reduced from 300+100 to 100+50ms pause after punctuation
+        } else {
+          const variableDelay = Math.random() * 5; // Reduced from 15 to 5ms
+          typingDelay = baseDelay + variableDelay; // 5-10ms for normal typing
+        }
+        
+        // Add the next character
+        currentText += currentChunk.text[currentIndex];
+        setStreamingText(currentText);
+        currentIndex++;
+        
+        // Process next character with dynamic delay
+        setTimeout(processNextCharacter, typingDelay);
+      } else {
+        // Move to the next chunk
+        chunkIndex++;
+        currentIndex = 0;
+        processNextCharacter();
+      }
+    };
+    
+    processNextCharacter();
+    
+    // Return cleanup function
+    return () => {
+      setIsStreamingText(false);
+      setStreamingText("");
+      isPaused = true; // Stop processing
+    };
+  }, [isPlaying, messages, currentMessageIndex]);
+  
+  // Main playback function
+  useEffect(() => {
+    if (!isPlaying || messages.length === 0) return;
+    
+    let playbackTimeout: NodeJS.Timeout;
+    
+    const playbackNextMessage = async () => {
+      // Ensure we're within bounds
+      if (currentMessageIndex >= messages.length) {
+        setIsPlaying(false);
+        return;
+      }
+      
+      const currentMessage = messages[currentMessageIndex];
+      console.log(`Playing message ${currentMessageIndex}:`, currentMessage.type, currentMessage.message_id);
+      
+      // If it's an assistant message, stream it
+      if (currentMessage.type === 'assistant') {
+        try {
+          // Parse the content if it's JSON
+          let content = currentMessage.content;
+          try {
+            const parsed = JSON.parse(content);
+            if (parsed.content) {
+              content = parsed.content;
+            }
+          } catch (e) {
+            // Not JSON, use as is
+          }
+          
+          // Stream the message content
+          await new Promise<void>((resolve) => {
+            const cleanupFn = streamText(content, resolve);
+            return cleanupFn;
+          });
+        } catch (error) {
+          console.error('Error streaming message:', error);
+        }
+      } else {
+        // For non-assistant messages, just add them to visible messages
+        setVisibleMessages(prev => [...prev, currentMessage]);
+        
+        // Wait a moment before showing the next message
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
+      // Move to the next message
+      setCurrentMessageIndex(prevIndex => prevIndex + 1);
+    };
+    
+    // Start playback with a small delay
+    playbackTimeout = setTimeout(playbackNextMessage, 500);
+    
+    return () => {
+      clearTimeout(playbackTimeout);
+    };
+  }, [isPlaying, currentMessageIndex, messages, streamText]);
+
   const {
     status: streamHookStatus,
     textContent: streamingTextContent,
@@ -411,21 +584,23 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
       try {
         if (!threadId) throw new Error('Thread ID is required');
 
+        // Fetch the thread to check if it's public
         const threadData = await getThread(threadId).catch(err => { 
+          // If it fails with 404, we'll catch it here
           throw new Error('Failed to load thread data: ' + err.message); 
         });
         
         if (!isMounted) return;
         
-        console.log('[PAGE] Thread data loaded:', threadData);
+        // Make sure the thread is public
+        if (!(threadData as any).is_public) {
+          throw new Error('This thread is not available for public viewing.');
+        }
         
         if (threadData?.project_id) {
-          console.log('[PAGE] Getting project data for project_id:', threadData.project_id);
           const projectData = await getProject(threadData.project_id);
           if (isMounted && projectData) {
-            console.log('[PAGE] Project data loaded:', projectData);
-            console.log('[PAGE] Project ID:', projectData.id);
-            console.log('[PAGE] Project sandbox data:', projectData.sandbox);
+            console.log('[SHARE] Project data loaded:', projectData);
             
             // Set project data
             setProject(projectData);
@@ -441,105 +616,120 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
           }
         }
 
-        if (!messagesLoadedRef.current) {
-          const messagesData = await getMessages(threadId);
-          if (isMounted) {
-            // Log raw messages fetched from API
-            console.log('[PAGE] Raw messages fetched:', messagesData);
-            
-            // Map API message type to UnifiedMessage type
-            const unifiedMessages = (messagesData || [])
-              .filter(msg => msg.type !== 'status')
-              .map((msg: ApiMessageType, index: number) => {
-                console.log(`[MAP ${index}] Processing raw message:`, msg);
-                const messageId = msg.message_id;
-                console.log(`[MAP ${index}] Accessed msg.message_id:`, messageId);
-                if (!messageId && msg.type !== 'status') { 
-                  console.warn(`[MAP ${index}] Non-status message fetched from API is missing ID: Type=${msg.type}`);
-                }
-                const threadIdMapped = msg.thread_id || threadId;
-                console.log(`[MAP ${index}] Accessed msg.thread_id (using fallback):`, threadIdMapped);
-                const typeMapped = (msg.type || 'system') as UnifiedMessage['type'];
-                console.log(`[MAP ${index}] Accessed msg.type (using fallback):`, typeMapped);
-                const isLlmMessageMapped = Boolean(msg.is_llm_message);
-                console.log(`[MAP ${index}] Accessed msg.is_llm_message:`, isLlmMessageMapped);
-                const contentMapped = msg.content || '';
-                console.log(`[MAP ${index}] Accessed msg.content (using fallback):`, contentMapped.substring(0, 50) + '...');
-                const metadataMapped = msg.metadata || '{}';
-                console.log(`[MAP ${index}] Accessed msg.metadata (using fallback):`, metadataMapped);
-                const createdAtMapped = msg.created_at || new Date().toISOString();
-                console.log(`[MAP ${index}] Accessed msg.created_at (using fallback):`, createdAtMapped);
-                const updatedAtMapped = msg.updated_at || new Date().toISOString();
-                console.log(`[MAP ${index}] Accessed msg.updated_at (using fallback):`, updatedAtMapped);
-
-                return {
-                  message_id: messageId || null, 
-                  thread_id: threadIdMapped,
-                  type: typeMapped, 
-                  is_llm_message: isLlmMessageMapped,
-                  content: contentMapped,
-                  metadata: metadataMapped,
-                  created_at: createdAtMapped,
-                  updated_at: updatedAtMapped
-                };
-            });
-            
-            setMessages(unifiedMessages); // Set the filtered and mapped messages
-            console.log('[PAGE] Loaded Messages (excluding status, keeping browser_state):', unifiedMessages.length)
-            
-            // Debug loaded messages
-            const assistantMessages = unifiedMessages.filter(m => m.type === 'assistant');
-            const toolMessages = unifiedMessages.filter(m => m.type === 'tool');
-            
-            console.log('[PAGE] Assistant messages:', assistantMessages.length);
-            console.log('[PAGE] Tool messages:', toolMessages.length);
-            
-            // Check if tool messages have associated assistant messages
-            toolMessages.forEach(toolMsg => {
+        // Fetch all messages for the thread
+        const messagesData = await getMessages(threadId);
+        if (isMounted) {
+          // Log raw messages fetched from API
+          console.log('[SHARE] Raw messages fetched:', messagesData);
+          
+          // Map API message type to UnifiedMessage type
+          const unifiedMessages = (messagesData || [])
+            .filter(msg => msg.type !== 'status')
+            .map((msg: ApiMessageType) => ({
+              message_id: msg.message_id || null, 
+              thread_id: msg.thread_id || threadId,
+              type: (msg.type || 'system') as UnifiedMessage['type'], 
+              is_llm_message: Boolean(msg.is_llm_message),
+              content: msg.content || '',
+              metadata: msg.metadata || '{}',
+              created_at: msg.created_at || new Date().toISOString(),
+              updated_at: msg.updated_at || new Date().toISOString()
+            }));
+          
+          setMessages(unifiedMessages);
+          
+          // Calculate historical tool pairs
+          const historicalToolPairs: ToolCallInput[] = [];
+          const assistantMessages = unifiedMessages.filter(m => m.type === 'assistant' && m.message_id);
+          
+          console.log('Building tool calls from', assistantMessages.length, 'assistant messages');
+          
+          // Map to track which assistant messages have tool results
+          const assistantToolMap = new Map<string, UnifiedMessage>();
+          
+          // First build a map of assistant message IDs to tool messages
+          unifiedMessages.forEach(msg => {
+            if (msg.type === 'tool' && msg.metadata) {
               try {
-                const metadata = JSON.parse(toolMsg.metadata);
+                const metadata = JSON.parse(msg.metadata);
                 if (metadata.assistant_message_id) {
-                  const hasAssociated = assistantMessages.some(
-                    assMsg => assMsg.message_id === metadata.assistant_message_id
-                  );
-                  console.log(`[PAGE] Tool message ${toolMsg.message_id} references assistant ${metadata.assistant_message_id} - found: ${hasAssociated}`);
+                  assistantToolMap.set(metadata.assistant_message_id, msg);
                 }
               } catch (e) {
-                console.error("Error parsing tool message metadata:", e);
+                // Ignore parsing errors
               }
-            });
-            
-            messagesLoadedRef.current = true;
-            if (!hasInitiallyScrolled.current) {
-              scrollToBottom('auto');
-              hasInitiallyScrolled.current = true;
             }
-          }
-        }
-
-        if (!agentRunsCheckedRef.current && isMounted) {
-          try {
-            console.log('[PAGE] Checking for active agent runs...');
-            const agentRuns = await getAgentRuns(threadId);
-            agentRunsCheckedRef.current = true;
-
-            const activeRun = agentRuns.find(run => run.status === 'running');
-            if (activeRun && isMounted) {
-              console.log('[PAGE] Found active run on load:', activeRun.id);
-              setAgentRunId(activeRun.id);
-            } else {
-              console.log('[PAGE] No active agent runs found');
-              if (isMounted) setAgentStatus('idle');
-            }
-          } catch (err) {
-            console.error('[PAGE] Error checking for active runs:', err);
-            agentRunsCheckedRef.current = true;
-            if (isMounted) setAgentStatus('idle');
-          }
-        }
+          });
           
-        initialLoadCompleted.current = true;
-
+          console.log('Found', assistantToolMap.size, 'tool messages with assistant IDs');
+          
+          // Now process each assistant message
+          assistantMessages.forEach((assistantMsg, index) => {
+            // Get message ID
+            const messageId = assistantMsg.message_id;
+            if (!messageId) return;
+            
+            console.log(`Processing assistant message ${index}:`, messageId);
+            
+            // Find corresponding tool message
+            const toolMessage = assistantToolMap.get(messageId);
+            
+            // Check for tool calls in the assistant message content
+            let assistantContent: any;
+            try {
+              assistantContent = JSON.parse(assistantMsg.content);
+            } catch (e) {
+              assistantContent = { content: assistantMsg.content };
+            }
+            
+            const assistantMessageText = assistantContent.content || assistantMsg.content;
+            
+            // Use a regex to find tool calls in the message content
+            const toolCalls = extractToolCallsFromMessage(assistantMessageText);
+            console.log(`Found ${toolCalls.length} tool calls in message ${messageId}`);
+            
+            if (toolCalls.length > 0 && toolMessage) {
+              // For each tool call in the message, create a pair
+              toolCalls.forEach((toolCall, callIndex) => {
+                console.log(`Adding tool call ${callIndex}:`, toolCall.name, 'for message', messageId);
+                
+                let toolContent: any;
+                try {
+                  toolContent = JSON.parse(toolMessage.content);
+                } catch (e) {
+                  toolContent = { content: toolMessage.content };
+                }
+                
+                historicalToolPairs.push({
+                  assistantCall: {
+                    name: toolCall.name,
+                    content: `${toolCall.fullMatch}<!-- messageId:${messageId} -->`,
+                    timestamp: assistantMsg.created_at
+                  },
+                  toolResult: {
+                    content: toolContent.content || toolMessage.content,
+                    isSuccess: true,
+                    timestamp: toolMessage.created_at
+                  }
+                });
+              });
+            }
+          });
+          
+          // Sort the tool calls chronologically by timestamp
+          historicalToolPairs.sort((a, b) => {
+            const timeA = new Date(a.assistantCall.timestamp || '').getTime();
+            const timeB = new Date(b.assistantCall.timestamp || '').getTime();
+            return timeA - timeB;
+          });
+          
+          console.log('Created', historicalToolPairs.length, 'total tool calls');
+          
+          setToolCalls(historicalToolPairs);
+          
+          // When loading is complete, prepare for playback
+          initialLoadCompleted.current = true;
+        }
       } catch (err) {
         console.error('Error loading thread data:', err);
         if (isMounted) {
@@ -559,90 +749,6 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     };
   }, [threadId]);
 
-  const handleSubmitMessage = useCallback(async (message: string) => {
-    if (!message.trim()) return;
-    setIsSending(true);
-
-    const optimisticUserMessage: UnifiedMessage = {
-      message_id: `temp-${Date.now()}`,
-      thread_id: threadId,
-      type: 'user',
-      is_llm_message: false,
-      content: message,
-      metadata: '{}',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    setMessages(prev => [...prev, optimisticUserMessage]);
-    setNewMessage('');
-    scrollToBottom('smooth');
-
-    try {
-      const results = await Promise.allSettled([
-        addUserMessage(threadId, message),
-        startAgent(threadId)
-      ]);
-
-      if (results[0].status === 'rejected') {
-        console.error("Failed to send message:", results[0].reason);
-        throw new Error(`Failed to send message: ${results[0].reason?.message || results[0].reason}`);
-      }
-
-      if (results[1].status === 'rejected') {
-        console.error("Failed to start agent:", results[1].reason);
-        throw new Error(`Failed to start agent: ${results[1].reason?.message || results[1].reason}`);
-      }
-
-      const agentResult = results[1].value;
-      setAgentRunId(agentResult.agent_run_id);
-
-    } catch (err) {
-      console.error('Error sending message or starting agent:', err);
-      toast.error(err instanceof Error ? err.message : 'Operation failed');
-      setMessages(prev => prev.filter(m => m.message_id !== optimisticUserMessage.message_id));
-    } finally {
-      setIsSending(false);
-    }
-  }, [threadId]);
-
-  const handleStopAgent = useCallback(async () => {
-    console.log(`[PAGE] Requesting agent stop via hook.`);
-    setAgentStatus('idle');
-    await stopStreaming();
-    
-    // Refetch messages after agent stop
-    try {
-      console.log('[PAGE] Refetching messages after agent stop');
-      const messagesData = await getMessages(threadId);
-      if (messagesData) {
-        // Map API message type to UnifiedMessage type
-        const unifiedMessages = (messagesData || [])
-          .filter(msg => msg.type !== 'status') // Filter out status messages
-          .map((msg: ApiMessageType) => ({
-            message_id: msg.message_id || null, 
-            thread_id: msg.thread_id || threadId,
-            type: (msg.type || 'system') as UnifiedMessage['type'], 
-            is_llm_message: Boolean(msg.is_llm_message),
-            content: msg.content || '',
-            metadata: msg.metadata || '{}',
-            created_at: msg.created_at || new Date().toISOString(),
-            updated_at: msg.updated_at || new Date().toISOString()
-          }));
-        
-        console.log('[PAGE] Refetched messages after stop:', unifiedMessages.length);
-        setMessages(unifiedMessages);
-        
-        // Clear auto-opened state to trigger tool detection with fresh messages
-        setAutoOpenedPanel(false);
-        
-        scrollToBottom('smooth');
-      }
-    } catch (err) {
-      console.error('Error refetching messages after agent stop:', err);
-    }
-  }, [stopStreaming, threadId]);
-
   const handleScroll = () => {
     if (!messagesContainerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
@@ -655,23 +761,23 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     messagesEndRef.current?.scrollIntoView({ behavior });
   };
 
+  // Auto-scroll when new messages appear during playback
   useEffect(() => {
-    const lastMsg = messages[messages.length - 1];
-    const isNewUserMessage = lastMsg?.type === 'user';
-    if ((isNewUserMessage || agentStatus === 'running') && !userHasScrolled) {
+    if (visibleMessages.length > 0 && !userHasScrolled) {
       scrollToBottom('smooth');
     }
-  }, [messages, agentStatus, userHasScrolled, scrollToBottom]);
+  }, [visibleMessages, userHasScrolled]);
 
+  // Scroll button visibility
   useEffect(() => {
-    if (!latestMessageRef.current || messages.length === 0) return;
+    if (!latestMessageRef.current || visibleMessages.length === 0) return;
     const observer = new IntersectionObserver(
       ([entry]) => setShowScrollButton(!entry?.isIntersecting),
       { root: messagesContainerRef.current, threshold: 0.1 }
     );
     observer.observe(latestMessageRef.current);
     return () => observer.disconnect();
-  }, [messages, streamingTextContent, streamingToolCall, setShowScrollButton]);
+  }, [visibleMessages, streamingText, currentToolCall]);
 
   const handleScrollButtonClick = () => {
     scrollToBottom('smooth');
@@ -744,8 +850,8 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         try {
           const toolContent = resultMessage.content?.toLowerCase() || '';
           isSuccess = !(toolContent.includes('failed') || 
-                         toolContent.includes('error') || 
-                         toolContent.includes('failure'));
+                        toolContent.includes('error') || 
+                        toolContent.includes('failure'));
         } catch {}
 
         historicalToolPairs.push({
@@ -790,7 +896,6 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
 
   // Process the assistant call data
   const toolViewAssistant = useCallback((assistantContent?: string, toolContent?: string) => {
-    // This needs to stay simple as it's meant for the side panel tool call view
     if (!assistantContent) return null;
     
     return (
@@ -846,10 +951,6 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
 
     // Find the index of the tool call associated with the clicked assistant message
     const toolIndex = toolCalls.findIndex(tc => {
-      // Check if the assistant message ID matches the one stored in the tool result's metadata
-      if (!tc.toolResult?.content || tc.toolResult.content === "STREAMING") return false; // Skip streaming or incomplete calls
-
-      // Directly compare assistant message IDs if available in the structure
       // Find the original assistant message based on the ID
       const assistantMessage = messages.find(m => m.message_id === clickedAssistantMessageId && m.type === 'assistant');
       if (!assistantMessage) return false;
@@ -869,7 +970,6 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
       return tc.assistantCall?.content === assistantMessage.content &&
              tc.toolResult?.content === toolMessage?.content;
     });
-
 
     if (toolIndex !== -1) {
       console.log(`[PAGE] Found tool call at index ${toolIndex} for assistant message ${clickedAssistantMessageId}`);
@@ -953,27 +1053,208 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   // SEO title update
   useEffect(() => {
     if (projectName) {
-      // Update document title when project name changes
-      document.title = `${projectName} | Kortix Kortix`;
+      document.title = `${projectName} | Shared Thread`;
       
-      // Update meta tags for SEO
       const metaDescription = document.querySelector('meta[name="description"]');
       if (metaDescription) {
-        metaDescription.setAttribute('content', `${projectName} - Interactive agent conversation powered by Kortix Kortix`);
+        metaDescription.setAttribute('content', `${projectName} - Public AI conversation shared from Kortix Kortix`);
       }
       
-      // Update OpenGraph tags if they exist
       const ogTitle = document.querySelector('meta[property="og:title"]');
       if (ogTitle) {
-        ogTitle.setAttribute('content', `${projectName} | Kortix Kortix`);
+        ogTitle.setAttribute('content', `${projectName} | Shared AI Conversation`);
       }
       
       const ogDescription = document.querySelector('meta[property="og:description"]');
       if (ogDescription) {
-        ogDescription.setAttribute('content', `Interactive AI conversation for ${projectName}`);
+        ogDescription.setAttribute('content', `Public AI conversation of ${projectName}`);
       }
     }
   }, [projectName]);
+
+  useEffect(() => {
+    if (streamingTextContent && streamHookStatus === 'streaming' && messages.length > 0) {
+      // Find the last assistant message to update with streaming content
+      const lastAssistantIndex = messages.findIndex(m => 
+        m.type === 'assistant' && m.message_id === messages[currentMessageIndex]?.message_id);
+      
+      if (lastAssistantIndex >= 0) {
+        const assistantMessage = {...messages[lastAssistantIndex]};
+        assistantMessage.content = streamingTextContent;
+        
+        // Update the message in the messages array
+        const updatedMessages = [...messages];
+        updatedMessages[lastAssistantIndex] = assistantMessage;
+        
+        // Only show the streaming message if we're not already streaming and we're in play mode
+        if (!isStreamingText && isPlaying) {
+          const cleanup = streamText(streamingTextContent, () => {
+            // When streaming completes, update the visible messages
+            setVisibleMessages(prev => {
+              const messageExists = prev.some(m => m.message_id === assistantMessage.message_id);
+              if (messageExists) {
+                // Replace the existing message
+                return prev.map(m => m.message_id === assistantMessage.message_id ? assistantMessage : m);
+              } else {
+                // Add as a new message
+                return [...prev, assistantMessage];
+              }
+            });
+          });
+          
+          return cleanup;
+        }
+      }
+    }
+  }, [streamingTextContent, streamHookStatus, messages, isStreamingText, isPlaying, currentMessageIndex, streamText]);
+
+  // Create a message-to-tool-index map for faster lookups
+  const [messageToToolIndex, setMessageToToolIndex] = useState<Record<string, number>>({});
+  
+  // Build the message-to-tool-index map when tool calls change
+  useEffect(() => {
+    if (!toolCalls.length) return;
+    
+    const mapBuilder: Record<string, number> = {};
+    
+    toolCalls.forEach((tool, index) => {
+      const content = tool.assistantCall?.content || '';
+      const match = content.match(/<!-- messageId:([\w-]+) -->/);
+      if (match && match[1]) {
+        mapBuilder[match[1]] = index;
+        console.log(`Mapped message ID ${match[1]} to tool index ${index}`);
+      }
+    });
+    
+    setMessageToToolIndex(mapBuilder);
+  }, [toolCalls]);
+  
+  // Very direct approach to update the tool index during message playback
+  useEffect(() => {
+    if (!isPlaying || currentMessageIndex <= 0 || !messages.length) return;
+    
+    // Check if current message is a tool message
+    const currentMsg = messages[currentMessageIndex - 1]; // Look at previous message that just played
+    
+    if (currentMsg?.type === 'tool' && currentMsg.metadata) {
+      try {
+        const metadata = safeJsonParse<ParsedMetadata>(currentMsg.metadata, {});
+        const assistantId = metadata.assistant_message_id;
+        
+        if (assistantId && messageToToolIndex[assistantId] !== undefined) {
+          const toolIndex = messageToToolIndex[assistantId];
+          console.log(`Direct mapping: Setting tool index to ${toolIndex} for message ${assistantId}`);
+          setCurrentToolIndex(toolIndex);
+        }
+      } catch (e) {
+        console.error('Error in direct tool mapping:', e);
+      }
+    }
+  }, [currentMessageIndex, isPlaying, messages, messageToToolIndex]);
+
+  // Add a helper function to extract tool calls from message content
+  const extractToolCallsFromMessage = (content: string) => {
+    const toolCallRegex = /<([a-zA-Z\-_]+)(?:\s+[^>]*)?>(?:[\s\S]*?)<\/\1>|<([a-zA-Z\-_]+)(?:\s+[^>]*)?\/>/g;
+    const results = [];
+    let match;
+    
+    while ((match = toolCallRegex.exec(content)) !== null) {
+      const toolName = match[1] || match[2];
+      results.push({
+        name: toolName,
+        fullMatch: match[0]
+      });
+    }
+    
+    return results;
+  };
+
+  // Force an explicit update to the tool panel based on the current message index
+  useEffect(() => {
+    // Skip if not playing or no messages
+    if (!isPlaying || messages.length === 0 || currentMessageIndex <= 0) return;
+    
+    // Get all messages up to the current index 
+    const currentMessages = messages.slice(0, currentMessageIndex);
+    
+    // Find the most recent tool message to determine which panel to show
+    for (let i = currentMessages.length - 1; i >= 0; i--) {
+      const msg = currentMessages[i];
+      if (msg.type === 'tool' && msg.metadata) {
+        try {
+          const metadata = safeJsonParse<ParsedMetadata>(msg.metadata, {});
+          const assistantId = metadata.assistant_message_id;
+          
+          if (assistantId) {
+            console.log(`Looking for tool panel for assistant message ${assistantId}`);
+            
+            // Scan for matching tool call
+            for (let j = 0; j < toolCalls.length; j++) {
+              const content = toolCalls[j].assistantCall?.content || '';
+              if (content.includes(assistantId)) {
+                console.log(`Found matching tool call at index ${j}, updating panel`);
+                setCurrentToolIndex(j);
+                return;
+              }
+            }
+          }
+        } catch (e) {
+          console.error('Error parsing tool message metadata:', e);
+        }
+      }
+    }
+  }, [currentMessageIndex, isPlaying, messages, toolCalls]);
+
+  // Add a special button to each tool call to show its debug info
+  // This replaces the existing ToolCallSidePanel component with a wrapper that adds debug info
+  const ToolCallPanelWithDebugInfo = React.useMemo(() => {
+    const WrappedPanel = (props: any) => {
+      const { isOpen, onClose, toolCalls, currentIndex, onNavigate, ...rest } = props;
+      
+      // Add a function to show debug info for the current tool call
+      const showDebugInfo = useCallback(() => {
+        if (toolCalls && toolCalls.length > 0 && currentIndex >= 0 && currentIndex < toolCalls.length) {
+          const tool = toolCalls[currentIndex];
+          console.log('Current tool call debug info:', {
+            name: tool.assistantCall?.name,
+            content: tool.assistantCall?.content,
+            messageIdMatches: tool.assistantCall?.content?.match(/<!-- messageId:([\w-]+) -->/),
+            toolResult: tool.toolResult
+          });
+        }
+      }, [toolCalls, currentIndex]);
+      
+      return (
+        <div>
+          <ToolCallSidePanel 
+            isOpen={isOpen} 
+            onClose={onClose}
+            toolCalls={toolCalls}
+            currentIndex={currentIndex}
+            onNavigate={onNavigate}
+            {...rest}
+          />
+          
+          {/* Add debug button */}
+          {isOpen && toolCalls && toolCalls.length > 0 && (
+            <div className="fixed bottom-4 right-4 z-50">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="h-8 w-8 rounded-full p-0 bg-background/50 backdrop-blur"
+                onClick={showDebugInfo}
+              >
+                <span className="sr-only">Debug</span>
+                <Info className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+        </div>
+      );
+    };
+    
+    return WrappedPanel;
+  }, []);
 
   if (isLoading && !initialLoadCompleted.current) {
     return (
@@ -1035,45 +1316,12 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                   </div>
                 </div>
               </div>
-              
-              {/* User message */}
-              <div className="flex justify-end">
-                <div className="max-w-[85%] rounded-lg bg-primary/10 px-4 py-3">
-                  <Skeleton className="h-4 w-36" />
-                </div>
-              </div>
-              
-              {/* Assistant thinking state */}
-              <div>
-                <div className="flex items-start gap-3">
-                  <Skeleton className="flex-shrink-0 w-5 h-5 mt-2 rounded-full" />
-                  <div className="flex-1 space-y-2">
-                    <div className="flex items-center gap-1.5 py-1">
-                      <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse" />
-                      <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse delay-150" />
-                      <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse delay-300" />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          {/* Skeleton Chat Input */}
-          <div className="border-t p-4">
-            <div className="mx-auto max-w-3xl">
-              <div className="relative">
-                <Skeleton className="h-10 w-full rounded-md" />
-                <div className="absolute right-2 top-2">
-                  <Skeleton className="h-6 w-6 rounded-full" />
-                </div>
-              </div>
             </div>
           </div>
         </div>
         
         {/* Skeleton Side Panel (closed state) */}
-        <div className={`hidden ${isSidePanelOpen ? 'block' : ''}`}>
+        <div className={`hidden sm:block ${isSidePanelOpen ? 'block' : ''}`}>
           <div className="h-screen w-[450px] border-l">
             <div className="p-4">
               <Skeleton className="h-8 w-32 mb-4" />
@@ -1090,32 +1338,23 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     return (
       <div className="flex h-screen">
         <div className={`flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out ${isSidePanelOpen ? 'mr-[90%] sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[650px]' : ''}`}>
-          <SiteHeader 
-            threadId={threadId} 
-            projectName={projectName}
-            projectId={project?.id || ""}
-            onViewFiles={handleOpenFileViewer} 
-            onToggleSidePanel={toggleSidePanel}
-          />
+          <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+            <div className="flex h-14 items-center gap-4 px-4">
+              <div className="flex-1">
+                <span className="text-foreground font-medium">Shared Conversation</span>
+              </div>
+            </div>
+          </div>
           <div className="flex flex-1 items-center justify-center p-4">
             <div className="flex w-full max-w-md flex-col items-center gap-4 rounded-lg border bg-card p-6 text-center">
               <h2 className="text-lg font-semibold text-destructive">Error</h2>
               <p className="text-sm text-muted-foreground">{error}</p>
-              <Button variant="outline" onClick={() => router.push(`/dashboard/projects/${project?.id || ''}`)}>
-                Back to Project
+              <Button variant="outline" onClick={() => router.push(`/`)}>
+                Back to Home
               </Button>
             </div>
           </div>
         </div>
-        <ToolCallSidePanel 
-          isOpen={isSidePanelOpen} 
-          onClose={() => setIsSidePanelOpen(false)}
-          toolCalls={[]}
-          currentIndex={0}
-          onNavigate={handleSidePanelNavigate}
-          project={project || undefined}
-          agentStatus="error"
-        />
       </div>
     );
   }
@@ -1123,23 +1362,76 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   return (
     <div className="flex h-screen">
       <div className={`flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out ${isSidePanelOpen ? 'mr-[90%] sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[650px]' : ''}`}>
-        <SiteHeader 
-          threadId={threadId} 
-          projectName={projectName}
-          projectId={project?.id || ""}
-          onViewFiles={handleOpenFileViewer} 
-          onToggleSidePanel={toggleSidePanel}
-          onProjectRenamed={handleProjectRenamed}
-        />
+        {/* Header with playback controls */}
+        <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <div className="flex h-14 items-center gap-4 px-4">
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <div className="flex items-center justify-center w-6 h-6 rounded-md overflow-hidden bg-primary/10">
+                  <Image src="/kortix-symbol.svg" alt="Kortix" width={16} height={16} className="object-contain"/>
+                </div>
+                <span className="font-medium text-foreground">{projectName || 'Shared Conversation'}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={togglePlayback}
+                className="h-8 w-8"
+                aria-label={isPlaying ? "Pause Replay" : "Play Replay"}
+              >
+                {isPlaying ? 
+                  <Pause className="h-4 w-4" /> : 
+                  <Play className="h-4 w-4" />
+                }
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={resetPlayback}
+                className="h-8 w-8"
+                aria-label="Restart Replay"
+              >
+                <ArrowDown className="h-4 w-4 rotate-90" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleSidePanel}
+                className={cn("h-8 w-8", isSidePanelOpen && "text-primary")}
+                aria-label="Toggle Tool Panel"
+              >
+                <Info className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
         <div 
           ref={messagesContainerRef}
-          className="flex-1 overflow-y-auto px-6 py-4 pb-24 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+          className="flex-1 overflow-y-auto px-6 py-4 pb-8 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
           onScroll={handleScroll}
         >
           <div className="mx-auto max-w-3xl">
-            {messages.length === 0 && !streamingTextContent && !streamingToolCall && agentStatus === 'idle' ? (
-              <div className="flex h-full items-center justify-center">
-                <div className="text-center text-muted-foreground">Send a message to start.</div>
+            {visibleMessages.length === 0 && !streamingText && !currentToolCall ? (
+              <div className="flex flex-col items-center justify-center min-h-[50vh] py-12">
+                <div className="text-center max-w-md mx-auto">
+                  <div className="rounded-full bg-primary/10 w-12 h-12 mx-auto flex items-center justify-center mb-4">
+                    <Play className="h-5 w-5 text-primary" />
+                  </div>
+                  <h3 className="text-lg font-medium mb-2">Watch this conversation</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    This is a shared view-only conversation. Click play to replay the entire conversation with realistic timing.
+                  </p>
+                  <Button 
+                    onClick={togglePlayback} 
+                    className="flex items-center mx-auto"
+                    size="lg"
+                  >
+                    <Play className="h-4 w-4 mr-2" /> 
+                    Start Playback
+                  </Button>
+                </div>
               </div>
             ) : (
               <div className="space-y-8">
@@ -1153,7 +1445,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                   const groupedMessages: MessageGroup[] = [];
                   let currentGroup: MessageGroup | null = null;
 
-                  messages.forEach((message, index) => {
+                  visibleMessages.forEach((message, index) => {
                     const messageType = message.type;
                     const key = message.message_id || `msg-${index}`;
 
@@ -1256,15 +1548,15 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                                     return elements;
                                   })()}
 
-                                  {groupIndex === groupedMessages.length - 1 && (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
+                                  {groupIndex === groupedMessages.length - 1 && isStreamingText && (
                                     <div className="mt-2"> 
                                       {(() => {
                                           let detectedTag: string | null = null;
                                           let tagStartIndex = -1;
-                                          if (streamingTextContent) {
+                                          if (streamingText) {
                                               for (const tag of HIDE_STREAMING_XML_TAGS) {
                                                   const openingTagPattern = `<${tag}`;
-                                                  const index = streamingTextContent.indexOf(openingTagPattern);
+                                                  const index = streamingText.indexOf(openingTagPattern);
                                                   if (index !== -1) {
                                                       detectedTag = tag;
                                                       tagStartIndex = index;
@@ -1273,9 +1565,9 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                                               }
                                           }
 
-                                          const textToRender = streamingTextContent || '';
+                                          const textToRender = streamingText || '';
                                           const textBeforeTag = detectedTag ? textToRender.substring(0, tagStartIndex) : textToRender;
-                                          const showCursor = (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && !detectedTag;
+                                          const showCursor = isStreamingText && !detectedTag;
 
                                           return (
                                             <>
@@ -1296,25 +1588,6 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                                                   </button>
                                                 </div>
                                               )}
-
-                                              {streamingToolCall && !detectedTag && (
-                                                <div className="mt-2 mb-1">
-                                                  {(() => {
-                                                    const toolName = streamingToolCall.name || streamingToolCall.xml_tag_name || 'Tool';
-                                                    const IconComponent = getToolIcon(toolName);
-                                                    const paramDisplay = extractPrimaryParam(toolName, streamingToolCall.arguments || '');
-                                                    return (
-                                                      <button
-                                                        className="inline-flex items-center gap-1.5 py-1 px-2.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md transition-colors cursor-pointer border border-primary/20"
-                                                      >
-                                                        <CircleDashed className="h-3.5 w-3.5 text-primary flex-shrink-0 animate-spin animation-duration-2000" />
-                                                        <span className="font-mono text-xs text-primary">{toolName}</span>
-                                                        {paramDisplay && <span className="ml-1 text-primary/70 truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
-                                                      </button>
-                                                    );
-                                                  })()}
-                                                </div>
-                                              )}
                                             </>
                                           );
                                       })()}
@@ -1330,66 +1603,110 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                     return null;
                   });
                 })()}
-                {(agentStatus === 'running' || agentStatus === 'connecting') && 
-                  (messages.length === 0 || messages[messages.length - 1].type === 'user') && (
-                    <div ref={latestMessageRef}>
-                      <div className="flex items-start gap-3">
-                        <div className="flex-shrink-0 w-5 h-5 rounded-md flex items-center justify-center overflow-hidden bg-primary/10">
-                          <Image src="/kortix-symbol.svg" alt="Suna" width={14} height={14} className="object-contain"/>
+                
+                {/* Show tool call animation if active */}
+                {currentToolCall && (
+                  <div ref={latestMessageRef}>
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0 w-5 h-5 mt-2 rounded-md flex items-center justify-center overflow-hidden bg-primary/10">
+                        <Image src="/kortix-symbol.svg" alt="Suna" width={14} height={14} className="object-contain"/>
+                      </div>
+                      <div className="flex-1 space-y-2">
+                        <div className="inline-flex items-center gap-1.5 py-1.5 px-3 text-xs font-medium text-primary bg-primary/10 rounded-md border border-primary/20">
+                          <CircleDashed className="h-3.5 w-3.5 text-primary flex-shrink-0 animate-spin animation-duration-2000" />
+                          <span className="font-mono text-xs text-primary">
+                            {currentToolCall.name || 'Using Tool'}
+                          </span>
                         </div>
-                        <div className="flex-1 space-y-2">
-                          <div className="max-w-[90%] px-4 py-3 text-sm">
-                            <div className="flex items-center gap-1.5 py-1">
-                              <div className="h-1.5 w-1.5 rounded-full bg-primary/50 animate-pulse" />
-                              <div className="h-1.5 w-1.5 rounded-full bg-primary/50 animate-pulse delay-150" />
-                              <div className="h-1.5 w-1.5 rounded-full bg-primary/50 animate-pulse delay-300" />
-                            </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Show streaming indicator if no messages yet */}
+                {visibleMessages.length === 0 && isStreamingText && (
+                  <div ref={latestMessageRef}>
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0 w-5 h-5 mt-2 rounded-md flex items-center justify-center overflow-hidden bg-primary/10">
+                        <Image src="/kortix-symbol.svg" alt="Suna" width={14} height={14} className="object-contain"/>
+                      </div>
+                      <div className="flex-1 space-y-2">
+                        <div className="max-w-[90%] px-4 py-3 text-sm">
+                          <div className="flex items-center gap-1.5 py-1">
+                            <div className="h-1.5 w-1.5 rounded-full bg-primary/50 animate-pulse" />
+                            <div className="h-1.5 w-1.5 rounded-full bg-primary/50 animate-pulse delay-150" />
+                            <div className="h-1.5 w-1.5 rounded-full bg-primary/50 animate-pulse delay-300" />
                           </div>
                         </div>
                       </div>
                     </div>
+                  </div>
                 )}
               </div>
             )}
             <div ref={messagesEndRef} className="h-1" />
           </div>
         </div>
+        
+        {/* Floating playback controls - moved to be centered in the chat area when side panel is open */}
+        {messages.length > 0 && (
+          <div className={`fixed bottom-4 z-10 transform bg-background/90 backdrop-blur rounded-full border shadow-md px-3 py-1.5 transition-all duration-200 ${
+            isSidePanelOpen 
+              ? 'left-1/2 -translate-x-1/4 sm:left-[calc(50%-225px)] md:left-[calc(50%-250px)] lg:left-[calc(50%-275px)] xl:left-[calc(50%-325px)]' 
+              : 'left-1/2 -translate-x-1/2'
+          }`}>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={togglePlayback}
+                className="h-8 w-8"
+              >
+                {isPlaying ? 
+                  <Pause className="h-4 w-4" /> : 
+                  <Play className="h-4 w-4" />
+                }
+              </Button>
+              
+              <div className="flex items-center text-xs text-muted-foreground">
+                <span>{Math.min(currentMessageIndex + (isStreamingText ? 0 : 1), messages.length)}/{messages.length}</span>
+              </div>
+              
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={resetPlayback}
+                className="h-8 w-8"
+              >
+                <ArrowDown className="h-4 w-4 rotate-90" />
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
 
-      <div className={cn(
-        "fixed bottom-0 z-10 bg-gradient-to-t from-background via-background/90 to-transparent px-4 pt-8 transition-all duration-200 ease-in-out",
-        leftSidebarState === 'expanded' ? 'left-[72px] lg:left-[256px]' : 'left-[72px]',
-        isSidePanelOpen ? 'right-[90%] sm:right-[450px] md:right-[500px] lg:right-[550px] xl:right-[650px]' : 'right-0'
-      )}>
-        <div className="mx-auto max-w-3xl">
-          <ChatInput
-            value={newMessage}
-            onChange={setNewMessage}
-            onSubmit={handleSubmitMessage}
-            placeholder="Ask Suna anything..."
-            loading={isSending}
-            disabled={isSending || agentStatus === 'running' || agentStatus === 'connecting'}
-            isAgentRunning={agentStatus === 'running' || agentStatus === 'connecting'}
-            onStopAgent={handleStopAgent}
-            autoFocus={!isLoading}
-            onFileBrowse={handleOpenFileViewer}
-            sandboxId={sandboxId || undefined}
-          />
-        </div>
-      </div>
+      {/* Scroll to bottom button */}
+      {showScrollButton && (
+        <Button
+          variant="outline"
+          size="icon"
+          className="fixed bottom-20 right-6 z-10 h-8 w-8 rounded-full shadow-md"
+          onClick={handleScrollButtonClick}
+        >
+          <ArrowDown className="h-4 w-4" />
+        </Button>
+      )}
 
-      <ToolCallSidePanel 
+      {/* Tool calls side panel - Replace with debug-enabled version */}
+      <ToolCallPanelWithDebugInfo
         isOpen={isSidePanelOpen} 
-        onClose={() => {
-          setIsSidePanelOpen(false);
-          userClosedPanelRef.current = true;
-        }}
+        onClose={() => setIsSidePanelOpen(false)}
         toolCalls={toolCalls}
         messages={messages as ApiMessageType[]}
-        agentStatus={agentStatus}
+        agentStatus="idle"
         currentIndex={currentToolIndex}
         onNavigate={handleSidePanelNavigate}
-        project={project || undefined}
+        project={project}
         renderAssistantMessage={toolViewAssistant}
         renderToolResult={toolViewResult}
       />
@@ -1400,7 +1717,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
           onOpenChange={setFileViewerOpen}
           sandboxId={sandboxId}
           initialFilePath={fileToView}
-          project={project || undefined}
+          project={project}
         />
       )}
     </div>
