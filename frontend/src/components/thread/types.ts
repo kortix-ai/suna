@@ -11,7 +11,7 @@ export type ThreadParams = {
 export interface UnifiedMessage {
   message_id: string | null; // Can be null for transient stream events (chunks, unsaved statuses)
   thread_id: string;
-  type: 'user' | 'assistant' | 'tool' | 'status' | 'system'; // Add 'system' if used
+  type: 'user' | 'assistant' | 'tool' | 'system' | 'status' | 'browser_state'; // Add 'system' if used
   is_llm_message: boolean;
   content: string; // ALWAYS a JSON string from the backend
   metadata: string; // ALWAYS a JSON string from the backend

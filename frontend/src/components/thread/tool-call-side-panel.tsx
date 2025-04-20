@@ -1,12 +1,11 @@
 'use client';
 
-import { Button } from "@/components/ui/button";
-import { X } from "lucide-react";
 import { Project } from "@/lib/api";
 import { getToolIcon } from "@/components/thread/utils";
 import React from "react";
 import { Slider } from "@/components/ui/slider";
 import { ApiMessageType } from '@/components/thread/types';
+import { CircleDashed } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // Import tool view components from the tool-views directory
@@ -45,7 +44,8 @@ function getToolView(
   messages?: ApiMessageType[],
   agentStatus?: string,
   currentIndex?: number,
-  totalCalls?: number
+  totalCalls?: number,
+  isStreaming?: boolean
 ) {
   if (!toolName) return null;
   
@@ -185,18 +185,14 @@ export function ToolCallSidePanel({
   renderAssistantMessage,
   renderToolResult
 }: ToolCallSidePanelProps) {
-  if (!isOpen) return null;
-  
+  // Move hooks outside of conditional
+  const [dots, setDots] = React.useState('');
   const currentToolCall = toolCalls[currentIndex];
   const totalCalls = toolCalls.length;
   const currentToolName = currentToolCall?.assistantCall?.name || 'Tool Call';
   const CurrentToolIcon = getToolIcon(currentToolName === 'Tool Call' ? 'unknown' : currentToolName);
-  
-  // Determine if this is a streaming tool call
   const isStreaming = currentToolCall?.toolResult?.content === "STREAMING";
-  
-  // Set up a pulse animation for streaming
-  const [dots, setDots] = React.useState('');
+  const isSuccess = currentToolCall?.toolResult?.isSuccess ?? true;
   
   React.useEffect(() => {
     if (!isStreaming) return;
@@ -211,18 +207,19 @@ export function ToolCallSidePanel({
     
     return () => clearInterval(interval);
   }, [isStreaming]);
+
+  if (!isOpen) return null;
   
   const renderContent = () => {
     if (!currentToolCall) {
       return (
         <div className="flex items-center justify-center h-full p-4">
-          <p className="text-sm text-muted-foreground text-center">No tool call details available.</p>
+          <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center">No tool call details available.</p>
         </div>
       );
     }
     
-    // Get the specific tool view based on the tool name
-    return getToolView(
+    const toolView = getToolView(
       currentToolCall.assistantCall.name,
       currentToolCall.assistantCall.content,
       currentToolCall.toolResult?.content,
@@ -233,35 +230,76 @@ export function ToolCallSidePanel({
       messages,
       agentStatus,
       currentIndex,
-      totalCalls
+      totalCalls,
+      isStreaming
+    );
+
+    if (!toolView) return null;
+
+    return (
+      <div className="flex flex-col h-full">
+        <div className="pt-4 pl-4 pr-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-medium text-zinc-900 dark:text-zinc-100">Suna's Computer</h2>
+              {/* <div className="h-6 w-6 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+                <CurrentToolIcon className="h-3.5 w-3.5 text-zinc-800 dark:text-zinc-300" />
+              </div>
+              <span className="text-sm text-zinc-700 dark:text-zinc-300">{currentToolName}</span> */}
+            </div>
+            
+            {currentToolCall.toolResult?.content && !isStreaming && (
+              
+<div className="flex items-center gap-2">
+              <div className="h-6 w-6 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+                <CurrentToolIcon className="h-3.5 w-3.5 text-zinc-800 dark:text-zinc-300" />
+              </div>
+              <span className="text-sm text-zinc-700 dark:text-zinc-300">{currentToolName}</span>              
+             <div className={cn(
+                "px-2.5 py-0.5 rounded-full text-xs font-medium",
+                isSuccess 
+                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400" 
+                  : "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400"
+              )}>
+                {isSuccess ? 'Success' : 'Failed'}
+                </div>
+              </div>
+            )}
+            
+     
+            {isStreaming && (
+              <div className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400 flex items-center gap-1.5">
+                <CircleDashed className="h-3 w-3 animate-spin" />
+                <span>Running</span>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700 scrollbar-track-transparent">
+          {toolView}
+        </div>
+      </div>
     );
   };
   
   return (
-    <div className="fixed inset-y-0 right-0 w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[650px] bg-background border-l flex flex-col z-10">
-      <div className="p-4 flex items-center justify-between">
-        <h3 className="text-sm font-semibold">
-          {isStreaming 
-            ? `Suna's Computer (Running${dots})` 
-            : "Suna's Computer"}
-        </h3>
-        <Button variant="ghost" size="icon" onClick={onClose} className="text-muted-foreground hover:text-foreground">
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
-      <div className="flex-1 overflow-auto">
+    <div className="fixed inset-y-0 right-0 w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[650px] border-l flex flex-col z-10 h-screen">
+      <div className="flex-1 flex flex-col overflow-hidden">
         {renderContent()}
       </div>
       {totalCalls > 1 && (
-        <div className="p-4 border-t bg-muted/30 space-y-3">
+        <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 space-y-2">
           <div className="flex justify-between items-center gap-4">
              <div className="flex items-center gap-2 min-w-0">
-               <CurrentToolIcon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-               <span className="text-xs font-medium text-foreground truncate" title={currentToolName}>
+               <div className="h-5 w-5 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+                 <CurrentToolIcon className="h-3 w-3 text-zinc-800 dark:text-zinc-300" />
+               </div>
+               <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300 truncate" title={currentToolName}>
                  {currentToolName} {isStreaming && `(Running${dots})`}
                </span>
              </div>
-            <span className="text-xs text-muted-foreground flex-shrink-0">
+
+            <span className="text-xs text-zinc-500 dark:text-zinc-400 flex-shrink-0">
               Step {currentIndex + 1} of {totalCalls}
             </span>
           </div>
@@ -271,7 +309,7 @@ export function ToolCallSidePanel({
             step={1}
             value={[currentIndex]}
             onValueChange={([newValue]) => onNavigate(newValue)}
-            className="w-full [&>span:first-child]:h-1.5 [&>span:first-child>span]:h-1.5"
+            className="w-full [&>span:first-child]:h-1 [&>span:first-child]:bg-zinc-200 dark:[&>span:first-child]:bg-zinc-800 [&>span:first-child>span]:bg-zinc-500 dark:[&>span:first-child>span]:bg-zinc-400 [&>span:first-child>span]:h-1"
           />
         </div>
       )}

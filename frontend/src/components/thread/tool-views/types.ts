@@ -6,7 +6,13 @@ export interface ToolViewProps {
   assistantTimestamp?: string;
   toolTimestamp?: string;
   isSuccess?: boolean;
+  isStreaming?: boolean;
   project?: Project;
+  name?: string;
+  messages?: any[];
+  agentStatus?: string;
+  currentIndex?: number;
+  totalCalls?: number;
 }
 
 export interface BrowserToolViewProps extends ToolViewProps {

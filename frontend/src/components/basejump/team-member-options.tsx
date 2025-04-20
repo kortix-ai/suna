@@ -23,7 +23,7 @@ export default function TeamMemberOptions({ teamMember, accountId, isPrimaryOwne
         if (updateTeamRole) {
             toggleUpdateTeamRole(false);
         }
-    }, [teamMember.account_role])
+    }, [teamMember.account_role, updateTeamRole])
     
     return (
         <>

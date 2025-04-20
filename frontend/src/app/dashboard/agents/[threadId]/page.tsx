@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
-  ArrowDown, CheckCircle, CircleDashed, AlertTriangle, Info, File
+  ArrowDown, CheckCircle, CircleDashed, AlertTriangle, Info, File, ChevronRight
 } from 'lucide-react';
 import { addUserMessage, getMessages, startAgent, stopAgent, getAgentRuns, getProject, getThread, updateProject, Project, Message as BaseApiMessageType } from '@/lib/api';
 import { toast } from 'sonner';
@@ -110,32 +110,40 @@ function renderMarkdownContent(content: string, handleToolClick: (assistantMessa
       // Render <ask> tag content with attachment UI
       contentParts.push(
         <div key={`ask-${match.index}`} className="space-y-3">
-          <Markdown className="text-sm">{askContent}</Markdown>
+          <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3">{askContent}</Markdown>
           
           {attachments.length > 0 && (
             <div className="mt-3 space-y-2">
               <div className="text-xs font-medium text-muted-foreground">Attachments:</div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <div className="flex flex-wrap gap-2">
                 {attachments.map((attachment, idx) => {
-                  // Determine file type & icon based on extension
                   const extension = attachment.split('.').pop()?.toLowerCase();
                   const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(extension || '');
                   const isPdf = extension === 'pdf';
                   const isMd = extension === 'md';
+                  const isCode = ['js', 'jsx', 'ts', 'tsx', 'py', 'html', 'css', 'json'].includes(extension || '');
                   
-                  let icon = <File className="h-4 w-4 text-gray-500" />;
-                  if (isImage) icon = <File className="h-4 w-4 text-purple-500" />;
-                  if (isPdf) icon = <File className="h-4 w-4 text-red-500" />;
-                  if (isMd) icon = <File className="h-4 w-4 text-blue-500" />;
+                  let icon = <File className="h-3.5 w-3.5 text-muted-foreground" />;
+                  if (isImage) icon = <File className="h-3.5 w-3.5 text-purple-500" />;
+                  if (isPdf) icon = <File className="h-3.5 w-3.5 text-red-500" />;
+                  if (isMd) icon = <File className="h-3.5 w-3.5 text-blue-500" />;
+                  if (isCode) icon = <File className="h-3.5 w-3.5 text-emerald-500" />;
                   
                   return (
                     <button
                       key={`attachment-${idx}`}
                       onClick={() => fileViewerHandler?.(attachment)}
-                      className="flex items-center gap-1.5 py-1.5 px-2.5 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
+                      className="group inline-flex items-center gap-2 rounded-md border bg-muted/5 px-2.5 py-1.5 text-sm transition-colors hover:bg-muted/10"
                     >
-                      {icon}
-                      <span className="font-mono text-xs text-gray-700 truncate">{attachment}</span>
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border bg-background">
+                        {icon}
+                      </div>
+                      <div className="flex-1 overflow-hidden">
+                        <div className="font-medium truncate max-w-[120px]">
+                          {attachment.split('/').pop()}
+                        </div>
+                      </div>
+                      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                     </button>
                   );
                 })}
@@ -150,11 +158,11 @@ function renderMarkdownContent(content: string, handleToolClick: (assistantMessa
         <button                                                  
           key={toolCallKey} 
           onClick={() => handleToolClick(messageId, toolName)}
-          className="inline-flex items-center gap-1.5 py-0.5 px-2 my-0.5 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
+          className="inline-flex items-center gap-1.5 py-1 px-2.5 my-1 text-xs text-muted-foreground bg-muted hover:bg-muted/80 rounded-md transition-colors cursor-pointer border border-border"
         >
-          <IconComponent className="h-3.5 w-3.5 text-gray-500 flex-shrink-0" />
-          <span className="font-mono text-xs text-gray-700">{toolName}</span>
-          {paramDisplay && <span className="ml-1 text-gray-500 truncate max-w-[150px]" title={paramDisplay}>{paramDisplay}</span>}
+          <IconComponent className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+          <span className="font-mono text-xs text-foreground">{toolName}</span>
+          {paramDisplay && <span className="ml-1 text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
         </button>
       );
     }
@@ -186,7 +194,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
   const [toolCalls, setToolCalls] = useState<ToolCallInput[]>([]);
   const [currentToolIndex, setCurrentToolIndex] = useState<number>(0);
-  const [autoOpenedPanel, setAutoOpenedPanel] = useState(true);
+  const [autoOpenedPanel, setAutoOpenedPanel] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -297,11 +305,11 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         // Reset auto-opened state when agent completes to trigger tool detection
         setAutoOpenedPanel(false);
         
-        // Refetch messages to ensure we have the final state after completion
-        if (hookStatus === 'completed') {
+        // Refetch messages to ensure we have the final state after completion OR stopping
+        if (hookStatus === 'completed' || hookStatus === 'stopped') {
           getMessages(threadId).then(messagesData => {
             if (messagesData) {
-              console.log('[PAGE] Refetched messages after completion:', messagesData.length);
+              console.log(`[PAGE] Refetched messages after ${hookStatus}:`, messagesData.length);
               // Map API message type to UnifiedMessage type
               const unifiedMessages = (messagesData || [])
                 .filter(msg => msg.type !== 'status') 
@@ -320,7 +328,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
               scrollToBottom('smooth');
             }
           }).catch(err => {
-            console.error('Error refetching messages after completion:', err);
+            console.error(`Error refetching messages after ${hookStatus}:`, err);
           });
         }
         break;
@@ -366,14 +374,14 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     onStatusChange: handleStreamStatusChange,
     onError: handleStreamError,
     onClose: handleStreamClose,
-  });
+  }, threadId, setMessages);
 
   useEffect(() => {
     if (agentRunId && agentRunId !== currentHookRunId) {
       console.log(`[PAGE] Target agentRunId set to ${agentRunId}, initiating stream...`);
       startStreaming(agentRunId);
     }
-  }, [agentRunId, startStreaming]);
+  }, [agentRunId, startStreaming, currentHookRunId]);
 
   useEffect(() => {
     let isMounted = true;
@@ -631,7 +639,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     if ((isNewUserMessage || agentStatus === 'running') && !userHasScrolled) {
       scrollToBottom('smooth');
     }
-  }, [messages, agentStatus, userHasScrolled]);
+  }, [messages, agentStatus, userHasScrolled, scrollToBottom]);
 
   useEffect(() => {
     if (!latestMessageRef.current || messages.length === 0) return;
@@ -641,7 +649,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     );
     observer.observe(latestMessageRef.current);
     return () => observer.disconnect();
-  }, [messages, streamingTextContent, streamingToolCall]);
+  }, [messages, streamingTextContent, streamingToolCall, setShowScrollButton]);
 
   const handleScrollButtonClick = () => {
     scrollToBottom('smooth');
@@ -920,6 +928,31 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     setIsSidePanelOpen(true);
   }, []);
 
+  // SEO title update
+  useEffect(() => {
+    if (projectName) {
+      // Update document title when project name changes
+      document.title = `${projectName} | Kortix Kortix`;
+      
+      // Update meta tags for SEO
+      const metaDescription = document.querySelector('meta[name="description"]');
+      if (metaDescription) {
+        metaDescription.setAttribute('content', `${projectName} - Interactive agent conversation powered by Kortix Kortix`);
+      }
+      
+      // Update OpenGraph tags if they exist
+      const ogTitle = document.querySelector('meta[property="og:title"]');
+      if (ogTitle) {
+        ogTitle.setAttribute('content', `${projectName} | Kortix Kortix`);
+      }
+      
+      const ogDescription = document.querySelector('meta[property="og:description"]');
+      if (ogDescription) {
+        ogDescription.setAttribute('content', `Interactive AI conversation for ${projectName}`);
+      }
+    }
+  }, [projectName]);
+
   if (isLoading && !initialLoadCompleted.current) {
     return (
       <div className="flex h-screen">
@@ -1078,7 +1111,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         />
         <div 
           ref={messagesContainerRef}
-          className="flex-1 overflow-y-auto px-6 py-4 pb-24 bg-transparent"
+          className="flex-1 overflow-y-auto px-6 py-4 pb-24 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
           onScroll={handleScroll}
         >
           <div className="mx-auto max-w-3xl">
@@ -1087,7 +1120,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                 <div className="text-center text-muted-foreground">Send a message to start.</div>
               </div>
             ) : (
-              <div className="space-y-6">
+              <div className="space-y-8">
                 {(() => {
                   // Group messages logic
                   type MessageGroup = {
@@ -1108,22 +1141,20 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                       }
                       groupedMessages.push({ type: 'user', messages: [message], key });
                       currentGroup = null;
-                    } else if (messageType === 'assistant' || messageType === 'tool') {
-                       // Assistant or tool message, add to the current assistant group or start a new one
+                    } else if (messageType === 'assistant' || messageType === 'tool' || messageType === 'browser_state') {
                       if (currentGroup && currentGroup.type === 'assistant_group') {
                         currentGroup.messages.push(message);
                       } else {
-                        if (currentGroup) { // End previous (user) group
+                        if (currentGroup) {
                           groupedMessages.push(currentGroup);
                         }
                         currentGroup = { type: 'assistant_group', messages: [message], key };
                       }
                     } else if (messageType !== 'status') {
-                       // Handle any other message types silently
-                       if (currentGroup) {
-                         groupedMessages.push(currentGroup);
-                         currentGroup = null;
-                       }
+                      if (currentGroup) {
+                        groupedMessages.push(currentGroup);
+                        currentGroup = null;
+                      }
                     }
                   });
 
@@ -1131,11 +1162,9 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                     groupedMessages.push(currentGroup);
                   }
                   
-                  // Render grouped messages
                   return groupedMessages.map((group, groupIndex) => {
                     if (group.type === 'user') {
                       const message = group.messages[0];
-                      // Fix parsing of user message content - handle both formats
                       const messageContent = (() => {
                         try {
                           const parsed = safeJsonParse<ParsedContent>(message.content, { content: message.content });
@@ -1147,8 +1176,8 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                       
                       return (
                         <div key={group.key} className="flex justify-end">
-                          <div className="max-w-[85%] rounded-lg bg-primary/10 px-4 py-3 w-full">
-                            <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none">{messageContent}</Markdown>
+                          <div className="inline-flex max-w-[85%] rounded-lg bg-primary/10 px-4 py-3">
+                            <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3">{messageContent}</Markdown>
                           </div>
                         </div>
                       );
@@ -1156,14 +1185,13 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                       return (
                         <div key={group.key} ref={groupIndex === groupedMessages.length - 1 ? latestMessageRef : null}>
                           <div className="flex items-start gap-3">
-                            <div className="flex-shrink-0 w-5 h-5 mt-2 rounded-full flex items-center justify-center overflow-hidden bg-gray-200">
+                            <div className="flex-shrink-0 w-5 h-5 mt-2 rounded-md flex items-center justify-center overflow-hidden bg-primary/10">
                               <Image src="/kortix-symbol.svg" alt="Suna" width={14} height={14} className="object-contain"/>
                             </div>
-                            <div className="flex-1 space-y-2">
-                              <div className="max-w-[90%] w-full rounded-lg bg-muted px-4 py-3 text-sm">
-                                <div className="space-y-3">
+                            <div className="flex-1">
+                              <div className="inline-flex max-w-[90%] rounded-lg bg-muted/5 px-4 py-3 text-sm">
+                                <div className="space-y-2">
                                   {(() => {
-                                    // Pre-process to map tool results to their calls for easier lookup
                                     const toolResultsMap = new Map<string | null, UnifiedMessage[]>();
                                     group.messages.forEach(msg => {
                                       if (msg.type === 'tool') {
@@ -1184,9 +1212,8 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                                         const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
                                         const msgKey = message.message_id || `submsg-assistant-${msgIndex}`;
 
-                                        if (!parsedContent.content) return; // Skip empty assistant messages
+                                        if (!parsedContent.content) return;
 
-                                        // Use the new rendering function instead of manual XML parsing
                                         const renderedContent = renderMarkdownContent(
                                           parsedContent.content, 
                                           handleToolClick, 
@@ -1194,16 +1221,19 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                                           handleOpenFileViewer
                                         );
 
-                                        // Add the processed assistant message parts to the main elements array
-                                        elements.push(<div key={msgKey}>{renderedContent}</div>);
+                                        elements.push(
+                                          <div key={msgKey} className={msgIndex > 0 ? "mt-2" : ""}>
+                                            <div className="prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3">
+                                              {renderedContent}
+                                            </div>
+                                          </div>
+                                        );
                                       }
                                     });
 
-                                    // Render all collected elements for the group
                                     return elements;
                                   })()}
 
-                                  {/* Streaming content placeholder within the last assistant group */} 
                                   {groupIndex === groupedMessages.length - 1 && (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') && (
                                     <div className="mt-2"> 
                                       {(() => {
@@ -1228,38 +1258,36 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                                           return (
                                             <>
                                               {textBeforeTag && (
-                                                <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none">{textBeforeTag}</Markdown>
+                                                <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3">{textBeforeTag}</Markdown>
                                               )}
                                               {showCursor && (
-                                                 <span className="inline-block h-4 w-0.5 bg-gray-400 ml-0.5 -mb-1 animate-pulse" />
-                                               )}
-
-                                              {/* Render detected streaming tag (placeholder) */}
-                                              {detectedTag && (
-                                                 <div className="mt-1">
-                                                   <button
-                                                      className="inline-flex items-center gap-1.5 py-0.5 px-2 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
-                                                    >
-                                                      <CircleDashed className="h-3.5 w-3.5 text-gray-500 flex-shrink-0 animate-spin animation-duration-2000" />
-                                                      <span className="font-mono text-xs text-gray-700">{detectedTag}</span>
-                                                    </button>
-                                                  </div>
+                                                <span className="inline-block h-4 w-0.5 bg-primary ml-0.5 -mb-1 animate-pulse" />
                                               )}
 
-                                              {/* Render fully parsed streaming tool call (placeholder) */}
+                                              {detectedTag && (
+                                                <div className="mt-2 mb-1">
+                                                  <button
+                                                    className="inline-flex items-center gap-1.5 py-1 px-2.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md transition-colors cursor-pointer border border-primary/20"
+                                                  >
+                                                    <CircleDashed className="h-3.5 w-3.5 text-primary flex-shrink-0 animate-spin animation-duration-2000" />
+                                                    <span className="font-mono text-xs text-primary">{detectedTag}</span>
+                                                  </button>
+                                                </div>
+                                              )}
+
                                               {streamingToolCall && !detectedTag && (
-                                                <div className="mt-1">
+                                                <div className="mt-2 mb-1">
                                                   {(() => {
                                                     const toolName = streamingToolCall.name || streamingToolCall.xml_tag_name || 'Tool';
                                                     const IconComponent = getToolIcon(toolName);
                                                     const paramDisplay = extractPrimaryParam(toolName, streamingToolCall.arguments || '');
                                                     return (
                                                       <button
-                                                        className="inline-flex items-center gap-1.5 py-0.5 px-2 text-xs text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors cursor-pointer border border-gray-200"
+                                                        className="inline-flex items-center gap-1.5 py-1 px-2.5 text-xs font-medium text-primary bg-primary/10 hover:bg-primary/20 rounded-md transition-colors cursor-pointer border border-primary/20"
                                                       >
-                                                        <CircleDashed className="h-3.5 w-3.5 text-gray-500 flex-shrink-0 animate-spin animation-duration-2000" />
-                                                        <span className="font-mono text-xs text-gray-700">{toolName}</span>
-                                                        {paramDisplay && <span className="ml-1 text-gray-500 truncate" title={paramDisplay}>{paramDisplay}</span>}
+                                                        <CircleDashed className="h-3.5 w-3.5 text-primary flex-shrink-0 animate-spin animation-duration-2000" />
+                                                        <span className="font-mono text-xs text-primary">{toolName}</span>
+                                                        {paramDisplay && <span className="ml-1 text-primary/70 truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
                                                       </button>
                                                     );
                                                   })()}
@@ -1277,29 +1305,28 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                         </div>
                       );
                     }
-                    return null; // Should not happen
+                    return null;
                   });
                 })()}
-                 {/* Render thinking indicator ONLY if agent is running AND the last group wasn't assistant OR there are no messages yet */}
-                 {(agentStatus === 'running' || agentStatus === 'connecting') && 
-                   (messages.length === 0 || messages[messages.length - 1].type === 'user') && (
-                      <div ref={latestMessageRef}>
-                         <div className="flex items-start gap-3">
-                             <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center overflow-hidden bg-gray-200">
-                               <Image src="/kortix-symbol.svg" alt="Suna" width={14} height={14} className="object-contain"/>
-                             </div>
+                {(agentStatus === 'running' || agentStatus === 'connecting') && 
+                  (messages.length === 0 || messages[messages.length - 1].type === 'user') && (
+                    <div ref={latestMessageRef}>
+                      <div className="flex items-start gap-3">
+                        <div className="flex-shrink-0 w-5 h-5 rounded-md flex items-center justify-center overflow-hidden bg-primary/10">
+                          <Image src="/kortix-symbol.svg" alt="Suna" width={14} height={14} className="object-contain"/>
+                        </div>
                         <div className="flex-1 space-y-2">
                           <div className="max-w-[90%] px-4 py-3 text-sm">
-                            <div className="flex items-center gap-1.5 py-1"> {/* Adjusted padding/margin */}
-                              <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse" />
-                              <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse delay-150" />
-                              <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse delay-300" />
+                            <div className="flex items-center gap-1.5 py-1">
+                              <div className="h-1.5 w-1.5 rounded-full bg-primary/50 animate-pulse" />
+                              <div className="h-1.5 w-1.5 rounded-full bg-primary/50 animate-pulse delay-150" />
+                              <div className="h-1.5 w-1.5 rounded-full bg-primary/50 animate-pulse delay-300" />
                             </div>
                           </div>
                         </div>
-                        </div>
                       </div>
-                  )}
+                    </div>
+                )}
               </div>
             )}
             <div ref={messagesEndRef} className="h-1" />
@@ -1307,11 +1334,10 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         </div>
       </div>
 
-      {/* Fixed Chat Input Container */}
       <div className={cn(
-          "fixed bottom-0 z-10 bg-gradient-to-t from-background via-background/90 to-transparent px-4 pb-4 pt-8 transition-all duration-200 ease-in-out",
-          leftSidebarState === 'expanded' ? 'left-[72px] lg:left-[256px]' : 'left-[72px]',
-          isSidePanelOpen ? 'right-[90%] sm:right-[450px] md:right-[500px] lg:right-[550px] xl:right-[650px]' : 'right-0'
+        "fixed bottom-0 z-10 bg-gradient-to-t from-background via-background/90 to-transparent px-4 pt-8 transition-all duration-200 ease-in-out",
+        leftSidebarState === 'expanded' ? 'left-[72px] lg:left-[256px]' : 'left-[72px]',
+        isSidePanelOpen ? 'right-[90%] sm:right-[450px] md:right-[500px] lg:right-[550px] xl:right-[650px]' : 'right-0'
       )}>
         <div className="mx-auto max-w-3xl">
           <ChatInput
@@ -1334,7 +1360,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         isOpen={isSidePanelOpen} 
         onClose={() => {
           setIsSidePanelOpen(false);
-          userClosedPanelRef.current = true;  // Mark that user explicitly closed panel
+          userClosedPanelRef.current = true;
         }}
         toolCalls={toolCalls}
         messages={messages as ApiMessageType[]}

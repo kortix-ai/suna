@@ -9,6 +9,44 @@ export function formatTimestamp(isoString?: string): string {
   }
 }
 
+// Get standardized tool title
+export function getToolTitle(toolName: string): string {
+  // Normalize tool name
+  const normalizedName = toolName.toLowerCase();
+  
+  // Map of tool names to their display titles
+  const toolTitles: Record<string, string> = {
+    'execute-command': 'Execute Command',
+    'str-replace': 'String Replace',
+    'create-file': 'Create File',
+    'full-file-rewrite': 'Rewrite File',
+    'delete-file': 'Delete File',
+    'web-search': 'Web Search',
+    'web-crawl': 'Web Crawl',
+    'browser-navigate': 'Browser Navigate',
+    'browser-click': 'Browser Click',
+    'browser-extract': 'Browser Extract',
+    'browser-fill': 'Browser Fill',
+    'browser-wait': 'Browser Wait'
+  };
+  
+  // Return the mapped title or a formatted version of the name
+  if (toolTitles[normalizedName]) {
+    return toolTitles[normalizedName];
+  }
+  
+  // For browser tools not explicitly mapped
+  if (normalizedName.startsWith('browser-')) {
+    const operation = normalizedName.replace('browser-', '').replace(/-/g, ' ');
+    return 'Browser ' + operation.charAt(0).toUpperCase() + operation.slice(1);
+  }
+  
+  // Format any other tool name
+  return toolName.split('-')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
 // Helper to extract command from execute-command content
 export function extractCommand(content: string | undefined): string | null {
   if (!content) return null;

@@ -22,6 +22,13 @@ function LegalContent() {
   const [mounted, setMounted] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
 
+  // Function to update URL without refreshing the page
+  const updateUrl = (tab: string) => {
+    const params = new URLSearchParams(searchParams);
+    params.set("tab", tab);
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  };
+
   useEffect(() => {
     setMounted(true);
     
@@ -29,12 +36,12 @@ function LegalContent() {
     if (tabParam !== activeTab) {
       updateUrl(activeTab);
     }
-  }, []);
+  }, [tabParam, activeTab, updateUrl]);
   
   // Update the URL when the tab changes
   useEffect(() => {
     updateUrl(activeTab);
-  }, [activeTab]);
+  }, [activeTab, updateUrl]);
   
   // Update the active tab when URL changes
   useEffect(() => {
@@ -42,13 +49,6 @@ function LegalContent() {
       setActiveTab(tabParam);
     }
   }, [tabParam]);
-  
-  // Function to update URL without refreshing the page
-  const updateUrl = (tab: string) => {
-    const params = new URLSearchParams(searchParams);
-    params.set("tab", tab);
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-  };
 
   // Handle tab change
   const handleTabChange = (tab: "terms" | "privacy") => {

@@ -4,11 +4,22 @@ import {
     getAgentStatus, 
     stopAgent, 
     AgentRun, 
-    Message as ApiMessageType 
+    getMessages
 } from '@/lib/api';
 import { toast } from 'sonner';
 import { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/components/thread/types';
 import { safeJsonParse } from '@/components/thread/utils';
+
+interface ApiMessageType {
+  message_id?: string;
+  thread_id?: string;
+  type: string;
+  is_llm_message?: boolean;
+  content: string;
+  metadata?: string;
+  created_at?: string;
+  updated_at?: string;
+}
 
 // Define the structure returned by the hook
 export interface UseAgentStreamResult {
@@ -29,7 +40,7 @@ export interface AgentStreamCallbacks {
   onClose?: (finalStatus: string) => void; // Optional: Notify when streaming definitively ends
 }
 
-export function useAgentStream(callbacks: AgentStreamCallbacks): UseAgentStreamResult {
+export function useAgentStream(callbacks: AgentStreamCallbacks, threadId: string, setMessages: (messages: UnifiedMessage[]) => void): UseAgentStreamResult {
   const [agentRunId, setAgentRunId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>('idle');
   const [textContent, setTextContent] = useState<string>('');
@@ -105,9 +116,32 @@ export function useAgentStream(callbacks: AgentStreamCallbacks): UseAgentStreamR
     if (!processedData) return;
 
     // --- Early exit for non-JSON completion messages ---
-    if (processedData.includes('"type":"status"') && processedData.includes('"status":"completed"')) {
+    if (processedData === '{"type": "status", "status": "completed", "message": "Agent run completed successfully"}') {
       console.log('[useAgentStream] Received final completion status message');
-      finalizeStream('completed', currentRunIdRef.current);
+      finalizeStream('stopped', currentRunIdRef.current);
+      // Refetch thread messages
+      getMessages(threadId).then((messagesData: ApiMessageType[]) => {
+        if (messagesData) {
+          console.log(`[useAgentStream] Refetched messages after completion:`, messagesData.length);
+          // Map API message type to UnifiedMessage type
+          const unifiedMessages = (messagesData || [])
+            .filter(msg => msg.type !== 'status') 
+            .map((msg: ApiMessageType) => ({
+              message_id: msg.message_id || null, 
+              thread_id: msg.thread_id || threadId,
+              type: (msg.type || 'system') as UnifiedMessage['type'], 
+              is_llm_message: Boolean(msg.is_llm_message),
+              content: msg.content || '',
+              metadata: msg.metadata || '{}',
+              created_at: msg.created_at || new Date().toISOString(),
+              updated_at: msg.updated_at || new Date().toISOString()
+            }));
+          
+          setMessages(unifiedMessages);
+        }
+      }).catch(err => {
+        console.error(`Error refetching messages after completion:`, err);
+      });
       return;
     }
      if (processedData.includes('Run data not available for streaming') || processedData.includes('Stream ended with status: completed')) {
@@ -192,7 +226,7 @@ export function useAgentStream(callbacks: AgentStreamCallbacks): UseAgentStreamR
       default:
         console.warn('[useAgentStream] Unhandled message type:', message.type);
     }
-  }, [status, toolCall, callbacks, finalizeStream, updateStatus]);
+  }, [threadId, setMessages, status, toolCall, callbacks, finalizeStream, updateStatus]);
 
   const handleStreamError = useCallback((err: Error | string | Event) => {
     if (!isMountedRef.current) return;
@@ -406,7 +440,7 @@ export function useAgentStream(callbacks: AgentStreamCallbacks): UseAgentStreamR
 
      try {
        await stopAgent(runIdToStop);
-       toast.success('Agent stop request sent.');
+       toast.success('Agent stopped.');
        // finalizeStream already called getAgentStatus implicitly if needed
      } catch (err) {
        // Don't revert status here, as the user intended to stop. Just log error.

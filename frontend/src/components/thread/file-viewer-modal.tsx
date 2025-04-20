@@ -15,12 +15,15 @@ import {
   ChevronLeft,
   Loader,
   AlertTriangle,
+  FileText,
+  ChevronDown,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { FileRenderer, getFileTypeFromExtension } from "@/components/file-renderers";
 import { listSandboxFiles, getSandboxFileContent, type FileInfo, Project } from "@/lib/api";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 
 // Define API_URL
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
@@ -66,6 +69,14 @@ export function FileViewerModal({
   
   // Project state
   const [projectWithSandbox, setProjectWithSandbox] = useState<Project | undefined>(project);
+  
+  // Add state for PDF export
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const markdownContainerRef = useRef<HTMLDivElement>(null);
+  const markdownRef = useRef<HTMLDivElement>(null);
+  
+  // Add state for print orientation
+  const [pdfOrientation, setPdfOrientation] = useState<'portrait' | 'landscape'>('portrait');
   
   // Setup project with sandbox URL if not provided directly
   useEffect(() => {
@@ -390,6 +401,174 @@ export function FileViewerModal({
     onOpenChange(open);
   }, [onOpenChange, clearSelectedFile]);
 
+  // Helper to check if file is markdown
+  const isMarkdownFile = useCallback((filePath: string | null) => {
+    return filePath ? filePath.toLowerCase().endsWith('.md') : false;
+  }, []);
+  
+  // Handle PDF export for markdown files
+  const handleExportPdf = useCallback(async (orientation: 'portrait' | 'landscape' = 'portrait') => {
+    if (!selectedFilePath || isExportingPdf || !isMarkdownFile(selectedFilePath)) return;
+    
+    setIsExportingPdf(true);
+    
+    try {
+      // Use the ref to access the markdown content directly
+      if (!markdownRef.current) {
+        throw new Error('Markdown content not found');
+      }
+      
+      // Create a standalone document for printing
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        throw new Error('Unable to open print window. Please check if popup blocker is enabled.');
+      }
+      
+      // Get the base URL for resolving relative URLs
+      const baseUrl = window.location.origin;
+      
+      // Generate HTML content
+      const fileName = selectedFilePath.split('/').pop() || 'document';
+      const pdfName = fileName.replace(/\.md$/, '');
+      
+      // Extract content
+      const markdownContent = markdownRef.current.innerHTML;
+      
+      // Generate a full HTML document with controlled styles
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>${pdfName}</title>
+          <style>
+            @media print {
+              @page { 
+                size: ${orientation === 'landscape' ? 'A4 landscape' : 'A4'};
+                margin: 15mm;
+              }
+              body {
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+            }
+            body {
+              font-family: 'Helvetica', 'Arial', sans-serif;
+              font-size: 12pt;
+              color: #333;
+              line-height: 1.5;
+              padding: 20px;
+              max-width: 100%;
+              margin: 0 auto;
+              background: white;
+            }
+            h1 { font-size: 24pt; margin-top: 20pt; margin-bottom: 12pt; }
+            h2 { font-size: 20pt; margin-top: 18pt; margin-bottom: 10pt; }
+            h3 { font-size: 16pt; margin-top: 16pt; margin-bottom: 8pt; }
+            h4, h5, h6 { font-weight: bold; margin-top: 12pt; margin-bottom: 6pt; }
+            p { margin: 8pt 0; }
+            pre, code {
+              font-family: 'Courier New', monospace;
+              background-color: #f5f5f5;
+              border-radius: 3pt;
+              padding: 2pt 4pt;
+              font-size: 10pt;
+            }
+            pre {
+              padding: 8pt;
+              margin: 8pt 0;
+              overflow-x: auto;
+              white-space: pre-wrap;
+            }
+            code {
+              white-space: pre-wrap;
+            }
+            img {
+              max-width: 100%;
+              height: auto;
+            }
+            a {
+              color: #0066cc;
+              text-decoration: underline;
+            }
+            ul, ol {
+              padding-left: 20pt;
+              margin: 8pt 0;
+            }
+            blockquote {
+              margin: 8pt 0;
+              padding-left: 12pt;
+              border-left: 4pt solid #ddd;
+              color: #666;
+            }
+            table {
+              border-collapse: collapse;
+              width: 100%;
+              margin: 12pt 0;
+            }
+            th, td {
+              border: 1pt solid #ddd;
+              padding: 6pt;
+              text-align: left;
+            }
+            th {
+              background-color: #f5f5f5;
+              font-weight: bold;
+            }
+            /* Syntax highlighting basic styles */
+            .hljs-keyword, .hljs-selector-tag { color: #569cd6; }
+            .hljs-literal, .hljs-number { color: #b5cea8; }
+            .hljs-string { color: #ce9178; }
+            .hljs-comment { color: #6a9955; }
+            .hljs-attribute, .hljs-attr { color: #9cdcfe; }
+            .hljs-function, .hljs-name { color: #dcdcaa; }
+            .hljs-title.class_ { color: #4ec9b0; }
+            .markdown-content pre { background-color: #f8f8f8; }
+          </style>
+        </head>
+        <body>
+          <div class="markdown-content">
+            ${markdownContent}
+          </div>
+          <script>
+            // Remove any complex CSS variables or functions that might cause issues
+            document.querySelectorAll('[style]').forEach(el => {
+              const style = el.getAttribute('style');
+              if (style && (style.includes('oklch') || style.includes('var(--') || style.includes('hsl('))) {
+                // Replace complex color values with simple ones or remove them
+                el.setAttribute('style', style
+                  .replace(/color:.*?(;|$)/g, 'color: #333;')
+                  .replace(/background-color:.*?(;|$)/g, 'background-color: transparent;')
+                );
+              }
+            });
+            
+            // Print automatically when loaded
+            window.onload = () => {
+              setTimeout(() => {
+                window.print();
+                setTimeout(() => window.close(), 500);
+              }, 300);
+            };
+          </script>
+        </body>
+        </html>
+      `;
+      
+      // Write the HTML content to the new window
+      printWindow.document.open();
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+      
+      toast.success("PDF export initiated. Check your print dialog.");
+    } catch (error) {
+      console.error("PDF export failed:", error);
+      toast.error(`Failed to export PDF: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      setIsExportingPdf(false);
+    }
+  }, [selectedFilePath, isExportingPdf, isMarkdownFile]);
+
   // --- useEffect Hooks --- //
 
   // Load files when modal opens or path changes - Refined
@@ -538,20 +717,58 @@ export function FileViewerModal({
           
           <div className="flex items-center gap-2 flex-shrink-0">
             {selectedFilePath && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleDownload}
-                disabled={isDownloading || isLoadingContent}
-                className="h-8 gap-1"
-              >
-                {isDownloading ? (
-                  <Loader className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Download className="h-4 w-4" />
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDownload}
+                  disabled={isDownloading || isLoadingContent}
+                  className="h-8 gap-1"
+                >
+                  {isDownloading ? (
+                    <Loader className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                  <span className="hidden sm:inline">Download</span>
+                </Button>
+                
+                {/* Replace the Export as PDF button with a dropdown */}
+                {isMarkdownFile(selectedFilePath) && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={isExportingPdf || isLoadingContent || contentError !== null}
+                        className="h-8 gap-1"
+                      >
+                        {isExportingPdf ? (
+                          <Loader className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <FileText className="h-4 w-4" />
+                        )}
+                        <span className="hidden sm:inline">Export as PDF</span>
+                        <ChevronDown className="h-3 w-3 ml-1" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem 
+                        onClick={() => handleExportPdf('portrait')}
+                        className="flex items-center gap-2 cursor-pointer"
+                      >
+                        <span className="rotate-90">⬌</span> Portrait
+                      </DropdownMenuItem>
+                      <DropdownMenuItem 
+                        onClick={() => handleExportPdf('landscape')}
+                        className="flex items-center gap-2 cursor-pointer"
+                      >
+                        <span>⬌</span> Landscape
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
-                <span className="hidden sm:inline">Download</span>
-              </Button>
+              </>
             )}
             
             {!selectedFilePath && (
@@ -633,18 +850,8 @@ export function FileViewerModal({
                     fileName={selectedFilePath}
                     className="h-full w-full"
                     project={projectWithSandbox}
+                    markdownRef={isMarkdownFile(selectedFilePath) ? markdownRef : undefined}
                   />
-                  <div className="absolute top-3 right-3">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 w-8 p-0 rounded-full bg-background/80 shadow-md hover:bg-background"
-                      title="Back to files"
-                      onClick={() => clearSelectedFile()}
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                  </div>
                 </div>
               )}
             </div>

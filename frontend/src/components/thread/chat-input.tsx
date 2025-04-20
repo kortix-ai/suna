@@ -58,12 +58,16 @@ export function ChatInput({
   isAgentRunning = false,
   onStopAgent,
   autoFocus = true,
-  value,
-  onChange,
+  value: controlledValue,
+  onChange: controlledOnChange,
   onFileBrowse,
   sandboxId
 }: ChatInputProps) {
-  const [inputValue, setInputValue] = useState(value || "");
+  const isControlled = controlledValue !== undefined && controlledOnChange !== undefined;
+  
+  const [uncontrolledValue, setUncontrolledValue] = useState('');
+  const value = isControlled ? controlledValue : uncontrolledValue;
+
   const [selectedModel, setSelectedModel] = useState("sonnet-3.7");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -84,14 +88,6 @@ export function ChatInput({
     }
   }, []);
   
-  const isControlled = value !== undefined && onChange !== undefined;
-  
-  useEffect(() => {
-    if (isControlled && value !== inputValue) {
-      setInputValue(value);
-    }
-  }, [value, isControlled, inputValue]);
-
   useEffect(() => {
     if (autoFocus && textareaRef.current) {
       textareaRef.current.focus();
@@ -104,15 +100,17 @@ export function ChatInput({
 
     const adjustHeight = () => {
       textarea.style.height = 'auto';
-      const newHeight = Math.min(Math.max(textarea.scrollHeight, 24), 200); // Min 24px, max 200px
+      const newHeight = Math.min(Math.max(textarea.scrollHeight, 24), 200);
       textarea.style.height = `${newHeight}px`;
     };
 
     adjustHeight();
     
+    adjustHeight();
+
     window.addEventListener('resize', adjustHeight);
     return () => window.removeEventListener('resize', adjustHeight);
-  }, [inputValue]);
+  }, [value]);
 
   const handleModelChange = (model: string) => {
     setSelectedModel(model);
@@ -123,14 +121,14 @@ export function ChatInput({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if ((!inputValue.trim() && uploadedFiles.length === 0) || loading || (disabled && !isAgentRunning)) return;
+    if ((!value.trim() && uploadedFiles.length === 0) || loading || (disabled && !isAgentRunning)) return;
     
     if (isAgentRunning && onStopAgent) {
       onStopAgent();
       return;
     }
     
-    let message = inputValue;
+    let message = value;
     
     if (uploadedFiles.length > 0) {
       const fileInfo = uploadedFiles.map(file => 
@@ -152,7 +150,7 @@ export function ChatInput({
     });
     
     if (!isControlled) {
-      setInputValue("");
+      setUncontrolledValue("");
     }
     
     setUploadedFiles([]);
@@ -161,16 +159,16 @@ export function ChatInput({
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newValue = e.target.value;
     if (isControlled) {
-      onChange(newValue);
+      controlledOnChange(newValue);
     } else {
-      setInputValue(newValue);
+      setUncontrolledValue(newValue);
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if ((inputValue.trim() || uploadedFiles.length > 0) && !loading && (!disabled || isAgentRunning)) {
+      if ((value.trim() || uploadedFiles.length > 0) && !loading && (!disabled || isAgentRunning)) {
         handleSubmit(e as React.FormEvent);
       }
     }
@@ -221,7 +219,7 @@ export function ChatInput({
       const newUploadedFiles: UploadedFile[] = [];
       
       for (const file of files) {
-        if (file.size > 50 * 1024 * 1024) { // 50MB limit
+        if (file.size > 50 * 1024 * 1024) {
           toast.error(`File size exceeds 50MB limit: ${file.name}`);
           continue;
         }
@@ -329,7 +327,7 @@ export function ChatInput({
 
       <div 
         className={cn(
-          "flex items-center w-full rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-3 py-2 shadow-sm transition-all duration-200",
+          "flex items-end w-full rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950 px-3 py-2 shadow-sm transition-all duration-200",
           isDraggingOver ? "border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-950/10" : ""
         )}
         onDragOver={handleDragOver}
@@ -339,14 +337,10 @@ export function ChatInput({
         <div className="relative flex-1 flex items-center overflow-hidden">
           <Textarea
             ref={textareaRef}
-            value={inputValue}
+            value={value}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            placeholder={
-              isAgentRunning 
-                ? "Agent is thinking..." 
-                : placeholder
-            }
+            placeholder={placeholder}
             className={cn(
               "min-h-[24px] max-h-[200px] py-0 px-0 text-sm resize-none border-0 shadow-none focus-visible:ring-0 focus-visible:ring-offset-0 bg-transparent w-full",
               isDraggingOver ? "opacity-40" : ""
@@ -357,7 +351,7 @@ export function ChatInput({
         </div>
         
         <div className="flex items-center gap-2 pl-2 flex-shrink-0">
-          {!isAgentRunning && (
+          {/* {!isAgentRunning && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -402,7 +396,7 @@ export function ChatInput({
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
-          )}
+          )} */}
           
           <TooltipProvider>
             <Tooltip>
@@ -449,11 +443,11 @@ export function ChatInput({
                     isAgentRunning 
                       ? "text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/30" 
                       : "text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800",
-                    ((!inputValue.trim() && uploadedFiles.length === 0) && !isAgentRunning) || loading || (disabled && !isAgentRunning) 
+                    ((!value.trim() && uploadedFiles.length === 0) && !isAgentRunning) || loading || (disabled && !isAgentRunning) 
                       ? "opacity-50" 
                       : ""
                   )}
-                  disabled={((!inputValue.trim() && uploadedFiles.length === 0) && !isAgentRunning) || loading || (disabled && !isAgentRunning)}
+                  disabled={((!value.trim() && uploadedFiles.length === 0) && !isAgentRunning) || loading || (disabled && !isAgentRunning)}
                 >
                   {loading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -480,7 +474,7 @@ export function ChatInput({
         >
           <div className="text-xs text-muted-foreground flex items-center gap-2">
             <Loader2 className="h-3 w-3 animate-spin" />
-            <span>Agent is thinking...</span>
+            <span>Kortix Suna is working...</span>
           </div>
         </motion.div>
       )}

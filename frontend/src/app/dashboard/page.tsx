@@ -16,33 +16,6 @@ function DashboardContent() {
   const [autoSubmit, setAutoSubmit] = useState(false);
   const router = useRouter();
 
-  // Check for pending prompt in localStorage on mount
-  useEffect(() => {
-    // Use a small delay to ensure we're fully mounted
-    const timer = setTimeout(() => {
-      const pendingPrompt = localStorage.getItem(PENDING_PROMPT_KEY);
-      
-      if (pendingPrompt) {
-        setInputValue(pendingPrompt);
-        setAutoSubmit(true); // Flag to auto-submit after mounting
-      }
-    }, 200);
-    
-    return () => clearTimeout(timer);
-  }, []);
-
-  // Auto-submit the form if we have a pending prompt
-  useEffect(() => {
-    if (autoSubmit && inputValue && !isSubmitting) {
-      const timer = setTimeout(() => {
-        handleSubmit(inputValue);
-        setAutoSubmit(false);
-      }, 500);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [autoSubmit, inputValue, isSubmitting]);
-
   const handleSubmit = async (message: string, options?: { model_name?: string; enable_thinking?: boolean }) => {
     if (!message.trim() || isSubmitting) return;
     
@@ -81,6 +54,33 @@ function DashboardContent() {
       setIsSubmitting(false);
     }
   };
+
+  // Check for pending prompt in localStorage on mount
+  useEffect(() => {
+    // Use a small delay to ensure we're fully mounted
+    const timer = setTimeout(() => {
+      const pendingPrompt = localStorage.getItem(PENDING_PROMPT_KEY);
+      
+      if (pendingPrompt) {
+        setInputValue(pendingPrompt);
+        setAutoSubmit(true); // Flag to auto-submit after mounting
+      }
+    }, 200);
+    
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Auto-submit the form if we have a pending prompt
+  useEffect(() => {
+    if (autoSubmit && inputValue && !isSubmitting) {
+      const timer = setTimeout(() => {
+        handleSubmit(inputValue);
+        setAutoSubmit(false);
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [autoSubmit, inputValue, isSubmitting, handleSubmit]);
 
   return (
     <div className="flex flex-col items-center justify-center h-full w-full">

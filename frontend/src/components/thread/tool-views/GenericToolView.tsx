@@ -1,20 +1,22 @@
 import React from "react";
 import { ToolViewProps } from "./types";
-import { formatTimestamp } from "./utils";
+import { formatTimestamp, getToolTitle } from "./utils";
 import { getToolIcon } from "../utils";
-import { CircleDashed } from "lucide-react";
+import { CircleDashed, CheckCircle, AlertTriangle } from "lucide-react";
 import { Markdown } from "@/components/home/ui/markdown";
+import { cn } from "@/lib/utils";
 
 export function GenericToolView({ 
-  name, 
+  name = 'unknown', 
   assistantContent, 
   toolContent, 
   isSuccess = true, 
+  isStreaming = false,
   assistantTimestamp, 
   toolTimestamp 
-}: ToolViewProps & { name?: string }) {
-  const toolName = name || 'Unknown Tool';
-  const isStreaming = toolContent === "STREAMING";
+}: ToolViewProps) {
+  const toolTitle = getToolTitle(name);
+  const Icon = getToolIcon(name);
   
   // Parse the assistant content to extract tool parameters
   const parsedContent = React.useMemo(() => {
@@ -46,100 +48,110 @@ export function GenericToolView({
   }, [toolContent, isStreaming]);
   
   return (
-    <div className="space-y-4 p-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
-            {React.createElement(getToolIcon(toolName), { className: "h-4 w-4" })}
-          </div>
-          <div>
-            <h4 className="text-sm font-medium">{toolName}</h4>
-          </div>
-        </div>
-        
-        {toolContent && !isStreaming && (
-          <div className={`px-2 py-1 rounded-full text-xs ${
-            isSuccess ? 'bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300' 
-                      : 'bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-300'
-          }`}>
-            {isSuccess ? 'Success' : 'Failed'}
+    <div className="flex flex-col h-full">
+      <div className="flex-1 p-4 overflow-auto">
+        {/* Tool Parameters */}
+        {parsedContent && (
+          <div className="space-y-1.5">
+            <div className="flex justify-between items-center">
+              <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Input</div>
+              {assistantTimestamp && (
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">{formatTimestamp(assistantTimestamp)}</div>
+              )}
+            </div>
+            <div className="rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-3">
+              {parsedContent.content.startsWith('{') ? (
+                <pre className="text-xs overflow-auto whitespace-pre-wrap break-words text-zinc-800 dark:text-zinc-300 font-mono">
+                  {JSON.stringify(JSON.parse(parsedContent.content), null, 2)}
+                </pre>
+              ) : (
+                <Markdown className="text-xs prose prose-zinc dark:prose-invert max-w-none">
+                  {parsedContent.content}
+                </Markdown>
+              )}
+            </div>
           </div>
         )}
         
-        {isStreaming && (
-          <div className="px-2 py-1 rounded-full text-xs bg-blue-50 text-blue-700 dark:bg-blue-900 dark:text-blue-300 flex items-center gap-1">
-            <CircleDashed className="h-3 w-3 animate-spin" />
-            <span>Running</span>
+        {/* Show original assistant content if couldn't parse properly */}
+        {assistantContent && !parsedContent && !isStreaming && (
+          <div className="space-y-1.5">
+            <div className="flex justify-between items-center">
+              <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400">Input</div>
+              {assistantTimestamp && (
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">{formatTimestamp(assistantTimestamp)}</div>
+              )}
+            </div>
+            <div className="rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-3">
+              <pre className="text-xs overflow-auto whitespace-pre-wrap break-words text-zinc-800 dark:text-zinc-300 font-mono">{assistantContent}</pre>
+            </div>
+          </div>
+        )}
+        
+        {/* Tool Result */}
+        {toolContent && (
+          <div className="space-y-1.5 mt-4">
+            <div className="flex justify-between items-center">
+              <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                {isStreaming ? "Processing" : "Output"}
+              </div>
+              {toolTimestamp && !isStreaming && (
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">{formatTimestamp(toolTimestamp)}</div>
+              )}
+            </div>
+            <div className={cn(
+              "rounded-md border p-3",
+              isStreaming 
+                ? 'border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-900/10' 
+                : isSuccess 
+                  ? 'border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900' 
+                  : 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-900/10'
+            )}>
+              {isStreaming ? (
+                <div className="flex items-center gap-2 text-xs font-medium text-blue-700 dark:text-blue-400">
+                  <CircleDashed className="h-3 w-3 animate-spin" />
+                  <span>Executing {toolTitle.toLowerCase()}...</span>
+                </div>
+              ) : (
+                <pre className="text-xs overflow-auto whitespace-pre-wrap break-words text-zinc-800 dark:text-zinc-300 font-mono">{parsedToolContent || toolContent}</pre>
+              )}
+            </div>
           </div>
         )}
       </div>
       
-      {/* Tool Parameters */}
-      {parsedContent && (
-        <div className="space-y-1">
-          <div className="flex justify-between items-center">
-            <div className="text-xs font-medium text-muted-foreground">Tool Parameters</div>
-            {assistantTimestamp && (
-              <div className="text-xs text-muted-foreground">{formatTimestamp(assistantTimestamp)}</div>
-            )}
-          </div>
-          <div className="rounded-md border bg-muted/50 p-3">
-            {parsedContent.content.startsWith('{') ? (
-              // If content looks like JSON, render it prettified
-              <pre className="text-xs overflow-auto whitespace-pre-wrap break-words">
-                {JSON.stringify(JSON.parse(parsedContent.content), null, 2)}
-              </pre>
-            ) : (
-              // Otherwise render as Markdown
-              <Markdown className="text-xs prose prose-xs dark:prose-invert max-w-none">
-                {parsedContent.content}
-              </Markdown>
-            )}
-          </div>
-        </div>
-      )}
-      
-      {/* Show original assistant content if couldn't parse properly or for debugging */}
-      {assistantContent && !parsedContent && !isStreaming && (
-        <div className="space-y-1">
-          <div className="flex justify-between items-center">
-            <div className="text-xs font-medium text-muted-foreground">Assistant Message</div>
-            {assistantTimestamp && (
-              <div className="text-xs text-muted-foreground">{formatTimestamp(assistantTimestamp)}</div>
-            )}
-          </div>
-          <div className="rounded-md border bg-muted/50 p-3">
-            <pre className="text-xs overflow-auto whitespace-pre-wrap break-words">{assistantContent}</pre>
-          </div>
-        </div>
-      )}
-      
-      {/* Tool Result */}
-      {toolContent && (
-        <div className="space-y-1">
-          <div className="flex justify-between items-center">
-            <div className="text-xs font-medium text-muted-foreground">
-              {isStreaming ? "Tool Execution" : "Tool Result"}
+      {/* Footer */}
+      <div className="p-4 border-t border-zinc-200 dark:border-zinc-800">
+        <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
+          {!isStreaming && (
+            <div className="flex items-center gap-2">
+              {isSuccess ? (
+                <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
+              ) : (
+                <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
+              )}
+              <span>
+                {isSuccess ? 'Completed successfully' : 'Execution failed'}
+              </span>
             </div>
-            {toolTimestamp && !isStreaming && (
-              <div className="text-xs text-muted-foreground">{formatTimestamp(toolTimestamp)}</div>
-            )}
-          </div>
-          <div className={`rounded-md border p-3 ${
-            isStreaming ? 'bg-blue-50/30 dark:bg-blue-900/20' : 
-            (isSuccess ? 'bg-muted/50' : 'bg-red-50/30 dark:bg-red-900/20')
-          }`}>
-            {isStreaming ? (
-              <div className="flex items-center gap-2 text-xs text-blue-700 dark:text-blue-300">
-                <CircleDashed className="h-3 w-3 animate-spin" />
-                <span>Executing {toolName.toLowerCase()}...</span>
-              </div>
-            ) : (
-              <pre className="text-xs overflow-auto whitespace-pre-wrap break-words">{parsedToolContent || toolContent}</pre>
-            )}
+          )}
+          
+          {isStreaming && (
+            <div className="flex items-center gap-2">
+              <CircleDashed className="h-3.5 w-3.5 text-blue-500 animate-spin" />
+              <span>Processing...</span>
+            </div>
+          )}
+          
+          <div className="text-xs">
+            {toolTimestamp && !isStreaming 
+              ? formatTimestamp(toolTimestamp) 
+              : assistantTimestamp 
+                ? formatTimestamp(assistantTimestamp)
+                : ''}
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 } 

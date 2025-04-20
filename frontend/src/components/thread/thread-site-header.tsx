@@ -1,7 +1,7 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { Copy, File, PanelRightOpen, Check, X } from "lucide-react"
+import { FolderOpen, Link, PanelRightOpen, Check, X } from "lucide-react"
 import { usePathname } from "next/navigation"
 import { toast } from "sonner"
 import {
@@ -103,7 +103,7 @@ export function SiteHeader({
               onChange={(e) => setEditName(e.target.value)}
               onKeyDown={handleKeyDown}
               onBlur={saveNewName}
-              className="h-7 w-auto min-w-[180px] text-sm font-medium"
+              className="h-8 w-auto min-w-[180px] text-base font-medium"
               maxLength={50}
             />
             <Button
@@ -127,7 +127,7 @@ export function SiteHeader({
           <Skeleton className="h-5 w-32" />
         ) : (
           <div 
-            className="text-sm font-medium text-muted-foreground hover:text-foreground cursor-pointer flex items-center"
+            className="text-base font-medium text-muted-foreground hover:text-foreground cursor-pointer flex items-center"
             onClick={startEditing}
             title="Click to rename project"
           >
@@ -144,9 +144,9 @@ export function SiteHeader({
                 variant="ghost"
                 size="icon"
                 onClick={onViewFiles}
-                className="h-9 w-9"
+                className="h-9 w-9 cursor-pointer"
               >
-                <File className="h-4 w-4" />
+                <FolderOpen className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
             <TooltipContent>
@@ -160,13 +160,13 @@ export function SiteHeader({
                 variant="ghost"
                 size="icon"
                 onClick={copyCurrentUrl}
-                className="h-9 w-9"
+                className="h-9 w-9 cursor-pointer"
               >
-                <Copy className="h-4 w-4" />
+                <Link className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              <p>Copy URL</p>
+              <p>Copy Link</p>
             </TooltipContent>
           </Tooltip>
 
@@ -176,13 +176,13 @@ export function SiteHeader({
                 variant="ghost"
                 size="icon"
                 onClick={onToggleSidePanel}
-                className="h-9 w-9"
+                className="h-9 w-9 cursor-pointer"
               >
                 <PanelRightOpen className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              <p>Toggle Tool Details</p>
+              <p>Toggle Computer Preview (CMD+I)</p>
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>

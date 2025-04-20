@@ -222,7 +222,7 @@ export const updateProject = async (projectId: string, data: Partial<Project>): 
       detail: { 
         projectId, 
         updatedData: {
-          id: updatedData.project_id || updatedData.id,
+          id: updatedData.project_id,
           name: updatedData.name,
           description: updatedData.description
         }
@@ -230,7 +230,15 @@ export const updateProject = async (projectId: string, data: Partial<Project>): 
     }));
   }
   
-  return updatedData;
+  // Return formatted project data
+  return {
+    id: updatedData.project_id,
+    name: updatedData.name,
+    description: updatedData.description || '',
+    account_id: updatedData.account_id,
+    created_at: updatedData.created_at,
+    sandbox: updatedData.sandbox || { id: "", pass: "", vnc_preview: "" }
+  };
 };
 
 export const deleteProject = async (projectId: string): Promise<void> => {
