@@ -37,11 +37,11 @@ export function KortixProcessModal() {
       </DialogTrigger>
       <DialogContent className="p-0 gap-0 border-none max-w-[70vw] rounded-xl overflow-hidden">
         <DialogTitle className="sr-only">Custom AI Employees for your Business.</DialogTitle>
-        <div className="grid grid-cols-1 md:grid-cols-2 h-[800px] overflow-hidden">
+        <div className="grid grid-cols-1 md:grid-cols-2 h-[800px]">
           {/* Info Panel */}
-          <div className="p-8 flex flex-col bg-white dark:bg-black relative min-h-0">
-            <div className="relative z-10 h-full flex flex-col">
-              <div className="mb-8 mt-0">
+          <div className="p-8 flex flex-col bg-white dark:bg-black relative h-full overflow-y-auto border-r border-gray-200 dark:border-gray-800">
+            <div className="relative z-10 flex flex-col h-full">
+              <div className="mb-8 mt-0 flex-shrink-0">
                 <Image 
                   src={isDarkMode ? "/kortix-logo-white.svg" : "/kortix-logo.svg"} 
                   alt="Kortix Logo" 
@@ -51,14 +51,14 @@ export function KortixProcessModal() {
                 />
               </div>
               
-              <h2 className="text-2xl md:text-3xl font-semibold tracking-tight mb-4 text-foreground">
+              <h2 className="text-2xl md:text-3xl font-semibold tracking-tight mb-4 text-foreground flex-shrink-0">
                 Custom AI Employees for your Business
               </h2>
-              <p className="text-base md:text-lg text-muted-foreground mb-8 max-w-lg">
+              <p className="text-base md:text-lg text-muted-foreground mb-8 max-w-lg flex-shrink-0">
                 Create custom AI employees for your business based on your human employees data.
               </p>
               
-              <div className="space-y-8 mb-auto">
+              <div className="space-y-8 mb-auto flex-shrink-0">
                 <div className="transition-all duration-300 hover:translate-x-1 group">
                   <h3 className="text-base md:text-lg font-medium mb-3 flex items-center">
                     <span className="bg-primary text-primary-foreground w-7 h-7 rounded-full inline-flex items-center justify-center mr-3 text-sm group-hover:shadow-md transition-all duration-300">1</span>
@@ -90,7 +90,7 @@ export function KortixProcessModal() {
                 </div>
               </div>
               
-              <div className="border-t border-gray-200 dark:border-gray-800 pt-6 mt-6">
+              <div className="border-t border-gray-200 dark:border-gray-800 pt-6 mt-6 flex-shrink-0">
                 <p className="text-base font-medium mb-3">Key Benefits</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-y-2 gap-x-4">
                   <div className="flex items-center">
@@ -117,16 +117,18 @@ export function KortixProcessModal() {
               </div>
             </div>
           </div>
-          <div className="bg-white dark:bg-[#171717]">
-            <Cal 
+          <div className="bg-white dark:bg-[#171717] h-full overflow-hidden">
+            <div className="h-full overflow-auto">
+              <Cal 
                 namespace="enterprise-demo"
                 calLink="team/kortix/enterprise-demo"
-                style={{width:"100%", height:"100%", overflow:"scroll"}}
+                style={{width:"100%", height:"100%"}}
                 config={{
                   layout: "month_view",
                   hideEventTypeDetails: "false",
                 }}
               />
+            </div>
           </div>
 
         </div>
