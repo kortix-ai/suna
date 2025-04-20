@@ -40,6 +40,22 @@ export interface AgentStreamCallbacks {
   onClose?: (finalStatus: string) => void; // Optional: Notify when streaming definitively ends
 }
 
+// Helper function to map API messages to UnifiedMessages
+const mapApiMessagesToUnified = (messagesData: ApiMessageType[] | null | undefined, currentThreadId: string): UnifiedMessage[] => {
+  return (messagesData || [])
+    .filter(msg => msg.type !== 'status') 
+    .map((msg: ApiMessageType) => ({
+      message_id: msg.message_id || null, 
+      thread_id: msg.thread_id || currentThreadId,
+      type: (msg.type || 'system') as UnifiedMessage['type'], 
+      is_llm_message: Boolean(msg.is_llm_message),
+      content: msg.content || '',
+      metadata: msg.metadata || '{}',
+      created_at: msg.created_at || new Date().toISOString(),
+      updated_at: msg.updated_at || new Date().toISOString()
+    }));
+};
+
 export function useAgentStream(callbacks: AgentStreamCallbacks, threadId: string, setMessages: (messages: UnifiedMessage[]) => void): UseAgentStreamResult {
   const [agentRunId, setAgentRunId] = useState<string | null>(null);
   const [status, setStatus] = useState<string>('idle');
@@ -50,6 +66,17 @@ export function useAgentStream(callbacks: AgentStreamCallbacks, threadId: string
   const streamCleanupRef = useRef<(() => void) | null>(null);
   const isMountedRef = useRef<boolean>(true);
   const currentRunIdRef = useRef<string | null>(null); // Ref to track the run ID being processed
+  const threadIdRef = useRef(threadId); // Ref to hold the current threadId
+  const setMessagesRef = useRef(setMessages); // Ref to hold the setMessages function
+
+  // Update refs if threadId or setMessages changes
+  useEffect(() => {
+    threadIdRef.current = threadId;
+  }, [threadId]);
+
+  useEffect(() => {
+    setMessagesRef.current = setMessages;
+  }, [setMessages]);
   
   // Helper function to map backend status to frontend status string
   const mapAgentStatus = (backendStatus: string): string => {
@@ -79,7 +106,10 @@ export function useAgentStream(callbacks: AgentStreamCallbacks, threadId: string
   const finalizeStream = useCallback((finalStatus: string, runId: string | null = agentRunId) => {
     if (!isMountedRef.current) return;
     
-    console.log(`[useAgentStream] Finalizing stream for ${runId} with status: ${finalStatus}`);
+    const currentThreadId = threadIdRef.current; // Get current threadId from ref
+    const currentSetMessages = setMessagesRef.current; // Get current setMessages from ref
+    
+    console.log(`[useAgentStream] Finalizing stream for ${runId} on thread ${currentThreadId} with status: ${finalStatus}`);
     
     if (streamCleanupRef.current) {
       streamCleanupRef.current();
@@ -95,7 +125,29 @@ export function useAgentStream(callbacks: AgentStreamCallbacks, threadId: string
     setAgentRunId(null);
     currentRunIdRef.current = null;
 
-    // If the run was stopped or completed, try to get final status to update nonRunning set
+    // --- Reliable Message Refetch on Finalization ---
+    // Only refetch if the stream ended with a terminal status indicating the run is likely over
+    const terminalStatuses = ['completed', 'stopped', 'failed', 'error', 'agent_not_running'];
+    if (currentThreadId && terminalStatuses.includes(finalStatus)) {
+        console.log(`[useAgentStream] Refetching messages for thread ${currentThreadId} after finalization with status ${finalStatus}.`);
+        getMessages(currentThreadId).then((messagesData: ApiMessageType[]) => {
+            if (isMountedRef.current && messagesData) {
+                console.log(`[useAgentStream] Refetched ${messagesData.length} messages for thread ${currentThreadId}.`);
+                const unifiedMessages = mapApiMessagesToUnified(messagesData, currentThreadId);
+                currentSetMessages(unifiedMessages); // Use the ref'd setMessages
+            } else if (!isMountedRef.current) {
+                console.log(`[useAgentStream] Component unmounted before messages could be set after refetch for thread ${currentThreadId}.`);
+            }
+        }).catch(err => {
+            console.error(`[useAgentStream] Error refetching messages for thread ${currentThreadId} after finalization:`, err);
+            // Optionally notify the user via toast or callback
+            toast.error(`Failed to refresh messages: ${err.message}`);
+        });
+    } else {
+        console.log(`[useAgentStream] Skipping message refetch for thread ${currentThreadId}. Final status: ${finalStatus}`);
+    }
+
+    // If the run was stopped or completed, try to get final status to update nonRunning set (keep this)
     if (runId && (finalStatus === 'completed' || finalStatus === 'stopped' || finalStatus === 'agent_not_running')) {
       getAgentStatus(runId).catch(err => {
         console.log(`[useAgentStream] Post-finalization status check for ${runId} failed (this might be expected if not found): ${err.message}`);
@@ -118,30 +170,7 @@ export function useAgentStream(callbacks: AgentStreamCallbacks, threadId: string
     // --- Early exit for non-JSON completion messages ---
     if (processedData === '{"type": "status", "status": "completed", "message": "Agent run completed successfully"}') {
       console.log('[useAgentStream] Received final completion status message');
-      finalizeStream('stopped', currentRunIdRef.current);
-      // Refetch thread messages
-      getMessages(threadId).then((messagesData: ApiMessageType[]) => {
-        if (messagesData) {
-          console.log(`[useAgentStream] Refetched messages after completion:`, messagesData.length);
-          // Map API message type to UnifiedMessage type
-          const unifiedMessages = (messagesData || [])
-            .filter(msg => msg.type !== 'status') 
-            .map((msg: ApiMessageType) => ({
-              message_id: msg.message_id || null, 
-              thread_id: msg.thread_id || threadId,
-              type: (msg.type || 'system') as UnifiedMessage['type'], 
-              is_llm_message: Boolean(msg.is_llm_message),
-              content: msg.content || '',
-              metadata: msg.metadata || '{}',
-              created_at: msg.created_at || new Date().toISOString(),
-              updated_at: msg.updated_at || new Date().toISOString()
-            }));
-          
-          setMessages(unifiedMessages);
-        }
-      }).catch(err => {
-        console.error(`Error refetching messages after completion:`, err);
-      });
+      finalizeStream('completed', currentRunIdRef.current);
       return;
     }
      if (processedData.includes('Run data not available for streaming') || processedData.includes('Stream ended with status: completed')) {
@@ -400,7 +429,7 @@ export function useAgentStream(callbacks: AgentStreamCallbacks, threadId: string
        if (agentStatus.status !== 'running') {
          console.warn(`[useAgentStream] Agent run ${runId} is not in running state (status: ${agentStatus.status}). Cannot start stream.`);
          setError(`Agent run is not running (status: ${agentStatus.status})`);
-         finalizeStream('agent_not_running', runId);
+         finalizeStream(mapAgentStatus(agentStatus.status) || 'agent_not_running', runId);
          return;
        }
 

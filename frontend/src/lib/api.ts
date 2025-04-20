@@ -429,12 +429,7 @@ export const addUserMessage = async (threadId: string, content: string): Promise
 };
 
 export const getMessages = async (threadId: string): Promise<Message[]> => {
-  // Check cache first
-  const cached = apiCache.getThreadMessages(threadId);
-  if (cached) {
-    return cached;
-  }
-  
+  // Cache code removed - will always fetch fresh messages
   const supabase = createClient();
   
   const { data, error } = await supabase
@@ -452,8 +447,7 @@ export const getMessages = async (threadId: string): Promise<Message[]> => {
 
   console.log('[API] Messages fetched:', data);
   
-  // Cache the result
-  apiCache.setThreadMessages(threadId, data || []);
+  // Cache storage removed
   
   return data || [];
 };
@@ -1047,3 +1041,4 @@ export const updateThread = async (threadId: string, data: Partial<Thread>): Pro
 export const toggleThreadPublicStatus = async (threadId: string, isPublic: boolean): Promise<Thread> => {
   return updateThread(threadId, { is_public: isPublic });
 };
+
