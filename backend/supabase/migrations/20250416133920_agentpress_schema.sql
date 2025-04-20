@@ -274,8 +274,8 @@ CREATE POLICY message_delete_policy ON messages
 
 -- Grant permissions to roles
 GRANT ALL PRIVILEGES ON TABLE projects TO authenticated, service_role;
-GRANT ALL PRIVILEGES ON TABLE threads TO authenticated, service_role;
-GRANT ALL PRIVILEGES ON TABLE messages TO authenticated, service_role;
+GRANT SELECT ON TABLE threads TO authenticated, anon, service_role;
+GRANT SELECT ON TABLE messages TO authenticated, anon, service_role;
 GRANT ALL PRIVILEGES ON TABLE agent_runs TO authenticated, service_role;
 
 -- Create a function that matches the Python get_messages behavior
@@ -371,4 +371,4 @@ END;
 $$;
 
 -- Grant execute permissions
-GRANT EXECUTE ON FUNCTION get_llm_formatted_messages TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION get_llm_formatted_messages TO authenticated, anon, service_role;

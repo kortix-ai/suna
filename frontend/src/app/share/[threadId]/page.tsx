@@ -608,21 +608,29 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         }
         
         if (threadData?.project_id) {
-          const projectData = await getProject(threadData.project_id);
-          if (isMounted && projectData) {
-            console.log('[SHARE] Project data loaded:', projectData);
-            
-            // Set project data
-            setProject(projectData);
-            
-            // Make sure sandbox ID is set correctly
-            if (typeof projectData.sandbox === 'string') {
-              setSandboxId(projectData.sandbox);
-            } else if (projectData.sandbox?.id) {
-              setSandboxId(projectData.sandbox.id);
+          try {
+            const projectData = await getProject(threadData.project_id);
+            if (isMounted && projectData) {
+              console.log('[SHARE] Project data loaded:', projectData);
+              
+              // Set project data
+              setProject(projectData);
+              
+              // Make sure sandbox ID is set correctly
+              if (typeof projectData.sandbox === 'string') {
+                setSandboxId(projectData.sandbox);
+              } else if (projectData.sandbox?.id) {
+                setSandboxId(projectData.sandbox.id);
+              }
+              
+              setProjectName(projectData.name || '');
             }
-            
-            setProjectName(projectData.name || '');
+          } catch (projectError) {
+            // Don't throw an error if project can't be loaded
+            // Just log it and continue with the thread
+            console.warn('[SHARE] Could not load project data:', projectError);
+            // Set a generic name if we couldn't load the project
+            setProjectName('Shared Conversation');
           }
         }
 
@@ -1387,6 +1395,15 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
               <Button
                 variant="ghost"
                 size="icon"
+                onClick={() => handleOpenFileViewer()}
+                className="h-8 w-8"
+                aria-label="View Files"
+              >
+                <File className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
                 onClick={togglePlayback}
                 className="h-8 w-8"
                 aria-label={isPlaying ? "Pause Replay" : "Play Replay"}
@@ -1733,6 +1750,24 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
           initialFilePath={fileToView}
           project={project}
         />
+      )}
+      
+      {/* Show a fallback modal when sandbox is not available */}
+      {!sandboxId && fileViewerOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-background rounded-lg p-6 max-w-md w-full">
+            <h3 className="text-lg font-medium mb-2">File Unavailable</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              The file viewer is not available for this shared thread.
+            </p>
+            <Button 
+              onClick={() => setFileViewerOpen(false)}
+              className="w-full"
+            >
+              Close
+            </Button>
+          </div>
+        </div>
       )}
     </div>
   );

@@ -268,7 +268,7 @@ select exists(
            );
 $$;
 
-grant execute on function basejump.has_role_on_account(uuid, basejump.account_role) to authenticated;
+grant execute on function basejump.has_role_on_account(uuid, basejump.account_role) to authenticated, anon, public, service_role;
 
 
 /**

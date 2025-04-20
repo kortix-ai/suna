@@ -341,23 +341,22 @@ class BrowserAutomation:
                 launch_options = {"timeout": 90000}
                 self.browser = await playwright.chromium.launch(**launch_options)
                 print("Browser launched with minimal options")
-            
-            print("Creating new page...")
+
             try:
+                await self.get_current_page()
+                print("Found existing page, using it")
+                self.current_page_index = 0
+            except Exception as page_error:
+                print(f"Error finding existing page, creating new one. ( {page_error})")
                 page = await self.browser.new_page()
                 print("New page created successfully")
                 self.pages.append(page)
                 self.current_page_index = 0
-                
                 # Navigate to about:blank to ensure page is ready
-                await page.goto("about:blank", timeout=30000)
-                print("Navigated to about:blank")
+                # await page.goto("google.com", timeout=30000)
+                print("Navigated to google.com")
                 
                 print("Browser initialization completed successfully")
-            except Exception as page_error:
-                print(f"Error creating page: {page_error}")
-                traceback.print_exc()
-                raise RuntimeError(f"Failed to initialize browser page: {page_error}")
         except Exception as e:
             print(f"Browser startup error: {str(e)}")
             traceback.print_exc()

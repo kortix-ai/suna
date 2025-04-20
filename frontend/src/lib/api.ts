@@ -151,58 +151,70 @@ export const getProject = async (projectId: string): Promise<Project> => {
   }
   
   const supabase = createClient();
-  const { data, error } = await supabase
-    .from('projects')
-    .select('*')
-    .eq('project_id', projectId)
-    .single();
   
-  if (error) throw error;
-
-  console.log('Raw project data from database:', data);
-
-  // If project has a sandbox, ensure it's started
-  if (data.sandbox?.id) {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.access_token) {
-        console.log(`Ensuring sandbox is active for project ${projectId}...`);
-        const response = await fetch(`${API_URL}/project/${projectId}/sandbox/ensure-active`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-          },
-        });
-        
-        if (!response.ok) {
-          const errorText = await response.text().catch(() => 'No error details available');
-          console.warn(`Failed to ensure sandbox is active: ${response.status} ${response.statusText}`, errorText);
-        } else {
-          console.log('Sandbox activation successful');
-        }
+  try {
+    const { data, error } = await supabase
+      .from('projects')
+      .select('*')
+      .eq('project_id', projectId)
+      .single();
+    
+    if (error) {
+      // Handle the specific "no rows returned" error from Supabase
+      if (error.code === 'PGRST116') {
+        throw new Error(`Project not found or not accessible: ${projectId}`);
       }
-    } catch (sandboxError) {
-      console.warn('Failed to ensure sandbox is active:', sandboxError);
-      // Non-blocking error - continue with the project data
+      throw error;
     }
+
+    console.log('Raw project data from database:', data);
+
+    // If project has a sandbox, ensure it's started
+    if (data.sandbox?.id) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          console.log(`Ensuring sandbox is active for project ${projectId}...`);
+          const response = await fetch(`${API_URL}/project/${projectId}/sandbox/ensure-active`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+            },
+          });
+          
+          if (!response.ok) {
+            const errorText = await response.text().catch(() => 'No error details available');
+            console.warn(`Failed to ensure sandbox is active: ${response.status} ${response.statusText}`, errorText);
+          } else {
+            console.log('Sandbox activation successful');
+          }
+        }
+      } catch (sandboxError) {
+        console.warn('Failed to ensure sandbox is active:', sandboxError);
+        // Non-blocking error - continue with the project data
+      }
+    }
+    
+    // Map database fields to our Project type
+    const mappedProject: Project = {
+      id: data.project_id,
+      name: data.name || '',
+      description: data.description || '',
+      account_id: data.account_id,
+      created_at: data.created_at,
+      sandbox: data.sandbox || { id: "", pass: "", vnc_preview: "", sandbox_url: "" }
+    };
+    
+    console.log('Mapped project data for frontend:', mappedProject);
+    
+    // Cache the result
+    apiCache.setProject(projectId, mappedProject);
+    return mappedProject;
+  } catch (error) {
+    console.error(`Error fetching project ${projectId}:`, error);
+    throw error;
   }
-  
-  // Map database fields to our Project type
-  const mappedProject: Project = {
-    id: data.project_id,
-    name: data.name || '',
-    description: data.description || '',
-    account_id: data.account_id,
-    created_at: data.created_at,
-    sandbox: data.sandbox || { id: "", pass: "", vnc_preview: "", sandbox_url: "" }
-  };
-  
-  console.log('Mapped project data for frontend:', mappedProject);
-  
-  // Cache the result
-  apiCache.setProject(projectId, mappedProject);
-  return mappedProject;
 };
 
 export const createProject = async (
