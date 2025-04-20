@@ -82,7 +82,7 @@ export function BrowserToolView({
               <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">Browser Window</span>
             </div>
             {url && (
-              <div className="text-xs font-mono text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]">
+              <div className="text-xs font-mono text-zinc-500 dark:text-zinc-400 truncate max-w-[340px]">
                 {url}
               </div>
             )}

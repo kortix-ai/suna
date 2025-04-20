@@ -54,6 +54,24 @@ export function FileOperationToolView({
   // For debugging - show raw content if file path can't be extracted for delete operations
   const showDebugInfo = !filePath && operation === "delete";
   
+  // Process file path - handle potential newlines and clean up
+  const processedFilePath = filePath ? filePath.trim().replace(/\\n/g, '\n').split('\n')[0] : null;
+  
+  // For create and rewrite, prepare content for display
+  const contentLines = fileContent ? fileContent.replace(/\\n/g, '\n').split('\n') : [];
+  const fileName = processedFilePath ? processedFilePath.split('/').pop() || processedFilePath : '';
+  const fileType = processedFilePath ? getFileType(processedFilePath) : '';
+  const isMarkdown = fileName.endsWith('.md');
+  const isHtml = fileName.endsWith('.html');
+  
+  // Construct HTML file preview URL if we have a sandbox and the file is HTML
+  const htmlPreviewUrl = (isHtml && project?.sandbox?.sandbox_url && processedFilePath) 
+    ? `${project.sandbox.sandbox_url}/${processedFilePath}`
+    : undefined;
+  
+  // Add state for view mode toggle (code or preview) - moved before any conditional returns
+  const [viewMode, setViewMode] = useState<'code' | 'preview'>(isHtml ? 'preview' : 'code');
+  
   // Fall back to generic view if file path is missing or if content is missing for non-delete operations
   if ((!filePath && !showDebugInfo) || (operation !== "delete" && !fileContent)) {
     return (
@@ -86,25 +104,7 @@ export function FileOperationToolView({
   };
   
   const config = configs[operation];
-  
-  // Process file path - handle potential newlines and clean up
-  const processedFilePath = filePath ? filePath.trim().replace(/\\n/g, '\n').split('\n')[0] : null;
-  
-  // For create and rewrite, prepare content for display
-  const contentLines = fileContent ? fileContent.replace(/\\n/g, '\n').split('\n') : [];
-  const fileName = processedFilePath ? processedFilePath.split('/').pop() || processedFilePath : '';
-  const fileType = processedFilePath ? getFileType(processedFilePath) : '';
-  const isMarkdown = fileName.endsWith('.md');
-  const isHtml = fileName.endsWith('.html');
   const Icon = config.icon;
-  
-  // Construct HTML file preview URL if we have a sandbox and the file is HTML
-  const htmlPreviewUrl = (isHtml && project?.sandbox?.sandbox_url && processedFilePath) 
-    ? `${project.sandbox.sandbox_url}/${processedFilePath}`
-    : undefined;
-  
-  // Add state for view mode toggle (code or preview)
-  const [viewMode, setViewMode] = useState<'code' | 'preview'>(isHtml ? 'preview' : 'code');
   
   return (
     <div className="flex flex-col h-full">

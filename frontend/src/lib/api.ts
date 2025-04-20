@@ -189,6 +189,29 @@ export const getProject = async (projectId: string): Promise<Project> => {
           } else {
             console.log('Sandbox activation successful');
           }
+
+  console.log('Raw project data from database:', data);
+
+  // If project has a sandbox, ensure it's started
+  if (data.sandbox?.id) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        console.log(`Ensuring sandbox is active for project ${projectId}...`);
+        const response = await fetch(`${API_URL}/project/${projectId}/sandbox/ensure-active`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => 'No error details available');
+          console.warn(`Failed to ensure sandbox is active: ${response.status} ${response.statusText}`, errorText);
+        } else {
+          console.log('Sandbox activation successful');
+
         }
       } catch (sandboxError) {
         console.warn('Failed to ensure sandbox is active:', sandboxError);
@@ -215,6 +238,22 @@ export const getProject = async (projectId: string): Promise<Project> => {
     console.error(`Error fetching project ${projectId}:`, error);
     throw error;
   }
+  
+  // Map database fields to our Project type
+  const mappedProject: Project = {
+    id: data.project_id,
+    name: data.name || '',
+    description: data.description || '',
+    account_id: data.account_id,
+    created_at: data.created_at,
+    sandbox: data.sandbox || { id: "", pass: "", vnc_preview: "", sandbox_url: "" }
+  };
+  
+  console.log('Mapped project data for frontend:', mappedProject);
+  
+  // Cache the result
+  apiCache.setProject(projectId, mappedProject);
+  return mappedProject;
 };
 
 export const createProject = async (

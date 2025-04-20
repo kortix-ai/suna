@@ -34,8 +34,8 @@ export function StrReplaceToolView({
   
   // Perform a character-level diff to identify changes
   const generateDiff = (oldText: string, newText: string) => {
-    let i = 0;
-    let j = 0;
+    const i = 0;
+    const j = 0;
     
     // Find common prefix length
     let prefixLength = 0;
