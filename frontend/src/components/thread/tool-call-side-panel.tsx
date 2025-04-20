@@ -194,6 +194,35 @@ export function ToolCallSidePanel({
   const isStreaming = currentToolCall?.toolResult?.content === "STREAMING";
   const isSuccess = currentToolCall?.toolResult?.isSuccess ?? true;
   
+  // Add keyboard shortcut for CMD+I to close panel
+  React.useEffect(() => {
+    if (!isOpen) return;
+    
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === 'i') {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+  
+  // Listen for sidebar toggle events
+  React.useEffect(() => {
+    if (!isOpen) return;
+    
+    const handleSidebarToggle = (event: CustomEvent) => {
+      if (event.detail.expanded) {
+        onClose();
+      }
+    };
+    
+    window.addEventListener('sidebar-left-toggled', handleSidebarToggle as EventListener);
+    return () => window.removeEventListener('sidebar-left-toggled', handleSidebarToggle as EventListener);
+  }, [isOpen, onClose]);
+  
   React.useEffect(() => {
     if (!isStreaming) return;
     

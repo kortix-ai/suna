@@ -1,16 +1,12 @@
 "use client"
 
 import * as React from "react"
-import {
-  BookOpen,
-  CalendarClock,
-} from "lucide-react"
 import Link from "next/link"
 
 import { NavAgents } from "@/components/dashboard/sidebar/nav-agents"
 import { NavUserWithTeams } from "@/components/dashboard/sidebar/nav-user-with-teams"
-import { NavSecondary } from "@/components/dashboard/sidebar/nav-secondary"
 import { KortixLogo } from "@/components/dashboard/sidebar/kortix-logo"
+import { CTACard } from "@/components/dashboard/sidebar/cta"
 import {
   Sidebar,
   SidebarContent,
@@ -28,24 +24,10 @@ import {
   TooltipTrigger
 } from "@/components/ui/tooltip"
 
-// Only keep necessary data
-const navSecondaryItems = [
-  {
-    title: "Hiring!",
-    url: "https://www.kortix.ai/careers",
-    icon: BookOpen,
-  },
-  {
-    title: "Book Enterprise Demo",
-    url: "https://cal.com/marko-kraemer/15min",
-    icon: CalendarClock,
-  },
-]
-
 export function SidebarLeft({
   ...props
 }: React.ComponentProps<typeof Sidebar>) {
-  const { state } = useSidebar()
+  const { state, setOpen } = useSidebar()
   const [user, setUser] = useState<{
     name: string;
     email: string;
@@ -74,6 +56,26 @@ export function SidebarLeft({
     fetchUserData()
   }, [])
 
+  // Handle keyboard shortcuts (CMD+B) for consistency
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === 'b') {
+        event.preventDefault();
+        // We'll handle this in the parent page component
+        // to ensure proper coordination between panels
+        setOpen(!state.startsWith('expanded'));
+        
+        // Broadcast a custom event to notify other components
+        window.dispatchEvent(new CustomEvent('sidebar-left-toggled', {
+          detail: { expanded: !state.startsWith('expanded') }
+        }));
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [state, setOpen]);
+
   return (
     <Sidebar collapsible="icon" className="border-r-0 bg-background/95 backdrop-blur-sm" {...props}>
       <SidebarHeader className="px-2 py-2">
@@ -92,7 +94,7 @@ export function SidebarLeft({
                 <TooltipTrigger asChild>
                   <SidebarTrigger className="h-8 w-8" />
                 </TooltipTrigger>
-                <TooltipContent>Toggle sidebar</TooltipContent>
+                <TooltipContent>Toggle sidebar (CMD+B)</TooltipContent>
               </Tooltip>
             </div>
           )}
@@ -101,7 +103,11 @@ export function SidebarLeft({
       <SidebarContent>
         <NavAgents />
       </SidebarContent>
-        <NavSecondary items={navSecondaryItems}/>
+      {state !== "collapsed" && (
+        <div className="px-3 py-2">
+          <CTACard />
+        </div>
+      )}
       <SidebarFooter>
       {state === "collapsed" && (
           <div className="mt-2 flex justify-center">

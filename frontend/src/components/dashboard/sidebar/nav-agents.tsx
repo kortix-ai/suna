@@ -8,9 +8,10 @@ import {
   Trash2,
   Plus,
   MessagesSquare,
+  Loader2,
 } from "lucide-react"
 import { toast } from "sonner"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 
 import {
   DropdownMenu,
@@ -58,7 +59,9 @@ export function NavAgents() {
   const { isMobile, state } = useSidebar()
   const [agents, setAgents] = useState<Agent[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [loadingAgentId, setLoadingAgentId] = useState<string | null>(null)
   const pathname = usePathname()
+  const router = useRouter()
 
   // Helper to sort agents by updated_at (most recent first)
   const sortAgents = (agentsList: Agent[]): Agent[] => {
@@ -162,6 +165,18 @@ export function NavAgents() {
     }
   }, []);
 
+  // Reset loading state when navigation completes (pathname changes)
+  useEffect(() => {
+    setLoadingAgentId(null)
+  }, [pathname])
+
+  // Function to handle agent click with loading state
+  const handleAgentClick = (e: React.MouseEvent<HTMLAnchorElement>, threadId: string, url: string) => {
+    e.preventDefault()
+    setLoadingAgentId(threadId)
+    router.push(url)
+  }
+
   return (
     <SidebarGroup>
       <div className="flex justify-between items-center">
@@ -215,6 +230,7 @@ export function NavAgents() {
             {agents.map((agent, index) => {
               // Check if this agent is currently active
               const isActive = pathname.includes(agent.threadId);
+              const isAgentLoading = loadingAgentId === agent.threadId;
               
               return (
                 <SidebarMenuItem key={`agent-${agent.threadId}`}>
@@ -222,8 +238,12 @@ export function NavAgents() {
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <SidebarMenuButton asChild className={isActive ? "bg-accent text-accent-foreground" : ""}>
-                          <Link href={agent.url}>
-                            <MessagesSquare className="h-4 w-4" />
+                          <Link href={agent.url} onClick={(e) => handleAgentClick(e, agent.threadId, agent.url)}>
+                            {isAgentLoading ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <MessagesSquare className="h-4 w-4" />
+                            )}
                             <span>{agent.name}</span>
                           </Link>
                         </SidebarMenuButton>
@@ -232,8 +252,12 @@ export function NavAgents() {
                     </Tooltip>
                   ) : (
                     <SidebarMenuButton asChild className={isActive ? "bg-accent text-accent-foreground font-medium" : ""}>
-                      <Link href={agent.url}>
-                        <MessagesSquare className="h-4 w-4" />
+                      <Link href={agent.url} onClick={(e) => handleAgentClick(e, agent.threadId, agent.url)}>
+                        {isAgentLoading ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <MessagesSquare className="h-4 w-4" />
+                        )}
                         <span>{agent.name}</span>
                       </Link>
                     </SidebarMenuButton>

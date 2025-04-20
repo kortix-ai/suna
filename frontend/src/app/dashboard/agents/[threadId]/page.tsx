@@ -232,26 +232,17 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
       const newState = !prevIsOpen;
       if (!newState) {
         userClosedPanelRef.current = true;
+      } else {
+        // Close left sidebar when opening side panel
+        setLeftSidebarOpen(false);
       }
       return newState;
     });
-  }, []);
+  }, [setLeftSidebarOpen]);
 
   const handleSidePanelNavigate = useCallback((newIndex: number) => {
     setCurrentToolIndex(newIndex);
   }, []);
-
-  useEffect(() => {
-    if (isSidePanelOpen && leftSidebarState !== 'collapsed') {
-      setLeftSidebarOpen(false);
-    }
-  }, [isSidePanelOpen, leftSidebarState, setLeftSidebarOpen]);
-
-  useEffect(() => {
-    if (leftSidebarState === 'expanded' && isSidePanelOpen) {
-      setIsSidePanelOpen(false);
-    }
-  }, [leftSidebarState, isSidePanelOpen]);
 
   useEffect(() => {
     if (!initialLayoutAppliedRef.current) {
@@ -260,16 +251,43 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     }
   }, [setLeftSidebarOpen]);
 
+  // Update keyboard shortcut handlers to manage both panels
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      // CMD+I for ToolCall SidePanel
       if ((event.metaKey || event.ctrlKey) && event.key === 'i') {
         event.preventDefault();
-        toggleSidePanel();
+        // If side panel is already open, just close it
+        if (isSidePanelOpen) {
+          setIsSidePanelOpen(false);
+          userClosedPanelRef.current = true;
+        } else {
+          // Open side panel and ensure left sidebar is closed
+          setIsSidePanelOpen(true);
+          setLeftSidebarOpen(false);
+        }
+      }
+      
+      // CMD+B for Left Sidebar
+      if ((event.metaKey || event.ctrlKey) && event.key === 'b') {
+        event.preventDefault();
+        // If left sidebar is expanded, collapse it
+        if (leftSidebarState === 'expanded') {
+          setLeftSidebarOpen(false);
+        } else {
+          // Otherwise expand the left sidebar and close the side panel
+          setLeftSidebarOpen(true);
+          if (isSidePanelOpen) {
+            setIsSidePanelOpen(false);
+            userClosedPanelRef.current = true;
+          }
+        }
       }
     };
+    
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [toggleSidePanel]);
+  }, [toggleSidePanel, isSidePanelOpen, leftSidebarState, setLeftSidebarOpen]);
 
   const handleNewMessageFromStream = useCallback((message: UnifiedMessage) => {
     // Log the ID of the message received from the stream
