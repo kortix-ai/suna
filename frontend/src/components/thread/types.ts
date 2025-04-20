@@ -1,4 +1,6 @@
+import React from 'react';
 import type { Project } from '@/lib/api';
+import { Message as BaseApiMessageType } from '@/lib/api';
 
 // Define a type for the params to make React.use() work properly
 export type ThreadParams = { 
@@ -37,6 +39,18 @@ export interface ParsedMetadata {
   linked_tool_result_message_id?: string; // Link status to tool result
   parsing_details?: any;
   [key: string]: any; // Allow other properties
+}
+
+// Extend the base Message type with the expected database fields
+export interface ApiMessageType extends Omit<BaseApiMessageType, 'type'> {
+  message_id?: string;
+  thread_id?: string;
+  is_llm_message?: boolean;
+  metadata?: string;
+  created_at?: string;
+  updated_at?: string;
+  // Allow 'type' to be potentially wider than the base type
+  type?: string;
 }
 
 // Re-export existing types

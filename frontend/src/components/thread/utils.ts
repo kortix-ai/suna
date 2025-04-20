@@ -72,6 +72,10 @@ export const getToolIcon = (toolName: string): ElementType => {
     case 'execute-code':
       return Code;
     
+    // User interaction
+    case 'ask':
+      return MessageSquare;
+    
     // Default case
     default:
       // Add logging for debugging unhandled tool types

@@ -31,6 +31,19 @@ export function GenericToolView({
     
     return null;
   }, [assistantContent]);
+
+  // Parse the tool content to extract result from inside <tool_result> tags
+  const parsedToolContent = React.useMemo(() => {
+    if (!toolContent || isStreaming) return null;
+    
+    // Try to extract content from <tool_result> tags
+    const toolResultMatch = toolContent.match(/<tool_result>([\s\S]*?)<\/tool_result>/);
+    if (toolResultMatch) {
+      return toolResultMatch[1].trim();
+    }
+    
+    return toolContent;
+  }, [toolContent, isStreaming]);
   
   return (
     <div className="space-y-4 p-4">
@@ -122,7 +135,7 @@ export function GenericToolView({
                 <span>Executing {toolName.toLowerCase()}...</span>
               </div>
             ) : (
-              <pre className="text-xs overflow-auto whitespace-pre-wrap break-words">{toolContent}</pre>
+              <pre className="text-xs overflow-auto whitespace-pre-wrap break-words">{parsedToolContent || toolContent}</pre>
             )}
           </div>
         </div>

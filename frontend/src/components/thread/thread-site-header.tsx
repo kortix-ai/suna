@@ -13,6 +13,7 @@ import {
 import { useState, useRef, KeyboardEvent } from "react"
 import { Input } from "@/components/ui/input"
 import { updateProject } from "@/lib/api"
+import { Skeleton } from "@/components/ui/skeleton"
 
 interface ThreadSiteHeaderProps {
   threadId: string
@@ -122,6 +123,8 @@ export function SiteHeader({
               <X className="h-3.5 w-3.5" />
             </Button>
           </div>
+        ) : !projectName || projectName === 'Project' ? (
+          <Skeleton className="h-5 w-32" />
         ) : (
           <div 
             className="text-sm font-medium text-muted-foreground hover:text-foreground cursor-pointer flex items-center"

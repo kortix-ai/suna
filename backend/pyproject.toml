@@ -49,6 +49,7 @@ openai = "^1.72.0"
 streamlit = "^1.44.1"
 nest-asyncio = "^1.6.0"
 vncdotool = "^1.2.0"
+tavily-python = "^0.5.4"
 
 [tool.poetry.scripts]
 agentpress = "agentpress.cli:main"

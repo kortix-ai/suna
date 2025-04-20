@@ -58,7 +58,7 @@ class SandboxBrowserTool(SandboxToolsBase):
                     logger.info("Browser automation request completed successfully")
 
                     # Add full result to thread messages for state tracking
-                    await self.thread_manager.add_message(
+                    added_message = await self.thread_manager.add_message(
                         thread_id=self.thread_id,
                         type="browser_state",
                         content=result,
@@ -70,6 +70,10 @@ class SandboxBrowserTool(SandboxToolsBase):
                         "success": True,
                         "message": result.get("message", "Browser action completed successfully")
                     }
+
+                    # Add message ID if available
+                    if added_message and 'message_id' in added_message:
+                        success_response['message_id'] = added_message['message_id']
 
                     # Add relevant browser-specific info
                     if result.get("url"):

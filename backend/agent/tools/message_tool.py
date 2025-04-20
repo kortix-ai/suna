@@ -54,6 +54,7 @@ Ask user a question and wait for response. Use for: 1) Requesting clarification 
         <!-- 3. Choosing between implementation options -->
         <!-- 4. Validating critical assumptions -->
         <!-- 5. Getting missing information -->
+        <!-- IMPORTANT: Always if applicable include representable files as attachments - this includes HTML files, presentations, writeups, visualizations, reports, and any other viewable content -->
         
         <ask attachments="recipes/chocolate_cake.txt,photos/cake_examples.jpg">
             I'm planning to bake the chocolate cake for your birthday party. The recipe mentions "rich frosting" but doesn't specify what type. Could you clarify your preferences? For example:

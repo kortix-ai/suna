@@ -1,9 +1,12 @@
+'use client';
+
 import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
 import { Project } from "@/lib/api";
 import { getToolIcon } from "@/components/thread/utils";
 import React from "react";
 import { Slider } from "@/components/ui/slider";
+import { ApiMessageType } from '@/components/thread/types';
 
 // Import tool view components from the tool-views directory
 import { CommandToolView } from "./tool-views/CommandToolView";
@@ -26,6 +29,7 @@ export interface ToolCallInput {
     isSuccess?: boolean;
     timestamp?: string;
   };
+  messages?: ApiMessageType[];
 }
 
 // Get the specialized tool view component based on the tool name
@@ -36,7 +40,11 @@ function getToolView(
   assistantTimestamp: string | undefined,
   toolTimestamp: string | undefined,
   isSuccess: boolean = true,
-  project?: Project
+  project?: Project,
+  messages?: ApiMessageType[],
+  agentStatus?: string,
+  currentIndex?: number,
+  totalCalls?: number
 ) {
   if (!toolName) return null;
   
@@ -74,6 +82,7 @@ function getToolView(
           toolTimestamp={toolTimestamp}
           isSuccess={isSuccess}
           name={normalizedToolName}
+          project={project}
         />
       );
     case 'browser-navigate':
@@ -83,6 +92,10 @@ function getToolView(
     case 'browser-wait':
       return (
         <BrowserToolView
+          currentIndex={currentIndex}
+          totalCalls={totalCalls}
+          agentStatus={agentStatus}
+          messages={messages}
           name={normalizedToolName}
           assistantContent={assistantContent}
           toolContent={toolContent}
@@ -117,6 +130,10 @@ function getToolView(
       if (normalizedToolName.startsWith('browser-')) {
         return (
           <BrowserToolView
+            currentIndex={currentIndex}
+            totalCalls={totalCalls}
+            agentStatus={agentStatus}
+            messages={messages}
             name={toolName}
             assistantContent={assistantContent}
             toolContent={toolContent}
@@ -148,6 +165,8 @@ interface ToolCallSidePanelProps {
   toolCalls: ToolCallInput[];
   currentIndex: number;
   onNavigate: (newIndex: number) => void;
+  messages?: ApiMessageType[];
+  agentStatus: string;
   project?: Project;
   renderAssistantMessage?: (assistantContent?: string, toolContent?: string) => React.ReactNode;
   renderToolResult?: (toolContent?: string, isSuccess?: boolean) => React.ReactNode;
@@ -159,6 +178,8 @@ export function ToolCallSidePanel({
   toolCalls,
   currentIndex,
   onNavigate,
+  messages,
+  agentStatus,
   project,
   renderAssistantMessage,
   renderToolResult
@@ -207,12 +228,16 @@ export function ToolCallSidePanel({
       currentToolCall.assistantCall.timestamp,
       currentToolCall.toolResult?.timestamp,
       isStreaming ? true : (currentToolCall.toolResult?.isSuccess ?? true),
-      project
+      project,
+      messages,
+      agentStatus,
+      currentIndex,
+      totalCalls
     );
   };
   
   return (
-    <div className="fixed inset-y-0 right-0 w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[600px] bg-background border-l flex flex-col z-10">
+    <div className="fixed inset-y-0 right-0 w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[700px] bg-background border-l flex flex-col z-10">
       <div className="p-4 flex items-center justify-between">
         <h3 className="text-sm font-semibold">
           {isStreaming 

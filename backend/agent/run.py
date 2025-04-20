@@ -82,9 +82,8 @@ async def run_agent(
                 "message": error_msg
             }
             break
-        
         # Check if last message is from assistant using direct Supabase query
-        latest_message = await client.table('messages').select('*').eq('thread_id', thread_id).order('created_at', desc=True).limit(1).execute()  
+        latest_message = await client.table('messages').select('*').eq('thread_id', thread_id).in_('type', ['assistant', 'tool', 'user']).order('created_at', desc=True).limit(1).execute()  
         if latest_message.data and len(latest_message.data) > 0:
             message_type = latest_message.data[0].get('type')
             if message_type == 'assistant':
@@ -92,7 +91,7 @@ async def run_agent(
                 continue_execution = False
                 break
             
-        # Get the latest message from messages table that its tpye is browser_state
+        # Get the latest message from messages table that its type is browser_state
         latest_browser_state = await client.table('messages').select('*').eq('thread_id', thread_id).eq('type', 'browser_state').order('created_at', desc=True).limit(1).execute()
         temporary_message = None
         if latest_browser_state.data and len(latest_browser_state.data) > 0:

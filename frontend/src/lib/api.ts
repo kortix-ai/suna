@@ -38,6 +38,7 @@ export type Project = {
   created_at: string;
   sandbox: {
     vnc_preview?: string;
+    sandbox_url?: string;
     id?: string;
     pass?: string;
   };

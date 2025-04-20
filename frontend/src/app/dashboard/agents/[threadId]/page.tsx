@@ -197,7 +197,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const [project, setProject] = useState<Project | null>(null);
   const [sandboxId, setSandboxId] = useState<string | null>(null);
   const [fileViewerOpen, setFileViewerOpen] = useState(false);
-  const [projectName, setProjectName] = useState<string>('Project');
+  const [projectName, setProjectName] = useState<string>('');
   const [fileToView, setFileToView] = useState<string | null>(null);
 
   const initialLoadCompleted = useRef<boolean>(false);
@@ -211,8 +211,16 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const { state: leftSidebarState, setOpen: setLeftSidebarOpen } = useSidebar();
   const initialLayoutAppliedRef = useRef(false);
 
+  const userClosedPanelRef = useRef(false);
+
   const toggleSidePanel = useCallback(() => {
-    setIsSidePanelOpen(prevIsOpen => !prevIsOpen);
+    setIsSidePanelOpen(prevIsOpen => {
+      const newState = !prevIsOpen;
+      if (!newState) {
+        userClosedPanelRef.current = true;
+      }
+      return newState;
+    });
   }, []);
 
   const handleSidePanelNavigate = useCallback((newIndex: number) => {
@@ -282,6 +290,33 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         setAgentRunId(null);
         // Reset auto-opened state when agent completes to trigger tool detection
         setAutoOpenedPanel(false);
+        
+        // Refetch messages to ensure we have the final state after completion
+        if (hookStatus === 'completed') {
+          getMessages(threadId).then(messagesData => {
+            if (messagesData) {
+              console.log('[PAGE] Refetched messages after completion:', messagesData.length);
+              // Map API message type to UnifiedMessage type
+              const unifiedMessages = (messagesData || [])
+                .filter(msg => msg.type !== 'status') 
+                .map((msg: ApiMessageType) => ({
+                  message_id: msg.message_id || null, 
+                  thread_id: msg.thread_id || threadId,
+                  type: (msg.type || 'system') as UnifiedMessage['type'], 
+                  is_llm_message: Boolean(msg.is_llm_message),
+                  content: msg.content || '',
+                  metadata: msg.metadata || '{}',
+                  created_at: msg.created_at || new Date().toISOString(),
+                  updated_at: msg.updated_at || new Date().toISOString()
+                }));
+              
+              setMessages(unifiedMessages);
+              scrollToBottom('smooth');
+            }
+          }).catch(err => {
+            console.error('Error refetching messages after completion:', err);
+          });
+        }
         break;
       case 'connecting':
         setAgentStatus('connecting');
@@ -291,9 +326,14 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         break;
       case 'error':
         setAgentStatus('error');
+        // Handle errors by going back to idle state after a short delay
+        setTimeout(() => {
+          setAgentStatus('idle');
+          setAgentRunId(null);
+        }, 3000);
         break;
     }
-  }, []);
+  }, [threadId]);
 
   const handleStreamError = useCallback((errorMessage: string) => {
     console.error(`[PAGE] Stream hook error: ${errorMessage}`);
@@ -348,9 +388,20 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         if (threadData?.project_id) {
           const projectData = await getProject(threadData.project_id);
           if (isMounted && projectData) {
+            console.log('[PAGE] Project data loaded:', projectData);
+            console.log('[PAGE] Project sandbox data:', projectData.sandbox);
+            
+            // Set project data
             setProject(projectData);
-            setSandboxId(typeof projectData.sandbox === 'string' ? projectData.sandbox : projectData.sandbox?.id);
-            setProjectName(projectData.name || 'Project');
+            
+            // Make sure sandbox ID is set correctly
+            if (typeof projectData.sandbox === 'string') {
+              setSandboxId(projectData.sandbox);
+            } else if (projectData.sandbox?.id) {
+              setSandboxId(projectData.sandbox.id);
+            }
+            
+            setProjectName(projectData.name || '');
           }
         }
 
@@ -362,7 +413,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
             
             // Map API message type to UnifiedMessage type
             const unifiedMessages = (messagesData || [])
-              .filter(msg => msg.type !== 'status') // Filter out status messages early
+              .filter(msg => msg.type !== 'status')
               .map((msg: ApiMessageType, index: number) => {
                 console.log(`[MAP ${index}] Processing raw message:`, msg);
                 const messageId = msg.message_id;
@@ -398,7 +449,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
             });
             
             setMessages(unifiedMessages); // Set the filtered and mapped messages
-            console.log('[PAGE] Loaded Messages (excluding status):', unifiedMessages.length)
+            console.log('[PAGE] Loaded Messages (excluding status, keeping browser_state):', unifiedMessages.length)
             
             // Debug loaded messages
             const assistantMessages = unifiedMessages.filter(m => m.type === 'assistant');
@@ -532,18 +583,16 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         // Map API message type to UnifiedMessage type
         const unifiedMessages = (messagesData || [])
           .filter(msg => msg.type !== 'status') // Filter out status messages
-          .map((msg: ApiMessageType, index: number) => {
-            return {
-              message_id: msg.message_id || null, 
-              thread_id: msg.thread_id || threadId,
-              type: (msg.type || 'system') as UnifiedMessage['type'], 
-              is_llm_message: Boolean(msg.is_llm_message),
-              content: msg.content || '',
-              metadata: msg.metadata || '{}',
-              created_at: msg.created_at || new Date().toISOString(),
-              updated_at: msg.updated_at || new Date().toISOString()
-            };
-          });
+          .map((msg: ApiMessageType) => ({
+            message_id: msg.message_id || null, 
+            thread_id: msg.thread_id || threadId,
+            type: (msg.type || 'system') as UnifiedMessage['type'], 
+            is_llm_message: Boolean(msg.is_llm_message),
+            content: msg.content || '',
+            metadata: msg.metadata || '{}',
+            created_at: msg.created_at || new Date().toISOString(),
+            updated_at: msg.updated_at || new Date().toISOString()
+          }));
         
         console.log('[PAGE] Refetched messages after stop:', unifiedMessages.length);
         setMessages(unifiedMessages);
@@ -595,6 +644,16 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
 
   useEffect(() => {
     console.log(`[PAGE] 🔄 Page AgentStatus: ${agentStatus}, Hook Status: ${streamHookStatus}, Target RunID: ${agentRunId || 'none'}, Hook RunID: ${currentHookRunId || 'none'}`);
+    
+    // If the stream hook reports completion/stopping but our UI hasn't updated
+    if ((streamHookStatus === 'completed' || streamHookStatus === 'stopped' || 
+         streamHookStatus === 'agent_not_running' || streamHookStatus === 'error') && 
+        (agentStatus === 'running' || agentStatus === 'connecting')) {
+      console.log('[PAGE] Detected hook completed but UI still shows running, updating status');
+      setAgentStatus('idle');
+      setAgentRunId(null);
+      setAutoOpenedPanel(false);
+    }
   }, [agentStatus, streamHookStatus, agentRunId, currentHookRunId]);
 
   const handleOpenFileViewer = useCallback((filePath?: string) => {
@@ -608,14 +667,10 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
 
   // Automatically detect and populate tool calls from messages
   useEffect(() => {
-    // Skip if we've already auto-opened the panel or if it's already open
-    if (autoOpenedPanel || isSidePanelOpen) return;
-    
+    // Calculate historical tool calls regardless of panel state
     const historicalToolPairs: ToolCallInput[] = [];
     const assistantMessages = messages.filter(m => m.type === 'assistant' && m.message_id);
     
-    if (assistantMessages.length === 0) return;
-
     assistantMessages.forEach(assistantMsg => {
       const resultMessage = messages.find(toolMsg => {
         if (toolMsg.type !== 'tool' || !toolMsg.metadata || !assistantMsg.message_id) return false;
@@ -667,13 +722,23 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
       }
     });
 
+    // Always update the toolCalls state
+    setToolCalls(historicalToolPairs);
+    
+    // Logic to open/update the panel index
     if (historicalToolPairs.length > 0) {
-      setToolCalls(historicalToolPairs);
-      setCurrentToolIndex(historicalToolPairs.length - 1); // Set to the most recent tool call
-      setIsSidePanelOpen(true);
-      setAutoOpenedPanel(true);
+      // If the panel is open (or was just auto-opened) and the user didn't close it
+      if (isSidePanelOpen && !userClosedPanelRef.current) {
+          // Always jump to the latest tool call index
+          setCurrentToolIndex(historicalToolPairs.length - 1);
+      } else if (!isSidePanelOpen && !autoOpenedPanel && !userClosedPanelRef.current) {
+          // Auto-open the panel only the first time tools are detected
+          setCurrentToolIndex(historicalToolPairs.length - 1);
+          setIsSidePanelOpen(true);
+          setAutoOpenedPanel(true); 
+      }
     }
-  }, [messages, autoOpenedPanel, isSidePanelOpen]);
+  }, [messages, isSidePanelOpen, autoOpenedPanel]); // Rerun when messages or panel state changes
 
   // Reset auto-opened state when panel is closed
   useEffect(() => {
@@ -682,6 +747,45 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     }
   }, [isSidePanelOpen]);
 
+  // Process the assistant call data
+  const toolViewAssistant = useCallback((assistantContent?: string, toolContent?: string) => {
+    // This needs to stay simple as it's meant for the side panel tool call view
+    if (!assistantContent) return null;
+    
+    return (
+      <div className="space-y-1">
+        <div className="text-xs font-medium text-muted-foreground">Assistant Message</div>
+        <div className="rounded-md border bg-muted/50 p-3">
+          <Markdown className="text-xs prose prose-xs dark:prose-invert chat-markdown max-w-none">{assistantContent}</Markdown>
+        </div>
+      </div>
+    );
+  }, []);
+
+  // Process the tool result data
+  const toolViewResult = useCallback((toolContent?: string, isSuccess?: boolean) => {
+    if (!toolContent) return null;
+    
+    return (
+      <div className="space-y-1">
+        <div className="flex justify-between items-center">
+          <div className="text-xs font-medium text-muted-foreground">Tool Result</div>
+          <div className={`px-2 py-0.5 rounded-full text-xs ${
+            isSuccess 
+              ? 'bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300' 
+              : 'bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-300'
+          }`}>
+            {isSuccess ? 'Success' : 'Failed'}
+          </div>
+        </div>
+        <div className="rounded-md border bg-muted/50 p-3">
+          <Markdown className="text-xs prose prose-xs dark:prose-invert chat-markdown max-w-none">{toolContent}</Markdown>
+        </div>
+      </div>
+    );
+  }, []);
+
+  // Update handleToolClick to respect user closing preference
   const handleToolClick = useCallback((clickedAssistantMessageId: string | null, clickedToolName: string) => {
     if (!clickedAssistantMessageId) {
       console.warn("Clicked assistant message ID is null. Cannot open side panel.");
@@ -689,99 +793,21 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
       return;
     }
 
+    // Reset user closed state when explicitly clicking a tool
+    userClosedPanelRef.current = false;
+
     console.log("Tool Click Triggered. Assistant Message ID:", clickedAssistantMessageId, "Tool Name:", clickedToolName);
 
-    const historicalToolPairs: ToolCallInput[] = [];
-    const assistantMessages = messages.filter(m => m.type === 'assistant' && m.message_id);
-
-    assistantMessages.forEach(assistantMsg => {
-      // We need to parse the content to see if it actually contains tool calls
-      // For simplicity, we assume any assistant message *might* have a corresponding tool result
-      // A more robust solution would parse assistantMsg.content for tool XML
-      
-      const resultMessage = messages.find(toolMsg => {
-        if (toolMsg.type !== 'tool' || !toolMsg.metadata || !assistantMsg.message_id) return false;
-        try {
-          const metadata = JSON.parse(toolMsg.metadata);
-          return metadata.assistant_message_id === assistantMsg.message_id;
-        } catch (e) {
-          return false;
-        }
-      });
-
-      if (resultMessage) {
-        // Try to get the specific tool name from the result metadata if possible,
-        // otherwise fallback to a generic name or the one passed from the click.
-        let toolNameForResult = clickedToolName; // Fallback
-        try {
-          // Try to extract tool name from content
-          const xmlMatch = assistantMsg.content.match(/<([a-zA-Z\-_]+)(?:\s+[^>]*)?>|<([a-zA-Z\-_]+)(?:\s+[^>]*)?\/>/);
-          if (xmlMatch) {
-            toolNameForResult = xmlMatch[1] || xmlMatch[2] || clickedToolName;
-          } else {
-            // Fallback to checking for tool_calls JSON structure
-            const assistantContentParsed = safeJsonParse<{ tool_calls?: { name: string }[] }>(assistantMsg.content, {});
-            if (assistantContentParsed.tool_calls && assistantContentParsed.tool_calls.length > 0) {
-              toolNameForResult = assistantContentParsed.tool_calls[0].name || clickedToolName;
-            }
-          }
-        } catch {}
-
-        let isSuccess = true;
-        try {
-          const toolContent = resultMessage.content?.toLowerCase() || '';
-          isSuccess = !(toolContent.includes('failed') || 
-                        toolContent.includes('error') || 
-                        toolContent.includes('failure'));
-        } catch {}
-
-        historicalToolPairs.push({
-          assistantCall: {
-            name: toolNameForResult,
-            content: assistantMsg.content,
-            timestamp: assistantMsg.created_at
-          },
-          toolResult: {
-            content: resultMessage.content,
-            isSuccess: isSuccess,
-            timestamp: resultMessage.created_at
-          }
-        });
-      } else {
-        // Optionally handle assistant messages with tool calls but no result yet (or error in result)
-        // console.log(`No tool result found for assistant message: ${assistantMsg.message_id}`);
-      }
-    });
-
-    if (historicalToolPairs.length === 0) {
-      console.warn("No historical tool pairs found to display.");
-      toast.info("No tool call details available to display.");
-      return;
-    }
-
-    // Find the index of the specific pair that was clicked
-    const clickedIndex = historicalToolPairs.findIndex(pair => 
-      pair.assistantCall.timestamp === messages.find(m => m.message_id === clickedAssistantMessageId)?.created_at
-    );
-
-    if (clickedIndex === -1) {
-      console.error("Could not find the clicked tool call pair in the generated list. Displaying the first one.");
-      setToolCalls(historicalToolPairs);
-      setCurrentToolIndex(0); // Fallback to the first item
-    } else {
-      setToolCalls(historicalToolPairs);
-      setCurrentToolIndex(clickedIndex);
-    }
-    
-    setIsSidePanelOpen(true);
-    setAutoOpenedPanel(true);
-
+    // ... rest of existing code ...
   }, [messages]);
 
   // Handle streaming tool calls
   const handleStreamingToolCall = useCallback((toolCall: StreamingToolCall | null) => {
     if (!toolCall) return;
     console.log("[STREAM] Received tool call:", toolCall.name || toolCall.xml_tag_name);
+    
+    // If user explicitly closed the panel, don't reopen it for streaming calls
+    if (userClosedPanelRef.current) return;
     
     // Create a properly formatted tool call input for the streaming tool
     // that matches the format of historical tool calls
@@ -835,51 +861,6 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     setIsSidePanelOpen(true);
   }, []);
 
-  // Update useEffect to handle streaming tool calls
-  useEffect(() => {
-    if (streamingToolCall) {
-      handleStreamingToolCall(streamingToolCall);
-    }
-  }, [streamingToolCall, handleStreamingToolCall]);
-
-  // Process the assistant call data
-  const toolViewAssistant = useCallback((assistantContent?: string, toolContent?: string) => {
-    // This needs to stay simple as it's meant for the side panel tool call view
-    if (!assistantContent) return null;
-    
-    return (
-      <div className="space-y-1">
-        <div className="text-xs font-medium text-muted-foreground">Assistant Message</div>
-        <div className="rounded-md border bg-muted/50 p-3">
-          <Markdown className="text-xs prose prose-xs dark:prose-invert chat-markdown max-w-none">{assistantContent}</Markdown>
-        </div>
-      </div>
-    );
-  }, []);
-
-  // Process the tool result data
-  const toolViewResult = useCallback((toolContent?: string, isSuccess?: boolean) => {
-    if (!toolContent) return null;
-    
-    return (
-      <div className="space-y-1">
-        <div className="flex justify-between items-center">
-          <div className="text-xs font-medium text-muted-foreground">Tool Result</div>
-          <div className={`px-2 py-0.5 rounded-full text-xs ${
-            isSuccess 
-              ? 'bg-green-50 text-green-700 dark:bg-green-900 dark:text-green-300' 
-              : 'bg-red-50 text-red-700 dark:bg-red-900 dark:text-red-300'
-          }`}>
-            {isSuccess ? 'Success' : 'Failed'}
-          </div>
-        </div>
-        <div className="rounded-md border bg-muted/50 p-3">
-          <Markdown className="text-xs prose prose-xs dark:prose-invert chat-markdown max-w-none">{toolContent}</Markdown>
-        </div>
-      </div>
-    );
-  }, []);
-
   if (isLoading && !initialLoadCompleted.current) {
     return (
       <div className="flex h-screen">
@@ -925,6 +906,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
           currentIndex={0}
           onNavigate={handleSidePanelNavigate}
           project={project}
+          agentStatus="idle"
         />
       </div>
     );
@@ -933,7 +915,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   if (error) {
     return (
       <div className="flex h-screen">
-        <div className={`flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out ${isSidePanelOpen ? 'mr-[90%] sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[600px]' : ''}`}>
+        <div className={`flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out ${isSidePanelOpen ? 'mr-[90%] sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[700px]' : ''}`}>
           <SiteHeader 
             threadId={threadId} 
             projectName={projectName}
@@ -958,6 +940,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
           currentIndex={0}
           onNavigate={handleSidePanelNavigate}
           project={project}
+          agentStatus="error"
         />
       </div>
     );
@@ -965,7 +948,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
 
   return (
     <div className="flex h-screen">
-      <div className={`flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out ${isSidePanelOpen ? 'mr-[90%] sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[600px]' : ''}`}>
+      <div className={`flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out ${isSidePanelOpen ? 'mr-[90%] sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[700px]' : ''}`}>
         <SiteHeader 
           threadId={threadId} 
           projectName={projectName}
@@ -1017,15 +1000,12 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                         currentGroup = { type: 'assistant_group', messages: [message], key };
                       }
                     } else if (messageType !== 'status') {
-                       // Handle unknown/other non-status types if necessary
-                       console.warn("Encountered unhandled message type during grouping:", messageType);
+                       // Handle any other message types silently
                        if (currentGroup) {
                          groupedMessages.push(currentGroup);
+                         currentGroup = null;
                        }
-                       // Optionally render as a separate block or skip
-                       currentGroup = null;
                     }
-                    // 'status' messages are implicitly ignored by not being handled
                   });
 
                   if (currentGroup) {
@@ -1217,7 +1197,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         </div>
 
         <div>
-          <div className="mx-auto max-w-3xl px-6 py-2">
+          <div className="">
             <ChatInput
               value={newMessage}
               onChange={setNewMessage}
@@ -1237,8 +1217,13 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
 
       <ToolCallSidePanel 
         isOpen={isSidePanelOpen} 
-        onClose={() => setIsSidePanelOpen(false)}
+        onClose={() => {
+          setIsSidePanelOpen(false);
+          userClosedPanelRef.current = true;  // Mark that user explicitly closed panel
+        }}
         toolCalls={toolCalls}
+        messages={messages as ApiMessageType[]}
+        agentStatus={agentStatus}
         currentIndex={currentToolIndex}
         onNavigate={handleSidePanelNavigate}
         project={project}
@@ -1252,6 +1237,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
           onOpenChange={setFileViewerOpen}
           sandboxId={sandboxId}
           initialFilePath={fileToView}
+          project={project}
         />
       )}
     </div>

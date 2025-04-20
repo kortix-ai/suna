@@ -1,5 +1,5 @@
 import React from "react";
-import { FileCode, FileSymlink, FolderPlus, FileX, Replace, CheckCircle, AlertTriangle } from "lucide-react";
+import { FileCode, FileSymlink, FolderPlus, FileX, Replace, CheckCircle, AlertTriangle, ExternalLink } from "lucide-react";
 import { ToolViewProps } from "./types";
 import { extractFilePath, extractFileContent, getFileType, formatTimestamp } from "./utils";
 import { GenericToolView } from "./GenericToolView";
@@ -13,7 +13,8 @@ export function FileOperationToolView({
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
-  name
+  name,
+  project
 }: ToolViewProps & { name?: string }) {
   // Determine operation type from content or name
   const getOperationType = (): FileOperation => {
@@ -99,7 +100,13 @@ export function FileOperationToolView({
   const fileName = processedFilePath ? processedFilePath.split('/').pop() || processedFilePath : '';
   const fileType = processedFilePath ? getFileType(processedFilePath) : '';
   const isMarkdown = fileName.endsWith('.md');
+  const isHtml = fileName.endsWith('.html');
   const Icon = config.icon;
+  
+  // Construct HTML file preview URL if we have a sandbox and the file is HTML
+  const htmlPreviewUrl = (isHtml && project?.sandbox?.sandbox_url && processedFilePath) 
+    ? `${project.sandbox.sandbox_url}/${processedFilePath}`
+    : undefined;
   
   return (
     <div className="space-y-4 p-4">
@@ -157,6 +164,41 @@ export function FileOperationToolView({
               <div className="table-row h-4"></div>
             </div>
           </div>
+          
+          {/* HTML Preview with iframe */}
+          {htmlPreviewUrl && isSuccess && (
+            <div className="border-t border-slate-700">
+              <div className="bg-slate-800 py-2 px-3 text-xs font-medium text-white flex items-center">
+                <FileCode className="h-3.5 w-3.5 mr-2 text-blue-400" />
+                HTML Preview
+              </div>
+              <div className="relative">
+                {/* Iframe with preview */}
+                <div className="aspect-video bg-white relative">
+                  <iframe 
+                    src={htmlPreviewUrl}
+                    title={`HTML Preview of ${fileName}`}
+                    className="w-full h-full"
+                    style={{ minHeight: "200px" }}
+                    sandbox="allow-same-origin allow-scripts"
+                  />
+                  {/* Semi-transparent overlay */}
+                  <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center">
+                    <a 
+                      href={htmlPreviewUrl} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-1.5 py-1.5 px-3 text-xs text-gray-700 bg-white hover:bg-gray-100 rounded-md transition-colors cursor-pointer border border-gray-200 shadow-sm"
+                    >
+                      <ExternalLink className="h-4 w-4 text-gray-500 flex-shrink-0" />
+                      <span className="font-medium">Open in Browser</span>
+                    </a>
+                    <p className="text-xs text-gray-300 mt-2">Preview available in new tab</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
       

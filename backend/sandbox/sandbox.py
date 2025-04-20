@@ -100,9 +100,9 @@ def create_sandbox(password: str):
         public=True,
         env_vars={
             "CHROME_PERSISTENT_SESSION": "true",
-            "RESOLUTION": "1920x1080x24",
-            "RESOLUTION_WIDTH": "1920",
-            "RESOLUTION_HEIGHT": "1080",
+            "RESOLUTION": "1280x720x24",
+            "RESOLUTION_WIDTH": "1280",
+            "RESOLUTION_HEIGHT": "720",
             "VNC_PASSWORD": password,
             "ANONYMIZED_TELEMETRY": "false",
             "CHROME_PATH": "",

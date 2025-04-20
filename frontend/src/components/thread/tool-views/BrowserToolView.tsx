@@ -2,6 +2,16 @@ import React from "react";
 import { Globe, MonitorPlay, ExternalLink, CheckCircle, AlertTriangle } from "lucide-react";
 import { BrowserToolViewProps } from "./types";
 import { extractBrowserUrl, extractBrowserOperation, formatTimestamp } from "./utils";
+import { ApiMessageType } from '@/components/thread/types';
+import { safeJsonParse } from '@/components/thread/utils';
+
+// Define props including messages
+export interface BrowserToolViewPropsExtended extends BrowserToolViewProps {
+  messages?: ApiMessageType[];
+  agentStatus?: string;
+  currentIndex?: number;
+  totalCalls?: number;
+}
 
 export function BrowserToolView({ 
   name,
@@ -10,14 +20,68 @@ export function BrowserToolView({
   assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
-  project
-}: BrowserToolViewProps) {
+  project,
+  agentStatus = 'idle',
+  messages = [],
+  currentIndex = 0,
+  totalCalls = 1
+}: BrowserToolViewPropsExtended) {
   const url = extractBrowserUrl(assistantContent);
   const operation = extractBrowserOperation(name);
   
+  // --- Revised message_id Extraction Logic --- 
+  let browserStateMessageId: string | undefined;
+  console.log("[BrowserToolView] Raw Tool Content:", toolContent); 
+  try {
+    // 1. Parse the top-level JSON
+    const topLevelParsed = safeJsonParse<{ content?: string }>(toolContent, {});
+    const innerContentString = topLevelParsed?.content;
+    console.log("[BrowserToolView] Inner Content String:", innerContentString);
+
+    if (innerContentString && typeof innerContentString === 'string') {
+      // 2. Extract the output='...' string using regex
+      const outputMatch = innerContentString.match(/\boutput='(.*?)'(?=\s*\))/);
+      const outputString = outputMatch ? outputMatch[1] : null;
+      console.log("[BrowserToolView] Extracted Output String (raw):", outputString);
+
+      if (outputString) {
+        // 3. Unescape the JSON string (basic unescaping for \n and \")
+        const unescapedOutput = outputString.replace(/\\n/g, '\n').replace(/\\"/g, '"');
+        console.log("[BrowserToolView] Unescaped Output String:", unescapedOutput);
+        
+        // 4. Parse the unescaped JSON to get message_id
+        const finalParsedOutput = safeJsonParse<{ message_id?: string }>(unescapedOutput, {});
+        browserStateMessageId = finalParsedOutput?.message_id;
+        console.log("[BrowserToolView] Final Parsed Output for message_id:", finalParsedOutput);
+      }
+    }
+  } catch (error) {
+    console.error("[BrowserToolView] Error parsing tool content for message_id:", error);
+  }
+  console.log("[BrowserToolView] Final Extracted browserStateMessageId:", browserStateMessageId);
+  // --- End of Revised Logic ---
+
+  console.log("[BrowserToolView] Received messages count:", messages?.length);
+
+  // Find the browser_state message and extract the screenshot
+  let screenshotBase64: string | null = null;
+  if (browserStateMessageId && messages.length > 0) {
+    const browserStateMessage = messages.find(msg => 
+        (msg.type as string) === 'browser_state' && 
+        msg.message_id === browserStateMessageId
+    );
+    console.log("[BrowserToolView] Found browserStateMessage:", browserStateMessage);
+    if (browserStateMessage) {
+        console.log("[BrowserToolView] Browser State Content:", browserStateMessage.content);
+        const browserStateContent = safeJsonParse<{ screenshot_base64?: string }>(browserStateMessage.content, {});
+        screenshotBase64 = browserStateContent?.screenshot_base64 || null;
+        console.log("[BrowserToolView] Extracted screenshotBase64 (first 50 chars):", screenshotBase64?.substring(0, 50));
+    }
+  }
+  
   // Check if we have a VNC preview URL from the project
   const vncPreviewUrl = project?.sandbox?.vnc_preview ? 
-    `${project.sandbox.vnc_preview}/vnc_lite.html?password=${project?.sandbox?.pass}` : 
+    `${project.sandbox.vnc_preview}/vnc_lite.html?password=${project?.sandbox?.pass}&autoconnect=true&scale=local&width=1024&height=768` : 
     undefined;
   
   return (
@@ -54,15 +118,34 @@ export function BrowserToolView({
           )}
         </div>
         
-        {vncPreviewUrl ? (
-          <div className="aspect-video relative bg-black">
+        {/* --- Updated Preview Logic --- */}
+        {agentStatus === 'running' && vncPreviewUrl && currentIndex === (totalCalls ?? 1) - 1 ? (
+          // Show live preview if agent is running, URL exists, AND it's the latest call
+          <div className="bg-black w-full relative" style={{ paddingTop: '75%' }}>
             <iframe
               src={vncPreviewUrl}
-              title="Browser preview"
-              className="w-full h-full"
-              style={{ minHeight: "400px" }}
-              frameBorder="0"
-              allowFullScreen
+              title="Browser preview (Live)"
+              className="absolute top-0 left-0 w-full h-full border-0"
+              style={{ maxHeight: '600px' }}
+            />
+          </div>
+        ) : screenshotBase64 ? (
+            // Show screenshot if available (and agent is not running)
+            <div className="bg-black w-full relative overflow-hidden" style={{ maxHeight: '600px' }}>
+               <img 
+                 src={`data:image/jpeg;base64,${screenshotBase64}`} 
+                 alt="Browser Screenshot (Final State)"
+                 className="w-full h-auto object-contain"
+               />
+            </div>
+        ) : vncPreviewUrl ? (
+          // Fallback to VNC preview if agent is not running and no screenshot
+          <div className="bg-black w-full relative" style={{ paddingTop: '75%' }}>
+            <iframe
+              src={vncPreviewUrl}
+              title="Browser preview (VNC Fallback)"
+              className="absolute top-0 left-0 w-full h-full border-0"
+              style={{ maxHeight: '600px' }}
             />
           </div>
         ) : (
