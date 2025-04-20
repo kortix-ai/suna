@@ -60,7 +60,6 @@
     "papaparse": "^5.5.2",
     "postcss": "8.4.33",
     "react": "^18",
-    "react-data-grid": "^7.0.0-beta.52",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18",
     "react-hook-form": "^7.55.0",
