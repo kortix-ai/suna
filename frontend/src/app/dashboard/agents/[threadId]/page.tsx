@@ -17,6 +17,7 @@ import { ToolCallSidePanel, ToolCallInput } from "@/components/thread/tool-call-
 import { useSidebar } from "@/components/ui/sidebar";
 import { useAgentStream } from '@/hooks/useAgentStream';
 import { Markdown } from '@/components/home/ui/markdown';
+import { cn } from "@/lib/utils";
 
 import { UnifiedMessage, ParsedContent, ParsedMetadata, ThreadParams } from '@/components/thread/types';
 import { getToolIcon, extractPrimaryParam, safeJsonParse } from '@/components/thread/utils';
@@ -185,7 +186,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
   const [toolCalls, setToolCalls] = useState<ToolCallInput[]>([]);
   const [currentToolIndex, setCurrentToolIndex] = useState<number>(0);
-  const [autoOpenedPanel, setAutoOpenedPanel] = useState(false);
+  const [autoOpenedPanel, setAutoOpenedPanel] = useState(true);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -212,6 +213,11 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const initialLayoutAppliedRef = useRef(false);
 
   const userClosedPanelRef = useRef(false);
+  
+  // Initialize as if user already closed panel to prevent auto-opening
+  useEffect(() => {
+    userClosedPanelRef.current = true;
+  }, []);
 
   const toggleSidePanel = useCallback(() => {
     setIsSidePanelOpen(prevIsOpen => {
@@ -667,7 +673,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
 
   // Automatically detect and populate tool calls from messages
   useEffect(() => {
-    // Calculate historical tool calls regardless of panel state
+    // Calculate historical tool pairs regardless of panel state
     const historicalToolPairs: ToolCallInput[] = [];
     const assistantMessages = messages.filter(m => m.type === 'assistant' && m.message_id);
     
@@ -698,6 +704,11 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
             }
           }
         } catch {}
+
+        // Skip adding <ask> tags to the tool calls
+        if (toolName === 'ask') {
+          return;
+        }
 
         let isSuccess = true;
         try {
@@ -785,8 +796,13 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     );
   }, []);
 
-  // Update handleToolClick to respect user closing preference
+  // Update handleToolClick to respect user closing preference and navigate correctly
   const handleToolClick = useCallback((clickedAssistantMessageId: string | null, clickedToolName: string) => {
+    // Explicitly ignore ask tags from opening the side panel
+    if (clickedToolName === 'ask') {
+      return;
+    }
+    
     if (!clickedAssistantMessageId) {
       console.warn("Clicked assistant message ID is null. Cannot open side panel.");
       toast.warning("Cannot view details: Assistant message ID is missing.");
@@ -796,22 +812,65 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     // Reset user closed state when explicitly clicking a tool
     userClosedPanelRef.current = false;
 
-    console.log("Tool Click Triggered. Assistant Message ID:", clickedAssistantMessageId, "Tool Name:", clickedToolName);
+    console.log("[PAGE] Tool Click Triggered. Assistant Message ID:", clickedAssistantMessageId, "Tool Name:", clickedToolName);
 
-    // ... rest of existing code ...
-  }, [messages]);
+    // Find the index of the tool call associated with the clicked assistant message
+    const toolIndex = toolCalls.findIndex(tc => {
+      // Check if the assistant message ID matches the one stored in the tool result's metadata
+      if (!tc.toolResult?.content || tc.toolResult.content === "STREAMING") return false; // Skip streaming or incomplete calls
+
+      // Directly compare assistant message IDs if available in the structure
+      // Find the original assistant message based on the ID
+      const assistantMessage = messages.find(m => m.message_id === clickedAssistantMessageId && m.type === 'assistant');
+      if (!assistantMessage) return false;
+
+      // Find the corresponding tool message using metadata
+      const toolMessage = messages.find(m => {
+        if (m.type !== 'tool' || !m.metadata) return false;
+        try {
+          const metadata = safeJsonParse<ParsedMetadata>(m.metadata, {});
+          return metadata.assistant_message_id === assistantMessage.message_id;
+        } catch {
+          return false;
+        }
+      });
+      
+      // Check if the current toolCall 'tc' corresponds to this assistant/tool message pair
+      return tc.assistantCall?.content === assistantMessage.content &&
+             tc.toolResult?.content === toolMessage?.content;
+    });
+
+
+    if (toolIndex !== -1) {
+      console.log(`[PAGE] Found tool call at index ${toolIndex} for assistant message ${clickedAssistantMessageId}`);
+      setCurrentToolIndex(toolIndex);
+      setIsSidePanelOpen(true); // Explicitly open the panel
+    } else {
+      console.warn(`[PAGE] Could not find matching tool call in toolCalls array for assistant message ID: ${clickedAssistantMessageId}`);
+      toast.info("Could not find details for this tool call.");
+      // Optionally, still open the panel but maybe at the last index or show a message?
+      // setIsSidePanelOpen(true);
+    }
+  }, [messages, toolCalls]); // Add toolCalls as a dependency
 
   // Handle streaming tool calls
   const handleStreamingToolCall = useCallback((toolCall: StreamingToolCall | null) => {
     if (!toolCall) return;
-    console.log("[STREAM] Received tool call:", toolCall.name || toolCall.xml_tag_name);
+    
+    const toolName = toolCall.name || toolCall.xml_tag_name || 'Unknown Tool';
+    
+    // Skip <ask> tags from showing in the side panel during streaming
+    if (toolName === 'ask') {
+      return;
+    }
+    
+    console.log("[STREAM] Received tool call:", toolName);
     
     // If user explicitly closed the panel, don't reopen it for streaming calls
     if (userClosedPanelRef.current) return;
     
     // Create a properly formatted tool call input for the streaming tool
     // that matches the format of historical tool calls
-    const toolName = toolCall.name || toolCall.xml_tag_name || 'Unknown Tool';
     const toolArguments = toolCall.arguments || '';
     
     // Format the arguments in a way that matches the expected XML format for each tool
@@ -864,50 +923,110 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   if (isLoading && !initialLoadCompleted.current) {
     return (
       <div className="flex h-screen">
-        <div className={`flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out ${isSidePanelOpen ? 'mr-[90%] sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[600px]' : ''}`}>
-          <SiteHeader 
-            threadId={threadId} 
-            projectName={projectName}
-            projectId={project?.id ?? null}
-            onViewFiles={handleOpenFileViewer} 
-            onToggleSidePanel={toggleSidePanel}
-          />
+        <div className={`flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out ${isSidePanelOpen ? 'mr-[90%] sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[650px]' : ''}`}>
+          {/* Skeleton Header */}
+          <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+            <div className="flex h-14 items-center gap-4 px-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-2">
+                  <Skeleton className="h-6 w-6 rounded-full" />
+                  <Skeleton className="h-5 w-40" />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Skeleton className="h-8 w-8 rounded-full" />
+                <Skeleton className="h-8 w-8 rounded-full" />
+              </div>
+            </div>
+          </div>
+          
+          {/* Skeleton Chat Messages */}
           <div className="flex-1 overflow-y-auto px-6 py-4 pb-[5.5rem]">
-            <div className="mx-auto max-w-3xl space-y-4">
+            <div className="mx-auto max-w-3xl space-y-6">
+              {/* User message */}
               <div className="flex justify-end">
                 <div className="max-w-[85%] rounded-lg bg-primary/10 px-4 py-3">
-                  <Skeleton className="h-4 w-32" />
+                  <div className="space-y-2">
+                    <Skeleton className="h-4 w-48" />
+                    <Skeleton className="h-4 w-32" />
+                  </div>
                 </div>
               </div>
-              <div className="flex justify-start">
-                <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3">
-                  <Skeleton className="h-4 w-48 mb-2" />
-                  <Skeleton className="h-4 w-40" />
+              
+              {/* Assistant response with tool usage */}
+              <div>
+                <div className="flex items-start gap-3">
+                  <Skeleton className="flex-shrink-0 w-5 h-5 mt-2 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <div className="max-w-[90%] w-full rounded-lg bg-muted px-4 py-3">
+                      <div className="space-y-3">
+                        <div>
+                          <Skeleton className="h-4 w-full max-w-[360px] mb-2" />
+                          <Skeleton className="h-4 w-full max-w-[320px] mb-2" />
+                          <Skeleton className="h-4 w-full max-w-[290px]" />
+                        </div>
+                        
+                        {/* Tool call button skeleton */}
+                        <div className="py-1">
+                          <Skeleton className="h-6 w-32 rounded-md" />
+                        </div>
+                        
+                        <div>
+                          <Skeleton className="h-4 w-full max-w-[340px] mb-2" />
+                          <Skeleton className="h-4 w-full max-w-[280px]" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
+              
+              {/* User message */}
               <div className="flex justify-end">
                 <div className="max-w-[85%] rounded-lg bg-primary/10 px-4 py-3">
-                  <Skeleton className="h-4 w-40" />
+                  <Skeleton className="h-4 w-36" />
                 </div>
               </div>
-              <div className="flex justify-start">
-                <div className="max-w-[85%] rounded-lg bg-muted px-4 py-3">
-                  <Skeleton className="h-4 w-56 mb-2" />
-                  <Skeleton className="h-4 w-44" />
+              
+              {/* Assistant thinking state */}
+              <div>
+                <div className="flex items-start gap-3">
+                  <Skeleton className="flex-shrink-0 w-5 h-5 mt-2 rounded-full" />
+                  <div className="flex-1 space-y-2">
+                    <div className="flex items-center gap-1.5 py-1">
+                      <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse" />
+                      <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse delay-150" />
+                      <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse delay-300" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {/* Skeleton Chat Input */}
+          <div className="border-t p-4">
+            <div className="mx-auto max-w-3xl">
+              <div className="relative">
+                <Skeleton className="h-10 w-full rounded-md" />
+                <div className="absolute right-2 top-2">
+                  <Skeleton className="h-6 w-6 rounded-full" />
                 </div>
               </div>
             </div>
           </div>
         </div>
-        <ToolCallSidePanel 
-          isOpen={isSidePanelOpen} 
-          onClose={() => setIsSidePanelOpen(false)}
-          toolCalls={[]}
-          currentIndex={0}
-          onNavigate={handleSidePanelNavigate}
-          project={project}
-          agentStatus="idle"
-        />
+        
+        {/* Skeleton Side Panel (closed state) */}
+        <div className={`hidden ${isSidePanelOpen ? 'block' : ''}`}>
+          <div className="h-screen w-[450px] border-l">
+            <div className="p-4">
+              <Skeleton className="h-8 w-32 mb-4" />
+              <Skeleton className="h-20 w-full rounded-md mb-4" />
+              <Skeleton className="h-40 w-full rounded-md" />
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -915,7 +1034,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   if (error) {
     return (
       <div className="flex h-screen">
-        <div className={`flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out ${isSidePanelOpen ? 'mr-[90%] sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[700px]' : ''}`}>
+        <div className={`flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out ${isSidePanelOpen ? 'mr-[90%] sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[650px]' : ''}`}>
           <SiteHeader 
             threadId={threadId} 
             projectName={projectName}
@@ -948,7 +1067,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
 
   return (
     <div className="flex h-screen">
-      <div className={`flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out ${isSidePanelOpen ? 'mr-[90%] sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[700px]' : ''}`}>
+      <div className={`flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out ${isSidePanelOpen ? 'mr-[90%] sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[650px]' : ''}`}>
         <SiteHeader 
           threadId={threadId} 
           projectName={projectName}
@@ -959,7 +1078,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         />
         <div 
           ref={messagesContainerRef}
-          className="flex-1 overflow-y-auto px-6 py-4 pb-[0.5rem]"
+          className="flex-1 overflow-y-auto px-6 py-4 pb-24 bg-transparent"
           onScroll={handleScroll}
         >
           <div className="mx-auto max-w-3xl">
@@ -1185,33 +1304,29 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
             )}
             <div ref={messagesEndRef} className="h-1" />
           </div>
-
-          <div
-            className="sticky bottom-6 flex justify-center transition-opacity duration-300"
-            style={{ opacity: showScrollButton ? 1 : 0, visibility: showScrollButton ? 'visible' : 'hidden' }}
-          >
-            <Button variant="outline" size="icon" className="h-8 w-8 rounded-full" onClick={handleScrollButtonClick}>
-              <ArrowDown className="h-4 w-4" />
-            </Button>
-          </div>
         </div>
+      </div>
 
-        <div>
-          <div className="">
-            <ChatInput
-              value={newMessage}
-              onChange={setNewMessage}
-              onSubmit={handleSubmitMessage}
-              placeholder="Ask Suna anything..."
-              loading={isSending}
-              disabled={isSending || agentStatus === 'running' || agentStatus === 'connecting'}
-              isAgentRunning={agentStatus === 'running' || agentStatus === 'connecting'}
-              onStopAgent={handleStopAgent}
-              autoFocus={!isLoading}
-              onFileBrowse={handleOpenFileViewer}
-              sandboxId={sandboxId || undefined}
-            />
-          </div>
+      {/* Fixed Chat Input Container */}
+      <div className={cn(
+          "fixed bottom-0 z-10 bg-gradient-to-t from-background via-background/90 to-transparent px-4 pb-4 pt-8 transition-all duration-200 ease-in-out",
+          leftSidebarState === 'expanded' ? 'left-[72px] lg:left-[256px]' : 'left-[72px]',
+          isSidePanelOpen ? 'right-[90%] sm:right-[450px] md:right-[500px] lg:right-[550px] xl:right-[650px]' : 'right-0'
+      )}>
+        <div className="mx-auto max-w-3xl">
+          <ChatInput
+            value={newMessage}
+            onChange={setNewMessage}
+            onSubmit={handleSubmitMessage}
+            placeholder="Ask Suna anything..."
+            loading={isSending}
+            disabled={isSending || agentStatus === 'running' || agentStatus === 'connecting'}
+            isAgentRunning={agentStatus === 'running' || agentStatus === 'connecting'}
+            onStopAgent={handleStopAgent}
+            autoFocus={!isLoading}
+            onFileBrowse={handleOpenFileViewer}
+            sandboxId={sandboxId || undefined}
+          />
         </div>
       </div>
 

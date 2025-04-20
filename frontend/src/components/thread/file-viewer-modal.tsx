@@ -12,17 +12,11 @@ import {
   Download,
   ChevronRight,
   Home,
-  ArrowLeft,
-  Save,
   ChevronLeft,
-  PanelLeft,
-  PanelLeftClose,
-  Menu,
   Loader,
   AlertTriangle,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { FileRenderer, getFileTypeFromExtension } from "@/components/file-renderers";
 import { listSandboxFiles, getSandboxFileContent, type FileInfo, Project } from "@/lib/api";
 import { toast } from "sonner";

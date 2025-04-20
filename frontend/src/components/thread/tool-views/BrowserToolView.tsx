@@ -126,12 +126,12 @@ export function BrowserToolView({
               src={vncPreviewUrl}
               title="Browser preview (Live)"
               className="absolute top-0 left-0 w-full h-full border-0"
-              style={{ maxHeight: '600px' }}
+              style={{ maxHeight: '650px' }}
             />
           </div>
         ) : screenshotBase64 ? (
             // Show screenshot if available (and agent is not running)
-            <div className="bg-black w-full relative overflow-hidden" style={{ maxHeight: '600px' }}>
+            <div className="bg-black w-full relative overflow-hidden" style={{ maxHeight: '650px' }}>
                <img 
                  src={`data:image/jpeg;base64,${screenshotBase64}`} 
                  alt="Browser Screenshot (Final State)"
@@ -145,7 +145,7 @@ export function BrowserToolView({
               src={vncPreviewUrl}
               title="Browser preview (VNC Fallback)"
               className="absolute top-0 left-0 w-full h-full border-0"
-              style={{ maxHeight: '600px' }}
+              style={{ maxHeight: '650px' }}
             />
           </div>
         ) : (

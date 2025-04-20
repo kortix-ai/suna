@@ -7,6 +7,7 @@ import { getToolIcon } from "@/components/thread/utils";
 import React from "react";
 import { Slider } from "@/components/ui/slider";
 import { ApiMessageType } from '@/components/thread/types';
+import { cn } from "@/lib/utils";
 
 // Import tool view components from the tool-views directory
 import { CommandToolView } from "./tool-views/CommandToolView";
@@ -237,7 +238,7 @@ export function ToolCallSidePanel({
   };
   
   return (
-    <div className="fixed inset-y-0 right-0 w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[700px] bg-background border-l flex flex-col z-10">
+    <div className="fixed inset-y-0 right-0 w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[650px] bg-background border-l flex flex-col z-10">
       <div className="p-4 flex items-center justify-between">
         <h3 className="text-sm font-semibold">
           {isStreaming 
