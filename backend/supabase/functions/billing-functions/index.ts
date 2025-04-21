@@ -10,6 +10,7 @@ import Stripe from "https://esm.sh/stripe@11.1.0?target=deno";
 console.log("Starting billing functions...");
 
 const defaultAllowedHost = Deno.env.get("ALLOWED_HOST") || "http://localhost:3000";
+const allowedHosts = [defaultAllowedHost, "https://www.suna.so", "https://suna.so", "https://staging.suna.so"];
 console.log("Default allowed host:", defaultAllowedHost);
 
 export const corsHeaders = {
@@ -92,7 +93,7 @@ serve(async (req) => {
 
             case "get_billing_portal_url":
                 console.log("Getting billing portal URL for account:", body.args.account_id);
-                if (!validateUrl(body.args.return_url, [defaultAllowedHost])) {
+                if (!validateUrl(body.args.return_url, allowedHosts)) {
                     console.log("Invalid return URL:", body.args.return_url);
                     return new Response(
                         JSON.stringify({ error: "Return url is not allowed" }),
@@ -150,7 +151,7 @@ serve(async (req) => {
 
             case "get_new_subscription_url":
                 console.log("Getting new subscription URL for account:", body.args.account_id);
-                if (!validateUrl(body.args.success_url, [defaultAllowedHost]) || !validateUrl(body.args.cancel_url, [defaultAllowedHost])) {
+                if (!validateUrl(body.args.success_url, allowedHosts) || !validateUrl(body.args.cancel_url, allowedHosts)) {
                     console.log("Invalid success or cancel URL:", body.args.success_url, body.args.cancel_url);
                     return new Response(
                         JSON.stringify({ error: "Success or cancel url is not allowed" }),
