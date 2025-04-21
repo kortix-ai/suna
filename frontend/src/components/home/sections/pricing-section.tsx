@@ -366,6 +366,15 @@ export function PricingSection() {
                       </li>
                     ))}
                   </ul>
+
+                  {(tier as any).showContactSales && (
+                    <button
+                      className="h-10 w-full flex items-center justify-center text-sm font-normal tracking-wide rounded-full px-4 cursor-pointer transition-all ease-out active:scale-95 bg-transparent border border-secondary/20 text-secondary shadow-[0px_1px_2px_0px_rgba(255,255,255,0.05)_inset] mt-6"
+                      onClick={() => window.open('mailto:support@kortix.ai?subject=Enterprise Plan Inquiry', '_blank')}
+                    >
+                      Need more? Contact Sales
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

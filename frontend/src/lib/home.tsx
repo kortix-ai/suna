@@ -111,7 +111,7 @@ export const siteConfig = {
       name: "Enterprise",
       price: "$199",
       description: "For organizations with complex needs",
-      buttonText: "Contact Sales",
+      buttonText: "Hire Suna",
       buttonColor: "bg-secondary text-white",
       isPopular: false,
       hours: "40 hours",
@@ -123,6 +123,7 @@ export const siteConfig = {
         "Service level agreement",
         "Custom AI model training",
       ],
+      showContactSales: true,
     },
   ],
   companyShowcase: {

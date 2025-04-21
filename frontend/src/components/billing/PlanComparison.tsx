@@ -9,9 +9,9 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { Button } from "@/components/ui/button";
 import { siteConfig } from "@/lib/home";
 export const SUBSCRIPTION_PLANS = {
-  FREE: 'price_1RDQbOG6l1KZGqIrgrYzMbnL',
-  BASIC: 'price_1RC2PYG6l1KZGqIrpbzFB9Lp',
-  PRO: 'price_1RDQWqG6l1KZGqIrChli4Ys4'
+  FREE: 'price_1RGJ9GG6l1KZGqIroxSqgphC',
+  BASIC: 'price_1RGJ9LG6l1KZGqIrd9pwzeNW',
+  PRO: 'price_1RGJ9JG6l1KZGqIrVUU4ZRv6'
 } as const;
 
 interface PlanComparisonProps {
@@ -171,6 +171,16 @@ export function PlanComparison({
                   </li>
                 ))}
               </ul>
+              
+              {(tier as any).showContactSales && (
+                <Button
+                  variant="outline"
+                  className="w-full h-10 rounded-full font-medium transition-colors mt-4"
+                  onClick={() => window.open('mailto:support@kortix.ai?subject=Enterprise Plan Inquiry', '_blank')}
+                >
+                  Need more? Contact Sales
+                </Button>
+              )}
             </div>
           </div>
         );
