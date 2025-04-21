@@ -705,7 +705,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         } catch {}
 
         // Skip adding <ask> tags to the tool calls
-        if (toolName === 'ask') {
+        if (toolName === 'ask' || toolName === 'complete') {
           return;
         }
 
@@ -859,7 +859,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     const toolName = toolCall.name || toolCall.xml_tag_name || 'Unknown Tool';
     
     // Skip <ask> tags from showing in the side panel during streaming
-    if (toolName === 'ask') {
+    if (toolName === 'ask' || toolName === 'complete') {
       return;
     }
     

@@ -7,6 +7,7 @@ from typing import Optional
 # from agent.tools.message_tool import MessageTool
 from agent.tools.message_tool import MessageTool
 from agent.tools.sb_deploy_tool import SandboxDeployTool
+from agent.tools.sb_expose_tool import SandboxExposeTool
 from agent.tools.web_search_tool import WebSearchTool
 from dotenv import load_dotenv
 
@@ -52,6 +53,7 @@ async def run_agent(
     thread_manager.add_tool(SandboxFilesTool, sandbox=sandbox)
     thread_manager.add_tool(SandboxBrowserTool, sandbox=sandbox, thread_id=thread_id, thread_manager=thread_manager)
     thread_manager.add_tool(SandboxDeployTool, sandbox=sandbox)
+    thread_manager.add_tool(SandboxExposeTool, sandbox=sandbox)
     thread_manager.add_tool(MessageTool) # we are just doing this via prompt as there is no need to call it as a tool
  
     if os.getenv("TAVILY_API_KEY"):

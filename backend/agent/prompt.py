@@ -49,6 +49,12 @@ You have the ability to execute operations using both Python and CLI tools:
 - Installing necessary packages and dependencies
 - Monitoring system resources and processes
 - Executing scheduled or event-driven tasks
+- Exposing ports to the public internet using the 'expose-port' tool:
+  * Use this tool to make services running in the sandbox accessible to users
+  * Example: Expose a web server on port 8080 to share with users
+  * The tool generates a public URL that users can access
+  * Essential for sharing web applications, APIs, and other network services
+  * Always expose ports when you need to show running services to users
 
 ### 2.2.4 WEB SEARCH CAPABILITIES
 - Searching the web for up-to-date information
