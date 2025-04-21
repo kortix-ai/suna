@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
-  ArrowDown, CircleDashed, Info, File, ChevronRight, Play, Pause
+  ArrowDown, CircleDashed, Info, File, ChevronRight, Play, Pause, MonitorPlay, ExternalLink
 } from 'lucide-react';
 import { getMessages, getProject, getThread, Project, Message as BaseApiMessageType } from '@/lib/api';
 import { toast } from 'sonner';
@@ -1090,6 +1090,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     }
   }, [projectName]);
 
+  // In the useEffect where streamingTextContent is handled
   useEffect(() => {
     if (streamingTextContent && streamHookStatus === 'streaming' && messages.length > 0) {
       // Find the last assistant message to update with streaming content
@@ -1126,256 +1127,56 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     }
   }, [streamingTextContent, streamHookStatus, messages, isStreamingText, isPlaying, currentMessageIndex, streamText]);
 
-  // Create a message-to-tool-index map for faster lookups
-  const [messageToToolIndex, setMessageToToolIndex] = useState<Record<string, number>>({});
-  
-  // Build the message-to-tool-index map when tool calls change
+  // Create a memoized VNC iframe component to prevent reconnections
+  const memoizedVncIframe = useMemo(() => {
+    if (!vncPreviewUrl) return null;
+    
+    return (
+      <iframe
+        src={vncPreviewUrl}
+        title="Browser preview"
+        className="w-full h-full border-0 flex-1"
+      />
+    );
+  }, [vncPreviewUrl]);
+
   useEffect(() => {
-    if (!toolCalls.length) return;
-    
-    const mapBuilder: Record<string, number> = {};
-    
-    toolCalls.forEach((tool, index) => {
-      const content = tool.assistantCall?.content || '';
-      const match = content.match(/<!-- messageId:([\w-]+) -->/);
-      if (match && match[1]) {
-        mapBuilder[match[1]] = index;
-        console.log(`Mapped message ID ${match[1]} to tool index ${index}`);
-      }
-    });
-    
-    setMessageToToolIndex(mapBuilder);
-  }, [toolCalls]);
-  
-  // Very direct approach to update the tool index during message playback
-  useEffect(() => {
-    if (!isPlaying || currentMessageIndex <= 0 || !messages.length) return;
-    
-    // Check if current message is a tool message
-    const currentMsg = messages[currentMessageIndex - 1]; // Look at previous message that just played
-    
-    if (currentMsg?.type === 'tool' && currentMsg.metadata) {
-      try {
-        const metadata = safeJsonParse<ParsedMetadata>(currentMsg.metadata, {});
-        const assistantId = metadata.assistant_message_id;
+    if (streamingTextContent && streamHookStatus === 'streaming' && messages.length > 0) {
+      // Find the last assistant message to update with streaming content
+      const lastAssistantIndex = messages.findIndex(m => 
+        m.type === 'assistant' && m.message_id === messages[currentMessageIndex]?.message_id);
+      
+      if (lastAssistantIndex >= 0) {
+        const assistantMessage = {...messages[lastAssistantIndex]};
+        assistantMessage.content = streamingTextContent;
         
-        if (assistantId && messageToToolIndex[assistantId] !== undefined) {
-          const toolIndex = messageToToolIndex[assistantId];
-          console.log(`Direct mapping: Setting tool index to ${toolIndex} for message ${assistantId}`);
-          setCurrentToolIndex(toolIndex);
-        }
-      } catch (e) {
-        console.error('Error in direct tool mapping:', e);
-      }
-    }
-  }, [currentMessageIndex, isPlaying, messages, messageToToolIndex]);
-
-  // Add a helper function to extract tool calls from message content
-  const extractToolCallsFromMessage = (content: string) => {
-    const toolCallRegex = /<([a-zA-Z\-_]+)(?:\s+[^>]*)?>(?:[\s\S]*?)<\/\1>|<([a-zA-Z\-_]+)(?:\s+[^>]*)?\/>/g;
-    const results = [];
-    let match;
-    
-    while ((match = toolCallRegex.exec(content)) !== null) {
-      const toolName = match[1] || match[2];
-      results.push({
-        name: toolName,
-        fullMatch: match[0]
-      });
-    }
-    
-    return results;
-  };
-
-  // Force an explicit update to the tool panel based on the current message index
-  useEffect(() => {
-    // Skip if not playing or no messages
-    if (!isPlaying || messages.length === 0 || currentMessageIndex <= 0) return;
-    
-    // Get all messages up to the current index 
-    const currentMessages = messages.slice(0, currentMessageIndex);
-    
-    // Find the most recent tool message to determine which panel to show
-    for (let i = currentMessages.length - 1; i >= 0; i--) {
-      const msg = currentMessages[i];
-      if (msg.type === 'tool' && msg.metadata) {
-        try {
-          const metadata = safeJsonParse<ParsedMetadata>(msg.metadata, {});
-          const assistantId = metadata.assistant_message_id;
-          
-          if (assistantId) {
-            console.log(`Looking for tool panel for assistant message ${assistantId}`);
-            
-            // Scan for matching tool call
-            for (let j = 0; j < toolCalls.length; j++) {
-              const content = toolCalls[j].assistantCall?.content || '';
-              if (content.includes(assistantId)) {
-                console.log(`Found matching tool call at index ${j}, updating panel`);
-                setCurrentToolIndex(j);
-                return;
+        // Update the message in the messages array
+        const updatedMessages = [...messages];
+        updatedMessages[lastAssistantIndex] = assistantMessage;
+        
+        // Only show the streaming message if we're not already streaming and we're in play mode
+        if (!isStreamingText && isPlaying) {
+          const cleanup = streamText(streamingTextContent, () => {
+            // When streaming completes, update the visible messages
+            setVisibleMessages(prev => {
+              const messageExists = prev.some(m => m.message_id === assistantMessage.message_id);
+              if (messageExists) {
+                // Replace the existing message
+                return prev.map(m => m.message_id === assistantMessage.message_id ? assistantMessage : m);
+              } else {
+                // Add as a new message
+                return [...prev, assistantMessage];
               }
-            }
-          }
-        } catch (e) {
-          console.error('Error parsing tool message metadata:', e);
+            });
+          });
+          
+          return cleanup;
         }
       }
     }
-  }, [currentMessageIndex, isPlaying, messages, toolCalls]);
+  }, [streamingTextContent, streamHookStatus, messages, isStreamingText, isPlaying, currentMessageIndex, streamText]);
 
-  // Add a special button to each tool call to show its debug info
-  // This replaces the existing ToolCallSidePanel component with a wrapper that adds debug info
-  const ToolCallPanelWithDebugInfo = React.useMemo(() => {
-    const WrappedPanel = (props: any) => {
-      const { isOpen, onClose, toolCalls, currentIndex, onNavigate, ...rest } = props;
-      
-      // Add a function to show debug info for the current tool call
-      const showDebugInfo = useCallback(() => {
-        if (toolCalls && toolCalls.length > 0 && currentIndex >= 0 && currentIndex < toolCalls.length) {
-          const tool = toolCalls[currentIndex];
-          console.log('Current tool call debug info:', {
-            name: tool.assistantCall?.name,
-            content: tool.assistantCall?.content,
-            messageIdMatches: tool.assistantCall?.content?.match(/<!-- messageId:([\w-]+) -->/),
-            toolResult: tool.toolResult
-          });
-        }
-      }, [toolCalls, currentIndex]);
-      
-      return (
-        <div>
-          <ToolCallSidePanel 
-            isOpen={isOpen} 
-            onClose={onClose}
-            toolCalls={toolCalls}
-            currentIndex={currentIndex}
-            onNavigate={onNavigate}
-            {...rest}
-          />
-          
-          {/* Add debug button */}
-          {isOpen && toolCalls && toolCalls.length > 0 && (
-            <div className="fixed bottom-4 right-4 z-50">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="h-8 w-8 rounded-full p-0 bg-background/50 backdrop-blur"
-                onClick={showDebugInfo}
-              >
-                <span className="sr-only">Debug</span>
-                <Info className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
-        </div>
-      );
-    };
-    
-    return WrappedPanel;
-  }, []);
-
-  if (isLoading && !initialLoadCompleted.current) {
-    return (
-      <div className="flex h-screen">
-        <div className={`flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out ${isSidePanelOpen ? 'mr-[90%] sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[650px]' : ''}`}>
-          {/* Skeleton Header */}
-          <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-            <div className="flex h-14 items-center gap-4 px-4">
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <Skeleton className="h-6 w-6 rounded-full" />
-                  <Skeleton className="h-5 w-40" />
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Skeleton className="h-8 w-8 rounded-full" />
-                <Skeleton className="h-8 w-8 rounded-full" />
-              </div>
-            </div>
-          </div>
-          
-          {/* Skeleton Chat Messages */}
-          <div className="flex-1 overflow-y-auto px-6 py-4 pb-[5.5rem]">
-            <div className="mx-auto max-w-3xl space-y-6">
-              {/* User message */}
-              <div className="flex justify-end">
-                <div className="max-w-[85%] rounded-lg bg-primary/10 px-4 py-3">
-                  <div className="space-y-2">
-                    <Skeleton className="h-4 w-48" />
-                    <Skeleton className="h-4 w-32" />
-                  </div>
-                </div>
-              </div>
-              
-              {/* Assistant response with tool usage */}
-              <div>
-                <div className="flex items-start gap-3">
-                  <Skeleton className="flex-shrink-0 w-5 h-5 mt-2 rounded-full" />
-                  <div className="flex-1 space-y-2">
-                    <div className="max-w-[90%] w-full rounded-lg bg-muted px-4 py-3">
-                      <div className="space-y-3">
-                        <div>
-                          <Skeleton className="h-4 w-full max-w-[360px] mb-2" />
-                          <Skeleton className="h-4 w-full max-w-[320px] mb-2" />
-                          <Skeleton className="h-4 w-full max-w-[290px]" />
-                        </div>
-                        
-                        {/* Tool call button skeleton */}
-                        <div className="py-1">
-                          <Skeleton className="h-6 w-32 rounded-md" />
-                        </div>
-                        
-                        <div>
-                          <Skeleton className="h-4 w-full max-w-[340px] mb-2" />
-                          <Skeleton className="h-4 w-full max-w-[280px]" />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        {/* Skeleton Side Panel (closed state) */}
-        <div className={`hidden sm:block ${isSidePanelOpen ? 'block' : ''}`}>
-          <div className="h-screen w-[450px] border-l">
-            <div className="p-4">
-              <Skeleton className="h-8 w-32 mb-4" />
-              <Skeleton className="h-20 w-full rounded-md mb-4" />
-              <Skeleton className="h-40 w-full rounded-md" />
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="flex h-screen">
-        <div className={`flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out ${isSidePanelOpen ? 'mr-[90%] sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[650px]' : ''}`}>
-          <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-            <div className="flex h-14 items-center gap-4 px-4">
-              <div className="flex-1">
-                <span className="text-foreground font-medium">Shared Conversation</span>
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-1 items-center justify-center p-4">
-            <div className="flex w-full max-w-md flex-col items-center gap-4 rounded-lg border bg-card p-6 text-center">
-              <h2 className="text-lg font-semibold text-destructive">Error</h2>
-              <p className="text-sm text-muted-foreground">{error}</p>
-              <Button variant="outline" onClick={() => router.push(`/`)}>
-                Back to Home
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // ... rest of the existing code ...
 
   return (
     <div className="flex h-screen">

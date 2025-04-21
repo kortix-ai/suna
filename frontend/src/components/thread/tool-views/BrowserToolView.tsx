@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Globe, MonitorPlay, ExternalLink, CheckCircle, AlertTriangle, CircleDashed } from "lucide-react";
 import { ToolViewProps } from "./types";
 import { extractBrowserUrl, extractBrowserOperation, formatTimestamp, getToolTitle } from "./utils";
@@ -72,6 +72,21 @@ export function BrowserToolView({
   const isRunning = isStreaming || agentStatus === 'running';
   const isLastToolCall = currentIndex === (totalCalls - 1);
   
+  // Memoize the VNC iframe to prevent reconnections on re-renders
+  const vncIframe = useMemo(() => {
+    if (!vncPreviewUrl) return null;
+    
+    console.log("[BrowserToolView] Creating memoized VNC iframe with URL:", vncPreviewUrl);
+    
+    return (
+      <iframe
+        src={vncPreviewUrl}
+        title="Browser preview"
+        className="w-full h-full border-0 flex-1"
+      />
+    );
+  }, [vncPreviewUrl]); // Only recreate if the URL changes
+  
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 p-4 overflow-auto">
@@ -92,12 +107,9 @@ export function BrowserToolView({
           <div className="flex-1 flex items-stretch bg-black">
             {isLastToolCall ? (
               // Only show live sandbox or fallback to sandbox for the last tool call
-              isRunning && vncPreviewUrl ? (
-                <iframe
-                  src={vncPreviewUrl}
-                  title="Browser preview (Live)"
-                  className="w-full h-full border-0 flex-1"
-                />
+              isRunning && vncIframe ? (
+                // Use the memoized iframe for live preview
+                vncIframe
               ) : screenshotBase64 ? (
                 <div className="flex items-center justify-center w-full h-full max-h-[650px] overflow-auto">
                   <img 
@@ -106,12 +118,9 @@ export function BrowserToolView({
                     className="max-w-full max-h-full object-contain"
                   />
                 </div>
-              ) : vncPreviewUrl ? (
-                <iframe
-                  src={vncPreviewUrl}
-                  title="Browser preview"
-                  className="w-full h-full border-0 flex-1"
-                />
+              ) : vncIframe ? (
+                // Use the memoized iframe
+                vncIframe
               ) : (
                 <div className="p-8 flex flex-col items-center justify-center w-full bg-zinc-50 dark:bg-zinc-900 text-zinc-700 dark:text-zinc-400">
                   <MonitorPlay className="h-12 w-12 mb-3 opacity-40" />
