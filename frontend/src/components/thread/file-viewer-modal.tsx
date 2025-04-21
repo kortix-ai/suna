@@ -620,40 +620,36 @@ export function FileViewerModal({
       
       // Mark the initial path as processed so this doesn't run again
       setInitialPathProcessed(true);
-      
-      // We don't need to open the file here; the file loading useEffect 
-      // combined with the logic below will handle it once files are loaded.
-      
     } else if (!open) {
       // Reset the processed flag when the modal closes
       console.log('[FILE VIEWER] useEffect[initialFilePath]: Modal closed, resetting initialPathProcessed flag.');
       setInitialPathProcessed(false);
     }
-  }, [open, initialFilePath, initialPathProcessed, normalizePath, currentPath]); // Dependencies carefully chosen
+  }, [open, initialFilePath, initialPathProcessed, normalizePath, currentPath]);
   
   // Effect to open the initial file *after* the correct directory files are loaded
   useEffect(() => {
     // Only run if initial path was processed, files are loaded, and no file is currently selected
     if (initialPathProcessed && !isLoadingFiles && files.length > 0 && !selectedFilePath && initialFilePath) {
-        console.log('[FILE VIEWER] useEffect[openInitialFile]: Checking for initial file now that files are loaded.');
+      console.log('[FILE VIEWER] useEffect[openInitialFile]: Checking for initial file now that files are loaded.');
+      
+      const fullPath = normalizePath(initialFilePath);
+      const lastSlashIndex = fullPath.lastIndexOf('/');
+      const targetFileName = lastSlashIndex >= 0 ? fullPath.substring(lastSlashIndex + 1) : '';
+      
+      if (targetFileName) {
+        console.log(`[FILE VIEWER] useEffect[openInitialFile]: Looking for file: ${targetFileName} in current directory: ${currentPath}`);
+        const targetFile = files.find(f => f.name === targetFileName && f.path === fullPath);
         
-        const fullPath = normalizePath(initialFilePath);
-        const lastSlashIndex = fullPath.lastIndexOf('/');
-        const targetFileName = lastSlashIndex >= 0 ? fullPath.substring(lastSlashIndex + 1) : '';
-        
-        if (targetFileName) {
-            console.log(`[FILE VIEWER] useEffect[openInitialFile]: Looking for file: ${targetFileName} in current directory: ${currentPath}`);
-            const targetFile = files.find(f => f.name === targetFileName && f.path === fullPath);
-            
-            if (targetFile && !targetFile.is_dir) {
-                console.log(`[FILE VIEWER] useEffect[openInitialFile]: Found initial file, opening: ${targetFile.path}`);
-                openFile(targetFile); 
-            } else {
-                console.log(`[FILE VIEWER] useEffect[openInitialFile]: Initial file ${targetFileName} not found in loaded files or is a directory.`);
-            }
+        if (targetFile && !targetFile.is_dir) {
+          console.log(`[FILE VIEWER] useEffect[openInitialFile]: Found initial file, opening: ${targetFile.path}`);
+          openFile(targetFile); 
+        } else {
+          console.log(`[FILE VIEWER] useEffect[openInitialFile]: Initial file ${targetFileName} not found in loaded files or is a directory.`);
         }
+      }
     }
-  }, [initialPathProcessed, isLoadingFiles, files, selectedFilePath, initialFilePath, normalizePath, currentPath, openFile]); // Depends on files being loaded
+  }, [initialPathProcessed, isLoadingFiles, files, selectedFilePath, initialFilePath, normalizePath, currentPath, openFile]);
 
   // --- Render --- //
   return (

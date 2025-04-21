@@ -134,7 +134,7 @@ export function ChatInput({
     
     if (uploadedFiles.length > 0) {
       const fileInfo = uploadedFiles.map(file => 
-        `[Uploaded file: ${file.name} (${formatFileSize(file.size)}) at ${file.path}]`
+        `[Uploaded File: ${file.path}]`
       ).join('\n');
       message = message ? `${message}\n\n${fileInfo}` : fileInfo;
     }

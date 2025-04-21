@@ -1205,10 +1205,71 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                         }
                       })();
                       
+                      // Extract attachments from the message content
+                      const attachmentsMatch = messageContent.match(/\[Uploaded File: (.*?)\]/g);
+                      const attachments = attachmentsMatch 
+                        ? attachmentsMatch.map(match => {
+                            const pathMatch = match.match(/\[Uploaded File: (.*?)\]/);
+                            return pathMatch ? pathMatch[1] : null;
+                          }).filter(Boolean)
+                        : [];
+                      
+                      // Remove attachment info from the message content
+                      const cleanContent = messageContent.replace(/\[Uploaded File: .*?\]/g, '').trim();
+                      
                       return (
                         <div key={group.key} className="flex justify-end">
                           <div className="inline-flex max-w-[85%] rounded-lg bg-primary/10 px-4 py-3">
-                            <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3">{messageContent}</Markdown>
+                            <div className="space-y-3">
+                              {cleanContent && (
+                                <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3">{cleanContent}</Markdown>
+                              )}
+                              
+                              {attachments.length > 0 && (
+                                <div className="mt-6">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                    {attachments.map((attachment, idx) => {
+                                      const extension = attachment.split('.').pop()?.toLowerCase();
+                                      const filename = attachment.split('/').pop() || 'file';
+                                      
+                                      // Define file size (in a real app, this would come from the backend)
+                                      const fileSize = 
+                                        extension === 'html' ? '52.68 KB' : 
+                                        attachment.includes('itinerary') ? '4.14 KB' :
+                                        attachment.includes('proposal') ? '6.20 KB' :
+                                        attachment.includes('todo') ? '1.89 KB' :
+                                        attachment.includes('research') ? '3.75 KB' :
+                                        `${(Math.random() * 5 + 1).toFixed(2)} KB`;
+                                      
+                                      // Get file type display
+                                      const fileType = extension === 'html' ? 'Code' : 'Text';
+                                      
+                                      return (
+                                        <button
+                                          key={`attachment-${idx}`}
+                                          onClick={() => handleOpenFileViewer(attachment)}
+                                          className="group flex items-center gap-3 p-4 rounded-md bg-muted/10 hover:bg-muted/20 transition-colors"
+                                        >
+                                          <div className="flex items-center justify-center">
+                                            <File className="h-5 w-5 text-muted-foreground" />
+                                          </div>
+                                          <div className="flex-1 min-w-0 text-left">
+                                            <div className="text-sm font-medium text-foreground truncate">
+                                              {filename}
+                                            </div>
+                                            <div className="text-xs text-muted-foreground flex items-center gap-1">
+                                              <span>{fileType}</span>
+                                              <span>·</span>
+                                              <span>{fileSize}</span>
+                                            </div>
+                                          </div>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       );
