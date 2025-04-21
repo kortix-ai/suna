@@ -246,8 +246,59 @@ export function extractBrowserOperation(toolName: string | undefined): string {
 // Helper to extract search query
 export function extractSearchQuery(content: string | undefined): string | null {
   if (!content) return null;
-  const queryMatch = content.match(/query=["']([\s\S]*?)["']/);
-  return queryMatch ? queryMatch[1] : null;
+
+  let contentToSearch = content; // Start with the original content
+
+  // 3. Try parsing as JSON first, as the relevant content might be nested
+  try {
+    const parsedOuter = JSON.parse(content);
+    if (typeof parsedOuter.content === 'string') {
+      // If the outer content is JSON and has a 'content' string field,
+      // use that inner content for searching the query.
+      contentToSearch = parsedOuter.content;
+      
+      // Also check common JSON structures within the outer parsed object itself
+      if (typeof parsedOuter.query === 'string') {
+        return parsedOuter.query;
+      }
+      if (typeof parsedOuter.arguments === 'object' && parsedOuter.arguments !== null && typeof parsedOuter.arguments.query === 'string') {
+        return parsedOuter.arguments.query;
+      }
+      if (Array.isArray(parsedOuter.tool_calls) && parsedOuter.tool_calls.length > 0) {
+        const toolCall = parsedOuter.tool_calls[0];
+        if (typeof toolCall.arguments === 'object' && toolCall.arguments !== null && typeof toolCall.arguments.query === 'string') {
+          return toolCall.arguments.query;
+        }
+        if (typeof toolCall.arguments === 'string') {
+            try {
+                const argsParsed = JSON.parse(toolCall.arguments);
+                if (typeof argsParsed.query === 'string') {
+                    return argsParsed.query;
+                }
+            } catch {} 
+        }
+      }
+    }
+  } catch (e) {
+    // If parsing fails, continue with the original content string
+  }
+
+  // Now search within contentToSearch (either original or nested content)
+  
+  // 1. Try regex for attribute within <web-search ...> tag
+  const xmlQueryMatch = contentToSearch.match(/<web-search[^>]*query=[\"']([^\"']*)["'][^>]*>/i);
+  if (xmlQueryMatch && xmlQueryMatch[1]) {
+    return xmlQueryMatch[1].trim();
+  }
+
+  // 2. Try simple attribute regex (fallback, less specific)
+  const simpleAttrMatch = contentToSearch.match(/query=[\"']([\s\S]*?)["']/i);
+  if (simpleAttrMatch && simpleAttrMatch[1]) {
+    return simpleAttrMatch[1].split(/[\"']/)[0].trim(); 
+  }
+
+  // 4. If nothing found after checking original/nested content and JSON structure, return null
+  return null;
 }
 
 // Helper to extract search results from tool response
@@ -308,24 +359,54 @@ export function extractSearchResults(content: string | undefined): Array<{ title
 export function extractUrlsAndTitles(content: string): Array<{ title: string, url: string, snippet?: string }> {
   const results: Array<{ title: string, url: string, snippet?: string }> = [];
   
-  // Match URL and title pairs
-  const urlMatches = content.match(/https?:\/\/[^\s"]+/g) || [];
-  urlMatches.forEach(url => {
-    // Try to find a title near this URL
-    const urlIndex = content.indexOf(url);
-    const surroundingText = content.substring(Math.max(0, urlIndex - 100), urlIndex + url.length + 100);
+  // Regex to find URLs, attempting to exclude common trailing unwanted characters/tags
+  const urlRegex = /https?:\/\/[^\s"<]+/g;
+  let match;
+  
+  while ((match = urlRegex.exec(content)) !== null) {
+    let url = match[0];
     
-    // Look for "Title:" or similar patterns
-    const titleMatch = surroundingText.match(/Title[:\s]+([^\n]+)/i) || 
+    // Basic cleaning: remove common tags or artifacts if they are directly appended
+    url = url.replace(/<\/?url>$/, '')
+             .replace(/<\/?content>$/, '')
+             .replace(/%3C$/, ''); // Remove trailing %3C (less than sign)
+             
+    // Decode URI components to handle % sequences, but catch errors
+    try {
+      url = decodeURIComponent(url);
+    } catch (e) {
+      // If decoding fails, use the URL as is, potentially still needs cleaning
+      console.warn("Failed to decode URL component:", url, e);
+    }
+    
+    // Final cleaning for specific problematic sequences like ellipsis
+    url = url.replace(/\u2026$/, ''); // Remove trailing ellipsis (…)
+    
+    // Try to find a title near this URL - simplified logic
+    const urlIndex = match.index;
+    const surroundingText = content.substring(Math.max(0, urlIndex - 100), urlIndex + url.length + 150); // Increased lookahead for content
+    
+    // Look for title patterns more robustly
+    const contentMatch = surroundingText.match(/<content>([^<]+)<\/content>/i);
+    const titleMatch = surroundingText.match(/Title[:\s]+([^\n<]+)/i) || 
                       surroundingText.match(/\"(.*?)\"[\s\n]*?https?:\/\//);
-    
-    const title = titleMatch ? titleMatch[1] : cleanUrl(url);
-    
-    results.push({
-      title: title,
-      url: url
-    });
-  });
+                      
+    let title = cleanUrl(url); // Default to cleaned URL hostname/path
+    if (contentMatch && contentMatch[1].trim()) {
+      title = contentMatch[1].trim();
+    } else if (titleMatch && titleMatch[1].trim()) {
+      title = titleMatch[1].trim();
+    }
+
+    // Avoid adding duplicates if the cleaning resulted in the same URL
+    if (!results.some(r => r.url === url)) {
+      results.push({
+        title: title,
+        url: url
+        // Snippet extraction could be added here if needed
+      });
+    }
+  }
   
   return results;
 }

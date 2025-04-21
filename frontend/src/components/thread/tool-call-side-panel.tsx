@@ -312,7 +312,7 @@ export function ToolCallSidePanel({
   };
   
   return (
-    <div className="fixed inset-y-0 right-0 w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[650px] border-l flex flex-col z-10 h-screen">
+    <div className={`fixed inset-y-0 right-0 w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[650px] border-l flex flex-col z-10 h-screen transition-all duration-200 ease-in-out ${!isOpen ? 'translate-x-full' : ''}`}>
       <div className="flex-1 flex flex-col overflow-hidden">
         {renderContent()}
       </div>

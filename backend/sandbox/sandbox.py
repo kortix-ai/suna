@@ -111,14 +111,14 @@ def create_sandbox(password: str):
             "CHROME_DEBUGGING_HOST": "localhost",
             "CHROME_CDP": ""
         },
-        # ports=[
-        #     7788,  # Gradio default port
-        #     6080,  # noVNC web interface
+        ports=[
+            # 7788,  # Gradio default port
+            6080,  # noVNC web interface
         #     5900,  # VNC port
         #     5901,  # VNC port
         #     9222,  # Chrome remote debugging port
-        #     8080   # HTTP website port
-        # ]
+            8080   # HTTP website port
+        ]
     ))
     logger.info(f"Sandbox created with ID: {sandbox.id}")
     

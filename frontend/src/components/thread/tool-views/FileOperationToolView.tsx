@@ -3,6 +3,7 @@ import { FileCode, FileSymlink, FolderPlus, FileX, Replace, CheckCircle, AlertTr
 import { ToolViewProps } from "./types";
 import { extractFilePath, extractFileContent, getFileType, formatTimestamp, getToolTitle } from "./utils";
 import { GenericToolView } from "./GenericToolView";
+import { Markdown } from "@/components/ui/markdown";
 import { cn } from "@/lib/utils";
 
 // Type for operation type
@@ -70,7 +71,7 @@ export function FileOperationToolView({
     : undefined;
   
   // Add state for view mode toggle (code or preview) - moved before any conditional returns
-  const [viewMode, setViewMode] = useState<'code' | 'preview'>(isHtml ? 'preview' : 'code');
+  const [viewMode, setViewMode] = useState<'code' | 'preview'>(isHtml || isMarkdown ? 'preview' : 'code');
   
   // Fall back to generic view if file path is missing or if content is missing for non-delete operations
   if ((!filePath && !showDebugInfo) || (operation !== "delete" && !fileContent)) {
@@ -152,14 +153,43 @@ export function FileOperationToolView({
                     </button>
                   </div>
                 )}
+                {/* View switcher for Markdown files */}
+                {isMarkdown && isSuccess && (
+                  <div className="flex rounded-md overflow-hidden border border-zinc-200 dark:border-zinc-700">
+                    <button
+                      onClick={() => setViewMode('code')}
+                      className={cn(
+                        "flex items-center gap-1 text-xs px-2 py-1 transition-colors",
+                        viewMode === 'code'
+                          ? "bg-zinc-800 text-zinc-100 dark:bg-zinc-700 dark:text-zinc-100"
+                          : "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 hover:bg-zinc-300 dark:hover:bg-zinc-700"
+                      )}
+                    >
+                      <Code className="h-3 w-3" />
+                      <span>Code</span>
+                    </button>
+                    <button
+                      onClick={() => setViewMode('preview')}
+                      className={cn(
+                        "flex items-center gap-1 text-xs px-2 py-1 transition-colors",
+                        viewMode === 'preview'
+                          ? "bg-zinc-800 text-zinc-100 dark:bg-zinc-700 dark:text-zinc-100"
+                          : "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 hover:bg-zinc-300 dark:hover:bg-zinc-700"
+                      )}
+                    >
+                      <Eye className="h-3 w-3" />
+                      <span>Preview</span>
+                    </button>
+                  </div>
+                )}
                 <span className="text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-200 dark:bg-zinc-800 px-2 py-0.5 rounded">
                   {fileType}
                 </span>
               </div>
             </div>
             
-            {/* File Content */}
-            {(!isHtml || viewMode === 'code' || !htmlPreviewUrl || !isSuccess) && (
+            {/* File Content (Code View) */}
+            {viewMode === 'code' || (!isHtml && !isMarkdown) || !isSuccess ? (
               <div className="flex-1 overflow-auto bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
                 <div className="min-w-full table">
                   {contentLines.map((line, idx) => (
@@ -175,7 +205,7 @@ export function FileOperationToolView({
                   <div className="table-row h-4"></div>
                 </div>
               </div>
-            )}
+            ) : null}
             
             {/* HTML Preview with iframe */}
             {isHtml && viewMode === 'preview' && htmlPreviewUrl && isSuccess && (
@@ -187,6 +217,15 @@ export function FileOperationToolView({
                   style={{ minHeight: "300px" }}
                   sandbox="allow-same-origin allow-scripts"
                 />
+              </div>
+            )}
+            
+            {/* Markdown Preview */}
+            {isMarkdown && viewMode === 'preview' && isSuccess && (
+              <div className="flex-1 overflow-auto bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 p-4">
+                <Markdown className="text-sm prose prose-sm dark:prose-invert max-w-none">
+                  {fileContent}
+                </Markdown>
               </div>
             )}
             

@@ -193,7 +193,7 @@ export function NavAgents() {
         ) : null}
       </div>
 
-      <SidebarMenu className="overflow-y-auto max-h-[calc(100vh-200px)]">
+      <SidebarMenu className="overflow-y-auto max-h-[calc(100vh-200px)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
         {state === "collapsed" && (
           <SidebarMenuItem>
             <Tooltip>

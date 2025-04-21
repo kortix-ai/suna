@@ -5,6 +5,7 @@ from datetime import datetime
 import os
 from dotenv import load_dotenv
 from agentpress.tool import Tool, ToolResult, openapi_schema, xml_schema
+import json
 
 # TODO: add subpages, etc... in filters as sometimes its necessary 
 
@@ -92,30 +93,13 @@ class WebSearchTool(Tool):
     ) -> ToolResult:
         """
         Search the web using the Exa API to find relevant and up-to-date information.
-        
-        This function performs a web search based on the provided query and returns a list
-        of relevant search results. Each result includes metadata about the webpage, such as
-        title, URL, summary (if requested), publication date, and relevance score.
-        
-        The returned data for each result includes:
-        - Title: The title of the webpage
-        - URL: The URL of the webpage 
-        - Summary: A brief summary of the webpage content (if summary=True)
-        - Published Date: When the content was published (if available)
-        - Score: The relevance score of the result
-        
-        Parameters:
-        - query: The search query to find relevant web pages
-        - summary: Whether to include a summary of the results (default: True)
-        - num_results: The number of results to return (default: 20)
         """
         try:
             # Ensure we have a valid query
             if not query or not isinstance(query, str):
                 return self.fail_response("A valid search query is required.")
             
-            # ---------- Tavily search parameters ----------
-            # num_results normalisation (1‑50)
+            # Normalize num_results
             if num_results is None:
                 num_results = 20
             elif isinstance(num_results, int):
@@ -136,30 +120,36 @@ class WebSearchTool(Tool):
                 include_images=False,
             )
 
-            # `tavily` may return a dict with `results` or a bare list
+            # Normalize the response format
             raw_results = (
                 search_response.get("results")
                 if isinstance(search_response, dict)
                 else search_response
             )
 
+            # Format results consistently
             formatted_results = []
             for result in raw_results:
                 formatted_result = {
-                    "Title": result.get("title"),
-                    "URL": result.get("url"),
+                    "title": result.get("title", ""),
+                    "url": result.get("url", ""),
                 }
 
                 if summary:
                     # Prefer full content; fall back to description
-                    if result.get("content"):
-                        formatted_result["Summary"] = result["content"]
-                    elif result.get("description"):
-                        formatted_result["Summary"] = result["description"]
+                    formatted_result["snippet"] = (
+                        result.get("content") or 
+                        result.get("description") or 
+                        ""
+                    )
 
                 formatted_results.append(formatted_result)
             
-            return self.success_response(formatted_results)
+            # Return a properly formatted ToolResult
+            return ToolResult(
+                success=True,
+                output=json.dumps(formatted_results, ensure_ascii=False)
+            )
         
         except Exception as e:
             error_message = str(e)
@@ -257,11 +247,8 @@ class WebSearchTool(Tool):
                 )
                 response.raise_for_status()
                 data = response.json()
-                print(f"--- Raw Tavily Response ---")
-                print(data)
-                print(f"--------------------------")
 
-            # Normalise Tavily extract output to a list of dicts
+            # Normalize Tavily extract output to a list of dicts
             extracted = []
             if isinstance(data, list):
                 extracted = data
@@ -273,18 +260,25 @@ class WebSearchTool(Tool):
                 else:
                     extracted = [data]
 
+            # Format results consistently
             formatted_results = []
             for item in extracted:
                 formatted_result = {
-                    "Title": item.get("title"),
-                    "URL": item.get("url") or url,
-                    "Text":item.get("raw_content") or item.get("content") or item.get("text")
+                    "title": item.get("title", ""),
+                    "url": item.get("url", url),
+                    "content": item.get("raw_content") or item.get("content") or item.get("text", "")
                 }
+                
                 if item.get("published_date"):
-                    formatted_result["Published Date"] = item["published_date"]
+                    formatted_result["published_date"] = item["published_date"]
+                    
                 formatted_results.append(formatted_result)
             
-            return self.success_response(formatted_results)
+            # Return a properly formatted ToolResult
+            return ToolResult(
+                success=True,
+                output=json.dumps(formatted_results, ensure_ascii=False)
+            )
         
         except Exception as e:
             error_message = str(e)

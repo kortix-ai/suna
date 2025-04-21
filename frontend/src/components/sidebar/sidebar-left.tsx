@@ -77,7 +77,7 @@ export function SidebarLeft({
   }, [state, setOpen]);
 
   return (
-    <Sidebar collapsible="icon" className="border-r-0 bg-background/95 backdrop-blur-sm" {...props}>
+    <Sidebar collapsible="icon" className="border-r-0 bg-background/95 backdrop-blur-sm [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']" {...props}>
       <SidebarHeader className="px-2 py-2">
         <div className="flex h-[40px] items-center px-1 relative">
           <Link href="/dashboard">
@@ -100,7 +100,7 @@ export function SidebarLeft({
           )}
         </div>
       </SidebarHeader>
-      <SidebarContent>
+      <SidebarContent className="[&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
         <NavAgents />
       </SidebarContent>
       {state !== "collapsed" && (
