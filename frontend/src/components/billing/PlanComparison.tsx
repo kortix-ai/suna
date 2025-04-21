@@ -8,11 +8,13 @@ import { setupNewSubscription } from "@/lib/actions/billing";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { Button } from "@/components/ui/button";
 import { siteConfig } from "@/lib/home";
+
+// Create SUBSCRIPTION_PLANS using stripePriceId from siteConfig
 export const SUBSCRIPTION_PLANS = {
-  FREE: 'price_1RGJ9GG6l1KZGqIroxSqgphC',
-  BASIC: 'price_1RGJ9LG6l1KZGqIrd9pwzeNW',
-  PRO: 'price_1RGJ9JG6l1KZGqIrVUU4ZRv6'
-} as const;
+  FREE: siteConfig.cloudPricingItems.find(item => item.name === 'Free')?.stripePriceId || '',
+  PRO: siteConfig.cloudPricingItems.find(item => item.name === 'Pro')?.stripePriceId || '',
+  ENTERPRISE: siteConfig.cloudPricingItems.find(item => item.name === 'Enterprise')?.stripePriceId || '',
+};
 
 interface PlanComparisonProps {
   accountId?: string | null;

@@ -90,6 +90,7 @@ export const siteConfig = {
         "Single user",
         "Standard response time",
       ],
+      stripePriceId: 'price_1RGJ9GG6l1KZGqIroxSqgphC',
     },
     {
       name: "Pro",
@@ -106,6 +107,7 @@ export const siteConfig = {
         "5 team members",
         "Custom integrations",
       ],
+      stripePriceId: 'price_1RGJ9LG6l1KZGqIrd9pwzeNW',
     },
     {
       name: "Enterprise",
@@ -124,6 +126,7 @@ export const siteConfig = {
         "Custom AI model training",
       ],
       showContactSales: true,
+      stripePriceId: 'price_1RGJ9JG6l1KZGqIrVUU4ZRv6',
     },
   ],
   companyShowcase: {
