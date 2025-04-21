@@ -366,22 +366,56 @@ export function extractUrlsAndTitles(content: string): Array<{ title: string, ur
   while ((match = urlRegex.exec(content)) !== null) {
     let url = match[0];
     
+    // --- Start: New Truncation Logic ---
+    // Find the first occurrence of potential garbage separators like /n or \n after the protocol.
+    const protocolEndIndex = url.indexOf('://');
+    const searchStartIndex = protocolEndIndex !== -1 ? protocolEndIndex + 3 : 0;
+    
+    const newlineIndexN = url.indexOf('/n', searchStartIndex);
+    const newlineIndexSlashN = url.indexOf('\\n', searchStartIndex);
+    
+    let firstNewlineIndex = -1;
+    if (newlineIndexN !== -1 && newlineIndexSlashN !== -1) {
+      firstNewlineIndex = Math.min(newlineIndexN, newlineIndexSlashN);
+    } else if (newlineIndexN !== -1) {
+      firstNewlineIndex = newlineIndexN;
+    } else if (newlineIndexSlashN !== -1) {
+      firstNewlineIndex = newlineIndexSlashN;
+    }
+    
+    // If a newline indicator is found, truncate the URL there.
+    if (firstNewlineIndex !== -1) {
+      url = url.substring(0, firstNewlineIndex);
+    }
+    // --- End: New Truncation Logic ---
+
     // Basic cleaning: remove common tags or artifacts if they are directly appended
     url = url.replace(/<\/?url>$/, '')
              .replace(/<\/?content>$/, '')
              .replace(/%3C$/, ''); // Remove trailing %3C (less than sign)
              
-    // Decode URI components to handle % sequences, but catch errors
-    try {
-      url = decodeURIComponent(url);
-    } catch (e) {
-      // If decoding fails, use the URL as is, potentially still needs cleaning
-      console.warn("Failed to decode URL component:", url, e);
+    // Aggressive trailing character removal (common issues)
+    // Apply this *after* potential truncation
+    while (/[);.,\/]$/.test(url)) {
+      url = url.slice(0, -1);
     }
     
-    // Final cleaning for specific problematic sequences like ellipsis
-    url = url.replace(/\u2026$/, ''); // Remove trailing ellipsis (…)
+    // Decode URI components to handle % sequences, but catch errors
+    try {
+      // Decode multiple times? Sometimes needed for double encoding
+      url = decodeURIComponent(decodeURIComponent(url));
+    } catch (e) {
+      try { // Try decoding once if double decoding failed
+        url = decodeURIComponent(url);
+      } catch (e2) {
+        console.warn("Failed to decode URL component:", url, e2);
+      }
+    }
     
+    // Final cleaning for specific problematic sequences like ellipsis or remaining tags
+    url = url.replace(/\u2026$/, ''); // Remove trailing ellipsis (…)
+    url = url.replace(/<\/?url>$/, '').replace(/<\/?content>$/, ''); // Re-apply tag removal after decode
+
     // Try to find a title near this URL - simplified logic
     const urlIndex = match.index;
     const surroundingText = content.substring(Math.max(0, urlIndex - 100), urlIndex + url.length + 150); // Increased lookahead for content
@@ -399,7 +433,7 @@ export function extractUrlsAndTitles(content: string): Array<{ title: string, ur
     }
 
     // Avoid adding duplicates if the cleaning resulted in the same URL
-    if (!results.some(r => r.url === url)) {
+    if (url && !results.some(r => r.url === url)) { // Added check for non-empty url
       results.push({
         title: title,
         url: url

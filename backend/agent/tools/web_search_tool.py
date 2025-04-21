@@ -247,8 +247,11 @@ class WebSearchTool(Tool):
                 )
                 response.raise_for_status()
                 data = response.json()
+                print(f"--- Raw Tavily Response ---")
+                print(data)
+                print(f"--------------------------")
 
-            # Normalize Tavily extract output to a list of dicts
+            # Normalise Tavily extract output to a list of dicts
             extracted = []
             if isinstance(data, list):
                 extracted = data
@@ -260,25 +263,18 @@ class WebSearchTool(Tool):
                 else:
                     extracted = [data]
 
-            # Format results consistently
             formatted_results = []
             for item in extracted:
                 formatted_result = {
-                    "title": item.get("title", ""),
-                    "url": item.get("url", url),
-                    "content": item.get("raw_content") or item.get("content") or item.get("text", "")
+                    "Title": item.get("title"),
+                    "URL": item.get("url") or url,
+                    "Text":item.get("raw_content") or item.get("content") or item.get("text")
                 }
-                
                 if item.get("published_date"):
-                    formatted_result["published_date"] = item["published_date"]
-                    
+                    formatted_result["Published Date"] = item["published_date"]
                 formatted_results.append(formatted_result)
             
-            # Return a properly formatted ToolResult
-            return ToolResult(
-                success=True,
-                output=json.dumps(formatted_results, ensure_ascii=False)
-            )
+            return self.success_response(formatted_results)
         
         except Exception as e:
             error_message = str(e)

@@ -2,45 +2,6 @@ import { createClient } from '@/lib/supabase/client';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
-// Simple cache implementation for non-agent data
-const apiCache = {
-  projects: new Map(),
-  threads: new Map(),
-  threadMessages: new Map(),
-  
-  getProject: (projectId: string) => apiCache.projects.get(projectId),
-  setProject: (projectId: string, data: any) => apiCache.projects.set(projectId, data),
-  
-  getProjects: () => apiCache.projects.get('all'),
-  setProjects: (data: any) => apiCache.projects.set('all', data),
-  
-  getThreads: (projectId: string) => apiCache.threads.get(projectId || 'all'),
-  setThreads: (projectId: string, data: any) => apiCache.threads.set(projectId || 'all', data),
-  invalidateThreads: (projectId: string) => apiCache.threads.delete(projectId || 'all'),
-  
-  getThreadMessages: (threadId: string) => apiCache.threadMessages.get(threadId),
-  setThreadMessages: (threadId: string, data: any) => apiCache.threadMessages.set(threadId, data),
-  invalidateThreadMessages: (threadId: string) => apiCache.threadMessages.delete(threadId),
-  
-  // Functions to clear all cache
-  clearAll: () => {
-    apiCache.projects.clear();
-    apiCache.threads.clear();
-    apiCache.threadMessages.clear();
-    console.log('[API] Cache cleared');
-  },
-  
-  clearProjects: () => {
-    apiCache.projects.clear();
-    console.log('[API] Projects cache cleared');
-  },
-  
-  clearThreads: () => {
-    apiCache.threads.clear();
-    console.log('[API] Threads cache cleared');
-  }
-};
-
 // Track active streams by agent run ID
 const activeStreams = new Map<string, EventSource>();
 
@@ -96,13 +57,6 @@ export type ToolCall = {
 
 // Project APIs
 export const getProjects = async (): Promise<Project[]> => {
-  // Check cache first
-  const cached = apiCache.getProjects();
-  if (cached) {
-    console.log('[API] Returning cached projects:', cached.length);
-    return cached;
-  }
-  
   try {
     const supabase = createClient();
     const { data, error } = await supabase
@@ -133,8 +87,6 @@ export const getProjects = async (): Promise<Project[]> => {
     
     console.log('[API] Mapped projects for frontend:', mappedProjects.length);
     
-    // Cache the result
-    apiCache.setProjects(mappedProjects);
     return mappedProjects;
   } catch (err) {
     console.error('Error fetching projects:', err);
@@ -144,12 +96,6 @@ export const getProjects = async (): Promise<Project[]> => {
 };
 
 export const getProject = async (projectId: string): Promise<Project> => {
-  // Check cache first
-  const cached = apiCache.getProject(projectId);
-  if (cached) {
-    return cached;
-  }
-  
   const supabase = createClient();
   
   try {
@@ -208,8 +154,6 @@ export const getProject = async (projectId: string): Promise<Project> => {
     
     console.log('Mapped project data for frontend:', mappedProject);
     
-    // Cache the result
-    apiCache.setProject(projectId, mappedProject);
     return mappedProject;
   } catch (error) {
     console.error(`Error fetching project ${projectId}:`, error);
@@ -284,10 +228,6 @@ export const updateProject = async (projectId: string, data: Partial<Project>): 
   if (!updatedData) {
     throw new Error('No data returned from update');
   }
-
-  // Invalidate cache after successful update
-  apiCache.projects.delete(projectId);
-  apiCache.projects.delete('all');
   
   // Dispatch a custom event to notify components about the project change
   if (typeof window !== 'undefined') {
@@ -326,13 +266,6 @@ export const deleteProject = async (projectId: string): Promise<void> => {
 
 // Thread APIs
 export const getThreads = async (projectId?: string): Promise<Thread[]> => {
-  // Check cache first
-  const cached = apiCache.getThreads(projectId || 'all');
-  if (cached) {
-    console.log('[API] Returning cached threads:', cached.length, projectId ? `for project ${projectId}` : 'for all projects');
-    return cached;
-  }
-  
   const supabase = createClient();
   let query = supabase.from('threads').select('*');
   
@@ -359,8 +292,6 @@ export const getThreads = async (projectId?: string): Promise<Thread[]> => {
     updated_at: thread.updated_at
   }));
   
-  // Cache the result
-  apiCache.setThreads(projectId || 'all', mappedThreads);
   return mappedThreads;
 };
 
@@ -423,13 +354,9 @@ export const addUserMessage = async (threadId: string, content: string): Promise
     console.error('Error adding user message:', error);
     throw new Error(`Error adding message: ${error.message}`);
   }
-  
-  // Invalidate the cache for this thread's messages
-  apiCache.invalidateThreadMessages(threadId);
 };
 
 export const getMessages = async (threadId: string): Promise<Message[]> => {
-  // Cache code removed - will always fetch fresh messages
   const supabase = createClient();
   
   const { data, error } = await supabase
@@ -446,8 +373,6 @@ export const getMessages = async (threadId: string): Promise<Message[]> => {
   }
 
   console.log('[API] Messages fetched:', data);
-  
-  // Cache storage removed
   
   return data || [];
 };
@@ -1005,11 +930,6 @@ export const getSandboxFileContent = async (sandboxId: string, path: string): Pr
   }
 };
 
-// Function to clear all API cache
-export const clearApiCache = () => {
-  apiCache.clearAll();
-};
-
 export const updateThread = async (threadId: string, data: Partial<Thread>): Promise<Thread> => {
   const supabase = createClient();
   
@@ -1028,12 +948,6 @@ export const updateThread = async (threadId: string, data: Partial<Thread>): Pro
     console.error('Error updating thread:', error);
     throw new Error(`Error updating thread: ${error.message}`);
   }
-  
-  // Invalidate thread cache if we're updating thread data
-  if (updatedThread.project_id) {
-    apiCache.invalidateThreads(updatedThread.project_id);
-  }
-  apiCache.invalidateThreads('all');
   
   return updatedThread;
 };
