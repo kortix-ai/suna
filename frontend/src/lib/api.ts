@@ -119,22 +119,27 @@ export const getProject = async (projectId: string): Promise<Project> => {
     if (data.sandbox?.id) {
       try {
         const { data: { session } } = await supabase.auth.getSession();
+        
+        // For public projects, we don't need authentication
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json'
+        };
+        
         if (session?.access_token) {
-          console.log(`Ensuring sandbox is active for project ${projectId}...`);
-          const response = await fetch(`${API_URL}/project/${projectId}/sandbox/ensure-active`, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${session.access_token}`,
-              'Content-Type': 'application/json',
-            },
-          });
-          
-          if (!response.ok) {
-            const errorText = await response.text().catch(() => 'No error details available');
-            console.warn(`Failed to ensure sandbox is active: ${response.status} ${response.statusText}`, errorText);
-          } else {
-            console.log('Sandbox activation successful');
-          }
+          headers['Authorization'] = `Bearer ${session.access_token}`;
+        }
+        
+        console.log(`Ensuring sandbox is active for project ${projectId}...`);
+        const response = await fetch(`${API_URL}/project/${projectId}/sandbox/ensure-active`, {
+          method: 'POST',
+          headers,
+        });
+        
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => 'No error details available');
+          console.warn(`Failed to ensure sandbox is active: ${response.status} ${response.statusText}`, errorText);
+        } else {
+          console.log('Sandbox activation successful');
         }
       } catch (sandboxError) {
         console.warn('Failed to ensure sandbox is active:', sandboxError);
@@ -784,10 +789,6 @@ export const createSandboxFile = async (sandboxId: string, filePath: string, con
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
     
-    if (!session?.access_token) {
-      throw new Error('No access token available');
-    }
-
     // Use FormData to handle both text and binary content more reliably
     const formData = new FormData();
     formData.append('path', filePath);
@@ -796,11 +797,14 @@ export const createSandboxFile = async (sandboxId: string, filePath: string, con
     const blob = new Blob([content], { type: 'application/octet-stream' });
     formData.append('file', blob, filePath.split('/').pop() || 'file');
 
+    const headers: Record<string, string> = {};
+    if (session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
+
     const response = await fetch(`${API_URL}/sandboxes/${sandboxId}/files`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-      },
+      headers,
       body: formData,
     });
     
@@ -823,16 +827,17 @@ export const createSandboxFileJson = async (sandboxId: string, filePath: string,
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
     
-    if (!session?.access_token) {
-      throw new Error('No access token available');
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json'
+    };
+    
+    if (session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`;
     }
 
     const response = await fetch(`${API_URL}/sandboxes/${sandboxId}/files/json`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${session.access_token}`,
-      },
+      headers,
       body: JSON.stringify({
         path: filePath,
         content: content
@@ -866,17 +871,16 @@ export const listSandboxFiles = async (sandboxId: string, path: string): Promise
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
     
-    if (!session?.access_token) {
-      throw new Error('No access token available');
-    }
-
     const url = new URL(`${API_URL}/sandboxes/${sandboxId}/files`);
     url.searchParams.append('path', path);
 
+    const headers: Record<string, string> = {};
+    if (session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
+
     const response = await fetch(url.toString(), {
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-      },
+      headers,
     });
     
     if (!response.ok) {
@@ -898,17 +902,16 @@ export const getSandboxFileContent = async (sandboxId: string, path: string): Pr
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
     
-    if (!session?.access_token) {
-      throw new Error('No access token available');
-    }
-
     const url = new URL(`${API_URL}/sandboxes/${sandboxId}/files/content`);
     url.searchParams.append('path', path);
 
+    const headers: Record<string, string> = {};
+    if (session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
+
     const response = await fetch(url.toString(), {
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-      },
+      headers,
     });
     
     if (!response.ok) {
