@@ -21,6 +21,7 @@ export type Project = {
     id?: string;
     pass?: string;
   };
+  is_public?: boolean; // Flag to indicate if the project is public
   [key: string]: any; // Allow additional properties to handle database fields
 }
 
@@ -59,9 +60,25 @@ export type ToolCall = {
 export const getProjects = async (): Promise<Project[]> => {
   try {
     const supabase = createClient();
+    
+    // Get the current user's ID to filter projects
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError) {
+      console.error('Error getting current user:', userError);
+      return [];
+    }
+    
+    // If no user is logged in, return an empty array
+    if (!userData.user) {
+      console.log('[API] No user logged in, returning empty projects array');
+      return [];
+    }
+    
+    // Query only projects where account_id matches the current user's ID
     const { data, error } = await supabase
       .from('projects')
-      .select('*');
+      .select('*')
+      .eq('account_id', userData.user.id);
     
     if (error) {
       // Handle permission errors specifically
@@ -957,5 +974,68 @@ export const updateThread = async (threadId: string, data: Partial<Thread>): Pro
 
 export const toggleThreadPublicStatus = async (threadId: string, isPublic: boolean): Promise<Thread> => {
   return updateThread(threadId, { is_public: isPublic });
+};
+
+// Function to get public projects
+export const getPublicProjects = async (): Promise<Project[]> => {
+  try {
+    const supabase = createClient();
+    
+    // Query for threads that are marked as public
+    const { data: publicThreads, error: threadsError } = await supabase
+      .from('threads')
+      .select('project_id')
+      .eq('is_public', true);
+    
+    if (threadsError) {
+      console.error('Error fetching public threads:', threadsError);
+      return [];
+    }
+    
+    // If no public threads found, return empty array
+    if (!publicThreads?.length) {
+      return [];
+    }
+    
+    // Extract unique project IDs from public threads
+    const publicProjectIds = [...new Set(publicThreads.map(thread => thread.project_id))].filter(Boolean);
+    
+    // If no valid project IDs, return empty array
+    if (!publicProjectIds.length) {
+      return [];
+    }
+    
+    // Get the projects that have public threads
+    const { data: projects, error: projectsError } = await supabase
+      .from('projects')
+      .select('*')
+      .in('project_id', publicProjectIds);
+    
+    if (projectsError) {
+      console.error('Error fetching public projects:', projectsError);
+      return [];
+    }
+    
+    console.log('[API] Raw public projects from DB:', projects?.length, projects);
+    
+    // Map database fields to our Project type
+    const mappedProjects: Project[] = (projects || []).map(project => ({
+      id: project.project_id,
+      name: project.name || '',
+      description: project.description || '',
+      account_id: project.account_id,
+      created_at: project.created_at,
+      updated_at: project.updated_at,
+      sandbox: project.sandbox || { id: "", pass: "", vnc_preview: "", sandbox_url: "" },
+      is_public: true // Mark these as public projects
+    }));
+    
+    console.log('[API] Mapped public projects for frontend:', mappedProjects.length);
+    
+    return mappedProjects;
+  } catch (err) {
+    console.error('Error fetching public projects:', err);
+    return [];
+  }
 };
 

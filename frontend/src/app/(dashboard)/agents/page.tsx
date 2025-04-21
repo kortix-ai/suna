@@ -15,6 +15,7 @@ interface Agent {
   description: string;
   created_at: string;
   threadId: string | null;
+  is_public?: boolean;
 }
 
 export default function AgentsPage() {
@@ -26,7 +27,7 @@ export default function AgentsPage() {
     async function loadAgents() {
       setIsLoading(true);
       try {
-        // Get projects from API - in our new model, each project is an agent with one thread
+        // Get projects from API - now only fetches the user's projects
         const projectsData = await getProjects();
         
         // We'll fetch threads for each project to create our agent abstraction
@@ -43,6 +44,7 @@ export default function AgentsPage() {
             description: project.description,
             created_at: project.created_at,
             threadId: threads && threads.length > 0 ? threads[0].thread_id : null,
+            is_public: false // Default to false for user's projects
           });
         }
         
