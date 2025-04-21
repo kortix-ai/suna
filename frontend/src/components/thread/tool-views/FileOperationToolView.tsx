@@ -141,10 +141,10 @@ export function FileOperationToolView({
   const hasHighlighting = language !== 'text';
   // Construct HTML file preview URL if we have a sandbox and the file is HTML
   const htmlPreviewUrl = (isHtml && project?.sandbox?.sandbox_url && processedFilePath) 
-    ? `${project.sandbox.sandbox_url}/${processedFilePath}`
+    ? `${project.sandbox.sandbox_url}/${encodeURIComponent(processedFilePath)}`
     : undefined;
     
-  // console.log('HTML Preview URL:', htmlPreviewUrl);
+  console.log('HTML Preview URL:', htmlPreviewUrl);
   // Add state for view mode toggle (code or preview)
   const [viewMode, setViewMode] = useState<'code' | 'preview'>(isHtml || isMarkdown || isCsv ? 'preview' : 'code');
   
