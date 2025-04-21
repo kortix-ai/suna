@@ -34,7 +34,7 @@ import {
   TooltipContent,
   TooltipTrigger
 } from "@/components/ui/tooltip"
-import { getProjects, getThreads, clearApiCache, Project, Thread } from "@/lib/api"
+import { getProjects, getThreads, Project } from "@/lib/api"
 import Link from "next/link"
 
 // Thread with associated project info for display in sidebar
