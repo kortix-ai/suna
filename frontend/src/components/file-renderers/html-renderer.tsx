@@ -13,6 +13,7 @@ interface HtmlRendererProps {
 }
 
 export function HtmlRenderer({ content, previewUrl, className }: HtmlRendererProps) {
+  // Always default to 'preview' mode
   const [viewMode, setViewMode] = useState<'preview' | 'code'>('preview');
 
   return (
