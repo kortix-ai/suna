@@ -38,7 +38,7 @@ export function BillingErrorAlert({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="fixed inset-0 z-[9999] flex items-center justify-center"
+              className="fixed inset-0 z-[9999] flex items-center justify-center overflow-y-auto py-4"
             >
               {/* Backdrop */}
               <motion.div
@@ -58,52 +58,52 @@ export function BillingErrorAlert({
                 exit={{ opacity: 0, scale: 0.95, y: 20 }}
                 transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
                 className={cn(
-                  "relative bg-background rounded-xl shadow-2xl w-full max-w-3xl mx-4",
+                  "relative bg-background rounded-lg shadow-xl w-full max-w-sm mx-3",
                   className
                 )}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="billing-modal-title"
               >
-                <div className="p-6">
+                <div className="p-4">
                   {/* Close button */}
                   {onDismiss && (
                     <button
                       onClick={onDismiss}
-                      className="absolute top-4 right-4 text-muted-foreground hover:text-foreground transition-colors"
+                      className="absolute top-2 right-2 text-muted-foreground hover:text-foreground transition-colors"
                       aria-label="Close dialog"
                     >
-                      <X className="h-5 w-5" />
+                      <X className="h-4 w-4" />
                     </button>
                   )}
 
                   {/* Header */}
-                  <div className="text-center mb-8">
-                    <div className="inline-flex items-center justify-center p-2 bg-destructive/10 rounded-full mb-4">
-                      <AlertCircle className="h-6 w-6 text-destructive" />
+                  <div className="text-center mb-4">
+                    <div className="inline-flex items-center justify-center p-1.5 bg-destructive/10 rounded-full mb-2">
+                      <AlertCircle className="h-4 w-4 text-destructive" />
                     </div>
-                    <h2 id="billing-modal-title" className="text-2xl font-medium tracking-tight mb-2">
+                    <h2 id="billing-modal-title" className="text-lg font-medium tracking-tight mb-1">
                       Usage Limit Reached
                     </h2>
-                    <p className="text-muted-foreground">
+                    <p className="text-xs text-muted-foreground">
                       {message || "You've reached your monthly usage limit."}
                     </p>
                   </div>
 
                   {/* Usage Stats */}
                   {currentUsage !== undefined && limit !== undefined && (
-                    <div className="mb-8 p-6 bg-[#F3F4F6] dark:bg-[#F9FAFB]/[0.02] border border-border rounded-xl">
-                      <div className="flex justify-between items-center mb-4">
+                    <div className="mb-4 p-3 bg-muted/30 border border-border rounded-lg">
+                      <div className="flex justify-between items-center mb-2">
                         <div>
-                          <p className="text-sm font-medium text-muted-foreground">Current Usage</p>
-                          <p className="text-2xl font-semibold">{currentUsage} hours</p>
+                          <p className="text-xs font-medium text-muted-foreground">Usage</p>
+                          <p className="text-base font-semibold">{currentUsage}h</p>
                         </div>
                         <div className="text-right">
-                          <p className="text-sm font-medium text-muted-foreground">Monthly Limit</p>
-                          <p className="text-2xl font-semibold">{limit} hours</p>
+                          <p className="text-xs font-medium text-muted-foreground">Limit</p>
+                          <p className="text-base font-semibold">{limit}h</p>
                         </div>
                       </div>
-                      <div className="w-full h-2 bg-background rounded-full overflow-hidden">
+                      <div className="w-full h-1.5 bg-background rounded-full overflow-hidden">
                         <motion.div
                           initial={{ width: 0 }}
                           animate={{ width: `${Math.min((currentUsage / limit) * 100, 100)}%` }}
@@ -118,14 +118,16 @@ export function BillingErrorAlert({
                   <PlanComparison
                     accountId={accountId}
                     returnUrl={returnUrl}
-                    className="mb-6"
+                    className="mb-3"
+                    isCompact={true}
                   />
 
                   {/* Dismiss Button */}
                   {onDismiss && (
                     <Button
                       variant="ghost"
-                      className="w-full text-muted-foreground hover:text-foreground"
+                      size="sm"
+                      className="w-full text-muted-foreground hover:text-foreground text-xs h-7"
                       onClick={onDismiss}
                     >
                       Continue with Current Plan

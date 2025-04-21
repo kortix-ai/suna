@@ -22,14 +22,15 @@ interface PlanComparisonProps {
   isManaged?: boolean;
   onPlanSelect?: (planId: string) => void;
   className?: string;
+  isCompact?: boolean; // When true, uses vertical stacked layout for modals
 }
 
 // Price display animation component
-const PriceDisplay = ({ tier }: { tier: typeof siteConfig.cloudPricingItems[number] }) => {
+const PriceDisplay = ({ tier, isCompact }: { tier: typeof siteConfig.cloudPricingItems[number]; isCompact?: boolean }) => {
   return (
     <motion.span
       key={tier.price}
-      className="text-4xl font-semibold"
+      className={isCompact ? "text-xl font-semibold" : "text-3xl font-semibold"}
       initial={{
         opacity: 0,
         x: 10,
@@ -48,7 +49,8 @@ export function PlanComparison({
   returnUrl = typeof window !== 'undefined' ? window.location.href : '',
   isManaged = true,
   onPlanSelect,
-  className = ""
+  className = "",
+  isCompact = false
 }: PlanComparisonProps) {
   const [currentPlanId, setCurrentPlanId] = useState<string | undefined>();
 
@@ -74,7 +76,15 @@ export function PlanComparison({
   }, [accountId]);
 
   return (
-    <div className={cn("grid min-[650px]:grid-cols-2 min-[900px]:grid-cols-3 gap-4 w-full max-w-6xl mx-auto", className)}>
+    <div 
+      className={cn(
+        "grid gap-3 w-full mx-auto", 
+        isCompact 
+          ? "grid-cols-1 max-w-md" 
+          : "grid-cols-1 md:grid-cols-3 max-w-6xl",
+        className
+      )}
+    >
       {siteConfig.cloudPricingItems.map((tier) => {
         const isCurrentPlan = currentPlanId === SUBSCRIPTION_PLANS[tier.name.toUpperCase() as keyof typeof SUBSCRIPTION_PLANS];
         
@@ -82,108 +92,157 @@ export function PlanComparison({
           <div
             key={tier.name}
             className={cn(
-              "rounded-xl bg-background border border-border p-6 flex flex-col gap-6",
-              isCurrentPlan && "ring-2 ring-primary"
+              "rounded-lg bg-background border border-border", 
+              isCompact ? "p-3 text-sm" : "p-5",
+              isCurrentPlan && (isCompact ? "ring-1 ring-primary" : "ring-2 ring-primary")
             )}
           >
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <h3 className="text-lg font-medium">{tier.name}</h3>
-                {tier.isPopular && (
-                  <span className="bg-primary text-primary-foreground text-xs font-medium px-2 py-0.5 rounded-full">
-                    Popular
-                  </span>
-                )}
-                {isCurrentPlan && (
-                  <span className="bg-secondary text-secondary-foreground text-xs font-medium px-2 py-0.5 rounded-full">
-                    Current Plan
-                  </span>
-                )}
-              </div>
-              <div className="flex items-baseline">
-                <PriceDisplay tier={tier} />
-                <span className="text-muted-foreground ml-2">
-                  {tier.price !== "$0" ? "/month" : ""}
-                </span>
-              </div>
-              <p className="text-muted-foreground">{tier.description}</p>
-              <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium bg-secondary/10 text-secondary">
-                {tier.hours}/month
-              </div>
-            </div>
-
-            {!isCurrentPlan && accountId && (
-              <form className="mt-2">
-                <input type="hidden" name="accountId" value={accountId} />
-                <input type="hidden" name="returnUrl" value={returnUrl} />
-                <input type="hidden" name="planId" value={SUBSCRIPTION_PLANS[tier.name.toUpperCase() as keyof typeof SUBSCRIPTION_PLANS]} />
-                {isManaged ? (
-                  <SubmitButton
-                    pendingText="Loading..."
-                    formAction={setupNewSubscription}
-                    className={cn(
-                      "w-full h-10 rounded-full font-medium transition-colors",
-                      tier.buttonColor
-                    )}
-                  >
-                    {tier.buttonText}
-                  </SubmitButton>
-                ) : (
-                  <Button
-                    className={cn(
-                      "w-full h-10 rounded-full font-medium transition-colors",
-                      tier.buttonColor
-                    )}
-                    onClick={() => onPlanSelect?.(SUBSCRIPTION_PLANS[tier.name.toUpperCase() as keyof typeof SUBSCRIPTION_PLANS])}
-                  >
-                    {tier.buttonText}
-                  </Button>
-                )}
-              </form>
-            )}
-
-            <div className="space-y-4">
-              {tier.name !== "Free" && (
-                <p className="text-sm text-muted-foreground">
-                  Everything in {tier.name === "Basic" ? "Free" : "Basic"} +
-                </p>
-              )}
-              <ul className="space-y-3">
-                {tier.features.map((feature) => (
-                  <li key={feature} className="flex items-center gap-2 text-muted-foreground">
-                    <div className="size-5 rounded-full bg-primary/10 flex items-center justify-center">
-                      <svg
-                        width="12"
-                        height="12"
-                        viewBox="0 0 12 12"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
-                        className="text-primary"
-                      >
-                        <path
-                          d="M2.5 6L5 8.5L9.5 4"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
+            {isCompact ? (
+              // Compact layout for modal
+              <>
+                <div className="flex justify-between mb-2">
+                  <div>
+                    <div className="flex items-center gap-1">
+                      <h3 className="font-medium">{tier.name}</h3>
+                      {tier.isPopular && (
+                        <span className="bg-primary/10 text-primary text-[10px] font-medium px-1.5 py-0.5 rounded-full">
+                          Popular
+                        </span>
+                      )}
+                      {isCurrentPlan && (
+                        <span className="bg-secondary/10 text-secondary text-[10px] font-medium px-1.5 py-0.5 rounded-full">
+                          Current
+                        </span>
+                      )}
                     </div>
-                    <span className="text-sm">{feature}</span>
-                  </li>
-                ))}
-              </ul>
-              
-              {(tier as any).showContactSales && (
-                <Button
-                  variant="outline"
-                  className="w-full h-10 rounded-full font-medium transition-colors mt-4"
-                  onClick={() => window.open('mailto:support@kortix.ai?subject=Enterprise Plan Inquiry', '_blank')}
+                    <div className="text-xs text-muted-foreground mt-0.5">{tier.description}</div>
+                  </div>
+                  
+                  <div className="text-right">
+                    <div className="flex items-baseline">
+                      <PriceDisplay tier={tier} isCompact={true} />
+                      <span className="text-xs text-muted-foreground ml-1">
+                        {tier.price !== "$0" ? "/mo" : ""}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">
+                      {tier.hours}/month
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="mb-2.5">
+                  <div className="text-[10px] text-muted-foreground leading-tight max-h-[40px] overflow-y-auto pr-1">
+                    {tier.features.map((feature, index) => (
+                      <span key={index} className="whitespace-normal">
+                        {index > 0 && ' • '}
+                        {feature}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </>
+            ) : (
+              // Standard layout for normal view
+              <>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-medium">{tier.name}</h3>
+                  <div className="flex gap-1">
+                    {tier.isPopular && (
+                      <span className="bg-primary/10 text-primary text-xs font-medium px-2 py-0.5 rounded-full">
+                        Popular
+                      </span>
+                    )}
+                    {isCurrentPlan && (
+                      <span className="bg-secondary/10 text-secondary text-xs font-medium px-2 py-0.5 rounded-full">
+                        Current
+                      </span>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="flex items-baseline mb-1">
+                  <PriceDisplay tier={tier} />
+                  <span className="text-muted-foreground ml-2">
+                    {tier.price !== "$0" ? "/month" : ""}
+                  </span>
+                </div>
+                
+                <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium bg-secondary/10 text-secondary mb-4">
+                  {tier.hours}/month
+                </div>
+                
+                <p className="text-muted-foreground mb-6">{tier.description}</p>
+                
+                <div className="mb-6">
+                  <div className="text-sm text-muted-foreground space-y-2">
+                    {tier.features.map((feature, index) => (
+                      <div key={index} className="flex items-start gap-2">
+                        <div className="size-5 rounded-full bg-primary/10 flex items-center justify-center mt-0.5">
+                          <svg
+                            width="12"
+                            height="12"
+                            viewBox="0 0 12 12"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="text-primary"
+                          >
+                            <path
+                              d="M2.5 6L5 8.5L9.5 4"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        </div>
+                        <span>{feature}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+            
+            <form>
+              <input type="hidden" name="accountId" value={accountId} />
+              <input type="hidden" name="returnUrl" value={returnUrl} />
+              <input type="hidden" name="planId" value={SUBSCRIPTION_PLANS[tier.name.toUpperCase() as keyof typeof SUBSCRIPTION_PLANS]} />
+              {isManaged ? (
+                <SubmitButton
+                  pendingText="..."
+                  formAction={setupNewSubscription}
+                  // disabled={isCurrentPlan}
+                  className={cn(
+                    "w-full font-medium transition-colors",
+                    isCompact 
+                      ? "h-7 rounded-md text-xs" 
+                      : "h-10 rounded-full text-sm",
+                    isCurrentPlan 
+                      ? "bg-muted text-muted-foreground hover:bg-muted" 
+                      : tier.buttonColor
+                  )}
                 >
-                  Need more? Contact Sales
+                  {isCurrentPlan ? "Current Plan" : (tier.name === "Free" ? tier.buttonText : "Upgrade")}
+                </SubmitButton>
+              ) : (
+                <Button
+                  className={cn(
+                    "w-full font-medium transition-colors",
+                    isCompact 
+                      ? "h-7 rounded-md text-xs" 
+                      : "h-10 rounded-full text-sm",
+                    isCurrentPlan 
+                      ? "bg-muted text-muted-foreground hover:bg-muted" 
+                      : tier.buttonColor
+                  )}
+                  disabled={isCurrentPlan}
+                  onClick={() => onPlanSelect?.(SUBSCRIPTION_PLANS[tier.name.toUpperCase() as keyof typeof SUBSCRIPTION_PLANS])}
+                >
+                  {isCurrentPlan ? "Current Plan" : (tier.name === "Free" ? tier.buttonText : "Upgrade")}
                 </Button>
               )}
-            </div>
+            </form>
           </div>
         );
       })}

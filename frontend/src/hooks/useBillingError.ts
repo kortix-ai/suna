@@ -6,6 +6,7 @@ interface BillingErrorState {
   limit?: number;
   subscription?: {
     price_id?: string;
+    plan_name?: string;
     current_usage?: number;
     limit?: number;
   };
@@ -15,8 +16,20 @@ export function useBillingError() {
   const [billingError, setBillingError] = useState<BillingErrorState | null>(null);
 
   const handleBillingError = useCallback((error: any) => {
-    // Check if it's a billing error (402 status or message contains 'Payment Required')
+    // Case 1: Error is already a formatted billing error detail object
+    if (error && (error.message || error.subscription)) {
+      setBillingError({
+        message: error.message || "You've reached your monthly usage limit.",
+        currentUsage: error.currentUsage || error.subscription?.current_usage,
+        limit: error.limit || error.subscription?.limit,
+        subscription: error.subscription || {}
+      });
+      return true;
+    }
+    
+    // Case 2: Error is an HTTP error response
     if (error.status === 402 || (error.message && error.message.includes('Payment Required'))) {
+      // Try to get details from error.data.detail (common API pattern)
       const errorDetail = error.data?.detail || {};
       const subscription = errorDetail.subscription || {};
       
@@ -28,6 +41,8 @@ export function useBillingError() {
       });
       return true;
     }
+
+    // Not a billing error
     return false;
   }, []);
 
