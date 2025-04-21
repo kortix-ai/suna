@@ -17,6 +17,7 @@ import { BrowserToolView } from "./tool-views/BrowserToolView";
 import { WebSearchToolView } from "./tool-views/WebSearchToolView";
 import { WebCrawlToolView } from "./tool-views/WebCrawlToolView";
 import { DataProviderToolView } from "./tool-views/DataProviderToolView";
+import { ExposePortToolView } from "./tool-views/ExposePortToolView";
 
 // Simple input interface
 export interface ToolCallInput {
@@ -71,6 +72,17 @@ function getToolView(
           assistantTimestamp={assistantTimestamp}
           toolTimestamp={toolTimestamp}
           isSuccess={isSuccess}
+        />
+      );
+    case 'expose-port':
+      return (
+        <ExposePortToolView
+          assistantContent={assistantContent}
+          toolContent={toolContent}
+          assistantTimestamp={assistantTimestamp}
+          toolTimestamp={toolTimestamp}
+          isSuccess={isSuccess}
+          isStreaming={isStreaming}
         />
       );
     case 'create-file':

@@ -59,7 +59,7 @@ export function GenericToolView({
               )}
             </div>
             <div className="rounded-md border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 p-3">
-              <pre className="text-xs overflow-auto whitespace-pre-wrap break-words text-zinc-800 dark:text-zinc-300 font-mono">{formattedAssistantContent}</pre>
+              <Markdown className="text-xs text-zinc-800 dark:text-zinc-300">{formattedAssistantContent}</Markdown>
             </div>
           </div>
         )}
@@ -89,7 +89,7 @@ export function GenericToolView({
                   <span>Executing {toolTitle.toLowerCase()}...</span>
                 </div>
               ) : (
-                <pre className="text-xs overflow-auto whitespace-pre-wrap break-words text-zinc-800 dark:text-zinc-300 font-mono">{formattedToolContent}</pre>
+                <Markdown className="text-xs text-zinc-800 dark:text-zinc-300">{formattedToolContent}</Markdown>
               )}
             </div>
           </div>
