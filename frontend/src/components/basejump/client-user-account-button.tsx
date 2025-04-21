@@ -58,10 +58,10 @@ export default function ClientUserAccountButton({
                         <Link href="/dashboard" className="flex w-full h-full text-foreground/90">My Account</Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild className="rounded-md hover:bg-hover-bg cursor-pointer">
-                        <Link href="/dashboard/settings" className="flex w-full h-full text-foreground/90">Settings</Link>
+                        <Link href="/settings" className="flex w-full h-full text-foreground/90">Settings</Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild className="rounded-md hover:bg-hover-bg cursor-pointer">
-                        <Link href="/dashboard/settings/teams" className="flex w-full h-full text-foreground/90">Teams</Link>
+                        <Link href="/settings/teams" className="flex w-full h-full text-foreground/90">Teams</Link>
                     </DropdownMenuItem>
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator className="border-subtle dark:border-white/10" />

@@ -69,7 +69,7 @@ export default function TeamBillingPage({ params }: { params: Promise<AccountPar
             
             <AccountBillingStatus 
                 accountId={teamAccount.account_id} 
-                returnUrl={`${returnUrl}/dashboard/${accountSlug}/settings/billing`} 
+                returnUrl={`${returnUrl}/${accountSlug}/settings/billing`} 
             />
         </div>
     )

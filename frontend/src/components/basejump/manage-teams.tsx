@@ -39,7 +39,7 @@ export default async function ManageTeams() {
                                         asChild 
                                         className="rounded-lg h-9 border-subtle dark:border-white/10 hover:bg-hover-bg dark:hover:bg-hover-bg-dark"
                                     >
-                                        <Link href={`/dashboard/${team.slug}`}>View</Link>
+                                        <Link href={`/${team.slug}`}>View</Link>
                                     </Button>
                                 </TableCell>
                             </TableRow>

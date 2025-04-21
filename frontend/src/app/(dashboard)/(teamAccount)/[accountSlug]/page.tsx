@@ -16,5 +16,5 @@ export default function AccountRedirect({
   const { accountSlug } = unwrappedParams;
   
   // Redirect to the settings page
-  redirect(`/dashboard/${accountSlug}/settings`);
+  redirect(`/${accountSlug}/settings`);
 } 

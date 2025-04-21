@@ -21,7 +21,7 @@ export async function createTeam(prevState: any, formData: FormData) {
         };
     }
 
-    redirect(`/dashboard/${data.slug}`);
+    redirect(`/${data.slug}`);
 };
 
 
@@ -62,5 +62,5 @@ export async function editTeamSlug(prevState: any, formData: FormData) {
         };
     }
 
-    redirect(`/dashboard/${data.slug}/settings`);
+    redirect(`/${data.slug}/settings`);
 };

@@ -10,7 +10,7 @@ export default async function PersonalAccountBillingPage() {
 
     return (
         <div>
-            <AccountBillingStatus accountId={personalAccount.account_id} returnUrl={`${returnUrl}/dashboard/settings/billing`} />
+            <AccountBillingStatus accountId={personalAccount.account_id} returnUrl={`${returnUrl}/settings/billing`} />
         </div>
     )
 }

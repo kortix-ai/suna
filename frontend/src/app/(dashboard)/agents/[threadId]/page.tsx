@@ -1110,7 +1110,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
             <div className="flex w-full max-w-md flex-col items-center gap-4 rounded-lg border bg-card p-6 text-center">
               <h2 className="text-lg font-semibold text-destructive">Error</h2>
               <p className="text-sm text-muted-foreground">{error}</p>
-              <Button variant="outline" onClick={() => router.push(`/dashboard/projects/${project?.id || ''}`)}>
+              <Button variant="outline" onClick={() => router.push(`/projects/${project?.id || ''}`)}>
                 Back to Project
               </Button>
             </div>

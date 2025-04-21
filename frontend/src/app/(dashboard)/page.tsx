@@ -48,7 +48,7 @@ function DashboardContent() {
       localStorage.removeItem(PENDING_PROMPT_KEY);
       
       // 5. Navigate to the new agent's thread page
-      router.push(`/dashboard/agents/${thread.thread_id}`);
+      router.push(`/agents/${thread.thread_id}`);
     } catch (error) {
       console.error("Error creating agent:", error);
       setIsSubmitting(false);

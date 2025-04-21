@@ -104,7 +104,7 @@ export function NavAgents() {
           threadId: thread.thread_id,
           projectId: projectId,
           projectName: project.name || 'Unnamed Project',
-          url: `/dashboard/agents/${thread.thread_id}`,
+          url: `/agents/${thread.thread_id}`,
           updatedAt: thread.updated_at || project.updated_at || new Date().toISOString()
         });
       }

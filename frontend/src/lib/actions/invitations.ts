@@ -25,7 +25,7 @@ export async function createInvitation(prevState: any, formData: FormData): Prom
         };
     }
 
-    revalidatePath(`/dashboard/[accountSlug]/settings/members/page`);
+    revalidatePath(`/[accountSlug]/settings/members/page`);
 
     return {
         token: data.token as string
@@ -69,6 +69,6 @@ export async function acceptInvitation(prevState: any, formData: FormData) {
             message: error.message
         };
     }
-    redirect(`/dashboard/${data.slug}`);
+    redirect(`/${data.slug}`);
 
 };

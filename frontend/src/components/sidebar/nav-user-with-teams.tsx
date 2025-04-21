@@ -131,7 +131,7 @@ export function NavUserWithTeams({
     if (team.personal_account) {
       router.push('/dashboard')
     } else {
-      router.push(`/dashboard/${team.slug}`)
+      router.push(`/${team.slug}`)
     }
   }
 
@@ -268,13 +268,13 @@ export function NavUserWithTeams({
               {/* User Settings Section */}
               <DropdownMenuGroup>
                 <DropdownMenuItem asChild>
-                  <Link href="/dashboard/settings/billing">
+                  <Link href="/settings/billing">
                     <CreditCard className="mr-2 h-4 w-4" />
                     Billing
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
-                  <Link href="/dashboard/settings">
+                  <Link href="/settings">
                     <Settings className="mr-2 h-4 w-4" />
                     Settings
                   </Link>

@@ -1,28 +1,15 @@
 'use client';
 
-import React from 'react';
 import {Separator} from "@/components/ui/separator";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-type LayoutParams = {
-  accountSlug: string;
-};
-
-export default function TeamSettingsLayout({
-  children, 
-  params
-}: {
-  children: React.ReactNode, 
-  params: Promise<LayoutParams>
-}) {
-    const unwrappedParams = React.use(params);
-    const { accountSlug } = unwrappedParams;
+export default function PersonalAccountSettingsPage({children}: {children: React.ReactNode}) {
     const pathname = usePathname();
     const items = [
-        { name: "Account", href: `/dashboard/${accountSlug}/settings` },
-        { name: "Members", href: `/dashboard/${accountSlug}/settings/members` },
-        { name: "Billing", href: `/dashboard/${accountSlug}/settings/billing` },
+        { name: "Profile", href: "/settings" },
+        { name: "Teams", href: "/settings/teams" },
+        { name: "Billing", href: "/settings/billing" },
     ]
     return (
         <div className="space-y-6 w-full">

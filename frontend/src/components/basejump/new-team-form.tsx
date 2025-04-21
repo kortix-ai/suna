@@ -79,7 +79,7 @@ export default function NewTeamForm() {
                         <p>
                             This will be used for your team URL: 
                             <span className="block text-primary font-medium mt-0.5">
-                                yourapp.com/dashboard/{slugValue || "team-name"}
+                                yourapp.com/{slugValue || "team-name"}
                             </span>
                         </p>
                     </div>

@@ -80,7 +80,7 @@ export default function AgentsPage() {
           </p>
         </div>
         <Button asChild>
-          <Link href="/dashboard/agents/new">
+          <Link href="/agents/new">
             <PlusCircle className="mr-2 h-4 w-4" />
             New Agent
           </Link>
@@ -110,7 +110,7 @@ export default function AgentsPage() {
             Create your first agent to start automating tasks and getting help from AI.
           </p>
           <Button asChild>
-            <Link href="/dashboard/agents/new">
+            <Link href="/agents/new">
               <PlusCircle className="mr-2 h-4 w-4" />
               Create your first agent
             </Link>
@@ -133,7 +133,7 @@ export default function AgentsPage() {
                     <Link
                       href={
                         agent.threadId
-                          ? `/dashboard/agents/${agent.threadId}`
+                          ? `/agents/${agent.threadId}`
                           : `/dashboard`
                       }
                     >
