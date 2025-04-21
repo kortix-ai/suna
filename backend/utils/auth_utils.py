@@ -140,3 +140,35 @@ async def verify_thread_access(client, thread_id: str, user_id: str):
         if account_user_result.data and len(account_user_result.data) > 0:
             return True
     raise HTTPException(status_code=403, detail="Not authorized to access this thread")
+
+async def get_optional_user_id(request: Request) -> Optional[str]:
+    """
+    Extract the user ID from the JWT in the Authorization header if present,
+    but don't require authentication. Returns None if no valid token is found.
+    
+    This function is used for endpoints that support both authenticated and 
+    unauthenticated access (like public projects).
+    
+    Args:
+        request: The FastAPI request object
+        
+    Returns:
+        Optional[str]: The user ID extracted from the JWT, or None if no valid token
+    """
+    auth_header = request.headers.get('Authorization')
+    
+    if not auth_header or not auth_header.startswith('Bearer '):
+        return None
+    
+    token = auth_header.split(' ')[1]
+    
+    try:
+        # For Supabase JWT, we just need to decode and extract the user ID
+        payload = jwt.decode(token, options={"verify_signature": False})
+        
+        # Supabase stores the user ID in the 'sub' claim
+        user_id = payload.get('sub')
+        
+        return user_id
+    except PyJWTError:
+        return None
