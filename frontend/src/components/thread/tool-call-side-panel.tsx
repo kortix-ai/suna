@@ -369,6 +369,7 @@ export function ToolCallSidePanel({
           />
         </div>
       )}
+ 
     </div>
   );
 } 

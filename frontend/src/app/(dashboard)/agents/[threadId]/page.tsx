@@ -18,6 +18,7 @@ import { useSidebar } from "@/components/ui/sidebar";
 import { useAgentStream } from '@/hooks/useAgentStream';
 import { Markdown } from '@/components/ui/markdown';
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 import { UnifiedMessage, ParsedContent, ParsedMetadata, ThreadParams } from '@/components/thread/types';
 import { getToolIcon, extractPrimaryParam, safeJsonParse } from '@/components/thread/utils';
@@ -188,6 +189,7 @@ function renderMarkdownContent(content: string, handleToolClick: (assistantMessa
 export default function ThreadPage({ params }: { params: Promise<ThreadParams> }) {
   const unwrappedParams = React.use(params);
   const threadId = unwrappedParams.threadId;
+  const isMobile = useIsMobile();
   
   const router = useRouter();
   const [messages, setMessages] = useState<UnifiedMessage[]>([]);
@@ -1132,14 +1134,16 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   return (
     <div className="flex h-screen">
       <div className={`flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out ${isSidePanelOpen ? 'mr-[90%] sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[650px]' : ''}`}>
-        <SiteHeader 
-          threadId={threadId} 
-          projectName={projectName}
-          projectId={project?.id || ""}
-          onViewFiles={handleOpenFileViewer} 
-          onToggleSidePanel={toggleSidePanel}
-          onProjectRenamed={handleProjectRenamed}
-        />
+        {!isMobile && (
+          <SiteHeader 
+            threadId={threadId} 
+            projectName={projectName}
+            projectId={project?.id || ""}
+            onViewFiles={handleOpenFileViewer} 
+            onToggleSidePanel={toggleSidePanel}
+            onProjectRenamed={handleProjectRenamed}
+          />
+        )}
         <div 
           ref={messagesContainerRef}
           className="flex-1 overflow-y-auto px-6 py-4 pb-24 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
@@ -1429,9 +1433,13 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
       <div className={cn(
         "fixed bottom-0 z-10 bg-gradient-to-t from-background via-background/90 to-transparent px-4 pt-8 transition-all duration-200 ease-in-out",
         leftSidebarState === 'expanded' ? 'left-[72px] lg:left-[256px]' : 'left-[72px]',
-        isSidePanelOpen ? 'right-[90%] sm:right-[450px] md:right-[500px] lg:right-[550px] xl:right-[650px]' : 'right-0'
+        isSidePanelOpen ? 'right-[90%] sm:right-[450px] md:right-[500px] lg:right-[550px] xl:right-[650px]' : 'right-0',
+        isMobile ? 'left-0 right-0' : ''
       )}>
-        <div className="mx-auto max-w-3xl">
+        <div className={cn(
+          "mx-auto",
+          isMobile ? "w-full px-4" : "max-w-3xl"
+        )}>
           <ChatInput
             value={newMessage}
             onChange={setNewMessage}
