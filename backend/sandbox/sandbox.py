@@ -152,10 +152,15 @@ class SandboxToolsBase(Tool):
             logger.error(f"Error retrieving sandbox: {str(e)}", exc_info=True)
             raise e
 
-        # Get and log preview links
-        vnc_url = self.sandbox.get_preview_link(6080)
-        website_url = self.sandbox.get_preview_link(8080)
+        # Get preview links
+        vnc_link = self.sandbox.get_preview_link(6080)
+        website_link = self.sandbox.get_preview_link(8080)
         
+        # Extract the actual URLs from the preview link objects
+        vnc_url = vnc_link.url if hasattr(vnc_link, 'url') else str(vnc_link)
+        website_url = website_link.url if hasattr(website_link, 'url') else str(website_link)
+        
+        # Log the actual URLs
         logger.info(f"Sandbox VNC URL: {vnc_url}")
         logger.info(f"Sandbox Website URL: {website_url}")
         

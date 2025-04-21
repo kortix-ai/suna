@@ -299,12 +299,29 @@ async def start_agent(
         sandbox = create_sandbox(sandbox_pass)
         logger.info(f"Created new sandbox with preview: {sandbox.get_preview_link(6080)}/vnc_lite.html?password={sandbox_pass}")
         sandbox_id = sandbox.id
+        
+        # Get preview links
+        vnc_link = sandbox.get_preview_link(6080)
+        website_link = sandbox.get_preview_link(8080)
+        
+        # Extract the actual URLs and token from the preview link objects
+        vnc_url = vnc_link.url if hasattr(vnc_link, 'url') else str(vnc_link).split("url='")[1].split("'")[0]
+        website_url = website_link.url if hasattr(website_link, 'url') else str(website_link).split("url='")[1].split("'")[0]
+        
+        # Extract token if available
+        token = None
+        if hasattr(vnc_link, 'token'):
+            token = vnc_link.token
+        elif "token='" in str(vnc_link):
+            token = str(vnc_link).split("token='")[1].split("'")[0]
+        
         await client.table('projects').update({
             'sandbox': {
                 'id': sandbox_id,
                 'pass': sandbox_pass,
-                'vnc_preview': str(sandbox.get_preview_link(6080)),
-                'sandbox_url': str(sandbox.get_preview_link(8080))
+                'vnc_preview': vnc_url,
+                'sandbox_url': website_url,
+                'token': token
             }
         }).eq('project_id', project_id).execute()
     
