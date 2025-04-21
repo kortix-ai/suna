@@ -34,7 +34,7 @@ Suna's powerful toolkit includes seamless browser automation to navigate the web
 
 ## Project Architecture
 
-![Architecture Diagram](docs/images/architecture_diagram.svg)
+![Architecture Diagram](docs/images/diagram.png)
 
 Suna consists of four main components:
 
