@@ -5,7 +5,7 @@ import { getToolIcon } from "@/components/thread/utils";
 import React from "react";
 import { Slider } from "@/components/ui/slider";
 import { ApiMessageType } from '@/components/thread/types';
-import { CircleDashed, X } from "lucide-react";
+import { CircleDashed, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Button } from "@/components/ui/button";
@@ -267,13 +267,47 @@ export function ToolCallSidePanel({
     return () => clearInterval(interval);
   }, [isStreaming]);
 
+  // Handle navigation with safety checks
+  const navigateToPrevious = React.useCallback(() => {
+    if (currentIndex > 0) {
+      onNavigate(currentIndex - 1);
+    }
+  }, [currentIndex, onNavigate]);
+
+  const navigateToNext = React.useCallback(() => {
+    if (currentIndex < totalCalls - 1) {
+      onNavigate(currentIndex + 1);
+    }
+  }, [currentIndex, totalCalls, onNavigate]);
+
   if (!isOpen) return null;
   
   const renderContent = () => {
     if (!currentToolCall) {
       return (
-        <div className="flex items-center justify-center h-full p-4">
-          <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center">No tool call details available.</p>
+        <div className="flex flex-col h-full">
+          {/* Always show header with close button for empty state */}
+          <div className="pt-4 pl-4 pr-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-medium text-zinc-900 dark:text-zinc-100">Suna's Computer</h2>
+              </div>
+              
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={onClose}
+                className="h-8 w-8"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+          
+          {/* Empty state message */}
+          <div className="flex items-center justify-center flex-1 p-4">
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center">No tool call details available.</p>
+          </div>
         </div>
       );
     }
@@ -293,7 +327,34 @@ export function ToolCallSidePanel({
       isStreaming
     );
 
-    if (!toolView) return null;
+    if (!toolView) {
+      return (
+        <div className="flex flex-col h-full">
+          {/* Header with close button even when no tool view */}
+          <div className="pt-4 pl-4 pr-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-medium text-zinc-900 dark:text-zinc-100">Suna's Computer</h2>
+              </div>
+              
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={onClose}
+                className="h-8 w-8"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+          
+          {/* Error state message */}
+          <div className="flex items-center justify-center flex-1 p-4">
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center">Unable to display tool details.</p>
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div className="flex flex-col h-full">
@@ -302,17 +363,6 @@ export function ToolCallSidePanel({
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-medium text-zinc-900 dark:text-zinc-100">Suna's Computer</h2>
             </div>
-            
-            {isMobile && (
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                onClick={onClose}
-                className="h-8 w-8 -mr-2"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            )}
             
             {currentToolCall.toolResult?.content && !isStreaming && (
               <div className="flex items-center gap-2">
@@ -333,17 +383,53 @@ export function ToolCallSidePanel({
                 )}>
                   {isSuccess ? 'Success' : 'Failed'}
                 </div>
+                
+                {/* Add close button */}
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={onClose}
+                  className="h-8 w-8 ml-1"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
               </div>
             )}
             
             {isStreaming && (
-              <div className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400 flex items-center gap-1.5">
-                <CircleDashed className="h-3 w-3 animate-spin" />
-                <span>Running</span>
+              <div className="flex items-center gap-2">
+                <div className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400 flex items-center gap-1.5">
+                  <CircleDashed className="h-3 w-3 animate-spin" />
+                  <span>Running</span>
+                </div>
+                
+                {/* Add close button */}
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  onClick={onClose}
+                  className="h-8 w-8 ml-1"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
               </div>
+            )}
+            
+            {/* Show close button when no status is available */}
+            {!currentToolCall.toolResult?.content && !isStreaming && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={onClose}
+                className="h-8 w-8"
+              >
+                <X className="h-4 w-4" />
+              </Button>
             )}
           </div>
         </div>
+        
+        {/* Content area */}
         <div className="flex-1 overflow-auto scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700 scrollbar-track-transparent">
           {toolView}
         </div>
@@ -353,42 +439,79 @@ export function ToolCallSidePanel({
   
   return (
     <div className={cn(
-      "fixed inset-y-0 right-0 border-l flex flex-col z-10 h-screen transition-all duration-200 ease-in-out",
+      "fixed inset-y-0 right-0 border-l flex flex-col z-30 h-screen transition-all duration-200 ease-in-out",
       isMobile 
-        ? "w-[90%]" 
+        ? "w-full" 
         : "w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[650px]",
       !isOpen && "translate-x-full"
     )}>
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden bg-background">
         {renderContent()}
       </div>
+      
+      {/* Navigation controls */}
       {totalCalls > 1 && (
-        <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 space-y-2">
-          <div className="flex justify-between items-center gap-4">
-             <div className="flex items-center gap-2 min-w-0">
-               <div className="h-5 w-5 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
-                 <CurrentToolIcon className="h-3 w-3 text-zinc-800 dark:text-zinc-300" />
-               </div>
-               <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300 truncate" title={currentToolName}>
-                 {currentToolName} {isStreaming && `(Running${dots})`}
-               </span>
-             </div>
+        <div className={cn(
+          "border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900",
+          isMobile ? "p-3" : "p-4 space-y-2"
+        )}>
+          {!isMobile && (
+            <div className="flex justify-between items-center gap-4">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="h-5 w-5 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+                  <CurrentToolIcon className="h-3 w-3 text-zinc-800 dark:text-zinc-300" />
+                </div>
+                <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300 truncate" title={currentToolName}>
+                  {currentToolName} {isStreaming && `(Running${dots})`}
+                </span>
+              </div>
 
-            <span className="text-xs text-zinc-500 dark:text-zinc-400 flex-shrink-0">
-              Step {currentIndex + 1} of {totalCalls}
-            </span>
-          </div>
-          <Slider
-            min={0}
-            max={totalCalls - 1}
-            step={1}
-            value={[currentIndex]}
-            onValueChange={([newValue]) => onNavigate(newValue)}
-            className="w-full [&>span:first-child]:h-1 [&>span:first-child]:bg-zinc-200 dark:[&>span:first-child]:bg-zinc-800 [&>span:first-child>span]:bg-zinc-500 dark:[&>span:first-child>span]:bg-zinc-400 [&>span:first-child>span]:h-1"
-          />
+              <span className="text-xs text-zinc-500 dark:text-zinc-400 flex-shrink-0">
+                Step {currentIndex + 1} of {totalCalls}
+              </span>
+            </div>
+          )}
+          
+          {isMobile ? (
+            <div className="flex items-center justify-between">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={navigateToPrevious}
+                disabled={currentIndex <= 0}
+                className="h-9 px-3"
+              >
+                <ChevronLeft className="h-4 w-4 mr-1" />
+                <span>Previous</span>
+              </Button>
+              
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                {currentIndex + 1} / {totalCalls}
+              </span>
+              
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={navigateToNext}
+                disabled={currentIndex >= totalCalls - 1}
+                className="h-9 px-3"
+              >
+                <span>Next</span>
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
+          ) : (
+            <Slider
+              min={0}
+              max={totalCalls - 1}
+              step={1}
+              value={[currentIndex]}
+              onValueChange={([newValue]) => onNavigate(newValue)}
+              className="w-full [&>span:first-child]:h-1 [&>span:first-child]:bg-zinc-200 dark:[&>span:first-child]:bg-zinc-800 [&>span:first-child>span]:bg-zinc-500 dark:[&>span:first-child>span]:bg-zinc-400 [&>span:first-child>span]:h-1"
+            />
+          )}
         </div>
       )}
- 
     </div>
   );
 } 

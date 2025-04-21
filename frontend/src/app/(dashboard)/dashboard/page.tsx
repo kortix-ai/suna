@@ -3,9 +3,14 @@
 import React, { useState, Suspense, useEffect } from 'react';
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRouter } from 'next/navigation';
+import { Menu } from "lucide-react";
 import { ChatInput } from '@/components/thread/chat-input';
 import { createProject, addUserMessage, startAgent, createThread } from "@/lib/api";
 import { generateThreadName } from "@/lib/actions/threads";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { useSidebar } from "@/components/ui/sidebar";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 // Constant for localStorage key to ensure consistency
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
@@ -15,6 +20,8 @@ function DashboardContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [autoSubmit, setAutoSubmit] = useState(false);
   const router = useRouter();
+  const isMobile = useIsMobile();
+  const { setOpenMobile } = useSidebar();
 
   const handleSubmit = async (message: string, options?: { model_name?: string; enable_thinking?: boolean }) => {
     if (!message.trim() || isSubmitting) return;
@@ -84,6 +91,25 @@ function DashboardContent() {
 
   return (
     <div className="flex flex-col items-center justify-center h-full w-full">
+      {isMobile && (
+        <div className="absolute top-4 left-4 z-10">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button 
+                variant="ghost" 
+                size="icon"
+                className="h-8 w-8" 
+                onClick={() => setOpenMobile(true)}
+              >
+                <Menu className="h-4 w-4" />
+                <span className="sr-only">Open menu</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Open menu</TooltipContent>
+          </Tooltip>
+        </div>
+      )}
+
       <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[560px] max-w-[90%]">
         <div className="text-center mb-10">
           <h1 className="text-4xl font-medium text-foreground mb-2">Hey </h1>

@@ -1,7 +1,7 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { FolderOpen, Link, PanelRightOpen, Check, X } from "lucide-react"
+import { FolderOpen, Link, PanelRightOpen, Check, X, Menu } from "lucide-react"
 import { usePathname } from "next/navigation"
 import { toast } from "sonner"
 import {
@@ -16,6 +16,7 @@ import { updateProject } from "@/lib/api"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
+import { useSidebar } from "@/components/ui/sidebar"
 
 interface ThreadSiteHeaderProps {
   threadId: string
@@ -41,6 +42,7 @@ export function SiteHeader({
   const [editName, setEditName] = useState(projectName)
   const inputRef = useRef<HTMLInputElement>(null)
   const isMobile = useIsMobile() || isMobileView
+  const { setOpenMobile } = useSidebar()
   
   const copyCurrentUrl = () => {
     const url = window.location.origin + pathname
@@ -106,9 +108,21 @@ export function SiteHeader({
 
   return (
     <header className={cn(
-      "bg-background sticky top-0 flex h-14 shrink-0 items-center gap-2 z-20 border-b w-full",
+      "bg-background sticky top-0 flex h-14 shrink-0 items-center gap-2 z-20 w-full",
       isMobile && "px-2"
     )}>
+      {isMobile && (
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => setOpenMobile(true)}
+          className="h-9 w-9 mr-1"
+          aria-label="Open sidebar"
+        >
+          <Menu className="h-4 w-4" />
+        </Button>
+      )}
+
       <div className="flex flex-1 items-center gap-2 px-3">
         {isEditing ? (
           <div className="flex items-center gap-1">
