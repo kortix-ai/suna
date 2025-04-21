@@ -84,15 +84,18 @@ class SandboxBrowserTool(SandboxToolsBase):
                         success_response["elements_found"] = result["element_count"]
                     if result.get("pixels_below"):
                         success_response["scrollable_content"] = result["pixels_below"] > 0
+                    # Add OCR text when available
+                    if result.get("ocr_text"):
+                        success_response["ocr_text"] = result["ocr_text"]
 
                     return self.success_response(success_response)
 
-                except json.JSONDecodeError:
-                    logger.error(f"Failed to parse response JSON: {response.result}")
-                    return self.fail_response(f"Failed to parse response JSON: {response.result}")
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse response JSON: {response.result} {e}")
+                    return self.fail_response(f"Failed to parse response JSON: {response.result} {e}")
             else:
-                logger.error(f"Browser automation request failed: {response.result}")
-                return self.fail_response(f"Browser automation request failed: {response.result}")
+                logger.error(f"Browser automation request failed 2: {response}")
+                return self.fail_response(f"Browser automation request failed 2: {response}")
 
         except Exception as e:
             logger.error(f"Error executing browser action: {e}")
@@ -848,3 +851,47 @@ class SandboxBrowserTool(SandboxToolsBase):
             return self.fail_response("Must provide either element selectors or coordinates for drag and drop")
         
         return await self._execute_browser_action("drag_drop", params)
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "browser_click_coordinates",
+            "description": "Click at specific X,Y coordinates on the page",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "x": {
+                        "type": "integer",
+                        "description": "The X coordinate to click"
+                    },
+                    "y": {
+                        "type": "integer",
+                        "description": "The Y coordinate to click"
+                    }
+                },
+                "required": ["x", "y"]
+            }
+        }
+    })
+    @xml_schema(
+        tag_name="browser-click-coordinates",
+        mappings=[
+            {"param_name": "x", "node_type": "attribute", "path": "."},
+            {"param_name": "y", "node_type": "attribute", "path": "."}
+        ],
+        example='''
+        <browser-click-coordinates x="100" y="200"></browser-click-coordinates>
+        '''
+    )
+    async def browser_click_coordinates(self, x: int, y: int) -> ToolResult:
+        """Click at specific X,Y coordinates on the page
+        
+        Args:
+            x (int): The X coordinate to click
+            y (int): The Y coordinate to click
+            
+        Returns:
+            dict: Result of the execution
+        """
+        print(f"\033[95mClicking at coordinates: ({x}, {y})\033[0m")
+        return await self._execute_browser_action("click_coordinates", {"x": x, "y": y})

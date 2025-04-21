@@ -50,6 +50,7 @@ streamlit = "^1.44.1"
 nest-asyncio = "^1.6.0"
 vncdotool = "^1.2.0"
 tavily-python = "^0.5.4"
+pytesseract = "^0.3.13"
 
 [tool.poetry.scripts]
 agentpress = "agentpress.cli:main"
