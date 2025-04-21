@@ -24,3 +24,4 @@ daytona_sdk>=0.12.0
 boto3>=1.34.0
 pydantic
 tavily-python>=0.5.4
+pytesseract==0.3.13

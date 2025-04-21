@@ -13,6 +13,9 @@ import os
 import random
 from functools import cached_property
 import traceback
+import pytesseract
+from PIL import Image
+import io
 
 #######################################################
 # Action model definitions
@@ -24,6 +27,10 @@ class Position(BaseModel):
 
 class ClickElementAction(BaseModel):
     index: int
+
+class ClickCoordinatesAction(BaseModel):
+    x: int
+    y: int
 
 class GoToUrlAction(BaseModel):
     url: str
@@ -257,6 +264,7 @@ class BrowserActionResult(BaseModel):
     pixels_above: int = 0
     pixels_below: int = 0
     content: Optional[str] = None
+    ocr_text: Optional[str] = None  # Added field for OCR text
     
     # Additional metadata
     element_count: int = 0  # Number of interactive elements found
@@ -294,6 +302,7 @@ class BrowserAutomation:
         
         # Element interaction
         self.router.post("/automation/click_element")(self.click_element)
+        self.router.post("/automation/click_coordinates")(self.click_coordinates)
         self.router.post("/automation/input_text")(self.input_text)
         self.router.post("/automation/send_keys")(self.send_keys)
         
@@ -626,6 +635,28 @@ class BrowserAutomation:
             print(f"Error saving screenshot: {e}")
             return ""
     
+    async def extract_ocr_text_from_screenshot(self, screenshot_base64: str) -> str:
+        """Extract text from screenshot using OCR"""
+        if not screenshot_base64:
+            return ""
+            
+        try:
+            # Decode base64 to image
+            image_bytes = base64.b64decode(screenshot_base64)
+            image = Image.open(io.BytesIO(image_bytes))
+            
+            # Extract text using pytesseract
+            ocr_text = pytesseract.image_to_string(image)
+            
+            # Clean up the text
+            ocr_text = ocr_text.strip()
+            
+            return ocr_text
+        except Exception as e:
+            print(f"Error performing OCR: {e}")
+            traceback.print_exc()
+            return ""
+    
     async def get_updated_browser_state(self, action_name: str) -> tuple:
         """Helper method to get updated browser state after any action
         Returns a tuple of (dom_state, screenshot, elements, metadata)
@@ -686,6 +717,12 @@ class BrowserAutomation:
                 metadata['viewport_width'] = 0
                 metadata['viewport_height'] = 0
             
+            # Extract OCR text from screenshot if available
+            ocr_text = ""
+            if screenshot:
+                ocr_text = await self.extract_ocr_text_from_screenshot(screenshot)
+                metadata['ocr_text'] = ocr_text
+            
             print(f"Got updated state after {action_name}: {len(dom_state.selector_map)} elements")
             return dom_state, screenshot, elements, metadata
         except Exception as e:
@@ -713,6 +750,7 @@ class BrowserAutomation:
             pixels_above=dom_state.pixels_above if dom_state else 0,
             pixels_below=dom_state.pixels_below if dom_state else 0,
             content=content,
+            ocr_text=metadata.get('ocr_text', ""),
             element_count=metadata.get('element_count', 0),
             interactive_elements=metadata.get('interactive_elements', []),
             viewport_width=metadata.get('viewport_width', 0),
@@ -884,6 +922,59 @@ class BrowserAutomation:
             )
     
     # Element Interaction Actions
+    
+    async def click_coordinates(self, action: ClickCoordinatesAction = Body(...)):
+        """Click at specific x,y coordinates on the page"""
+        try:
+            page = await self.get_current_page()
+            
+            # Perform the click at the specified coordinates
+            await page.mouse.click(action.x, action.y)
+            
+            # Give time for any navigation or DOM updates to occur
+            await page.wait_for_load_state("networkidle", timeout=5000)
+            
+            # Get updated state after action
+            dom_state, screenshot, elements, metadata = await self.get_updated_browser_state(f"click_coordinates({action.x}, {action.y})")
+            
+            return self.build_action_result(
+                True,
+                f"Clicked at coordinates ({action.x}, {action.y})",
+                dom_state,
+                screenshot,
+                elements,
+                metadata,
+                error="",
+                content=None
+            )
+        except Exception as e:
+            print(f"Error in click_coordinates: {e}")
+            traceback.print_exc()
+            
+            # Try to get state even after error
+            try:
+                dom_state, screenshot, elements, metadata = await self.get_updated_browser_state("click_coordinates_error_recovery")
+                return self.build_action_result(
+                    False,
+                    str(e),
+                    dom_state,
+                    screenshot,
+                    elements,
+                    metadata,
+                    error=str(e),
+                    content=None
+                )
+            except:
+                return self.build_action_result(
+                    False,
+                    str(e),
+                    None,
+                    "",
+                    "",
+                    {},
+                    error=str(e),
+                    content=None
+                )
     
     async def click_element(self, action: ClickElementAction = Body(...)):
         """Click on an element by index"""
@@ -1730,6 +1821,18 @@ async def test_browser_api():
         print(f"\nScreenshot captured: {'Yes' if result.screenshot_base64 else 'No'}")
         print(f"Viewport size: {result.viewport_width}x{result.viewport_height}")
         
+        # Test OCR extraction from screenshot
+        print("\n--- Testing OCR Text Extraction ---")
+        if result.ocr_text:
+            print("OCR text extracted from screenshot:")
+            print("=== OCR TEXT START ===")
+            print(result.ocr_text)
+            print("=== OCR TEXT END ===")
+            print(f"OCR text length: {len(result.ocr_text)} characters")
+            print(result.ocr_text)
+        else:
+            print("No OCR text extracted from screenshot")
+        
         await asyncio.sleep(2)
         
         # Test search functionality
@@ -1741,6 +1844,15 @@ async def test_browser_api():
         else:
             print(f"Found {result.element_count} elements after search")
             print(f"Page title: {result.title}")
+            
+            # Test OCR extraction from search results
+            if result.ocr_text:
+                print("\nOCR text from search results:")
+                print("=== OCR TEXT START ===")
+                print(result.ocr_text)
+                print("=== OCR TEXT END ===")
+            else:
+                print("\nNo OCR text extracted from search results")
         
         await asyncio.sleep(2)
 
@@ -1763,6 +1875,15 @@ async def test_browser_api():
             print(f"New URL after click: {click_result.url}")
         else:
             print("Skipping click test - no elements found")
+        
+        await asyncio.sleep(2)
+
+        # Test clicking on coordinates
+        print("\n--- Testing Click Coordinates ---")
+        coord_click_result = await automation_service.click_coordinates(ClickCoordinatesAction(x=100, y=100))
+        print(f"Coordinate click status: {'✅ Success' if coord_click_result.success else '❌ Failed'}")
+        print(f"Message: {coord_click_result.message}")
+        print(f"URL after coordinate click: {coord_click_result.url}")
         
         await asyncio.sleep(2)
 

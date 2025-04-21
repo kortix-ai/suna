@@ -96,8 +96,8 @@ def create_sandbox(password: str):
         logger.debug("OPENAI_API_KEY configured for sandbox")
     
     sandbox = daytona.create(CreateSandboxParams(
-        image="adamcohenhillel/kortix-suna:0.0.16",
-        public=False,
+        image="adamcohenhillel/kortix-suna:0.0.18",
+        public=True,
         env_vars={
             "CHROME_PERSISTENT_SESSION": "true",
             "RESOLUTION": "1280x720x24",
@@ -112,12 +112,14 @@ def create_sandbox(password: str):
             "CHROME_CDP": ""
         },
         ports=[
-            # 7788,  # Gradio default port
+            7788,  # Gradio default port
             6080,  # noVNC web interface
-        #     5900,  # VNC port
-        #     5901,  # VNC port
-        #     9222,  # Chrome remote debugging port
-            8080   # HTTP website port
+            5900,  # VNC port
+            5901,  # VNC port
+            9222,  # Chrome remote debugging port
+            8080,   # HTTP website port
+            8002,  # The browser api port
+            22222  # The browser api port
         ]
     ))
     logger.info(f"Sandbox created with ID: {sandbox.id}")
