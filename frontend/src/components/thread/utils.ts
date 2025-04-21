@@ -59,6 +59,8 @@ export const getToolIcon = (toolName: string): ElementType => {
       return ExternalLink;
     case 'get-data-provider-endpoints':
       return Network;
+    case 'execute-data-provider-call':
+      return Network;
     
     // Code operations
     case 'delete-file':

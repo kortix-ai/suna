@@ -1,13 +1,82 @@
 import React, { useState } from "react";
-import { FileCode, FileSymlink, FolderPlus, FileX, Replace, CheckCircle, AlertTriangle, ExternalLink, CircleDashed, Code, Eye } from "lucide-react";
+import { FileCode, FileSymlink, FolderPlus, FileX, Replace, CheckCircle, AlertTriangle, ExternalLink, CircleDashed, Code, Eye, FileSpreadsheet } from "lucide-react";
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { ToolViewProps } from "./types";
 import { extractFilePath, extractFileContent, getFileType, formatTimestamp, getToolTitle } from "./utils";
 import { GenericToolView } from "./GenericToolView";
 import { Markdown } from "@/components/ui/markdown";
+import { CsvRenderer } from "@/components/file-renderers/csv-renderer";
 import { cn } from "@/lib/utils";
+import { useTheme } from "next-themes";
 
 // Type for operation type
 type FileOperation = "create" | "rewrite" | "delete";
+
+// Map file extensions to language names for syntax highlighting
+const getLanguageFromFileName = (fileName: string): string => {
+  const extension = fileName.split('.').pop()?.toLowerCase() || '';
+  
+  // Map of file extensions to language names for syntax highlighting
+  const extensionMap: Record<string, string> = {
+    // Web languages
+    'html': 'html',
+    'htm': 'html',
+    'css': 'css',
+    'scss': 'scss',
+    'sass': 'scss',
+    'less': 'less',
+    'js': 'javascript',
+    'jsx': 'jsx',
+    'ts': 'typescript',
+    'tsx': 'tsx',
+    'json': 'json',
+    'jsonc': 'json',
+    
+    // Build and config files
+    'xml': 'xml',
+    'yml': 'yaml',
+    'yaml': 'yaml',
+    'toml': 'toml',
+    'ini': 'ini',
+    'env': 'bash',
+    'gitignore': 'bash',
+    'dockerignore': 'bash',
+    
+    // Scripting languages
+    'py': 'python',
+    'rb': 'ruby',
+    'php': 'php',
+    'go': 'go',
+    'java': 'java',
+    'kt': 'kotlin',
+    'c': 'c',
+    'cpp': 'cpp',
+    'h': 'c',
+    'hpp': 'cpp',
+    'cs': 'csharp',
+    'swift': 'swift',
+    'rs': 'rust',
+    
+    // Shell scripts
+    'sh': 'bash',
+    'bash': 'bash',
+    'zsh': 'bash',
+    'ps1': 'powershell',
+    'bat': 'batch',
+    'cmd': 'batch',
+    
+    // Markup languages (excluding markdown which has its own renderer)
+    'svg': 'svg',
+    'tex': 'latex',
+    
+    // Data formats
+    'graphql': 'graphql',
+    'gql': 'graphql',
+  };
+  
+  return extensionMap[extension] || 'text';
+};
 
 export function FileOperationToolView({ 
   assistantContent, 
@@ -19,6 +88,9 @@ export function FileOperationToolView({
   name,
   project
 }: ToolViewProps) {
+  const { resolvedTheme } = useTheme();
+  const isDarkTheme = resolvedTheme === 'dark';
+  
   // Determine operation type from content or name
   const getOperationType = (): FileOperation => {
     // First check tool name if available
@@ -64,14 +136,17 @@ export function FileOperationToolView({
   const fileType = processedFilePath ? getFileType(processedFilePath) : '';
   const isMarkdown = fileName.endsWith('.md');
   const isHtml = fileName.endsWith('.html');
+  const isCsv = fileName.endsWith('.csv');
+  const language = getLanguageFromFileName(fileName);
+  const hasHighlighting = language !== 'text';
   
   // Construct HTML file preview URL if we have a sandbox and the file is HTML
   const htmlPreviewUrl = (isHtml && project?.sandbox?.sandbox_url && processedFilePath) 
     ? `${project.sandbox.sandbox_url}/${processedFilePath}`
     : undefined;
   
-  // Add state for view mode toggle (code or preview) - moved before any conditional returns
-  const [viewMode, setViewMode] = useState<'code' | 'preview'>(isHtml || isMarkdown ? 'preview' : 'code');
+  // Add state for view mode toggle (code or preview)
+  const [viewMode, setViewMode] = useState<'code' | 'preview'>(isHtml || isMarkdown || isCsv ? 'preview' : 'code');
   
   // Fall back to generic view if file path is missing or if content is missing for non-delete operations
   if ((!filePath && !showDebugInfo) || (operation !== "delete" && !fileContent)) {
@@ -118,6 +193,8 @@ export function FileOperationToolView({
               <div className="flex items-center">
                 {isMarkdown ? 
                   <FileCode className="h-4 w-4 mr-2 text-zinc-600 dark:text-zinc-400" /> :
+                  isCsv ?
+                  <FileSpreadsheet className="h-4 w-4 mr-2 text-zinc-600 dark:text-zinc-400" /> :
                   <FileSymlink className="h-4 w-4 mr-2 text-zinc-600 dark:text-zinc-400" />
                 }
                 <span className="text-xs font-medium">{fileName}</span>
@@ -182,28 +259,109 @@ export function FileOperationToolView({
                     </button>
                   </div>
                 )}
+                {/* View switcher for CSV files */}
+                {isCsv && isSuccess && (
+                  <div className="flex rounded-md overflow-hidden border border-zinc-200 dark:border-zinc-700">
+                    <button
+                      onClick={() => setViewMode('code')}
+                      className={cn(
+                        "flex items-center gap-1 text-xs px-2 py-1 transition-colors",
+                        viewMode === 'code'
+                          ? "bg-zinc-800 text-zinc-100 dark:bg-zinc-700 dark:text-zinc-100"
+                          : "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 hover:bg-zinc-300 dark:hover:bg-zinc-700"
+                      )}
+                    >
+                      <Code className="h-3 w-3" />
+                      <span>Code</span>
+                    </button>
+                    <button
+                      onClick={() => setViewMode('preview')}
+                      className={cn(
+                        "flex items-center gap-1 text-xs px-2 py-1 transition-colors",
+                        viewMode === 'preview'
+                          ? "bg-zinc-800 text-zinc-100 dark:bg-zinc-700 dark:text-zinc-100"
+                          : "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 hover:bg-zinc-300 dark:hover:bg-zinc-700"
+                      )}
+                    >
+                      <Eye className="h-3 w-3" />
+                      <span>Preview</span>
+                    </button>
+                  </div>
+                )}
                 <span className="text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-200 dark:bg-zinc-800 px-2 py-0.5 rounded">
-                  {fileType}
+                  {hasHighlighting ? language.toUpperCase() : fileType}
                 </span>
               </div>
             </div>
             
-            {/* File Content (Code View) */}
-            {viewMode === 'code' || (!isHtml && !isMarkdown) || !isSuccess ? (
+            {/* File Content (Code View with Syntax Highlighting) */}
+            {viewMode === 'code' || (!isHtml && !isMarkdown && !isCsv) || !isSuccess ? (
               <div className="flex-1 overflow-auto bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
-                <div className="min-w-full table">
-                  {contentLines.map((line, idx) => (
-                    <div key={idx} className="table-row hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors">
-                      <div className="table-cell text-right pr-3 py-0.5 text-xs font-mono text-zinc-500 dark:text-zinc-500 select-none w-12 border-r border-zinc-200 dark:border-zinc-800">
-                        {idx + 1}
-                      </div>
-                      <div className="table-cell pl-3 py-0.5 text-xs font-mono whitespace-pre text-zinc-800 dark:text-zinc-300">
-                        {line || ' '}
-                      </div>
+                {hasHighlighting ? (
+                  <div className="relative">
+                    <div className="absolute left-0 top-0 bottom-0 w-12 border-r border-zinc-200 dark:border-zinc-800 z-10 flex flex-col">
+                      {contentLines.map((_, idx) => (
+                        <div key={idx} 
+                          className="h-6 text-right pr-3 text-xs font-mono text-zinc-500 dark:text-zinc-500 select-none">
+                          {idx + 1}
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                  <div className="table-row h-4"></div>
-                </div>
+                    <div className="pl-12">
+                      <SyntaxHighlighter
+                        language={language}
+                        style={isDarkTheme ? oneDark : oneLight}
+                        customStyle={{
+                          margin: 0,
+                          padding: '0.5rem 1rem',
+                          background: 'transparent',
+                          fontSize: '0.75rem',
+                          lineHeight: '1.5rem',
+                          minHeight: '100%',
+                          backgroundColor: 'transparent'
+                        }}
+                        codeTagProps={{
+                          style: {
+                            backgroundColor: 'transparent'
+                          }
+                        }}
+                        useInlineStyles={true}
+                        wrapLines={true}
+                        lineProps={(lineNumber) => ({
+                          style: {
+                            display: 'block',
+                            width: '100%',
+                            backgroundColor: 'transparent',
+                            lineHeight: '1.5rem',
+                            minHeight: '1.5rem',
+                            padding: '0 0.25rem',
+                            ':hover': {
+                              backgroundColor: isDarkTheme ? 'rgba(39, 39, 42, 0.5)' : 'rgba(244, 244, 245, 0.5)',
+                            }
+                          },
+                          className: 'hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors'
+                        })}
+                        showLineNumbers={false}
+                      >
+                        {fileContent}
+                      </SyntaxHighlighter>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="min-w-full table">
+                    {contentLines.map((line, idx) => (
+                      <div key={idx} className="table-row hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors">
+                        <div className="table-cell text-right pr-3 py-0.5 text-xs font-mono text-zinc-500 dark:text-zinc-500 select-none w-12 border-r border-zinc-200 dark:border-zinc-800">
+                          {idx + 1}
+                        </div>
+                        <div className="table-cell pl-3 py-0.5 text-xs font-mono whitespace-pre text-zinc-800 dark:text-zinc-300">
+                          {line || ' '}
+                        </div>
+                      </div>
+                    ))}
+                    <div className="table-row h-4"></div>
+                  </div>
+                )}
               </div>
             ) : null}
             
@@ -226,6 +384,13 @@ export function FileOperationToolView({
                 <Markdown className="text-sm prose prose-sm dark:prose-invert max-w-none">
                   {fileContent}
                 </Markdown>
+              </div>
+            )}
+            
+            {/* CSV Preview */}
+            {isCsv && viewMode === 'preview' && isSuccess && (
+              <div className="flex-1 overflow-hidden bg-white dark:bg-zinc-950">
+                <CsvRenderer content={fileContent} />
               </div>
             )}
             

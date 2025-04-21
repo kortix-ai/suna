@@ -22,7 +22,7 @@ export function getToolTitle(toolName: string): string {
     'full-file-rewrite': 'Rewrite File',
     'delete-file': 'Delete File',
     'web-search': 'Web Search',
-    'web-crawl': 'Web Crawl',
+    'crawl-webpage': 'Web Crawl',
     'browser-navigate': 'Browser Navigate',
     'browser-click': 'Browser Click',
     'browser-extract': 'Browser Extract',
@@ -301,10 +301,361 @@ export function extractSearchQuery(content: string | undefined): string | null {
   return null;
 }
 
+// Helper to extract URLs and titles with regex
+export function extractUrlsAndTitles(content: string): Array<{ title: string, url: string, snippet?: string }> {
+  const results: Array<{ title: string, url: string, snippet?: string }> = [];
+  
+  // First try to handle the case where content contains fragments of JSON objects
+  // This pattern matches both complete and partial result objects
+  const jsonFragmentPattern = /"?title"?\s*:\s*"([^"]+)"[^}]*"?url"?\s*:\s*"?(https?:\/\/[^",\s]+)"?|https?:\/\/[^",\s]+[",\s]*"?title"?\s*:\s*"([^"]+)"/g;
+  let fragmentMatch;
+  
+  while ((fragmentMatch = jsonFragmentPattern.exec(content)) !== null) {
+    // Extract title and URL from the matched groups
+    // Groups can match in different orders depending on the fragment format
+    const title = fragmentMatch[1] || fragmentMatch[3] || '';
+    let url = fragmentMatch[2] || '';
+    
+    // If no URL was found in the JSON fragment pattern but we have a title,
+    // try to find a URL on its own line above the title
+    if (!url && title) {
+      // Look backwards from the match position
+      const beforeText = content.substring(0, fragmentMatch.index);
+      const urlMatch = beforeText.match(/https?:\/\/[^\s",]+\s*$/);
+      if (urlMatch && urlMatch[0]) {
+        url = urlMatch[0].trim();
+      }
+    }
+    
+    if (url && title && !results.some(r => r.url === url)) {
+      results.push({ title, url });
+    }
+  }
+  
+  // If we didn't find any results with the JSON fragment approach, fall back to standard URL extraction
+  if (results.length === 0) {
+    // Regex to find URLs, attempting to exclude common trailing unwanted characters/tags
+    const urlRegex = /https?:\/\/[^\s"<]+/g;
+    let match;
+    
+    while ((match = urlRegex.exec(content)) !== null) {
+      let url = match[0];
+      
+      // --- Start: New Truncation Logic ---
+      // Find the first occurrence of potential garbage separators like /n or \n after the protocol.
+      const protocolEndIndex = url.indexOf('://');
+      const searchStartIndex = protocolEndIndex !== -1 ? protocolEndIndex + 3 : 0;
+      
+      const newlineIndexN = url.indexOf('/n', searchStartIndex);
+      const newlineIndexSlashN = url.indexOf('\\n', searchStartIndex);
+      
+      let firstNewlineIndex = -1;
+      if (newlineIndexN !== -1 && newlineIndexSlashN !== -1) {
+        firstNewlineIndex = Math.min(newlineIndexN, newlineIndexSlashN);
+      } else if (newlineIndexN !== -1) {
+        firstNewlineIndex = newlineIndexN;
+      } else if (newlineIndexSlashN !== -1) {
+        firstNewlineIndex = newlineIndexSlashN;
+      }
+      
+      // If a newline indicator is found, truncate the URL there.
+      if (firstNewlineIndex !== -1) {
+        url = url.substring(0, firstNewlineIndex);
+      }
+      // --- End: New Truncation Logic ---
+
+      // Basic cleaning: remove common tags or artifacts if they are directly appended
+      url = url.replace(/<\/?url>$/, '')
+              .replace(/<\/?content>$/, '')
+              .replace(/%3C$/, ''); // Remove trailing %3C (less than sign)
+              
+      // Aggressive trailing character removal (common issues)
+      // Apply this *after* potential truncation
+      while (/[);.,\/]$/.test(url)) {
+        url = url.slice(0, -1);
+      }
+      
+      // Decode URI components to handle % sequences, but catch errors
+      try {
+        // Decode multiple times? Sometimes needed for double encoding
+        url = decodeURIComponent(decodeURIComponent(url));
+      } catch (e) {
+        try { // Try decoding once if double decoding failed
+          url = decodeURIComponent(url);
+        } catch (e2) {
+          console.warn("Failed to decode URL component:", url, e2);
+        }
+      }
+      
+      // Final cleaning for specific problematic sequences like ellipsis or remaining tags
+      url = url.replace(/\u2026$/, ''); // Remove trailing ellipsis (…)
+      url = url.replace(/<\/?url>$/, '').replace(/<\/?content>$/, ''); // Re-apply tag removal after decode
+
+      // Try to find a title near this URL
+      const urlIndex = match.index;
+      const surroundingText = content.substring(Math.max(0, urlIndex - 100), urlIndex + url.length + 200);
+      
+      // Look for title patterns more robustly
+      const titleMatch = surroundingText.match(/title"?\s*:\s*"([^"]+)"/i) || 
+                        surroundingText.match(/Title[:\s]+([^\n<]+)/i) || 
+                        surroundingText.match(/\"(.*?)\"[\s\n]*?https?:\/\//);
+                        
+      let title = cleanUrl(url); // Default to cleaned URL hostname/path
+      if (titleMatch && titleMatch[1].trim()) {
+        title = titleMatch[1].trim();
+      }
+
+      // Avoid adding duplicates if the cleaning resulted in the same URL
+      if (url && !results.some(r => r.url === url)) {
+        results.push({
+          title: title,
+          url: url
+        });
+      }
+    }
+  }
+  
+  return results;
+}
+
+// Helper to clean URL for display
+export function cleanUrl(url: string): string {
+  try {
+    const urlObj = new URL(url);
+    return urlObj.hostname.replace('www.', '') + (urlObj.pathname !== '/' ? urlObj.pathname : '');
+  } catch (e) {
+    return url;
+  }
+}
+
+// Helper to extract URL for webpage crawling
+export function extractCrawlUrl(content: string | undefined): string | null {
+  if (!content) return null;
+  
+  try {
+    // Try to parse content as JSON first (for the new format)
+    const parsedContent = JSON.parse(content);
+    if (parsedContent.content) {
+      // Look for URL in the content string
+      const urlMatch = parsedContent.content.match(/<crawl-webpage\s+url=["'](https?:\/\/[^"']+)["']/i);
+      if (urlMatch) return urlMatch[1];
+    }
+  } catch (e) {
+    // Fall back to direct regex search if JSON parsing fails
+  }
+  
+  // Direct regex search in the content string
+  const urlMatch = content.match(/<crawl-webpage\s+url=["'](https?:\/\/[^"']+)["']/i) || 
+                   content.match(/url=["'](https?:\/\/[^"']+)["']/i);
+  
+  return urlMatch ? urlMatch[1] : null;
+}
+
+// Helper to extract webpage content from crawl result
+export function extractWebpageContent(content: string | undefined): { title: string, text: string } | null {
+  if (!content) return null;
+  
+  try {
+    // Try to parse the JSON content
+    const parsedContent = JSON.parse(content);
+    
+    // Handle case where content is in parsedContent.content field
+    if (parsedContent.content && typeof parsedContent.content === 'string') {
+      // Look for tool_result tag
+      const toolResultMatch = parsedContent.content.match(/<tool_result>\s*<crawl-webpage>([\s\S]*?)<\/crawl-webpage>\s*<\/tool_result>/);
+      if (toolResultMatch) {
+        try {
+          // Try to parse the content inside the tags
+          const rawData = toolResultMatch[1];
+          
+          // Look for ToolResult pattern in the raw data
+          const toolResultOutputMatch = rawData.match(/ToolResult\(.*?output='([\s\S]*?)'.*?\)/);
+          if (toolResultOutputMatch) {
+            try {
+              // If ToolResult pattern found, try to parse its output which may be a stringified JSON
+              const outputJson = JSON.parse(toolResultOutputMatch[1].replace(/\\\\n/g, '\\n').replace(/\\\\u/g, '\\u'));
+              
+              // Handle array format (first item)
+              if (Array.isArray(outputJson) && outputJson.length > 0) {
+                const item = outputJson[0];
+                return {
+                  title: item.Title || item.title || '',
+                  text: item.Text || item.text || item.content || ''
+                };
+              }
+              
+              // Handle direct object format
+              return {
+                title: outputJson.Title || outputJson.title || '',
+                text: outputJson.Text || outputJson.text || outputJson.content || ''
+              };
+            } catch (e) {
+              // If parsing fails, use the raw output
+              return {
+                title: 'Webpage Content',
+                text: toolResultOutputMatch[1]
+              };
+            }
+          }
+          
+          // Try to parse as direct JSON if no ToolResult pattern
+          const crawlData = JSON.parse(rawData);
+          
+          // Handle array format
+          if (Array.isArray(crawlData) && crawlData.length > 0) {
+            const item = crawlData[0];
+            return {
+              title: item.Title || item.title || '',
+              text: item.Text || item.text || item.content || ''
+            };
+          }
+          
+          // Handle direct object format
+          return {
+            title: crawlData.Title || crawlData.title || '',
+            text: crawlData.Text || crawlData.text || crawlData.content || ''
+          };
+        } catch (e) {
+          // Fallback to basic text extraction
+          return {
+            title: 'Webpage Content',
+            text: toolResultMatch[1]
+          };
+        }
+      }
+      
+      // Handle ToolResult pattern in the content directly
+      const toolResultOutputMatch = parsedContent.content.match(/ToolResult\(.*?output='([\s\S]*?)'.*?\)/);
+      if (toolResultOutputMatch) {
+        try {
+          // Parse the output which might be a stringified JSON
+          const outputJson = JSON.parse(toolResultOutputMatch[1].replace(/\\\\n/g, '\\n').replace(/\\\\u/g, '\\u'));
+          
+          // Handle array format
+          if (Array.isArray(outputJson) && outputJson.length > 0) {
+            const item = outputJson[0];
+            return {
+              title: item.Title || item.title || '',
+              text: item.Text || item.text || item.content || ''
+            };
+          }
+          
+          // Handle direct object format
+          return {
+            title: outputJson.Title || outputJson.title || '',
+            text: outputJson.Text || outputJson.text || outputJson.content || ''
+          };
+        } catch (e) {
+          // If parsing fails, use the raw output
+          return {
+            title: 'Webpage Content',
+            text: toolResultOutputMatch[1]
+          };
+        }
+      }
+    }
+    
+    // Direct handling of <crawl-webpage> format outside of content field
+    const crawlWebpageMatch = content.match(/<crawl-webpage>([\s\S]*?)<\/crawl-webpage>/);
+    if (crawlWebpageMatch) {
+      const rawData = crawlWebpageMatch[1];
+      
+      // Look for ToolResult pattern
+      const toolResultOutputMatch = rawData.match(/ToolResult\(.*?output='([\s\S]*?)'.*?\)/);
+      if (toolResultOutputMatch) {
+        try {
+          // Parse the output which might be a stringified JSON
+          const outputString = toolResultOutputMatch[1].replace(/\\\\n/g, '\\n').replace(/\\\\u/g, '\\u');
+          const outputJson = JSON.parse(outputString);
+          
+          // Handle array format
+          if (Array.isArray(outputJson) && outputJson.length > 0) {
+            const item = outputJson[0];
+            return {
+              title: item.Title || item.title || (item.URL ? new URL(item.URL).hostname : ''),
+              text: item.Text || item.text || item.content || ''
+            };
+          }
+          
+          // Handle direct object format
+          return {
+            title: outputJson.Title || outputJson.title || '',
+            text: outputJson.Text || outputJson.text || outputJson.content || ''
+          };
+        } catch (e) {
+          // If parsing fails, use the raw output
+          return {
+            title: 'Webpage Content',
+            text: toolResultOutputMatch[1]
+          };
+        }
+      }
+    }
+    
+    // Direct content extraction from parsed JSON if it's an array
+    if (Array.isArray(parsedContent) && parsedContent.length > 0) {
+      const item = parsedContent[0];
+      return {
+        title: item.Title || item.title || '',
+        text: item.Text || item.text || item.content || ''
+      };
+    }
+    
+    // Direct content extraction from parsed JSON as object
+    if (typeof parsedContent === 'object') {
+      return {
+        title: parsedContent.Title || parsedContent.title || 'Webpage Content',
+        text: parsedContent.Text || parsedContent.text || parsedContent.content || JSON.stringify(parsedContent)
+      };
+    }
+  } catch (e) {
+    // Last resort, try to match the ToolResult pattern directly in the raw content
+    const toolResultMatch = content.match(/ToolResult\(.*?output='([\s\S]*?)'.*?\)/);
+    if (toolResultMatch) {
+      try {
+        // Try to parse the output which might be a stringified JSON
+        const outputJson = JSON.parse(toolResultMatch[1].replace(/\\\\n/g, '\\n').replace(/\\\\u/g, '\\u'));
+        
+        // Handle array format
+        if (Array.isArray(outputJson) && outputJson.length > 0) {
+          const item = outputJson[0];
+          return {
+            title: item.Title || item.title || '',
+            text: item.Text || item.text || item.content || ''
+          };
+        }
+        
+        // Handle direct object format
+        return {
+          title: outputJson.Title || outputJson.title || '',
+          text: outputJson.Text || outputJson.text || outputJson.content || ''
+        };
+      } catch (e) {
+        // If parsing fails, use the raw output
+        return {
+          title: 'Webpage Content',
+          text: toolResultMatch[1]
+        };
+      }
+    }
+    
+    // If all else fails, return the content as-is
+    if (content) {
+      return {
+        title: 'Webpage Content',
+        text: content
+      };
+    }
+  }
+  
+  return null;
+}
+
 // Helper to extract search results from tool response
 export function extractSearchResults(content: string | undefined): Array<{ title: string, url: string, snippet?: string }> {
   if (!content) return [];
   
+  // First try the standard JSON extraction methods
   try {
     // Try to parse JSON content first
     const parsedContent = JSON.parse(content);
@@ -337,174 +688,67 @@ export function extractSearchResults(content: string | undefined): Array<{ title
         try {
           return JSON.parse(jsonArrayMatch[0]);
         } catch (e) {
-          return [];
+          return extractUrlsAndTitles(parsedContent.content);
         }
       }
+      
+      // If none of the above worked, try the whole content
+      return extractUrlsAndTitles(parsedContent.content);
     }
   } catch (e) {
-    // If JSON parsing fails, try regex direct extraction
-    const urlMatch = content.match(/https?:\/\/[^\s"]+/g);
-    if (urlMatch) {
-      return urlMatch.map(url => ({ 
-        title: cleanUrl(url), 
-        url 
-      }));
-    }
+    // If JSON parsing fails, extract directly from the content
+    return extractUrlsAndTitles(content);
   }
   
-  return [];
+  // Last resort fallback
+  return extractUrlsAndTitles(content);
 }
 
-// Helper to extract URLs and titles with regex
-export function extractUrlsAndTitles(content: string): Array<{ title: string, url: string, snippet?: string }> {
-  const results: Array<{ title: string, url: string, snippet?: string }> = [];
+// Function to determine which tool component to render based on the tool name
+export function getToolComponent(toolName: string): string {
+  if (!toolName) return 'GenericToolView';
   
-  // Regex to find URLs, attempting to exclude common trailing unwanted characters/tags
-  const urlRegex = /https?:\/\/[^\s"<]+/g;
-  let match;
+  const normalizedName = toolName.toLowerCase();
   
-  while ((match = urlRegex.exec(content)) !== null) {
-    let url = match[0];
+  // Map specific tool names to their respective components
+  switch (normalizedName) {
+    // Browser tools
+    case 'browser-navigate':
+    case 'browser-click':
+    case 'browser-extract':
+    case 'browser-fill':
+    case 'browser-wait':
+    case 'browser-screenshot':
+      return 'BrowserToolView';
     
-    // --- Start: New Truncation Logic ---
-    // Find the first occurrence of potential garbage separators like /n or \n after the protocol.
-    const protocolEndIndex = url.indexOf('://');
-    const searchStartIndex = protocolEndIndex !== -1 ? protocolEndIndex + 3 : 0;
+    // Command execution
+    case 'execute-command':
+      return 'CommandToolView';
     
-    const newlineIndexN = url.indexOf('/n', searchStartIndex);
-    const newlineIndexSlashN = url.indexOf('\\n', searchStartIndex);
+    // File operations
+    case 'create-file':
+    case 'delete-file':
+    case 'full-file-rewrite':
+    case 'read-file':
+      return 'FileOperationToolView';
     
-    let firstNewlineIndex = -1;
-    if (newlineIndexN !== -1 && newlineIndexSlashN !== -1) {
-      firstNewlineIndex = Math.min(newlineIndexN, newlineIndexSlashN);
-    } else if (newlineIndexN !== -1) {
-      firstNewlineIndex = newlineIndexN;
-    } else if (newlineIndexSlashN !== -1) {
-      firstNewlineIndex = newlineIndexSlashN;
-    }
+    // String operations
+    case 'str-replace':
+      return 'StrReplaceToolView';
     
-    // If a newline indicator is found, truncate the URL there.
-    if (firstNewlineIndex !== -1) {
-      url = url.substring(0, firstNewlineIndex);
-    }
-    // --- End: New Truncation Logic ---
-
-    // Basic cleaning: remove common tags or artifacts if they are directly appended
-    url = url.replace(/<\/?url>$/, '')
-             .replace(/<\/?content>$/, '')
-             .replace(/%3C$/, ''); // Remove trailing %3C (less than sign)
-             
-    // Aggressive trailing character removal (common issues)
-    // Apply this *after* potential truncation
-    while (/[);.,\/]$/.test(url)) {
-      url = url.slice(0, -1);
-    }
+    // Web operations
+    case 'web-search':
+      return 'WebSearchToolView';
+    case 'crawl-webpage':
+      return 'WebCrawlToolView';
+      
+    // Data provider operations
+    case 'execute-data-provider-call':
+    case 'get-data-provider-endpoints':
+      return 'DataProviderToolView';
     
-    // Decode URI components to handle % sequences, but catch errors
-    try {
-      // Decode multiple times? Sometimes needed for double encoding
-      url = decodeURIComponent(decodeURIComponent(url));
-    } catch (e) {
-      try { // Try decoding once if double decoding failed
-        url = decodeURIComponent(url);
-      } catch (e2) {
-        console.warn("Failed to decode URL component:", url, e2);
-      }
-    }
-    
-    // Final cleaning for specific problematic sequences like ellipsis or remaining tags
-    url = url.replace(/\u2026$/, ''); // Remove trailing ellipsis (…)
-    url = url.replace(/<\/?url>$/, '').replace(/<\/?content>$/, ''); // Re-apply tag removal after decode
-
-    // Try to find a title near this URL - simplified logic
-    const urlIndex = match.index;
-    const surroundingText = content.substring(Math.max(0, urlIndex - 100), urlIndex + url.length + 150); // Increased lookahead for content
-    
-    // Look for title patterns more robustly
-    const contentMatch = surroundingText.match(/<content>([^<]+)<\/content>/i);
-    const titleMatch = surroundingText.match(/Title[:\s]+([^\n<]+)/i) || 
-                      surroundingText.match(/\"(.*?)\"[\s\n]*?https?:\/\//);
-                      
-    let title = cleanUrl(url); // Default to cleaned URL hostname/path
-    if (contentMatch && contentMatch[1].trim()) {
-      title = contentMatch[1].trim();
-    } else if (titleMatch && titleMatch[1].trim()) {
-      title = titleMatch[1].trim();
-    }
-
-    // Avoid adding duplicates if the cleaning resulted in the same URL
-    if (url && !results.some(r => r.url === url)) { // Added check for non-empty url
-      results.push({
-        title: title,
-        url: url
-        // Snippet extraction could be added here if needed
-      });
-    }
+    // Default
+    default:
+      return 'GenericToolView';
   }
-  
-  return results;
-}
-
-// Helper to clean URL for display
-export function cleanUrl(url: string): string {
-  try {
-    const urlObj = new URL(url);
-    return urlObj.hostname.replace('www.', '') + (urlObj.pathname !== '/' ? urlObj.pathname : '');
-  } catch (e) {
-    return url;
-  }
-}
-
-// Helper to extract URL for webpage crawling
-export function extractCrawlUrl(content: string | undefined): string | null {
-  if (!content) return null;
-  const urlMatch = content.match(/url=["'](https?:\/\/[^"']+)["']/);
-  return urlMatch ? urlMatch[1] : null;
-}
-
-// Helper to extract webpage content from crawl result
-export function extractWebpageContent(content: string | undefined): { title: string, text: string } | null {
-  if (!content) return null;
-  
-  try {
-    // Try to parse the JSON content
-    const parsedContent = JSON.parse(content);
-    if (parsedContent.content && typeof parsedContent.content === 'string') {
-      // Look for tool_result tag
-      const toolResultMatch = parsedContent.content.match(/<tool_result>\s*<crawl-webpage>([\s\S]*?)<\/crawl-webpage>\s*<\/tool_result>/);
-      if (toolResultMatch) {
-        try {
-          const crawlData = JSON.parse(toolResultMatch[1]);
-          return {
-            title: crawlData.title || '',
-            text: crawlData.text || crawlData.content || ''
-          };
-        } catch (e) {
-          // Fallback to basic text extraction
-          return {
-            title: 'Webpage Content',
-            text: toolResultMatch[1]
-          };
-        }
-      }
-    }
-    
-    // Direct content extraction from parsed JSON
-    if (parsedContent.content) {
-      return {
-        title: 'Webpage Content',
-        text: parsedContent.content
-      };
-    }
-  } catch (e) {
-    // If JSON parsing fails, return the content as-is
-    if (content) {
-      return {
-        title: 'Webpage Content',
-        text: content
-      };
-    }
-  }
-  
-  return null;
 } 
