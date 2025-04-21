@@ -26,4 +26,4 @@ app.mount('/', StaticFiles(directory=workspace_dir, html=True), name='site')
 if __name__ == '__main__':
     print(f"Starting server with auto-reload, serving files from: {workspace_dir}")
     # Don't use reload directly in the run call
-    uvicorn.run("server:app", host="0.0.0.0", port=8080, reload=True) 
+    uvicorn.run("server:app", host="0.0.0.0", port=8099, reload=True) 

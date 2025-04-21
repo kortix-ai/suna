@@ -3,7 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ZoomIn, ZoomOut, RotateCw, Download, Maximize2, Minimize2, Info } from "lucide-react";
+import { ZoomIn, ZoomOut, RotateCw, Maximize2, Minimize2, Info } from "lucide-react";
 
 interface ImageRendererProps {
   url: string;
@@ -75,17 +75,6 @@ export function ImageRenderer({ url, className }: ImageRendererProps) {
   // Function for rotation
   const handleRotate = () => {
     setRotation(prev => (prev + 90) % 360);
-  };
-  
-  // Function for download
-  const handleDownload = () => {
-    const link = document.createElement('a');
-    link.href = url;
-    const filename = url.split('/').pop() || 'image';
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   };
   
   // Toggle fit to screen
@@ -196,15 +185,6 @@ export function ImageRenderer({ url, className }: ImageRendererProps) {
             ) : (
               <Minimize2 className="h-4 w-4" />
             )}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 w-8 p-0"
-            onClick={handleDownload}
-            title="Download"
-          >
-            <Download className="h-4 w-4" />
           </Button>
         </div>
       </div>

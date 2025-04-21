@@ -5,7 +5,7 @@ import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/pris
 import { ToolViewProps } from "./types";
 import { extractFilePath, extractFileContent, getFileType, formatTimestamp, getToolTitle } from "./utils";
 import { GenericToolView } from "./GenericToolView";
-import { MarkdownRenderer } from "@/components/file-renderers/markdown-renderer";
+import { MarkdownRenderer, processUnicodeContent } from "@/components/file-renderers/markdown-renderer";
 import { CsvRenderer } from "@/components/file-renderers/csv-renderer";
 import { cn } from "@/lib/utils";
 import { useTheme } from "next-themes";
@@ -343,7 +343,7 @@ export function FileOperationToolView({
                         })}
                         showLineNumbers={false}
                       >
-                        {fileContent}
+                        {processUnicodeContent(fileContent)}
                       </SyntaxHighlighter>
                     </div>
                   </div>
@@ -355,7 +355,7 @@ export function FileOperationToolView({
                           {idx + 1}
                         </div>
                         <div className="table-cell pl-3 py-0.5 text-xs font-mono whitespace-pre text-zinc-800 dark:text-zinc-300">
-                          {line || ' '}
+                          {processUnicodeContent(line) || ' '}
                         </div>
                       </div>
                     ))}
@@ -381,14 +381,14 @@ export function FileOperationToolView({
             {/* Markdown Preview */}
             {isMarkdown && viewMode === 'preview' && isSuccess && (
               <div className="flex-1 overflow-auto bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
-                <MarkdownRenderer content={fileContent} />
+                <MarkdownRenderer content={processUnicodeContent(fileContent)} />
               </div>
             )}
             
             {/* CSV Preview */}
             {isCsv && viewMode === 'preview' && isSuccess && (
               <div className="flex-1 overflow-hidden bg-white dark:bg-zinc-950">
-                <CsvRenderer content={fileContent} />
+                <CsvRenderer content={processUnicodeContent(fileContent)} />
               </div>
             )}
             

@@ -296,9 +296,34 @@
   html {
     scroll-behavior: smooth;
     zoom: 100%;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
   body {
     @apply bg-background text-foreground;
+    font-feature-settings: "palt"; /* Adjusts spacing for CJK text */
+  }
+  
+  /* Add font fallbacks for CJK characters */
+  .cjk-text, 
+  .prose p, 
+  .prose li, 
+  .prose table td, 
+  .prose table th,
+  .markdown-content {
+    font-family: var(--font-sans), ui-sans-serif, -apple-system, "Segoe UI", "Helvetica Neue", 
+                 "Noto Sans", "Noto Sans CJK JP", "Noto Sans CJK KR", "Noto Sans CJK SC", 
+                 "Noto Sans CJK TC", sans-serif;
+    line-height: 1.7;
+  }
+  
+  /* Specific handling for monospace/code with CJK character support */
+  code, pre, .font-mono {
+    font-family: var(--font-mono), ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, 
+                 Consolas, "Liberation Mono", "Courier New", monospace, 
+                 "Noto Sans Mono CJK JP", "Noto Sans Mono CJK KR", "Noto Sans Mono CJK SC", 
+                 "Noto Sans Mono CJK TC";
   }
 }
 

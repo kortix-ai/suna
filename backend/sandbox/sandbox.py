@@ -116,7 +116,7 @@ def create_sandbox(password: str):
             5900,  # VNC port
             5901,  # VNC port
             9222,  # Chrome remote debugging port
-            8080,   # HTTP website port
+            8099,   # HTTP website port
             8002,  # The browser api port
         ]
     ))
@@ -154,7 +154,7 @@ class SandboxToolsBase(Tool):
 
         # Get preview links
         vnc_link = self.sandbox.get_preview_link(6080)
-        website_link = self.sandbox.get_preview_link(8080)
+        website_link = self.sandbox.get_preview_link(8099)
         
         # Extract the actual URLs from the preview link objects
         vnc_url = vnc_link.url if hasattr(vnc_link, 'url') else str(vnc_link)

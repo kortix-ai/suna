@@ -1107,6 +1107,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
             projectId={project?.id || ""}
             onViewFiles={handleOpenFileViewer} 
             onToggleSidePanel={toggleSidePanel}
+            isMobileView={isMobile}
           />
           <div className="flex flex-1 items-center justify-center p-4">
             <div className="flex w-full max-w-md flex-col items-center gap-4 rounded-lg border bg-card p-6 text-center">
@@ -1134,16 +1135,15 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   return (
     <div className="flex h-screen">
       <div className={`flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out ${isSidePanelOpen ? 'mr-[90%] sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[650px]' : ''}`}>
-        {!isMobile && (
-          <SiteHeader 
-            threadId={threadId} 
-            projectName={projectName}
-            projectId={project?.id || ""}
-            onViewFiles={handleOpenFileViewer} 
-            onToggleSidePanel={toggleSidePanel}
-            onProjectRenamed={handleProjectRenamed}
-          />
-        )}
+        <SiteHeader 
+          threadId={threadId} 
+          projectName={projectName}
+          projectId={project?.id || ""}
+          onViewFiles={handleOpenFileViewer} 
+          onToggleSidePanel={toggleSidePanel}
+          onProjectRenamed={handleProjectRenamed}
+          isMobileView={isMobile}
+        />
         <div 
           ref={messagesContainerRef}
           className="flex-1 overflow-y-auto px-6 py-4 pb-24 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"

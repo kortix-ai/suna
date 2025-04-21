@@ -5,8 +5,10 @@ import { getToolIcon } from "@/components/thread/utils";
 import React from "react";
 import { Slider } from "@/components/ui/slider";
 import { ApiMessageType } from '@/components/thread/types';
-import { CircleDashed } from "lucide-react";
+import { CircleDashed, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { Button } from "@/components/ui/button";
 
 // Import tool view components from the tool-views directory
 import { CommandToolView } from "./tool-views/CommandToolView";
@@ -220,6 +222,7 @@ export function ToolCallSidePanel({
   const CurrentToolIcon = getToolIcon(currentToolName === 'Tool Call' ? 'unknown' : currentToolName);
   const isStreaming = currentToolCall?.toolResult?.content === "STREAMING";
   const isSuccess = currentToolCall?.toolResult?.isSuccess ?? true;
+  const isMobile = useIsMobile();
   
   // Add keyboard shortcut for CMD+I to close panel
   React.useEffect(() => {
@@ -298,31 +301,41 @@ export function ToolCallSidePanel({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <h2 className="text-lg font-medium text-zinc-900 dark:text-zinc-100">Suna's Computer</h2>
-              {/* <div className="h-6 w-6 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
-                <CurrentToolIcon className="h-3.5 w-3.5 text-zinc-800 dark:text-zinc-300" />
-              </div>
-              <span className="text-sm text-zinc-700 dark:text-zinc-300">{currentToolName}</span> */}
             </div>
             
+            {isMobile && (
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                onClick={onClose}
+                className="h-8 w-8 -mr-2"
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+            
             {currentToolCall.toolResult?.content && !isStreaming && (
-              
-<div className="flex items-center gap-2">
-              <div className="h-6 w-6 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
-                <CurrentToolIcon className="h-3.5 w-3.5 text-zinc-800 dark:text-zinc-300" />
-              </div>
-              <span className="text-sm text-zinc-700 dark:text-zinc-300">{currentToolName}</span>              
-             <div className={cn(
-                "px-2.5 py-0.5 rounded-full text-xs font-medium",
-                isSuccess 
-                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400" 
-                  : "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400"
-              )}>
-                {isSuccess ? 'Success' : 'Failed'}
+              <div className="flex items-center gap-2">
+                <div className="h-6 w-6 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+                  <CurrentToolIcon className="h-3.5 w-3.5 text-zinc-800 dark:text-zinc-300" />
+                </div>
+                <span className={cn(
+                  "text-sm text-zinc-700 dark:text-zinc-300",
+                  isMobile && "hidden sm:inline" // Hide on small mobile
+                )}>
+                  {currentToolName}
+                </span>              
+                <div className={cn(
+                  "px-2.5 py-0.5 rounded-full text-xs font-medium",
+                  isSuccess 
+                    ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400" 
+                    : "bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400"
+                )}>
+                  {isSuccess ? 'Success' : 'Failed'}
                 </div>
               </div>
             )}
             
-     
             {isStreaming && (
               <div className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400 flex items-center gap-1.5">
                 <CircleDashed className="h-3 w-3 animate-spin" />
@@ -339,7 +352,13 @@ export function ToolCallSidePanel({
   };
   
   return (
-    <div className={`fixed inset-y-0 right-0 w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[650px] border-l flex flex-col z-10 h-screen transition-all duration-200 ease-in-out ${!isOpen ? 'translate-x-full' : ''}`}>
+    <div className={cn(
+      "fixed inset-y-0 right-0 border-l flex flex-col z-10 h-screen transition-all duration-200 ease-in-out",
+      isMobile 
+        ? "w-[90%]" 
+        : "w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[650px]",
+      !isOpen && "translate-x-full"
+    )}>
       <div className="flex-1 flex flex-col overflow-hidden">
         {renderContent()}
       </div>
