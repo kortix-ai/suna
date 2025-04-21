@@ -20,7 +20,7 @@ supabase>=2.15.0
 pyjwt==2.10.1
 certifi==2024.2.2
 python-ripgrep==0.0.6
-daytona_sdk>=0.12.0
+daytona_sdk>=0.14.0
 boto3>=1.34.0
 pydantic
 tavily-python>=0.5.4
