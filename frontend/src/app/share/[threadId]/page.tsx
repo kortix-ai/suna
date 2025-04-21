@@ -20,6 +20,28 @@ import { cn } from "@/lib/utils";
 import { UnifiedMessage, ParsedContent, ParsedMetadata, ThreadParams } from '@/components/thread/types';
 import { getToolIcon, extractPrimaryParam, safeJsonParse } from '@/components/thread/utils';
 
+// Function to extract tool calls from a message
+function extractToolCallsFromMessage(messageText: string) {
+  const result: { name: string; fullMatch: string }[] = [];
+  
+  // Define regex to find tool calls in text
+  const toolCallRegex = /<([a-zA-Z\-_]+)(?:\s+[^>]*)?>(?:[\s\S]*?)<\/\1>|<([a-zA-Z\-_]+)(?:\s+[^>]*)?\/>/g;
+  
+  let match;
+  while ((match = toolCallRegex.exec(messageText)) !== null) {
+    const toolName = match[1] || match[2];
+    // Skip <ask> tags
+    if (toolName !== 'ask') {
+      result.push({
+        name: toolName,
+        fullMatch: match[0]
+      });
+    }
+  }
+  
+  return result;
+}
+
 // Define the set of tags whose raw XML should be hidden during streaming
 const HIDE_STREAMING_XML_TAGS = new Set([
   'execute-command',
@@ -1127,57 +1149,6 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     }
   }, [streamingTextContent, streamHookStatus, messages, isStreamingText, isPlaying, currentMessageIndex, streamText]);
 
-  // Create a memoized VNC iframe component to prevent reconnections
-  const memoizedVncIframe = useMemo(() => {
-    if (!vncPreviewUrl) return null;
-    
-    return (
-      <iframe
-        src={vncPreviewUrl}
-        title="Browser preview"
-        className="w-full h-full border-0 flex-1"
-      />
-    );
-  }, [vncPreviewUrl]);
-
-  useEffect(() => {
-    if (streamingTextContent && streamHookStatus === 'streaming' && messages.length > 0) {
-      // Find the last assistant message to update with streaming content
-      const lastAssistantIndex = messages.findIndex(m => 
-        m.type === 'assistant' && m.message_id === messages[currentMessageIndex]?.message_id);
-      
-      if (lastAssistantIndex >= 0) {
-        const assistantMessage = {...messages[lastAssistantIndex]};
-        assistantMessage.content = streamingTextContent;
-        
-        // Update the message in the messages array
-        const updatedMessages = [...messages];
-        updatedMessages[lastAssistantIndex] = assistantMessage;
-        
-        // Only show the streaming message if we're not already streaming and we're in play mode
-        if (!isStreamingText && isPlaying) {
-          const cleanup = streamText(streamingTextContent, () => {
-            // When streaming completes, update the visible messages
-            setVisibleMessages(prev => {
-              const messageExists = prev.some(m => m.message_id === assistantMessage.message_id);
-              if (messageExists) {
-                // Replace the existing message
-                return prev.map(m => m.message_id === assistantMessage.message_id ? assistantMessage : m);
-              } else {
-                // Add as a new message
-                return [...prev, assistantMessage];
-              }
-            });
-          });
-          
-          return cleanup;
-        }
-      }
-    }
-  }, [streamingTextContent, streamHookStatus, messages, isStreamingText, isPlaying, currentMessageIndex, streamText]);
-
-  // ... rest of the existing code ...
-
   return (
     <div className="flex h-screen">
       <div className={`flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out ${isSidePanelOpen ? 'mr-[90%] sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[650px]' : ''}`}>
@@ -1529,8 +1500,8 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         </Button>
       )}
 
-      {/* Tool calls side panel - Replace with debug-enabled version */}
-      <ToolCallPanelWithDebugInfo
+      {/* Tool calls side panel */}
+      <ToolCallSidePanel
         isOpen={isSidePanelOpen} 
         onClose={() => setIsSidePanelOpen(false)}
         toolCalls={toolCalls}
