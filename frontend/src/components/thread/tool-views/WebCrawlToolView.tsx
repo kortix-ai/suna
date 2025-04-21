@@ -1,12 +1,12 @@
 import React from "react";
-import { Globe, ArrowUpRight, Copy, CheckCircle, AlertTriangle, CircleDashed } from "lucide-react";
+import { Globe, CheckCircle, AlertTriangle, CircleDashed, ExternalLink } from "lucide-react";
 import { ToolViewProps } from "./types";
 import { extractCrawlUrl, extractWebpageContent, formatTimestamp, getToolTitle } from "./utils";
 import { GenericToolView } from "./GenericToolView";
 import { cn } from "@/lib/utils";
 
 export function WebCrawlToolView({ 
-  name = "web-crawl",
+  name = "crawl-webpage",
   assistantContent, 
   toolContent,
   assistantTimestamp,
@@ -44,55 +44,48 @@ export function WebCrawlToolView({
   
   const domain = url ? formatDomain(url) : 'Unknown';
   
-  // Format the extracted text into paragraphs
-  const formatTextContent = (text: string): React.ReactNode[] => {
-    if (!text) return [<p key="empty" className="text-zinc-500 dark:text-zinc-400 italic">No content extracted</p>];
-    
-    return text.split('\n\n').map((paragraph, idx) => {
-      if (!paragraph.trim()) return null;
-      return (
-        <p key={idx} className="mb-3 text-zinc-700 dark:text-zinc-300">
-          {paragraph.trim()}
-        </p>
-      );
-    }).filter(Boolean);
-  };
-  
   return (
     <div className="flex flex-col h-full">
       <div className="flex-1 p-4 overflow-auto">
         <div className="border border-zinc-200 dark:border-zinc-800 rounded-md overflow-hidden h-full flex flex-col">
           {/* Webpage Header */}
-          <div className="flex items-center p-2 bg-zinc-100 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 justify-between border-b border-zinc-200 dark:border-zinc-800">
+          <div className="flex items-center p-2 bg-zinc-100 dark:bg-zinc-900 justify-between border-b border-zinc-200 dark:border-zinc-800">
             <div className="flex items-center">
               <Globe className="h-4 w-4 mr-2 text-zinc-600 dark:text-zinc-400" />
-              <span className="text-xs font-medium line-clamp-1 pr-2">
-                {webpageContent?.title || domain}
+              <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">
+                {toolTitle}
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <a 
-                href={url} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-xs text-blue-600 dark:text-blue-500 hover:text-blue-500 dark:hover:text-blue-400 flex items-center gap-1"
-              >
-                Visit <ArrowUpRight className="h-3 w-3" />
-              </a>
-            </div>
+            
+            {!isStreaming && (
+              <div className="flex items-center gap-2">
+                <span className={cn(
+                  "text-xs flex items-center",
+                  isSuccess ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
+                )}>
+                  <span className="h-1.5 w-1.5 rounded-full mr-1.5 bg-current"></span>
+                  {isSuccess ? 'Success' : 'Failed'}
+                </span>
+                
+                <a 
+                  href={url} 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 py-1 px-2 text-xs text-zinc-700 dark:text-zinc-300 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 rounded transition-colors"
+                >
+                  <ExternalLink className="h-3.5 w-3.5 text-zinc-500 flex-shrink-0" />
+                  <span>Open URL</span>
+                </a>
+              </div>
+            )}
           </div>
           
           {/* URL Bar */}
-          <div className="px-3 py-1.5 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 flex items-center justify-between">
-            <div className="flex-1 bg-zinc-100 dark:bg-zinc-800 rounded px-2 py-1 text-zinc-800 dark:text-zinc-300 flex items-center">
-              <code className="text-xs font-mono truncate">{url}</code>
-            </div>
-            <button className="ml-2 text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300" title="Copy URL">
-              <Copy className="h-3.5 w-3.5" />
-            </button>
+          <div className="px-3 py-2 border-b border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
+            <code className="text-xs font-mono text-zinc-700 dark:text-zinc-300">{url}</code>
           </div>
           
-          {/* Webpage Content */}
+          {/* Content */}
           {isStreaming ? (
             <div className="flex-1 bg-white dark:bg-zinc-950 flex items-center justify-center">
               <div className="text-center p-6">
@@ -102,13 +95,15 @@ export function WebCrawlToolView({
               </div>
             </div>
           ) : (
-            <div className="flex-1 overflow-auto bg-white dark:bg-zinc-950 p-4">
+            <div className="flex-1 overflow-auto bg-white dark:bg-zinc-950 font-mono text-sm">
               {webpageContent ? (
-                <div className="prose prose-sm dark:prose-invert max-w-none">
-                  <h1 className="text-lg font-bold mb-4 text-zinc-900 dark:text-zinc-100">{webpageContent.title}</h1>
-                  <div className="text-sm">
-                    {formatTextContent(webpageContent.text)}
-                  </div>
+                <div className="p-3">
+                  <div className="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-2">Page Content</div>
+                  <div className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-md">
+                    <pre className="p-3 text-xs overflow-auto whitespace-pre-wrap text-zinc-800 dark:text-zinc-300 font-mono">
+                      {webpageContent.text || "No content extracted"}
+                    </pre>
+                  </div>                  
                 </div>
               ) : (
                 <div className="p-6 h-full flex items-center justify-center">
@@ -135,7 +130,7 @@ export function WebCrawlToolView({
                 <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
               )}
               <span>
-                {isSuccess ? 'Webpage crawled successfully' : 'Failed to crawl webpage'}
+                {isSuccess ? `${toolTitle} completed successfully` : `${toolTitle} operation failed`}
               </span>
             </div>
           )}
@@ -143,7 +138,7 @@ export function WebCrawlToolView({
           {isStreaming && (
             <div className="flex items-center gap-2">
               <CircleDashed className="h-3.5 w-3.5 text-blue-500 animate-spin" />
-              <span>Crawling webpage...</span>
+              <span>Executing {toolTitle.toLowerCase()}...</span>
             </div>
           )}
           

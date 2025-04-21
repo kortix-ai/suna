@@ -195,6 +195,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const [toolCalls, setToolCalls] = useState<ToolCallInput[]>([]);
   const [currentToolIndex, setCurrentToolIndex] = useState<number>(0);
   const [autoOpenedPanel, setAutoOpenedPanel] = useState(false);
+  const [initialPanelOpenAttempted, setInitialPanelOpenAttempted] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -221,18 +222,33 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const initialLayoutAppliedRef = useRef(false);
 
   const userClosedPanelRef = useRef(false);
-  
-  // Initialize as if user already closed panel to prevent auto-opening
+
+  // Replace both useEffect hooks with a single one that respects user closing
   useEffect(() => {
-    userClosedPanelRef.current = true;
-  }, []);
+    if (initialLoadCompleted.current && !initialPanelOpenAttempted) {
+      // Only attempt to open panel once on initial load
+      setInitialPanelOpenAttempted(true);
+      
+      // Open the panel with tool calls if available
+      if (toolCalls.length > 0) {
+        setIsSidePanelOpen(true);
+        setCurrentToolIndex(toolCalls.length - 1);
+      } else {
+        // Only if there are messages but no tool calls yet
+        if (messages.length > 0) {
+          setIsSidePanelOpen(true);
+        }
+      }
+    }
+  }, [initialPanelOpenAttempted, messages, toolCalls]);
 
   const toggleSidePanel = useCallback(() => {
     setIsSidePanelOpen(prevIsOpen => {
       const newState = !prevIsOpen;
       if (!newState) {
         userClosedPanelRef.current = true;
-      } else {
+      }
+      if (newState) {
         // Close left sidebar when opening side panel
         setLeftSidebarOpen(false);
       }
@@ -1370,6 +1386,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         onClose={() => {
           setIsSidePanelOpen(false);
           userClosedPanelRef.current = true;
+          setAutoOpenedPanel(true);
         }}
         toolCalls={toolCalls}
         messages={messages as ApiMessageType[]}

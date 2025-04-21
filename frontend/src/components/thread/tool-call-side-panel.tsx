@@ -16,6 +16,7 @@ import { FileOperationToolView } from "./tool-views/FileOperationToolView";
 import { BrowserToolView } from "./tool-views/BrowserToolView";
 import { WebSearchToolView } from "./tool-views/WebSearchToolView";
 import { WebCrawlToolView } from "./tool-views/WebCrawlToolView";
+import { DataProviderToolView } from "./tool-views/DataProviderToolView";
 
 // Simple input interface
 export interface ToolCallInput {
@@ -116,7 +117,7 @@ function getToolView(
           isSuccess={isSuccess}
         />
       );
-    case 'web-crawl':
+    case 'crawl-webpage':
       return (
         <WebCrawlToolView
           assistantContent={assistantContent}
@@ -124,6 +125,19 @@ function getToolView(
           assistantTimestamp={assistantTimestamp}
           toolTimestamp={toolTimestamp}
           isSuccess={isSuccess}
+        />
+      );
+    case 'execute-data-provider-call':
+    case 'get-data-provider-endpoints':
+      return (
+        <DataProviderToolView
+          name={normalizedToolName}
+          assistantContent={assistantContent}
+          toolContent={toolContent}
+          assistantTimestamp={assistantTimestamp}
+          toolTimestamp={toolTimestamp}
+          isSuccess={isSuccess}
+          isStreaming={isStreaming}
         />
       );
     default:
@@ -155,6 +169,7 @@ function getToolView(
           assistantTimestamp={assistantTimestamp}
           toolTimestamp={toolTimestamp}
           isSuccess={isSuccess}
+          isStreaming={isStreaming}
         />
       );
   }
