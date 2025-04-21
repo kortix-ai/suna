@@ -96,6 +96,7 @@ function DashboardContent() {
           placeholder="Describe what you need help with..."
           value={inputValue}
           onChange={setInputValue}
+          hideAttachments={true}
         />
       </div>
     </div>

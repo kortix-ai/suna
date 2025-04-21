@@ -42,6 +42,7 @@ interface ChatInputProps {
   onChange?: (value: string) => void;
   onFileBrowse?: () => void;
   sandboxId?: string;
+  hideAttachments?: boolean;
 }
 
 interface UploadedFile {
@@ -61,7 +62,8 @@ export function ChatInput({
   value: controlledValue,
   onChange: controlledOnChange,
   onFileBrowse,
-  sandboxId
+  sandboxId,
+  hideAttachments = false
 }: ChatInputProps) {
   const isControlled = controlledValue !== undefined && controlledOnChange !== undefined;
   
@@ -398,29 +400,31 @@ export function ChatInput({
             </TooltipProvider>
           )} */}
           
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button 
-                  type="button"
-                  onClick={handleFileUpload}
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
-                  disabled={loading || (disabled && !isAgentRunning) || isUploading}
-                >
-                  {isUploading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Paperclip className="h-4 w-4" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="top">
-                <p>Attach files</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          {!hideAttachments && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    type="button"
+                    onClick={handleFileUpload}
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 rounded-md text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                    disabled={loading || (disabled && !isAgentRunning) || isUploading}
+                  >
+                    {isUploading ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Paperclip className="h-4 w-4" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p>Attach files</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
           
           <input
             type="file"

@@ -36,7 +36,7 @@ class SandboxShellTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "execute_command",
-            "description": "Execute a shell command in the workspace directory. Uses sessions to maintain state between commands. This tool is essential for running CLI tools, installing packages, and managing system operations. Always verify command outputs before using the data. Commands can be chained using && for sequential execution, || for fallback execution, and | for piping output.",
+            "description": "Execute a shell command in the workspace directory. IMPORTANT: By default, commands are blocking and will wait for completion before returning. For long-running operations, use background execution techniques (& operator, nohup) to prevent timeouts. Uses sessions to maintain state between commands. This tool is essential for running CLI tools, installing packages, and managing system operations. Always verify command outputs before using the data. Commands can be chained using && for sequential execution, || for fallback execution, and | for piping output.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -55,7 +55,7 @@ class SandboxShellTool(SandboxToolsBase):
                     },
                     "timeout": {
                         "type": "integer",
-                        "description": "Optional timeout in seconds. Increase for long-running commands. Defaults to 60.",
+                        "description": "Optional timeout in seconds. Increase for long-running commands. Defaults to 60. For commands that might exceed this timeout, use background execution with & operator instead.",
                         "default": 60
                     }
                 },
@@ -72,29 +72,58 @@ class SandboxShellTool(SandboxToolsBase):
             {"param_name": "timeout", "node_type": "attribute", "path": ".", "required": False}
         ],
         example='''
-        <!-- Example 1: Basic command execution -->
+        <!-- IMPORTANT: By default, all commands are blocking and will wait for completion -->
+        
+        <!-- Example 1: Basic command execution (blocking) -->
         <execute-command>
         ls -l
         </execute-command>
 
-        <!-- Example 2: Command in specific directory -->
+        <!-- Example 2: Command in specific directory (blocking) -->
         <execute-command folder="data/pdfs">
         pdftotext document.pdf -layout
         </execute-command>
 
-        <!-- Example 3: Using named session for related commands -->
+        <!-- Example 3: Using named session for related commands (blocking) -->
         <execute-command session_name="pdf_processing">
         pdftotext input.pdf -layout > output.txt
         </execute-command>
 
-        <!-- Example 4: Complex command with pipes and chaining -->
+        <!-- Example 4: Complex command with pipes and chaining (blocking) -->
         <execute-command>
         find . -type f -name "*.txt" | sort && grep -r "pattern" . | awk '{print $1}' | sort | uniq -c
         </execute-command>
 
-        <!-- Example 5: Command with error handling and chaining -->
+        <!-- Example 5: Command with error handling and chaining (blocking) -->
         <execute-command>
         pdftotext input.pdf -layout 2>&1 || echo "Error processing PDF" && ls -la output.txt
+        </execute-command>
+
+        <!-- NON-BLOCKING COMMANDS: Use these for long-running operations to prevent timeouts -->
+
+        <!-- Example 6: Basic non-blocking command with & operator -->
+        <execute-command>
+        python scraper.py --large-dataset > scraper_output.log 2>&1 &
+        </execute-command>
+
+        <!-- Example 7: Run a process with nohup for immunity to hangups -->
+        <execute-command>
+        nohup python processor.py --heavy-computation > processor.log 2>&1 &
+        </execute-command>
+
+        <!-- Example 8: Starting a background process and storing its PID -->
+        <execute-command>
+        python long_task.py & echo $! > task.pid
+        </execute-command>
+
+        <!-- Example 9: Checking if a process is still running -->
+        <execute-command>
+        ps -p $(cat task.pid)
+        </execute-command>
+
+        <!-- Example 10: Killing a background process -->
+        <execute-command>
+        kill $(cat task.pid)
         </execute-command>
         '''
     )
@@ -122,7 +151,7 @@ class SandboxShellTool(SandboxToolsBase):
             from sandbox.sandbox import SessionExecuteRequest
             req = SessionExecuteRequest(
                 command=command,
-                var_async=False,
+                var_async=False,  # This makes the command blocking by default
                 cwd=cwd  # Still set the working directory for reference
             )
             

@@ -108,6 +108,14 @@ You have the ability to execute operations using both Python and CLI tools:
 - Always clean up sessions after use
 - Avoid commands requiring confirmation; actively use -y or -f flags for automatic confirmation
 - Avoid commands with excessive output; save to files when necessary
+- **IMPORTANT**: Shell commands are blocking by default - they will not return control until the command completes, which can cause timeouts with long-running operations
+- For non-blocking, long-running commands, use these simple approaches:
+  1. Run a command in the background using `&`: `command &`
+  2. Make a process immune to hangups: `nohup command > output.log 2>&1 &`
+  3. Start a background process and get its PID: `command & echo $!`
+  4. Check if a process is still running: `ps -p PID_NUMBER`
+  5. View output of a background process: `tail -f output.log`
+  6. Kill a background process: `kill PID_NUMBER` or `pkill PROCESS_NAME`
 - Chain multiple commands with operators to minimize interruptions and improve efficiency:
   1. Use && for sequential execution: `command1 && command2 && command3`
   2. Use || for fallback execution: `command1 || command2`

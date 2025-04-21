@@ -5,7 +5,7 @@ import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/pris
 import { ToolViewProps } from "./types";
 import { extractFilePath, extractFileContent, getFileType, formatTimestamp, getToolTitle } from "./utils";
 import { GenericToolView } from "./GenericToolView";
-import { Markdown } from "@/components/ui/markdown";
+import { MarkdownRenderer } from "@/components/file-renderers/markdown-renderer";
 import { CsvRenderer } from "@/components/file-renderers/csv-renderer";
 import { cn } from "@/lib/utils";
 import { useTheme } from "next-themes";
@@ -380,10 +380,8 @@ export function FileOperationToolView({
             
             {/* Markdown Preview */}
             {isMarkdown && viewMode === 'preview' && isSuccess && (
-              <div className="flex-1 overflow-auto bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 p-4">
-                <Markdown className="text-sm prose prose-sm dark:prose-invert max-w-none">
-                  {fileContent}
-                </Markdown>
+              <div className="flex-1 overflow-auto bg-white dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100">
+                <MarkdownRenderer content={fileContent} />
               </div>
             )}
             
