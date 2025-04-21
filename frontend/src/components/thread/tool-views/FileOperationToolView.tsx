@@ -144,11 +144,7 @@ export function FileOperationToolView({
     ? `${project.sandbox.sandbox_url}/${processedFilePath}`
     : undefined;
     
-  // Only log HTML preview URL when it exists
-  if (htmlPreviewUrl) {
-    console.log('HTML Preview URL:', htmlPreviewUrl);
-  }
-  
+  // console.log('HTML Preview URL:', htmlPreviewUrl);
   // Add state for view mode toggle (code or preview)
   const [viewMode, setViewMode] = useState<'code' | 'preview'>(isHtml || isMarkdown || isCsv ? 'preview' : 'code');
   
