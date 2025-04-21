@@ -34,10 +34,10 @@ class SandboxExposeTool(SandboxToolsBase):
             {"param_name": "port", "node_type": "content", "path": "."}
         ],
         example='''
-        <!-- Example 1: Expose a web server running on port 8099 -->
+        <!-- Example 1: Expose a web server running on port 8000 -->
         <!-- This will generate a public URL that users can access to view the web application -->
         <expose-port>
-        8099
+        8000
         </expose-port>
 
         <!-- Example 2: Expose an API service running on port 3000 -->

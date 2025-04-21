@@ -46,7 +46,7 @@ function DashboardContent() {
       
       // 2. Create a new thread for this project
       const thread = await createThread(newAgent.id);
-      
+    
       // 3. Add the user message to the thread
       await addUserMessage(thread.thread_id, message.trim());
       
@@ -212,7 +212,7 @@ function DashboardContent() {
           placeholder="Describe what you need help with..."
           value={inputValue}
           onChange={setInputValue}
-          hideAttachments={true}
+          hideAttachments={false}
         />
       </div>
       
