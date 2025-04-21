@@ -12,7 +12,7 @@ services:
       - "5901:5901"  # VNC port
       - "9222:9222"  # Chrome remote debugging port
       - "8000:8000"  # API server port
-      - "8099:8099"  # HTTP server port
+      - "8080:8080"  # HTTP server port
     environment:
       - ANONYMIZED_TELEMETRY=${ANONYMIZED_TELEMETRY:-false}
       - CHROME_PATH=/usr/bin/google-chrome
