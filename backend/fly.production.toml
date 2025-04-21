@@ -18,6 +18,6 @@ primary_region = 'bos'
   processes = ['app']
 
 [[vm]]
-  memory = '1gb'
-  cpu_kind = 'shared'
-  cpus = 1
+  memory = '16gb'
+  cpu_kind = 'performance'
+  cpus = 8
