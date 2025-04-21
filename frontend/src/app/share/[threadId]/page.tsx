@@ -95,6 +95,8 @@ function renderMarkdownContent(content: string, handleToolClick: (assistantMessa
   let lastIndex = 0;
   const contentParts: React.ReactNode[] = [];
   let match;
+  // Generate a unique timestamp for this render to avoid key conflicts
+  const timestamp = Date.now();
 
   // If no XML tags found, just return the full content as markdown
   if (!content.match(xmlRegex)) {
@@ -106,7 +108,7 @@ function renderMarkdownContent(content: string, handleToolClick: (assistantMessa
     if (match.index > lastIndex) {
       const textBeforeTag = content.substring(lastIndex, match.index);
       contentParts.push(
-        <Markdown key={`md-${lastIndex}`} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none inline-block mr-1">{textBeforeTag}</Markdown>
+        <Markdown key={`md-${lastIndex}-${timestamp}`} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none inline-block mr-1">{textBeforeTag}</Markdown>
       );
     }
 
@@ -114,7 +116,7 @@ function renderMarkdownContent(content: string, handleToolClick: (assistantMessa
     const toolName = match[1] || match[2];
     const IconComponent = getToolIcon(toolName);
     const paramDisplay = extractPrimaryParam(toolName, rawXml);
-    const toolCallKey = `tool-${match.index}`;
+    const toolCallKey = `tool-${match.index}-${timestamp}`;
 
     if (toolName === 'ask') {
       // Extract attachments from the XML attributes
@@ -129,7 +131,7 @@ function renderMarkdownContent(content: string, handleToolClick: (assistantMessa
 
       // Render <ask> tag content with attachment UI
       contentParts.push(
-        <div key={`ask-${match.index}`} className="space-y-3">
+        <div key={`ask-${match.index}-${timestamp}`} className="space-y-3">
           <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3">{askContent}</Markdown>
           
           {attachments.length > 0 && (
@@ -151,7 +153,7 @@ function renderMarkdownContent(content: string, handleToolClick: (assistantMessa
                   
                   return (
                     <button
-                      key={`attachment-${idx}`}
+                      key={`attachment-${idx}-${timestamp}`}
                       onClick={() => fileViewerHandler?.(attachment)}
                       className="group inline-flex items-center gap-2 rounded-md border bg-muted/5 px-2.5 py-1.5 text-sm transition-colors hover:bg-muted/10"
                     >
@@ -192,7 +194,7 @@ function renderMarkdownContent(content: string, handleToolClick: (assistantMessa
   // Add text after the last tag
   if (lastIndex < content.length) {
     contentParts.push(
-      <Markdown key={`md-${lastIndex}`} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none">{content.substring(lastIndex)}</Markdown>
+      <Markdown key={`md-${lastIndex}-${timestamp}`} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none">{content.substring(lastIndex)}</Markdown>
     );
   }
 
@@ -294,10 +296,13 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     }
     
     setMessages(prev => {
+      // First check if the message already exists
       const messageExists = prev.some(m => m.message_id === message.message_id);
       if (messageExists) {
+        // If it exists, update it instead of adding a new one
         return prev.map(m => m.message_id === message.message_id ? message : m);
       } else {
+        // If it's a new message, add it to the end
         return [...prev, message];
       }
     });
@@ -1250,7 +1255,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
 
                   visibleMessages.forEach((message, index) => {
                     const messageType = message.type;
-                    const key = message.message_id || `msg-${index}`;
+                    const key = message.message_id ? `${message.message_id}-${index}` : `msg-${index}`;
 
                     if (messageType === 'user') {
                       if (currentGroup) {
@@ -1327,7 +1332,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
                                     group.messages.forEach((message, msgIndex) => {
                                       if (message.type === 'assistant') {
                                         const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
-                                        const msgKey = message.message_id || `submsg-assistant-${msgIndex}`;
+                                        const msgKey = message.message_id ? `${message.message_id}-${msgIndex}` : `submsg-assistant-${msgIndex}`;
 
                                         if (!parsedContent.content) return;
 
@@ -1483,6 +1488,27 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
               >
                 <ArrowDown className="h-4 w-4 rotate-90" />
               </Button>
+              
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setIsPlaying(false);
+                  setCurrentMessageIndex(messages.length);
+                  setVisibleMessages(messages);
+                  setToolPlaybackIndex(toolCalls.length - 1);
+                  setStreamingText("");
+                  setIsStreamingText(false);
+                  setCurrentToolCall(null);
+                  if (toolCalls.length > 0) {
+                    setCurrentToolIndex(toolCalls.length - 1);
+                    setIsSidePanelOpen(true);
+                  }
+                }}
+                className="text-xs"
+              >
+                Skip to end
+              </Button>
             </div>
           </div>
         )}
@@ -1514,33 +1540,14 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         renderToolResult={toolViewResult}
       />
 
-      {sandboxId && (
-        <FileViewerModal
-          open={fileViewerOpen}
-          onOpenChange={setFileViewerOpen}
-          sandboxId={sandboxId}
-          initialFilePath={fileToView}
-          project={project}
-        />
-      )}
-      
-      {/* Show a fallback modal when sandbox is not available */}
-      {!sandboxId && fileViewerOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-background rounded-lg p-6 max-w-md w-full">
-            <h3 className="text-lg font-medium mb-2">File Unavailable</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              The file viewer is not available for this shared thread.
-            </p>
-            <Button 
-              onClick={() => setFileViewerOpen(false)}
-              className="w-full"
-            >
-              Close
-            </Button>
-          </div>
-        </div>
-      )}
+      {/* Show FileViewerModal regardless of sandboxId availability */}
+      <FileViewerModal
+        open={fileViewerOpen}
+        onOpenChange={setFileViewerOpen}
+        sandboxId={sandboxId || ""}
+        initialFilePath={fileToView}
+        project={project}
+      />
     </div>
   );
 }

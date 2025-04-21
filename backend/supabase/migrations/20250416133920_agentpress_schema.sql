@@ -6,6 +6,7 @@ CREATE TABLE projects (
     description TEXT,
     account_id UUID NOT NULL REFERENCES basejump.accounts(id) ON DELETE CASCADE,
     sandbox JSONB DEFAULT '{}'::jsonb,
+    is_public BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
@@ -96,7 +97,10 @@ ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
 -- Project policies
 CREATE POLICY project_select_policy ON projects
     FOR SELECT
-    USING (basejump.has_role_on_account(account_id) = true);
+    USING (
+        is_public = TRUE OR
+        basejump.has_role_on_account(account_id) = true OR
+    );
 
 CREATE POLICY project_insert_policy ON projects
     FOR INSERT
@@ -274,6 +278,7 @@ CREATE POLICY message_delete_policy ON messages
 
 -- Grant permissions to roles
 GRANT ALL PRIVILEGES ON TABLE projects TO authenticated, service_role;
+GRANT SELECT ON TABLE projects TO anon;
 GRANT SELECT ON TABLE threads TO authenticated, anon, service_role;
 GRANT SELECT ON TABLE messages TO authenticated, anon, service_role;
 GRANT ALL PRIVILEGES ON TABLE agent_runs TO authenticated, service_role;

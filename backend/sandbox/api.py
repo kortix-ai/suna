@@ -53,6 +53,10 @@ async def verify_sandbox_access(client, sandbox_id: str, user_id: str):
         raise HTTPException(status_code=404, detail="Sandbox not found")
     
     project_data = project_result.data[0]
+
+    if project_data.get('is_public'):
+        return project_data
+    
     account_id = project_data.get('account_id')
     
     # Verify account membership
