@@ -19,6 +19,9 @@ import { useAgentStream } from '@/hooks/useAgentStream';
 import { Markdown } from '@/components/ui/markdown';
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { BillingErrorAlert } from '@/components/billing/BillingErrorAlert';
+import { SUBSCRIPTION_PLANS } from '@/components/billing/PlanComparison';
+import { createClient } from '@/lib/supabase/client';
 
 import { UnifiedMessage, ParsedContent, ParsedMetadata, ThreadParams } from '@/components/thread/types';
 import { getToolIcon, extractPrimaryParam, safeJsonParse } from '@/components/thread/utils';
@@ -204,6 +207,15 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const [currentToolIndex, setCurrentToolIndex] = useState<number>(0);
   const [autoOpenedPanel, setAutoOpenedPanel] = useState(false);
   const [initialPanelOpenAttempted, setInitialPanelOpenAttempted] = useState(false);
+  
+  // Billing alert state
+  const [showBillingAlert, setShowBillingAlert] = useState(false);
+  const [billingData, setBillingData] = useState<{
+    currentUsage?: number;
+    limit?: number;
+    message?: string;
+    accountId?: string;
+  }>({});
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
@@ -221,6 +233,7 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
   const initialLoadCompleted = useRef<boolean>(false);
   const messagesLoadedRef = useRef(false);
   const agentRunsCheckedRef = useRef(false);
+  const previousAgentStatus = useRef<typeof agentStatus>('idle');
 
   const handleProjectRenamed = useCallback((newName: string) => {
     setProjectName(newName);
@@ -986,6 +999,117 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
     }
   }, [agentStatus, threadId, isLoading, streamHookStatus]);
 
+  // Check billing status when agent completes
+  const checkBillingStatus = useCallback(async () => {
+    if (!project?.account_id) return;
+    
+    const supabase = createClient();
+    
+    try {
+      // Check subscription status
+      const { data: subscriptionData } = await supabase
+        .schema('basejump')
+        .from('billing_subscriptions')
+        .select('price_id')
+        .eq('account_id', project.account_id)
+        .eq('status', 'active')
+        .single();
+      
+      const currentPlanId = subscriptionData?.price_id || SUBSCRIPTION_PLANS.FREE;
+      
+      // Only check usage limits for free tier users
+      if (currentPlanId === SUBSCRIPTION_PLANS.FREE) {
+        // Calculate usage
+        const startOfMonth = new Date();
+        startOfMonth.setDate(1);
+        startOfMonth.setHours(0, 0, 0, 0);
+        
+        // Get threads for this account
+        const { data: threadsData } = await supabase
+          .from('threads')
+          .select('thread_id')
+          .eq('account_id', project.account_id);
+        
+        const threadIds = threadsData?.map(t => t.thread_id) || [];
+        
+        // Get agent runs for those threads
+        const { data: agentRunData } = await supabase
+          .from('agent_runs')
+          .select('started_at, completed_at')
+          .in('thread_id', threadIds)
+          .gte('started_at', startOfMonth.toISOString());
+        
+        let totalSeconds = 0;
+        if (agentRunData) {
+          totalSeconds = agentRunData.reduce((acc, run) => {
+            const start = new Date(run.started_at);
+            const end = run.completed_at ? new Date(run.completed_at) : new Date();
+            const seconds = (end.getTime() - start.getTime()) / 1000;
+            return acc + seconds;
+          }, 0);
+        }
+        
+        // Convert to hours for display
+        const hours = totalSeconds / 3600;
+        const minutesUsed = totalSeconds / 60;
+        
+        // The free plan has a 10 minute limit as defined in backend/utils/billing.py
+        const FREE_PLAN_LIMIT_MINUTES = 10;
+        const FREE_PLAN_LIMIT_HOURS = FREE_PLAN_LIMIT_MINUTES / 60;
+        
+        // Show alert if over limit
+        if (minutesUsed > FREE_PLAN_LIMIT_MINUTES) {
+          console.log("Usage limit exceeded:", {
+            minutesUsed,
+            hoursUsed: hours,
+            limit: FREE_PLAN_LIMIT_MINUTES
+          });
+          setBillingData({
+            currentUsage: Number(hours.toFixed(2)),
+            limit: FREE_PLAN_LIMIT_HOURS,
+            message: `You've used ${Math.floor(minutesUsed)} minutes on the Free plan. The limit is ${FREE_PLAN_LIMIT_MINUTES} minutes per month.`,
+            accountId: project.account_id
+          });
+          setShowBillingAlert(true);
+          return true; // Return true if over limit
+        }
+      }
+      return false; // Return false if not over limit
+    } catch (err) {
+      console.error('Error checking billing status:', err);
+      return false;
+    }
+  }, [project?.account_id]);
+
+  // Update useEffect to check billing when agent completes
+  useEffect(() => {
+    const previousStatus = previousAgentStatus.current;
+    
+    // Check if agent just completed (status changed from running to idle)
+    if (previousStatus === 'running' && agentStatus === 'idle') {
+      checkBillingStatus();
+    }
+    
+    // Store current status for next comparison
+    previousAgentStatus.current = agentStatus;
+  }, [agentStatus, checkBillingStatus]);
+
+  // Add new useEffect to check billing limits when page first loads or project changes
+  useEffect(() => {
+    if (project?.account_id && initialLoadCompleted.current) {
+      console.log("Checking billing status on page load");
+      checkBillingStatus();
+    }
+  }, [project?.account_id, checkBillingStatus, initialLoadCompleted]);
+  
+  // Also check after messages are loaded to ensure we have the complete state
+  useEffect(() => {
+    if (messagesLoadedRef.current && project?.account_id && !isLoading) {
+      console.log("Checking billing status after messages loaded");
+      checkBillingStatus();
+    }
+  }, [messagesLoadedRef.current, checkBillingStatus, project?.account_id, isLoading]);
+
   if (isLoading && !initialLoadCompleted.current) {
     return (
       <div className="flex h-screen">
@@ -1482,6 +1606,16 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
           project={project || undefined}
         />
       )}
+
+      {/* Billing Alert for usage limit */}
+      <BillingErrorAlert 
+        message={billingData.message}
+        currentUsage={billingData.currentUsage}
+        limit={billingData.limit}
+        accountId={billingData.accountId || null}
+        onDismiss={() => setShowBillingAlert(false)}
+        isOpen={showBillingAlert}
+      />
     </div>
   );
 }

@@ -96,11 +96,11 @@ export function BillingErrorAlert({
                       <div className="flex justify-between items-center mb-2">
                         <div>
                           <p className="text-xs font-medium text-muted-foreground">Usage</p>
-                          <p className="text-base font-semibold">{currentUsage}h</p>
+                          <p className="text-base font-semibold">{(currentUsage * 60).toFixed(0)}m</p>
                         </div>
                         <div className="text-right">
                           <p className="text-xs font-medium text-muted-foreground">Limit</p>
-                          <p className="text-base font-semibold">{limit}h</p>
+                          <p className="text-base font-semibold">{(limit * 60).toFixed(0)}m</p>
                         </div>
                       </div>
                       <div className="w-full h-1.5 bg-background rounded-full overflow-hidden">
