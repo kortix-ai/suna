@@ -5,6 +5,7 @@ export const siteConfig = {
   links: {
     twitter: "https://x.com/kortixai",
     github: "https://github.com/kortix-ai/",
+    linkedin: "https://www.linkedin.com/company/kortix/",
   },
 };
 
