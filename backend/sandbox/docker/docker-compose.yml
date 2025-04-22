@@ -6,7 +6,7 @@ services:
       dockerfile: ${DOCKERFILE:-Dockerfile}
       args:
         TARGETPLATFORM: ${TARGETPLATFORM:-linux/amd64}
-    image: adamcohenhillel/kortix-suna:0.0.18
+    image: adamcohenhillel/kortix-suna:0.0.19
     ports:
       - "6080:6080"  # noVNC web interface
       - "5901:5901"  # VNC port
