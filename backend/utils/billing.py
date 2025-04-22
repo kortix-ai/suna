@@ -3,9 +3,9 @@ from typing import Dict, Optional, Tuple
 
 # Define subscription tiers and their monthly limits (in minutes)
 SUBSCRIPTION_TIERS = {
-    'price_1RGJ9GG6l1KZGqIroxSqgphC': {'name': 'free', 'minutes': 10000},
-    'price_1RGJ9LG6l1KZGqIrd9pwzeNW': {'name': 'base', 'minutes': 6000},  # 100 hours = 6000 minutes
-    'price_1RGJ9JG6l1KZGqIrVUU4ZRv6': {'name': 'extra', 'minutes': 6000}  # 100 hours = 6000 minutes
+    'price_1RGJ9GG6l1KZGqIroxSqgphC': {'name': 'free', 'minutes': 10},
+    'price_1RGJ9LG6l1KZGqIrd9pwzeNW': {'name': 'base', 'minutes': 300},  # 100 hours = 6000 minutes
+    'price_1RGJ9JG6l1KZGqIrVUU4ZRv6': {'name': 'extra', 'minutes': 2400}  # 100 hours = 6000 minutes
 }
 
 async def get_account_subscription(client, account_id: str) -> Optional[Dict]:

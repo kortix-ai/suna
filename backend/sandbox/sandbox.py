@@ -90,7 +90,7 @@ def create_sandbox(password: str):
     logger.debug("Configuring sandbox with browser-use image and environment variables")
         
     sandbox = daytona.create(CreateSandboxParams(
-        image="adamcohenhillel/kortix-suna:0.0.19",
+        image="adamcohenhillel/kortix-suna:0.0.20",
         public=True,
         env_vars={
             "CHROME_PERSISTENT_SESSION": "true",
