@@ -317,7 +317,8 @@ export function PricingSection() {
                     </p>
                   )}
                   <ul className="space-y-3">
-                    {tier.features.map((feature) => (
+                    {tier.features.filter(feature => !feature.startsWith('//'))
+                      .map((feature) => (
                       <li key={feature} className="flex items-center gap-2">
                         <div
                           className={cn(
@@ -366,7 +367,7 @@ export function PricingSection() {
                       </li>
                     ))}
                   </ul>
-
+{/* 
                   {(tier as any).showContactSales && (
                     <button
                       className="h-10 w-full flex items-center justify-center text-sm font-normal tracking-wide rounded-full px-4 cursor-pointer transition-all ease-out active:scale-95 bg-transparent border border-secondary/20 text-secondary shadow-[0px_1px_2px_0px_rgba(255,255,255,0.05)_inset] mt-6"
@@ -374,7 +375,7 @@ export function PricingSection() {
                     >
                       Need more? Contact Sales
                     </button>
-                  )}
+                  )} */}
                 </div>
               </div>
             ))}
