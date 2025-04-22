@@ -88,13 +88,7 @@ def create_sandbox(password: str):
     
     logger.info("Creating new Daytona sandbox environment")
     logger.debug("Configuring sandbox with browser-use image and environment variables")
-    
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    if not openai_api_key:
-        logger.warning("OPENAI_API_KEY not found in environment variables")
-    else:
-        logger.debug("OPENAI_API_KEY configured for sandbox")
-    
+        
     sandbox = daytona.create(CreateSandboxParams(
         image="adamcohenhillel/kortix-suna:0.0.19",
         public=True,
