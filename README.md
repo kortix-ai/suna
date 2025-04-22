@@ -122,7 +122,7 @@ You'll need the following components:
    - Save your Redis connection details for later use
 
 3. **Daytona**: 
-   - Create an account on [Daytona](https://www.daytona.io/)
+   - Create an account on [Daytona](https://app.daytona.io/)
    - Generate an API key from your account settings
    - Go to [Images](https://app.daytona.io/dashboard/images)
    - Click "Add Image"
