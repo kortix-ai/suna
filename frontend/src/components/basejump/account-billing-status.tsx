@@ -35,10 +35,19 @@ export default async function AccountBillingStatus({ accountId, returnUrl }: Pro
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
+    // First get threads for this account
+    const { data: threadsData } = await supabaseClient
+        .from('threads')
+        .select('thread_id')
+        .eq('account_id', accountId);
 
+    const threadIds = threadsData?.map(t => t.thread_id) || [];
+
+    // Then get agent runs for those threads
     const { data: agentRunData, error: agentRunError } = await supabaseClient
         .from('agent_runs')
         .select('started_at, completed_at')
+        .in('thread_id', threadIds)
         .gte('started_at', startOfMonth.toISOString());
 
     let totalSeconds = 0;
@@ -52,7 +61,7 @@ export default async function AccountBillingStatus({ accountId, returnUrl }: Pro
     }
 
     const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const minutes = Math.floor((totalSeconds % 3600) / 60); 
     const seconds = Math.floor(totalSeconds % 60);
     const usageDisplay = `${hours}h ${minutes}m ${seconds}s`;
 
