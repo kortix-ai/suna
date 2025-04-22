@@ -980,81 +980,94 @@ class BrowserAutomation:
         """Click on an element by index"""
         try:
             page = await self.get_current_page()
-            selector_map = await self.get_selector_map()
+            
+            # Get the current state and selector map *before* the click
+            initial_dom_state = await self.get_current_dom_state()
+            selector_map = initial_dom_state.selector_map
             
             if action.index not in selector_map:
+                # Get updated state even if element not found initially
+                dom_state, screenshot, elements, metadata = await self.get_updated_browser_state(f"click_element_error (index {action.index} not found)")
                 return self.build_action_result(
                     False,
                     f"Element with index {action.index} not found",
-                    None,
-                    "",
-                    "",
-                    {},
+                    dom_state, # Use the latest state
+                    screenshot,
+                    elements,
+                    metadata,
                     error=f"Element with index {action.index} not found"
                 )
+
+            element_to_click = selector_map[action.index]
+            print(f"Attempting to click element: {element_to_click}")
+
+            # Construct a more reliable selector using JavaScript evaluation
+            # Find the element based on its properties captured in selector_map
+            js_selector_script = """
+            (targetElementInfo) => {
+                const interactiveElements = Array.from(document.querySelectorAll(
+                    'a, button, input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [tabindex]:not([tabindex="-1"])'
+                ));
+                
+                const visibleElements = interactiveElements.filter(el => {
+                    const style = window.getComputedStyle(el);
+                    const rect = el.getBoundingClientRect();
+                    return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0' && rect.width > 0 && rect.height > 0;
+                });
+
+                if (targetElementInfo.index > 0 && targetElementInfo.index <= visibleElements.length) {
+                    // Return the element at the specified index (1-based)
+                    return visibleElements[targetElementInfo.index - 1];
+                }
+                return null; // Element not found at the expected index
+            }
+            """
             
-            # In a real implementation, we would use the selector map to get the element's
-            # properties and use them to find and click the element
-            element = selector_map[action.index]
-            print(f"Clicking element: {element}")
+            element_info = {'index': action.index} # Pass the target index to the script
             
-            # Use CSS selector or XPath to locate and click the element
-            await page.wait_for_timeout(500)  # Small delay before clicking
-            
+            target_element_handle = await page.evaluate_handle(js_selector_script, element_info)
+
             click_success = False
-            try:
-                # Try different strategies to click the element
-                if element.attributes.get("id"):
-                    await page.click(f"#{element.attributes['id']}")
-                    click_success = True
-                elif element.attributes.get("class"):
-                    class_selector = f".{element.attributes['class'].replace(' ', '.')}"
-                    await page.click(class_selector)
-                    click_success = True
-                else:
-                    # Try text-based location
-                    text = element.get_all_text_till_next_clickable_element()
-                    if text:
-                        await page.click(f"text={text}")
-                        click_success = True
-                    else:
-                        # Generic xpath - not reliable but for demo purposes
-                        await page.click(f"//{element.tag_name}[{action.index}]")
-                        click_success = True
-            except Exception as click_error:
-                print(f"Error clicking element with standard methods: {click_error}")
-                # Fallback to JavaScript click
+            error_message = ""
+
+            if await target_element_handle.evaluate("node => node !== null"):
                 try:
-                    js_click = f"""
-                    (function() {{
-                        const elements = document.querySelectorAll('{element.tag_name}');
-                        if (elements.length >= {action.index}) {{
-                            elements[{action.index-1}].click();
-                            return true;
-                        }}
-                        return false;
-                    }})()
-                    """
-                    click_success = await page.evaluate(js_click)
-                except Exception as js_error:
-                    print(f"Error with JavaScript click fallback: {js_error}")
-            
-            # Give time for any navigation to occur
-            await page.wait_for_load_state("networkidle", timeout=5000)
-            
+                    # Use Playwright's recommended way: click the handle
+                    # Add timeout and wait for element to be stable
+                    await target_element_handle.click(timeout=5000) 
+                    click_success = True
+                    print(f"Successfully clicked element handle for index {action.index}")
+                except Exception as click_error:
+                    error_message = f"Error clicking element handle: {click_error}"
+                    print(error_message)
+                    # Optional: Add fallback methods here if needed
+                    # e.g., target_element_handle.dispatch_event('click')
+            else:
+                 error_message = f"Could not locate the target element handle for index {action.index} using JS script."
+                 print(error_message)
+
+
+            # Wait for potential page changes/network activity
+            try:
+                await page.wait_for_load_state("networkidle", timeout=5000)
+            except Exception as wait_error:
+                print(f"Timeout or error waiting for network idle after click: {wait_error}")
+                await asyncio.sleep(1) # Fallback wait
+
             # Get updated state after action
             dom_state, screenshot, elements, metadata = await self.get_updated_browser_state(f"click_element({action.index})")
-            
+
             return self.build_action_result(
                 click_success,
-                f"Clicked element with index {action.index}" if click_success else f"Attempted to click element {action.index} but may have failed",
+                f"Clicked element with index {action.index}" if click_success else f"Attempted to click element {action.index} but failed. Error: {error_message}",
                 dom_state,
                 screenshot,
                 elements,
                 metadata,
-                error="",
+                error=error_message if not click_success else "",
                 content=None
             )
+            
         except Exception as e:
             print(f"Error in click_element: {e}")
             traceback.print_exc()
@@ -1072,15 +1085,22 @@ class BrowserAutomation:
                     content=None
                 )
             except:
+                # Fallback if getting state also fails
+                current_url = "unknown"
+                try:
+                   current_url = page.url # Try to get at least the URL
+                except:
+                    pass 
                 return self.build_action_result(
                     False,
                     str(e),
-                    None,
-                    "",
-                    "",
-                    {},
+                    None, # No DOM state available
+                    "",   # No screenshot
+                    "",   # No elements string
+                    {},   # Empty metadata
                     error=str(e),
-                    content=None
+                    content=None,
+                    fallback_url=current_url 
                 )
     
     async def input_text(self, action: InputTextAction = Body(...)):
@@ -1917,16 +1937,127 @@ async def test_browser_api():
         await automation_service.shutdown()
         print("Browser closed")
 
+async def test_browser_api_2():
+    """Test the browser automation API functionality on the chess page"""
+    try:
+        # Initialize browser automation
+        print("\n=== Starting Browser Automation Test 2 (Chess Page) ===")
+        await automation_service.startup()
+        print("✅ Browser started successfully")
+
+        # Navigate to the chess test page
+        print("\n--- Testing Navigation to Chess Page ---")
+        test_url = "https://dat-lequoc.github.io/chess-for-suna/chess.html"
+        result = await automation_service.navigate_to(GoToUrlAction(url=test_url))
+        print(f"Navigation status: {'✅ Success' if result.success else '❌ Failed'}")
+        if not result.success:
+            print(f"Error: {result.error}")
+            return
+        
+        print(f"URL: {result.url}")
+        print(f"Title: {result.title}")
+        
+        # Check DOM state and elements
+        print(f"\nFound {result.element_count} interactive elements")
+        if result.elements and result.elements.strip():
+            print("Elements:")
+            print(result.elements)
+        else:
+            print("No formatted elements found, but DOM was processed")
+            
+        # Display interactive elements as JSON
+        if result.interactive_elements and len(result.interactive_elements) > 0:
+            print("\nInteractive elements summary:")
+            for el in result.interactive_elements:
+                print(f"  [{el['index']}] <{el['tag_name']}> {el.get('text', '')[:30]}")
+        
+        # Screenshot info
+        print(f"\nScreenshot captured: {'Yes' if result.screenshot_base64 else 'No'}")
+        print(f"Viewport size: {result.viewport_width}x{result.viewport_height}")
+        
+        await asyncio.sleep(2)
+
+        # Test clicking on an element (e.g., a chess square)
+        print("\n--- Testing Element Click (element 5) ---")
+        if result.element_count > 4: # Ensure element 5 exists
+            click_index = 5
+            click_result = await automation_service.click_element(ClickElementAction(index=click_index))
+            print(f"Click status for element {click_index}: {'✅ Success' if click_result.success else '❌ Failed'}")
+            print(f"Message: {click_result.message}")
+            print(f"URL after click: {click_result.url}")
+
+            # Retrieve and display elements again after click
+            print(f"\n--- Retrieving elements after clicking element {click_index} ---")
+            if click_result.elements and click_result.elements.strip():
+                print("Updated Elements:")
+                print(click_result.elements)
+            else:
+                print("No formatted elements found after click.")
+
+            if click_result.interactive_elements and len(click_result.interactive_elements) > 0:
+                print("\nUpdated interactive elements summary:")
+                for el in click_result.interactive_elements:
+                    print(f"  [{el['index']}] <{el['tag_name']}> {el.get('text', '')[:30]}")
+            else:
+                print("No interactive elements found after click.")
+
+            # Test clicking element 1 after the first click
+            print("\n--- Testing Element Click (element 1 after clicking 5) ---")
+            if click_result.element_count > 0: # Check if there are still elements
+                click_index_2 = 1
+                click_result_2 = await automation_service.click_element(ClickElementAction(index=click_index_2))
+                print(f"Click status for element {click_index_2}: {'✅ Success' if click_result_2.success else '❌ Failed'}")
+                print(f"Message: {click_result_2.message}")
+                print(f"URL after click: {click_result_2.url}")
+
+                # Retrieve and display elements again after the second click
+                print(f"\n--- Retrieving elements after clicking element {click_index_2} ---")
+                if click_result_2.elements and click_result_2.elements.strip():
+                    print("Elements after second click:")
+                    print(click_result_2.elements)
+                else:
+                    print("No formatted elements found after second click.")
+
+                if click_result_2.interactive_elements and len(click_result_2.interactive_elements) > 0:
+                    print("\nInteractive elements summary after second click:")
+                    for el in click_result_2.interactive_elements:
+                        print(f"  [{el['index']}] <{el['tag_name']}> {el.get('text', '')[:30]}")
+                else:
+                    print("No interactive elements found after second click.")
+            else:
+                print("Skipping second element click test - no elements found after first click.")
+
+        else:
+            print("Skipping element click test - fewer than 5 elements found.")
+
+        await asyncio.sleep(2)
+
+        print("\n✅ Chess Page Test Completed!")
+        await asyncio.sleep(100)
+
+    except Exception as e:
+        print(f"\n❌ Chess Page Test failed: {str(e)}")
+        traceback.print_exc()
+    finally:
+        # Ensure browser is closed
+        print("\n--- Cleaning up ---")
+        await automation_service.shutdown()
+        print("Browser closed")
+
 if __name__ == '__main__':
     import uvicorn
     import sys
     
-    # Check if running in test mode
-    test_mode = len(sys.argv) > 1 and sys.argv[1] == "--test"
+    # Check command line arguments for test mode
+    test_mode_1 = "--test" in sys.argv
+    test_mode_2 = "--test2" in sys.argv
     
-    if test_mode:
-        print("Running in test mode")
+    if test_mode_1:
+        print("Running in test mode 1")
         asyncio.run(test_browser_api())
+    elif test_mode_2:
+        print("Running in test mode 2 (Chess Page)")
+        asyncio.run(test_browser_api_2())
     else:
         print("Starting API server")
         uvicorn.run("browser_api:api_app", host="0.0.0.0", port=8002)
