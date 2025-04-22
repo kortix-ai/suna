@@ -118,12 +118,14 @@ CREATE POLICY project_delete_policy ON projects
 CREATE POLICY thread_select_policy ON threads
     FOR SELECT
     USING (
-        is_public = TRUE OR
         basejump.has_role_on_account(account_id) = true OR 
         EXISTS (
             SELECT 1 FROM projects
             WHERE projects.project_id = threads.project_id
-            AND basejump.has_role_on_account(projects.account_id) = true
+            AND (
+                projects.is_public = TRUE OR
+                basejump.has_role_on_account(projects.account_id) = true
+            )
         )
     );
 
@@ -169,7 +171,7 @@ CREATE POLICY agent_run_select_policy ON agent_runs
             LEFT JOIN projects ON threads.project_id = projects.project_id
             WHERE threads.thread_id = agent_runs.thread_id
             AND (
-                threads.is_public = TRUE OR
+                projects.is_public = TRUE OR
                 basejump.has_role_on_account(threads.account_id) = true OR 
                 basejump.has_role_on_account(projects.account_id) = true
             )
@@ -227,7 +229,7 @@ CREATE POLICY message_select_policy ON messages
             LEFT JOIN projects ON threads.project_id = projects.project_id
             WHERE threads.thread_id = messages.thread_id
             AND (
-                threads.is_public = TRUE OR
+                projects.is_public = TRUE OR
                 basejump.has_role_on_account(threads.account_id) = true OR 
                 basejump.has_role_on_account(projects.account_id) = true
             )
@@ -295,18 +297,19 @@ DECLARE
     current_role TEXT;
     latest_summary_id UUID;
     latest_summary_time TIMESTAMP WITH TIME ZONE;
-    is_thread_public BOOLEAN;
+    is_project_public BOOLEAN;
 BEGIN
     -- Get current role
     SELECT current_user INTO current_role;
     
-    -- Check if thread is public
-    SELECT is_public INTO is_thread_public
-    FROM threads
-    WHERE thread_id = p_thread_id;
+    -- Check if associated project is public
+    SELECT p.is_public INTO is_project_public
+    FROM threads t
+    LEFT JOIN projects p ON t.project_id = p.project_id
+    WHERE t.thread_id = p_thread_id;
     
-    -- Skip access check for service_role or public threads
-    IF current_role = 'authenticated' AND NOT is_thread_public THEN
+    -- Skip access check for service_role or public projects
+    IF current_role = 'authenticated' AND NOT is_project_public THEN
         -- Check if thread exists and user has access
         SELECT EXISTS (
             SELECT 1 FROM threads t

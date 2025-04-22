@@ -608,9 +608,9 @@ export default function ThreadPage({ params }: { params: Promise<ThreadParams> }
         if (!isMounted) return;
         
         // Make sure the thread is public
-        if (!(threadData as any).is_public) {
-          throw new Error('This thread is not available for public viewing.');
-        }
+        // if (!(threadData as any).is_public) {
+        //   throw new Error('This thread is not available for public viewing.');
+        // }
         
         if (threadData?.project_id) {
           try {

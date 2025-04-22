@@ -105,7 +105,6 @@ async def get_user_id_from_stream_auth(
         detail="No valid authentication credentials found",
         headers={"WWW-Authenticate": "Bearer"}
     )
-
 async def verify_thread_access(client, thread_id: str, user_id: str):
     """
     Verify that a user has access to a specific thread based on account membership.
@@ -122,16 +121,20 @@ async def verify_thread_access(client, thread_id: str, user_id: str):
         HTTPException: If the user doesn't have access to the thread
     """
     # Query the thread to get account information
-    thread_result = await client.table('threads').select('*').eq('thread_id', thread_id).execute()
+    thread_result = await client.table('threads').select('*,project_id').eq('thread_id', thread_id).execute()
 
     if not thread_result.data or len(thread_result.data) == 0:
         raise HTTPException(status_code=404, detail="Thread not found")
     
     thread_data = thread_result.data[0]
     
-    # Check if thread is public
-    if thread_data.get('is_public'):
-        return True
+    # Check if project is public
+    project_id = thread_data.get('project_id')
+    if project_id:
+        project_result = await client.table('projects').select('is_public').eq('project_id', project_id).execute()
+        if project_result.data and len(project_result.data) > 0:
+            if project_result.data[0].get('is_public'):
+                return True
         
     account_id = thread_data.get('account_id')
     # When using service role, we need to manually check account membership instead of using current_user_account_role
