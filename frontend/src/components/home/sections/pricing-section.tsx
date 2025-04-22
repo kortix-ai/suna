@@ -322,8 +322,9 @@ export function PricingSection() {
                     </button>
                   )}
                 </div>
-                <hr className="border-border dark:border-white/20" />
+                {/* <hr className="border-border dark:border-white/20" /> */}
                 <div className="p-4">
+                  {/* 
                   {tier.name !== "Free" && (
                     <p className="text-sm mb-4">
                       Everything in {tier.name === "Pro" ? "Free" : "Pro"} +
@@ -380,15 +381,7 @@ export function PricingSection() {
                       </li>
                     ))}
                   </ul>
-{/* 
-                  {(tier as any).showContactSales && (
-                    <button
-                      className="h-10 w-full flex items-center justify-center text-sm font-normal tracking-wide rounded-full px-4 cursor-pointer transition-all ease-out active:scale-95 bg-transparent border border-secondary/20 text-secondary shadow-[0px_1px_2px_0px_rgba(255,255,255,0.05)_inset] mt-6"
-                      onClick={() => window.open('mailto:support@kortix.ai?subject=Enterprise Plan Inquiry', '_blank')}
-                    >
-                      Need more? Contact Sales
-                    </button>
-                  )} */}
+                  */}
                 </div>
               </div>
             ))}
