@@ -1,13 +1,12 @@
 [tool.poetry]
-name = "agentpress"
-version = "0.1.12"
-description = "Building blocks for AI Agents"
+name = "suna"
+version = "1.0"
+description = "open source generalist AI Agent"
 authors = ["marko-kraemer <mail@markokraemer.com>"]
 readme = "README.md"
 license = "MIT"
-homepage = "https://github.com/kortix-ai/agentpress"
-repository = "https://github.com/kortix-ai/agentpress"
-keywords = ["llm", "ai", "agents", "ai agents", "ai agent framework"]
+homepage = "https://www.suna.so/"
+repository = "https://github.com/kortix-ai/suna"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
