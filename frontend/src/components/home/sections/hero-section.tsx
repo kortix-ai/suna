@@ -302,12 +302,12 @@ export function HeroSection() {
           <DialogHeader>
             <div className="flex items-center justify-between">
               <DialogTitle className="text-xl font-medium">Sign in to continue</DialogTitle>
-              <button 
+              {/* <button 
                 onClick={() => setAuthDialogOpen(false)}
                 className="rounded-full p-1 hover:bg-muted transition-colors"
               >
                 <X className="h-4 w-4 text-muted-foreground" />
-              </button>
+              </button> */}
             </div>
             <DialogDescription className="text-muted-foreground">
               Sign in or create an account to talk with Suna
