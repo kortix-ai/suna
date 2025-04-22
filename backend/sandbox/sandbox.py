@@ -112,7 +112,12 @@ def create_sandbox(password: str):
             9222,  # Chrome remote debugging port
             8080,   # HTTP website port
             8002,  # The browser api port
-        ]
+        ],
+        resources={
+            "cpu": 2,
+            "memory": 4,
+            "disk": 5,
+        }
     ))
     logger.info(f"Sandbox created with ID: {sandbox.id}")
     
