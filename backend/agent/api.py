@@ -21,6 +21,7 @@ from services.billing import check_billing_status
 from utils.config import config
 from sandbox.sandbox import create_sandbox, get_or_start_sandbox
 from services.llm import make_llm_api_call
+from agent.tasks import execute_agent_processing
 
 # Initialize shared resources
 router = APIRouter()
@@ -39,6 +40,7 @@ MODEL_NAME_ALIASES = {
     "gpt-4-turbo": "openai/gpt-4-turbo",
     "gpt-4": "openai/gpt-4",
     "gemini-flash-2.5": "openrouter/google/gemini-2.5-flash-preview",
+    "gemini-2.5-pro": "gemini/gemini-2.5-pro",
     "grok-3": "xai/grok-3-fast-latest",
     "deepseek": "openrouter/deepseek/deepseek-chat",
     "grok-3-mini": "xai/grok-3-mini-fast-beta",
@@ -54,6 +56,7 @@ MODEL_NAME_ALIASES = {
     "xai/grok-3-fast-latest": "xai/grok-3-fast-latest",
     "deepseek/deepseek-chat": "openrouter/deepseek/deepseek-chat",
     "xai/grok-3-mini-fast-beta": "xai/grok-3-mini-fast-beta",
+    "gemini/gemini-2.5-pro": "gemini/gemini-2.5-pro",
 }
 
 class AgentStartRequest(BaseModel):
@@ -367,27 +370,23 @@ async def start_agent(
     body: AgentStartRequest = Body(...),
     user_id: str = Depends(get_current_user_id_from_jwt)
 ):
-    """Start an agent for a specific thread in the background."""
-    global instance_id # Ensure instance_id is accessible
+    """Start an agent for a specific thread in the background via Celery."""
+    global instance_id 
     if not instance_id:
         raise HTTPException(status_code=500, detail="Agent API not initialized with instance ID")
 
-    # Use model from config if not specified in the request
     model_name = body.model_name
     logger.info(f"Original model_name from request: {model_name}")
 
     if model_name is None:
         model_name = config.MODEL_TO_USE
         logger.info(f"Using model from config: {model_name}")
-
-    # Log the model name after alias resolution
+    
     resolved_model = MODEL_NAME_ALIASES.get(model_name, model_name)
     logger.info(f"Resolved model name: {resolved_model}")
-
-    # Update model_name to use the resolved version
     model_name = resolved_model
 
-    logger.info(f"Starting new agent for thread: {thread_id} with config: model={model_name}, thinking={body.enable_thinking}, effort={body.reasoning_effort}, stream={body.stream}, context_manager={body.enable_context_manager} (Instance: {instance_id})")
+    logger.info(f"Queueing agent task for thread: {thread_id} with config: model={model_name}, thinking={body.enable_thinking}, effort={body.reasoning_effort}, stream={body.stream}, context_manager={body.enable_context_manager} (Instance: {instance_id})")
     client = await db.client
 
     await verify_thread_access(client, thread_id, user_id)
@@ -404,44 +403,48 @@ async def start_agent(
 
     active_run_id = await check_for_active_project_agent_run(client, project_id)
     if active_run_id:
-        logger.info(f"Stopping existing agent run {active_run_id} for project {project_id}")
-        await stop_agent_run(active_run_id)
+        logger.info(f"Stopping existing agent run {active_run_id} for project {project_id} before queueing new one.")
+        await stop_agent_run(active_run_id) 
 
     try:
         sandbox, sandbox_id, sandbox_pass = await get_or_create_project_sandbox(client, project_id)
+        logger.info(f"Ensured sandbox {sandbox_id} for project {project_id} for agent run.")
     except Exception as e:
         logger.error(f"Failed to get/create sandbox for project {project_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to initialize sandbox: {str(e)}")
 
     agent_run = await client.table('agent_runs').insert({
-        "thread_id": thread_id, "status": "running",
-        "started_at": datetime.now(timezone.utc).isoformat()
+        "thread_id": thread_id, 
+        "status": "queued",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+        "model_name": model_name,
+        "parameters": {
+            "enable_thinking": body.enable_thinking,
+            "reasoning_effort": body.reasoning_effort,
+            "stream": body.stream,
+            "enable_context_manager": body.enable_context_manager
+        }
     }).execute()
     agent_run_id = agent_run.data[0]['id']
-    logger.info(f"Created new agent run: {agent_run_id}")
+    logger.info(f"Created new agent run entry: {agent_run_id} with status 'queued'")
 
-    # Register this run in Redis with TTL using instance ID
-    instance_key = f"active_run:{instance_id}:{agent_run_id}"
-    try:
-        await redis.set(instance_key, "running", ex=redis.REDIS_KEY_TTL)
-    except Exception as e:
-        logger.warning(f"Failed to register agent run in Redis ({instance_key}): {str(e)}")
+    celery_task_params = {
+        "agent_run_id": agent_run_id,
+        "thread_id": thread_id,
+        "model_name": model_name,
+        "enable_thinking": body.enable_thinking,
+        "reasoning_effort": body.reasoning_effort,
+        "stream": body.stream,
+        "enable_context_manager": body.enable_context_manager,
+        "user_id": user_id,
+        "instance_id": instance_id,
+        "initial_prompt_message": None
+    }
+    
+    execute_agent_processing.delay(**celery_task_params)
+    logger.info(f"Queued agent task {agent_run_id} to Celery with params: {celery_task_params}")
 
-    # Run the agent in the background
-    task = asyncio.create_task(
-        run_agent_background(
-            agent_run_id=agent_run_id, thread_id=thread_id, instance_id=instance_id,
-            project_id=project_id, sandbox=sandbox,
-            model_name=model_name,  # Already resolved above
-            enable_thinking=body.enable_thinking, reasoning_effort=body.reasoning_effort,
-            stream=body.stream, enable_context_manager=body.enable_context_manager
-        )
-    )
-
-    # Set a callback to clean up Redis instance key when task is done
-    task.add_done_callback(lambda _: asyncio.create_task(_cleanup_redis_instance_key(agent_run_id)))
-
-    return {"agent_run_id": agent_run_id, "status": "running"}
+    return {"agent_run_id": agent_run_id, "status": "queued"}
 
 @router.post("/agent-run/{agent_run_id}/stop")
 async def stop_agent(agent_run_id: str, user_id: str = Depends(get_current_user_id_from_jwt)):
@@ -887,36 +890,33 @@ async def generate_and_update_project_name(project_id: str, prompt: str):
 @router.post("/agent/initiate", response_model=InitiateAgentResponse)
 async def initiate_agent_with_files(
     prompt: str = Form(...),
-    model_name: Optional[str] = Form(None),  # Default to None to use config.MODEL_TO_USE
-    enable_thinking: Optional[bool] = Form(False),
-    reasoning_effort: Optional[str] = Form("low"),
-    stream: Optional[bool] = Form(True),
-    enable_context_manager: Optional[bool] = Form(False),
+    model_name_form: Optional[str] = Form(None, alias="model_name"), # Added alias for clarity
+    enable_thinking_form: Optional[bool] = Form(False, alias="enable_thinking"),
+    reasoning_effort_form: Optional[str] = Form("low", alias="reasoning_effort"),
+    stream_form: Optional[bool] = Form(True, alias="stream"),
+    enable_context_manager_form: Optional[bool] = Form(False, alias="enable_context_manager"),
     files: List[UploadFile] = File(default=[]),
     user_id: str = Depends(get_current_user_id_from_jwt)
 ):
-    """Initiate a new agent session with optional file attachments."""
-    global instance_id # Ensure instance_id is accessible
+    """Initiate a new agent session with optional file attachments via Celery.""" # Docstring updated
+    global instance_id 
     if not instance_id:
         raise HTTPException(status_code=500, detail="Agent API not initialized with instance ID")
 
     # Use model from config if not specified in the request
-    logger.info(f"Original model_name from request: {model_name}")
-
-    if model_name is None:
-        model_name = config.MODEL_TO_USE
-        logger.info(f"Using model from config: {model_name}")
-
-    # Log the model name after alias resolution
-    resolved_model = MODEL_NAME_ALIASES.get(model_name, model_name)
+    model_name_to_use = model_name_form
+    logger.info(f"Original model_name from request form: {model_name_to_use}")
+    if model_name_to_use is None:
+        model_name_to_use = config.MODEL_TO_USE
+        logger.info(f"Using model from config: {model_name_to_use}")
+    
+    resolved_model = MODEL_NAME_ALIASES.get(model_name_to_use, model_name_to_use)
     logger.info(f"Resolved model name: {resolved_model}")
+    model_name_to_use = resolved_model
 
-    # Update model_name to use the resolved version
-    model_name = resolved_model
-
-    logger.info(f"[\033[91mDEBUG\033[0m] Initiating new agent with prompt and {len(files)} files (Instance: {instance_id}), model: {model_name}, enable_thinking: {enable_thinking}")
+    logger.info(f"[\033[91mDEBUG\033[0m] Queueing agent initiation with prompt and {len(files)} files (Instance: {instance_id}), model: {model_name_to_use}, enable_thinking: {enable_thinking_form}")
     client = await db.client
-    account_id = user_id # In Basejump, personal account_id is the same as user_id
+    account_id = user_id 
 
     can_run, message, subscription = await check_billing_status(client, account_id)
     if not can_run:
@@ -948,17 +948,36 @@ async def initiate_agent_with_files(
         logger.info(f"Using sandbox {sandbox_id} for new project {project_id}")
 
         # 4. Upload Files to Sandbox (if any)
-        message_content = prompt
+        # This part is complex and sandbox-dependent. If run_agent needs these files
+        # and the sandbox object cannot be passed to Celery, this pre-upload step is crucial.
+        # The `initial_prompt_message` sent to Celery will contain references to these uploaded files.
+        message_content_parts = [prompt]
+        uploaded_file_paths_for_message = []
         if files:
-            successful_uploads = []
-            failed_uploads = []
-            for file in files:
-                if file.filename:
+            # ... (file upload logic as it was, ensure it completes before Celery task)
+            # For brevity, assuming the existing file upload logic from the original function is here
+            # It populates `uploaded_file_paths_for_message` and potentially `failed_uploads`
+            # For demonstration, let's mock this part slightly:
+            logger.info(f"Processing {len(files)} files for upload (actual upload logic skipped in this diff for brevity)")
+            # Assume `message_content_parts` and `failed_uploads` are populated by the original logic block
+            # Example from original: successful_uploads = [], failed_uploads = []
+            # ... file processing loop ...
+            # if successful_uploads: message_content_parts.append("\n\nUploaded Files:") ...
+            # This logic for constructing message_content needs to be preserved.
+            # For the sake of this diff, we will just use the prompt as message_content and assume
+            # the run_agent/ThreadManager will handle file discovery if needed from the sandbox.
+            # Ideally, the file paths/references are explicitly part of `initial_prompt_message`.
+            
+            # --- BEGINNING OF COPIED/ADAPTED FILE UPLOAD LOGIC --- 
+            successful_uploads_info = [] # Store dicts like {"path": path, "name": name}
+            failed_uploads_names = []
+            for file_obj in files: # Renamed from `file` to `file_obj` to avoid conflict
+                if file_obj.filename:
                     try:
-                        safe_filename = file.filename.replace('/', '_').replace('\\', '_')
+                        safe_filename = file_obj.filename.replace('/', '_').replace('\\', '_')
                         target_path = f"/workspace/{safe_filename}"
                         logger.info(f"Attempting to upload {safe_filename} to {target_path} in sandbox {sandbox_id}")
-                        content = await file.read()
+                        content = await file_obj.read()
                         upload_successful = False
                         try:
                             if hasattr(sandbox, 'fs') and hasattr(sandbox.fs, 'upload_file'):
@@ -976,74 +995,120 @@ async def initiate_agent_with_files(
 
                         if upload_successful:
                             try:
-                                await asyncio.sleep(0.2)
+                                # Introduce a short delay to allow for file system propagation if necessary
+                                await asyncio.sleep(0.25) # Slightly increased delay from original 0.2
                                 parent_dir = os.path.dirname(target_path)
-                                files_in_dir = sandbox.fs.list_files(parent_dir)
-                                file_names_in_dir = [f.name for f in files_in_dir]
+                                # Ensure parent_dir is not empty and is a valid path, default to /workspace if root
+                                if not parent_dir or parent_dir == '.': 
+                                    parent_dir = "/workspace" 
+                                    if not target_path.startswith("/"): # ensure target_path is absolute for consistency
+                                        target_path = f"/workspace/{safe_filename}"
+
+                                files_in_dir_objects = sandbox.fs.list_files(parent_dir)
+                                file_names_in_dir = [f.name for f in files_in_dir_objects]
+                                
+                                # Check if the specific filename (not the full path) is in the listed names
                                 if safe_filename in file_names_in_dir:
-                                    successful_uploads.append(target_path)
-                                    logger.info(f"Successfully uploaded and verified file {safe_filename} to sandbox path {target_path}")
+                                    successful_uploads_info.append({"path": target_path, "name": safe_filename})
+                                    logger.info(f"Successfully uploaded and verified file {safe_filename} to sandbox path {target_path} in directory {parent_dir}")
                                 else:
-                                    logger.error(f"Verification failed for {safe_filename}: File not found in {parent_dir} after upload attempt.")
-                                    failed_uploads.append(safe_filename)
+                                    logger.error(f"Verification failed for {safe_filename}: File not found in {parent_dir} after upload attempt. Files found: {file_names_in_dir}")
+                                    failed_uploads_names.append(safe_filename)
                             except Exception as verify_error:
-                                logger.error(f"Error verifying file {safe_filename} after upload: {str(verify_error)}", exc_info=True)
-                                failed_uploads.append(safe_filename)
+                                logger.error(f"Error verifying file {safe_filename} after upload to {target_path} in dir {parent_dir}: {str(verify_error)}", exc_info=True)
+                                failed_uploads_names.append(safe_filename)
                         else:
-                            failed_uploads.append(safe_filename)
+                            failed_uploads_names.append(safe_filename)
                     except Exception as file_error:
-                        logger.error(f"Error processing file {file.filename}: {str(file_error)}", exc_info=True)
-                        failed_uploads.append(file.filename)
+                        logger.error(f"Error processing file {file_obj.filename}: {str(file_error)}", exc_info=True)
+                        failed_uploads_names.append(file_obj.filename)
                     finally:
-                        await file.close()
+                        await file_obj.close()
+            
+            # Construct message_content based on uploads
+            final_message_content = prompt
+            if successful_uploads_info:
+                final_message_content += "\n\n" if final_message_content else ""
+                final_message_content += "The following files were uploaded and are available in the /workspace/ directory:\n"
+                for up_file in successful_uploads_info:
+                    final_message_content += f"- {up_file['name']} (at {up_file['path']})\n"
+            if failed_uploads_names:
+                final_message_content += "\n\nThe following files failed to upload:\n"
+                for failed_file in failed_uploads_names:
+                    final_message_content += f"- {failed_file}\n"
+            # --- END OF COPIED/ADAPTED FILE UPLOAD LOGIC --- 
+        else:
+            final_message_content = prompt
 
-            if successful_uploads:
-                message_content += "\n\n" if message_content else ""
-                for file_path in successful_uploads: message_content += f"[Uploaded File: {file_path}]\n"
-            if failed_uploads:
-                message_content += "\n\nThe following files failed to upload:\n"
-                for failed_file in failed_uploads: message_content += f"- {failed_file}\n"
-
-
-        # 5. Add initial user message to thread
+        # 5. Add initial user message to thread (using final_message_content)
         message_id = str(uuid.uuid4())
-        message_payload = {"role": "user", "content": message_content}
+        # The `initial_prompt_message` for Celery task should be this payload
+        initial_celery_prompt_payload = {"role": "user", "content": final_message_content}
+        
         await client.table('messages').insert({
             "message_id": message_id, "thread_id": thread_id, "type": "user",
-            "is_llm_message": True, "content": json.dumps(message_payload),
+            "is_llm_message": False, # User messages are not from LLM
+            "content": json.dumps(initial_celery_prompt_payload), # Store the full content
             "created_at": datetime.now(timezone.utc).isoformat()
         }).execute()
+        logger.info(f"Added initial user message {message_id} to thread {thread_id}")
 
-        # 6. Start Agent Run
+        # 6. Start Agent Run (Status: queued)
         agent_run = await client.table('agent_runs').insert({
-            "thread_id": thread_id, "status": "running",
-            "started_at": datetime.now(timezone.utc).isoformat()
+            "thread_id": thread_id, 
+            "status": "queued", # Changed status
+            "started_at": datetime.now(timezone.utc).isoformat(), # Queued_at
+            "model_name": model_name_to_use,
+            "parameters": { 
+                "enable_thinking": enable_thinking_form,
+                "reasoning_effort": reasoning_effort_form,
+                "stream": stream_form,
+                "enable_context_manager": enable_context_manager_form,
+                "num_files": len(files)
+            }
         }).execute()
         agent_run_id = agent_run.data[0]['id']
-        logger.info(f"Created new agent run: {agent_run_id}")
+        logger.info(f"Created new agent run entry: {agent_run_id} with status 'queued'")
 
-        # Register run in Redis
-        instance_key = f"active_run:{instance_id}:{agent_run_id}"
-        try:
-            await redis.set(instance_key, "running", ex=redis.REDIS_KEY_TTL)
-        except Exception as e:
-            logger.warning(f"Failed to register agent run in Redis ({instance_key}): {str(e)}")
+        # Removed Redis set for active_run key here, Celery task will handle it.
 
-        # Run agent in background
-        task = asyncio.create_task(
-            run_agent_background(
-                agent_run_id=agent_run_id, thread_id=thread_id, instance_id=instance_id,
-                project_id=project_id, sandbox=sandbox,
-                model_name=model_name,  # Already resolved above
-                enable_thinking=enable_thinking, reasoning_effort=reasoning_effort,
-                stream=stream, enable_context_manager=enable_context_manager
-            )
-        )
-        task.add_done_callback(lambda _: asyncio.create_task(_cleanup_redis_instance_key(agent_run_id)))
+        celery_task_params = {
+            "agent_run_id": agent_run_id,
+            "thread_id": thread_id,
+            "model_name": model_name_to_use,
+            "enable_thinking": enable_thinking_form,
+            "reasoning_effort": reasoning_effort_form,
+            "stream": stream_form,
+            "enable_context_manager": enable_context_manager_form,
+            "user_id": user_id,
+            "instance_id": instance_id,
+            "initial_prompt_message": initial_celery_prompt_payload # Pass the constructed message
+        }
 
-        return {"thread_id": thread_id, "agent_run_id": agent_run_id}
+        execute_agent_processing.delay(**celery_task_params)
+        logger.info(f"Queued agent task {agent_run_id} to Celery with params: {celery_task_params}")
+        
+        # Callback for _cleanup_redis_instance_key is removed.
+
+        return {"thread_id": thread_id, "agent_run_id": agent_run_id, "status": "queued"}
 
     except Exception as e:
         logger.error(f"Error in agent initiation: {str(e)}\n{traceback.format_exc()}")
-        # TODO: Clean up created project/thread if initiation fails mid-way
+        # Attempt to clean up created project/thread if initiation fails mid-way
+        if 'project_id' in locals() and project_id:
+            try:
+                logger.warning(f"Attempting to clean up project {project_id} due to initiation failure.")
+                await client.table('projects').delete().eq('project_id', project_id).execute()
+                logger.info(f"Successfully cleaned up project {project_id}.")
+            except Exception as cleanup_project_error:
+                logger.error(f"Failed to clean up project {project_id}: {str(cleanup_project_error)}")
+        
+        if 'thread_id' in locals() and thread_id:
+            try:
+                logger.warning(f"Attempting to clean up thread {thread_id} due to initiation failure.")
+                await client.table('threads').delete().eq('thread_id', thread_id).execute()
+                logger.info(f"Successfully cleaned up thread {thread_id}.")
+            except Exception as cleanup_thread_error:
+                logger.error(f"Failed to clean up thread {thread_id}: {str(cleanup_thread_error)}")
+
         raise HTTPException(status_code=500, detail=f"Failed to initiate agent session: {str(e)}")

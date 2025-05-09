@@ -13,26 +13,33 @@ from agentpress.thread_manager import ThreadManager
 load_dotenv()
 
 logger.debug("Initializing Daytona sandbox configuration")
-daytona_config = DaytonaConfig(
-    api_key=config.DAYTONA_API_KEY,
-    server_url=config.DAYTONA_SERVER_URL,
-    target=config.DAYTONA_TARGET
-)
 
-if daytona_config.api_key:
+# Prepare Daytona config arguments, excluding None values
+daytona_config_args = {
+    'server_url': config.DAYTONA_SERVER_URL
+}
+if config.DAYTONA_API_KEY:
+    daytona_config_args['api_key'] = config.DAYTONA_API_KEY
+if config.DAYTONA_TARGET:
+    daytona_config_args['target'] = config.DAYTONA_TARGET
+
+daytona_config = DaytonaConfig(**daytona_config_args)
+
+if daytona_config_args.get('api_key'):
     logger.debug("Daytona API key configured successfully")
 else:
-    logger.warning("No Daytona API key found in environment variables")
+    logger.info("No Daytona API key found in environment variables (this might be expected for local setups)")
 
 if daytona_config.server_url:
     logger.debug(f"Daytona server URL set to: {daytona_config.server_url}")
 else:
-    logger.warning("No Daytona server URL found in environment variables")
+    # This should ideally not happen due to config validation, but good to check
+    logger.error("CRITICAL: Daytona server URL is missing!") 
 
-if daytona_config.target:
-    logger.debug(f"Daytona target set to: {daytona_config.target}")
+if daytona_config_args.get('target'):
+    logger.debug(f"Daytona target set to: {daytona_config_args.get('target')}")
 else:
-    logger.warning("No Daytona target found in environment variables")
+    logger.info("No Daytona target found in environment variables (this might be expected for local setups)")
 
 daytona = Daytona(daytona_config)
 logger.debug("Daytona client initialized")

@@ -32,3 +32,8 @@ pydantic
 tavily-python>=0.5.4
 pytesseract==0.3.13
 stripe>=7.0.0
+pypdf
+python-docx
+tiktoken
+sentence-transformers>=2.2.0
+nltk>=3.8.0

@@ -39,7 +39,7 @@ class SandboxShellTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "execute_command",
-            "description": "Execute a shell command in the workspace directory. IMPORTANT: By default, commands are blocking and will wait for completion before returning. For long-running operations, use background execution techniques (& operator, nohup) to prevent timeouts. Uses sessions to maintain state between commands. This tool is essential for running CLI tools, installing packages, and managing system operations. Always verify command outputs before using the data. Commands can be chained using && for sequential execution, || for fallback execution, and | for piping output.",
+            "description": "Execute a shell command in the workspace directory. IMPORTANT: Commands are blocking by default and wait for completion up to the specified timeout. For operations that might exceed the timeout, structure the command itself to run in the background (e.g., using '&', 'nohup', or 'tmux'). Uses sessions to maintain state between commands. Essential for running CLI tools, installing packages, and system operations. Always verify command outputs. Commands can be chained using &&, ||, and |.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -58,7 +58,7 @@ class SandboxShellTool(SandboxToolsBase):
                     },
                     "timeout": {
                         "type": "integer",
-                        "description": "Optional timeout in seconds. Increase for long-running commands. Defaults to 60. For commands that might exceed this timeout, use background execution with & operator instead.",
+                        "description": "Optional timeout in seconds for the tool to wait for the command. Defaults to 60. For commands expected to run longer, ensure they are structured to execute in the background within the command string itself.",
                         "default": 60
                     }
                 },

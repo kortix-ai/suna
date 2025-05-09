@@ -21,17 +21,25 @@ Suna's powerful toolkit includes seamless browser automation to navigate the web
 
 ## Table of Contents
 
-- [Suna Architecture](#project-architecture)
-  - [Backend API](#backend-api)
-  - [Frontend](#frontend)
-  - [Agent Docker](#agent-docker)
-  - [Supabase Database](#supabase-database)
-- [Run Locally / Self-Hosting](#run-locally--self-hosting)
-  - [Requirements](#requirements)
-  - [Prerequisites](#prerequisites)
-  - [Installation Steps](#installation-steps)
-- [Acknowledgements](#acknowledgements)
-- [License](#license)
+- [Suna - Open Source Generalist AI Agent](#suna---open-source-generalist-ai-agent)
+  - [Table of Contents](#table-of-contents)
+  - [Project Architecture](#project-architecture)
+    - [Backend API](#backend-api)
+    - [Frontend](#frontend)
+    - [Agent Docker](#agent-docker)
+    - [Supabase Database](#supabase-database)
+  - [Use Cases](#use-cases)
+  - [Run Locally / Self-Hosting](#run-locally--self-hosting)
+    - [Requirements](#requirements)
+    - [Prerequisites](#prerequisites)
+    - [Installation Steps](#installation-steps)
+  - [Run Locally / Self-Hosting with a Local Supabase Docker Instance](#run-locally--self-hosting-with-a-local-supabase-docker-instance)
+    - [Prerequisites](#prerequisites-1)
+    - [Installation and Configuration Steps](#installation-and-configuration-steps)
+  - [Acknowledgements](#acknowledgements)
+    - [Main Contributors](#main-contributors)
+    - [Technologies](#technologies)
+  - [License](#license)
 
 ## Project Architecture
 
@@ -111,6 +119,12 @@ You'll need the following components:
    - Enter `kortix/suna:0.1` as the image name
    - Set `/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf` as the Entrypoint
 
+   **Note for Local/Legacy Daytona:** If you are self-hosting the legacy version of Daytona ([`legacy-daytona` branch](https://github.com/daytonaio/daytona/tree/legacy-daytona)), you will need to adjust the environment variables in `backend/.env` (Step 2 of Installation):
+     - `DAYTONA_SERVER_URL`: Set this to the API endpoint of your local Daytona instance (e.g., `http://localhost:YOUR_PORT/api`). You need to determine the correct port and path from your local setup.
+     - `DAYTONA_API_KEY`: This can likely be left unset or commented out, as the legacy local version may not require an API key.
+     - `DAYTONA_TARGET`: This can also likely be left unset or commented out, as the target concept might not apply locally.
+     - **Image Compatibility:** You must also verify that the Docker image `adamcohenhillel/kortix-suna:0.0.20` (specified above and used in `backend/sandbox/sandbox.py`) is compatible with your legacy Daytona setup. If it's not, you'll need to identify a compatible image and update the `image` parameter in the `create_sandbox` function within `backend/sandbox/sandbox.py`.
+
 4. **LLM API Keys**:
    - Obtain an API key [Anthropic](https://www.anthropic.com/)
    - While other providers should work via [LiteLLM](https://github.com/BerriAI/litellm), Anthropic is recommended – the prompt needs to be adjusted for other providers to output correct XML for tool calls.
@@ -158,12 +172,7 @@ REDIS_PASSWORD=your_redis_password
 REDIS_SSL=True  # Set to False for local Redis without SSL
 
 # Daytona credentials from step 3
-DAYTONA_API_KEY=your_daytona_api_key
-DAYTONA_SERVER_URL="https://app.daytona.io/api"
-DAYTONA_TARGET="us"
-
-# Anthropic
-ANTHROPIC_API_KEY=
+DAYTONA_API_KEY=
 
 # OpenAI API:
 OPENAI_API_KEY=your_openai_api_key
@@ -264,6 +273,141 @@ The Docker Compose setup includes a Redis service that will be used by the backe
    - Open your browser and navigate to `http://localhost:3000`
    - Sign up for an account using the Supabase authentication
    - Start using your self-hosted Suna instance!
+
+## Run Locally / Self-Hosting with a Local Supabase Docker Instance
+
+This guide helps you run Suna locally using Docker Compose, connecting to a Supabase instance also running locally in Docker (managed by the Supabase CLI). This setup is ideal for development and testing.
+
+### Prerequisites
+
+1.  **Docker and Docker Compose:** Ensure they are installed and running.
+2.  **Node.js & npm:** Required for the Supabase CLI.
+3.  **Supabase CLI:**
+    *   Install globally: `npm install -g supabase` OR use with `npx`.
+    *   Log in to Supabase: `supabase login` (or `npx supabase login`).
+
+### Installation and Configuration Steps
+
+1.  **Set up your Local Supabase Project:**
+    *   Create a new directory for your Supabase project (e.g., `my-suna-db`):
+        ```bash
+        mkdir my-suna-db
+        cd my-suna-db
+        ```
+    *   Initialize Supabase in this directory:
+        ```bash
+        supabase init
+        # Follow prompts, defaults are usually fine for local setup.
+        # This creates a 'supabase' directory within 'my-suna-db'.
+        ```
+    *   Start your local Supabase services:
+        ```bash
+        supabase start
+        ```
+    *   **Important:** After starting, the CLI will output your local Supabase details. **Copy these down**, especially:
+        *   `API URL` (e.g., `http://localhost:54321`)
+        *   `anon public key`
+        *   `service_role_key` (sometimes referred to as `service_role secret`)
+        *   The `DB Port` (e.g., `54322`) and `Studio URL` (e.g., `http://localhost:54323`) are also useful.
+
+2.  **Clone the Suna Repository:**
+    ```bash
+    git clone https://github.com/kortix-ai/suna.git
+    cd suna
+    ```
+
+3.  **Configure Suna Backend (`backend/.env`):**
+    *   Navigate to the `backend` directory of Suna: `cd backend`
+    *   Create a `.env` file. You can copy `backend/.env.example` if it exists, or create a new one.
+    *   Add the following content, replacing placeholders with the values from your `supabase start` output:
+
+        ```env
+        # Supabase Configuration (for connection from Suna Docker to Supabase Docker)
+        SUPABASE_URL=http://host.docker.internal:54321 # Use port from Supabase API URL (default 54321)
+        SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_PUBLIC_KEY
+        SUPABASE_SERVICE_ROLE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY
+
+        # Default Suna Backend Environment Variables (as per docker-compose.yaml)
+        ENV_MODE=local
+        REDIS_HOST=redis      # Suna's docker-compose will provide this service
+        REDIS_PORT=6379
+        REDIS_PASSWORD=
+        REDIS_SSL=False       # Usually false for local Redis via Docker Compose
+
+        # Add other API keys required by Suna (defined in backend/utils/config.py)
+        # Example (provide real keys if these services are used):
+        # ANTHROPIC_API_KEY=sk-ant-xxx
+        # OPENAI_API_KEY=sk-xxx
+        # TAVILY_API_KEY=tvly-xxx
+        # FIRECRAWL_API_KEY=fc-xxx
+        # RAPID_API_KEY=xxx
+        # --- Daytona Configuration ---
+        # For Cloud Daytona (Default):
+        # DAYTONA_API_KEY=your_daytona_api_key_from_cloud
+        # DAYTONA_SERVER_URL="https://app.daytona.io/api"
+        # DAYTONA_TARGET="us"
+        # For Local/Legacy Daytona:
+        # DAYTONA_SERVER_URL="http://localhost:YOUR_LEGACY_PORT/api" # Replace with your local endpoint
+        # DAYTONA_API_KEY= # Likely leave empty or comment out
+        # DAYTONA_TARGET= # Likely leave empty or comment out
+
+        # Frontend URL (if needed by backend for specific tasks like email links)
+        NEXT_PUBLIC_URL="http://localhost:3000"
+        ```
+    *   Navigate back to the Suna root directory: `cd ..`
+
+4.  **Configure Suna Frontend (`frontend/.env.local`):**
+    *   Navigate to the `frontend` directory of Suna: `cd frontend`
+    *   Create a `.env.local` file. You can copy `frontend/.env.example` if it exists, or create a new one.
+    *   Add the following content, replacing placeholders:
+
+        ```env
+        NEXT_PUBLIC_SUPABASE_URL=http://localhost:54321 # Use the API URL from Supabase (host machine's localhost)
+        NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_PUBLIC_KEY # Same anon key as above
+        NEXT_PUBLIC_BACKEND_URL="http://localhost:8000/api" # Suna backend will be on host's port 8000
+        NEXT_PUBLIC_URL="http://localhost:3000"
+        ```
+    *   Navigate back to the Suna root directory: `cd ..`
+
+5.  **(Recommended) Apply Suna's Database Migrations to Your Local Supabase:**
+    *   Your local Supabase instance needs Suna's database schema.
+    *   Go to the directory of **your Supabase project** (e.g., `my-suna-db/supabase/migrations/`).
+    *   Copy the migration files from Suna's `backend/supabase/migrations/` directory into your Supabase project's `migrations` directory.
+        ```bash
+        # Example: if 'suna' and 'my-suna-db' are sibling directories
+        # cp -R ../suna/backend/supabase/migrations/* ./supabase/migrations/
+        ```
+    *   Inside **your Supabase project directory** (e.g., `my-suna-db`), run:
+        ```bash
+        supabase db reset
+        ```
+        This command will apply all migrations (including Suna's) and any seed data.
+        **Warning:** This erases any existing data in your local Supabase database.
+        Alternatively, if you have existing data you wish to keep, and you're only adding Suna's migrations, you might try `supabase migration up` after ensuring the migration files are correctly ordered and named.
+
+6.  **Ensure `host.docker.internal` Resolution (If not already done):**
+    *   The Suna `docker-compose.yaml` file in the root of the Suna project should ideally include `extra_hosts` for the `backend` service to ensure `host.docker.internal` works reliably across platforms. If you've pulled the latest version where this was added, you can skip this. Otherwise, verify or add:
+        ```yaml
+        # In suna/docker-compose.yaml
+        services:
+          # ...
+          backend:
+            # ... other configurations ...
+            extra_hosts:
+              - "host.docker.internal:host-gateway"
+          # ...
+        ```
+
+7.  **Build and Run Suna with Docker Compose:**
+    *   From the root directory of the Suna project:
+        ```bash
+        docker-compose up --build -d
+        ```
+    *   Suna frontend should be accessible at `http://localhost:3000`.
+    *   Suna backend will be running on port `8000`.
+    *   Your local Supabase Studio is at `http://localhost:54323` (or as per `supabase start` output).
+
+This setup keeps Supabase and Suna containerized and communicating locally. Remember to stop your Supabase instance (`supabase stop` in its project directory) when not in use to free up resources.
 
 ## Acknowledgements
 

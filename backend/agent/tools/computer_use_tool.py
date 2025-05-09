@@ -378,7 +378,7 @@ class ComputerUseTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "mouse_down",
-            "description": "Press a mouse button",
+            "description": "Press a mouse button at the current or specified location",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -387,6 +387,14 @@ class ComputerUseTool(SandboxToolsBase):
                         "description": "Mouse button to press",
                         "enum": ["left", "right", "middle"],
                         "default": "left"
+                    },
+                    "x": {
+                        "type": "number",
+                        "description": "Optional X coordinate to move to before pressing"
+                    },
+                    "y": {
+                        "type": "number",
+                        "description": "Optional Y coordinate to move to before pressing"
                     }
                 }
             }
@@ -395,42 +403,38 @@ class ComputerUseTool(SandboxToolsBase):
     @xml_schema(
         tag_name="mouse-down",
         mappings=[
-            {"param_name": "button", "node_type": "attribute", "path": "button"}
+            {"param_name": "button", "node_type": "attribute", "path": "button"},
+            {"param_name": "x", "node_type": "attribute", "path": "x"},
+            {"param_name": "y", "node_type": "attribute", "path": "y"}
         ],
         example='''
-        <mouse-down button="left">
+        <mouse-down button="left" x="100" y="200">
         </mouse-down>
         '''
     )
     async def mouse_down(self, button: str = "left", x: Optional[float] = None, y: Optional[float] = None) -> ToolResult:
-        """Press a mouse button at current or specified position."""
+        """Presses and holds down a mouse button at the specified location."""
         try:
-            x_val = x if x is not None else self.mouse_x
-            y_val = y if y is not None else self.mouse_y
+            # Move mouse first if x and y are provided
+            if x is not None and y is not None:
+                move_result = await self.move_to(x, y)
+                if not move_result.success:
+                    return ToolResult(success=False, output=f"Failed to move before mouse_down: {move_result.output}")
             
-            x_int = int(round(float(x_val)))
-            y_int = int(round(float(y_val)))
-            
-            result = await self._api_request("POST", "/automation/mouse/down", {
-                "x": x_int,
-                "y": y_int,
-                "button": button.lower()
-            })
+            result = await self._api_request("POST", "/automation/mouse/down", {"button": button.lower()})
             
             if result.get("success", False):
-                self.mouse_x = x_int
-                self.mouse_y = y_int
-                return ToolResult(success=True, output=f"{button} button pressed at ({x_int}, {y_int})")
+                return ToolResult(success=True, output=f"Mouse button '{button}' pressed down")
             else:
-                return ToolResult(success=False, output=f"Failed to press button: {result.get('error', 'Unknown error')}")
+                return ToolResult(success=False, output=f"Failed mouse_down: {result.get('error', 'Unknown error')}")
         except Exception as e:
-            return ToolResult(success=False, output=f"Failed to press button: {str(e)}")
+            return ToolResult(success=False, output=f"Failed mouse_down: {str(e)}")
 
     @openapi_schema({
         "type": "function",
         "function": {
             "name": "mouse_up",
-            "description": "Release a mouse button",
+            "description": "Release a mouse button at the current or specified location",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -439,6 +443,14 @@ class ComputerUseTool(SandboxToolsBase):
                         "description": "Mouse button to release",
                         "enum": ["left", "right", "middle"],
                         "default": "left"
+                    },
+                    "x": {
+                        "type": "number",
+                        "description": "Optional X coordinate to move to before releasing"
+                    },
+                    "y": {
+                        "type": "number",
+                        "description": "Optional Y coordinate to move to before releasing"
                     }
                 }
             }
@@ -447,36 +459,32 @@ class ComputerUseTool(SandboxToolsBase):
     @xml_schema(
         tag_name="mouse-up",
         mappings=[
-            {"param_name": "button", "node_type": "attribute", "path": "button"}
+            {"param_name": "button", "node_type": "attribute", "path": "button"},
+            {"param_name": "x", "node_type": "attribute", "path": "x"},
+            {"param_name": "y", "node_type": "attribute", "path": "y"}
         ],
         example='''
-        <mouse-up button="left">
+        <mouse-up button="left" x="100" y="200">
         </mouse-up>
         '''
     )
     async def mouse_up(self, button: str = "left", x: Optional[float] = None, y: Optional[float] = None) -> ToolResult:
-        """Release a mouse button at current or specified position."""
+        """Releases a previously pressed mouse button at the specified location."""
         try:
-            x_val = x if x is not None else self.mouse_x
-            y_val = y if y is not None else self.mouse_y
-            
-            x_int = int(round(float(x_val)))
-            y_int = int(round(float(y_val)))
-            
-            result = await self._api_request("POST", "/automation/mouse/up", {
-                "x": x_int,
-                "y": y_int,
-                "button": button.lower()
-            })
+            # Move mouse first if x and y are provided
+            if x is not None and y is not None:
+                move_result = await self.move_to(x, y)
+                if not move_result.success:
+                     return ToolResult(success=False, output=f"Failed to move before mouse_up: {move_result.output}")
+
+            result = await self._api_request("POST", "/automation/mouse/up", {"button": button.lower()})
             
             if result.get("success", False):
-                self.mouse_x = x_int
-                self.mouse_y = y_int
-                return ToolResult(success=True, output=f"{button} button released at ({x_int}, {y_int})")
+                return ToolResult(success=True, output=f"Mouse button '{button}' released")
             else:
-                return ToolResult(success=False, output=f"Failed to release button: {result.get('error', 'Unknown error')}")
+                return ToolResult(success=False, output=f"Failed mouse_up: {result.get('error', 'Unknown error')}")
         except Exception as e:
-            return ToolResult(success=False, output=f"Failed to release button: {str(e)}")
+            return ToolResult(success=False, output=f"Failed mouse_up: {str(e)}")
 
     @openapi_schema({
         "type": "function",

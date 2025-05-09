@@ -9,6 +9,7 @@ from agent.tools.message_tool import MessageTool
 from agent.tools.sb_deploy_tool import SandboxDeployTool
 from agent.tools.sb_expose_tool import SandboxExposeTool
 from agent.tools.web_search_tool import WebSearchTool
+from agent.tools.perplexity_search_tool import PerplexitySearchTool
 from dotenv import load_dotenv
 from utils.config import config
 
@@ -23,6 +24,7 @@ from utils import logger
 from utils.auth_utils import get_account_id_from_thread
 from services.billing import check_billing_status
 from agent.tools.sb_vision_tool import SandboxVisionTool
+from agent.tools.knowledge_retrieval_tool import KnowledgeRetrievalTool
 
 load_dotenv()
 
@@ -43,7 +45,8 @@ async def run_agent(
 
     thread_manager = ThreadManager()
 
-    client = await thread_manager.db.client
+    db_connection = await thread_manager.get_db_connection()
+    client = await db_connection.client
 
     # Get account ID from thread for billing checks
     account_id = await get_account_id_from_thread(client, thread_id)
@@ -74,9 +77,33 @@ async def run_agent(
     if config.RAPID_API_KEY:
         thread_manager.add_tool(DataProvidersTool)
 
+    # Add Perplexity search tool if Perplexity API key is available
+    if config.PERPLEXITY_API_KEY:
+        thread_manager.add_tool(PerplexitySearchTool)
+        logger.info("PerplexitySearchTool added to agent.")
+    else:
+        logger.warning("Perplexity API key not found. PerplexitySearchTool will not be available.")
 
-    # Only include sample response if the model name does not contain "anthropic"
-    if "anthropic" not in model_name.lower():
+    # --- Add Knowledge Base Retrieval Tool --- 
+    # Initialize KB tool with project_id and the db client
+    # We pass the client instance directly, assuming add_tool can handle this or adapt the tool's __init__ if needed.
+    # Alternatively, pass arguments that allow the tool to fetch the client.
+    # Let's try passing it as an init argument.
+    try:
+        # Pass the already obtained Supabase client instance to the tool
+        thread_manager.add_tool(KnowledgeRetrievalTool, project_id=project_id, db=client)
+        logger.info(f"KnowledgeRetrievalTool added for project {project_id}.")
+    except Exception as e_kb_tool:
+        logger.error(f"Failed to initialize or add KnowledgeRetrievalTool: {e_kb_tool}", exc_info=True)
+        # Decide if this should prevent the agent from running or just log a warning
+        # For now, log and continue without the KB tool.
+        logger.warning("Knowledge Base tool will not be available for this run.")
+    # -------------------------------------------
+
+    # MODIFIED: Only include sample response if the model is not Gemini and not Anthropic
+    # This is to avoid sending XML tool call examples from sample_responses/1.txt to Gemini (which will use native) 
+    # or Anthropic (which has its own XML handling nuances).
+    if not model_name.lower().startswith("gemini/") and "anthropic" not in model_name.lower():
         sample_response_path = os.path.join(os.path.dirname(__file__), 'sample_responses/1.txt')
         with open(sample_response_path, 'r') as file:
             sample_response = file.read()
@@ -195,18 +222,9 @@ async def run_agent(
             llm_temperature=0,
             llm_max_tokens=max_tokens,
             tool_choice="auto",
-            max_xml_tool_calls=1,
-            temporary_message=temporary_message,
-            processor_config=ProcessorConfig(
-                xml_tool_calling=True,
-                native_tool_calling=False,
-                execute_tools=True,
-                execute_on_stream=True,
-                tool_execution_strategy="parallel",
-                xml_adding_strategy="user_message"
-            ),
             native_max_auto_continues=native_max_auto_continues,
             include_xml_examples=True,
+            temporary_message=temporary_message,
             enable_thinking=enable_thinking,
             reasoning_effort=reasoning_effort,
             enable_context_manager=enable_context_manager

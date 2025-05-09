@@ -23,6 +23,7 @@ export default function TeamSettingsLayout({
     { name: 'Account', href: `/${accountSlug}/settings` },
     { name: 'Members', href: `/${accountSlug}/settings/members` },
     { name: 'Billing', href: `/${accountSlug}/settings/billing` },
+    { name: 'Knowledge Base', href: `/${accountSlug}/settings/knowledge-base` },
   ];
   return (
     <div className="space-y-6 w-full">

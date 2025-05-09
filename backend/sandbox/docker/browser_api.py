@@ -327,6 +327,9 @@ class BrowserAutomation:
         # Drag and drop
         self.router.post("/automation/drag_drop")(self.drag_drop)
 
+        # List elements
+        self.router.post("/automation/list_elements")(self.list_elements)
+
     async def startup(self):
         """Initialize the browser instance on startup"""
         try:
@@ -1790,6 +1793,58 @@ class BrowserAutomation:
                 error=str(e),
                 content=None
             )
+
+    async def list_elements(self, _: NoParamsAction = Body(...)):
+        """List all interactive elements on the current page"""
+        try:
+            # Get updated state which includes element information
+            dom_state, screenshot, elements, metadata = await self.get_updated_browser_state("list_elements")
+            
+            return self.build_action_result(
+                True,
+                f"Successfully listed {metadata.get('element_count', 0)} interactive elements.",
+                dom_state,
+                screenshot,
+                elements,
+                metadata,
+                error="",
+                content=None # Or potentially elements string if preferred in content
+            )
+        except Exception as e:
+            self.logger.error(f"Error in list_elements: {e}")
+            traceback.print_exc()
+            # Try to get some state info even after error
+            try:
+                dom_state, screenshot, elements, metadata = await self.get_updated_browser_state("list_elements_error_recovery")
+                return self.build_action_result(
+                    False,
+                    str(e),
+                    dom_state,
+                    screenshot,
+                    elements,
+                    metadata,
+                    error=str(e),
+                    content=None
+                )
+            except:
+                 # Fallback if getting state also fails
+                current_url = "unknown"
+                try:
+                   page = await self.get_current_page()
+                   current_url = page.url # Try to get at least the URL
+                except:
+                    pass
+                return self.build_action_result(
+                    False,
+                    str(e),
+                    None, # No DOM state available
+                    "",   # No screenshot
+                    "",   # No elements string
+                    {},   # Empty metadata
+                    error=str(e),
+                    content=None,
+                    fallback_url=current_url 
+                )
 
 # Create singleton instance
 automation_service = BrowserAutomation()

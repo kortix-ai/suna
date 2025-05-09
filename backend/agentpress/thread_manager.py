@@ -34,11 +34,23 @@ class ThreadManager:
     XML-based tool execution patterns.
     """
 
-    def __init__(self):
+    def __init__(self, db_connection_override: Optional[DBConnection] = None):
         """Initialize ThreadManager.
 
+        Args:
+            db_connection_override: Optional DBConnection instance to use. If None, a new one is created.
         """
-        self.db = DBConnection()
+        if db_connection_override:
+            self.db = db_connection_override
+            logger.info("ThreadManager initialized with an overridden DBConnection.")
+        else:
+            self.db = DBConnection()
+            logger.info("ThreadManager initialized with a new DBConnection.")
+        # It's assumed that if self.db is a new DBConnection(), its .initialize() will be called
+        # by its first consumer (e.g., await self.db.client).
+        # If db_connection_override is provided, it's assumed to be already initialized or
+        # will be initialized by worker_init_services.
+
         self.tool_registry = ToolRegistry()
         self.response_processor = ResponseProcessor(
             tool_registry=self.tool_registry,
@@ -154,10 +166,10 @@ class ThreadManager:
         llm_model: str = "gpt-4o",
         llm_temperature: float = 0,
         llm_max_tokens: Optional[int] = None,
-        processor_config: Optional[ProcessorConfig] = None,
+        processor_config_param: Optional[ProcessorConfig] = None,
         tool_choice: ToolChoice = "auto",
         native_max_auto_continues: int = 25,
-        max_xml_tool_calls: int = 0,
+        max_xml_tool_calls_param: int = 0,
         include_xml_examples: bool = False,
         enable_thinking: Optional[bool] = False,
         reasoning_effort: Optional[str] = 'low',
@@ -173,11 +185,11 @@ class ThreadManager:
             llm_model: The name of the LLM model to use
             llm_temperature: Temperature parameter for response randomness (0-1)
             llm_max_tokens: Maximum tokens in the LLM response
-            processor_config: Configuration for the response processor
+            processor_config_param: Configuration for the response processor
             tool_choice: Tool choice preference ("auto", "required", "none")
             native_max_auto_continues: Maximum number of automatic continuations when
                                       finish_reason="tool_calls" (0 disables auto-continue)
-            max_xml_tool_calls: Maximum number of XML tool calls to allow (0 = no limit)
+            max_xml_tool_calls_param: Maximum number of XML tool calls to allow (0 = no limit)
             include_xml_examples: Whether to include XML tool examples in the system prompt
             enable_thinking: Whether to enable thinking before making a decision
             reasoning_effort: The effort level for reasoning
@@ -189,21 +201,33 @@ class ThreadManager:
 
         logger.info(f"Starting thread execution for thread {thread_id}")
         logger.info(f"Using model: {llm_model}")
-        # Log parameters
-        logger.info(f"Parameters: model={llm_model}, temperature={llm_temperature}, max_tokens={llm_max_tokens}")
-        logger.info(f"Auto-continue: max={native_max_auto_continues}, XML tool limit={max_xml_tool_calls}")
+        logger.info(f"Run_thread input params: llm_temperature={llm_temperature}, llm_max_tokens={llm_max_tokens}, native_max_auto_continues={native_max_auto_continues}, input_max_xml_tool_calls={max_xml_tool_calls_param}, include_xml_examples={include_xml_examples}")
 
-        # Log model info
+        processor_config: ProcessorConfig
+
+        if processor_config_param is not None:
+            processor_config = processor_config_param
+            if max_xml_tool_calls_param > 0 and not processor_config.max_xml_tool_calls:
+                logger.info(f"Overriding max_xml_tool_calls in provided ProcessorConfig (was {processor_config.max_xml_tool_calls}) with value from run_thread: {max_xml_tool_calls_param}")
+                processor_config.max_xml_tool_calls = max_xml_tool_calls_param
+        else:
+            if llm_model.startswith("gemini/"):
+                logger.info(f"Gemini model ('{llm_model}') detected. Defaulting to native tool calling configuration.")
+                processor_config = ProcessorConfig(
+                    native_tool_calling=True,
+                    xml_tool_calling=False
+                )
+            else:
+                processor_config = ProcessorConfig(
+                    max_xml_tool_calls=max_xml_tool_calls_param
+                )
+        
+        logger.info(f"Effective ProcessorConfig: native_tool_calling={processor_config.native_tool_calling}, xml_tool_calling={processor_config.xml_tool_calling}, max_xml_tool_calls={processor_config.max_xml_tool_calls}")
+
         logger.info(f"🤖 Thread {thread_id}: Using model {llm_model}")
 
-        # Apply max_xml_tool_calls if specified and not already set in config
-        if max_xml_tool_calls > 0 and not processor_config.max_xml_tool_calls:
-            processor_config.max_xml_tool_calls = max_xml_tool_calls
-
-        # Create a working copy of the system prompt to potentially modify
         working_system_prompt = system_prompt.copy()
 
-        # Add XML examples to system prompt if requested, do this only ONCE before the loop
         if include_xml_examples and processor_config.xml_tool_calling:
             xml_examples = self.tool_registry.get_xml_examples()
             if xml_examples:
@@ -220,14 +244,6 @@ Here are the XML tools available with examples:
                 for tag_name, example in xml_examples.items():
                     examples_content += f"<{tag_name}> Example: {example}\\n"
 
-                # # Save examples content to a file
-                # try:
-                #     with open('xml_examples.txt', 'w') as f:
-                #         f.write(examples_content)
-                #     logger.debug("Saved XML examples to xml_examples.txt")
-                # except Exception as e:
-                #     logger.error(f"Failed to save XML examples to file: {e}")
-
                 system_content = working_system_prompt.get('content')
 
                 if isinstance(system_content, str):
@@ -235,7 +251,7 @@ Here are the XML tools available with examples:
                     logger.debug("Appended XML examples to string system prompt content.")
                 elif isinstance(system_content, list):
                     appended = False
-                    for item in working_system_prompt['content']: # Modify the copy
+                    for item in working_system_prompt['content']:
                         if isinstance(item, dict) and item.get('type') == 'text' and 'text' in item:
                             item['text'] += examples_content
                             logger.debug("Appended XML examples to the first text block in list system prompt content.")
@@ -245,85 +261,53 @@ Here are the XML tools available with examples:
                         logger.warning("System prompt content is a list but no text block found to append XML examples.")
                 else:
                     logger.warning(f"System prompt content is of unexpected type ({type(system_content)}), cannot add XML examples.")
-        # Control whether we need to auto-continue due to tool_calls finish reason
+
         auto_continue = True
         auto_continue_count = 0
 
-        # Define inner function to handle a single run
         async def _run_once(temp_msg=None):
             try:
-                # Ensure processor_config is available in this scope
                 nonlocal processor_config
-                # Note: processor_config is now guaranteed to exist due to check above
 
-                # 1. Get messages from thread for LLM call
                 messages = await self.get_llm_messages(thread_id)
 
-                # 2. Check token count before proceeding
                 token_count = 0
                 try:
                     from litellm import token_counter
-                    # Use the potentially modified working_system_prompt for token counting
                     token_count = token_counter(model=llm_model, messages=[working_system_prompt] + messages)
                     token_threshold = self.context_manager.token_threshold
                     logger.info(f"Thread {thread_id} token count: {token_count}/{token_threshold} ({(token_count/token_threshold)*100:.1f}%)")
 
-                    # if token_count >= token_threshold and enable_context_manager:
-                    #     logger.info(f"Thread token count ({token_count}) exceeds threshold ({token_threshold}), summarizing...")
-                    #     summarized = await self.context_manager.check_and_summarize_if_needed(
-                    #         thread_id=thread_id,
-                    #         add_message_callback=self.add_message,
-                    #         model=llm_model,
-                    #         force=True
-                    #     )
-                    #     if summarized:
-                    #         logger.info("Summarization complete, fetching updated messages with summary")
-                    #         messages = await self.get_llm_messages(thread_id)
-                    #         # Recount tokens after summarization, using the modified prompt
-                    #         new_token_count = token_counter(model=llm_model, messages=[working_system_prompt] + messages)
-                    #         logger.info(f"After summarization: token count reduced from {token_count} to {new_token_count}")
-                    #     else:
-                    #         logger.warning("Summarization failed or wasn't needed - proceeding with original messages")
-                    # elif not enable_context_manager:
-                    #     logger.info("Automatic summarization disabled. Skipping token count check and summarization.")
-
                 except Exception as e:
                     logger.error(f"Error counting tokens or summarizing: {str(e)}")
 
-                # 3. Prepare messages for LLM call + add temporary message if it exists
-                # Use the working_system_prompt which may contain the XML examples
                 prepared_messages = [working_system_prompt]
 
-                # Find the last user message index
                 last_user_index = -1
                 for i, msg in enumerate(messages):
                     if msg.get('role') == 'user':
                         last_user_index = i
 
-                # Insert temporary message before the last user message if it exists
                 if temp_msg and last_user_index >= 0:
                     prepared_messages.extend(messages[:last_user_index])
                     prepared_messages.append(temp_msg)
                     prepared_messages.extend(messages[last_user_index:])
                     logger.debug("Added temporary message before the last user message")
                 else:
-                    # If no user message or no temporary message, just add all messages
                     prepared_messages.extend(messages)
                     if temp_msg:
                         prepared_messages.append(temp_msg)
                         logger.debug("Added temporary message to the end of prepared messages")
 
-                # 4. Prepare tools for LLM call
                 openapi_tool_schemas = None
                 if processor_config.native_tool_calling:
                     openapi_tool_schemas = self.tool_registry.get_openapi_schemas()
                     logger.debug(f"Retrieved {len(openapi_tool_schemas) if openapi_tool_schemas else 0} OpenAPI tool schemas")
 
-                # 5. Make LLM API call
                 logger.debug("Making LLM API call")
                 try:
                     llm_response = await make_llm_api_call(
-                        prepared_messages, # Pass the potentially modified messages
+                        prepared_messages,
                         llm_model,
                         temperature=llm_temperature,
                         max_tokens=llm_max_tokens,
@@ -339,7 +323,6 @@ Here are the XML tools available with examples:
                     logger.error(f"Failed to make LLM API call: {str(e)}", exc_info=True)
                     raise
 
-                # 6. Process LLM response using the ResponseProcessor
                 if stream:
                     logger.debug("Processing streaming response")
                     response_generator = self.response_processor.process_streaming_response(
@@ -354,7 +337,6 @@ Here are the XML tools available with examples:
                 else:
                     logger.debug("Processing non-streaming response")
                     try:
-                        # Return the async generator directly, don't await it
                         response_generator = self.response_processor.process_non_streaming_response(
                             llm_response=llm_response,
                             thread_id=thread_id,
@@ -362,10 +344,10 @@ Here are the XML tools available with examples:
                             prompt_messages=prepared_messages,
                             llm_model=llm_model
                         )
-                        return response_generator # Return the generator
+                        return response_generator
                     except Exception as e:
                         logger.error(f"Error setting up non-streaming response: {str(e)}", exc_info=True)
-                        raise # Re-raise the exception to be caught by the outer handler
+                        raise
 
             except Exception as e:
                 logger.error(f"Error in run_thread: {str(e)}", exc_info=True)
@@ -374,49 +356,35 @@ Here are the XML tools available with examples:
                     "message": str(e)
                 }
 
-        # Define a wrapper generator that handles auto-continue logic
         async def auto_continue_wrapper():
             nonlocal auto_continue, auto_continue_count
 
             while auto_continue and (native_max_auto_continues == 0 or auto_continue_count < native_max_auto_continues):
-                # Reset auto_continue for this iteration
                 auto_continue = False
 
-                # Run the thread once, passing the potentially modified system prompt
-                # Pass temp_msg only on the first iteration
                 response_gen = await _run_once(temporary_message if auto_continue_count == 0 else None)
 
-                # Handle error responses
                 if isinstance(response_gen, dict) and "status" in response_gen and response_gen["status"] == "error":
                     yield response_gen
                     return
 
-                # Process each chunk
                 async for chunk in response_gen:
-                    # Check if this is a finish reason chunk with tool_calls or xml_tool_limit_reached
                     if chunk.get('type') == 'finish':
                         if chunk.get('finish_reason') == 'tool_calls':
-                            # Only auto-continue if enabled (max > 0)
                             if native_max_auto_continues > 0:
                                 logger.info(f"Detected finish_reason='tool_calls', auto-continuing ({auto_continue_count + 1}/{native_max_auto_continues})")
                                 auto_continue = True
                                 auto_continue_count += 1
-                                # Don't yield the finish chunk to avoid confusing the client
                                 continue
                         elif chunk.get('finish_reason') == 'xml_tool_limit_reached':
-                            # Don't auto-continue if XML tool limit was reached
                             logger.info(f"Detected finish_reason='xml_tool_limit_reached', stopping auto-continue")
                             auto_continue = False
-                            # Still yield the chunk to inform the client
 
-                    # Otherwise just yield the chunk normally
                     yield chunk
 
-                # If not auto-continuing, we're done
                 if not auto_continue:
                     break
 
-            # If we've reached the max auto-continues, log a warning
             if auto_continue and auto_continue_count >= native_max_auto_continues:
                 logger.warning(f"Reached maximum auto-continue limit ({native_max_auto_continues}), stopping.")
                 yield {
@@ -424,11 +392,8 @@ Here are the XML tools available with examples:
                     "content": f"\n[Agent reached maximum auto-continue limit of {native_max_auto_continues}]"
                 }
 
-        # If auto-continue is disabled (max=0), just run once
         if native_max_auto_continues == 0:
             logger.info("Auto-continue is disabled (native_max_auto_continues=0)")
-            # Pass the potentially modified system prompt and temp message
             return await _run_once(temporary_message)
 
-        # Otherwise return the auto-continue wrapper generator
         return auto_continue_wrapper()

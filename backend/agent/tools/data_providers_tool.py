@@ -98,11 +98,11 @@ Use this tool when you need to discover what endpoints are available.
                         "description": "The key of the endpoint to call"
                     },
                     "payload": {
-                        "type": "object",
-                        "description": "The payload to send with the API call"
+                        "type": "string",
+                        "description": "The payload to send with the API call (must be a valid JSON string)."
                     }
                 },
-                "required": ["service_name", "route"]
+                "required": ["service_name", "route", "payload"]
             }
         }
     })

@@ -38,7 +38,7 @@ class SandboxVisionTool(SandboxToolsBase):
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "The relative path to the image file within the /workspace directory (e.g., 'screenshots/image.png'). Supported formats: JPG, PNG, GIF, WEBP. Max size: 5MB."
+                        "description": "The relative path to the image file within the /workspace directory (e.g., 'screenshots/image.png'). Supported formats: JPG, PNG, GIF, WEBP. Max size: 10MB."
                     }
                 },
                 "required": ["file_path"]

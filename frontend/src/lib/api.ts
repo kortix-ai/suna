@@ -1718,3 +1718,107 @@ export const checkBillingStatus = async (): Promise<BillingStatusResponse> => {
     throw error;
   }
 };
+
+// Knowledge Base APIs
+export interface KBDocument {
+  id: string; // Changed from uuid.UUID to string for frontend simplicity
+  file_name: string;
+  created_at: string; // Keep as string, can be parsed by Date if needed
+  status: string;
+  error_message?: string | null;
+  mime_type: string;
+  file_size: number;
+}
+
+export interface KBUpdateResponse {
+  document_id: string; // Changed from uuid.UUID to string
+  file_name: string;
+  status: string;
+  message: string;
+}
+
+export const listKnowledgeBaseDocuments = async (projectId: string): Promise<KBDocument[]> => {
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+
+  if (!token) {
+    throw new Error('User not authenticated');
+  }
+
+  const response = await fetch(`${API_URL}/kb/projects/${projectId}/documents`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ detail: 'Failed to list KB documents' }));
+    console.error('Failed to list KB documents:', errorData);
+    throw new Error(errorData.detail || 'Failed to list KB documents');
+  }
+  return response.json();
+};
+
+export const deleteKnowledgeBaseDocument = async (projectId: string, documentId: string): Promise<void> => {
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+
+  if (!token) {
+    throw new Error('User not authenticated');
+  }
+
+  const response = await fetch(`${API_URL}/kb/projects/${projectId}/documents/${documentId}`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    // For 204 No Content, response.ok might be true but no JSON body
+    if (response.status === 204) {
+      return;
+    }
+    const errorData = await response.json().catch(() => ({ detail: 'Failed to delete KB document' }));
+    console.error('Failed to delete KB document:', errorData);
+    throw new Error(errorData.detail || 'Failed to delete KB document');
+  }
+  // No content expected on successful delete (204)
+};
+
+export const uploadKnowledgeBaseDocument = async (projectId: string, file: File): Promise<KBUpdateResponse> => {
+  const supabase = createClient();
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+
+  if (!token) {
+    throw new Error('User not authenticated');
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await fetch(`${API_URL}/kb/projects/${projectId}/documents`, {
+    method: 'POST',
+    headers: {
+      // Content-Type is set automatically by browser for FormData
+      'Authorization': `Bearer ${token}`,
+    },
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ detail: 'Failed to upload KB document' }));
+    console.error('Failed to upload KB document:', errorData);
+    // Check for specific billing error structure from backend
+    if (response.status === 402 && errorData.detail?.message) {
+        throw new BillingError(response.status, errorData.detail, errorData.detail.message);
+    }
+    throw new Error(errorData.detail || 'Failed to upload KB document');
+  }
+  return response.json();
+};

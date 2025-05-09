@@ -37,9 +37,9 @@ class LLMRetryError(LLMError):
 
 def setup_api_keys() -> None:
     """Set up API keys from environment variables."""
-    providers = ['OPENAI', 'ANTHROPIC', 'GROQ', 'OPENROUTER']
+    providers = ['OPENAI', 'ANTHROPIC', 'GROQ', 'OPENROUTER', 'GEMINI']
     for provider in providers:
-        key = getattr(config, f'{provider}_API_KEY')
+        key = getattr(config, f'{provider}_API_KEY', None)
         if key:
             logger.debug(f"API key set for provider: {provider}")
         else:
@@ -158,7 +158,7 @@ def prepare_params(
     # Apply Anthropic prompt caching (minimal implementation)
     # Check model name *after* potential modifications (like adding bedrock/ prefix)
     effective_model_name = params.get("model", model_name) # Use model from params if set, else original
-    if "claude" in effective_model_name.lower() or "anthropic" in effective_model_name.lower():
+    if ("claude" in effective_model_name.lower() or "anthropic" in effective_model_name.lower()) and not effective_model_name.startswith("gemini/"):
         messages = params["messages"] # Direct reference, modification affects params
 
         # Ensure messages is a list
@@ -226,7 +226,7 @@ def prepare_params(
 
     # Add reasoning_effort for Anthropic models if enabled
     use_thinking = enable_thinking if enable_thinking is not None else False
-    is_anthropic = "anthropic" in effective_model_name.lower() or "claude" in effective_model_name.lower()
+    is_anthropic = ("anthropic" in effective_model_name.lower() or "claude" in effective_model_name.lower()) and not effective_model_name.startswith("gemini/")
 
     if is_anthropic and use_thinking:
         effort_level = reasoning_effort if reasoning_effort else 'low'

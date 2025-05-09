@@ -37,7 +37,7 @@ class Configuration:
     """
     
     # Environment mode
-    ENV_MODE: EnvMode = EnvMode.LOCAL
+    ENV_MODE: EnvMode = EnvMode(os.getenv("ENV_MODE", "local"))
     
     # Subscription tier IDs - Production
     STRIPE_FREE_TIER_ID_PROD: str = 'price_1RILb4G6l1KZGqIrK4QLrx9i'
@@ -109,10 +109,11 @@ class Configuration:
         return self.STRIPE_TIER_200_1000_ID_PROD
     
     # LLM API keys
-    ANTHROPIC_API_KEY: str = None
+    ANTHROPIC_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
     GROQ_API_KEY: Optional[str] = None
     OPENROUTER_API_KEY: Optional[str] = None
+    GEMINI_API_KEY: Optional[str] = None
     OPENROUTER_API_BASE: Optional[str] = "https://openrouter.ai/api/v1"
     OR_SITE_URL: Optional[str] = "https://kortix.ai"
     OR_APP_NAME: Optional[str] = "Kortix AI"    
@@ -123,7 +124,8 @@ class Configuration:
     AWS_REGION_NAME: Optional[str] = None
     
     # Model configuration
-    MODEL_TO_USE: Optional[str] = "anthropic/claude-3-7-sonnet-latest"
+    MODEL_TO_USE: str = os.getenv("MODEL_TO_USE", "gemini/gemini-2.5-pro-preview-05-06")
+    EMBEDDING_MODEL_TO_USE: str = os.getenv("EMBEDDING_MODEL_TO_USE", "intfloat/multilingual-e5-large")
     
     # Supabase configuration
     SUPABASE_URL: str
@@ -137,9 +139,9 @@ class Configuration:
     REDIS_SSL: bool = True
     
     # Daytona sandbox configuration
-    DAYTONA_API_KEY: str
+    DAYTONA_API_KEY: Optional[str] = None
     DAYTONA_SERVER_URL: str
-    DAYTONA_TARGET: str
+    DAYTONA_TARGET: Optional[str] = None
     
     # Search and other API keys
     TAVILY_API_KEY: str
@@ -147,6 +149,7 @@ class Configuration:
     CLOUDFLARE_API_TOKEN: Optional[str] = None
     FIRECRAWL_API_KEY: str
     FIRECRAWL_URL: Optional[str] = "https://api.firecrawl.dev"
+    PERPLEXITY_API_KEY: Optional[str] = None
     
     # Stripe configuration
     STRIPE_SECRET_KEY: Optional[str] = None

@@ -894,5 +894,34 @@ class SandboxBrowserTool(SandboxToolsBase):
         Returns:
             dict: Result of the execution
         """
-        logger.debug(f"\033[95mClicking at coordinates: ({x}, {y})\033[0m")
+        logger.debug(f"\033[95mClicking at coordinates X: {x}, Y: {y}\033[0m")
         return await self._execute_browser_action("click_coordinates", {"x": x, "y": y})
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "browser_list_elements",
+            "description": "List all interactive elements on the current page",
+            "parameters": {
+                "type": "object",
+                "properties": {}
+            }
+        }
+    })
+    @xml_schema(
+        tag_name="browser-list-elements",
+        mappings=[],
+        example='''
+        <browser-list-elements></browser-list-elements>
+        '''
+    )
+    async def browser_list_elements(self) -> ToolResult:
+        """List all interactive elements on the current page
+        
+        Returns:
+            dict: Result of the execution, including a list of elements
+        """
+        # Note: The browser automation service (port 8002)
+        # must be updated to handle the /api/automation/list_elements endpoint
+        logger.debug(f"\033[95mListing all interactive elements\033[0m")
+        return await self._execute_browser_action("list_elements", {})
