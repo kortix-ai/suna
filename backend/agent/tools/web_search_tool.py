@@ -4,16 +4,32 @@ from dotenv import load_dotenv
 from agentpress.tool import Tool, ToolResult, openapi_schema, xml_schema
 from utils.config import config
 import json
+from agent.tools.sb_file_storage_tool import FileStorageTool
 
 # TODO: add subpages, etc... in filters as sometimes its necessary 
 
 class WebSearchTool(Tool):
     """Tool for performing web searches using Tavily API and web scraping using Firecrawl."""
 
-    def __init__(self, api_key: str = None):
+    def __init__(
+        self,
+        project_id: str,
+        thread_manager,
+        api_key: Optional[str] = None
+    ):
         super().__init__()
         # Load environment variables
         load_dotenv()
+        
+        self.project_id = project_id
+        self.thread_manager = thread_manager
+
+        # Initialize sandbox-backed storage tool
+        self.storage_tool = FileStorageTool(
+            project_id=project_id,
+            thread_manager=thread_manager
+        )
+
         # Use the provided API key or get it from environment variables
         self.tavily_api_key = api_key or config.TAVILY_API_KEY
         self.firecrawl_api_key = config.FIRECRAWL_API_KEY
@@ -280,10 +296,29 @@ class WebSearchTool(Tool):
             formatted_result = {
                 "Title": data.get("data", {}).get("metadata", {}).get("title", ""),
                 "URL": url,
-                "Text": data.get("data", {}).get("markdown", "")
+                "Text": data.get("data", {}).get("markdown", ""),
+                "Metadata": data.get("metadata", {})
             }
             
-            # Add metadata if available
+            content = json.dumps(formatted_result, ensure_ascii=False, indent=2)
+            metadata = {
+                "source": "firecrawl",
+                "url": url,
+                "stored_at": datetime.utcnow().isoformat()
+            }
+            
+            store_result = await self.storage_tool.store_file(
+                content=content,
+                file_type="scrape",
+                metadata=metadata
+            )
+            
+            if not store_result.success:
+                print(f"Warning: could not store scrape: {store_result.output}")
+            else:
+                print(f"Stored result to daytona sandbox: {store_result.output}")
+                formatted_result["stored_file"] = store_result.output.get("file_name")
+    
             if "metadata" in data.get("data", {}):
                 formatted_result["Metadata"] = data["data"]["metadata"]
             
