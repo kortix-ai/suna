@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from agentpress.tool import Tool, ToolResult, openapi_schema, xml_schema
 from utils.config import config
 import json
+import logging
 
 # TODO: add subpages, etc... in filters as sometimes its necessary 
 
@@ -18,11 +19,13 @@ class WebSearchTool(Tool):
         self.tavily_api_key = api_key or config.TAVILY_API_KEY
         self.firecrawl_api_key = config.FIRECRAWL_API_KEY
         self.firecrawl_url = config.FIRECRAWL_URL
+        self.scrapegraphai_api_key = config.SCRAPEGRAPHAI_API_KEY
+        self.scrapegraphai_url = config.SCRAPEGRAPHAI_URL
         
         if not self.tavily_api_key:
             raise ValueError("TAVILY_API_KEY not found in configuration")
-        if not self.firecrawl_api_key:
-            raise ValueError("FIRECRAWL_API_KEY not found in configuration")
+        if not self.firecrawl_api_key and not self.scrapegraphai_api_key:
+            raise ValueError("Neither FIRECRAWL_API_KEY nor SCRAPEGRAPHAI_API_KEY found in configuration")
 
         # Tavily asynchronous search client
         self.tavily_client = AsyncTavilyClient(api_key=self.tavily_api_key)
@@ -162,7 +165,7 @@ class WebSearchTool(Tool):
         "type": "function",
         "function": {
             "name": "scrape_webpage",
-            "description": "Retrieve the complete text content of a specific webpage using Firecrawl. This tool extracts the full text content from any accessible web page and returns it for analysis, processing, or reference. The extracted text includes the main content of the page without HTML markup. Note that some pages may have limitations on access due to paywalls, access restrictions, or dynamic content loading.",
+            "description": "Retrieve the complete text content of a specific webpage using ScrapeGraphAI or Firecrawl. This tool extracts the full text content from any accessible web page and returns it for analysis, processing, or reference. The extracted text includes the main content of the page without HTML markup. Note that some pages may have limitations on access due to paywalls, access restrictions, or dynamic content loading.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -182,13 +185,19 @@ class WebSearchTool(Tool):
         ],
         example='''
         <!-- 
-        The scrape-webpage tool extracts the complete text content from web pages using Firecrawl.
+        The scrape-webpage tool extracts the complete text content from web pages using ScrapeGraphAI or Firecrawl.
         IMPORTANT WORKFLOW RULES:
         1. ALWAYS use web-search first to find relevant URLs
         2. Then use scrape-webpage on URLs from web-search results
         3. Only if scrape-webpage fails or if the page requires interaction:
            - Use direct browser tools (browser_navigate_to, browser_click_element, etc.)
            - This is needed for dynamic content, JavaScript-heavy sites, or pages requiring interaction
+        
+        ScrapeGraphAI Features:
+        - Handles dynamic content and JavaScript-rendered sites
+        - Manages proxies, caching, and rate limits
+        - Supports PDFs and images
+        - Outputs clean markdown
         
         Firecrawl Features:
         - Converts web pages into clean markdown
@@ -226,9 +235,9 @@ class WebSearchTool(Tool):
         url: str
     ) -> ToolResult:
         """
-        Retrieve the complete text content of a webpage using Firecrawl.
+        Retrieve the complete text content of a webpage using ScrapeGraphAI or Firecrawl.
         
-        This function scrapes the specified URL and extracts the full text content from the page.
+        This function first attempts to use ScrapeGraphAI if available, then falls back to Firecrawl.
         The extracted text is returned in the response, making it available for further analysis,
         processing, or reference.
         
@@ -256,38 +265,80 @@ class WebSearchTool(Tool):
                     url = 'https://' + url
             else:
                 return self.fail_response("URL must be a string.")
-                
-            # ---------- Firecrawl scrape endpoint ----------
-            async with httpx.AsyncClient() as client:
-                headers = {
-                    "Authorization": f"Bearer {self.firecrawl_api_key}",
-                    "Content-Type": "application/json",
-                }
-                payload = {
-                    "url": url,
-                    "formats": ["markdown"]
-                }
-                response = await client.post(
-                    f"{self.firecrawl_url}/v1/scrape",
-                    json=payload,
-                    headers=headers,
-                    timeout=60,
-                )
-                response.raise_for_status()
-                data = response.json()
 
-            # Format the response
-            formatted_result = {
-                "Title": data.get("data", {}).get("metadata", {}).get("title", ""),
-                "URL": url,
-                "Text": data.get("data", {}).get("markdown", "")
-            }
-            
-            # Add metadata if available
-            if "metadata" in data.get("data", {}):
-                formatted_result["Metadata"] = data["data"]["metadata"]
-            
-            return self.success_response([formatted_result])
+            # Try ScrapeGraphAI first if API key is available
+            if self.scrapegraphai_api_key:
+                try:
+                    async with httpx.AsyncClient() as client:
+                        headers = {
+                            "Content-Type": "application/json",
+                            "SGAI-APIKEY": self.scrapegraphai_api_key,
+                            "accept": "application/json"
+                        }
+                        payload = {
+                            "website_url": url
+                        }
+                        response = await client.post(
+                            self.scrapegraphai_url,
+                            json=payload,
+                            headers=headers,
+                            timeout=60
+                        )
+                        response.raise_for_status()
+                        data = response.json()
+
+                        # Format the response from ScrapeGraphAI
+                        formatted_result = {
+                            "Title": data.get("title", ""),
+                            "URL": url,
+                            "Text": data.get("result", ""),
+                            "RequestID": data.get("request_id", ""),
+                            "Status": data.get("status", "")
+                        }
+                        
+                        # Add metadata if available
+                        if "metadata" in data:
+                            formatted_result["Metadata"] = data["metadata"]
+                        
+                        return self.success_response([formatted_result])
+                except Exception as e:
+                    # If ScrapeGraphAI fails, log the error and continue to Firecrawl
+                    logger.warning(f"ScrapeGraphAI failed: {str(e)}. Falling back to Firecrawl.")
+
+            # Fall back to Firecrawl if ScrapeGraphAI is not available or failed
+            if self.firecrawl_api_key:
+                async with httpx.AsyncClient() as client:
+                    headers = {
+                        "Authorization": f"Bearer {self.firecrawl_api_key}",
+                        "Content-Type": "application/json",
+                    }
+                    payload = {
+                        "url": url,
+                        "formats": ["markdown"]
+                    }
+                    response = await client.post(
+                        f"{self.firecrawl_url}/v1/scrape",
+                        json=payload,
+                        headers=headers,
+                        timeout=60,
+                    )
+                    response.raise_for_status()
+                    data = response.json()
+
+                # Format the response
+                formatted_result = {
+                    "Title": data.get("data", {}).get("metadata", {}).get("title", ""),
+                    "URL": url,
+                    "Text": data.get("data", {}).get("markdown", "")
+                }
+                
+                # Add metadata if available
+                if "metadata" in data.get("data", {}):
+                    formatted_result["Metadata"] = data["data"]["metadata"]
+                
+                return self.success_response([formatted_result])
+            else:
+                return self.fail_response("No scraping service available (neither ScrapeGraphAI nor Firecrawl)")
         
         except Exception as e:
             error_message = str(e)
