@@ -18,6 +18,22 @@ Suna's powerful toolkit includes seamless browser automation to navigate the web
 )](https://github.com/kortix-ai/suna/labels/bug)
 </div>
 
+## 🚀 Quick start (local)
+
+```bash
+git clone https://github.com/<YOUR_GH_USERNAME>/suna.git && cd suna
+make setup && make up
+# browse http://localhost:3000
+```
+
+Before running, make sure to:
+1. Create a [Supabase](https://supabase.com) project and get your API credentials
+2. Get an API key from [Anthropic](https://www.anthropic.com)
+3. Set up a sandbox on [Daytona](https://daytona.io)
+
+Fill these credentials in your `.env` files after running `make setup`.
+
+For code contributors: Install pre-commit hooks with `pip install pre-commit && pre-commit install`
 
 ## Table of Contents
 
