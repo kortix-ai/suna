@@ -64,9 +64,18 @@ async def get_or_start_sandbox(sandbox_id: str):
 
 def start_supervisord_session(sandbox: Sandbox):
     """Start supervisord in a session."""
-    session_id = "supervisord-session"
+    # Use a URL-safe session ID
+    session_id = "supervisord_session_1"
     try:
         logger.info(f"Creating session {session_id} for supervisord")
+        try:
+            # Try to delete the session if it exists
+            sandbox.process.delete_session(session_id)
+        except Exception:
+            # Ignore errors if session doesn't exist
+            pass
+            
+        # Create new session
         sandbox.process.create_session(session_id)
         
         # Execute supervisord command
@@ -77,7 +86,8 @@ def start_supervisord_session(sandbox: Sandbox):
         logger.info(f"Supervisord started in session {session_id}")
     except Exception as e:
         logger.error(f"Error starting supervisord session: {str(e)}")
-        raise e
+        # Don't raise the error, just log it and continue
+        logger.warning("Continuing without supervisord session - some features may be limited")
 
 def create_sandbox(password: str, project_id: str = None):
     """Create a new sandbox with all required services configured and running."""

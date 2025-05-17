@@ -5,11 +5,13 @@ from agentpress.tool import Tool, ToolResult, openapi_schema, xml_schema
 from utils.config import config
 from sandbox.tool_base import SandboxToolsBase
 from agentpress.thread_manager import ThreadManager
+from utils.logger import logger
 import json
 import os
 import datetime
 import asyncio
 import logging
+from typing import List
 
 # TODO: add subpages, etc... in filters as sometimes its necessary 
 
@@ -18,6 +20,9 @@ class SandboxWebSearchTool(SandboxToolsBase):
 
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
+        self.thread_manager = thread_manager
+        self.memory_tool = None
+        self._initialized = False
         # Load environment variables
         load_dotenv()
         # Use API keys from config
@@ -32,6 +37,24 @@ class SandboxWebSearchTool(SandboxToolsBase):
 
         # Tavily asynchronous search client
         self.tavily_client = AsyncTavilyClient(api_key=self.tavily_api_key)
+
+    async def _ensure_initialized(self):
+        """Ensure the memory tool is initialized."""
+        if not self._initialized:
+            try:
+                # Get memory tool from thread manager's tool registry
+                from agent.tools.memory_tool import MemoryTool  # Import here to avoid circular imports
+                tool_info = self.thread_manager.tool_registry.get_tool("save-memory")  # Get tool by function name
+                if tool_info and 'instance' in tool_info:
+                    self.memory_tool = tool_info['instance']
+                    logger.info("Successfully initialized memory tool")
+                else:
+                    logger.warning("Memory tool not available for web search")
+                self._initialized = True
+            except Exception as e:
+                logger.error(f"Failed to initialize memory tool: {e}")
+                # Continue without memory tool
+                self._initialized = True  # Mark as initialized to prevent repeated attempts
 
     @openapi_schema({
         "type": "function",
@@ -90,57 +113,81 @@ class SandboxWebSearchTool(SandboxToolsBase):
         '''
     )
     async def web_search(
-        self, 
+        self,
         query: str,
         num_results: int = 20
     ) -> ToolResult:
-        """
-        Search the web using the Tavily API to find relevant and up-to-date information.
-        """
+        """Search the web using Tavily API."""
         try:
-            # Ensure we have a valid query
-            if not query or not isinstance(query, str):
-                return self.fail_response("A valid search query is required.")
-            
-            # Normalize num_results
-            if num_results is None:
-                num_results = 20
-            elif isinstance(num_results, int):
-                num_results = max(1, min(num_results, 50))
-            elif isinstance(num_results, str):
+            # First, check if we have relevant memories about this topic
+            if self.memory_tool:
                 try:
-                    num_results = max(1, min(int(num_results), 50))
-                except ValueError:
-                    num_results = 20
-            else:
-                num_results = 20
+                    # Retrieve relevant memories before searching
+                    memory_results = await self.memory_tool.retrieve_memories(
+                        thread_id=self.thread_manager.current_thread_id,
+                        query=query,
+                        memory_types=["semantic", "episodic"],
+                        tags=["web_search", "research"],
+                        limit=3,
+                        min_importance=0.5
+                    )
+                    
+                    if memory_results.get("memories"):
+                        logger.info(f"Found {len(memory_results['memories'])} relevant memories for search query")
+                        # We'll use these memories to enhance our search results later
+                except Exception as e:
+                    logger.error(f"Failed to retrieve memories for search: {e}")
 
-            # Execute the search with Tavily
-            logging.info(f"Executing web search for query: '{query}' with {num_results} results")
-            search_response = await self.tavily_client.search(
-                query=query,
-                max_results=num_results,
-                include_images=True,
-                include_answer="advanced",
-                search_depth="advanced",
-            )
+            # Perform the web search
+            search_results = await self._perform_search(query, num_results)
             
-            # Return the complete Tavily response 
-            # This includes the query, answer, results, images and more
-            logging.info(f"Retrieved search results for query: '{query}' with answer and {len(search_response.get('results', []))} results")
-            
-            return ToolResult(
-                success=True,
-                output=json.dumps(search_response, ensure_ascii=False)
-            )
-        
+            if not search_results:
+                return self.fail_response("No search results found")
+
+            # Store search results in memory
+            if self.memory_tool:
+                try:
+                    # Create a semantic memory of the search results
+                    memory_content = f"Web Search Results for: {query}\n\n"
+                    
+                    # Add direct answer if available
+                    if search_results.get("answer"):
+                        memory_content += f"Direct Answer:\n{search_results['answer']}\n\n"
+                    
+                    # Add top results summary
+                    memory_content += "Top Results:\n"
+                    for idx, result in enumerate(search_results.get("results", [])[:5], 1):
+                        memory_content += f"{idx}. {result.get('title', 'No title')}\n"
+                        memory_content += f"   URL: {result.get('url', 'No URL')}\n"
+                        if result.get("snippet"):
+                            memory_content += f"   {result['snippet'][:200]}...\n"
+                        memory_content += "\n"
+                    
+                    # Save to memory with importance based on result quality
+                    importance_score = 0.6  # Default
+                    if search_results.get("answer") or len(search_results.get("results", [])) > 5:
+                        importance_score = 0.7
+                    
+                    await self.memory_tool.save_memory(
+                        thread_id=self.thread_manager.current_thread_id,
+                        content=memory_content,
+                        memory_type="semantic",
+                        importance_score=importance_score,
+                        tags=["web_search", "research", "information"],
+                        metadata={
+                            "query": query,
+                            "timestamp": datetime.datetime.now().isoformat(),
+                            "result_count": len(search_results.get("results", [])),
+                            "has_direct_answer": bool(search_results.get("answer")),
+                            "has_images": bool(search_results.get("images"))
+                        }
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to store search results in memory: {e}")
+
+            return self.success_response(search_results)
         except Exception as e:
-            error_message = str(e)
-            logging.error(f"Error performing web search for '{query}': {error_message}")
-            simplified_message = f"Error performing web search: {error_message[:200]}"
-            if len(error_message) > 200:
-                simplified_message += "..."
-            return self.fail_response(simplified_message)
+            return self.fail_response(f"Web search failed: {e}")
 
     @openapi_schema({
         "type": "function",
@@ -213,92 +260,70 @@ class SandboxWebSearchTool(SandboxToolsBase):
     )
     async def scrape_webpage(
         self,
-        urls: str
+        urls: str,
+        thread_id: str = None
     ) -> ToolResult:
-        """
-        Retrieve the complete text content of multiple webpages in a single efficient operation.
-        
-        ALWAYS collect multiple relevant URLs from search results and scrape them all at once
-        rather than making separate calls for each URL. This is much more efficient.
-        
-        Parameters:
-        - urls: Multiple URLs to scrape, separated by commas
-        """
+        """Scrape content from web pages."""
         try:
-            logging.info(f"Starting to scrape webpages: {urls}")
-            
-            # Ensure sandbox is initialized
+            # Ensure tools are initialized
             await self._ensure_sandbox()
+            await self._ensure_initialized()
             
-            # Parse the URLs parameter
-            if not urls:
-                logging.warning("Scrape attempt with empty URLs")
-                return self.fail_response("Valid URLs are required.")
-            
-            # Split the URLs string into a list
-            url_list = [url.strip() for url in urls.split(',') if url.strip()]
-            
-            if not url_list:
-                logging.warning("No valid URLs found in the input")
-                return self.fail_response("No valid URLs provided.")
-                
-            if len(url_list) == 1:
-                logging.warning("Only a single URL provided - for efficiency you should scrape multiple URLs at once")
-            
-            logging.info(f"Processing {len(url_list)} URLs: {url_list}")
-            
-            # Process each URL and collect results
-            results = []
-            for url in url_list:
+            # Get thread ID from the most recent message if not provided
+            if thread_id is None:
                 try:
-                    # Add protocol if missing
-                    if not (url.startswith('http://') or url.startswith('https://')):
-                        url = 'https://' + url
-                        logging.info(f"Added https:// protocol to URL: {url}")
-                    
-                    # Scrape this URL
-                    result = await self._scrape_single_url(url)
-                    results.append(result)
-                    
+                    client = await self.thread_manager.db.client
+                    result = await client.table('messages').select('thread_id').order('created_at', desc=True).limit(1).execute()
+                    if result.data and len(result.data) > 0:
+                        thread_id = result.data[0]['thread_id']
+                    else:
+                        logger.warning("No thread ID found in recent messages")
+                        return self.fail_response("No thread ID available for memory storage")
                 except Exception as e:
-                    logging.error(f"Error processing URL {url}: {str(e)}")
-                    results.append({
-                        "url": url,
-                        "success": False,
-                        "error": str(e)
-                    })
+                    logger.error(f"Failed to get thread ID: {e}")
+                    return self.fail_response("Failed to get thread ID for memory storage")
             
-            # Summarize results
-            successful = sum(1 for r in results if r.get("success", False))
-            failed = len(results) - successful
+            # Process URLs and get results
+            results = await self._process_urls(urls)
             
-            # Create success/failure message
-            if successful == len(results):
-                message = f"Successfully scraped all {len(results)} URLs. Results saved to:"
-                for r in results:
-                    if r.get("file_path"):
-                        message += f"\n- {r.get('file_path')}"
-            elif successful > 0:
-                message = f"Scraped {successful} URLs successfully and {failed} failed. Results saved to:"
-                for r in results:
-                    if r.get("success", False) and r.get("file_path"):
-                        message += f"\n- {r.get('file_path')}"
-                message += "\n\nFailed URLs:"
-                for r in results:
-                    if not r.get("success", False):
-                        message += f"\n- {r.get('url')}: {r.get('error', 'Unknown error')}"
-            else:
-                error_details = "; ".join([f"{r.get('url')}: {r.get('error', 'Unknown error')}" for r in results])
-                return self.fail_response(f"Failed to scrape all {len(results)} URLs. Errors: {error_details}")
+            # Store scraped content in memory if memory tool is available
+            if self.memory_tool and thread_id and results:
+                try:
+                    for result in results:
+                        if result.get("success") and result.get("title"):
+                            # Create a semantic memory of the scraped content
+                            memory_content = f"Scraped content from: {result['title']}\n"
+                            memory_content += f"URL: {result['url']}\n\n"
+                            
+                            # Store first 1000 characters of content as summary
+                            if result.get("text"):
+                                summary = result["text"][:1000] + "..." if len(result["text"]) > 1000 else result["text"]
+                                memory_content += f"Content Summary:\n{summary}\n"
+                            
+                            # Save to memory
+                            await self.memory_tool.save_memory(
+                                thread_id=thread_id,
+                                content=memory_content,
+                                memory_type="semantic",
+                                importance_score=0.7,
+                                tags=["web_scrape", "research", "content"],
+                                metadata={
+                                    "url": result["url"],
+                                    "title": result["title"],
+                                    "timestamp": datetime.datetime.now().isoformat(),
+                                    "content_length": result.get("content_length", 0)
+                                }
+                            )
+                    logger.info(f"Successfully stored scraped content in memory for thread {thread_id}")
+                except Exception as e:
+                    logger.error(f"Failed to store scraped content in memory: {e}")
             
-            return ToolResult(
-                success=True,
-                output=message
-            )
-        
+            # Return original response
+            return self._create_scrape_response(results)
+            
         except Exception as e:
             error_message = str(e)
-            logging.error(f"Error in scrape_webpage: {error_message}")
+            logger.error(f"Error in scrape_webpage: {error_message}")
             return self.fail_response(f"Error processing scrape request: {error_message[:200]}")
     
     async def _scrape_single_url(self, url: str) -> dict:
@@ -412,6 +437,118 @@ class SandboxWebSearchTool(SandboxToolsBase):
                 "success": False,
                 "error": error_message
             }
+
+    async def _perform_search(self, query: str, num_results: int = 20) -> dict:
+        """Perform a web search using Tavily API.
+        
+        Args:
+            query: The search query
+            num_results: Number of results to return
+            
+        Returns:
+            dict: Search results including direct answer and web pages
+        """
+        try:
+            logger.info(f"Performing web search for query: {query}")
+            
+            # Perform the search using Tavily
+            search_response = await self.tavily_client.search(
+                query=query,
+                search_depth="advanced",
+                max_results=num_results,
+                include_answer=True,
+                include_images=True
+            )
+            
+            # Format the response
+            results = {
+                "answer": search_response.get("answer", ""),
+                "results": []
+            }
+            
+            # Process each result
+            for result in search_response.get("results", []):
+                formatted_result = {
+                    "title": result.get("title", ""),
+                    "url": result.get("url", ""),
+                    "snippet": result.get("content", ""),
+                    "published_date": result.get("published_date", ""),
+                    "score": result.get("score", 0)
+                }
+                results["results"].append(formatted_result)
+            
+            # Add images if available
+            if "images" in search_response:
+                results["images"] = search_response["images"]
+            
+            logger.info(f"Search completed successfully. Found {len(results['results'])} results")
+            return results
+            
+        except Exception as e:
+            error_message = str(e)
+            logger.error(f"Error in _perform_search: {error_message}")
+            raise Exception(f"Search failed: {error_message}")
+
+    async def _process_urls(self, urls: str) -> List[dict]:
+        """Process multiple URLs for scraping.
+        
+        Args:
+            urls: Comma-separated list of URLs to scrape
+            
+        Returns:
+            List of scraping results for each URL
+        """
+        url_list = [url.strip() for url in urls.split(",")]
+        results = []
+        
+        for url in url_list:
+            try:
+                result = await self._scrape_single_url(url)
+                results.append(result)
+            except Exception as e:
+                logger.error(f"Error scraping URL {url}: {str(e)}")
+                results.append({
+                    "url": url,
+                    "success": False,
+                    "error": str(e)
+                })
+        
+        return results
+
+    def _create_scrape_response(self, results: List[dict]) -> ToolResult:
+        """Create a formatted response for scrape results.
+        
+        Args:
+            results: List of scraping results
+            
+        Returns:
+            ToolResult with formatted response
+        """
+        # Count successes and failures
+        success_count = sum(1 for r in results if r.get("success", False))
+        failure_count = len(results) - success_count
+        
+        # Create response data
+        response_data = {
+            "success": success_count > 0,  # Overall success if at least one URL succeeded
+            "total_urls": len(results),
+            "successful_urls": success_count,
+            "failed_urls": failure_count,
+            "results": results
+        }
+        
+        # Create success/failure message
+        if success_count > 0:
+            message = f"Successfully scraped {success_count} out of {len(results)} URLs"
+            if failure_count > 0:
+                message += f" ({failure_count} failed)"
+        else:
+            message = f"Failed to scrape any of the {len(results)} URLs"
+        
+        return self.success_response({
+            "message": message,
+            **response_data
+        })
 
 if __name__ == "__main__":
     async def test_web_search():

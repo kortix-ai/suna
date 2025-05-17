@@ -175,3 +175,5 @@ state.json
 *.db
 
 .env.scripts
+
+/logs

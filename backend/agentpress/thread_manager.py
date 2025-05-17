@@ -268,24 +268,55 @@ Here are the XML tools available with examples:
                     token_threshold = self.context_manager.token_threshold
                     logger.info(f"Thread {thread_id} token count: {token_count}/{token_threshold} ({(token_count/token_threshold)*100:.1f}%)")
 
-                    # if token_count >= token_threshold and enable_context_manager:
-                    #     logger.info(f"Thread token count ({token_count}) exceeds threshold ({token_threshold}), summarizing...")
-                    #     summarized = await self.context_manager.check_and_summarize_if_needed(
-                    #         thread_id=thread_id,
-                    #         add_message_callback=self.add_message,
-                    #         model=llm_model,
-                    #         force=True
-                    #     )
-                    #     if summarized:
-                    #         logger.info("Summarization complete, fetching updated messages with summary")
-                    #         messages = await self.get_llm_messages(thread_id)
-                    #         # Recount tokens after summarization, using the modified prompt
-                    #         new_token_count = token_counter(model=llm_model, messages=[working_system_prompt] + messages)
-                    #         logger.info(f"After summarization: token count reduced from {token_count} to {new_token_count}")
-                    #     else:
-                    #         logger.warning("Summarization failed or wasn't needed - proceeding with original messages")
-                    # elif not enable_context_manager:
-                    #     logger.info("Automatic summarization disabled. Skipping token count check and summarization.")
+                    # If token count is high, try to retrieve relevant context from memory
+                    if token_count > token_threshold * 0.7 and enable_context_manager:  # 70% threshold
+                        logger.info(f"Token count ({token_count}) approaching threshold, retrieving relevant context from memory")
+                        
+                        # Get the last user message to use as query
+                        last_user_msg = None
+                        for msg in reversed(messages):
+                            if msg.get('role') == 'user':
+                                last_user_msg = msg
+                                break
+                        
+                        # Retrieve relevant context using the last user message as query
+                        query = None
+                        if last_user_msg and isinstance(last_user_msg.get('content'), str):
+                            query = last_user_msg['content']
+                        
+                        context_messages = await self.context_manager.retrieve_relevant_context(
+                            thread_id=thread_id,
+                            query=query,
+                            limit=3  # Limit to 3 most relevant memories
+                        )
+                        
+                        if context_messages:
+                            logger.info(f"Retrieved {len(context_messages)} relevant context messages from memory")
+                            # Add context messages after system prompt but before other messages
+                            messages = [working_system_prompt] + context_messages + messages[1:]
+                            # Recalculate token count
+                            token_count = token_counter(model=llm_model, messages=messages)
+                            logger.info(f"After adding context: token count {token_count}/{token_threshold} ({(token_count/token_threshold)*100:.1f}%)")
+                    
+                    # If still above threshold, summarize
+                    if token_count >= token_threshold and enable_context_manager:
+                        logger.info(f"Thread token count ({token_count}) exceeds threshold ({token_threshold}), summarizing...")
+                        summarized = await self.context_manager.check_and_summarize_if_needed(
+                            thread_id=thread_id,
+                            add_message_callback=self.add_message,
+                            model=llm_model,
+                            force=True
+                        )
+                        if summarized:
+                            logger.info("Summarization complete, fetching updated messages with summary")
+                            messages = await self.get_llm_messages(thread_id)
+                            # Recount tokens after summarization
+                            new_token_count = token_counter(model=llm_model, messages=messages)
+                            logger.info(f"After summarization: token count reduced from {token_count} to {new_token_count}")
+                        else:
+                            logger.warning("Summarization failed or wasn't needed - proceeding with original messages")
+                    elif not enable_context_manager:
+                        logger.info("Automatic summarization disabled. Skipping token count check and summarization.")
 
                 except Exception as e:
                     logger.error(f"Error counting tokens or summarizing: {str(e)}")

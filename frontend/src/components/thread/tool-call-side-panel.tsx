@@ -22,6 +22,8 @@ import { WebCrawlToolView } from './tool-views/WebCrawlToolView';
 import { WebScrapeToolView } from './tool-views/WebScrapeToolView';
 import { DataProviderToolView } from './tool-views/DataProviderToolView';
 import { ExposePortToolView } from './tool-views/ExposePortToolView';
+import { MemorySaveToolView } from './tool-views/MemorySaveToolView';
+import { MemoryRetrieveToolView } from './tool-views/MemoryRetrieveToolView';
 
 // Simple input interface
 export interface ToolCallInput {
@@ -58,6 +60,54 @@ function getToolView(
   const normalizedToolName = toolName.toLowerCase();
 
   switch (normalizedToolName) {
+    case 'save-memory':
+      return (
+        <MemorySaveToolView
+          name={normalizedToolName}
+          assistantContent={assistantContent}
+          toolContent={toolContent}
+          assistantTimestamp={assistantTimestamp}
+          toolTimestamp={toolTimestamp}
+          isSuccess={isSuccess}
+          isStreaming={isStreaming}
+        />
+      );
+    case 'retrieve_memories':
+      return (
+        <MemoryRetrieveToolView
+          name={normalizedToolName}
+          assistantContent={assistantContent}
+          toolContent={toolContent}
+          assistantTimestamp={assistantTimestamp}
+          toolTimestamp={toolTimestamp}
+          isSuccess={isSuccess}
+          isStreaming={isStreaming}
+        />
+      );
+    case 'update_memory':
+      return (
+        <MemorySaveToolView
+          name={normalizedToolName}
+          assistantContent={assistantContent}
+          toolContent={toolContent}
+          assistantTimestamp={assistantTimestamp}
+          toolTimestamp={toolTimestamp}
+          isSuccess={isSuccess}
+          isStreaming={isStreaming}
+        />
+      );
+    case 'delete_memory':
+      return (
+        <MemoryRetrieveToolView
+          name={normalizedToolName}
+          assistantContent={assistantContent}
+          toolContent={toolContent}
+          assistantTimestamp={assistantTimestamp}
+          toolTimestamp={toolTimestamp}
+          isSuccess={isSuccess}
+          isStreaming={isStreaming}
+        />
+      );
     case 'execute-command':
       return (
         <CommandToolView

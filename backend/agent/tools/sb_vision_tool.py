@@ -2,10 +2,12 @@ import os
 import base64
 import mimetypes
 from typing import Optional
+import datetime
 
 from agentpress.tool import ToolResult, openapi_schema, xml_schema
 from sandbox.tool_base import SandboxToolsBase
 from agentpress.thread_manager import ThreadManager
+from utils.logger import logger
 import json
 
 # Add common image MIME types if mimetypes module is limited
@@ -24,8 +26,27 @@ class SandboxVisionTool(SandboxToolsBase):
     def __init__(self, project_id: str, thread_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
         self.thread_id = thread_id
-        # Make thread_manager accessible within the tool instance
         self.thread_manager = thread_manager
+        self.memory_tool = None
+        self._initialized = False
+
+    async def _ensure_initialized(self):
+        """Ensure the memory tool is initialized."""
+        if not self._initialized:
+            try:
+                # Get memory tool from thread manager's tool registry
+                from agent.tools.memory_tool import MemoryTool  # Import here to avoid circular imports
+                tool_info = self.thread_manager.tool_registry.get_tool("save-memory")  # Get tool by function name
+                if tool_info and 'instance' in tool_info:
+                    self.memory_tool = tool_info['instance']
+                    logger.info("Successfully initialized memory tool")
+                else:
+                    logger.warning("Memory tool not available for vision operations")
+                self._initialized = True
+            except Exception as e:
+                logger.error(f"Failed to initialize memory tool: {e}")
+                # Continue without memory tool
+                self._initialized = True  # Mark as initialized to prevent repeated attempts
 
     @openapi_schema({
         "type": "function",
@@ -57,8 +78,9 @@ class SandboxVisionTool(SandboxToolsBase):
     async def see_image(self, file_path: str) -> ToolResult:
         """Reads an image file, converts it to base64, and adds it as a temporary message."""
         try:
-            # Ensure sandbox is initialized
+            # Ensure tools are initialized
             await self._ensure_sandbox()
+            await self._ensure_initialized()
 
             # Clean and construct full path
             cleaned_path = self.clean_path(file_path)
@@ -101,19 +123,56 @@ class SandboxVisionTool(SandboxToolsBase):
             image_context_data = {
                 "mime_type": mime_type,
                 "base64": base64_image,
-                "file_path": cleaned_path # Include path for context
+                "file_path": cleaned_path,
+                "file_size": file_info.size,
+                "timestamp": datetime.datetime.now().isoformat()
             }
 
+            # Store image information in memory if memory tool is available
+            if self.memory_tool:
+                try:
+                    # Create a memory of the image
+                    memory_content = f"Image Analysis: {cleaned_path}\n"
+                    memory_content += f"Type: {mime_type}\n"
+                    memory_content += f"Size: {file_info.size / (1024*1024):.2f}MB\n"
+                    memory_content += f"Path: {cleaned_path}\n\n"
+                    
+                    # Add image metadata if available
+                    if hasattr(file_info, 'metadata'):
+                        memory_content += "Image Metadata:\n"
+                        for key, value in file_info.metadata.items():
+                            memory_content += f"- {key}: {value}\n"
+                    
+                    # Save to memory with high importance for large or important images
+                    importance_score = 0.6  # Default
+                    if file_info.size > 5 * 1024 * 1024:  # > 5MB
+                        importance_score = 0.8
+                    
+                    await self.memory_tool.save_memory(
+                        thread_id=self.thread_manager.current_thread_id,
+                        content=memory_content,
+                        memory_type="episodic",  # Image analysis is episodic memory
+                        importance_score=importance_score,
+                        tags=["vision", "image", mime_type.split('/')[-1], "analysis"],
+                        metadata={
+                            "file_path": cleaned_path,
+                            "mime_type": mime_type,
+                            "file_size": file_info.size,
+                            "timestamp": datetime.datetime.now().isoformat(),
+                            "has_metadata": hasattr(file_info, 'metadata')
+                        }
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to store image information in memory: {e}")
+
             # Add the temporary message using the thread_manager callback
-            # Use a distinct type like 'image_context'
             await self.thread_manager.add_message(
                 thread_id=self.thread_id,
-                type="image_context", # Use a specific type for this
-                content=image_context_data, # Store the dict directly
-                is_llm_message=False # This is context generated by a tool
+                type="image_context",
+                content=image_context_data,
+                is_llm_message=False
             )
 
-            # Inform the agent the image will be available next turn
             return self.success_response(f"Successfully loaded the image '{cleaned_path}'.")
 
         except Exception as e:

@@ -2,7 +2,8 @@
 Context Management for AgentPress Threads.
 
 This module handles token counting and thread summarization to prevent
-reaching the context window limitations of LLM models.
+reaching the context window limitations of LLM models. It integrates with
+the memory system to store summaries and retrieve relevant context.
 """
 
 import json
@@ -12,6 +13,7 @@ from litellm import token_counter, completion_cost
 from services.supabase import DBConnection
 from services.llm import make_llm_api_call
 from utils.logger import logger
+from agent.memory_manager import MemoryManager
 
 # Constants for token management
 DEFAULT_TOKEN_THRESHOLD = 120000  # 80k tokens threshold for summarization
@@ -29,6 +31,92 @@ class ContextManager:
         """
         self.db = DBConnection()
         self.token_threshold = token_threshold
+        self.memory_manager: Optional[MemoryManager] = None
+    
+    async def _ensure_memory_manager(self):
+        """Ensure memory manager is initialized."""
+        if not self.memory_manager:
+            self.memory_manager = await MemoryManager.create(self.db)
+    
+    async def store_summary_in_memory(
+        self,
+        thread_id: str,
+        summary: Dict[str, Any],
+        token_count: int
+    ) -> None:
+        """Store a summary as a semantic memory.
+        
+        Args:
+            thread_id: ID of the thread
+            summary: The summary message to store
+            token_count: Token count at time of summarization
+        """
+        try:
+            await self._ensure_memory_manager()
+            
+            # Extract the summary content
+            content = summary.get('content', '')
+            if isinstance(content, dict):
+                content = content.get('content', '')
+            
+            # Store as semantic memory with high importance
+            await self.memory_manager.save_memory(
+                thread_id=thread_id,
+                content=f"Conversation Summary (Token Count: {token_count}):\n{content}",
+                memory_type="semantic",
+                importance_score=0.9,  # High importance for summaries
+                tags=["context_summary", "conversation_history"],
+                metadata={
+                    "token_count": token_count,
+                    "summary_type": "context_summary",
+                    "timestamp": summary.get('created_at')
+                }
+            )
+            logger.info(f"Stored summary in memory for thread {thread_id}")
+        except Exception as e:
+            logger.error(f"Failed to store summary in memory: {e}")
+    
+    async def retrieve_relevant_context(
+        self,
+        thread_id: str,
+        query: Optional[str] = None,
+        limit: int = 5
+    ) -> List[Dict[str, Any]]:
+        """Retrieve relevant context from memory.
+        
+        Args:
+            thread_id: ID of the thread
+            query: Optional search query for semantic retrieval
+            limit: Maximum number of memories to retrieve
+            
+        Returns:
+            List of relevant memories
+        """
+        try:
+            await self._ensure_memory_manager()
+            
+            # Retrieve relevant memories
+            memories = await self.memory_manager.retrieve_memories(
+                thread_id=thread_id,
+                query=query,
+                memory_types=["semantic", "episodic"],  # Focus on semantic and episodic memories
+                tags=["context_summary", "conversation_history"],
+                limit=limit,
+                min_importance=0.7  # Only get important memories
+            )
+            
+            # Convert memories to message format
+            context_messages = []
+            for memory in memories:
+                context_messages.append({
+                    "role": "system",
+                    "content": f"Relevant context from memory:\n{memory['content']}"
+                })
+            
+            return context_messages
+        except Exception as e:
+            logger.error(f"Failed to retrieve context from memory: {e}")
+            return []
     
     async def get_thread_token_count(self, thread_id: str) -> int:
         """Get the current token count for a thread using LiteLLM.
@@ -287,7 +375,10 @@ The above is a summary of the conversation history. The conversation continues b
                     metadata={"token_count": token_count}
                 )
                 
-                logger.info(f"Successfully added summary to thread {thread_id}")
+                # Store summary in memory system
+                await self.store_summary_in_memory(thread_id, summary, token_count)
+                
+                logger.info(f"Successfully added summary to thread {thread_id} and stored in memory")
                 return True
             else:
                 logger.error(f"Failed to create summary for thread {thread_id}")

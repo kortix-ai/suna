@@ -1,5 +1,6 @@
 import traceback
 import json
+import datetime
 
 from agentpress.tool import ToolResult, openapi_schema, xml_schema
 from agentpress.thread_manager import ThreadManager
@@ -13,6 +14,26 @@ class SandboxBrowserTool(SandboxToolsBase):
     def __init__(self, project_id: str, thread_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
         self.thread_id = thread_id
+        self.memory_tool = None
+        self._initialized = False
+
+    async def _ensure_initialized(self):
+        """Ensure the memory tool is initialized."""
+        if not self._initialized:
+            try:
+                # Get memory tool from thread manager's tool registry
+                from agent.tools.memory_tool import MemoryTool  # Import here to avoid circular imports
+                tool_info = self.thread_manager.tool_registry.get_tool("save-memory")  # Get tool by function name
+                if tool_info and 'instance' in tool_info:
+                    self.memory_tool = tool_info['instance']
+                    logger.info("Successfully initialized memory tool")
+                else:
+                    logger.warning("Memory tool not available for browser actions")
+                self._initialized = True
+            except Exception as e:
+                logger.error(f"Failed to initialize memory tool: {e}")
+                # Continue without memory tool
+                self._initialized = True  # Mark as initialized to prevent repeated attempts
 
     async def _execute_browser_action(self, endpoint: str, params: dict = None, method: str = "POST") -> ToolResult:
         """Execute a browser automation action through the API
@@ -26,8 +47,9 @@ class SandboxBrowserTool(SandboxToolsBase):
             ToolResult: Result of the execution
         """
         try:
-            # Ensure sandbox is initialized
+            # Ensure tools are initialized
             await self._ensure_sandbox()
+            await self._ensure_initialized()
             
             # Build the curl command
             url = f"http://localhost:8002/api/automation/{endpoint}"
@@ -59,6 +81,60 @@ class SandboxBrowserTool(SandboxToolsBase):
 
                     logger.info("Browser automation request completed successfully")
 
+                    # Store browser interaction in memory if memory tool is available
+                    if self.memory_tool and result.get("content"):
+                        try:
+                            # Create a memory of the browser interaction
+                            memory_content = f"Browser Action: {endpoint}\n"
+                            if result.get("url"):
+                                memory_content += f"URL: {result['url']}\n"
+                            if result.get("title"):
+                                memory_content += f"Page Title: {result['title']}\n\n"
+                            
+                            # Add relevant content based on action type
+                            if endpoint == "get_text":
+                                memory_content += "Page Content:\n"
+                                memory_content += result.get("content", "")[:1000]  # Store first 1000 chars
+                                if len(result.get("content", "")) > 1000:
+                                    memory_content += "...\n"
+                            elif endpoint == "get_elements":
+                                memory_content += f"Found {result.get('element_count', 0)} elements\n"
+                                if result.get("elements"):
+                                    memory_content += "Element Details:\n"
+                                    for elem in result.get("elements", [])[:5]:  # Store first 5 elements
+                                        memory_content += f"- {elem.get('tag', 'unknown')}: {elem.get('text', '')}\n"
+                            elif endpoint == "get_ocr":
+                                memory_content += "OCR Text:\n"
+                                memory_content += result.get("ocr_text", "")[:1000]  # Store first 1000 chars
+                                if len(result.get("ocr_text", "")) > 1000:
+                                    memory_content += "...\n"
+                            
+                            # Determine importance score based on content length and action type
+                            importance_score = 0.5  # Default
+                            if endpoint in ["get_text", "get_ocr"] and len(result.get("content", "")) > 500:
+                                importance_score = 0.7
+                            elif endpoint == "get_elements" and result.get("element_count", 0) > 10:
+                                importance_score = 0.6
+                            
+                            # Save to memory
+                            await self.memory_tool.save_memory(
+                                thread_id=self.thread_manager.current_thread_id,
+                                content=memory_content,
+                                memory_type="episodic",  # Browser interactions are episodic memories
+                                importance_score=importance_score,
+                                tags=["browser_action", endpoint, "automation"],
+                                metadata={
+                                    "action": endpoint,
+                                    "url": result.get("url"),
+                                    "timestamp": datetime.datetime.now().isoformat(),
+                                    "element_count": result.get("element_count", 0),
+                                    "has_ocr": bool(result.get("ocr_text")),
+                                    "content_length": len(result.get("content", ""))
+                                }
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to store browser action in memory: {e}")
+                    
                     # Add full result to thread messages for state tracking
                     added_message = await self.thread_manager.add_message(
                         thread_id=self.thread_id,
