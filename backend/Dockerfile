@@ -21,7 +21,8 @@ RUN useradd -m -u 1000 appuser && \
 
 # Install Python dependencies
 COPY --chown=appuser:appuser requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt gunicorn
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+RUN uv pip install --system --no-cache-dir -r requirements.txt gunicorn
 
 # Switch to non-root user
 USER appuser
