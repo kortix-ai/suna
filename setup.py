@@ -4,28 +4,33 @@ import sys
 import time
 import platform
 import subprocess
-from getpass import getpass
 import re
 import json
 
+# --- Constants ---
+IS_WINDOWS = platform.system() == "Windows"
+PROGRESS_FILE = ".setup_progress"
+ENV_DATA_FILE = ".setup_env.json"
 
-IS_WINDOWS = platform.system() == 'Windows'
 
-# ANSI colors for pretty output
+# --- ANSI Colors ---
 class Colors:
-    HEADER = '\033[95m'
-    BLUE = '\033[94m'
-    CYAN = '\033[96m'
-    GREEN = '\033[92m'
-    YELLOW = '\033[93m'
-    RED = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
+    HEADER = "\033[95m"
+    BLUE = "\033[94m"
+    CYAN = "\033[96m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    RED = "\033[91m"
+    ENDC = "\033[0m"
+    BOLD = "\033[1m"
+    UNDERLINE = "\033[4m"
 
+
+# --- UI Helpers ---
 def print_banner():
-    """Print Suna setup banner"""
-    print(f"""
+    """Prints the Suna setup banner."""
+    print(
+        f"""
 {Colors.BLUE}{Colors.BOLD}
    ███████╗██╗   ██╗███╗   ██╗ █████╗ 
    ██╔════╝██║   ██║████╗  ██║██╔══██╗
@@ -34,900 +39,972 @@ def print_banner():
    ███████║╚██████╔╝██║ ╚████║██║  ██║
    ╚══════╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝
                                       
-   Setup Wizard
+   Installation Wizard
 {Colors.ENDC}
-""")
-
-PROGRESS_FILE = '.setup_progress'
-
-def save_progress(step):
-    with open(PROGRESS_FILE, 'w') as f:
-        f.write(str(step))
-
-def load_progress():
-    if os.path.exists(PROGRESS_FILE):
-        with open(PROGRESS_FILE, 'r') as f:
-            try:
-                return int(f.read().strip())
-            except ValueError:
-                return 0
-    return 0
-
-def clear_progress():
-    if os.path.exists(PROGRESS_FILE):
-        os.remove(PROGRESS_FILE)
-
-ENV_DATA_FILE = '.setup_env.json'
-
-def save_env_data(env_data):
-    with open(ENV_DATA_FILE, 'w') as f:
-        json.dump(env_data, f)
-
-def load_env_data():
-    if os.path.exists(ENV_DATA_FILE):
-        with open(ENV_DATA_FILE, 'r') as f:
-            return json.load(f)
-    return {
-        'supabase': {},
-        'daytona': {},
-        'llm': {},
-        'search': {},
-        'rapidapi': {}
-    }
+"""
+    )
 
 
 def print_step(step_num, total_steps, step_name):
-    """Print a step header"""
-    print(f"\n{Colors.BLUE}{Colors.BOLD}Step {step_num}/{total_steps}: {step_name}{Colors.ENDC}")
+    """Prints a formatted step header."""
+    print(
+        f"\n{Colors.BLUE}{Colors.BOLD}Step {step_num}/{total_steps}: {step_name}{Colors.ENDC}"
+    )
     print(f"{Colors.CYAN}{'='*50}{Colors.ENDC}\n")
 
+
 def print_info(message):
-    """Print info message"""
+    """Prints an informational message."""
     print(f"{Colors.CYAN}ℹ️  {message}{Colors.ENDC}")
 
+
 def print_success(message):
-    """Print success message"""
+    """Prints a success message."""
     print(f"{Colors.GREEN}✅  {message}{Colors.ENDC}")
 
+
 def print_warning(message):
-    """Print warning message"""
+    """Prints a warning message."""
     print(f"{Colors.YELLOW}⚠️  {message}{Colors.ENDC}")
 
+
 def print_error(message):
-    """Print error message"""
+    """Prints an error message."""
     print(f"{Colors.RED}❌  {message}{Colors.ENDC}")
 
-def check_requirements():
-    """Check if all required tools are installed"""
-    requirements = {
-        'git': 'https://git-scm.com/downloads',
-        'docker': 'https://docs.docker.com/get-docker/',
-        'python3': 'https://www.python.org/downloads/',
-        'poetry': 'https://python-poetry.org/docs/#installation',
-        'pip3': 'https://pip.pypa.io/en/stable/installation/',
-        'node': 'https://nodejs.org/en/download/',
-        'npm': 'https://docs.npmjs.com/downloading-and-installing-node-js-and-npm',
+
+# --- Environment File Parsing ---
+def parse_env_file(filepath):
+    """Parses a .env file and returns a dictionary of key-value pairs."""
+    env_vars = {}
+    if not os.path.exists(filepath):
+        return env_vars
+
+    try:
+        with open(filepath, "r") as f:
+            for line in f:
+                line = line.strip()
+                # Skip empty lines and comments
+                if not line or line.startswith("#"):
+                    continue
+                # Handle key=value pairs
+                if "=" in line:
+                    key, value = line.split("=", 1)
+                    key = key.strip()
+                    value = value.strip()
+                    # Remove quotes if present
+                    if value.startswith('"') and value.endswith('"'):
+                        value = value[1:-1]
+                    elif value.startswith("'") and value.endswith("'"):
+                        value = value[1:-1]
+                    env_vars[key] = value
+    except Exception as e:
+        print_warning(f"Could not parse {filepath}: {e}")
+
+    return env_vars
+
+
+def load_existing_env_vars():
+    """Loads existing environment variables from .env files."""
+    backend_env = parse_env_file(os.path.join("backend", ".env"))
+    frontend_env = parse_env_file(os.path.join("frontend", ".env.local"))
+
+    # Organize the variables by category
+    existing_vars = {
+        "supabase": {
+            "SUPABASE_URL": backend_env.get("SUPABASE_URL", ""),
+            "SUPABASE_ANON_KEY": backend_env.get("SUPABASE_ANON_KEY", ""),
+            "SUPABASE_SERVICE_ROLE_KEY": backend_env.get(
+                "SUPABASE_SERVICE_ROLE_KEY", ""
+            ),
+        },
+        "daytona": {
+            "DAYTONA_API_KEY": backend_env.get("DAYTONA_API_KEY", ""),
+            "DAYTONA_SERVER_URL": backend_env.get("DAYTONA_SERVER_URL", ""),
+            "DAYTONA_TARGET": backend_env.get("DAYTONA_TARGET", ""),
+        },
+        "llm": {
+            "OPENAI_API_KEY": backend_env.get("OPENAI_API_KEY", ""),
+            "ANTHROPIC_API_KEY": backend_env.get("ANTHROPIC_API_KEY", ""),
+            "OPENROUTER_API_KEY": backend_env.get("OPENROUTER_API_KEY", ""),
+            "MODEL_TO_USE": backend_env.get("MODEL_TO_USE", ""),
+        },
+        "search": {
+            "TAVILY_API_KEY": backend_env.get("TAVILY_API_KEY", ""),
+            "FIRECRAWL_API_KEY": backend_env.get("FIRECRAWL_API_KEY", ""),
+            "FIRECRAWL_URL": backend_env.get("FIRECRAWL_URL", ""),
+        },
+        "rapidapi": {
+            "RAPID_API_KEY": backend_env.get("RAPID_API_KEY", ""),
+        },
+        "frontend": {
+            "NEXT_PUBLIC_SUPABASE_URL": frontend_env.get(
+                "NEXT_PUBLIC_SUPABASE_URL", ""
+            ),
+            "NEXT_PUBLIC_SUPABASE_ANON_KEY": frontend_env.get(
+                "NEXT_PUBLIC_SUPABASE_ANON_KEY", ""
+            ),
+            "NEXT_PUBLIC_BACKEND_URL": frontend_env.get("NEXT_PUBLIC_BACKEND_URL", ""),
+            "NEXT_PUBLIC_URL": frontend_env.get("NEXT_PUBLIC_URL", ""),
+            "NEXT_PUBLIC_ENV_MODE": frontend_env.get("NEXT_PUBLIC_ENV_MODE", ""),
+        },
     }
-    
-    missing = []
-    
-    for cmd, url in requirements.items():
-        try:
-            # Check if python3/pip3 for Windows
-            if platform.system() == 'Windows' and cmd in ['python3', 'pip3']:
-                cmd_to_check = cmd.replace('3', '')
+
+    return existing_vars
+
+
+def mask_sensitive_value(value, show_last=4):
+    """Masks sensitive values for display, showing only the last few characters."""
+    if not value or len(value) <= show_last:
+        return value
+    return "*" * (len(value) - show_last) + value[-show_last:]
+
+
+# --- State Management ---
+def save_progress(step, data):
+    """Saves the current step and collected data."""
+    with open(PROGRESS_FILE, "w") as f:
+        json.dump({"step": step, "data": data}, f)
+
+
+def load_progress():
+    """Loads the last saved step and data."""
+    if os.path.exists(PROGRESS_FILE):
+        with open(PROGRESS_FILE, "r") as f:
+            try:
+                return json.load(f)
+            except (json.JSONDecodeError, KeyError):
+                return {"step": 0, "data": {}}
+    return {"step": 0, "data": {}}
+
+
+# --- Validators ---
+def validate_url(url, allow_empty=False):
+    """Validates a URL format."""
+    if allow_empty and not url:
+        return True
+    pattern = re.compile(
+        r"^(?:http|https)://"
+        r"(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|"
+        r"localhost|"
+        r"\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"
+        r"(?::\d+)?"
+        r"(?:/?|[/?]\S+)$",
+        re.IGNORECASE,
+    )
+    return bool(pattern.match(url))
+
+
+def validate_api_key(api_key, allow_empty=False):
+    """Performs a basic validation for an API key."""
+    if allow_empty and not api_key:
+        return True
+    return bool(api_key and len(api_key) >= 10)
+
+
+# --- Main Setup Class ---
+class SetupWizard:
+    def __init__(self):
+        progress = load_progress()
+        self.current_step = progress.get("step", 0)
+
+        # Load existing environment variables from .env files
+        existing_env_vars = load_existing_env_vars()
+
+        # Start with existing values, then override with any saved progress
+        self.env_vars = {
+            "setup_method": None,
+            "supabase": existing_env_vars["supabase"],
+            "daytona": existing_env_vars["daytona"],
+            "llm": existing_env_vars["llm"],
+            "search": existing_env_vars["search"],
+            "rapidapi": existing_env_vars["rapidapi"],
+        }
+
+        # Override with any progress data (in case user is resuming)
+        saved_data = progress.get("data", {})
+        for key, value in saved_data.items():
+            if key in self.env_vars and isinstance(value, dict):
+                self.env_vars[key].update(value)
             else:
+                self.env_vars[key] = value
+
+        self.total_steps = 11
+
+    def show_current_config(self):
+        """Shows the current configuration status."""
+        config_items = []
+
+        # Check Supabase
+        if self.env_vars["supabase"]["SUPABASE_URL"]:
+            config_items.append(f"{Colors.GREEN}✓{Colors.ENDC} Supabase")
+        else:
+            config_items.append(f"{Colors.YELLOW}○{Colors.ENDC} Supabase")
+
+        # Check Daytona
+        if self.env_vars["daytona"]["DAYTONA_API_KEY"]:
+            config_items.append(f"{Colors.GREEN}✓{Colors.ENDC} Daytona")
+        else:
+            config_items.append(f"{Colors.YELLOW}○{Colors.ENDC} Daytona")
+
+        # Check LLM providers
+        llm_keys = [
+            k
+            for k in self.env_vars["llm"]
+            if k != "MODEL_TO_USE" and self.env_vars["llm"][k]
+        ]
+        if llm_keys:
+            providers = [k.split("_")[0].capitalize() for k in llm_keys]
+            config_items.append(
+                f"{Colors.GREEN}✓{Colors.ENDC} LLM ({', '.join(providers)})"
+            )
+        else:
+            config_items.append(f"{Colors.YELLOW}○{Colors.ENDC} LLM providers")
+
+        # Check Search APIs
+        search_configured = (
+            self.env_vars["search"]["TAVILY_API_KEY"]
+            and self.env_vars["search"]["FIRECRAWL_API_KEY"]
+        )
+        if search_configured:
+            config_items.append(f"{Colors.GREEN}✓{Colors.ENDC} Search APIs")
+        else:
+            config_items.append(f"{Colors.YELLOW}○{Colors.ENDC} Search APIs")
+
+        # Check RapidAPI (optional)
+        if self.env_vars["rapidapi"]["RAPID_API_KEY"]:
+            config_items.append(f"{Colors.GREEN}✓{Colors.ENDC} RapidAPI (optional)")
+        else:
+            config_items.append(f"{Colors.CYAN}○{Colors.ENDC} RapidAPI (optional)")
+
+        if any("✓" in item for item in config_items):
+            print_info("Current configuration status:")
+            for item in config_items:
+                print(f"  {item}")
+            print()
+
+    def run(self):
+        """Runs the setup wizard."""
+        print_banner()
+        print(
+            "This wizard will guide you through setting up Suna, an open-source generalist AI agent.\n"
+        )
+
+        # Show current configuration status
+        self.show_current_config()
+
+        try:
+            self.run_step(1, self.choose_setup_method)
+            self.run_step(2, self.check_requirements)
+            self.run_step(3, self.collect_supabase_info)
+            self.run_step(4, self.collect_daytona_info)
+            self.run_step(5, self.collect_llm_api_keys)
+            self.run_step(6, self.collect_search_api_keys)
+            self.run_step(7, self.collect_rapidapi_keys)
+            self.run_step(8, self.configure_env_files)
+            self.run_step(9, self.setup_supabase_database)
+            self.run_step(10, self.install_dependencies)
+            self.run_step(11, self.start_suna)
+
+            self.final_instructions()
+
+        except KeyboardInterrupt:
+            print("\n\nSetup interrupted. Your progress has been saved.")
+            print("You can resume setup anytime by running this script again.")
+            sys.exit(1)
+        except Exception as e:
+            print_error(f"An unexpected error occurred: {e}")
+            print_error(
+                "Please check the error message and try running the script again."
+            )
+            sys.exit(1)
+
+    def run_step(self, step_number, step_function, *args, **kwargs):
+        """Executes a setup step if it hasn't been completed."""
+        if self.current_step < step_number:
+            step_function(*args, **kwargs)
+            self.current_step = step_number
+            save_progress(self.current_step, self.env_vars)
+
+    def choose_setup_method(self):
+        """Asks the user to choose between Docker and manual setup."""
+        print_step(1, self.total_steps, "Choose Setup Method")
+
+        if self.env_vars.get("setup_method"):
+            print_info(
+                f"Continuing with '{self.env_vars['setup_method']}' setup method."
+            )
+            return
+
+        print_info(
+            "You can start Suna using either Docker Compose or by manually starting the services."
+        )
+        print(f"\n{Colors.CYAN}How would you like to set up Suna?{Colors.ENDC}")
+        print(
+            f"{Colors.CYAN}[1] {Colors.GREEN}Docker Compose{Colors.ENDC} {Colors.CYAN}(recommended, starts all services automatically){Colors.ENDC}"
+        )
+        print(
+            f"{Colors.CYAN}[2] {Colors.GREEN}Manual{Colors.ENDC} {Colors.CYAN}(requires installing dependencies and running services manually){Colors.ENDC}\n"
+        )
+
+        while True:
+            choice = input("Enter your choice (1 or 2): ").strip()
+            if choice == "1":
+                self.env_vars["setup_method"] = "docker"
+                break
+            elif choice == "2":
+                self.env_vars["setup_method"] = "manual"
+                break
+            else:
+                print_error(
+                    "Invalid selection. Please enter '1' for Docker or '2' for Manual."
+                )
+        print_success(f"Selected '{self.env_vars['setup_method']}' setup.")
+
+    def check_requirements(self):
+        """Checks if all required tools for the chosen setup method are installed."""
+        print_step(2, self.total_steps, "Checking Requirements")
+
+        if self.env_vars["setup_method"] == "docker":
+            requirements = {
+                "git": "https://git-scm.com/downloads",
+                "docker": "https://docs.docker.com/get-docker/",
+            }
+        else:  # manual
+            requirements = {
+                "git": "https://git-scm.com/downloads",
+                "uv": "https://github.com/astral-sh/uv#installation",
+                "node": "https://nodejs.org/en/download/",
+                "npm": "https://docs.npmjs.com/downloading-and-installing-node-js-and-npm",
+                "docker": "https://docs.docker.com/get-docker/",  # For Redis/RabbitMQ
+            }
+
+        missing = []
+        for cmd, url in requirements.items():
+            try:
                 cmd_to_check = cmd
-                
+                # On Windows, python3 is just python
+                if IS_WINDOWS and cmd in ["python3", "pip3"]:
+                    cmd_to_check = cmd.replace("3", "")
+
+                subprocess.run(
+                    [cmd_to_check, "--version"],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=True,
+                    shell=IS_WINDOWS,
+                )
+                print_success(f"{cmd} is installed.")
+            except (subprocess.SubprocessError, FileNotFoundError):
+                missing.append((cmd, url))
+                print_error(f"{cmd} is not installed.")
+
+        if missing:
+            print_error(
+                "\nMissing required tools. Please install them before continuing:"
+            )
+            for cmd, url in missing:
+                print(f"  - {cmd}: {url}")
+            sys.exit(1)
+
+        self.check_docker_running()
+        self.check_suna_directory()
+
+    def check_docker_running(self):
+        """Checks if the Docker daemon is running."""
+        print_info("Checking if Docker is running...")
+        try:
             subprocess.run(
-                [cmd_to_check, '--version'],
+                ["docker", "info"],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 check=True,
-                shell=IS_WINDOWS
+                shell=IS_WINDOWS,
             )
-            print_success(f"{cmd} is installed")
-        except (subprocess.SubprocessError, FileNotFoundError):
-            missing.append((cmd, url))
-            print_error(f"{cmd} is not installed")
-    
-    if missing:
-        print_error("Missing required tools. Please install them before continuing:")
-        for cmd, url in missing:
-            print(f"  - {cmd}: {url}")
-        sys.exit(1)
-    
-    return True
+            print_success("Docker is running.")
+            return True
+        except subprocess.SubprocessError:
+            print_error(
+                "Docker is installed but not running. Please start Docker and try again."
+            )
+            sys.exit(1)
 
-def check_docker_running():
-    """Check if Docker is running"""
-    try:
-        result = subprocess.run(
-            ['docker', 'info'],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True,
-            shell=IS_WINDOWS
-        )
-        print_success("Docker is running")
+    def check_suna_directory(self):
+        """Checks if the script is run from the correct project root directory."""
+        print_info("Verifying project structure...")
+        required_dirs = ["backend", "frontend"]
+        required_files = ["README.md", "docker-compose.yaml"]
+
+        for directory in required_dirs:
+            if not os.path.isdir(directory):
+                print_error(
+                    f"'{directory}' directory not found. Make sure you're in the Suna repository root."
+                )
+                sys.exit(1)
+
+        for file in required_files:
+            if not os.path.isfile(file):
+                print_error(
+                    f"'{file}' not found. Make sure you're in the Suna repository root."
+                )
+                sys.exit(1)
+
+        print_success("Suna repository detected.")
         return True
-    except subprocess.SubprocessError:
-        print_error("Docker is installed but not running. Please start Docker and try again.")
-        sys.exit(1)
 
-def check_suna_directory():
-    """Check if we're in a Suna repository"""
-    required_dirs = ['backend', 'frontend']
-    required_files = ['README.md', 'docker-compose.yaml']
-    
-    for directory in required_dirs:
-        if not os.path.isdir(directory):
-            print_error(f"'{directory}' directory not found. Make sure you're in the Suna repository root.")
-            return False
-    
-    for file in required_files:
-        if not os.path.isfile(file):
-            print_error(f"'{file}' not found. Make sure you're in the Suna repository root.")
-            return False
-    
-    print_success("Suna repository detected")
-    return True
-
-def validate_url(url, allow_empty=False):
-    """Validate a URL"""
-    if allow_empty and not url:
-        return True
-    
-    pattern = re.compile(
-        r'^(?:http|https)://'  # http:// or https://
-        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|'  # domain
-        r'localhost|'  # localhost
-        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # or IP
-        r'(?::\d+)?'  # optional port
-        r'(?:/?|[/?]\S+)$', re.IGNORECASE)
-    
-    return bool(pattern.match(url))
-
-def validate_api_key(api_key, allow_empty=False):
-    """Validate an API key (basic format check)"""
-    if allow_empty and not api_key:
-        return True
-    
-    # Basic check: not empty and at least 10 chars
-    return bool(api_key)
-
-def collect_supabase_info():
-    """Collect Supabase information"""
-    print_info("You'll need to create a Supabase project before continuing")
-    print_info("Visit https://supabase.com/dashboard/projects to create one")
-    print_info("After creating your project, visit the project settings -> Data API and you'll need to get the following information:")
-    print_info("1. Supabase Project URL (e.g., https://abcdefg.supabase.co)")
-    print_info("2. Supabase anon key")
-    print_info("3. Supabase service role key")
-    input("Press Enter to continue once you've created your Supabase project...")
-    
-    while True:
-        supabase_url = input("Enter your Supabase Project URL (e.g., https://abcdefg.supabase.co): ")
-        if validate_url(supabase_url):
-            break
-        print_error("Invalid URL format. Please enter a valid URL.")
-    
-    while True:
-        supabase_anon_key = input("Enter your Supabase anon key: ")
-        if validate_api_key(supabase_anon_key):
-            break
-        print_error("Invalid API key format. It should be at least 10 characters long.")
-    
-    while True:
-        supabase_service_role_key = input("Enter your Supabase service role key: ")
-        if validate_api_key(supabase_service_role_key):
-            break
-        print_error("Invalid API key format. It should be at least 10 characters long.")
-    
-    return {
-        'SUPABASE_URL': supabase_url,
-        'SUPABASE_ANON_KEY': supabase_anon_key,
-        'SUPABASE_SERVICE_ROLE_KEY': supabase_service_role_key,
-    }
-
-def collect_daytona_info():
-    """Collect Daytona API key"""
-    print_info("You'll need to create a Daytona account before continuing")
-    print_info("Visit https://app.daytona.io/ to create one")
-    print_info("Then, generate an API key from 'Keys' menu")
-    print_info("After that, go to Images (https://app.daytona.io/dashboard/images)")
-    print_info("Click '+ Create Image'")
-    print_info(f"Enter 'kortix/suna:0.1.3' as the image name")
-    print_info(f"Set '/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf' as the Entrypoint")
-
-    input("Press Enter to continue once you've completed these steps...")
-    
-    while True:
-        daytona_api_key = input("Enter your Daytona API key: ")
-        if validate_api_key(daytona_api_key):
-            break
-        print_error("Invalid API key format. It should be at least 10 characters long.")
-    
-    return {
-        'DAYTONA_API_KEY': daytona_api_key,
-        'DAYTONA_SERVER_URL': "https://app.daytona.io/api",
-        'DAYTONA_TARGET': "us",
-    }
-
-def collect_llm_api_keys():
-    """Collect LLM API keys for various providers"""
-    print_info("You need at least one LLM provider API key to use Suna")
-    print_info("Available LLM providers: OpenAI, Anthropic, OpenRouter")
-    
-    # Display provider selection options
-    print(f"\n{Colors.CYAN}Select LLM providers to configure:{Colors.ENDC}")
-    print(f"{Colors.CYAN}[1] {Colors.GREEN}OpenAI{Colors.ENDC}")
-    print(f"{Colors.CYAN}[2] {Colors.GREEN}Anthropic{Colors.ENDC}")
-    print(f"{Colors.CYAN}[3] {Colors.GREEN}OpenRouter{Colors.ENDC} {Colors.CYAN}(access to multiple models){Colors.ENDC}")
-    print(f"{Colors.CYAN}Enter numbers separated by commas (e.g., 1,2,3){Colors.ENDC}\n")
-
-    while True:
-        providers_input = input("Select providers (required, at least one): ")
-        selected_providers = []
-        
-        try:
-            # Parse the input, handle both comma-separated and space-separated
-            provider_numbers = [int(p.strip()) for p in providers_input.replace(',', ' ').split()]
-            
-            for num in provider_numbers:
-                if num == 1:
-                    selected_providers.append('OPENAI')
-                elif num == 2:
-                    selected_providers.append('ANTHROPIC')
-                elif num == 3:
-                    selected_providers.append('OPENROUTER')
-            
-            if selected_providers:
-                break
-            else:
-                print_error("Please select at least one provider.")
-        except ValueError:
-            print_error("Invalid input. Please enter provider numbers (e.g., 1,2,3).")
-
-    # Collect API keys for selected providers
-    api_keys = {}
-    model_info = {}
-    
-    # Model aliases for reference
-    model_aliases = {
-        'OPENAI': ['openai/gpt-4o', 'openai/gpt-4o-mini'],
-        'ANTHROPIC': ['anthropic/claude-3-7-sonnet-latest', 'anthropic/claude-3-5-sonnet-latest'],
-        'OPENROUTER': ['openrouter/google/gemini-2.5-pro-preview', 'openrouter/deepseek/deepseek-chat-v3-0324:free', 'openrouter/openai/gpt-4o-2024-11-20'],
-    }
-    
-    for provider in selected_providers:
-        print_info(f"\nConfiguring {provider}")
-        
-        if provider == 'OPENAI':
-            while True:
-                api_key = input("Enter your OpenAI API key: ")
-                if validate_api_key(api_key):
-                    api_keys['OPENAI_API_KEY'] = api_key
-                    
-                    # Recommend default model
-                    print(f"\n{Colors.CYAN}Recommended OpenAI models:{Colors.ENDC}")
-                    for i, model in enumerate(model_aliases['OPENAI'], 1):
-                        print(f"{Colors.CYAN}[{i}] {Colors.GREEN}{model}{Colors.ENDC}")
-                    
-                    model_choice = input("Select default model (1-4) or press Enter for gpt-4o: ").strip()
-                    if not model_choice:
-                        model_info['default_model'] = 'openai/gpt-4o'
-                    elif model_choice.isdigit() and 1 <= int(model_choice) <= len(model_aliases['OPENAI']):
-                        model_info['default_model'] = model_aliases['OPENAI'][int(model_choice) - 1]
-                    else:
-                        model_info['default_model'] = 'openai/gpt-4o'
-                        print_warning(f"Invalid selection, using default: openai/gpt-4o")
-                    break
-                print_error("Invalid API key format. It should be at least 10 characters long.")
-        
-        elif provider == 'ANTHROPIC':
-            while True:
-                api_key = input("Enter your Anthropic API key: ")
-                if validate_api_key(api_key):
-                    api_keys['ANTHROPIC_API_KEY'] = api_key
-                    
-                    # Recommend default model
-                    print(f"\n{Colors.CYAN}Recommended Anthropic models:{Colors.ENDC}")
-                    for i, model in enumerate(model_aliases['ANTHROPIC'], 1):
-                        print(f"{Colors.CYAN}[{i}] {Colors.GREEN}{model}{Colors.ENDC}")
-                    
-                    model_choice = input("Select default model (1-3) or press Enter for claude-3-7-sonnet: ").strip()
-                    if not model_choice or model_choice == '1':
-                        model_info['default_model'] = 'anthropic/claude-3-7-sonnet-latest'
-                    elif model_choice.isdigit() and 1 <= int(model_choice) <= len(model_aliases['ANTHROPIC']):
-                        model_info['default_model'] = model_aliases['ANTHROPIC'][int(model_choice) - 1]
-                    else:
-                        model_info['default_model'] = 'anthropic/claude-3-7-sonnet-latest'
-                        print_warning(f"Invalid selection, using default: anthropic/claude-3-7-sonnet-latest")
-                    break
-                print_error("Invalid API key format. It should be at least 10 characters long.")
-        
-        elif provider == 'OPENROUTER':
-            while True:
-                api_key = input("Enter your OpenRouter API key: ")
-                if validate_api_key(api_key):
-                    api_keys['OPENROUTER_API_KEY'] = api_key
-                    api_keys['OPENROUTER_API_BASE'] = 'https://openrouter.ai/api/v1'
-
-                    # Recommend default model
-                    print(f"\n{Colors.CYAN}Recommended OpenRouter models:{Colors.ENDC}")
-                    for i, model in enumerate(model_aliases['OPENROUTER'], 1):
-                        print(f"{Colors.CYAN}[{i}] {Colors.GREEN}{model}{Colors.ENDC}")
-                    
-                    model_choice = input("Select default model (1-3) or press Enter for gemini-2.5-flash: ").strip()
-                    if not model_choice or model_choice == '1':
-                        model_info['default_model'] = 'openrouter/google/gemini-2.5-flash-preview'
-                    elif model_choice.isdigit() and 1 <= int(model_choice) <= len(model_aliases['OPENROUTER']):
-                        model_info['default_model'] = model_aliases['OPENROUTER'][int(model_choice) - 1]
-                    else:
-                        model_info['default_model'] = 'openrouter/google/gemini-2.5-flash-preview'
-                        print_warning(f"Invalid selection, using default: openrouter/google/gemini-2.5-flash-preview")
-                    break
-                print_error("Invalid API key format. It should be at least 10 characters long.")
-        
-    # If no default model has been set, check which provider was selected and set an appropriate default
-    if 'default_model' not in model_info:
-        if 'ANTHROPIC_API_KEY' in api_keys:
-            model_info['default_model'] = 'anthropic/claude-3-7-sonnet-latest'
-        elif 'OPENAI_API_KEY' in api_keys:
-            model_info['default_model'] = 'openai/gpt-4o'
-        elif 'OPENROUTER_API_KEY' in api_keys:
-            model_info['default_model'] = 'openrouter/google/gemini-2.5-flash-preview'
-    
-    print_success(f"Using {model_info['default_model']} as the default model")
-    
-    # Add the default model to the API keys dictionary
-    api_keys['MODEL_TO_USE'] = model_info['default_model']
-    
-    return api_keys
-
-def collect_search_api_keys():
-    """Collect search API keys (now required, not optional)"""
-    print_info("You'll need to obtain API keys for search and web scraping")
-    print_info("Visit https://tavily.com/ to get a Tavily API key")
-    print_info("Visit https://firecrawl.dev/ to get a Firecrawl API key")
-    
-    while True:
-        tavily_api_key = input("Enter your Tavily API key: ")
-        if validate_api_key(tavily_api_key):
-            break
-        print_error("Invalid API key format. It should be at least 10 characters long.")
-    
-    while True:
-        firecrawl_api_key = input("Enter your Firecrawl API key: ")
-        if validate_api_key(firecrawl_api_key):
-            break
-        print_error("Invalid API key format. It should be at least 10 characters long.")
-    
-    # Ask if user is self-hosting Firecrawl
-    is_self_hosted = input("Are you self-hosting Firecrawl? (y/n): ").lower().strip() == 'y'
-    firecrawl_url = "https://api.firecrawl.dev"  # Default URL
-    
-    if is_self_hosted:
+    def _get_input(
+        self, prompt, validator, error_message, allow_empty=False, default_value=""
+    ):
+        """Helper to get validated user input with optional default value."""
         while True:
-            custom_url = input("Enter your Firecrawl URL (e.g., https://your-firecrawl-instance.com): ")
-            if validate_url(custom_url):
-                firecrawl_url = custom_url
-                break
-            print_error("Invalid URL format. Please enter a valid URL.")
-    
-    return {
-        'TAVILY_API_KEY': tavily_api_key,
-        'FIRECRAWL_API_KEY': firecrawl_api_key,
-        'FIRECRAWL_URL': firecrawl_url,
-    }
-
-def collect_rapidapi_keys():
-    """Collect RapidAPI key (optional)"""
-    print_info("To enable API services like LinkedIn, and others, you'll need a RapidAPI key")
-    print_info("Each service requires individual activation in your RapidAPI account:")
-    print_info("1. Locate the service's `base_url` in its corresponding file (e.g., https://linkedin-data-scraper.p.rapidapi.com in backend/agent/tools/data_providers/LinkedinProvider.py)")
-    print_info("2. Visit that specific API on the RapidAPI marketplace")
-    print_info("3. Subscribe to th`e service (many offer free tiers with limited requests)")
-    print_info("4. Once subscribed, the service will be available to your agent through the API Services tool")
-    print_info("A RapidAPI key is optional for API services like LinkedIn")
-    print_info("Visit https://rapidapi.com/ to get your API key if needed")
-    print_info("You can leave this blank and add it later if desired")
-    
-    rapid_api_key = input("Enter your RapidAPI key (optional, press Enter to skip): ")
-    
-    # Allow empty key
-    if not rapid_api_key:
-        print_info("Skipping RapidAPI key setup. You can add it later if needed.")
-    else:
-        # Validate if not empty
-        if not validate_api_key(rapid_api_key, allow_empty=True):
-            print_warning("The API key format seems invalid, but continuing anyway.")
-    
-    return {
-        'RAPID_API_KEY': rapid_api_key,
-    }
-
-def configure_backend_env(env_vars, use_docker=True):
-    """Configure backend .env file"""
-    env_path = os.path.join('backend', '.env')
-    
-    # Redis configuration (based on deployment method)
-    redis_host = 'redis' if use_docker else 'localhost'
-    redis_config = {
-        'REDIS_HOST': redis_host,
-        'REDIS_PORT': '6379',
-        'REDIS_PASSWORD': '',
-        'REDIS_SSL': 'false',
-    }
-
-    # RabbitMQ configuration (based on deployment method)
-    rabbitmq_host = 'rabbitmq' if use_docker else 'localhost'
-    rabbitmq_config = {
-        'RABBITMQ_HOST': rabbitmq_host,
-        'RABBITMQ_PORT': '5672',
-    }
-    
-    # Organize all configuration
-    all_config = {}
-    
-    # Create a string with the formatted content
-    env_content = """# Generated by Suna setup script
-
-# Environment Mode
-# Valid values: local, staging, production
-ENV_MODE=local
-
-#DATABASE
-"""
-
-    # Supabase section
-    for key, value in env_vars['supabase'].items():
-        env_content += f"{key}={value}\n"
-    
-    # Redis section
-    env_content += "\n# REDIS\n"
-    for key, value in redis_config.items():
-        env_content += f"{key}={value}\n"
-    
-    # RabbitMQ section
-    env_content += "\n# RABBITMQ\n"
-    for key, value in rabbitmq_config.items():
-        env_content += f"{key}={value}\n"
-    
-    # LLM section
-    env_content += "\n# LLM Providers:\n"
-    # Add empty values for all LLM providers we support
-    all_llm_keys = ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'GROQ_API_KEY', 'OPENROUTER_API_KEY', 'MODEL_TO_USE']
-    # Add AWS keys separately
-    aws_keys = ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_REGION_NAME']
-    
-    # First add the keys that were provided
-    for key, value in env_vars['llm'].items():
-        if key in all_llm_keys:
-            env_content += f"{key}={value}\n"
-            # Remove from the list once added
-            if key in all_llm_keys:
-                all_llm_keys.remove(key)
-    
-    # Add empty values for any remaining LLM keys
-    for key in all_llm_keys:
-        env_content += f"{key}=\n"
-    
-    # AWS section
-    env_content += "\n# AWS Bedrock\n"
-    for key in aws_keys:
-        value = env_vars['llm'].get(key, '')
-        env_content += f"{key}={value}\n"
-    
-    # Additional OpenRouter params
-    if 'OR_SITE_URL' in env_vars['llm'] or 'OR_APP_NAME' in env_vars['llm']:
-        env_content += "\n# OpenRouter Additional Settings\n"
-        if 'OR_SITE_URL' in env_vars['llm']:
-            env_content += f"OR_SITE_URL={env_vars['llm']['OR_SITE_URL']}\n"
-        if 'OR_APP_NAME' in env_vars['llm']:
-            env_content += f"OR_APP_NAME={env_vars['llm']['OR_APP_NAME']}\n"
-    
-    # DATA APIs section
-    env_content += "\n# DATA APIS\n"
-    for key, value in env_vars['rapidapi'].items():
-        env_content += f"{key}={value}\n"
-    
-    # Web search section
-    env_content += "\n# WEB SEARCH\n"
-    tavily_key = env_vars['search'].get('TAVILY_API_KEY', '')
-    env_content += f"TAVILY_API_KEY={tavily_key}\n"
-    
-    # Web scrape section
-    env_content += "\n# WEB SCRAPE\n"
-    firecrawl_key = env_vars['search'].get('FIRECRAWL_API_KEY', '')
-    firecrawl_url = env_vars['search'].get('FIRECRAWL_URL', '')
-    env_content += f"FIRECRAWL_API_KEY={firecrawl_key}\n"
-    env_content += f"FIRECRAWL_URL={firecrawl_url}\n"
-    
-    # Daytona section
-    env_content += "\n# Sandbox container provider:\n"
-    for key, value in env_vars['daytona'].items():
-        env_content += f"{key}={value}\n"
-    
-    # Add next public URL at the end
-    env_content += f"NEXT_PUBLIC_URL=http://localhost:3000\n"
-    
-    # Write to file
-    with open(env_path, 'w') as f:
-        f.write(env_content)
-    
-    print_success(f"Backend .env file created at {env_path}")
-    print_info(f"Redis host is set to: {redis_host}")
-    print_info(f"RabbitMQ host is set to: {rabbitmq_host}")
-
-def configure_frontend_env(env_vars, use_docker=True):
-    """Configure frontend .env.local file"""
-    env_path = os.path.join('frontend', '.env.local')
-    
-    # Use the appropriate backend URL based on start method
-    backend_url = "http://localhost:8000/api"
-
-    config = {
-        'NEXT_PUBLIC_SUPABASE_URL': env_vars['supabase']['SUPABASE_URL'],
-        'NEXT_PUBLIC_SUPABASE_ANON_KEY': env_vars['supabase']['SUPABASE_ANON_KEY'],
-        'NEXT_PUBLIC_BACKEND_URL': backend_url,
-        'NEXT_PUBLIC_URL': 'http://localhost:3000',
-        'NEXT_PUBLIC_ENV_MODE': 'LOCAL',
-    }
-
-    # Write to file
-    with open(env_path, 'w') as f:
-        for key, value in config.items():
-            f.write(f"{key}={value}\n")
-    
-    print_success(f"Frontend .env.local file created at {env_path}")
-    print_info(f"Backend URL is set to: {backend_url}")
-
-def setup_supabase():
-    """Setup Supabase database"""
-    print_info("Setting up Supabase database...")
-    
-    # Check if the Supabase CLI is installed
-    try:
-        subprocess.run(
-            ['supabase', '--version'],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True,
-            shell=IS_WINDOWS
-        )
-    except (subprocess.SubprocessError, FileNotFoundError):
-        print_error("Supabase CLI is not installed.")
-        print_info("Please install it by following instructions at https://supabase.com/docs/guides/cli/getting-started")
-        print_info("After installing, run this setup again")
-        sys.exit(1)
-    
-    # Extract project reference from Supabase URL
-    supabase_url = os.environ.get('SUPABASE_URL')
-    if not supabase_url:
-        # Get from main function if environment variable not set
-        env_path = os.path.join('backend', '.env')
-        if os.path.exists(env_path):
-            with open(env_path, 'r') as f:
-                for line in f:
-                    if line.startswith('SUPABASE_URL='):
-                        supabase_url = line.strip().split('=', 1)[1]
-                        break
-
-    project_ref = None
-    if supabase_url:
-        # Extract project reference from URL (format: https://[project_ref].supabase.co)
-        match = re.search(r'https://([^.]+)\.supabase\.co', supabase_url)
-        if match:
-            project_ref = match.group(1)
-            print_success(f"Extracted project reference '{project_ref}' from your Supabase URL")
-    
-    # If extraction failed, ask the user
-    if not project_ref:
-        print_info("Could not extract project reference from Supabase URL")
-        print_info("Get your Supabase project reference from the Supabase dashboard")
-        print_info("It's the portion after 'https://' and before '.supabase.co' in your project URL")
-        project_ref = input("Enter your Supabase project reference: ")
-    
-    # Change the working directory to backend
-    backend_dir = os.path.join(os.getcwd(), 'backend')
-    print_info(f"Changing to backend directory: {backend_dir}")
-    
-    try:
-        # Login to Supabase CLI (interactive)
-        print_info("Logging into Supabase CLI...")
-        subprocess.run(['supabase', 'login'], check=True, shell=IS_WINDOWS)
-        
-        # Link to project
-        print_info(f"Linking to Supabase project {project_ref}...")
-        subprocess.run(
-            ['supabase', 'link', '--project-ref', project_ref],
-            cwd=backend_dir,
-            check=True,
-            shell=IS_WINDOWS
-        )
-        
-        # Push database migrations
-        print_info("Pushing database migrations...")
-        subprocess.run(
-            ['supabase', 'db', 'push'],
-            cwd=backend_dir,
-            check=True,
-            shell=IS_WINDOWS
-        )
-        
-        print_success("Supabase database setup completed")
-        
-        # Reminder for manual step
-        print_warning("IMPORTANT: You need to manually expose the 'basejump' schema in Supabase")
-        print_info("Go to the Supabase web platform -> choose your project -> Project Settings -> Data API")
-        print_info("In the 'Exposed Schema' section, add 'basejump' if not already there")
-        input("Press Enter once you've completed this step...")
-        
-    except subprocess.SubprocessError as e:
-        print_error(f"Failed to setup Supabase: {e}")
-        sys.exit(1)
-
-def install_dependencies():
-    """Install frontend and backend dependencies"""
-    print_info("Installing required dependencies...")
-    
-    try:
-        # Install frontend dependencies
-        print_info("Installing frontend dependencies...")
-        subprocess.run(
-            ['npm', 'install'], 
-            cwd='frontend',
-            check=True,
-            shell=IS_WINDOWS
-        )
-        print_success("Frontend dependencies installed successfully")
-        
-        # Lock dependencies
-        print_info("Locking dependencies...")
-        subprocess.run(
-            ['poetry', 'lock'],
-            cwd='backend',
-            check=True,
-            shell=IS_WINDOWS
-        )
-        # Install backend dependencies
-        print_info("Installing backend dependencies...")
-        subprocess.run(
-            ['poetry', 'install'], 
-            cwd='backend',
-            check=True,
-            shell=IS_WINDOWS
-        )
-        print_success("Backend dependencies installed successfully")
-        
-        return True
-    except subprocess.SubprocessError as e:
-        print_error(f"Failed to install dependencies: {e}")
-        print_info("You may need to install them manually.")
-        return False
-
-def start_suna():
-    """Start Suna using Docker Compose or manual startup"""
-    print_info("You can start Suna using either Docker Compose or by manually starting the frontend, backend and worker.")
-
-    print(f"\n{Colors.CYAN}How would you like to start Suna?{Colors.ENDC}")
-    print(f"{Colors.CYAN}[1] {Colors.GREEN}Docker Compose{Colors.ENDC} {Colors.CYAN}(recommended, starts all services){Colors.ENDC}")
-    print(f"{Colors.CYAN}[2] {Colors.GREEN}Manual startup{Colors.ENDC} {Colors.CYAN}(requires Redis, RabbitMQ & separate terminals){Colors.ENDC}\n")
-    
-    while True:
-        start_method = input("Enter your choice (1 or 2): ")
-        if start_method in ["1", "2"]:
-            break
-        print_error("Invalid selection. Please enter '1' for Docker Compose or '2' for Manual startup.")
-    
-    use_docker = start_method == "1"
-    
-    if use_docker:
-        print_info("Starting Suna with Docker Compose...")
-        
-        try:
-            # TODO: uncomment when we have pre-built images on Docker Hub or GHCR
-            # GitHub repository environment variable setup
-            # github_repo = None
-            
-            # print(f"\n{Colors.CYAN}Do you want to use pre-built images or build locally?{Colors.ENDC}")
-            # print(f"{Colors.CYAN}[1] {Colors.GREEN}Pre-built images{Colors.ENDC} {Colors.CYAN}(faster){Colors.ENDC}")
-            # print(f"{Colors.CYAN}[2] {Colors.GREEN}Build locally{Colors.ENDC} {Colors.CYAN}(customizable){Colors.ENDC}\n")
-            
-            # while True:
-            #     build_choice = input("Enter your choice (1 or 2): ")
-            #     if build_choice in ["1", "2"]:
-            #         break
-            #     print_error("Invalid selection. Please enter '1' for pre-built images or '2' for building locally.")
-                
-            # use_prebuilt = build_choice == "1"
-            
-            # if use_prebuilt:
-            #     # Get GitHub repository name from user
-            #     print_info("For pre-built images, you need to specify a GitHub repository name")
-            #     print_info("Example format: your-github-username/repo-name")
-                
-            #     github_repo = input("Enter GitHub repository name: ")
-            #     if not github_repo or "/" not in github_repo:
-            #         print_warning("Invalid GitHub repository format. Using a default value.")
-            #         # Create a random GitHub repository name as fallback
-            #         random_name = ''.join(random.choices(string.ascii_lowercase, k=8))
-            #         github_repo = f"user/{random_name}"
-                
-            #     # Set the environment variable
-            #     os.environ["GITHUB_REPOSITORY"] = github_repo
-            #     print_info(f"Using GitHub repository: {github_repo}")
-                
-            #     # Start with pre-built images
-            #     print_info("Using pre-built images...")
-            #     subprocess.run(['docker', 'compose', '-f', 'docker-compose.ghcr.yaml', 'up', '-d'], check=True)
-            # else:
-            #     # Start with docker-compose (build images locally)
-            #     print_info("Building images locally...")
-            #     subprocess.run(['docker', 'compose', 'up', '-d'], check=True)
-
-            print_info("Building images locally...")
-            subprocess.run(['docker', 'compose', 'up', '-d', '--build'], check=True, shell=IS_WINDOWS)
-
-            # Wait for services to be ready
-            print_info("Waiting for services to start...")
-            time.sleep(10)  # Give services some time to start
-            
-            # Check if services are running
-            result = subprocess.run(
-                ['docker', 'compose', 'ps', '-q'],
-                capture_output=True,
-                text=True,
-                shell=IS_WINDOWS
-            )
-            
-            if "backend" in result.stdout and "frontend" in result.stdout:
-                print_success("Suna services are up and running!")
+            # Show default value in prompt if it exists
+            if default_value:
+                # Mask sensitive values for display
+                if "key" in prompt.lower() or "token" in prompt.lower():
+                    display_default = mask_sensitive_value(default_value)
+                else:
+                    display_default = default_value
+                full_prompt = (
+                    f"{prompt}[{Colors.GREEN}{display_default}{Colors.ENDC}]: "
+                )
             else:
-                print_warning("Some services might not be running correctly. Check 'docker compose ps' for details.")
-            
+                full_prompt = prompt
+
+            value = input(full_prompt).strip()
+
+            # Use default value if user just pressed Enter
+            if not value and default_value:
+                value = default_value
+
+            if validator(value, allow_empty=allow_empty):
+                return value
+            print_error(error_message)
+
+    def collect_supabase_info(self):
+        """Collects Supabase project information from the user."""
+        print_step(3, self.total_steps, "Collecting Supabase Information")
+
+        # Check if we already have values configured
+        has_existing = any(self.env_vars["supabase"].values())
+        if has_existing:
+            print_info(
+                "Found existing Supabase configuration. Press Enter to keep current values or type new ones."
+            )
+        else:
+            print_info(
+                "You'll need a Supabase project. Visit https://supabase.com/dashboard/projects to create one."
+            )
+            print_info(
+                "In your project settings, go to 'API' to find the required information."
+            )
+            input("Press Enter to continue once you have your project details...")
+
+        self.env_vars["supabase"]["SUPABASE_URL"] = self._get_input(
+            "Enter your Supabase Project URL (e.g., https://xyz.supabase.co): ",
+            validate_url,
+            "Invalid URL format. Please enter a valid URL.",
+            default_value=self.env_vars["supabase"]["SUPABASE_URL"],
+        )
+        self.env_vars["supabase"]["SUPABASE_ANON_KEY"] = self._get_input(
+            "Enter your Supabase anon key: ",
+            validate_api_key,
+            "This does not look like a valid key. It should be at least 10 characters.",
+            default_value=self.env_vars["supabase"]["SUPABASE_ANON_KEY"],
+        )
+        self.env_vars["supabase"]["SUPABASE_SERVICE_ROLE_KEY"] = self._get_input(
+            "Enter your Supabase service role key: ",
+            validate_api_key,
+            "This does not look like a valid key. It should be at least 10 characters.",
+            default_value=self.env_vars["supabase"]["SUPABASE_SERVICE_ROLE_KEY"],
+        )
+        print_success("Supabase information saved.")
+
+    def collect_daytona_info(self):
+        """Collects Daytona API key."""
+        print_step(4, self.total_steps, "Collecting Daytona Information")
+
+        # Check if we already have values configured
+        has_existing = bool(self.env_vars["daytona"]["DAYTONA_API_KEY"])
+        if has_existing:
+            print_info(
+                "Found existing Daytona configuration. Press Enter to keep current values or type new ones."
+            )
+        else:
+            print_info(
+                "Suna uses Daytona for sandboxing. Visit https://app.daytona.io/ to create an account."
+            )
+            print_info("Then, generate an API key from the 'Keys' menu.")
+            input("Press Enter to continue once you have your API key...")
+
+        self.env_vars["daytona"]["DAYTONA_API_KEY"] = self._get_input(
+            "Enter your Daytona API key: ",
+            validate_api_key,
+            "Invalid API key format. It should be at least 10 characters long.",
+            default_value=self.env_vars["daytona"]["DAYTONA_API_KEY"],
+        )
+
+        # Set defaults if not already configured
+        if not self.env_vars["daytona"]["DAYTONA_SERVER_URL"]:
+            self.env_vars["daytona"][
+                "DAYTONA_SERVER_URL"
+            ] = "https://app.daytona.io/api"
+        if not self.env_vars["daytona"]["DAYTONA_TARGET"]:
+            self.env_vars["daytona"]["DAYTONA_TARGET"] = "us"
+
+        print_success("Daytona information saved.")
+
+    def collect_llm_api_keys(self):
+        """Collects LLM API keys for various providers."""
+        print_step(5, self.total_steps, "Collecting LLM API Keys")
+
+        # Check if we already have any LLM keys configured
+        existing_keys = {
+            k: v for k, v in self.env_vars["llm"].items() if v and k != "MODEL_TO_USE"
+        }
+        has_existing = bool(existing_keys)
+
+        if has_existing:
+            print_info("Found existing LLM API keys:")
+            for key, value in existing_keys.items():
+                provider_name = key.split("_")[0].capitalize()
+                print_info(f"  - {provider_name}: {mask_sensitive_value(value)}")
+            print_info(
+                "You can add more providers or press Enter to keep existing configuration."
+            )
+        else:
+            print_info(
+                "Suna requires at least one LLM provider. Supported: OpenAI, Anthropic, OpenRouter."
+            )
+
+        # Don't clear existing keys if we're updating
+        if not has_existing:
+            self.env_vars["llm"] = {}
+
+        while not any(
+            k
+            for k in self.env_vars["llm"]
+            if k != "MODEL_TO_USE" and self.env_vars["llm"][k]
+        ):
+            providers = {
+                "1": ("OpenAI", "OPENAI_API_KEY"),
+                "2": ("Anthropic", "ANTHROPIC_API_KEY"),
+                "3": ("OpenRouter", "OPENROUTER_API_KEY"),
+            }
+            print(
+                f"\n{Colors.CYAN}Select LLM providers to configure (e.g., 1,3):{Colors.ENDC}"
+            )
+            for key, (name, env_key) in providers.items():
+                current_value = self.env_vars["llm"].get(env_key, "")
+                status = (
+                    f" {Colors.GREEN}(configured){Colors.ENDC}" if current_value else ""
+                )
+                print(f"{Colors.CYAN}[{key}] {Colors.GREEN}{name}{Colors.ENDC}{status}")
+
+            # Allow Enter to skip if we already have keys configured
+            if has_existing:
+                choices_input = input(
+                    "Select providers (or press Enter to skip): "
+                ).strip()
+                if not choices_input:
+                    break
+            else:
+                choices_input = input("Select providers: ").strip()
+
+            choices = choices_input.replace(",", " ").split()
+            selected_keys = {providers[c][1] for c in choices if c in providers}
+
+            if not selected_keys and not has_existing:
+                print_error("Invalid selection. Please choose at least one provider.")
+                continue
+
+            for key in selected_keys:
+                provider_name = key.split("_")[0].capitalize()
+                existing_value = self.env_vars["llm"].get(key, "")
+                api_key = self._get_input(
+                    f"Enter your {provider_name} API key: ",
+                    validate_api_key,
+                    "Invalid API key format.",
+                    default_value=existing_value,
+                )
+                self.env_vars["llm"][key] = api_key
+
+        # Set a default model if not already set
+        if not self.env_vars["llm"].get("MODEL_TO_USE"):
+            if self.env_vars["llm"].get("OPENAI_API_KEY"):
+                self.env_vars["llm"]["MODEL_TO_USE"] = "openai/gpt-4o"
+            elif self.env_vars["llm"].get("ANTHROPIC_API_KEY"):
+                self.env_vars["llm"][
+                    "MODEL_TO_USE"
+                ] = "anthropic/claude-3-5-sonnet-latest"
+            elif self.env_vars["llm"].get("OPENROUTER_API_KEY"):
+                self.env_vars["llm"][
+                    "MODEL_TO_USE"
+                ] = "openrouter/google/gemini-flash-1.5"
+
+        print_success(
+            f"LLM keys saved. Default model: {self.env_vars['llm'].get('MODEL_TO_USE', 'Not set')}"
+        )
+
+    def collect_search_api_keys(self):
+        """Collects API keys for search and web scraping tools."""
+        print_step(6, self.total_steps, "Collecting Search and Scraping API Keys")
+
+        # Check if we already have values configured
+        has_existing = any(self.env_vars["search"].values())
+        if has_existing:
+            print_info(
+                "Found existing search API keys. Press Enter to keep current values or type new ones."
+            )
+        else:
+            print_info("Suna uses Tavily for search and Firecrawl for web scraping.")
+            print_info(
+                "Get a Tavily key at https://tavily.com and a Firecrawl key at https://firecrawl.dev"
+            )
+            input("Press Enter to continue once you have your keys...")
+
+        self.env_vars["search"]["TAVILY_API_KEY"] = self._get_input(
+            "Enter your Tavily API key: ",
+            validate_api_key,
+            "Invalid API key.",
+            default_value=self.env_vars["search"]["TAVILY_API_KEY"],
+        )
+        self.env_vars["search"]["FIRECRAWL_API_KEY"] = self._get_input(
+            "Enter your Firecrawl API key: ",
+            validate_api_key,
+            "Invalid API key.",
+            default_value=self.env_vars["search"]["FIRECRAWL_API_KEY"],
+        )
+
+        # Handle Firecrawl URL configuration
+        current_url = self.env_vars["search"]["FIRECRAWL_URL"]
+        is_self_hosted_default = (
+            current_url and current_url != "https://api.firecrawl.dev"
+        )
+
+        if current_url:
+            prompt = f"Are you self-hosting Firecrawl? (y/N) [Current: {'y' if is_self_hosted_default else 'N'}]: "
+        else:
+            prompt = "Are you self-hosting Firecrawl? (y/N): "
+
+        response = input(prompt).lower().strip()
+        if not response and current_url:
+            # Use existing configuration
+            is_self_hosted = is_self_hosted_default
+        else:
+            is_self_hosted = response == "y"
+
+        if is_self_hosted:
+            self.env_vars["search"]["FIRECRAWL_URL"] = self._get_input(
+                "Enter your self-hosted Firecrawl URL: ",
+                validate_url,
+                "Invalid URL.",
+                default_value=(
+                    current_url if current_url != "https://api.firecrawl.dev" else ""
+                ),
+            )
+        else:
+            self.env_vars["search"]["FIRECRAWL_URL"] = "https://api.firecrawl.dev"
+
+        print_success("Search and scraping keys saved.")
+
+    def collect_rapidapi_keys(self):
+        """Collects the optional RapidAPI key."""
+        print_step(7, self.total_steps, "Collecting RapidAPI Key (Optional)")
+
+        # Check if we already have a value configured
+        existing_key = self.env_vars["rapidapi"]["RAPID_API_KEY"]
+        if existing_key:
+            print_info(
+                f"Found existing RapidAPI key: {mask_sensitive_value(existing_key)}"
+            )
+            print_info("Press Enter to keep current value or type a new one.")
+        else:
+            print_info("A RapidAPI key enables extra tools like LinkedIn scraping.")
+            print_info(
+                "Get a key at https://rapidapi.com/. You can skip this and add it later."
+            )
+
+        rapid_api_key = self._get_input(
+            "Enter your RapidAPI key (or press Enter to skip): ",
+            validate_api_key,
+            "The key seems invalid, but continuing. You can edit it later in backend/.env",
+            allow_empty=True,
+            default_value=existing_key,
+        )
+        self.env_vars["rapidapi"]["RAPID_API_KEY"] = rapid_api_key
+        if rapid_api_key:
+            print_success("RapidAPI key saved.")
+        else:
+            print_info("Skipping RapidAPI key.")
+
+    def configure_env_files(self):
+        """Configures and writes the .env files for frontend and backend."""
+        print_step(8, self.total_steps, "Configuring Environment Files")
+
+        # --- Backend .env ---
+        is_docker = self.env_vars["setup_method"] == "docker"
+        redis_host = "redis" if is_docker else "localhost"
+        rabbitmq_host = "rabbitmq" if is_docker else "localhost"
+
+        backend_env = {
+            "ENV_MODE": "local",
+            **self.env_vars["supabase"],
+            "REDIS_HOST": redis_host,
+            "REDIS_PORT": "6379",
+            "RABBITMQ_HOST": rabbitmq_host,
+            "RABBITMQ_PORT": "5672",
+            **self.env_vars["llm"],
+            **self.env_vars["search"],
+            **self.env_vars["rapidapi"],
+            **self.env_vars["daytona"],
+            "NEXT_PUBLIC_URL": "http://localhost:3000",
+        }
+
+        backend_env_content = f"# Generated by Suna install script for '{self.env_vars['setup_method']}' setup\n\n"
+        for key, value in backend_env.items():
+            backend_env_content += f"{key}={value or ''}\n"
+
+        with open(os.path.join("backend", ".env"), "w") as f:
+            f.write(backend_env_content)
+        print_success("Created backend/.env file.")
+
+        # --- Frontend .env.local ---
+        frontend_env = {
+            "NEXT_PUBLIC_SUPABASE_URL": self.env_vars["supabase"]["SUPABASE_URL"],
+            "NEXT_PUBLIC_SUPABASE_ANON_KEY": self.env_vars["supabase"][
+                "SUPABASE_ANON_KEY"
+            ],
+            "NEXT_PUBLIC_BACKEND_URL": "http://localhost:8000/api",
+            "NEXT_PUBLIC_URL": "http://localhost:3000",
+            "NEXT_PUBLIC_ENV_MODE": "LOCAL",
+        }
+
+        frontend_env_content = "# Generated by Suna install script\n\n"
+        for key, value in frontend_env.items():
+            frontend_env_content += f"{key}={value or ''}\n"
+
+        with open(os.path.join("frontend", ".env.local"), "w") as f:
+            f.write(frontend_env_content)
+        print_success("Created frontend/.env.local file.")
+
+    def setup_supabase_database(self):
+        """Links the project to Supabase and pushes database migrations."""
+        print_step(9, self.total_steps, "Setting up Supabase Database")
+
+        print_info(
+            "This step will link your project to Supabase and push database migrations."
+        )
+        print_info(
+            "You can skip this if you've already set up your database or prefer to do it manually."
+        )
+
+        skip_db_setup = (
+            input("Do you want to skip the database setup? (y/N): ").lower().strip()
+        )
+        if skip_db_setup == "y":
+            print_info("Skipping Supabase database setup.")
+            print_warning(
+                "Remember to manually set up your Supabase database with the required migrations."
+            )
+            print_info(
+                "You can find the migration files in the backend/supabase/migrations directory."
+            )
+            return
+
+        try:
+            subprocess.run(
+                ["supabase", "--version"],
+                check=True,
+                capture_output=True,
+                shell=IS_WINDOWS,
+            )
+        except (subprocess.SubprocessError, FileNotFoundError):
+            print_error(
+                "Supabase CLI not found. Install it from: https://supabase.com/docs/guides/cli"
+            )
+            print_info("You can skip this step and set up the database manually later.")
+            skip_due_to_cli = (
+                input("Skip database setup due to missing CLI? (y/N): ").lower().strip()
+            )
+            if skip_due_to_cli == "y":
+                print_info("Skipping Supabase database setup.")
+                return
+            sys.exit(1)
+
+        supabase_url = self.env_vars["supabase"]["SUPABASE_URL"]
+        match = re.search(r"https://([^.]+)\.supabase\.co", supabase_url)
+        if not match:
+            print_error(f"Could not extract project reference from URL: {supabase_url}")
+            sys.exit(1)
+        project_ref = match.group(1)
+        print_info(f"Detected Supabase project reference: {project_ref}")
+
+        try:
+            print_info("Logging into Supabase CLI...")
+            subprocess.run(["supabase", "login"], check=True, shell=IS_WINDOWS)
+
+            print_info(f"Linking to Supabase project {project_ref}...")
+            subprocess.run(
+                ["supabase", "link", "--project-ref", project_ref],
+                cwd="backend",
+                check=True,
+                shell=IS_WINDOWS,
+            )
+
+            print_info("Pushing database migrations...")
+            subprocess.run(
+                ["supabase", "db", "push"], cwd="backend", check=True, shell=IS_WINDOWS
+            )
+            print_success("Database migrations pushed successfully.")
+
+            print_warning("IMPORTANT: You must manually expose the 'basejump' schema.")
+            print_info(
+                "In your Supabase dashboard, go to: Project Settings -> API -> Exposed schemas"
+            )
+            print_info("Ensure 'basejump' is checked, then save.")
+            input("Press Enter once you've completed this step...")
+
         except subprocess.SubprocessError as e:
-            print_error(f"Failed to start Suna: {e}")
+            print_error(f"Failed to set up Supabase database: {e}")
+            print_error(
+                "Please check the Supabase CLI output for errors and try again."
+            )
             sys.exit(1)
-            
-        return use_docker
-    else:
-        print_info("For manual startup, you'll need to:")
-        print_info("1. Start Redis and RabbitMQ in Docker (required for the backend)")
-        print_info("2. Start the frontend with npm run dev")
-        print_info("3. Start the backend with poetry run python3.11 api.py")
-        print_info("4. Start the worker with poetry run python3.11 -m dramatiq run_agent_background")
-        print_warning("Note: Redis and RabbitMQ must be running before starting the backend")
-        print_info("Detailed instructions will be provided at the end of setup")
-        
-        return use_docker
 
-def final_instructions(use_docker=True, env_vars=None):
-    """Show final instructions"""
-    print(f"\n{Colors.GREEN}{Colors.BOLD}✨ Suna Setup Complete! ✨{Colors.ENDC}\n")
-    
-    # Display LLM configuration info if available
-    if env_vars and 'llm' in env_vars and 'MODEL_TO_USE' in env_vars['llm']:
-        default_model = env_vars['llm']['MODEL_TO_USE']
-        print_info(f"Suna is configured to use {Colors.GREEN}{default_model}{Colors.ENDC} as the default LLM model")
-    
-    if use_docker:
-        print_info("Your Suna instance is now running!")
-        print_info("Access it at: http://localhost:3000")
-        print_info("Create an account using Supabase authentication to start using Suna")
-        print("\nUseful Docker commands:")
-        print(f"{Colors.CYAN}  docker compose ps{Colors.ENDC}         - Check the status of Suna services")
-        print(f"{Colors.CYAN}  docker compose logs{Colors.ENDC}       - View logs from all services")
-        print(f"{Colors.CYAN}  docker compose logs -f{Colors.ENDC}    - Follow logs from all services")
-        print(f"{Colors.CYAN}  docker compose down{Colors.ENDC}       - Stop Suna services")
-        print(f"{Colors.CYAN}  docker compose up -d{Colors.ENDC}      - Start Suna services (after they've been stopped)")
-    else:
-        print_info("Suna setup is complete but services are not running yet.")
-        print_info("To start Suna, you need to:")
-        
-        print_info("1. Start Redis and RabbitMQ (required for backend):")
-        print(f"{Colors.CYAN}    cd backend")
-        print(f"    docker compose up redis rabbitmq -d{Colors.ENDC}")
-        
-        print_info("2. In one terminal:")
-        print(f"{Colors.CYAN}    cd frontend")
-        print(f"    npm run dev{Colors.ENDC}")
-        
-        print_info("3. In another terminal:")
-        print(f"{Colors.CYAN}    cd backend")
-        print(f"    poetry run python3.11 api.py{Colors.ENDC}")
-        
-        print_info("3. In one more terminal:")
-        print(f"{Colors.CYAN}    cd backend")
-        print(f"    poetry run python3.11 -m dramatiq run_agent_background{Colors.ENDC}")
-        
-        print_info("4. Once all services are running, access Suna at: http://localhost:3000")
-        print_info("5. Create an account using Supabase authentication to start using Suna")
+    def install_dependencies(self):
+        """Installs frontend and backend dependencies for manual setup."""
+        print_step(10, self.total_steps, "Installing Dependencies")
+        if self.env_vars["setup_method"] == "docker":
+            print_info(
+                "Skipping dependency installation for Docker setup (will be handled by Docker Compose)."
+            )
+            return
 
-# Then update your main() function as follows:
+        try:
+            print_info("Installing frontend dependencies with npm...")
+            subprocess.run(
+                ["npm", "install"], cwd="frontend", check=True, shell=IS_WINDOWS
+            )
+            print_success("Frontend dependencies installed.")
 
-def main():
-    total_steps = 8
-    current_step = load_progress() + 1
+            print_info("Installing backend dependencies with uv...")
 
-    print_banner()
-    print("This wizard will guide you through setting up Suna, an open-source generalist AI agent.\n")
+            # Check if a virtual environment already exists
+            venv_exists = os.path.exists(os.path.join("backend", ".venv"))
 
-    env_vars = load_env_data()
+            if not venv_exists:
+                print_info("Creating virtual environment...")
+                subprocess.run(
+                    ["uv", "venv"], cwd="backend", check=True, shell=IS_WINDOWS
+                )
+                print_success("Virtual environment created.")
 
-    if current_step <= 1:
-        print_step(current_step, total_steps, "Checking requirements")
-        check_requirements()
-        check_docker_running()
-        if not check_suna_directory():
-            print_error("This setup script must be run from the Suna repository root directory.")
+            # Install dependencies in the virtual environment
+            subprocess.run(
+                ["uv", "pip", "install", "-r", "requirements.txt"],
+                cwd="backend",
+                check=True,
+                shell=IS_WINDOWS,
+            )
+
+            # Install the package itself in editable mode
+            subprocess.run(
+                ["uv", "pip", "install", "-e", "."],
+                cwd="backend",
+                check=True,
+                shell=IS_WINDOWS,
+            )
+            print_success("Backend dependencies and package installed.")
+
+        except subprocess.SubprocessError as e:
+            print_error(f"Failed to install dependencies: {e}")
+            print_info("Please install dependencies manually and run the script again.")
             sys.exit(1)
-        save_progress(current_step)
-        current_step += 1
 
-    if current_step <= 2:
-        print_step(current_step, total_steps, "Collecting Supabase information")
-        env_vars['supabase'] = collect_supabase_info()
-        os.environ['SUPABASE_URL'] = env_vars['supabase']['SUPABASE_URL']
-        save_env_data(env_vars)
-        save_progress(current_step)
-        current_step += 1
+    def start_suna(self):
+        """Starts Suna using Docker Compose or shows instructions for manual startup."""
+        print_step(11, self.total_steps, "Starting Suna")
+        if self.env_vars["setup_method"] == "docker":
+            print_info("Starting Suna with Docker Compose...")
+            try:
+                subprocess.run(
+                    ["docker", "compose", "up", "-d", "--build"],
+                    check=True,
+                    shell=IS_WINDOWS,
+                )
+                print_info("Waiting for services to spin up...")
+                time.sleep(15)
+                # A simple check to see if containers are running
+                result = subprocess.run(
+                    ["docker", "compose", "ps"],
+                    capture_output=True,
+                    text=True,
+                    shell=IS_WINDOWS,
+                )
+                if "backend" in result.stdout and "frontend" in result.stdout:
+                    print_success("Suna services are starting up!")
+                else:
+                    print_warning(
+                        "Some services might not be running. Check 'docker compose ps' for details."
+                    )
+            except subprocess.SubprocessError as e:
+                print_error(f"Failed to start Suna with Docker Compose: {e}")
+                print_info(
+                    "Try running 'docker compose up --build' manually to diagnose the issue."
+                )
+                sys.exit(1)
+        else:
+            print_info("All configurations are complete. Manual start is required.")
 
-    if current_step <= 3:
-        print_step(current_step, total_steps, "Collecting Daytona information")
-        env_vars['daytona'] = collect_daytona_info()
-        save_env_data(env_vars)
-        save_progress(current_step)
-        current_step += 1
+    def final_instructions(self):
+        """Shows final instructions to the user."""
+        print(f"\n{Colors.GREEN}{Colors.BOLD}✨ Suna Setup Complete! ✨{Colors.ENDC}\n")
 
-    if current_step <= 4:
-        print_step(current_step, total_steps, "Collecting LLM API keys")
-        env_vars['llm'] = collect_llm_api_keys()
-        save_env_data(env_vars)
-        save_progress(current_step)
-        current_step += 1
+        default_model = self.env_vars.get("llm", {}).get("MODEL_TO_USE", "N/A")
+        print_info(
+            f"Suna is configured to use {Colors.GREEN}{default_model}{Colors.ENDC} as the default LLM."
+        )
 
-    if current_step <= 5:
-        print_step(current_step, total_steps, "Collecting search and web scraping API keys")
-        env_vars['search'] = collect_search_api_keys()
-        save_env_data(env_vars)
-        save_progress(current_step)
-        current_step += 1
+        if self.env_vars["setup_method"] == "docker":
+            print_info("Your Suna instance is running!")
+            print_info("Access the frontend at: http://localhost:3000")
+            print("\nUseful Docker commands:")
+            print(
+                f"  {Colors.CYAN}docker compose ps{Colors.ENDC}         - Check service status"
+            )
+            print(
+                f"  {Colors.CYAN}docker compose logs -f{Colors.ENDC}    - Follow logs"
+            )
+            print(
+                f"  {Colors.CYAN}docker compose down{Colors.ENDC}       - Stop Suna services"
+            )
+        else:
+            print_info(
+                "To start Suna, you need to run these commands in separate terminals:"
+            )
+            print(
+                f"\n{Colors.BOLD}1. Start Infrastructure (in project root):{Colors.ENDC}"
+            )
+            print(f"{Colors.CYAN}   docker compose up redis rabbitmq -d{Colors.ENDC}")
 
-    if current_step <= 6:
-        print_step(current_step, total_steps, "Collecting RapidAPI key")
-        env_vars['rapidapi'] = collect_rapidapi_keys()
-        save_env_data(env_vars)
-        save_progress(current_step)
-        current_step += 1
+            print(f"\n{Colors.BOLD}2. Start Frontend (in a new terminal):{Colors.ENDC}")
+            print(f"{Colors.CYAN}   cd frontend && npm run dev{Colors.ENDC}")
 
-    if current_step <= 7:
-        print_step(current_step, total_steps, "Setting up Supabase")
-        setup_supabase()
-        save_progress(current_step)
-        current_step += 1
+            print(f"\n{Colors.BOLD}3. Start Backend (in a new terminal):{Colors.ENDC}")
+            print(f"{Colors.CYAN}   cd backend && python run api.py{Colors.ENDC}")
 
-    if current_step <= 8:
-        print_step(current_step, total_steps, "Installing dependencies")
-        install_dependencies()
-        print_info("Configuring environment files...")
-        configure_backend_env(env_vars, True)
-        configure_frontend_env(env_vars, True)
-        print_step(current_step, total_steps, "Starting Suna")
-        use_docker = start_suna()
-        if not use_docker:
-            configure_backend_env(env_vars, use_docker)
-            configure_frontend_env(env_vars, use_docker)
-        final_instructions(use_docker, env_vars)
-        clear_progress()
-        if os.path.exists(ENV_DATA_FILE):
-            os.remove(ENV_DATA_FILE)
+            print(
+                f"\n{Colors.BOLD}4. Start Background Worker (in a new terminal):{Colors.ENDC}"
+            )
+            print(
+                f"{Colors.CYAN}   cd backend && python run -m dramatiq run_agent_background{Colors.ENDC}"
+            )
+
+            print(
+                "\nOnce all services are running, access Suna at: http://localhost:3000"
+            )
+
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print("\n\nSetup interrupted. You can resume setup anytime by running this script again.")
-        sys.exit(1)
+    wizard = SetupWizard()
+    wizard.run()
