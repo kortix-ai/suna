@@ -70,6 +70,7 @@ export function useCachedFile<T = string>(
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const { session } = useAuth();
+  const [localBlobUrl, setLocalBlobUrl] = useState<string | null>(null);
 
   // Calculate cache key from sandbox ID and file path
   const cacheKey = sandboxId && filePath
@@ -85,36 +86,9 @@ export function useCachedFile<T = string>(
     
     if (!force && cached && now - cached.timestamp < expiration) {
       console.log(`[FILE CACHE] Returning cached content for ${key}`);
-      
-      // Special handling for cached blobs - return a fresh URL
-      if (FileCache.isImageFile(filePath || '') && cached.content instanceof Blob) {
-        console.log(`[FILE CACHE] Creating fresh blob URL for cached image`);
-        const blobUrl = URL.createObjectURL(cached.content);
-        // Update the cache with the new blob URL to avoid creating multiple URLs for the same blob
-        console.log(`[FILE CACHE] Updating cache with fresh blob URL: ${blobUrl}`);
-        fileCache.set(key, {
-          content: blobUrl,
-          timestamp: now,
-          type: 'url'
-        });
-        return blobUrl;
-      } else if (cached.type === 'url' && typeof cached.content === 'string' && cached.content.startsWith('blob:')) {
-        // For blob URLs, verify they're still valid
-        try {
-          // This is a simple check that won't actually fetch the blob, just verify the URL is valid
-          const xhr = new XMLHttpRequest();
-          xhr.open('HEAD', cached.content, false);
-          xhr.send();
-          return cached.content;
-        } catch (err) {
-          console.warn(`[FILE CACHE] Cached blob URL is invalid, will refetch: ${err}`);
-          // Force a refetch
-          force = true;
-        }
-      }
-      
       return cached.content;
     }
+
     console.log(`[FILE CACHE] Fetching fresh content for ${key}`);
     // Fetch fresh content if no cache or expired
     setIsLoading(true);
@@ -192,60 +166,25 @@ export function useCachedFile<T = string>(
             if (isPdfFile && !blob.type.includes('pdf') && blob.size > 0) {
               console.warn(`[FILE CACHE] PDF blob has generic MIME type: ${blob.type} - will correct it automatically`);
               
-              // Check if the content looks like a PDF
               const firstBytes = await blob.slice(0, 10).text();
               if (firstBytes.startsWith('%PDF')) {
                 console.log(`[FILE CACHE] Content appears to be a PDF despite incorrect MIME type, proceeding`);
                 
-                // Create a new blob with the correct type
                 const correctedBlob = new Blob([await blob.arrayBuffer()], { type: 'application/pdf' });
-                console.log(`[FILE CACHE] Created corrected PDF blob with proper MIME type (${correctedBlob.size} bytes)`);
                 
-                // Store the corrected blob in cache
-                const specificKey = `${sandboxId}:${normalizePath(filePath)}:blob`;
-                fileCache.set(specificKey, {
-                  content: correctedBlob,
-                  timestamp: Date.now(),
-                  type: 'content'
-                });
-                
-                // Also update the general key
-                fileCache.set(key, {
-                  content: correctedBlob,
-                  timestamp: Date.now(),
-                  type: 'content'
-                });
-                
-                // Return a URL for immediate use
-                const blobUrl = URL.createObjectURL(correctedBlob);
-                console.log(`[FILE CACHE] Created fresh blob URL for corrected PDF: ${blobUrl}`);
-                return blobUrl;
+                // Store the corrected blob in cache and return it
+                fileCache.set(key, { content: correctedBlob, timestamp: Date.now(), type: 'content' });
+                return correctedBlob;
               }
             }
             
-            // Store the raw blob in cache - using a more specific key that includes content type
-            const specificKey = `${sandboxId}:${normalizePath(filePath)}:blob`;
-            fileCache.set(specificKey, {
-              content: blob,
-              timestamp: Date.now(),
-              type: 'content'
-            });
-            
-            // Also update the general key
-            fileCache.set(key, {
-              content: blob,
-              timestamp: Date.now(),
-              type: 'content'
-            });
-            
-            // But return a URL for immediate use
-            const blobUrl = URL.createObjectURL(blob);
-            console.log(`[FILE CACHE] Created fresh blob URL for immediate use: ${blobUrl}`);
-            return blobUrl; // Return early since we've already cached
+            // Store the raw blob in cache and return it
+            fileCache.set(key, { content: blob, timestamp: Date.now(), type: 'content' });
+            return blob;
           } else {
-            // For other binary files, create and return a blob URL
-            content = URL.createObjectURL(blob);
-            cacheType = 'url';
+            // For other binary files, content is the blob
+            content = blob;
+            cacheType = 'content';
           }
           break;
         case 'arrayBuffer':
@@ -263,14 +202,12 @@ export function useCachedFile<T = string>(
           break;
       }
       
-      // Only cache if we haven't already cached (for images and PDFs)
-      if (!isImageFile && !isPdfFile) {
-        fileCache.set(key, {
-          content,
-          timestamp: now,
-          type: cacheType
-        });
-      }
+      // After the switch, the caching logic should be simplified to handle all cases that fall through
+      fileCache.set(key, {
+        content,
+        timestamp: now,
+        type: cacheType
+      });
       
       return content;
     } catch (err: any) {
@@ -287,41 +224,43 @@ export function useCachedFile<T = string>(
     }
   };
 
-  // Function to force refresh the cache
-  const refreshCache = async () => {
-    if (!cacheKey) return null;
-    try {
-      const freshData = await getCachedFile(cacheKey, true);
-      setData(freshData);
-      return freshData;
-    } catch (err: any) {
-      setError(err);
-      return null;
-    }
-  };
-
   // Function to get data from cache first, then network if needed
   const getFileContent = async () => {
     if (!cacheKey) return;
+
+    const processContent = (content: any) => {
+      if (localBlobUrl) {
+        URL.revokeObjectURL(localBlobUrl);
+      }
+
+      if (content instanceof Blob) {
+        const newUrl = URL.createObjectURL(content);
+        setLocalBlobUrl(newUrl);
+        setData(newUrl as any);
+      } else {
+        setLocalBlobUrl(null);
+        setData(content);
+      }
+    };
     
     try {
       // First check if we have cached data
       const cachedItem = fileCache.get(cacheKey);
       if (cachedItem) {
         // Set data from cache immediately
-        setData(cachedItem.content);
+        processContent(cachedItem.content);
         
         // If cache is expired, refresh in background
         if (Date.now() - cachedItem.timestamp > (options.expiration || CACHE_EXPIRATION)) {
           getCachedFile(cacheKey, true)
-            .then(freshData => setData(freshData))
+            .then(freshData => processContent(freshData))
             .catch(err => console.error("Background refresh failed:", err));
         }
       } else {
         // No cache, load fresh
         setIsLoading(true);
         const content = await getCachedFile(cacheKey);
-        setData(content);
+        processContent(content);
       }
     } catch (err: any) {
       setError(err);
@@ -340,18 +279,11 @@ export function useCachedFile<T = string>(
       setError(null);
     }
     
-    // Clean up any blob URLs when component unmounts
+    // Clean up the local blob URL when component unmounts
     return () => {
-      if (cacheKey) {
-        const cachedData = fileCache.get(cacheKey);
-        if (cachedData?.type === 'url') {
-          // Only revoke if it's a URL type (created URL instead of raw blob)
-          const cachedUrl = cachedData.content;
-          if (typeof cachedUrl === 'string' && cachedUrl.startsWith('blob:')) {
-            console.log(`[FILE CACHE][IMAGE DEBUG] Cleaning up blob URL on unmount: ${cachedUrl} for key ${cacheKey}`);
-            URL.revokeObjectURL(cachedUrl);
-          }
-        }
+      if (localBlobUrl) {
+        URL.revokeObjectURL(localBlobUrl);
+        setLocalBlobUrl(null);
       }
     };
   }, [sandboxId, filePath, options.contentType]);
@@ -361,7 +293,6 @@ export function useCachedFile<T = string>(
     data,
     isLoading,
     error,
-    refreshCache,
     getCachedFile: (key?: string, force = false) => {
       return key ? getCachedFile(key, force) : (cacheKey ? getCachedFile(cacheKey, force) : Promise.resolve(null));
     },
