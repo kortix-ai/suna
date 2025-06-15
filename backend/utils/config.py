@@ -133,7 +133,7 @@ class Configuration:
     # Redis configuration
     REDIS_HOST: str
     REDIS_PORT: int = 6379
-    REDIS_PASSWORD: str
+    REDIS_PASSWORD: Optional[str] = None
     REDIS_SSL: bool = True
     
     # Daytona sandbox configuration

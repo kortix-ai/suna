@@ -2,3 +2,7 @@
 [tools]
 node = "20"
 python = "3.11.10"
+uv = "0.6.5"
+
+[env]
+_.python.venv = { path = "backend/.venv", create = true }

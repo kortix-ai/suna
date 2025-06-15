@@ -57,7 +57,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: python -m dramatiq run_agent_background
+    command: uv run dramatiq --processes 4 --threads 4 run_agent_background
     volumes:
       - ./backend/.env:/app/.env:ro
     env_file:

@@ -10,6 +10,7 @@ services:
       - .env
     volumes:
       - .:/app
+      - /app/.venv
       - ./logs:/app/logs
     restart: unless-stopped
     depends_on:
@@ -42,11 +43,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: python -m dramatiq --processes 4 --threads 4 run_agent_background
+    command: uv run dramatiq --processes 4 --threads 4 run_agent_background
     env_file:
       - .env
     volumes:
       - .:/app
+      - /app/.venv
       - ./worker-logs:/app/logs
     restart: unless-stopped
     depends_on:

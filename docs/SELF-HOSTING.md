@@ -63,12 +63,15 @@ Obtain the following API keys:
 
 Ensure the following tools are installed on your system:
 
-- **[Git](https://git-scm.com/downloads)**
 - **[Docker](https://docs.docker.com/get-docker/)**
-- **[Python 3.11](https://www.python.org/downloads/)**
-- **[Poetry](https://python-poetry.org/docs/#installation)**
-- **[Node.js & npm](https://nodejs.org/en/download/)**
 - **[Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started)**
+- **[Git](https://git-scm.com/downloads)**
+- **[Python 3.11](https://www.python.org/downloads/)**
+
+For manual setup, you'll also need:
+
+- **[uv](https://docs.astral.sh/uv/)**
+- **[Node.js & npm](https://nodejs.org/en/download/)**
 
 ## Installation Steps
 
@@ -114,7 +117,8 @@ As part of the setup, you'll need to:
 
 1. Create a Daytona account
 2. Generate an API key
-3. Create a Docker image:
+3. Create a Snapshot:
+   - Name: `kortix/suna:0.1.3`
    - Image name: `kortix/suna:0.1.3`
    - Entrypoint: `/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf`
 
@@ -212,6 +216,8 @@ This method requires you to start each component separately:
 
 ```bash
 docker compose up redis rabbitmq -d
+# or
+python start.py # Use the same to stop it later
 ```
 
 2. Start the frontend (in one terminal):
@@ -225,14 +231,14 @@ npm run dev
 
 ```bash
 cd backend
-poetry run python3.11 api.py
+uv run api.py
 ```
 
 4. Start the worker (in one more terminal):
 
 ```bash
 cd backend
-poetry run python3.11 -m dramatiq run_agent_background
+uv run dramatiq run_agent_background
 ```
 
 ## Troubleshooting
@@ -269,15 +275,15 @@ docker compose logs -f
 
 # Frontend logs (manual setup)
 cd frontend
-npm run dev
+npm run dev -- --turbopack
 
 # Backend logs (manual setup)
 cd backend
-poetry run python3.11 api.py
+uv run api.py
 
 # Worker logs (manual setup)
 cd backend
-poetry run python3.11 -m dramatiq run_agent_background
+uv run dramatiq run_agent_background
 ```
 
 ---
