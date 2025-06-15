@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { ArrowLeft, Loader2, Settings2, Sparkles, Check, Clock, Eye, Menu } from 'lucide-react';
+import { ArrowLeft, Loader2, Settings2, Sparkles, Check, Clock, Eye, Menu, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Badge } from '@/components/ui/badge';
@@ -13,6 +13,7 @@ import { useAgent, useUpdateAgent } from '@/hooks/react-query/agents/use-agents'
 import { AgentMCPConfiguration } from '../../_components/agent-mcp-configuration';
 import { toast } from 'sonner';
 import { AgentToolsConfiguration } from '../../_components/agent-tools-configuration';
+import { AgentTriggersConfiguration } from '../../_components/agent-triggers-configuration';
 import { AgentPreview } from '../../_components/agent-preview';
 import { getAgentAvatar } from '../../_utils/get-agent-style';
 import { EditableText } from '@/components/ui/editable';
@@ -21,6 +22,7 @@ import { useSidebar } from '@/components/ui/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { AgentBuilderChat } from '../../_components/agent-builder-chat';
 import { useFeatureAlertHelpers } from '@/hooks/use-feature-alerts';
+import { createClient } from '@/lib/supabase/client';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
@@ -31,6 +33,10 @@ export default function AgentConfigurationPage() {
 
   const { data: agent, isLoading, error } = useAgent(agentId);
   const updateAgentMutation = useUpdateAgent();
+  
+  // Load triggers for this agent
+  const [agentTriggers, setAgentTriggers] = useState([]);
+  const [triggersLoading, setTriggersLoading] = useState(true);
   const { state, setOpen, setOpenMobile } = useSidebar();
 
   // Ref to track if initial layout has been applied (for sidebar closing)
@@ -43,6 +49,7 @@ export default function AgentConfigurationPage() {
     agentpress_tools: {},
     configured_mcps: [],
     custom_mcps: [],
+    triggers: [],
     is_default: false,
     avatar: '',
     avatar_color: '',
@@ -73,6 +80,7 @@ export default function AgentConfigurationPage() {
         agentpress_tools: agentData.agentpress_tools || {},
         configured_mcps: agentData.configured_mcps || [],
         custom_mcps: agentData.custom_mcps || [],
+        triggers: agentTriggers, // Use the loaded triggers
         is_default: agentData.is_default || false,
         avatar: agentData.avatar || '',
         avatar_color: agentData.avatar_color || '',
@@ -80,7 +88,53 @@ export default function AgentConfigurationPage() {
       setFormData(initialData);
       originalDataRef.current = { ...initialData };
     }
-  }, [agent]);
+  }, [agent, agentTriggers]);
+
+  // Load triggers when component mounts
+  useEffect(() => {
+    const loadTriggers = async () => {
+      try {
+        setTriggersLoading(true);
+        
+        // Get authentication token
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (!session) {
+          console.error('No session found');
+          return;
+        }
+
+        const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/triggers`, {
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          // The backend returns triggers as a direct array, not wrapped in a triggers property
+          const allTriggers = Array.isArray(data) ? data : [];
+          // Filter triggers for this agent/project
+          const agentTriggersData = allTriggers.filter((trigger: any) => 
+            trigger.config?.thread_id === agentId || trigger.config?.project_id === agentId
+          );
+          setAgentTriggers(agentTriggersData);
+          console.log(`Loaded ${agentTriggersData.length} triggers for agent ${agentId}`);
+        } else {
+          console.error('Failed to load triggers:', response.statusText);
+        }
+      } catch (error) {
+        console.error('Error loading triggers:', error);
+      } finally {
+        setTriggersLoading(false);
+      }
+    };
+
+    if (agentId) {
+      loadTriggers();
+    }
+  }, [agentId]);
 
 
   useEffect(() => {
@@ -385,6 +439,27 @@ export default function AgentConfigurationPage() {
                         onMCPsChange={(mcps) => handleBatchMCPChange({ configured_mcps: mcps, custom_mcps: formData.custom_mcps })}
                         onCustomMCPsChange={(customMcps) => handleBatchMCPChange({ configured_mcps: formData.configured_mcps, custom_mcps: customMcps })}
                         onBatchMCPChange={handleBatchMCPChange}
+                      />
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  <AccordionItem value="triggers" className="border-b">
+                    <AccordionTrigger className="hover:no-underline text-sm md:text-base">
+                      <div className="flex items-center gap-2">
+                        <Calendar className="h-4 w-4" />
+                        Triggers
+                        <Badge variant='new'>New</Badge>
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pb-4 overflow-x-hidden">
+                      <AgentTriggersConfiguration
+                        agentId={agentId}
+                        triggers={formData.triggers}
+                        onTriggersChange={(triggers) => {
+                          handleFieldChange('triggers', triggers);
+                          setAgentTriggers(triggers);
+                        }}
+                        isLoading={triggersLoading}
                       />
                     </AccordionContent>
                   </AccordionItem>
