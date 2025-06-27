@@ -18,9 +18,75 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useAvailableModels } from '@/hooks/react-query/subscriptions/use-billing';
 import type { Model } from '@/lib/api';
 import { Loader2 } from 'lucide-react';
+import { useState } from 'react';
+
+// Example task data with token usage
+const exampleTasks = [
+  {
+    name: 'Social Automation System',
+    complexity: 'Complex',
+    complexityVariant: 'destructive' as const,
+    inputTokens: 3410337,
+    outputTokens: 93616,
+    duration: '35 minutes',
+    originalModel: 'claude-sonnet-4',
+  },
+  {
+    name: 'Content Marketing Strategy',
+    complexity: 'Standard Complexity',
+    complexityVariant: 'secondary' as const,
+    inputTokens: 212312,
+    outputTokens: 3378,
+    duration: '11 minutes',
+    originalModel: 'claude-sonnet-4',
+  },
+  {
+    name: 'Go-to-Market Strategy',
+    complexity: 'Standard Complexity',
+    complexityVariant: 'secondary' as const,
+    inputTokens: 307719,
+    outputTokens: 24033,
+    duration: '16 minutes',
+    originalModel: 'claude-sonnet-4',
+  },
+  {
+    name: 'Learning Path Generator',
+    complexity: 'Standard Complexity',
+    complexityVariant: 'secondary' as const,
+    inputTokens: 90953,
+    outputTokens: 17472,
+    duration: '5 minutes',
+    originalModel: 'claude-sonnet-4',
+  },
+  {
+    name: 'Customer Journey Mapping',
+    complexity: 'Complex',
+    complexityVariant: 'destructive' as const,
+    inputTokens: 360013,
+    outputTokens: 17287,
+    duration: '20 minutes',
+    originalModel: 'claude-sonnet-4',
+  },
+  {
+    name: 'Sales Funnel Optimization',
+    complexity: 'Complex',
+    complexityVariant: 'destructive' as const,
+    inputTokens: 559918,
+    outputTokens: 33392,
+    duration: '14 minutes',
+    originalModel: 'claude-sonnet-4',
+  },
+];
 
 export default function PricingPage() {
   const {
@@ -29,6 +95,10 @@ export default function PricingPage() {
     error,
     refetch,
   } = useAvailableModels();
+
+  const [selectedModelId, setSelectedModelId] = useState<string>(
+    'anthropic/claude-sonnet-4-20250514',
+  );
 
   // Filter to only show models that have pricing information available
   const models =
@@ -40,6 +110,30 @@ export default function PricingPage() {
         model.output_cost_per_million_tokens !== undefined
       );
     }) || [];
+
+  // Find the selected model
+  const selectedModel = models.find((model) => model.id === selectedModelId);
+
+  // Function to calculate cost based on tokens and model pricing
+  const calculateCost = (
+    inputTokens: number,
+    outputTokens: number,
+    model: Model,
+  ) => {
+    if (
+      !model.input_cost_per_million_tokens ||
+      !model.output_cost_per_million_tokens
+    ) {
+      return 0;
+    }
+
+    const inputCost =
+      (inputTokens / 1000000) * model.input_cost_per_million_tokens;
+    const outputCost =
+      (outputTokens / 1000000) * model.output_cost_per_million_tokens;
+
+    return inputCost + outputCost;
+  };
 
   if (loading) {
     return (
@@ -139,106 +233,90 @@ export default function PricingPage() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {/* Example 4 */}
-            <div className="p-4 border border-border rounded-lg space-y-3">
-              <div className="space-y-2">
-                <h4 className="font-semibold text-foreground">
-                  Social Automation System
-                </h4>
-                <Badge variant="destructive">Complex</Badge>
-              </div>
-              <div className="space-y-2 text-sm mt-6">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Model:</span>
-                  <span>claude-sonnet-4</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Duration:</span>
-                  <span>35 minutes</span>
-                </div>
-                <div className="flex justify-between font-semibold">
-                  <span className="text-muted-foreground">Cost:</span>
-                  <span className="text-blue-600">$17.45</span>
-                </div>
-              </div>
+          <div className="space-y-6">
+            {/* Model Selection */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-foreground">
+                Select a model to see pricing:
+              </label>
+              <Select
+                value={selectedModelId}
+                onValueChange={setSelectedModelId}
+              >
+                <SelectTrigger className="w-full max-w-md">
+                  <SelectValue placeholder="Choose a model to calculate costs" />
+                </SelectTrigger>
+                <SelectContent>
+                  {models.map((model) => (
+                    <SelectItem key={model.id} value={model.id}>
+                      {model.display_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
-            {/* Example 6 */}
-            <div className="p-4 border border-border rounded-lg space-y-3">
-              <div className="space-y-2">
-                <h4 className="font-semibold text-foreground">
-                  Content Marketing Strategy
-                </h4>
-                <Badge variant="secondary">Standard Complexity</Badge>
-              </div>
-              <div className="space-y-2 text-sm mt-6">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Model:</span>
-                  <span>claude-sonnet-4</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Duration:</span>
-                  <span>11 minutes</span>
-                </div>
-                <div className="flex justify-between font-semibold">
-                  <span className="text-muted-foreground">Cost:</span>
-                  <span className="text-blue-600">$1.93</span>
-                </div>
-              </div>
-            </div>
+            {/* Example Tasks Grid */}
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {exampleTasks.map((task, index) => {
+                const calculatedCost = selectedModel
+                  ? calculateCost(
+                      task.inputTokens,
+                      task.outputTokens,
+                      selectedModel,
+                    )
+                  : null;
 
-            {/* Example 5 */}
-            <div className="p-4 border border-border rounded-lg space-y-3">
-              <div className="space-y-2">
-                <h4 className="font-semibold text-foreground">
-                  Go-to-Market Strategy
-                </h4>
-                <Badge variant="secondary">Standard Complexity</Badge>
-              </div>
-              <div className="space-y-2 text-sm mt-6">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Model:</span>
-                  <span>deepseek-chat</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Duration:</span>
-                  <span>3 minutes</span>
-                </div>
-                <div className="flex justify-between font-semibold">
-                  <span className="text-muted-foreground">Cost:</span>
-                  <span className="text-blue-600">$0.13</span>
-                </div>
-              </div>
+                return (
+                  <div
+                    key={index}
+                    className="p-4 border border-border rounded-lg space-y-3"
+                  >
+                    <div className="space-y-2">
+                      <h4 className="font-semibold text-foreground">
+                        {task.name}
+                      </h4>
+                    </div>
+                    <div className="space-y-2 text-sm mt-6">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Model:</span>
+                        <span>
+                          {selectedModel?.display_name || task.originalModel}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">
+                          Input Tokens:
+                        </span>
+                        <span>{task.inputTokens.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">
+                          Output Tokens:
+                        </span>
+                        <span>{task.outputTokens.toLocaleString()}</span>
+                      </div>
+                      {/* <div className="flex justify-between">
+                        <span className="text-muted-foreground">Duration:</span>
+                        <span>{task.duration}</span>
+                      </div> */}
+                      <div className="flex justify-between font-semibold">
+                        <span className="text-muted-foreground">Cost:</span>
+                        {calculatedCost !== null ? (
+                          <span className="text-blue-600">
+                            ${calculatedCost.toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">
+                            Select model above
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-
-            {/* Example 7 */}
-            {/* <div className="p-4 border border-border rounded-lg space-y-3">
-              <div className="space-y-2">
-                <h4 className="font-semibold text-foreground">
-                  6-Month Content Marketing Strategy
-                </h4>
-                <Badge variant="secondary">Standard Complexity</Badge>
-              </div>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Task type:</span>
-                  <span>Marketing • SEO • Content</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Model:</span>
-                  <span>deepseek-chat</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Duration:</span>
-                  <span>4 minutes</span>
-                </div>
-                <div className="flex justify-between font-semibold">
-                  <span className="text-muted-foreground">Cost:</span>
-                  <span className="text-blue-600">$0.20</span>
-                </div>
-              </div>
-            </div> */}
           </div>
         </CardContent>
       </Card>
@@ -267,7 +345,11 @@ export default function PricingPage() {
               {models.map((model, index) => (
                 <div
                   key={model.id}
-                  className="px-6 py-4 hover:bg-muted/50 transition-colors duration-150"
+                  className={`px-6 py-4 hover:bg-muted/50 transition-colors duration-150 ${
+                    selectedModelId === model.id
+                      ? 'bg-blue-50 dark:bg-blue-950/20 border-l-4 border-l-blue-500'
+                      : ''
+                  }`}
                 >
                   <div className="grid grid-cols-3 gap-4 items-center">
                     {/* Model Name */}
