@@ -1,13 +1,6 @@
 'use client';
 
-import {
-  AlertCircle,
-  Clock,
-  DollarSign,
-  Zap,
-  Server,
-  Globe,
-} from 'lucide-react';
+import { AlertCircle, Zap, Server, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -16,7 +9,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -27,7 +19,8 @@ import {
 import { useAvailableModels } from '@/hooks/react-query/subscriptions/use-billing';
 import type { Model } from '@/lib/api';
 import { Loader2 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useModelSelection } from '@/components/thread/chat-input/_use-model-selection';
 
 // Example task data with token usage
 const exampleTasks = [
@@ -141,6 +134,8 @@ const exampleTasks = [
   },
 ];
 
+const DISABLE_EXAMPLES = true;
+
 export default function PricingPage() {
   const {
     data: modelsResponse,
@@ -149,21 +144,33 @@ export default function PricingPage() {
     refetch,
   } = useAvailableModels();
 
+  const { allModels } = useModelSelection();
+
   const [selectedModelId, setSelectedModelId] = useState<string>(
     'anthropic/claude-sonnet-4-20250514',
   );
   const [showAllTasks, setShowAllTasks] = useState<boolean>(false);
 
-  // Filter to only show models that have pricing information available
-  const models =
-    modelsResponse?.models?.filter((model: Model) => {
-      return (
-        model.input_cost_per_million_tokens !== null &&
-        model.input_cost_per_million_tokens !== undefined &&
-        model.output_cost_per_million_tokens !== null &&
-        model.output_cost_per_million_tokens !== undefined
-      );
-    }) || [];
+  // Filter to only show models that have pricing information available and sort by display name order
+  const models = useMemo(() => {
+    const filteredModels =
+      modelsResponse?.models?.filter((model: Model) => {
+        return (
+          model.input_cost_per_million_tokens !== null &&
+          model.input_cost_per_million_tokens !== undefined &&
+          model.output_cost_per_million_tokens !== null &&
+          model.output_cost_per_million_tokens !== undefined
+        );
+      }) || [];
+
+    return filteredModels
+      .map((v) => ({
+        ...v,
+        display_name: allModels.find((m) => m.id === v.short_name)?.label,
+        priority: allModels.find((m) => m.id === v.short_name)?.priority,
+      }))
+      .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+  }, [modelsResponse?.models, allModels]);
 
   // Find the selected model
   const selectedModel = models.find((model) => model.id === selectedModelId);
@@ -229,166 +236,168 @@ export default function PricingPage() {
     <div className="space-y-8 p-8 max-w-4xl mx-auto">
       {/* Header Section */}
       <div className="space-y-4">
-        <h1 className="text-3xl font-bold text-foreground">
-          Credits & Pricing
-        </h1>
+        <h1 className="text-3xl font-bold text-foreground">Token Pricing</h1>
         <p className="text-lg text-muted-foreground max-w-3xl">
-          Understand how credits work, explore pricing for AI models, and find
+          Understand how tokens work, explore pricing for AI models, and find
           the right plan for your needs.
         </p>
       </div>
 
-      {/* What are Credits Section */}
+      {/* What are Tokens Section */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Zap className="w-5 h-5 text-blue-500" />
-            What are credits?
+            Understanding Tokens & Compute
           </CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-muted-foreground">
-            Credits are our standard unit of measurement for platform usage -
-            the more complex or lengthy the task, the more credits it requires.
-            Credits provide a unified way to measure consumption across
-            different types of AI operations and computational resources.
+            Tokens are the fundamental units that AI models use to process text
+            - the more complex or lengthy your task, the more tokens it
+            requires. Compute usage is measured by both input tokens (your
+            prompts and context) and output tokens (the AI's responses), with
+            different models having varying computational requirements and costs
+            per token.
           </p>
         </CardContent>
       </Card>
 
-      {/* How Credits Work Section */}
+      {/* How Pricing Works Section */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Server className="w-5 h-5 text-green-500" />
-            How do credits work?
+            How does pricing work?
           </CardTitle>
         </CardHeader>
         <CardContent>
           <p className="text-muted-foreground">
-            Credits are consumed based on AI model usage. We apply a 50% markup
-            over the direct model provider costs. The specific credits
-            consumption is determined by the model used and the number of tokens
-            processed (both input and output tokens).
+            Usage costs are calculated based on token consumption from AI model
+            interactions. We apply a 50% markup over direct model provider costs
+            to maintain our platform and services. Your total cost depends on
+            the specific model used and the number of tokens processed for both
+            input (prompts, context) and output (generated responses).
           </p>
         </CardContent>
       </Card>
 
       {/* Usage Examples Section */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Globe className="w-5 h-5 text-orange-500" />
-            Usage Examples
-          </CardTitle>
-          <CardDescription>
-            Here are some examples demonstrating credits consumption across
-            different task types and complexity levels.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-6">
-            {/* Model Selection */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">
-                Select a model to see pricing:
-              </label>
-              <Select
-                value={selectedModelId}
-                onValueChange={setSelectedModelId}
-              >
-                <SelectTrigger className="w-full max-w-md">
-                  <SelectValue placeholder="Choose a model to calculate costs" />
-                </SelectTrigger>
-                <SelectContent>
-                  {models.map((model) => (
-                    <SelectItem key={model.id} value={model.id}>
-                      {model.display_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+      {!DISABLE_EXAMPLES && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Globe className="w-5 h-5 text-orange-500" />
+              Usage Examples
+            </CardTitle>
+            <CardDescription>
+              Here are some examples demonstrating credits consumption across
+              different task types and complexity levels.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-6">
+              {/* Model Selection */}
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground">
+                  Select a model to see pricing:
+                </label>
+                <Select
+                  value={selectedModelId}
+                  onValueChange={setSelectedModelId}
+                >
+                  <SelectTrigger className="w-full max-w-md">
+                    <SelectValue placeholder="Choose a model to calculate costs" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {models.map((model) => (
+                      <SelectItem key={model.id} value={model.id}>
+                        {model.display_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-            {/* Example Tasks Grid */}
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {(showAllTasks ? exampleTasks : exampleTasks.slice(0, 3)).map(
-                (task, index) => {
-                  const calculatedCost = selectedModel
-                    ? calculateCost(
-                        task.inputTokens,
-                        task.outputTokens,
-                        selectedModel,
-                      )
-                    : null;
+              {/* Example Tasks Grid */}
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {(showAllTasks ? exampleTasks : exampleTasks.slice(0, 3)).map(
+                  (task, index) => {
+                    const calculatedCost = selectedModel
+                      ? calculateCost(
+                          task.inputTokens,
+                          task.outputTokens,
+                          selectedModel,
+                        )
+                      : null;
 
-                  return (
-                    <div
-                      key={index}
-                      className="p-4 border border-border rounded-lg space-y-3"
-                    >
-                      <div className="space-y-2">
-                        <h4 className="font-semibold text-foreground">
-                          {task.name}
-                        </h4>
-                      </div>
-                      <div className="space-y-2 text-sm mt-6">
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Model:</span>
-                          <span>
-                            {selectedModel?.display_name || task.originalModel}
-                          </span>
+                    return (
+                      <div
+                        key={index}
+                        className="p-4 border border-border rounded-lg space-y-3"
+                      >
+                        <div className="space-y-2">
+                          <h4 className="font-semibold text-foreground">
+                            {task.name}
+                          </h4>
                         </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">
-                            Input Tokens:
-                          </span>
-                          <span>{task.inputTokens.toLocaleString()}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">
-                            Output Tokens:
-                          </span>
-                          <span>{task.outputTokens.toLocaleString()}</span>
-                        </div>
-                        {/* <div className="flex justify-between">
-                        <span className="text-muted-foreground">Duration:</span>
-                        <span>{task.duration}</span>
-                      </div> */}
-                        <div className="flex justify-between font-semibold">
-                          <span className="text-muted-foreground">Cost:</span>
-                          {calculatedCost !== null ? (
-                            <span className="text-blue-600">
-                              ${calculatedCost.toFixed(2)}
-                            </span>
-                          ) : (
+                        <div className="space-y-2 text-sm mt-6">
+                          <div className="flex justify-between">
                             <span className="text-muted-foreground">
-                              Select model above
+                              Model:
                             </span>
-                          )}
+                            <span>
+                              {selectedModel?.display_name ||
+                                task.originalModel}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">
+                              Input Tokens:
+                            </span>
+                            <span>{task.inputTokens.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">
+                              Output Tokens:
+                            </span>
+                            <span>{task.outputTokens.toLocaleString()}</span>
+                          </div>
+                          <div className="flex justify-between font-semibold">
+                            <span className="text-muted-foreground">Cost:</span>
+                            {calculatedCost !== null ? (
+                              <span className="text-blue-600">
+                                ${calculatedCost.toFixed(2)}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">
+                                Select model above
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                },
+                    );
+                  },
+                )}
+              </div>
+
+              {/* Show More/Less Button */}
+              {exampleTasks.length > 3 && (
+                <div className="flex justify-center mt-6">
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowAllTasks(!showAllTasks)}
+                    className="gap-2"
+                  >
+                    {showAllTasks ? 'Show Less' : `Show More`}
+                  </Button>
+                </div>
               )}
             </div>
-
-            {/* Show More/Less Button */}
-            {exampleTasks.length > 3 && (
-              <div className="flex justify-center mt-6">
-                <Button
-                  variant="outline"
-                  onClick={() => setShowAllTasks(!showAllTasks)}
-                  className="gap-2"
-                >
-                  {showAllTasks ? 'Show Less' : `Show More`}
-                </Button>
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Model Pricing Table */}
       <Card>
@@ -427,7 +436,7 @@ export default function PricingPage() {
                         <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0"></div>
                         <div className="min-w-0">
                           <div className="font-medium text-foreground truncate">
-                            {model.display_name}
+                            {model.display_name ?? model.id}
                           </div>
                         </div>
                       </div>
