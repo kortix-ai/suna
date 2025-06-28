@@ -1,6 +1,5 @@
 'use client';
 
-import { SectionHeader } from '@/components/home/section-header';
 import {
   AlertCircle,
   Clock,
@@ -86,6 +85,60 @@ const exampleTasks = [
     duration: '14 minutes',
     originalModel: 'claude-sonnet-4',
   },
+  {
+    name: 'Startup Pitch Deck',
+    complexity: 'Standard Complexity',
+    complexityVariant: 'secondary' as const,
+    inputTokens: 169175,
+    outputTokens: 10263,
+    duration: '5 minutes',
+    originalModel: 'claude-sonnet-4',
+  },
+  {
+    name: 'Health Tracking Dashboard',
+    complexity: 'Standard Complexity',
+    complexityVariant: 'secondary' as const,
+    inputTokens: 110952,
+    outputTokens: 5639,
+    duration: '3 minutes',
+    originalModel: 'claude-sonnet-4',
+  },
+  {
+    name: 'Recommendation Engine',
+    complexity: 'Complex',
+    complexityVariant: 'destructive' as const,
+    inputTokens: 4220364,
+    outputTokens: 21733,
+    duration: '25 minutes',
+    originalModel: 'claude-sonnet-4',
+  },
+  {
+    name: 'Automated ETL Pipeline',
+    complexity: 'Complex',
+    complexityVariant: 'destructive' as const,
+    inputTokens: 2513197,
+    outputTokens: 78438,
+    duration: '32 minutes',
+    originalModel: 'claude-sonnet-4',
+  },
+  {
+    name: 'Automated Code Reviewer',
+    complexity: 'Complex',
+    complexityVariant: 'destructive' as const,
+    inputTokens: 1707944,
+    outputTokens: 79117,
+    duration: '29 minutes',
+    originalModel: 'claude-sonnet-4',
+  },
+  {
+    name: 'Risk Assessment',
+    complexity: 'Complex',
+    complexityVariant: 'destructive' as const,
+    inputTokens: 693487,
+    outputTokens: 43371,
+    duration: '15 minutes',
+    originalModel: 'claude-sonnet-4',
+  },
 ];
 
 export default function PricingPage() {
@@ -99,6 +152,7 @@ export default function PricingPage() {
   const [selectedModelId, setSelectedModelId] = useState<string>(
     'anthropic/claude-sonnet-4-20250514',
   );
+  const [showAllTasks, setShowAllTasks] = useState<boolean>(false);
 
   // Filter to only show models that have pricing information available
   const models =
@@ -258,65 +312,80 @@ export default function PricingPage() {
 
             {/* Example Tasks Grid */}
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {exampleTasks.map((task, index) => {
-                const calculatedCost = selectedModel
-                  ? calculateCost(
-                      task.inputTokens,
-                      task.outputTokens,
-                      selectedModel,
-                    )
-                  : null;
+              {(showAllTasks ? exampleTasks : exampleTasks.slice(0, 3)).map(
+                (task, index) => {
+                  const calculatedCost = selectedModel
+                    ? calculateCost(
+                        task.inputTokens,
+                        task.outputTokens,
+                        selectedModel,
+                      )
+                    : null;
 
-                return (
-                  <div
-                    key={index}
-                    className="p-4 border border-border rounded-lg space-y-3"
-                  >
-                    <div className="space-y-2">
-                      <h4 className="font-semibold text-foreground">
-                        {task.name}
-                      </h4>
-                    </div>
-                    <div className="space-y-2 text-sm mt-6">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Model:</span>
-                        <span>
-                          {selectedModel?.display_name || task.originalModel}
-                        </span>
+                  return (
+                    <div
+                      key={index}
+                      className="p-4 border border-border rounded-lg space-y-3"
+                    >
+                      <div className="space-y-2">
+                        <h4 className="font-semibold text-foreground">
+                          {task.name}
+                        </h4>
                       </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">
-                          Input Tokens:
-                        </span>
-                        <span>{task.inputTokens.toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">
-                          Output Tokens:
-                        </span>
-                        <span>{task.outputTokens.toLocaleString()}</span>
-                      </div>
-                      {/* <div className="flex justify-between">
+                      <div className="space-y-2 text-sm mt-6">
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Model:</span>
+                          <span>
+                            {selectedModel?.display_name || task.originalModel}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
+                            Input Tokens:
+                          </span>
+                          <span>{task.inputTokens.toLocaleString()}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">
+                            Output Tokens:
+                          </span>
+                          <span>{task.outputTokens.toLocaleString()}</span>
+                        </div>
+                        {/* <div className="flex justify-between">
                         <span className="text-muted-foreground">Duration:</span>
                         <span>{task.duration}</span>
                       </div> */}
-                      <div className="flex justify-between font-semibold">
-                        <span className="text-muted-foreground">Cost:</span>
-                        {calculatedCost !== null ? (
-                          <span className="text-blue-600">
-                            ${calculatedCost.toFixed(2)}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">
-                            Select model above
-                          </span>
-                        )}
+                        <div className="flex justify-between font-semibold">
+                          <span className="text-muted-foreground">Cost:</span>
+                          {calculatedCost !== null ? (
+                            <span className="text-blue-600">
+                              ${calculatedCost.toFixed(2)}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground">
+                              Select model above
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                },
+              )}
             </div>
+
+            {/* Show More/Less Button */}
+            {exampleTasks.length > 3 && (
+              <div className="flex justify-center mt-6">
+                <Button
+                  variant="outline"
+                  onClick={() => setShowAllTasks(!showAllTasks)}
+                  className="gap-2"
+                >
+                  {showAllTasks ? 'Show Less' : `Show More`}
+                </Button>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
