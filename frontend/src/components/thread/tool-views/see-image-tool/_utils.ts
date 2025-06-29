@@ -364,6 +364,12 @@ export function constructImageUrl(filePath: string, project?: { sandbox?: { sand
   }
 
   const cleanPath = filePath.replace(/^['"](.*)['"]$/, '$1');
+  
+  // Check if it's a URL first, before trying to construct sandbox paths
+  if (cleanPath.startsWith('http')) {
+    return cleanPath;
+  }
+  
   const sandboxId = typeof project?.sandbox === 'string' 
     ? project.sandbox 
     : project?.sandbox?.id;
@@ -388,10 +394,6 @@ export function constructImageUrl(filePath: string, project?: { sandbox?: { sand
     const fullUrl = `${sandboxUrl}${normalizedPath}`;
     console.log('Constructed sandbox URL:', fullUrl);
     return fullUrl;
-  }
-  
-  if (cleanPath.startsWith('http')) {
-    return cleanPath;
   }
   
   console.warn('No sandbox URL or ID available, using path as-is:', cleanPath);

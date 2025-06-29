@@ -4,11 +4,12 @@ import mimetypes
 from typing import Optional, Tuple
 from io import BytesIO
 from PIL import Image
-
+from urllib.parse import urlparse
 from agentpress.tool import ToolResult, openapi_schema, xml_schema
 from sandbox.tool_base import SandboxToolsBase
 from agentpress.thread_manager import ThreadManager
 import json
+import requests
 
 # Add common image MIME types if mimetypes module is limited
 mimetypes.add_type("image/webp", ".webp")
@@ -100,17 +101,55 @@ class SandboxVisionTool(SandboxToolsBase):
             print(f"[SeeImage] Failed to compress image: {str(e)}. Using original.")
             return image_bytes, mime_type
 
+    def is_url(self, file_path: str) -> bool:
+        """check if the file path is url"""
+        parsed_url = urlparse(file_path)
+        return parsed_url.scheme in ('http', 'https')
+    
+    def download_image_from_url(self, url: str) -> Tuple[bytes, str]:
+        """Download image from a URL"""
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0"  # Some servers block default Python
+            }
+
+            # HEAD request to get the image size
+            head_response = requests.head(url, timeout=10, headers=headers, stream=True)
+            head_response.raise_for_status()
+            
+            # Check content length
+            content_length = int(head_response.headers.get('Content-Length'))
+            if content_length and content_length > MAX_IMAGE_SIZE:
+                raise Exception(f"Image is too large ({(content_length)/(1024*1024):.2f}MB) for the maximum allowed size of {MAX_IMAGE_SIZE/(1024*1024):.2f}MB")
+            
+            # Download the image
+            response = requests.get(url, timeout=10, headers=headers, stream=True)
+            response.raise_for_status()
+
+            image_bytes = response.content
+            if len(image_bytes) > MAX_IMAGE_SIZE:
+                raise Exception(f"Downloaded image is too large ({(len(image_bytes))/(1024*1024):.2f}MB). Maximum allowed size of {MAX_IMAGE_SIZE/(1024*1024):.2f}MB")
+
+            # Get MIME type
+            mime_type = response.headers.get('Content-Type')
+            if not mime_type or not mime_type.startswith('image/'):
+                raise Exception(f"URL does not point to an image (Content-Type: {mime_type}): {url}")
+            
+            return image_bytes, mime_type
+        except Exception as e:
+            return self.fail_response(f"Failed to download image from URL: {str(e)}")
+    
     @openapi_schema({
         "type": "function",
         "function": {
             "name": "see_image",
-            "description": "Allows the agent to 'see' an image file located in the /workspace directory. Provide the relative path to the image. The image will be compressed before sending to reduce token usage. The image content will be made available in the next turn's context.",
+            "description": "Allows the agent to 'see' an image file located in the /workspace directory or from a URL. Provide either a relative path to a local image or the URL to an image. The image will be compressed before sending to reduce token usage. The image content will be made available in the next turn's context.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "The relative path to the image file within the /workspace directory (e.g., 'screenshots/image.png'). Supported formats: JPG, PNG, GIF, WEBP. Max size: 10MB."
+                        "description": "Either a relative path to the image file within the /workspace directory (e.g., 'screenshots/image.png') or a URL to an image (e.g., 'https://example.com/image.jpg'). Supported formats: JPG, PNG, GIF, WEBP. Max size: 10MB."
                     }
                 },
                 "required": ["file_path"]
@@ -123,53 +162,72 @@ class SandboxVisionTool(SandboxToolsBase):
             {"param_name": "file_path", "node_type": "attribute", "path": "."}
         ],
         example='''
-        <!-- Example: Request to see an image named 'diagram.png' inside the 'docs' folder -->
+        <!-- Example: Request to see a local image named 'diagram.png' inside the 'docs' folder -->
         <function_calls>
         <invoke name="see_image">
         <parameter name="file_path">docs/diagram.png</parameter>
         </invoke>
         </function_calls>
+
+        <!-- Example: Request to see an image from a URL -->
+        <function_calls>
+        <invoke name="see_image">
+        <parameter name="file_path">https://example.com/image.jpg</parameter>
+        </invoke>
+        </function_calls>
         '''
     )
     async def see_image(self, file_path: str) -> ToolResult:
-        """Reads an image file, compresses it, converts it to base64, and adds it as a temporary message."""
+        """Reads an image file from local file system or from a URL, compresses it, converts it to base64, and adds it as a temporary message."""
         try:
-            # Ensure sandbox is initialized
-            await self._ensure_sandbox()
+            is_url = self.is_url(file_path)
+            if is_url:
+                try:
+                    image_bytes, mime_type = self.download_image_from_url(file_path)
+                    original_size = len(image_bytes)
+                    cleaned_path = file_path
+                except Exception as e:
+                    return self.fail_response(f"Failed to download image from URL: {str(e)}")
+            else:
+                # Ensure sandbox is initialized
+                await self._ensure_sandbox()
 
-            # Clean and construct full path
-            cleaned_path = self.clean_path(file_path)
-            full_path = f"{self.workspace_path}/{cleaned_path}"
+                # Clean and construct full path
+                cleaned_path = self.clean_path(file_path)
+                full_path = f"{self.workspace_path}/{cleaned_path}"
 
-            # Check if file exists and get info
-            try:
-                file_info = self.sandbox.fs.get_file_info(full_path)
-                if file_info.is_dir:
-                    return self.fail_response(f"Path '{cleaned_path}' is a directory, not an image file.")
-            except Exception as e:
-                return self.fail_response(f"Image file not found at path: '{cleaned_path}'")
+                # Check if file exists and get info
+                try:
+                    file_info = self.sandbox.fs.get_file_info(full_path)
+                    if file_info.is_dir:
+                        return self.fail_response(f"Path '{cleaned_path}' is a directory, not an image file.")
+                except Exception as e:
+                    return self.fail_response(f"Image file not found at path: '{cleaned_path}'")
 
-            # Check file size
-            if file_info.size > MAX_IMAGE_SIZE:
-                return self.fail_response(f"Image file '{cleaned_path}' is too large ({file_info.size / (1024*1024):.2f}MB). Maximum size is {MAX_IMAGE_SIZE / (1024*1024)}MB.")
+                # Check file size
+                if file_info.size > MAX_IMAGE_SIZE:
+                    return self.fail_response(f"Image file '{cleaned_path}' is too large ({file_info.size / (1024*1024):.2f}MB). Maximum size is {MAX_IMAGE_SIZE / (1024*1024)}MB.")
 
-            # Read image file content
-            try:
-                image_bytes = self.sandbox.fs.download_file(full_path)
-            except Exception as e:
-                return self.fail_response(f"Could not read image file: {cleaned_path}")
+                # Read image file content
+                try:
+                    image_bytes = self.sandbox.fs.download_file(full_path)
+                except Exception as e:
+                    return self.fail_response(f"Could not read image file: {cleaned_path}")
 
-            # Determine MIME type
-            mime_type, _ = mimetypes.guess_type(full_path)
-            if not mime_type or not mime_type.startswith('image/'):
-                # Basic fallback based on extension if mimetypes fails
-                ext = os.path.splitext(cleaned_path)[1].lower()
-                if ext == '.jpg' or ext == '.jpeg': mime_type = 'image/jpeg'
-                elif ext == '.png': mime_type = 'image/png'
-                elif ext == '.gif': mime_type = 'image/gif'
-                elif ext == '.webp': mime_type = 'image/webp'
-                else:
-                    return self.fail_response(f"Unsupported or unknown image format for file: '{cleaned_path}'. Supported: JPG, PNG, GIF, WEBP.")
+                # Determine MIME type
+                mime_type, _ = mimetypes.guess_type(full_path)
+                if not mime_type or not mime_type.startswith('image/'):
+                    # Basic fallback based on extension if mimetypes fails
+                    ext = os.path.splitext(cleaned_path)[1].lower()
+                    if ext == '.jpg' or ext == '.jpeg': mime_type = 'image/jpeg'
+                    elif ext == '.png': mime_type = 'image/png'
+                    elif ext == '.gif': mime_type = 'image/gif'
+                    elif ext == '.webp': mime_type = 'image/webp'
+                    else:
+                        return self.fail_response(f"Unsupported or unknown image format for file: '{cleaned_path}'. Supported: JPG, PNG, GIF, WEBP.")
+                
+                original_size = file_info.size
+            
 
             # Compress the image
             compressed_bytes, compressed_mime_type = self.compress_image(image_bytes, mime_type, cleaned_path)
@@ -186,7 +244,7 @@ class SandboxVisionTool(SandboxToolsBase):
                 "mime_type": compressed_mime_type,
                 "base64": base64_image,
                 "file_path": cleaned_path, # Include path for context
-                "original_size": file_info.size,
+                "original_size": original_size,
                 "compressed_size": len(compressed_bytes)
             }
 
@@ -200,7 +258,7 @@ class SandboxVisionTool(SandboxToolsBase):
             )
 
             # Inform the agent the image will be available next turn
-            return self.success_response(f"Successfully loaded and compressed the image '{cleaned_path}' (reduced from {file_info.size / 1024:.1f}KB to {len(compressed_bytes) / 1024:.1f}KB).")
+            return self.success_response(f"Successfully loaded and compressed the image '{cleaned_path}' (reduced from {original_size / 1024:.1f}KB to {len(compressed_bytes) / 1024:.1f}KB).")
 
         except Exception as e:
             return self.fail_response(f"An unexpected error occurred while trying to see the image: {str(e)}") 
