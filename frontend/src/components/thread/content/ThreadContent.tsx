@@ -18,6 +18,7 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { AgentLoader } from './loader';
 import { parseXmlToolCalls, isNewXmlFormat, extractToolNameFromStream } from '@/components/thread/tool-views/xml-parser';
 import { parseToolResult } from '@/components/thread/tool-views/tool-result-parser';
+import Feedback from '@/components/thread/feedback-modal';
 
 // Define the set of  tags whose raw XML should be hidden during streaming
 const HIDE_STREAMING_XML_TAGS = new Set([
@@ -605,7 +606,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                     } else if (group.type === 'assistant_group') {
                                         return (
                                             <div key={group.key} ref={groupIndex === groupedMessages.length - 1 ? latestMessageRef : null}>
-                                                <div className="flex flex-col gap-2">
+                                                <div className="flex flex-col gap-2 group">
                                                     <div className="flex items-center">
                                                         <div className="rounded-md flex items-center justify-center">
                                                             {(() => {
@@ -897,6 +898,20 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                             )}
                                                         </div>
                                                     </div>
+
+                                                    {(() => {
+                                                        const firstAssistant = group.messages.find(msg => msg.type === 'assistant');
+                                                        const messageId = firstAssistant?.message_id;
+                                                        if (!messageId) return null;
+
+                                                        
+
+                                                        return (
+                                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <Feedback messageId={messageId} />
+                                                            </div>
+                                                        );
+                                                    })()}
                                                 </div>
                                             </div>
                                         );
