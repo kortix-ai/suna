@@ -4,68 +4,83 @@ import { ThumbsDown, ThumbsUp } from "lucide-react";
 import { useState } from "react";
 import { Textarea } from "../ui/textarea";
 import { toast } from "sonner";
+import { apiClient } from '@/lib/api-client';
 
+interface FeedbackProps {
+  messageId: string;
+}
 
-export default function Feedback({ messageId }: { messageId: string }) {
+export default function Feedback({ messageId }: FeedbackProps) {
   const [open, setOpen] = useState<boolean>(false);
-  const [feedback, setFeedback] = useState<'positive' | 'negative' | null>(null);
-  const [comment, setComment] = useState<string>('');
+  const [responseIsGood, setResponseIsGood] = useState<boolean | null>(null);
+  const [feedback, setFeedback] = useState<string>('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleClick = (feedback: 'positive' | 'negative') => {
-    setFeedback(feedback);
+  const handleClick = (isGood: boolean) => {
+    setResponseIsGood(isGood);
     setOpen(true);
-  }
+  };
 
-  const handleSubmit = () => {
-    if(!feedback) return;
-    console.log(messageId, feedback, comment);
-    setOpen(false);
-    setFeedback(null);
-    setComment('');
-    toast.success('Feedback submitted');
-  }
+  const handleSubmit = async () => {
+    if (responseIsGood === null) return;
+    setSubmitting(true);
+    const { success } = await apiClient.post('/api/feedback', {
+      message_id: messageId,
+      response_is_good: responseIsGood,
+      comment: feedback.trim() || null,
+    });
+    setSubmitting(false);
+    if (success) {
+      toast.success('Feedback submitted - thank you!');
+      setOpen(false);
+      setFeedback('');
+      setResponseIsGood(null);
+    }
+  };
 
   return (
     <div className="flex items-center gap-1">
       <Button 
-        className="opacity-70 hover:opacity-100" 
+        className="h-7 w-7 opacity-70 hover:opacity-100" 
         variant="ghost"
-        onClick={() => handleClick('positive')}
+        onClick={() => handleClick(true)}
       >
-        <ThumbsUp />
-        <span className="sr-only">Positive feedback</span>
+        <ThumbsUp className="h-4 w-4" />
+        <span className="sr-only">Good response</span>
       </Button>
       <Button 
-        className="opacity-70 hover:opacity-100" 
+        className="h-7 w-7 opacity-70 hover:opacity-100" 
         size="icon" 
         variant="ghost"
-        onClick={() => handleClick('negative')}
+        onClick={() => handleClick(false)}
       >
-        <ThumbsDown />
-        <span className="sr-only">Negative feedback</span>
+        <ThumbsDown className="h-4 w-4" />
+        <span className="sr-only">Bad response</span>
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Feedback</DialogTitle>
+            <DialogTitle>{responseIsGood ? 'Good response' : 'Bad response'}</DialogTitle>
           </DialogHeader>
           <span 
             className="text-sm text-muted-foreground"
           >
-            {`What was ${feedback === 'negative' ? 'un' : ''}satisifying about this response?`}
+            {`What was ${responseIsGood === false ? 'un' : ''}satisifying about this response?`}
           </span>
           <Textarea 
             className="resize-none my-2" 
             placeholder="Please provide feedback..." 
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
+            value={feedback}
+            onChange={(e) => setFeedback(e.target.value)}
           />
           <DialogFooter className="gap-2">
             <DialogClose asChild>
               <Button variant="outline">Cancel</Button>
             </DialogClose>
-            <Button onClick={handleSubmit}>Submit</Button>
+            <Button onClick={handleSubmit} disabled={submitting || responseIsGood === null}>
+              {submitting ? 'Submitting...' : 'Submit'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
