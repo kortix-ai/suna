@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from services.supabase import DBConnection
+from utils.auth_utils import get_current_user_id_from_jwt, verify_thread_access
 
 router = APIRouter(prefix="/feedback", tags=["feedback"])
 
@@ -11,10 +12,18 @@ class FeedbackRequest(BaseModel):
 
 db = DBConnection()
 @router.post("/")
-async def submit_feedback(request: FeedbackRequest):
+async def submit_feedback(request: FeedbackRequest, user_id: str = Depends(get_current_user_id_from_jwt)):
     try:
         client = await db.client
+        thread = await client.table('messages').select('thread_id').eq('message_id', request.message_id).single().execute()
 
+        if not thread.data:
+            raise HTTPException(status_code=404, detail="Message not found")
+        
+        thread_id = thread.data['thread_id']
+
+        await verify_thread_access(client, thread_id, user_id)
+        
         feedback_data = {
             'message_id': request.message_id,
             'is_good': request.is_good,
