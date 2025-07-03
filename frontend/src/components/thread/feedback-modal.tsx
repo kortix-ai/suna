@@ -10,13 +10,14 @@ type SubmitStatus = 'idle' | 'submitting' | 'success' | 'error';
 
 interface FeedbackProps {
   messageId: string;
+  initialFeedback?: boolean | null;
 }
 
-export default function Feedback({ messageId }: FeedbackProps) {
+export default function Feedback({ messageId, initialFeedback = null }: FeedbackProps) {
   const [open, setOpen] = useState<boolean>(false);
-  const [responseIsGood, setResponseIsGood] = useState<boolean | null>(null);
+  const [responseIsGood, setResponseIsGood] = useState<boolean | null>(initialFeedback);
   const [feedback, setFeedback] = useState<string>('');
-  const [submitStatus, setSubmitStatus] = useState<SubmitStatus>('idle');
+  const [submitStatus, setSubmitStatus] = useState<SubmitStatus>(initialFeedback !== null ? 'success' : 'idle');
 
   const handleClick = (isGood: boolean) => {
     setResponseIsGood(isGood);

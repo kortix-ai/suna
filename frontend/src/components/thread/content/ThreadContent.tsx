@@ -908,7 +908,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
 
                                                         return (
                                                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                                <Feedback messageId={messageId} />
+                                                                <Feedback messageId={messageId} initialFeedback={firstAssistant?.user_feedback ?? null} />
                                                             </div>
                                                         );
                                                     })()}

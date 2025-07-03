@@ -30,7 +30,7 @@ async def submit_feedback(request: FeedbackRequest, user_id: str = Depends(get_c
             'feedback': request.feedback
         }
 
-        feedback_result = await client.table('feedback').insert(feedback_data).execute()
+        feedback_result = await client.table('feedback').upsert(feedback_data, on_conflict='message_id').execute()
 
         if not feedback_result.data:
             raise HTTPException(status_code=500, detail="Failed to submit feedback")

@@ -76,6 +76,11 @@ export type Message = {
   };
 };
 
+export interface MessageWithFeedback extends Message {
+  message_id: string;
+  user_feedback?: boolean | null;
+}
+
 export type AgentRun = {
   id: string;
   thread_id: string;
@@ -574,10 +579,10 @@ export const addUserMessage = async (
   }
 };
 
-export const getMessages = async (threadId: string): Promise<Message[]> => {
+export const getMessages = async (threadId: string): Promise<MessageWithFeedback[]> => {
   const supabase = createClient();
 
-  let allMessages: Message[] = [];
+  let allMessages: MessageWithFeedback[] = [];
   let from = 0;
   const batchSize = 1000;
   let hasMore = true;
@@ -612,6 +617,37 @@ export const getMessages = async (threadId: string): Promise<Message[]> => {
     } else {
       hasMore = false;
     }
+  }
+
+
+  try {
+    const messageIds = allMessages
+      .filter((m: Message) => m.type === 'assistant')
+      .map((m: any) => m.message_id)
+      .filter((id) => Boolean(id));
+
+    if (messageIds.length > 0) {
+      const { data: feedbackData, error: feedbackError } = await supabase
+        .from('feedback')
+        .select('message_id, is_good')
+        .in('message_id', messageIds);
+
+      if (feedbackError) {
+        console.error('Error fetching feedback data:', feedbackError);
+      }
+      
+      const feedback = Object.fromEntries(
+        feedbackData?.map((feedback: { message_id: string; is_good: boolean }) => [feedback.message_id, feedback.is_good]) ?? []
+      );
+
+      // Attach feedback to messages
+      allMessages = allMessages.map((msg: MessageWithFeedback) => ({
+        ...msg,
+        user_feedback: feedback[msg.message_id] ?? null,
+      }));
+    }
+  } catch (feedbackAttachError) {
+    console.error('Failed to attach feedback metadata to messages:', feedbackAttachError);
   }
 
   console.log('[API] Messages fetched count:', allMessages.length);

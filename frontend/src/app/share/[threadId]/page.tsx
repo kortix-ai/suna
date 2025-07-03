@@ -46,6 +46,7 @@ interface ApiMessageType extends BaseApiMessageType {
     avatar?: string;
     avatar_color?: string;
   };
+  user_feedback?: boolean | null;
 }
 
 interface StreamingToolCall {
@@ -399,6 +400,7 @@ export default function ThreadPage({
               updated_at: msg.updated_at || new Date().toISOString(),
               agent_id: (msg as any).agent_id,
               agents: (msg as any).agents,
+              user_feedback: msg.user_feedback ?? null,
             }));
 
           setMessages(unifiedMessages);
