@@ -4,7 +4,9 @@ import { ThumbsDown, ThumbsUp } from "lucide-react";
 import { useState } from "react";
 import { Textarea } from "../ui/textarea";
 import { toast } from "sonner";
-import { apiClient } from '@/lib/api-client';
+import { backendApi } from '@/lib/api-client';
+
+type SubmitStatus = 'idle' | 'submitting' | 'success' | 'error';
 
 interface FeedbackProps {
   messageId: string;
@@ -14,7 +16,7 @@ export default function Feedback({ messageId }: FeedbackProps) {
   const [open, setOpen] = useState<boolean>(false);
   const [responseIsGood, setResponseIsGood] = useState<boolean | null>(null);
   const [feedback, setFeedback] = useState<string>('');
-  const [submitting, setSubmitting] = useState(false);
+  const [submitStatus, setSubmitStatus] = useState<SubmitStatus>('idle');
 
   const handleClick = (isGood: boolean) => {
     setResponseIsGood(isGood);
@@ -23,18 +25,25 @@ export default function Feedback({ messageId }: FeedbackProps) {
 
   const handleSubmit = async () => {
     if (responseIsGood === null) return;
-    setSubmitting(true);
-    const { success } = await apiClient.post('/api/feedback', {
-      message_id: messageId,
-      response_is_good: responseIsGood,
-      comment: feedback.trim() || null,
-    });
-    setSubmitting(false);
-    if (success) {
-      toast.success('Feedback submitted - thank you!');
-      setOpen(false);
-      setFeedback('');
-      setResponseIsGood(null);
+    setSubmitStatus('submitting');
+    
+    try {
+      const { success } = await backendApi.post('/feedback/', {
+        message_id: messageId,
+        is_good: responseIsGood,
+        feedback: feedback.trim() || null,
+      });
+      setSubmitStatus('success');
+      if (success) {
+        toast.success('Feedback submitted - thank you!');
+        setOpen(false);
+        setFeedback('');
+        setSubmitStatus('success');
+      }
+    } catch (error) {
+      console.error('Failed to submit feedback:', error);
+      setSubmitStatus('error');
+      toast.error('Failed to submit feedback');
     }
   };
 
@@ -45,7 +54,7 @@ export default function Feedback({ messageId }: FeedbackProps) {
         variant="ghost"
         onClick={() => handleClick(true)}
       >
-        <ThumbsUp className="h-4 w-4" />
+        <ThumbsUp className={`h-4 w-4 ${submitStatus === 'success' && responseIsGood ? 'fill-white' : ''}`} />
         <span className="sr-only">Good response</span>
       </Button>
       <Button 
@@ -54,19 +63,19 @@ export default function Feedback({ messageId }: FeedbackProps) {
         variant="ghost"
         onClick={() => handleClick(false)}
       >
-        <ThumbsDown className="h-4 w-4" />
+        <ThumbsDown className={`h-4 w-4 ${submitStatus === 'success' && responseIsGood === false ? 'fill-white' : ''}`} />
         <span className="sr-only">Bad response</span>
       </Button>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{responseIsGood ? 'Good response' : 'Bad response'}</DialogTitle>
+            <DialogTitle>Feedback</DialogTitle>
           </DialogHeader>
-          <span 
+          <span
             className="text-sm text-muted-foreground"
           >
-            {`What was ${responseIsGood === false ? 'un' : ''}satisifying about this response?`}
+            {`What was ${responseIsGood === false ? 'un' : ''}satisfying about this response?`}
           </span>
           <Textarea 
             className="resize-none my-2" 
@@ -76,10 +85,14 @@ export default function Feedback({ messageId }: FeedbackProps) {
           />
           <DialogFooter className="gap-2">
             <DialogClose asChild>
-              <Button variant="outline">Cancel</Button>
+              <Button variant="outline">
+                Cancel
+                <span className="sr-only">Cancel feedback</span>
+              </Button>
             </DialogClose>
-            <Button onClick={handleSubmit} disabled={submitting || responseIsGood === null}>
-              {submitting ? 'Submitting...' : 'Submit'}
+            <Button onClick={handleSubmit} disabled={submitStatus === 'submitting' || responseIsGood === null}>
+              {submitStatus === 'submitting' ? 'Submitting...' : 'Submit'}
+              <span className="sr-only">Submit feedback</span>
             </Button>
           </DialogFooter>
         </DialogContent>
