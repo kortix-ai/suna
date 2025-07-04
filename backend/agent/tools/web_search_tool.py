@@ -346,13 +346,13 @@ class SandboxWebSearchTool(SandboxToolsBase):
             
             # Save results to a file in the /workspace/scrape directory
             scrape_dir = f"{self.workspace_path}/scrape"
-            self.sandbox.fs.create_folder(scrape_dir, "755")
+            await self.sandbox.fs.create_folder(scrape_dir, "755")
             
             results_file_path = f"{scrape_dir}/{safe_filename}"
             json_content = json.dumps(formatted_result, ensure_ascii=False, indent=2)
             logging.info(f"Saving content to file: {results_file_path}, size: {len(json_content)} bytes")
             
-            self.sandbox.fs.upload_file(
+            await self.sandbox.fs.upload_file(
                 json_content.encode(),
                 results_file_path,
             )

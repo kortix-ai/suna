@@ -5,6 +5,7 @@ from typing import Optional
 from fastapi import FastAPI, UploadFile, File, HTTPException, APIRouter, Form, Depends, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
+from daytona_sdk import AsyncSandbox
 
 from sandbox.sandbox import get_or_start_sandbox, delete_sandbox
 from utils.logger import logger
@@ -105,7 +106,7 @@ async def verify_sandbox_access(client, sandbox_id: str, user_id: Optional[str] 
     
     raise HTTPException(status_code=403, detail="Not authorized to access this sandbox")
 
-async def get_sandbox_by_id_safely(client, sandbox_id: str):
+async def get_sandbox_by_id_safely(client, sandbox_id: str) -> AsyncSandbox:
     """
     Safely retrieve a sandbox object by its ID, using the project that owns it.
     
@@ -114,7 +115,7 @@ async def get_sandbox_by_id_safely(client, sandbox_id: str):
         sandbox_id: The sandbox ID to retrieve
     
     Returns:
-        Sandbox: The sandbox object
+        AsyncSandbox: The sandbox object
         
     Raises:
         HTTPException: If the sandbox doesn't exist or can't be retrieved
@@ -166,7 +167,7 @@ async def create_file(
         content = await file.read()
         
         # Create file using raw binary content
-        sandbox.fs.upload_file(content, path)
+        await sandbox.fs.upload_file(content, path)
         logger.info(f"File created at {path} in sandbox {sandbox_id}")
         
         return {"status": "success", "created": True, "path": path}
@@ -196,7 +197,7 @@ async def list_files(
         sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
         
         # List files
-        files = sandbox.fs.list_files(path)
+        files = await sandbox.fs.list_files(path)
         result = []
         
         for file in files:
@@ -246,7 +247,7 @@ async def read_file(
         
         # Read file directly - don't check existence first with a separate call
         try:
-            content = sandbox.fs.download_file(path)
+            content = await sandbox.fs.download_file(path)
         except Exception as download_err:
             logger.error(f"Error downloading file {path} from sandbox {sandbox_id}: {str(download_err)}")
             raise HTTPException(
@@ -297,7 +298,7 @@ async def delete_file(
         sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
         
         # Delete file
-        sandbox.fs.delete_file(path)
+        await sandbox.fs.delete_file(path)
         logger.info(f"File deleted at {path} in sandbox {sandbox_id}")
         
         return {"status": "success", "deleted": True, "path": path}

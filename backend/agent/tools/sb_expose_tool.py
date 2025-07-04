@@ -17,7 +17,7 @@ class SandboxExposeTool(SandboxToolsBase):
         while time.time() - start_time < timeout:
             try:
                 # Check if supervisord is running and managing services
-                result = self.sandbox.process.exec("supervisorctl status", timeout=10)
+                result = await self.sandbox.process.exec("supervisorctl status", timeout=10)
                 
                 if result.exit_code == 0:
                     # Check if key services are running
@@ -101,7 +101,7 @@ class SandboxExposeTool(SandboxToolsBase):
             # Check if something is actually listening on the port (for custom ports)
             if port not in [6080, 8080, 8003]:  # Skip check for known sandbox ports
                 try:
-                    port_check = self.sandbox.process.exec(f"netstat -tlnp | grep :{port}", timeout=5)
+                    port_check = await self.sandbox.process.exec(f"netstat -tlnp | grep :{port}", timeout=5)
                     if port_check.exit_code != 0:
                         return self.fail_response(f"No service is currently listening on port {port}. Please start a service on this port first.")
                 except Exception:
@@ -109,7 +109,7 @@ class SandboxExposeTool(SandboxToolsBase):
                     pass
 
             # Get the preview link for the specified port
-            preview_link = self.sandbox.get_preview_link(port)
+            preview_link = await self.sandbox.get_preview_link(port)
             
             # Extract the actual URL from the preview link object
             url = preview_link.url if hasattr(preview_link, 'url') else str(preview_link)

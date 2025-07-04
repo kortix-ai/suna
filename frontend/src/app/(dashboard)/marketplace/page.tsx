@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { getAgentAvatar } from '../agents/_utils/get-agent-style';
 import { Skeleton } from '@/components/ui/skeleton';
-import { CredentialProfileSelector } from '@/components/workflows/CredentialProfileSelector';
+
 
 import { 
   useMarketplaceTemplates, 
@@ -30,6 +30,7 @@ import { useMCPServerDetails } from '@/hooks/react-query/mcp/use-mcp-servers';
 import { createClient } from '@/lib/supabase/client';
 import { useFeatureFlag } from '@/lib/feature-flags';
 import { useRouter } from 'next/navigation';
+import { CredentialProfileSelector } from '@/components/workflows/CredentialProfileSelector';
 
 type SortOption = 'newest' | 'popular' | 'most_downloaded' | 'name';
 

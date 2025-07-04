@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Loader2, Save, Sparkles, AlertTriangle, Plus, Key, Settings, Shield } from 'lucide-react';
 import { useMCPServerDetails } from '@/hooks/react-query/mcp/use-mcp-servers';
-import { CredentialProfileSelector } from '@/components/workflows/CredentialProfileSelector';
+
 import { 
   useCredentialProfilesForMcp, 
   useCreateCredentialProfile,
@@ -18,6 +18,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
+import { CredentialProfileSelector } from '@/components/workflows/CredentialProfileSelector';
 
 interface ConfigDialogProps {
   server: any;

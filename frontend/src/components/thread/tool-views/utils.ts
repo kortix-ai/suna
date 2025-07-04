@@ -507,18 +507,26 @@ export function extractFileContent(
   return null;
 }
 
-// Helper to process and clean file content
 function processFileContent(content: string): string {
   if (!content) return content;
-
-  // Handle escaped characters
+  const trimmedContent = content.trim();
+  const isLikelyJson = (trimmedContent.startsWith('{') && trimmedContent.endsWith('}')) ||
+                       (trimmedContent.startsWith('[') && trimmedContent.endsWith(']'));
+  
+  if (isLikelyJson) {
+    try {
+      const parsed = JSON.parse(content);
+      return JSON.stringify(parsed, null, 2);
+    } catch (e) {
+    }
+  }
   return content
-    .replace(/\\n/g, '\n') // Replace \n with actual newlines
-    .replace(/\\t/g, '\t') // Replace \t with actual tabs
-    .replace(/\\r/g, '') // Remove \r
-    .replace(/\\\\/g, '\\') // Replace \\ with \
-    .replace(/\\"/g, '"') // Replace \" with "
-    .replace(/\\'/g, "'"); // Replace \' with '
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\r/g, '')
+    .replace(/\\\\/g, '\\')
+    .replace(/\\"/g, '"')
+    .replace(/\\'/g, "'");
 }
 
 // Helper to determine file type (for syntax highlighting)

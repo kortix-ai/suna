@@ -21,10 +21,10 @@ class SandboxFilesTool(SandboxToolsBase):
         """Check if a file should be excluded based on path, name, or extension"""
         return should_exclude_file(rel_path)
 
-    def _file_exists(self, path: str) -> bool:
+    async def _file_exists(self, path: str) -> bool:
         """Check if a file exists in the sandbox"""
         try:
-            self.sandbox.fs.get_file_info(path)
+            await self.sandbox.fs.get_file_info(path)
             return True
         except Exception:
             return False
@@ -36,7 +36,7 @@ class SandboxFilesTool(SandboxToolsBase):
             # Ensure sandbox is initialized
             await self._ensure_sandbox()
             
-            files = self.sandbox.fs.list_files(self.workspace_path)
+            files = await self.sandbox.fs.list_files(self.workspace_path)
             for file_info in files:
                 rel_path = file_info.name
                 
@@ -46,7 +46,7 @@ class SandboxFilesTool(SandboxToolsBase):
 
                 try:
                     full_path = f"{self.workspace_path}/{rel_path}"
-                    content = self.sandbox.fs.download_file(full_path).decode()
+                    content = (await self.sandbox.fs.download_file(full_path)).decode()
                     files_state[rel_path] = {
                         "content": content,
                         "is_dir": file_info.is_dir,
@@ -126,24 +126,24 @@ class SandboxFilesTool(SandboxToolsBase):
             
             file_path = self.clean_path(file_path)
             full_path = f"{self.workspace_path}/{file_path}"
-            if self._file_exists(full_path):
+            if await self._file_exists(full_path):
                 return self.fail_response(f"File '{file_path}' already exists. Use update_file to modify existing files.")
             
             # Create parent directories if needed
             parent_dir = '/'.join(full_path.split('/')[:-1])
             if parent_dir:
-                self.sandbox.fs.create_folder(parent_dir, "755")
+                await self.sandbox.fs.create_folder(parent_dir, "755")
             
             # Write the file content
-            self.sandbox.fs.upload_file(file_contents.encode(), full_path)
-            self.sandbox.fs.set_file_permissions(full_path, permissions)
+            await self.sandbox.fs.upload_file(file_contents.encode(), full_path)
+            await self.sandbox.fs.set_file_permissions(full_path, permissions)
             
             message = f"File '{file_path}' created successfully."
             
             # Check if index.html was created and add 8080 server info (only in root workspace)
             if file_path.lower() == 'index.html':
                 try:
-                    website_link = self.sandbox.get_preview_link(8080)
+                    website_link = await self.sandbox.get_preview_link(8080)
                     website_url = website_link.url if hasattr(website_link, 'url') else str(website_link).split("url='")[1].split("'")[0]
                     message += f"\n\n[Auto-detected index.html - HTTP server available at: {website_url}]"
                     message += "\n[Note: Use the provided HTTP server URL above instead of starting a new server]"
@@ -203,10 +203,10 @@ class SandboxFilesTool(SandboxToolsBase):
             
             file_path = self.clean_path(file_path)
             full_path = f"{self.workspace_path}/{file_path}"
-            if not self._file_exists(full_path):
+            if not await self._file_exists(full_path):
                 return self.fail_response(f"File '{file_path}' does not exist")
             
-            content = self.sandbox.fs.download_file(full_path).decode()
+            content = (await self.sandbox.fs.download_file(full_path)).decode()
             old_str = old_str.expandtabs()
             new_str = new_str.expandtabs()
             
@@ -219,7 +219,7 @@ class SandboxFilesTool(SandboxToolsBase):
             
             # Perform replacement
             new_content = content.replace(old_str, new_str)
-            self.sandbox.fs.upload_file(new_content.encode(), full_path)
+            await self.sandbox.fs.upload_file(new_content.encode(), full_path)
             
             # Show snippet around the edit
             replacement_line = content.split(old_str)[0].count('\n')
@@ -291,18 +291,18 @@ class SandboxFilesTool(SandboxToolsBase):
             
             file_path = self.clean_path(file_path)
             full_path = f"{self.workspace_path}/{file_path}"
-            if not self._file_exists(full_path):
+            if not await self._file_exists(full_path):
                 return self.fail_response(f"File '{file_path}' does not exist. Use create_file to create a new file.")
             
-            self.sandbox.fs.upload_file(file_contents.encode(), full_path)
-            self.sandbox.fs.set_file_permissions(full_path, permissions)
+            await self.sandbox.fs.upload_file(file_contents.encode(), full_path)
+            await self.sandbox.fs.set_file_permissions(full_path, permissions)
             
             message = f"File '{file_path}' completely rewritten successfully."
             
             # Check if index.html was rewritten and add 8080 server info (only in root workspace)
             if file_path.lower() == 'index.html':
                 try:
-                    website_link = self.sandbox.get_preview_link(8080)
+                    website_link = await self.sandbox.get_preview_link(8080)
                     website_url = website_link.url if hasattr(website_link, 'url') else str(website_link).split("url='")[1].split("'")[0]
                     message += f"\n\n[Auto-detected index.html - HTTP server available at: {website_url}]"
                     message += "\n[Note: Use the provided HTTP server URL above instead of starting a new server]"
@@ -350,10 +350,10 @@ class SandboxFilesTool(SandboxToolsBase):
             
             file_path = self.clean_path(file_path)
             full_path = f"{self.workspace_path}/{file_path}"
-            if not self._file_exists(full_path):
+            if not await self._file_exists(full_path):
                 return self.fail_response(f"File '{file_path}' does not exist")
             
-            self.sandbox.fs.delete_file(full_path)
+            await self.sandbox.fs.delete_file(full_path)
             return self.success_response(f"File '{file_path}' deleted successfully.")
         except Exception as e:
             return self.fail_response(f"Error deleting file: {str(e)}")
@@ -427,11 +427,11 @@ class SandboxFilesTool(SandboxToolsBase):
     #         file_path = self.clean_path(file_path)
     #         full_path = f"{self.workspace_path}/{file_path}"
             
-    #         if not self._file_exists(full_path):
+    #         if not await self._file_exists(full_path):
     #             return self.fail_response(f"File '{file_path}' does not exist")
             
     #         # Download and decode file content
-    #         content = self.sandbox.fs.download_file(full_path).decode()
+    #         content = await self.sandbox.fs.download_file(full_path).decode()
             
     #         # Split content into lines
     #         lines = content.split('\n')

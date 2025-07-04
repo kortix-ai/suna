@@ -17,6 +17,7 @@ import { useModelSelection } from './_use-model-selection';
 import { AgentSelector } from './agent-selector';
 import { useFileDelete } from '@/hooks/react-query/files';
 import { useQueryClient } from '@tanstack/react-query';
+import { FloatingToolPreview, ToolCallInput } from './floating-tool-preview';
 
 export interface ChatInputHandles {
   getPendingFiles: () => File[];
@@ -44,6 +45,10 @@ export interface ChatInputProps {
   agentName?: string;
   messages?: any[];
   bgColor?: string;
+  toolCalls?: ToolCallInput[];
+  toolCallIndex?: number;
+  showToolPreview?: boolean;
+  onExpandToolPreview?: () => void;
 }
 
 export interface UploadedFile {
@@ -74,6 +79,10 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
       agentName,
       messages = [],
       bgColor = 'bg-sidebar',
+      toolCalls = [],
+      toolCallIndex = 0,
+      showToolPreview = false,
+      onExpandToolPreview,
     },
     ref,
   ) => {
@@ -226,15 +235,21 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
 
     return (
       <div className="mx-auto w-full max-w-4xl">
+        <FloatingToolPreview
+          toolCalls={toolCalls}
+          currentIndex={toolCallIndex}
+          onExpand={onExpandToolPreview || (() => {})}
+          agentName={agentName}
+          isVisible={showToolPreview}
+        />
         <Card
-          className="shadow-none w-full max-w-4xl mx-auto bg-transparent border-none rounded-xl overflow-hidden"
+          className="-mb-2 bg-red-400 shadow-none w-full max-w-4xl mx-auto bg-transparent border-none rounded-xl overflow-hidden"
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={(e) => {
             e.preventDefault();
             e.stopPropagation();
             setIsDraggingOver(false);
-
             if (fileInputRef.current && e.dataTransfer.files.length > 0) {
               const files = Array.from(e.dataTransfer.files);
               handleFiles(

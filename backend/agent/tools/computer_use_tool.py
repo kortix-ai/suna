@@ -8,7 +8,8 @@ from typing import Optional, Dict
 import os
 
 from agentpress.tool import Tool, ToolResult, openapi_schema, xml_schema
-from sandbox.tool_base import SandboxToolsBase, Sandbox
+from sandbox.tool_base import SandboxToolsBase
+from daytona_sdk import AsyncSandbox
 
 KEYBOARD_KEYS = [
     'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
@@ -25,15 +26,26 @@ KEYBOARD_KEYS = [
 class ComputerUseTool(SandboxToolsBase):
     """Computer automation tool for controlling the sandbox browser and GUI."""
     
-    def __init__(self, sandbox: Sandbox):
+    def __init__(self, project_id: str, thread_manager):
         """Initialize automation tool with sandbox connection."""
-        super().__init__(sandbox)
+        super().__init__(project_id, thread_manager)
         self.session = None
         self.mouse_x = 0  # Track current mouse position
         self.mouse_y = 0
-        # Get automation service URL using port 8000
-        self.api_base_url = self.sandbox.get_preview_link(8000)
-        logging.info(f"Initialized Computer Use Tool with API URL: {self.api_base_url}")
+        # API URL will be set when first needed
+        self.api_base_url = None
+        self._url_initialized = False
+        logging.info(f"Initialized Computer Use Tool")
+    
+    async def _ensure_api_url(self):
+        """Ensure API URL is initialized."""
+        if not self._url_initialized:
+            await self._ensure_sandbox()
+            # Get automation service URL using port 8000
+            preview_link = await self.sandbox.get_preview_link(8000)
+            self.api_base_url = preview_link.url if hasattr(preview_link, 'url') else str(preview_link)
+            self._url_initialized = True
+            logging.info(f"Initialized Computer Use Tool with API URL: {self.api_base_url}")
     
     async def _get_session(self) -> aiohttp.ClientSession:
         """Get or create aiohttp session for API requests."""
@@ -44,6 +56,9 @@ class ComputerUseTool(SandboxToolsBase):
     async def _api_request(self, method: str, endpoint: str, data: Optional[Dict] = None) -> Dict:
         """Send request to automation service API."""
         try:
+            # Ensure API URL is set
+            await self._ensure_api_url()
+            
             session = await self._get_session()
             url = f"{self.api_base_url}/api{endpoint}"
             

@@ -48,11 +48,10 @@ export function SidebarLeft({
   });
 
   const pathname = usePathname();
-  const { flags, loading: flagsLoading } = useFeatureFlags(['custom_agents', 'agent_marketplace', 'workflows']);
+  const { flags, loading: flagsLoading } = useFeatureFlags(['custom_agents', 'agent_marketplace']);
   const customAgentsEnabled = flags.custom_agents;
   const marketplaceEnabled = flags.agent_marketplace;
-  const workflowsEnabled = flags.workflows;
-
+  
   useEffect(() => {
     const fetchUserData = async () => {
       const supabase = createClient();
@@ -103,7 +102,6 @@ export function SidebarLeft({
           </Link>
           {state !== 'collapsed' && (
             <div className="ml-2 transition-all duration-200 ease-in-out whitespace-nowrap">
-              {/* <span className="font-semibold"> SUNA</span> */}
             </div>
           )}
           <div className="ml-auto flex items-center gap-2">
@@ -166,18 +164,6 @@ export function SidebarLeft({
                   <Key className="h-4 w-4 mr-2" />
                   <span className="flex items-center justify-between w-full">
                     Credentials
-                  </span>
-                </SidebarMenuButton>
-              </Link>
-            )}
-            {workflowsEnabled && (
-              <Link href="/workflows">
-                <SidebarMenuButton className={cn({
-                  'bg-primary/10 font-medium': pathname === '/workflows',
-                })}>
-                  <Workflow className="h-4 w-4 mr-2" />
-                  <span className="flex items-center justify-between w-full">
-                    Workflows
                   </span>
                 </SidebarMenuButton>
               </Link>

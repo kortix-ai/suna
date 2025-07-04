@@ -74,7 +74,6 @@ jobs:
           username: ${{ secrets.PROD_USERNAME }}
           key: ${{ secrets.PROD_KEY }}
           script: |
-            cd /home/suna/backend
-            git pull
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml build
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+            cd /mnt/gluster-shared/data/infra/suna
+            set -a; source .env; set +a
+            docker stack deploy -c docker-compose.yml suna

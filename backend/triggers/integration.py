@@ -131,12 +131,12 @@ class AgentTriggerExecutor:
         
         try:
             sandbox_pass = str(uuid.uuid4())
-            sandbox = create_sandbox(sandbox_pass, project_id)
+            sandbox = await create_sandbox(sandbox_pass, project_id)
             sandbox_id = sandbox.id
             logger.info(f"Created sandbox {sandbox_id} for trigger project {project_id}")
 
-            vnc_link = sandbox.get_preview_link(6080)
-            website_link = sandbox.get_preview_link(8080)
+            vnc_link = await sandbox.get_preview_link(6080)
+            website_link = await sandbox.get_preview_link(8080)
             vnc_url = vnc_link.url if hasattr(vnc_link, 'url') else str(vnc_link).split("url='")[1].split("'")[0]
             website_url = website_link.url if hasattr(website_link, 'url') else str(website_link).split("url='")[1].split("'")[0]
             token = None

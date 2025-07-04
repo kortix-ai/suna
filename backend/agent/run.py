@@ -710,18 +710,18 @@ async def run_agent(
 #     tool_usage_counter = 0 # Renamed from tool_call_counter as we track usage via status
 
 #     # Create a test sandbox for processing with a unique test prefix to avoid conflicts with production sandboxes
-#     sandbox_pass = str(uuid4())
-#     sandbox = create_sandbox(sandbox_pass)
+#     # sandbox_pass = str(uuid4())
+#     # sandbox = await create_sandbox(sandbox_pass)
 
 #     # Store the original ID so we can refer to it
-#     original_sandbox_id = sandbox.id
+#     # original_sandbox_id = sandbox.id
 
 #     # Generate a clear test identifier
-#     test_prefix = f"test_{uuid4().hex[:8]}_"
+#     # test_prefix = f"test_{uuid4().hex[:8]}_"
 #     logger.info(f"Created test sandbox with ID {original_sandbox_id} and test prefix {test_prefix}")
 
 #     # Log the sandbox URL for debugging
-#     print(f"\033[91mTest sandbox created: {str(sandbox.get_preview_link(6080))}/vnc_lite.html?password={sandbox_pass}\033[0m")
+#     # print(f"\033[91mTest sandbox created: {str(await sandbox.get_preview_link(6080))}/vnc_lite.html?password={sandbox_pass}\033[0m")
 
 #     async for chunk in run_agent(
 #         thread_id=thread_id,

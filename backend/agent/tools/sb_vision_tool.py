@@ -198,7 +198,7 @@ class SandboxVisionTool(SandboxToolsBase):
 
                 # Check if file exists and get info
                 try:
-                    file_info = self.sandbox.fs.get_file_info(full_path)
+                    file_info = await self.sandbox.fs.get_file_info(full_path)
                     if file_info.is_dir:
                         return self.fail_response(f"Path '{cleaned_path}' is a directory, not an image file.")
                 except Exception as e:
@@ -210,7 +210,7 @@ class SandboxVisionTool(SandboxToolsBase):
 
                 # Read image file content
                 try:
-                    image_bytes = self.sandbox.fs.download_file(full_path)
+                    image_bytes = await self.sandbox.fs.download_file(full_path)
                 except Exception as e:
                     return self.fail_response(f"Could not read image file: {cleaned_path}")
 

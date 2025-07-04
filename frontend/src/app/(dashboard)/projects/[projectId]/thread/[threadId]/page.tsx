@@ -18,7 +18,6 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { isLocalMode } from '@/lib/config';
 import { ThreadContent } from '@/components/thread/content/ThreadContent';
 import { ThreadSkeleton } from '@/components/thread/content/ThreadSkeleton';
-import { WorkflowInfo } from '@/components/thread/workflow-info';
 import { useAddUserMessageMutation } from '@/hooks/react-query/threads/use-messages';
 import { useStartAgentMutation, useStopAgentMutation } from '@/hooks/react-query/threads/use-agent-run';
 import { useSubscription } from '@/hooks/react-query/subscriptions/use-subscriptions';
@@ -664,6 +663,13 @@ export default function ThreadPage({
               agentName={agent && agent.name}
               selectedAgentId={selectedAgentId}
               onAgentSelect={setSelectedAgentId}
+              toolCalls={toolCalls}
+              toolCallIndex={currentToolIndex}
+              showToolPreview={!isSidePanelOpen && toolCalls.length > 0}
+              onExpandToolPreview={() => {
+                setIsSidePanelOpen(true);
+                userClosedPanelRef.current = false;
+              }}
             />
           </div>
         </div>

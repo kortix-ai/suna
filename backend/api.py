@@ -161,17 +161,6 @@ app.include_router(secure_mcp_api.router, prefix="/api/secure-mcp")
 app.include_router(transcription_api.router, prefix="/api")
 app.include_router(email_api.router, prefix="/api")
 
-from workflows import api as workflows_api
-workflows_api.initialize(db)
-app.include_router(workflows_api.router, prefix="/api")
-
-from webhooks import api as webhooks_api
-webhooks_api.initialize(db)
-app.include_router(webhooks_api.router, prefix="/api")
-
-from scheduling import api as scheduling_api
-app.include_router(scheduling_api.router)
-
 from knowledge_base import api as knowledge_base_api
 app.include_router(knowledge_base_api.router, prefix="/api")
 
