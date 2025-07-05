@@ -66,6 +66,7 @@ dependencies = [
   "openpyxl==3.1.2",
   "chardet==5.2.0",
   "PyYAML==6.0.1",
+  "resumable-stream",
 ]
 
 [project.urls]
@@ -74,3 +75,6 @@ repository = "https://github.com/kortix-ai/suna"
 
 [tool.uv]
 package = false
+
+[tool.uv.sources]
+resumable-stream = { git = "https://github.com/kortix-ai/resumable-stream-python", tag = "v0.0.2" }

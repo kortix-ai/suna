@@ -3,7 +3,7 @@ import structlog, logging, os
 ENV_MODE = os.getenv("ENV_MODE", "LOCAL")
 
 renderer = [structlog.processors.JSONRenderer()]
-if ENV_MODE.lower() == "local".lower():
+if ENV_MODE.lower() == "local".lower() or ENV_MODE.lower() == "staging".lower():
     renderer = [structlog.dev.ConsoleRenderer()]
 
 structlog.configure(

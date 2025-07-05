@@ -10,6 +10,7 @@ import jwt
 from pydantic import BaseModel
 import tempfile
 import os
+from resumable_stream.runtime import create_resumable_stream_context, ResumableStreamContext
 
 from agentpress.thread_manager import ThreadManager
 from services.supabase import DBConnection
@@ -20,7 +21,7 @@ from services.billing import check_billing_status, can_use_model
 from utils.config import config
 from sandbox.sandbox import create_sandbox, delete_sandbox, get_or_start_sandbox
 from services.llm import make_llm_api_call
-from run_agent_background import run_agent_background, _cleanup_redis_response_list, update_agent_run_status
+from run_agent_background import run_agent_background, update_agent_run_status
 from utils.constants import MODEL_NAME_ALIASES
 from flags.flags import is_enabled
 
@@ -32,6 +33,15 @@ instance_id = None # Global instance ID for this backend instance
 # TTL for Redis response lists (24 hours)
 REDIS_RESPONSE_LIST_TTL = 3600 * 24
 
+stream_context_global: Optional[ResumableStreamContext] = None
+
+async def get_stream_context():
+    global stream_context_global
+    if stream_context_global:
+        return stream_context_global
+    r = await redis.initialize_async()
+    stream_context_global = create_resumable_stream_context(r, "resumable_stream")
+    return stream_context_global
 
 class AgentStartRequest(BaseModel):
     model_name: Optional[str] = None  # Will be set from config.MODEL_TO_USE in the endpoint
@@ -174,61 +184,16 @@ async def cleanup():
 async def stop_agent_run(agent_run_id: str, error_message: Optional[str] = None):
     """Update database and publish stop signal to Redis."""
     logger.info(f"Stopping agent run: {agent_run_id}")
-    client = await db.client
+    stop_redis_key = f"stop_signal:{agent_run_id}"
+    await redis.client.set(stop_redis_key, "STOP", ex=redis.REDIS_KEY_TTL)
+    
     final_status = "failed" if error_message else "stopped"
-
-    # Attempt to fetch final responses from Redis
-    response_list_key = f"agent_run:{agent_run_id}:responses"
-    all_responses = []
-    try:
-        all_responses_json = await redis.lrange(response_list_key, 0, -1)
-        all_responses = [json.loads(r) for r in all_responses_json]
-        logger.info(f"Fetched {len(all_responses)} responses from Redis for DB update on stop/fail: {agent_run_id}")
-    except Exception as e:
-        logger.error(f"Failed to fetch responses from Redis for {agent_run_id} during stop/fail: {e}")
-        # Try fetching from DB as a fallback? Or proceed without responses? Proceeding without for now.
-
-    # Update the agent run status in the database
-    update_success = await update_agent_run_status(
-        client, agent_run_id, final_status, error=error_message, responses=all_responses
+    client = await db.client
+    await update_agent_run_status(
+        client, agent_run_id, final_status, error=error_message
     )
-
-    if not update_success:
-        logger.error(f"Failed to update database status for stopped/failed run {agent_run_id}")
-
-    # Send STOP signal to the global control channel
-    global_control_channel = f"agent_run:{agent_run_id}:control"
-    try:
-        await redis.publish(global_control_channel, "STOP")
-        logger.debug(f"Published STOP signal to global channel {global_control_channel}")
-    except Exception as e:
-        logger.error(f"Failed to publish STOP signal to global channel {global_control_channel}: {str(e)}")
-
-    # Find all instances handling this agent run and send STOP to instance-specific channels
-    try:
-        instance_keys = await redis.keys(f"active_run:*:{agent_run_id}")
-        logger.debug(f"Found {len(instance_keys)} active instance keys for agent run {agent_run_id}")
-
-        for key in instance_keys:
-            # Key format: active_run:{instance_id}:{agent_run_id}
-            parts = key.split(":")
-            if len(parts) == 3:
-                instance_id_from_key = parts[1]
-                instance_control_channel = f"agent_run:{agent_run_id}:control:{instance_id_from_key}"
-                try:
-                    await redis.publish(instance_control_channel, "STOP")
-                    logger.debug(f"Published STOP signal to instance channel {instance_control_channel}")
-                except Exception as e:
-                    logger.warning(f"Failed to publish STOP signal to instance channel {instance_control_channel}: {str(e)}")
-            else:
-                 logger.warning(f"Unexpected key format found: {key}")
-
-        # Clean up the response list immediately on stop/fail
-        await _cleanup_redis_response_list(agent_run_id)
-
-    except Exception as e:
-        logger.error(f"Failed to find or signal active instances for {agent_run_id}: {str(e)}")
-
+    instance_key = f"active_run:{instance_id}:{agent_run_id}"
+    await redis.client.delete(instance_key)
     logger.info(f"Successfully initiated stop process for agent run: {agent_run_id}")
 
 # async def restore_running_agent_runs():
@@ -465,8 +430,9 @@ async def start_agent(
 
     request_id = structlog.contextvars.get_contextvars().get('request_id')
 
-    # Run the agent in the background
-    run_agent_background.send(
+    stream_context = await get_stream_context()
+
+    stream = await stream_context.resumable_stream(agent_run_id, lambda: run_agent_background(
         agent_run_id=agent_run_id, thread_id=thread_id, instance_id=instance_id,
         project_id=project_id,
         model_name=model_name,  # Already resolved above
@@ -475,8 +441,14 @@ async def start_agent(
         agent_config=agent_config,  # Pass agent configuration
         is_agent_builder=is_agent_builder,
         target_agent_id=target_agent_id,
-        request_id=request_id,
-    )
+        request_id=request_id
+    ))
+
+    async def stream_in_background(s):
+        async for _ in s:
+            pass
+    
+    asyncio.create_task(stream_in_background(stream))
 
     return {"agent_run_id": agent_run_id, "status": "running"}
 
@@ -647,7 +619,7 @@ async def stream_agent_run(
     token: Optional[str] = None,
     request: Request = None
 ):
-    """Stream the responses of an agent run using Redis Lists and Pub/Sub."""
+    """Stream the responses of an agent run using resumable streams."""
     logger.info(f"Starting stream for agent run: {agent_run_id}")
     client = await db.client
 
@@ -659,175 +631,22 @@ async def stream_agent_run(
         user_id=user_id,
     )
 
-    response_list_key = f"agent_run:{agent_run_id}:responses"
-    response_channel = f"agent_run:{agent_run_id}:new_response"
-    control_channel = f"agent_run:{agent_run_id}:control" # Global control channel
-
-    async def stream_generator():
-        logger.debug(f"Streaming responses for {agent_run_id} using Redis list {response_list_key} and channel {response_channel}")
-        last_processed_index = -1
-        pubsub_response = None
-        pubsub_control = None
-        listener_task = None
-        terminate_stream = False
-        initial_yield_complete = False
-
-        try:
-            # 1. Fetch and yield initial responses from Redis list
-            initial_responses_json = await redis.lrange(response_list_key, 0, -1)
-            initial_responses = []
-            if initial_responses_json:
-                initial_responses = [json.loads(r) for r in initial_responses_json]
-                logger.debug(f"Sending {len(initial_responses)} initial responses for {agent_run_id}")
-                for response in initial_responses:
-                    yield f"data: {json.dumps(response)}\n\n"
-                last_processed_index = len(initial_responses) - 1
-            initial_yield_complete = True
-
-            # 2. Check run status *after* yielding initial data
-            run_status = await client.table('agent_runs').select('status', 'thread_id').eq("id", agent_run_id).maybe_single().execute()
-            current_status = run_status.data.get('status') if run_status.data else None
-
-            if current_status != 'running':
-                logger.info(f"Agent run {agent_run_id} is not running (status: {current_status}). Ending stream.")
-                yield f"data: {json.dumps({'type': 'status', 'status': 'completed'})}\n\n"
-                return
-          
-            structlog.contextvars.bind_contextvars(
-                thread_id=run_status.data.get('thread_id'),
-            )
-
-            # 3. Set up Pub/Sub listeners for new responses and control signals
-            pubsub_response = await redis.create_pubsub()
-            await pubsub_response.subscribe(response_channel)
-            logger.debug(f"Subscribed to response channel: {response_channel}")
-
-            pubsub_control = await redis.create_pubsub()
-            await pubsub_control.subscribe(control_channel)
-            logger.debug(f"Subscribed to control channel: {control_channel}")
-
-            # Queue to communicate between listeners and the main generator loop
-            message_queue = asyncio.Queue()
-
-            async def listen_messages():
-                response_reader = pubsub_response.listen()
-                control_reader = pubsub_control.listen()
-                tasks = [asyncio.create_task(response_reader.__anext__()), asyncio.create_task(control_reader.__anext__())]
-
-                while not terminate_stream:
-                    done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-                    for task in done:
-                        try:
-                            message = task.result()
-                            if message and isinstance(message, dict) and message.get("type") == "message":
-                                channel = message.get("channel")
-                                data = message.get("data")
-                                if isinstance(data, bytes): data = data.decode('utf-8')
-
-                                if channel == response_channel and data == "new":
-                                    await message_queue.put({"type": "new_response"})
-                                elif channel == control_channel and data in ["STOP", "END_STREAM", "ERROR"]:
-                                    logger.info(f"Received control signal '{data}' for {agent_run_id}")
-                                    await message_queue.put({"type": "control", "data": data})
-                                    return # Stop listening on control signal
-
-                        except StopAsyncIteration:
-                            logger.warning(f"Listener {task} stopped.")
-                            # Decide how to handle listener stopping, maybe terminate?
-                            await message_queue.put({"type": "error", "data": "Listener stopped unexpectedly"})
-                            return
-                        except Exception as e:
-                            logger.error(f"Error in listener for {agent_run_id}: {e}")
-                            await message_queue.put({"type": "error", "data": "Listener failed"})
-                            return
-                        finally:
-                            # Reschedule the completed listener task
-                            if task in tasks:
-                                tasks.remove(task)
-                                if message and isinstance(message, dict) and message.get("channel") == response_channel:
-                                     tasks.append(asyncio.create_task(response_reader.__anext__()))
-                                elif message and isinstance(message, dict) and message.get("channel") == control_channel:
-                                     tasks.append(asyncio.create_task(control_reader.__anext__()))
-
-                # Cancel pending listener tasks on exit
-                for p_task in pending: p_task.cancel()
-                for task in tasks: task.cancel()
-
-
-            listener_task = asyncio.create_task(listen_messages())
-
-            # 4. Main loop to process messages from the queue
-            while not terminate_stream:
-                try:
-                    queue_item = await message_queue.get()
-
-                    if queue_item["type"] == "new_response":
-                        # Fetch new responses from Redis list starting after the last processed index
-                        new_start_index = last_processed_index + 1
-                        new_responses_json = await redis.lrange(response_list_key, new_start_index, -1)
-
-                        if new_responses_json:
-                            new_responses = [json.loads(r) for r in new_responses_json]
-                            num_new = len(new_responses)
-                            # logger.debug(f"Received {num_new} new responses for {agent_run_id} (index {new_start_index} onwards)")
-                            for response in new_responses:
-                                yield f"data: {json.dumps(response)}\n\n"
-                                # Check if this response signals completion
-                                if response.get('type') == 'status' and response.get('status') in ['completed', 'failed', 'stopped']:
-                                    logger.info(f"Detected run completion via status message in stream: {response.get('status')}")
-                                    terminate_stream = True
-                                    break # Stop processing further new responses
-                            last_processed_index += num_new
-                        if terminate_stream: break
-
-                    elif queue_item["type"] == "control":
-                        control_signal = queue_item["data"]
-                        terminate_stream = True # Stop the stream on any control signal
-                        yield f"data: {json.dumps({'type': 'status', 'status': control_signal})}\n\n"
-                        break
-
-                    elif queue_item["type"] == "error":
-                        logger.error(f"Listener error for {agent_run_id}: {queue_item['data']}")
-                        terminate_stream = True
-                        yield f"data: {json.dumps({'type': 'status', 'status': 'error'})}\n\n"
-                        break
-
-                except asyncio.CancelledError:
-                     logger.info(f"Stream generator main loop cancelled for {agent_run_id}")
-                     terminate_stream = True
-                     break
-                except Exception as loop_err:
-                    logger.error(f"Error in stream generator main loop for {agent_run_id}: {loop_err}", exc_info=True)
-                    terminate_stream = True
-                    yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': f'Stream failed: {loop_err}'})}\n\n"
-                    break
-
-        except Exception as e:
-            logger.error(f"Error setting up stream for agent run {agent_run_id}: {e}", exc_info=True)
-            # Only yield error if initial yield didn't happen
-            if not initial_yield_complete:
-                 yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': f'Failed to start stream: {e}'})}\n\n"
-        finally:
-            terminate_stream = True
-            # Graceful shutdown order: unsubscribe → close → cancel
-            if pubsub_response: await pubsub_response.unsubscribe(response_channel)
-            if pubsub_control: await pubsub_control.unsubscribe(control_channel)
-            if pubsub_response: await pubsub_response.close()
-            if pubsub_control: await pubsub_control.close()
-
-            if listener_task:
-                listener_task.cancel()
-                try:
-                    await listener_task  # Reap inner tasks & swallow their errors
-                except asyncio.CancelledError:
-                    pass
-                except Exception as e:
-                    logger.debug(f"listener_task ended with: {e}")
-            # Wait briefly for tasks to cancel
-            await asyncio.sleep(0.1)
-            logger.debug(f"Streaming cleanup complete for agent run: {agent_run_id}")
-
-    return StreamingResponse(stream_generator(), media_type="text/event-stream", headers={
+    stream_context = await get_stream_context()
+    # Use resumable stream to get existing stream for this agent run
+    stream = await stream_context.resume_existing_stream(agent_run_id)
+    
+    # If stream is None, retry for 5 seconds
+    if stream is None:
+        import time
+        start_time = time.time()
+        while stream is None and (time.time() - start_time) < 10:
+            await asyncio.sleep(0.5)
+            stream = await stream_context.resume_existing_stream(agent_run_id)
+    
+    if stream is None:
+        return
+    
+    return StreamingResponse(stream, media_type="text/event-stream", headers={
         "Cache-Control": "no-cache, no-transform", "Connection": "keep-alive",
         "X-Accel-Buffering": "no", "Content-Type": "text/event-stream",
         "Access-Control-Allow-Origin": "*"
@@ -1114,8 +933,8 @@ async def initiate_agent_with_files(
 
         request_id = structlog.contextvars.get_contextvars().get('request_id')
 
-        # Run agent in background
-        run_agent_background.send(
+        stream_context = await get_stream_context()
+        stream_generator = await stream_context.resumable_stream(agent_run_id, lambda: run_agent_background(
             agent_run_id=agent_run_id, thread_id=thread_id, instance_id=instance_id,
             project_id=project_id,
             model_name=model_name,  # Already resolved above
@@ -1125,7 +944,13 @@ async def initiate_agent_with_files(
             is_agent_builder=is_agent_builder,
             target_agent_id=target_agent_id,
             request_id=request_id,
-        )
+        ))
+
+        async def stream_in_background(s):
+            async for _ in s:
+                pass
+        
+        asyncio.create_task(stream_in_background(stream_generator))
 
         return {"thread_id": thread_id, "agent_run_id": agent_run_id}
 

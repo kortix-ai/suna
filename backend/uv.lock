@@ -2198,6 +2198,11 @@ wheels = [
 ]
 
 [[package]]
+name = "resumable-stream"
+version = "0.0.1"
+source = { git = "https://github.com/kortix-ai/resumable-stream-python?tag=v0.0.2#822c2518697c67c2f21480807474c1df1e7e2322" }
+
+[[package]]
 name = "rpds-py"
 version = "0.25.1"
 source = { registry = "https://pypi.org/simple" }
@@ -2447,6 +2452,7 @@ dependencies = [
     { name = "questionary" },
     { name = "redis" },
     { name = "requests" },
+    { name = "resumable-stream" },
     { name = "sentry-sdk", extra = ["fastapi"] },
     { name = "setuptools" },
     { name = "stripe" },
@@ -2506,6 +2512,7 @@ requires-dist = [
     { name = "questionary", specifier = "==2.0.1" },
     { name = "redis", specifier = "==5.2.1" },
     { name = "requests", specifier = "==2.32.3" },
+    { name = "resumable-stream", git = "https://github.com/kortix-ai/resumable-stream-python?tag=v0.0.2" },
     { name = "sentry-sdk", extras = ["fastapi"], specifier = "==2.29.1" },
     { name = "setuptools", specifier = "==75.3.0" },
     { name = "stripe", specifier = "==12.0.1" },
