@@ -6,77 +6,83 @@ import { Textarea } from "../ui/textarea";
 import { toast } from "sonner";
 import { backendApi } from '@/lib/api-client';
 
-type SubmitStatus = 'idle' | 'submitting' | 'success' | 'error';
-
 interface FeedbackProps {
   messageId: string;
   initialFeedback?: boolean | null;
 }
 
 export default function Feedback({ messageId, initialFeedback = null }: FeedbackProps) {
-  const [open, setOpen] = useState<boolean>(false);
-  const [responseIsGood, setResponseIsGood] = useState<boolean | null>(initialFeedback);
-  const [feedback, setFeedback] = useState<string>('');
-  const [submitStatus, setSubmitStatus] = useState<SubmitStatus>(initialFeedback !== null ? 'success' : 'idle');
+  const [open, setOpen] = useState(false);
+  const [submittedFeedback, setSubmittedFeedback] = useState<boolean | null>(initialFeedback);
+  const [feedback, setFeedback] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [currentSelection, setCurrentSelection] = useState<boolean | null>(null);
 
   const handleClick = (isGood: boolean) => {
-    setResponseIsGood(isGood);
+    setCurrentSelection(isGood);
     setOpen(true);
   };
 
   const handleSubmit = async () => {
-    if (responseIsGood === null) return;
-    setSubmitStatus('submitting');
+    if (currentSelection === null) return;
+    
+    setIsSubmitting(true);
     
     try {
       const { success } = await backendApi.post('/feedback/', {
         message_id: messageId,
-        is_good: responseIsGood,
+        is_good: currentSelection,
         feedback: feedback.trim() || null,
       });
-      setSubmitStatus('success');
+      
       if (success) {
+        setSubmittedFeedback(currentSelection);
         toast.success('Feedback submitted - thank you!');
         setOpen(false);
         setFeedback('');
-        setSubmitStatus('success');
+        setCurrentSelection(null);
       }
     } catch (error) {
       console.error('Failed to submit feedback:', error);
-      setSubmitStatus('error');
       toast.error('Failed to submit feedback');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleOpenChange = (newOpen: boolean) => {
+    setOpen(newOpen);
+    if (!newOpen) {
+      // Reset form state when closing without submitting
+      setFeedback('');
+      setCurrentSelection(null);
     }
   };
 
   return (
-    <div className="flex items-center gap-1">
-      <Button 
-        className="h-7 w-7 opacity-70 hover:opacity-100" 
-        variant="ghost"
+    <div className="flex items-center p-0">
+      <button 
+        className="h-5 w-5 p-0" 
         onClick={() => handleClick(true)}
       >
-        <ThumbsUp className={`h-4 w-4 ${submitStatus === 'success' && responseIsGood ? 'fill-white' : ''}`} />
+        <ThumbsUp className={`h-4 w-4 ${submittedFeedback === true ? 'fill-current' : ''}`} />
         <span className="sr-only">Good response</span>
-      </Button>
-      <Button 
-        className="h-7 w-7 opacity-70 hover:opacity-100" 
-        size="icon" 
-        variant="ghost"
+      </button>
+      <button 
+        className="h-6 w-6 p-0" 
         onClick={() => handleClick(false)}
       >
-        <ThumbsDown className={`h-4 w-4 ${submitStatus === 'success' && responseIsGood === false ? 'fill-white' : ''}`} />
+        <ThumbsDown className={`h-4 w-4 ${submittedFeedback === false ? 'fill-current' : ''}`} />
         <span className="sr-only">Bad response</span>
-      </Button>
-
-      <Dialog open={open} onOpenChange={setOpen}>
+      </button>
+      
+      <Dialog open={open} onOpenChange={handleOpenChange}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Feedback</DialogTitle>
           </DialogHeader>
-          <span
-            className="text-sm text-muted-foreground"
-          >
-            {`What was ${responseIsGood === false ? 'un' : ''}satisfying about this response?`}
+          <span className="text-sm text-muted-foreground">
+            {`What was ${currentSelection === false ? 'un' : ''}satisfying about this response?`}
           </span>
           <Textarea 
             className="resize-none my-2" 
@@ -91,13 +97,16 @@ export default function Feedback({ messageId, initialFeedback = null }: Feedback
                 <span className="sr-only">Cancel feedback</span>
               </Button>
             </DialogClose>
-            <Button onClick={handleSubmit} disabled={submitStatus === 'submitting' || responseIsGood === null}>
-              {submitStatus === 'submitting' ? 'Submitting...' : 'Submit'}
+            <Button 
+              onClick={handleSubmit} 
+              disabled={isSubmitting || currentSelection === null}
+            >
+              {isSubmitting ? 'Submitting...' : 'Submit'}
               <span className="sr-only">Submit feedback</span>
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
-  )
+  );
 }
