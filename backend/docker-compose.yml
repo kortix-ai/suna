@@ -81,8 +81,8 @@ services:
 
   redis:
     image: redis:8-alpine
-    # ports:
-    #   - "127.0.0.1:6379:6379"
+    ports:
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
       - ./services/docker/redis.conf:/usr/local/etc/redis/redis.conf:ro
@@ -104,8 +104,8 @@ services:
 
   rabbitmq:
     image: rabbitmq
-    # ports:
-    #   - "127.0.0.1:5672:5672"
+    ports:
+      - "127.0.0.1:5672:5672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     restart: unless-stopped

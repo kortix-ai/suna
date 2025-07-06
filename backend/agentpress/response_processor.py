@@ -1602,51 +1602,6 @@ class ResponseProcessor:
                 )
                 return message_obj # Return the full message object
             
-            # Check if this is an MCP tool (function_name starts with "call_mcp_tool")
-            function_name = tool_call.get("function_name", "")
-            
-            # Check if this is an MCP tool - either the old call_mcp_tool or a dynamically registered MCP tool
-            is_mcp_tool = False
-            if function_name == "call_mcp_tool":
-                is_mcp_tool = True
-            else:
-                # Check if the result indicates it's an MCP tool by looking for MCP metadata
-                if hasattr(result, 'output') and isinstance(result.output, str):
-                    # Check for MCP metadata pattern in the output
-                    if "MCP Tool Result from" in result.output and "Tool Metadata:" in result.output:
-                        is_mcp_tool = True
-                    # Also check for MCP metadata in JSON format
-                    elif "mcp_metadata" in result.output:
-                        is_mcp_tool = True
-            
-            if is_mcp_tool:
-                # Special handling for MCP tools - make content prominent and LLM-friendly
-                result_role = "user" if strategy == "user_message" else "assistant"
-                
-                # Extract the actual content from the ToolResult
-                if hasattr(result, 'output'):
-                    mcp_content = str(result.output)
-                else:
-                    mcp_content = str(result)
-                
-                # Create a simple, LLM-friendly message format that puts content first
-                simple_message = {
-                    "role": result_role,
-                    "content": mcp_content  # Direct content, no complex nesting
-                }
-                
-                logger.info(f"Adding MCP tool result with simplified format for LLM visibility")
-                self.trace.event(name="adding_mcp_tool_result_simplified", level="DEFAULT", status_message="Adding MCP tool result with simplified format for LLM visibility")
-                
-                message_obj = await self.add_message(
-                    thread_id=thread_id, 
-                    type="tool",
-                    content=simple_message,
-                    is_llm_message=True,
-                    metadata=metadata
-                )
-                return message_obj
-            
             # For XML and other non-native tools, use the new structured format
             # Determine message role based on strategy
             result_role = "user" if strategy == "user_message" else "assistant"
@@ -1780,28 +1735,6 @@ class ResponseProcessor:
         #     return summary
             
         return structured_result_v1
-
-    def _format_xml_tool_result(self, tool_call: Dict[str, Any], result: ToolResult) -> str:
-        """Format a tool result wrapped in a <tool_result> tag.
-        
-        DEPRECATED: This method is kept for backwards compatibility.
-        New implementations should use _create_structured_tool_result instead.
-
-        Args:
-            tool_call: The tool call that was executed
-            result: The result of the tool execution
-
-        Returns:
-            String containing the formatted result wrapped in <tool_result> tag
-        """
-        # Always use xml_tag_name if it exists
-        if "xml_tag_name" in tool_call:
-            xml_tag_name = tool_call["xml_tag_name"]
-            return f"<tool_result> <{xml_tag_name}> {str(result)} </{xml_tag_name}> </tool_result>"
-        
-        # Non-XML tool, just return the function result
-        function_name = tool_call["function_name"]
-        return f"Result for {function_name}: {str(result)}"
 
     def _create_tool_context(self, tool_call: Dict[str, Any], tool_index: int, assistant_message_id: Optional[str] = None, parsing_details: Optional[Dict[str, Any]] = None) -> ToolExecutionContext:
         """Create a tool execution context with display name and parsing details populated."""

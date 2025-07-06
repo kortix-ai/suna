@@ -83,7 +83,7 @@ export function AttachmentGroup({
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: 'auto' }}
                 exit={{ opacity: 0, height: 0 }}
-                className={layout === 'inline' ? "mb-3 py-1 px-0.5" : "mt-4"}
+                className={layout === 'inline' ? "" : "mt-4"}
             />
         );
     }
@@ -277,9 +277,9 @@ export function AttachmentGroup({
         } else {
             // For inline layout with pre-computed data
             return (
-                <div className={cn("flex flex-wrap gap-3", className)} style={{ maxHeight }}>
+                <div className={cn("flex flex-wrap gap-3", className)}>
                     {visibleFilesWithMeta.map((item, index) => (
-                        <div key={index} className={cn("relative group", item.wrapperClassName)}>
+                        <div key={index} className={cn("relative group h-[54px]", item.wrapperClassName)}>
                             <FileAttachment
                                 filepath={item.path}
                                 onClick={handleFileClick}
@@ -346,16 +346,18 @@ export function AttachmentGroup({
             <AnimatePresence>
                 <motion.div
                     initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
+                    animate={{
+                        opacity: 1, height: 'auto'
+                    }}
                     exit={{ opacity: 0, height: 0 }}
-                    className={layout === 'inline' ? "mb-3 py-1 px-0.5" : "mt-4"}
+                    className={layout === 'inline' ? "pt-1.5 px-1.5 pb-0" : "mt-4"}
                 >
                     {renderContent()}
                 </motion.div>
-            </AnimatePresence>
+            </AnimatePresence >
 
             {/* Modal dialog to show all files - conditionally rendered based on isModalOpen state */}
-            <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+            < Dialog open={isModalOpen} onOpenChange={setIsModalOpen} >
                 <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
                     <DialogHeader className="mb-1">
                         <DialogTitle>
@@ -481,7 +483,7 @@ export function AttachmentGroup({
                         })()}
                     </div>
                 </DialogContent>
-            </Dialog>
+            </Dialog >
         </>
     );
 } 

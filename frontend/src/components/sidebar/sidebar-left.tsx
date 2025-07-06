@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Bot, Menu, Store, Shield, Key, Workflow } from 'lucide-react';
+import { Bot, Menu, Store, Shield, Key, Workflow, Plus } from 'lucide-react';
 
 import { NavAgents } from '@/components/sidebar/nav-agents';
 import { NavUserWithTeams } from '@/components/sidebar/nav-user-with-teams';
@@ -132,22 +132,20 @@ export function SidebarLeft({
       <SidebarContent className="[&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
         {!flagsLoading && (customAgentsEnabled || marketplaceEnabled) && (
           <SidebarGroup>
-            {customAgentsEnabled && (
-              <Link href="/agents">
-                <SidebarMenuButton className={cn({
-                  'bg-primary/10 font-medium': pathname === '/agents',
-                })}>
-                  <Bot className="h-4 w-4 mr-2" />
-                  <span className="flex items-center justify-between w-full">
-                    Agent Playground
-                  </span>
-                </SidebarMenuButton>
-              </Link>
-            )}
+            <Link href="/dashboard">
+              <SidebarMenuButton className={cn({
+                'bg-accent text-accent-foreground font-medium': pathname === '/dashboard',
+              })}>
+                <Plus className="h-4 w-4 mr-2" />
+                <span className="flex items-center justify-between w-full">
+                  New Task
+                </span>
+              </SidebarMenuButton>
+            </Link>
             {marketplaceEnabled && (
               <Link href="/marketplace">
                 <SidebarMenuButton className={cn({
-                  'bg-primary/10 font-medium': pathname === '/marketplace',
+                  'bg-accent text-accent-foreground font-medium': pathname === '/marketplace',
                 })}>
                   <Store className="h-4 w-4 mr-2" />
                   <span className="flex items-center justify-between w-full">
@@ -157,9 +155,21 @@ export function SidebarLeft({
               </Link>
             )}
             {customAgentsEnabled && (
+              <Link href="/agents">
+                <SidebarMenuButton className={cn({
+                  'bg-accent text-accent-foreground font-medium': pathname === '/agents',
+                })}>
+                  <Bot className="h-4 w-4 mr-2" />
+                  <span className="flex items-center justify-between w-full">
+                    Agent Playground
+                  </span>
+                </SidebarMenuButton>
+              </Link>
+            )}
+            {customAgentsEnabled && (
               <Link href="/settings/credentials">
                 <SidebarMenuButton className={cn({
-                  'bg-primary/10 font-medium': pathname === '/settings/credentials',
+                  'bg-accent text-accent-foreground font-medium': pathname === '/settings/credentials',
                 })}>
                   <Key className="h-4 w-4 mr-2" />
                   <span className="flex items-center justify-between w-full">

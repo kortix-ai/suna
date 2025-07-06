@@ -12,7 +12,7 @@ classifiers = [
 requires-python = ">=3.11"
 dependencies = [
   "python-dotenv==1.0.1",
-  "litellm==1.66.1",
+  "litellm==1.72.2",
   "click==8.1.7",
   "questionary==2.0.1",
   "requests==2.32.3",
@@ -38,7 +38,7 @@ dependencies = [
   "daytona-api-client==0.21.0",
   "daytona-api-client-async==0.21.0",
   "boto3==1.37.3",
-  "openai==1.72.0",
+  "openai==1.90.0",
   "nest-asyncio==1.6.0",
   "vncdotool==1.2.0",
   "tavily-python==0.5.4",

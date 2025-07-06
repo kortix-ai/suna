@@ -6,9 +6,10 @@ reaching the context window limitations of LLM models.
 """
 
 import json
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 
-from litellm import token_counter, completion_cost
+from litellm.utils import token_counter
+from litellm.cost_calculator import completion_cost
 from services.supabase import DBConnection
 from services.llm import make_llm_api_call
 from utils.logger import logger
@@ -29,270 +30,291 @@ class ContextManager:
         """
         self.db = DBConnection()
         self.token_threshold = token_threshold
+
+    def is_tool_result_message(self, msg: Dict[str, Any]) -> bool:
+        """Check if a message is a tool result message."""
+        if not ("content" in msg and msg['content']):
+            return False
+        content = msg['content']
+        if isinstance(content, str) and "ToolResult" in content: 
+            return True
+        if isinstance(content, dict) and "tool_execution" in content: 
+            return True
+        if isinstance(content, dict) and "interactive_elements" in content: 
+            return True
+        if isinstance(content, str):
+            try:
+                parsed_content = json.loads(content)
+                if isinstance(parsed_content, dict) and "tool_execution" in parsed_content: 
+                    return True
+                if isinstance(parsed_content, dict) and "interactive_elements" in content: 
+                    return True
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return False
     
-    async def get_thread_token_count(self, thread_id: str) -> int:
-        """Get the current token count for a thread using LiteLLM.
-        
-        Args:
-            thread_id: ID of the thread to analyze
-            
-        Returns:
-            The total token count for relevant messages in the thread
-        """
-        logger.debug(f"Getting token count for thread {thread_id}")
-        
-        try:
-            # Get messages for the thread
-            messages = await self.get_messages_for_summarization(thread_id)
-            
-            if not messages:
-                logger.debug(f"No messages found for thread {thread_id}")
-                return 0
-            
-            # Use litellm's token_counter for accurate model-specific counting
-            # This is much more accurate than the SQL-based estimation
-            token_count = token_counter(model="gpt-4", messages=messages)
-            
-            logger.info(f"Thread {thread_id} has {token_count} tokens (calculated with litellm)")
-            return token_count
-                
-        except Exception as e:
-            logger.error(f"Error getting token count: {str(e)}")
-            return 0
-    
-    async def get_messages_for_summarization(self, thread_id: str) -> List[Dict[str, Any]]:
-        """Get all LLM messages from the thread that need to be summarized.
-        
-        This gets messages after the most recent summary or all messages if
-        no summary exists. Unlike get_llm_messages, this includes ALL messages 
-        since the last summary, even if we're generating a new summary.
-        
-        Args:
-            thread_id: ID of the thread to get messages from
-            
-        Returns:
-            List of message objects to summarize
-        """
-        logger.debug(f"Getting messages for summarization for thread {thread_id}")
-        client = await self.db.client
-        
-        try:
-            # Find the most recent summary message
-            summary_result = await client.table('messages').select('created_at') \
-                .eq('thread_id', thread_id) \
-                .eq('type', 'summary') \
-                .eq('is_llm_message', True) \
-                .order('created_at', desc=True) \
-                .limit(1) \
-                .execute()
-            
-            # Get messages after the most recent summary or all messages if no summary
-            if summary_result.data and len(summary_result.data) > 0:
-                last_summary_time = summary_result.data[0]['created_at']
-                logger.debug(f"Found last summary at {last_summary_time}")
-                
-                # Get all messages after the summary, but NOT including the summary itself
-                messages_result = await client.table('messages').select('*') \
-                    .eq('thread_id', thread_id) \
-                    .eq('is_llm_message', True) \
-                    .gt('created_at', last_summary_time) \
-                    .order('created_at') \
-                    .execute()
+    def compress_message(self, msg_content: Union[str, dict], message_id: Optional[str] = None, max_length: int = 3000) -> Union[str, dict]:
+        """Compress the message content."""
+        if isinstance(msg_content, str):
+            if len(msg_content) > max_length:
+                return msg_content[:max_length] + "... (truncated)" + f"\n\nmessage_id \"{message_id}\"\nUse expand-message tool to see contents"
             else:
-                logger.debug("No previous summary found, getting all messages")
-                # Get all messages
-                messages_result = await client.table('messages').select('*') \
-                    .eq('thread_id', thread_id) \
-                    .eq('is_llm_message', True) \
-                    .order('created_at') \
-                    .execute()
-            
-            # Parse the message content if needed
-            messages = []
-            for msg in messages_result.data:
-                # Skip existing summary messages - we don't want to summarize summaries
-                if msg.get('type') == 'summary':
-                    logger.debug(f"Skipping summary message from {msg.get('created_at')}")
-                    continue
-                    
-                # Parse content if it's a string
-                content = msg['content']
-                if isinstance(content, str):
-                    try:
-                        content = json.loads(content)
-                    except json.JSONDecodeError:
-                        pass  # Keep as string if not valid JSON
+                return msg_content
+        elif isinstance(msg_content, dict):
+            if len(json.dumps(msg_content)) > max_length:
+                return json.dumps(msg_content)[:max_length] + "... (truncated)" + f"\n\nmessage_id \"{message_id}\"\nUse expand-message tool to see contents"
+            else:
+                return msg_content
+        
+    def safe_truncate(self, msg_content: Union[str, dict], max_length: int = 100000) -> Union[str, dict]:
+        """Truncate the message content safely by removing the middle portion."""
+        max_length = min(max_length, 100000)
+        if isinstance(msg_content, str):
+            if len(msg_content) > max_length:
+                # Calculate how much to keep from start and end
+                keep_length = max_length - 150  # Reserve space for truncation message
+                start_length = keep_length // 2
+                end_length = keep_length - start_length
                 
-                # Ensure we have the proper format for the LLM
-                if 'role' not in content and 'type' in msg:
-                    # Convert message type to role if needed
-                    role = msg['type']
-                    if role == 'assistant' or role == 'user' or role == 'system' or role == 'tool':
-                        content = {'role': role, 'content': content}
+                start_part = msg_content[:start_length]
+                end_part = msg_content[-end_length:] if end_length > 0 else ""
                 
-                messages.append(content)
-            
-            logger.info(f"Got {len(messages)} messages to summarize for thread {thread_id}")
-            return messages
-            
-        except Exception as e:
-            logger.error(f"Error getting messages for summarization: {str(e)}", exc_info=True)
-            return []
-    
-    async def create_summary(
-        self, 
-        thread_id: str, 
-        messages: List[Dict[str, Any]], 
-        model: str = "gpt-4o-mini"
-    ) -> Optional[Dict[str, Any]]:
-        """Generate a summary of conversation messages.
+                return start_part + f"\n\n... (middle truncated) ...\n\n" + end_part + f"\n\nThis message is too long, repeat relevant information in your response to remember it"
+            else:
+                return msg_content
+        elif isinstance(msg_content, dict):
+            json_str = json.dumps(msg_content)
+            if len(json_str) > max_length:
+                # Calculate how much to keep from start and end
+                keep_length = max_length - 150  # Reserve space for truncation message
+                start_length = keep_length // 2
+                end_length = keep_length - start_length
+                
+                start_part = json_str[:start_length]
+                end_part = json_str[-end_length:] if end_length > 0 else ""
+                
+                return start_part + f"\n\n... (middle truncated) ...\n\n" + end_part + f"\n\nThis message is too long, repeat relevant information in your response to remember it"
+            else:
+                return msg_content
+  
+    def compress_tool_result_messages(self, messages: List[Dict[str, Any]], llm_model: str, max_tokens: Optional[int], token_threshold: int = 1000) -> List[Dict[str, Any]]:
+        """Compress the tool result messages except the most recent one."""
+        uncompressed_total_token_count = token_counter(model=llm_model, messages=messages)
+        max_tokens_value = max_tokens or (100 * 1000)
+
+        if uncompressed_total_token_count > max_tokens_value:
+            _i = 0  # Count the number of ToolResult messages
+            for msg in reversed(messages):  # Start from the end and work backwards
+                if self.is_tool_result_message(msg):  # Only compress ToolResult messages
+                    _i += 1  # Count the number of ToolResult messages
+                    msg_token_count = token_counter(messages=[msg])  # Count the number of tokens in the message
+                    if msg_token_count > token_threshold:  # If the message is too long
+                        if _i > 1:  # If this is not the most recent ToolResult message
+                            message_id = msg.get('message_id')  # Get the message_id
+                            if message_id:
+                                msg["content"] = self.compress_message(msg["content"], message_id, token_threshold * 3)
+                            else:
+                                logger.warning(f"UNEXPECTED: Message has no message_id {str(msg)[:100]}")
+                        else:
+                            msg["content"] = self.safe_truncate(msg["content"], int(max_tokens_value * 2))
+        return messages
+
+    def compress_user_messages(self, messages: List[Dict[str, Any]], llm_model: str, max_tokens: Optional[int], token_threshold: int = 1000) -> List[Dict[str, Any]]:
+        """Compress the user messages except the most recent one."""
+        uncompressed_total_token_count = token_counter(model=llm_model, messages=messages)
+        max_tokens_value = max_tokens or (100 * 1000)
+
+        if uncompressed_total_token_count > max_tokens_value:
+            _i = 0  # Count the number of User messages
+            for msg in reversed(messages):  # Start from the end and work backwards
+                if msg.get('role') == 'user':  # Only compress User messages
+                    _i += 1  # Count the number of User messages
+                    msg_token_count = token_counter(messages=[msg])  # Count the number of tokens in the message
+                    if msg_token_count > token_threshold:  # If the message is too long
+                        if _i > 1:  # If this is not the most recent User message
+                            message_id = msg.get('message_id')  # Get the message_id
+                            if message_id:
+                                msg["content"] = self.compress_message(msg["content"], message_id, token_threshold * 3)
+                            else:
+                                logger.warning(f"UNEXPECTED: Message has no message_id {str(msg)[:100]}")
+                        else:
+                            msg["content"] = self.safe_truncate(msg["content"], int(max_tokens_value * 2))
+        return messages
+
+    def compress_assistant_messages(self, messages: List[Dict[str, Any]], llm_model: str, max_tokens: Optional[int], token_threshold: int = 1000) -> List[Dict[str, Any]]:
+        """Compress the assistant messages except the most recent one."""
+        uncompressed_total_token_count = token_counter(model=llm_model, messages=messages)
+        max_tokens_value = max_tokens or (100 * 1000)
+        
+        if uncompressed_total_token_count > max_tokens_value:
+            _i = 0  # Count the number of Assistant messages
+            for msg in reversed(messages):  # Start from the end and work backwards
+                if msg.get('role') == 'assistant':  # Only compress Assistant messages
+                    _i += 1  # Count the number of Assistant messages
+                    msg_token_count = token_counter(messages=[msg])  # Count the number of tokens in the message
+                    if msg_token_count > token_threshold:  # If the message is too long
+                        if _i > 1:  # If this is not the most recent Assistant message
+                            message_id = msg.get('message_id')  # Get the message_id
+                            if message_id:
+                                msg["content"] = self.compress_message(msg["content"], message_id, token_threshold * 3)
+                            else:
+                                logger.warning(f"UNEXPECTED: Message has no message_id {str(msg)[:100]}")
+                        else:
+                            msg["content"] = self.safe_truncate(msg["content"], int(max_tokens_value * 2))
+                            
+        return messages
+
+    def remove_meta_messages(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Remove meta messages from the messages."""
+        result: List[Dict[str, Any]] = []
+        for msg in messages:
+            msg_content = msg.get('content')
+            # Try to parse msg_content as JSON if it's a string
+            if isinstance(msg_content, str):
+                try: 
+                    msg_content = json.loads(msg_content)
+                except json.JSONDecodeError: 
+                    pass
+            if isinstance(msg_content, dict):
+                # Create a copy to avoid modifying the original
+                msg_content_copy = msg_content.copy()
+                if "tool_execution" in msg_content_copy:
+                    tool_execution = msg_content_copy["tool_execution"].copy()
+                    if "arguments" in tool_execution:
+                        del tool_execution["arguments"]
+                    msg_content_copy["tool_execution"] = tool_execution
+                # Create a new message dict with the modified content
+                new_msg = msg.copy()
+                new_msg["content"] = json.dumps(msg_content_copy)
+                result.append(new_msg)
+            else:
+                result.append(msg)
+        return result
+
+    def compress_messages(self, messages: List[Dict[str, Any]], llm_model: str, max_tokens: Optional[int] = 41000, token_threshold: int = 4096, max_iterations: int = 5) -> List[Dict[str, Any]]:
+        """Compress the messages.
         
         Args:
-            thread_id: ID of the thread to summarize
-            messages: Messages to summarize
-            model: LLM model to use for summarization
-            
-        Returns:
-            Summary message object or None if summarization failed
+            messages: List of messages to compress
+            llm_model: Model name for token counting
+            max_tokens: Maximum allowed tokens
+            token_threshold: Token threshold for individual message compression (must be a power of 2)
+            max_iterations: Maximum number of compression iterations
+        """
+        # Set model-specific token limits
+        if 'sonnet' in llm_model.lower():
+            max_tokens = 200 * 1000 - 64000 - 28000
+        elif 'gpt' in llm_model.lower():
+            max_tokens = 128 * 1000 - 28000
+        elif 'gemini' in llm_model.lower():
+            max_tokens = 1000 * 1000 - 300000
+        elif 'deepseek' in llm_model.lower():
+            max_tokens = 128 * 1000 - 28000
+        else:
+            max_tokens = 41 * 1000 - 10000
+
+        result = messages
+        result = self.remove_meta_messages(result)
+
+        uncompressed_total_token_count = token_counter(model=llm_model, messages=result)
+
+        result = self.compress_tool_result_messages(result, llm_model, max_tokens, token_threshold)
+        result = self.compress_user_messages(result, llm_model, max_tokens, token_threshold)
+        result = self.compress_assistant_messages(result, llm_model, max_tokens, token_threshold)
+
+        compressed_token_count = token_counter(model=llm_model, messages=result)
+
+        logger.info(f"compress_messages: {uncompressed_total_token_count} -> {compressed_token_count}")  # Log the token compression for debugging later
+
+        if max_iterations <= 0:
+            logger.warning(f"compress_messages: Max iterations reached, omitting messages")
+            result = self.compress_messages_by_omitting_messages(messages, llm_model, max_tokens)
+            return result
+
+        if compressed_token_count > max_tokens:
+            logger.warning(f"Further token compression is needed: {compressed_token_count} > {max_tokens}")
+            result = self.compress_messages(messages, llm_model, max_tokens, token_threshold // 2, max_iterations - 1)
+
+        return self.middle_out_messages(result)
+    
+    def compress_messages_by_omitting_messages(
+            self, 
+            messages: List[Dict[str, Any]], 
+            llm_model: str, 
+            max_tokens: Optional[int] = 41000,
+            removal_batch_size: int = 10,
+            min_messages_to_keep: int = 10
+        ) -> List[Dict[str, Any]]:
+        """Compress the messages by omitting messages from the middle.
+        
+        Args:
+            messages: List of messages to compress
+            llm_model: Model name for token counting
+            max_tokens: Maximum allowed tokens
+            removal_batch_size: Number of messages to remove per iteration
+            min_messages_to_keep: Minimum number of messages to preserve
         """
         if not messages:
-            logger.warning("No messages to summarize")
-            return None
-        
-        logger.info(f"Creating summary for thread {thread_id} with {len(messages)} messages")
-        
-        # Create system message with summarization instructions
-        system_message = {
-            "role": "system",
-            "content": f"""You are a specialized summarization assistant. Your task is to create a concise but comprehensive summary of the conversation history.
-
-The summary should:
-1. Preserve all key information including decisions, conclusions, and important context
-2. Include any tools that were used and their results
-3. Maintain chronological order of events
-4. Be presented as a narrated list of key points with section headers
-5. Include only factual information from the conversation (no new information)
-6. Be concise but detailed enough that the conversation can continue with this summary as context
-
-VERY IMPORTANT: This summary will replace older parts of the conversation in the LLM's context window, so ensure it contains ALL key information and LATEST STATE OF THE CONVERSATION - SO WE WILL KNOW HOW TO PICK UP WHERE WE LEFT OFF.
-
-
-THE CONVERSATION HISTORY TO SUMMARIZE IS AS FOLLOWS:
-===============================================================
-==================== CONVERSATION HISTORY ====================
-{messages}
-==================== END OF CONVERSATION HISTORY ====================
-===============================================================
-"""
-        }
-        
-        try:
-            # Call LLM to generate summary
-            response = await make_llm_api_call(
-                model_name=model,
-                messages=[system_message, {"role": "user", "content": "PLEASE PROVIDE THE SUMMARY NOW."}],
-                temperature=0,
-                max_tokens=SUMMARY_TARGET_TOKENS,
-                stream=False
-            )
+            return messages
             
-            if response and hasattr(response, 'choices') and response.choices:
-                summary_content = response.choices[0].message.content
-                
-                # Track token usage
-                try:
-                    token_count = token_counter(model=model, messages=[{"role": "user", "content": summary_content}])
-                    cost = completion_cost(model=model, prompt="", completion=summary_content)
-                    logger.info(f"Summary generated with {token_count} tokens at cost ${cost:.6f}")
-                except Exception as e:
-                    logger.error(f"Error calculating token usage: {str(e)}")
-                
-                # Format the summary message with clear beginning and end markers
-                formatted_summary = f"""
-======== CONVERSATION HISTORY SUMMARY ========
+        result = messages
+        result = self.remove_meta_messages(result)
 
-{summary_content}
+        # Early exit if no compression needed
+        initial_token_count = token_counter(model=llm_model, messages=result)
+        max_allowed_tokens = max_tokens or (100 * 1000)
+        
+        if initial_token_count <= max_allowed_tokens:
+            return result
 
-======== END OF SUMMARY ========
+        # Separate system message (assumed to be first) from conversation messages
+        system_message = messages[0] if messages and messages[0].get('role') == 'system' else None
+        conversation_messages = result[1:] if system_message else result
+        
+        safety_limit = 500
+        current_token_count = initial_token_count
+        
+        while current_token_count > max_allowed_tokens and safety_limit > 0:
+            safety_limit -= 1
+            
+            if len(conversation_messages) <= min_messages_to_keep:
+                logger.warning(f"Cannot compress further: only {len(conversation_messages)} messages remain (min: {min_messages_to_keep})")
+                break
 
-The above is a summary of the conversation history. The conversation continues below.
-"""
-                
-                # Format the summary message
-                summary_message = {
-                    "role": "user",
-                    "content": formatted_summary
-                }
-                
-                return summary_message
+            # Calculate removal strategy based on current message count
+            if len(conversation_messages) > (removal_batch_size * 2):
+                # Remove from middle, keeping recent and early context
+                middle_start = len(conversation_messages) // 2 - (removal_batch_size // 2)
+                middle_end = middle_start + removal_batch_size
+                conversation_messages = conversation_messages[:middle_start] + conversation_messages[middle_end:]
             else:
-                logger.error("Failed to generate summary: Invalid response")
-                return None
-                
-        except Exception as e:
-            logger.error(f"Error creating summary: {str(e)}", exc_info=True)
-            return None
+                # Remove from earlier messages, preserving recent context
+                messages_to_remove = min(removal_batch_size, len(conversation_messages) // 2)
+                if messages_to_remove > 0:
+                    conversation_messages = conversation_messages[messages_to_remove:]
+                else:
+                    # Can't remove any more messages
+                    break
+
+            # Recalculate token count
+            messages_to_count = ([system_message] + conversation_messages) if system_message else conversation_messages
+            current_token_count = token_counter(model=llm_model, messages=messages_to_count)
+
+        # Prepare final result
+        final_messages = ([system_message] + conversation_messages) if system_message else conversation_messages
+        final_token_count = token_counter(model=llm_model, messages=final_messages)
         
-    async def check_and_summarize_if_needed(
-        self, 
-        thread_id: str, 
-        add_message_callback, 
-        model: str = "gpt-4o-mini",
-        force: bool = False
-    ) -> bool:
-        """Check if thread needs summarization and summarize if so.
+        logger.info(f"compress_messages_by_omitting_messages: {initial_token_count} -> {final_token_count} tokens ({len(messages)} -> {len(final_messages)} messages)")
+            
+        return final_messages
+    
+    def middle_out_messages(self, messages: List[Dict[str, Any]], max_messages: int = 320) -> List[Dict[str, Any]]:
+        """Remove messages from the middle of the list, keeping max_messages total."""
+        if len(messages) <= max_messages:
+            return messages
         
-        Args:
-            thread_id: ID of the thread to check
-            add_message_callback: Callback to add the summary message to the thread
-            model: LLM model to use for summarization
-            force: Whether to force summarization regardless of token count
-            
-        Returns:
-            True if summarization was performed, False otherwise
-        """
-        try:
-            # Get token count using LiteLLM (accurate model-specific counting)
-            token_count = await self.get_thread_token_count(thread_id)
-            
-            # If token count is below threshold and not forcing, no summarization needed
-            if token_count < self.token_threshold and not force:
-                logger.debug(f"Thread {thread_id} has {token_count} tokens, below threshold {self.token_threshold}")
-                return False
-            
-            # Log reason for summarization
-            if force:
-                logger.info(f"Forced summarization of thread {thread_id} with {token_count} tokens")
-            else:
-                logger.info(f"Thread {thread_id} exceeds token threshold ({token_count} >= {self.token_threshold}), summarizing...")
-            
-            # Get messages to summarize
-            messages = await self.get_messages_for_summarization(thread_id)
-            
-            # If there are too few messages, don't summarize
-            if len(messages) < 3:
-                logger.info(f"Thread {thread_id} has too few messages ({len(messages)}) to summarize")
-                return False
-            
-            # Create summary
-            summary = await self.create_summary(thread_id, messages, model)
-            
-            if summary:
-                # Add summary message to thread
-                await add_message_callback(
-                    thread_id=thread_id,
-                    type="summary",
-                    content=summary,
-                    is_llm_message=True,
-                    metadata={"token_count": token_count}
-                )
-                
-                logger.info(f"Successfully added summary to thread {thread_id}")
-                return True
-            else:
-                logger.error(f"Failed to create summary for thread {thread_id}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error in check_and_summarize_if_needed: {str(e)}", exc_info=True)
-            return False 
+        # Keep half from the beginning and half from the end
+        keep_start = max_messages // 2
+        keep_end = max_messages - keep_start
+        
+        return messages[:keep_start] + messages[-keep_end:] 

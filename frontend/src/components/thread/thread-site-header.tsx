@@ -264,7 +264,7 @@ export function SiteHeader({
                 </TooltipContent>
               </Tooltip>
 
-              <Tooltip>
+              {/* <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
@@ -278,7 +278,7 @@ export function SiteHeader({
                 <TooltipContent>
                   <p>Toggle Computer Preview (CMD+I)</p>
                 </TooltipContent>
-              </Tooltip>
+              </Tooltip> */}
             </TooltipProvider>
           )}
         </div>

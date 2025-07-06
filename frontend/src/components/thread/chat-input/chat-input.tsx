@@ -238,12 +238,12 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
         <FloatingToolPreview
           toolCalls={toolCalls}
           currentIndex={toolCallIndex}
-          onExpand={onExpandToolPreview || (() => {})}
+          onExpand={onExpandToolPreview || (() => { })}
           agentName={agentName}
           isVisible={showToolPreview}
         />
         <Card
-          className="-mb-2 bg-red-400 shadow-none w-full max-w-4xl mx-auto bg-transparent border-none rounded-xl overflow-hidden"
+          className="-mb-2 bg-red-400 shadow-none w-full max-w-4xl mx-auto bg-transparent border-none rounded-3xl overflow-hidden"
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={(e) => {
@@ -265,7 +265,7 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
           }}
         >
           <div className="w-full text-sm flex flex-col justify-between items-start rounded-lg">
-            <CardContent className={`w-full p-1.5 pb-2 ${bgColor} rounded-2xl border`}>
+            <CardContent className={`w-full p-1.5 pb-2 ${bgColor} rounded-3xl border`}>
               <AttachmentGroup
                 files={uploadedFiles || []}
                 sandboxId={sandboxId}
@@ -311,7 +311,7 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
           </div>
         </Card>
 
-        {isAgentRunning && (
+        {/* {isAgentRunning && (
           <motion.div
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -322,7 +322,8 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
               <span>{agentName ? `${agentName} is working...` : 'Suna is working...'}</span>
             </div>
           </motion.div>
-        )}
+        )} */}
+
       </div>
     );
   },

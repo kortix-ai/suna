@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, B
 from pydantic import BaseModel, Field, HttpUrl
 from utils.auth_utils import get_current_user_id_from_jwt
 from services.supabase import DBConnection
-from services.file_processor import FileProcessor
+from knowledge_base.file_processor import FileProcessor
 from utils.logger import logger
 from flags.flags import is_enabled
 

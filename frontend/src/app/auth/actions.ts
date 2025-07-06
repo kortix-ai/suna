@@ -6,10 +6,18 @@ import { redirect } from 'next/navigation';
 async function sendWelcomeEmail(email: string, name?: string) {
   try {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
-    const response = await fetch(`${backendUrl}/send-welcome-email-background`, {
+    const adminApiKey = process.env.ADMIN_API_KEY;
+    
+    if (!adminApiKey) {
+      console.error('ADMIN_API_KEY not configured');
+      return;
+    }
+    
+    const response = await fetch(`${backendUrl}/api/send-welcome-email`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'X-Admin-Api-Key': adminApiKey,
       },
       body: JSON.stringify({
         email,
@@ -20,7 +28,8 @@ async function sendWelcomeEmail(email: string, name?: string) {
     if (response.ok) {
       console.log(`Welcome email queued for ${email}`);
     } else {
-      console.error(`Failed to queue welcome email for ${email}`);
+      const errorData = await response.json().catch(() => ({}));
+      console.error(`Failed to queue welcome email for ${email}:`, errorData);
     }
   } catch (error) {
     console.error('Error sending welcome email:', error);

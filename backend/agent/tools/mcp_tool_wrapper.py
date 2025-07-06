@@ -8,7 +8,7 @@ server tool calls through dynamically generated individual function methods.
 import json
 from typing import Any, Dict, List, Optional
 from agentpress.tool import Tool, ToolResult, openapi_schema, xml_schema, ToolSchema, SchemaType
-from mcp_local.client import MCPManager
+from mcp_service.client import MCPManager
 from utils.logger import logger
 import inspect
 from mcp import ClientSession

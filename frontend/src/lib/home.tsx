@@ -143,7 +143,7 @@ export const siteConfig = {
       hours: '2 hours',
       features: [
         '$20/month usage',
-        '+ $5 free included',
+        // '+ $5 free included',
         'Private projects',
         'More models',
       ],
@@ -165,7 +165,7 @@ export const siteConfig = {
       hours: '6 hours',
       features: [
         '$50/month usage',
-        '+ $5 free included',
+        // '+ $5 free included',
         'Private projects',
         'More models',
       ],
@@ -186,7 +186,7 @@ export const siteConfig = {
       hours: '12 hours',
       features: [
         '$100/month usage',
-        '+ $5 free included',
+        // '+ $5 free included',
         'Private projects',
         'Priority support',
       ],
@@ -208,7 +208,7 @@ export const siteConfig = {
       hours: '25 hours',
       features: [
         '$200/month usage',
-        '+ $5 free included',
+        // '+ $5 free included',
         'Private projects',
         'More models',
       ],
@@ -229,7 +229,7 @@ export const siteConfig = {
       hours: '50 hours',
       features: [
         '$400/month usage',
-        '+ $5 free included',
+        // '+ $5 free included',
         'Private projects',
         'Access to intelligent Model (Full Suna)',
         'Priority support',
@@ -253,7 +253,7 @@ export const siteConfig = {
       hours: '125 hours',
       features: [
         '$800/month usage',
-        '+ $5 free included',
+        // '+ $5 free included',
         'Private projects',
         'Access to intelligent Model (Full Suna)',
         'Priority support',
@@ -278,7 +278,7 @@ export const siteConfig = {
       hours: '200 hours',
       features: [
         '$1000/month usage',
-        '+ $5 free included',
+        // '+ $5 free included',
         'Private projects',
         'Access to intelligent Model (Full Suna)',
         'Priority support',

@@ -22,7 +22,7 @@ from sandbox import api as sandbox_api
 from services import billing as billing_api
 from flags import api as feature_flags_api
 from services import transcription as transcription_api
-from services.mcp_custom import discover_custom_tools
+from mcp_service.mcp_custom import discover_custom_tools
 import sys
 from services import email_api
 from feedback import api as feedback_api
@@ -152,8 +152,8 @@ app.include_router(billing_api.router, prefix="/api")
 
 app.include_router(feature_flags_api.router, prefix="/api")
 
-from mcp_local import api as mcp_api
-from mcp_local import secure_api as secure_mcp_api
+from mcp_service import api as mcp_api
+from mcp_service import secure_api as secure_mcp_api
 
 app.include_router(mcp_api.router, prefix="/api")
 app.include_router(secure_mcp_api.router, prefix="/api/secure-mcp")
