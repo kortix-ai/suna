@@ -1,17 +1,18 @@
-import { Dialog, DialogTitle, DialogHeader, DialogContent, DialogTrigger, DialogFooter, DialogClose } from "@/components/ui/dialog";
+import { Dialog, DialogTitle, DialogHeader, DialogContent, DialogFooter, DialogClose } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ThumbsDown, ThumbsUp } from "lucide-react";
-import { useState } from "react";
+import { ThumbsDown, ThumbsUp, Copy } from "lucide-react";
+import { memo, useState } from "react";
 import { Textarea } from "../ui/textarea";
 import { toast } from "sonner";
 import { backendApi } from '@/lib/api-client';
 
-interface FeedbackProps {
+interface MessageActionsProps {
   messageId: string;
   initialFeedback?: boolean | null;
+  processedContent?: string;
 }
 
-export default function Feedback({ messageId, initialFeedback = null }: FeedbackProps) {
+export default memo(function MessageActions({ messageId, initialFeedback = null, processedContent }: MessageActionsProps) {
   const [open, setOpen] = useState(false);
   const [submittedFeedback, setSubmittedFeedback] = useState<boolean | null>(initialFeedback);
   const [feedback, setFeedback] = useState('');
@@ -21,6 +22,20 @@ export default function Feedback({ messageId, initialFeedback = null }: Feedback
   const handleClick = (isGood: boolean) => {
     setCurrentSelection(isGood);
     setOpen(true);
+  };
+
+  const handleCopy = async () => {
+    try {
+      if (processedContent) {
+        await navigator.clipboard.writeText(processedContent);
+        toast.success('Response copied to clipboard');
+      } else {
+        toast.error('No content to copy');
+      }
+    } catch (error) {
+      console.error('Failed to copy to clipboard:', error);
+      toast.error('Failed to copy to clipboard');
+    }
   };
 
   const handleSubmit = async () => {
@@ -53,26 +68,45 @@ export default function Feedback({ messageId, initialFeedback = null }: Feedback
   const handleOpenChange = (newOpen: boolean) => {
     setOpen(newOpen);
     if (!newOpen) {
-      // Reset form state when closing without submitting
       setFeedback('');
       setCurrentSelection(null);
     }
   };
 
   return (
-    <div className="flex items-center p-0">
+    <div className="flex items-center gap-1 ml-auto justify-end pr-8">
       <button 
-        className="h-5 w-5 p-0" 
-        onClick={() => handleClick(true)}
+        className="h-4 w-4 p-0 rounded-sm hover:bg-muted/50 transition-colors flex items-center justify-center" 
+        onClick={handleCopy}
+        title="Copy response"
       >
-        <ThumbsUp className={`h-4 w-4 ${submittedFeedback === true ? 'fill-current' : ''}`} />
+        <Copy className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+        <span className="sr-only">Copy response</span>
+      </button>
+      
+      <button 
+        className="h-4 w-4 p-0 rounded-sm hover:bg-muted/50 transition-colors flex items-center justify-center" 
+        onClick={() => handleClick(true)}
+        title="Good response"
+      >
+        <ThumbsUp className={`h-3 w-3 transition-colors ${
+          submittedFeedback === true 
+            ? 'fill-current' 
+            : 'text-muted-foreground hover:text-foreground'
+        }`} />
         <span className="sr-only">Good response</span>
       </button>
+      
       <button 
-        className="h-6 w-6 p-0" 
+        className="h-4 w-4 p-0 rounded-sm hover:bg-muted/50 transition-colors flex items-center justify-center" 
         onClick={() => handleClick(false)}
+        title="Bad response"
       >
-        <ThumbsDown className={`h-4 w-4 ${submittedFeedback === false ? 'fill-current' : ''}`} />
+        <ThumbsDown className={`h-3 w-3 transition-colors ${
+          submittedFeedback === false 
+            ? 'fill-current' 
+            : 'text-muted-foreground hover:text-foreground'
+        }`} />
         <span className="sr-only">Bad response</span>
       </button>
       
@@ -109,4 +143,4 @@ export default function Feedback({ messageId, initialFeedback = null }: Feedback
       </Dialog>
     </div>
   );
-}
+});
