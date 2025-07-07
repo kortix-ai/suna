@@ -34,9 +34,6 @@ const ChatDropdown = () => {
                 align="end"
                 className="w-64 p-0 border"
                 sideOffset={4}
-                style={{
-                    borderRadius: '16px'
-                }}
             >
                 <DropdownMenuItem
                     className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-accent border-b m-0"

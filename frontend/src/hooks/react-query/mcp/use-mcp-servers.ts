@@ -37,7 +37,7 @@ interface MCPServerDetailResponse {
   tools?: any[];
 }
 
-interface PopularServersV2Response {
+interface PopularServersResponse {
   success: boolean;
   servers: Array<{
     qualifiedName: string;
@@ -132,12 +132,12 @@ export const useMCPServerDetails = (qualifiedName: string, enabled: boolean = tr
   });
 };
 
-export const usePopularMCPServersV2 = (page: number = 1, pageSize: number = 50) => {
+export const usePopularMCPServers = (page: number = 1, pageSize: number = 50) => {
   const supabase = createClient();
 
   return useQuery({
-    queryKey: ['mcp-servers-popular-v2', page, pageSize],
-    queryFn: async (): Promise<PopularServersV2Response> => {
+    queryKey: ['mcp-servers-popular', page, pageSize],
+    queryFn: async (): Promise<PopularServersResponse> => {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('No session');
 
@@ -147,7 +147,7 @@ export const usePopularMCPServersV2 = (page: number = 1, pageSize: number = 50) 
       });
 
       const response = await fetch(
-        `${API_URL}/mcp/popular-servers/v2?${params}`,
+        `${API_URL}/mcp/popular-servers?${params}`,
         {
           headers: {
             'Authorization': `Bearer ${session.access_token}`,
@@ -156,7 +156,7 @@ export const usePopularMCPServersV2 = (page: number = 1, pageSize: number = 50) 
       );
 
       if (!response.ok) {
-        throw new Error('Failed to fetch popular MCP servers v2');
+        throw new Error('Failed to fetch popular MCP servers');
       }
 
       return response.json();

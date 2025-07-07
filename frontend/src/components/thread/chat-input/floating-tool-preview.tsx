@@ -71,7 +71,7 @@ export const FloatingToolPreview: React.FC<FloatingToolPreviewProps> = ({
       setIsExpanding(false);
     }
   }, [isVisible]);
-  
+
   if (!currentToolCall || totalCalls === 0) return null;
 
   const toolName = currentToolCall.assistantCall?.name || 'Tool Call';
@@ -106,19 +106,19 @@ export const FloatingToolPreview: React.FC<FloatingToolPreviewProps> = ({
             layoutId={CONTENT_LAYOUT_ID}
             whileHover={{ scale: 1.01 }}
             whileTap={{ scale: 0.99 }}
-            className="bg-sidebar border border-border rounded-2xl p-2 w-full cursor-pointer group"
+            className="bg-card border border-border rounded-3xl p-2 w-full cursor-pointer group"
             onClick={handleClick}
             style={{ opacity: isExpanding ? 0 : 1 }}
           >
             <div className="flex items-center gap-3">
               <div className="flex-shrink-0">
-                <motion.div 
+                <motion.div
                   layoutId="tool-icon"
                   className={cn(
-                    "w-10 h-10 rounded-xl flex items-center justify-center",
-                    isStreaming 
-                      ? "bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800" 
-                      : isSuccess 
+                    "w-10 h-10 rounded-2xl flex items-center justify-center",
+                    isStreaming
+                      ? "bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800"
+                      : isSuccess
                         ? "bg-green-50 dark:bg-green-900/20 border border-green-300 dark:border-green-800"
                         : "bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800"
                   )}
@@ -131,7 +131,7 @@ export const FloatingToolPreview: React.FC<FloatingToolPreviewProps> = ({
                   )}
                 </motion.div>
               </div>
-              
+
               <div className="flex-1 min-w-0" style={{ opacity: isExpanding ? 0 : 1 }}>
                 <motion.div layoutId="tool-title" className="flex items-center gap-2 mb-1">
                   <h4 className="text-sm font-medium text-foreground truncate">
@@ -143,27 +143,27 @@ export const FloatingToolPreview: React.FC<FloatingToolPreviewProps> = ({
                     </span>
                   </div>
                 </motion.div>
-                
+
                 <motion.div layoutId="tool-status" className="flex items-center gap-2">
                   <div className={cn(
                     "w-2 h-2 rounded-full",
-                    isStreaming 
-                      ? "bg-blue-500 animate-pulse" 
-                      : isSuccess 
-                        ? "bg-green-500" 
+                    isStreaming
+                      ? "bg-blue-500 animate-pulse"
+                      : isSuccess
+                        ? "bg-green-500"
                         : "bg-red-500"
                   )} />
                   <span className="text-xs text-muted-foreground truncate">
-                    {isStreaming 
-                      ? `${agentName || 'Suna'} is working...` 
-                      : isSuccess 
-                        ? "Success" 
+                    {isStreaming
+                      ? `${agentName || 'Suna'} is working...`
+                      : isSuccess
+                        ? "Success"
                         : "Failed"
                     }
                   </span>
                 </motion.div>
               </div>
-              
+
               <Button value='ghost' className="bg-transparent hover:bg-transparent flex-shrink-0" style={{ opacity: isExpanding ? 0 : 1 }}>
                 <Maximize2 className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
               </Button>

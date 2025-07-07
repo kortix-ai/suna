@@ -32,7 +32,6 @@ instance_id = None # Global instance ID for this backend instance
 # TTL for Redis response lists (24 hours)
 REDIS_RESPONSE_LIST_TTL = 3600 * 24
 
-
 class AgentStartRequest(BaseModel):
     model_name: Optional[str] = None  # Will be set from config.MODEL_TO_USE in the endpoint
     enable_thinking: Optional[bool] = False
@@ -230,39 +229,6 @@ async def stop_agent_run(agent_run_id: str, error_message: Optional[str] = None)
         logger.error(f"Failed to find or signal active instances for {agent_run_id}: {str(e)}")
 
     logger.info(f"Successfully initiated stop process for agent run: {agent_run_id}")
-
-# async def restore_running_agent_runs():
-#     """Mark agent runs that were still 'running' in the database as failed and clean up Redis resources."""
-#     logger.info("Restoring running agent runs after server restart")
-#     client = await db.client
-#     running_agent_runs = await client.table('agent_runs').select('id').eq("status", "running").execute()
-
-#     for run in running_agent_runs.data:
-#         agent_run_id = run['id']
-#         logger.warning(f"Found running agent run {agent_run_id} from before server restart")
-
-#         # Clean up Redis resources for this run
-#         try:
-#             # Clean up active run key
-#             active_run_key = f"active_run:{instance_id}:{agent_run_id}"
-#             await redis.delete(active_run_key)
-
-#             # Clean up response list
-#             response_list_key = f"agent_run:{agent_run_id}:responses"
-#             await redis.delete(response_list_key)
-
-#             # Clean up control channels
-#             control_channel = f"agent_run:{agent_run_id}:control"
-#             instance_control_channel = f"agent_run:{agent_run_id}:control:{instance_id}"
-#             await redis.delete(control_channel)
-#             await redis.delete(instance_control_channel)
-
-#             logger.info(f"Cleaned up Redis resources for agent run {agent_run_id}")
-#         except Exception as e:
-#             logger.error(f"Error cleaning up Redis resources for agent run {agent_run_id}: {e}")
-
-#         # Call stop_agent_run to handle status update and cleanup
-#         await stop_agent_run(agent_run_id, error_message="Server restarted while agent was running")
 
 async def check_for_active_project_agent_run(client, project_id: str):
     """
@@ -896,7 +862,6 @@ async def initiate_agent_with_files(
 
     # Use model from config if not specified in the request
     logger.info(f"Original model_name from request: {model_name}")
-    
 
     if model_name is None:
         model_name = config.MODEL_TO_USE
@@ -1133,7 +1098,6 @@ async def initiate_agent_with_files(
         logger.error(f"Error in agent initiation: {str(e)}\n{traceback.format_exc()}")
         # TODO: Clean up created project/thread if initiation fails mid-way
         raise HTTPException(status_code=500, detail=f"Failed to initiate agent session: {str(e)}")
-
 
 # Custom agents
 
@@ -1798,286 +1762,6 @@ async def delete_agent(agent_id: str, user_id: str = Depends(get_current_user_id
         logger.error(f"Error deleting agent {agent_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-# Marketplace Models
-class MarketplaceAgent(BaseModel):
-    agent_id: str
-    name: str
-    description: Optional[str]
-    system_prompt: str
-    configured_mcps: List[Dict[str, Any]]
-    agentpress_tools: Dict[str, Any]
-    tags: Optional[List[str]]
-    download_count: int
-    marketplace_published_at: str
-    created_at: str
-    creator_name: str
-    avatar: Optional[str]
-    avatar_color: Optional[str]
-    is_kortix_team: Optional[bool] = False
-
-class MarketplaceAgentsResponse(BaseModel):
-    agents: List[MarketplaceAgent]
-    pagination: PaginationInfo
-
-class PublishAgentRequest(BaseModel):
-    tags: Optional[List[str]] = []
-
-@router.get("/marketplace/agents", response_model=MarketplaceAgentsResponse)
-async def get_marketplace_agents(
-    page: Optional[int] = Query(1, ge=1, description="Page number (1-based)"),
-    limit: Optional[int] = Query(20, ge=1, le=100, description="Number of items per page"),
-    search: Optional[str] = Query(None, description="Search in name and description"),
-    tags: Optional[str] = Query(None, description="Comma-separated string of tags"),
-    sort_by: Optional[str] = Query("newest", description="Sort by: newest, popular, most_downloaded, name"),
-    creator: Optional[str] = Query(None, description="Filter by creator name")
-):
-    """Get public agents from the marketplace with pagination, search, sort, and filter support."""
-    if not await is_enabled("agent_marketplace"):
-        raise HTTPException(
-            status_code=403, 
-            detail="Custom agent currently disabled. This feature is not available at the moment."
-        )
-    
-    logger.info(f"Fetching marketplace agents with page={page}, limit={limit}, search='{search}', tags='{tags}', sort_by={sort_by}")
-    client = await db.client
-    
-    try:
-        offset = (page - 1) * limit
-        tags_array = None
-        if tags:
-            tags_array = [tag.strip() for tag in tags.split(',') if tag.strip()]
-        
-        result = await client.rpc('get_marketplace_agents', {
-            'p_search': search,
-            'p_tags': tags_array,
-            'p_limit': limit + 1,
-            'p_offset': offset
-        }).execute()
-        
-        if result.data is None:
-            result.data = []
-        
-        has_more = len(result.data) > limit
-        agents_data = result.data[:limit] 
-        if creator:
-            agents_data = [
-                agent for agent in agents_data 
-                if creator.lower() in agent.get('creator_name', '').lower()
-            ]
-
-        if sort_by == "most_downloaded":
-            agents_data = sorted(agents_data, key=lambda x: x.get('download_count', 0), reverse=True)
-        elif sort_by == "popular":
-            agents_data = sorted(agents_data, key=lambda x: x.get('download_count', 0), reverse=True)
-        elif sort_by == "name":
-            agents_data = sorted(agents_data, key=lambda x: x.get('name', '').lower())
-        else:
-            agents_data = sorted(agents_data, key=lambda x: x.get('marketplace_published_at', ''), reverse=True)
-        
-        estimated_total = (page - 1) * limit + len(agents_data)
-        if has_more:
-            estimated_total += 1
-        
-        total_pages = max(page, (estimated_total + limit - 1) // limit)
-        if has_more:
-            total_pages = page + 1
-        
-        # Add Kortix team identification
-        kortix_team_creators = [
-            'kortix', 'kortix team', 'suna team', 'official', 'kortix official'
-        ]
-        
-        for agent in agents_data:
-            creator_name = agent.get('creator_name', '').lower()
-            agent['is_kortix_team'] = any(
-                kortix_creator in creator_name 
-                for kortix_creator in kortix_team_creators
-            )
-        
-        agents_data = sorted(agents_data, key=lambda x: (
-            not x.get('is_kortix_team', False),
-            -x.get('download_count', 0) if sort_by == "most_downloaded" else 0,
-            x.get('name', '').lower() if sort_by == "name" else '',
-            -(datetime.fromisoformat(x.get('marketplace_published_at', x.get('created_at', ''))).timestamp()) if sort_by == "newest" else 0
-        ))
-        
-        logger.info(f"Found {len(agents_data)} marketplace agents (page {page}, estimated {total_pages} pages)")
-        return {
-            "agents": agents_data,
-            "pagination": {
-                "page": page,
-                "limit": limit,
-                "total": estimated_total,
-                "pages": total_pages
-            }
-        }
-        
-    except Exception as e:
-        logger.error(f"Error fetching marketplace agents: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-@router.post("/agents/{agent_id}/publish")
-async def publish_agent_to_marketplace(
-    agent_id: str,
-    publish_data: PublishAgentRequest,
-    user_id: str = Depends(get_current_user_id_from_jwt)
-):
-    """Publish an agent to the marketplace."""
-    if not await is_enabled("agent_marketplace"):
-        raise HTTPException(
-            status_code=403, 
-            detail="Custom agent currently disabled. This feature is not available at the moment."
-        )
-    
-    logger.info(f"Publishing agent {agent_id} to marketplace")
-    client = await db.client
-    
-    try:
-        # Verify agent ownership
-        agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).execute()
-        if not agent_result.data:
-            raise HTTPException(status_code=404, detail="Agent not found")
-        
-        agent = agent_result.data[0]
-        if agent['account_id'] != user_id:
-            raise HTTPException(status_code=403, detail="Access denied")
-        
-        # Update agent with marketplace data
-        update_data = {
-            'is_public': True,
-            'marketplace_published_at': datetime.now(timezone.utc).isoformat()
-        }
-        
-        if publish_data.tags:
-            update_data['tags'] = publish_data.tags
-        
-        await client.table('agents').update(update_data).eq('agent_id', agent_id).execute()
-        
-        logger.info(f"Successfully published agent {agent_id} to marketplace")
-        return {"message": "Agent published to marketplace successfully"}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error publishing agent {agent_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-@router.post("/agents/{agent_id}/unpublish")
-async def unpublish_agent_from_marketplace(
-    agent_id: str,
-    user_id: str = Depends(get_current_user_id_from_jwt)
-):
-    """Unpublish an agent from the marketplace."""
-    if not await is_enabled("agent_marketplace"):
-        raise HTTPException(
-            status_code=403, 
-            detail="Custom agent currently disabled. This feature is not available at the moment."
-        )
-    
-    logger.info(f"Unpublishing agent {agent_id} from marketplace")
-    client = await db.client
-    
-    try:
-        # Verify agent ownership
-        agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).execute()
-        if not agent_result.data:
-            raise HTTPException(status_code=404, detail="Agent not found")
-        
-        agent = agent_result.data[0]
-        if agent['account_id'] != user_id:
-            raise HTTPException(status_code=403, detail="Access denied")
-        
-        # Update agent to remove from marketplace
-        await client.table('agents').update({
-            'is_public': False,
-            'marketplace_published_at': None
-        }).eq('agent_id', agent_id).execute()
-        
-        logger.info(f"Successfully unpublished agent {agent_id} from marketplace")
-        return {"message": "Agent removed from marketplace successfully"}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error unpublishing agent {agent_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-@router.post("/marketplace/agents/{agent_id}/add-to-library")
-async def add_agent_to_library(
-    agent_id: str,
-    user_id: str = Depends(get_current_user_id_from_jwt)
-):
-    """Add an agent from the marketplace to user's library."""
-    if not await is_enabled("agent_marketplace"):
-        raise HTTPException(
-            status_code=403, 
-            detail="Custom agent currently disabled. This feature is not available at the moment."
-        )
-
-    logger.info(f"Adding marketplace agent {agent_id} to user {user_id} library")
-    client = await db.client
-    
-    try:
-        # Call the database function with user_id
-        result = await client.rpc('add_agent_to_library', {
-            'p_original_agent_id': agent_id,
-            'p_user_account_id': user_id
-        }).execute()
-        
-        if result.data:
-            new_agent_id = result.data
-            logger.info(f"Successfully added agent {agent_id} to library as {new_agent_id}")
-            return {"message": "Agent added to library successfully", "new_agent_id": new_agent_id}
-        else:
-            raise HTTPException(status_code=400, detail="Failed to add agent to library")
-        
-    except Exception as e:
-        error_msg = str(e)
-        logger.error(f"Error adding agent {agent_id} to library: {error_msg}")
-        
-        if "Agent not found or not public" in error_msg:
-            raise HTTPException(status_code=404, detail="Agent not found or not public")
-        elif "Agent already in your library" in error_msg:
-            raise HTTPException(status_code=409, detail="Agent already in your library")
-        else:
-            raise HTTPException(status_code=500, detail="Internal server error")
-
-@router.get("/user/agent-library")
-async def get_user_agent_library(user_id: str = Depends(get_current_user_id_from_jwt)):
-    """Get user's agent library (agents added from marketplace)."""
-    if not await is_enabled("agent_marketplace"):
-        raise HTTPException(
-            status_code=403, 
-            detail="Custom agent currently disabled. This feature is not available at the moment."
-        )
-
-    logger.info(f"Fetching agent library for user {user_id}")
-    client = await db.client
-    
-    try:
-        result = await client.table('user_agent_library').select("""
-            *,
-            original_agent:agents!user_agent_library_original_agent_id_fkey(
-                agent_id,
-                name,
-                description,
-                download_count
-            ),
-            agent:agents!user_agent_library_agent_id_fkey(
-                agent_id,
-                name,
-                description,
-                system_prompt
-            )
-        """).eq('user_account_id', user_id).order('added_at', desc=True).execute()
-        
-        logger.info(f"Found {len(result.data or [])} agents in user library")
-        return {"library": result.data or []}
-        
-    except Exception as e:
-        logger.error(f"Error fetching user agent library: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
 @router.get("/agents/{agent_id}/builder-chat-history")
 async def get_agent_builder_chat_history(
     agent_id: str,
@@ -2135,6 +1819,8 @@ async def get_agent_builder_chat_history(
     except Exception as e:
         logger.error(f"Error fetching agent builder chat history for agent {agent_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch chat history: {str(e)}")
+
+# agent versioning
 
 @router.get("/agents/{agent_id}/versions", response_model=List[AgentVersionResponse])
 async def get_agent_versions(

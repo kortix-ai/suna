@@ -6,7 +6,6 @@ import { Dialog, DialogContent, DialogTitle, DialogHeader, DialogDescription } f
 import { Badge } from '@/components/ui/badge';
 import { useRouter } from 'next/navigation';
 import { getAgentAvatar } from '../_utils/get-agent-style';
-import { usePublishAgent, useUnpublishAgent } from '@/hooks/react-query/marketplace/use-marketplace';
 import { useCreateTemplate, useUnpublishTemplate } from '@/hooks/react-query/secure-mcp/use-secure-mcp';
 import { toast } from 'sonner';
 
@@ -118,7 +117,7 @@ const AgentModal = ({ agent, isOpen, onClose, onCustomize, onChat, onPublish, on
                 Chat
               </Button>
             </div>
-            <div className="pt-2 border-t">
+            <div className="pt-2">
               {agent.is_public ? (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm text-muted-foreground">
@@ -187,10 +186,8 @@ export const AgentsGrid = ({
   const [unpublishingId, setUnpublishingId] = useState<string | null>(null);
   const router = useRouter();
   
-  const publishAgentMutation = usePublishAgent();
-  const unpublishAgentMutation = useUnpublishAgent();
+  const unpublishAgentMutation = useUnpublishTemplate();
   const createTemplateMutation = useCreateTemplate();
-  const unpublishTemplateMutation = useUnpublishTemplate();
 
   const handleAgentClick = (agent: Agent) => {
     setSelectedAgent(agent);
@@ -234,16 +231,6 @@ export const AgentsGrid = ({
     } finally {
       setUnpublishingId(null);
     }
-  };
-
-  const handleQuickPublish = async (agentId: string, event: React.MouseEvent) => {
-    event.stopPropagation();
-    await handlePublish(agentId);
-  };
-
-  const handleQuickUnpublish = async (agentId: string, event: React.MouseEvent) => {
-    event.stopPropagation();
-    await handleUnpublish(agentId);
   };
 
   const getAgentStyling = (agent: Agent) => {

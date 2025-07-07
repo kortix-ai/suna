@@ -22,6 +22,7 @@ import os
 from urllib.parse import quote
 from utils.logger import logger
 from utils.auth_utils import get_current_user_id_from_jwt
+from mcp_service.mcp_custom import discover_custom_tools
 from collections import OrderedDict
 
 router = APIRouter()
@@ -62,8 +63,8 @@ class MCPServerDetailResponse(BaseModel):
     security: Optional[Dict[str, Any]] = None
     tools: Optional[List[Dict[str, Any]]] = None
 
-class PopularServersV2Response(BaseModel):
-    """Response model for v2 popular servers with categorization"""
+class PopularServersResponse(BaseModel):
+    """Response model for popular servers with categorization"""
     success: bool
     servers: List[Dict[str, Any]]
     categorized: Dict[str, List[Dict[str, Any]]]
@@ -236,64 +237,8 @@ async def get_mcp_server_details(
             detail=f"Failed to fetch MCP server details: {str(e)}"
         )
 
-@router.get("/mcp/popular-servers")
+@router.get("/mcp/popular-servers", response_model=PopularServersResponse)
 async def get_popular_mcp_servers(
-    user_id: str = Depends(get_current_user_id_from_jwt)
-):
-    """
-    Get a curated list of popular/recommended MCP servers.
-    This is a convenience endpoint that returns commonly used servers.
-    """
-    # Define some popular servers based on actual Smithery data
-    popular_servers = [
-        {
-            "qualifiedName": "@wonderwhy-er/desktop-commander",
-            "displayName": "Desktop Commander",
-            "description": "Execute terminal commands and manage files with diff editing capabilities. Coding, shell and terminal, task automation",
-            "icon": "💻",
-            "category": "development"
-        },
-        {
-            "qualifiedName": "@smithery-ai/server-sequential-thinking",
-            "displayName": "Sequential Thinking",
-            "description": "Dynamic and reflective problem-solving through a structured thinking process",
-            "icon": "🧠",
-            "category": "ai"
-        },
-        {
-            "qualifiedName": "@microsoft/playwright-mcp",
-            "displayName": "Playwright Automation",
-            "description": "Automate web interactions, navigate, extract data, and perform actions on web pages",
-            "icon": "🎭",
-            "category": "automation"
-        },
-        {
-            "qualifiedName": "exa",
-            "displayName": "Exa Search",
-            "description": "Fast, intelligent web search and crawling. Combines embeddings and traditional search",
-            "icon": "🔍",
-            "category": "search"
-        },
-        {
-            "qualifiedName": "@smithery-ai/github",
-            "displayName": "GitHub",
-            "description": "Access the GitHub API, enabling file operations, repository management, and search",
-            "icon": "🐙",
-            "category": "development"
-        },
-        {
-            "qualifiedName": "@nickclyde/duckduckgo-mcp-server",
-            "displayName": "DuckDuckGo Search",
-            "description": "Enable web search capabilities through DuckDuckGo. Fetch and parse webpage content",
-            "icon": "🦆",
-            "category": "search"
-        }
-    ]
-    
-    return {"servers": popular_servers}
-
-@router.get("/mcp/popular-servers/v2", response_model=PopularServersV2Response)
-async def get_popular_mcp_servers_v2(
     page: int = Query(1, ge=1, description="Page number"),
     pageSize: int = Query(100, ge=1, le=200, description="Items per page (max 500 for comprehensive categorization)"),
     user_id: str = Depends(get_current_user_id_from_jwt)
@@ -308,7 +253,7 @@ async def get_popular_mcp_servers_v2(
     - page: Page number (default: 1)
     - pageSize: Number of items per page (default: 200, max: 500)
     """
-    logger.info(f"Fetching v2 popular MCP servers for user {user_id}")
+    logger.info(f"Fetching  popular MCP servers for user {user_id}")
     
     try:
         async with httpx.AsyncClient() as client:
@@ -339,7 +284,7 @@ async def get_popular_mcp_servers_v2(
             
             if response.status_code != 200:
                 logger.error(f"Failed to fetch MCP servers: {response.status_code} - {response.text}")
-                return PopularServersV2Response(
+                return PopularServersResponse(
                     success=False,
                     servers=[],
                     categorized={},
@@ -528,7 +473,7 @@ async def get_popular_mcp_servers_v2(
             
             logger.info(f"Successfully categorized {len(servers)} servers into {len(sorted_categories)} categories")
             
-            return PopularServersV2Response(
+            return PopularServersResponse(
                 success=True,
                 servers=servers,
                 categorized=sorted_categories,
@@ -543,8 +488,8 @@ async def get_popular_mcp_servers_v2(
             )
             
     except Exception as e:
-        logger.error(f"Error fetching v2 popular MCP servers: {str(e)}")
-        return PopularServersV2Response(
+        logger.error(f"Error fetching  popular MCP servers: {str(e)}")
+        return PopularServersResponse(
             success=False,
             servers=[],
             categorized={},
@@ -553,3 +498,17 @@ async def get_popular_mcp_servers_v2(
             pagination={"currentPage": page, "pageSize": pageSize, "totalPages": 0, "totalCount": 0}
         ) 
     
+
+class CustomMCPDiscoverRequest(BaseModel):
+    type: str
+    config: Dict[str, Any]
+
+@router.post("/mcp/discover-custom-tools")
+async def discover_custom_mcp_tools(request: CustomMCPDiscoverRequest):
+    try:
+        return await discover_custom_tools(request.type, request.config)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error discovering custom MCP tools: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

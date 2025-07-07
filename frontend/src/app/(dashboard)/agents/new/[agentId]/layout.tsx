@@ -2,10 +2,10 @@ import { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'Create Agent | Kortix Suna',
-  description: 'Interactive agent playground powered by Kortix Suna',
+  description: 'Create an agent',
   openGraph: {
-    title: 'Agent Playground | Kortix Suna',
-    description: 'Interactive agent playground powered by Kortix Suna',
+    title: 'Create Agent | Kortix Suna',
+    description: 'Create an agent',
     type: 'website',
   },
 };

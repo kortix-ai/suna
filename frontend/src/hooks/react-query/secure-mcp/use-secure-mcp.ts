@@ -160,33 +160,6 @@ export function useStoreCredential() {
   });
 }
 
-export function useTestCredential() {
-  return useMutation({
-    mutationFn: async (mcp_qualified_name: string): Promise<TestCredentialResponse> => {
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        throw new Error('You must be logged in to test credentials');
-      }
-
-      const response = await fetch(`${API_URL}/secure-mcp/credentials/${encodeURIComponent(mcp_qualified_name)}/test`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
-        throw new Error(errorData.message || `HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      return response.json();
-    },
-  });
-}
-
 export function useDeleteCredential() {
   const queryClient = useQueryClient();
 
@@ -243,7 +216,7 @@ export function useMarketplaceTemplates(params?: {
       if (params?.search) searchParams.set('search', params.search);
       if (params?.tags) searchParams.set('tags', params.tags);
 
-      const response = await fetch(`${API_URL}/secure-mcp/templates/marketplace?${searchParams}`, {
+      const response = await fetch(`${API_URL}/templates/marketplace?${searchParams}`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
         },
@@ -270,7 +243,7 @@ export function useTemplateDetails(template_id: string) {
         throw new Error('You must be logged in to view template details');
       }
 
-      const response = await fetch(`${API_URL}/secure-mcp/templates/${template_id}`, {
+      const response = await fetch(`${API_URL}/templates/${template_id}`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
         },
@@ -299,7 +272,7 @@ export function useCreateTemplate() {
         throw new Error('You must be logged in to create templates');
       }
 
-      const response = await fetch(`${API_URL}/secure-mcp/templates`, {
+      const response = await fetch(`${API_URL}/templates`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -333,7 +306,7 @@ export function useMyTemplates() {
         throw new Error('You must be logged in to view your templates');
       }
 
-      const response = await fetch(`${API_URL}/secure-mcp/templates/my`, {
+      const response = await fetch(`${API_URL}/templates/my`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
         },
@@ -361,7 +334,7 @@ export function usePublishTemplate() {
         throw new Error('You must be logged in to publish templates');
       }
 
-      const response = await fetch(`${API_URL}/secure-mcp/templates/${template_id}/publish`, {
+      const response = await fetch(`${API_URL}/templates/${template_id}/publish`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -396,7 +369,7 @@ export function useUnpublishTemplate() {
         throw new Error('You must be logged in to unpublish templates');
       }
 
-      const response = await fetch(`${API_URL}/secure-mcp/templates/${template_id}/unpublish`, {
+      const response = await fetch(`${API_URL}/templates/${template_id}/unpublish`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -428,7 +401,7 @@ export function useInstallTemplate() {
       if (!session) {
         throw new Error('You must be logged in to install templates');
       }
-      const response = await fetch(`${API_URL}/secure-mcp/templates/install`, {
+      const response = await fetch(`${API_URL}/templates/install`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

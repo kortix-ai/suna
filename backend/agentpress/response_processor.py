@@ -25,7 +25,7 @@ from agentpress.utils.json_helpers import (
     ensure_dict, ensure_list, safe_json_parse, 
     to_json_string, format_for_yield
 )
-from litellm import token_counter
+from litellm.utils import token_counter
 
 # Type alias for XML result adding strategy
 XmlAddingStrategy = Literal["user_message", "assistant_message", "inline_edit"]
@@ -97,22 +97,21 @@ class ResponseProcessor:
         """
         self.tool_registry = tool_registry
         self.add_message = add_message_callback
-        self.trace = trace
-        if not self.trace:
-            self.trace = langfuse.trace(name="anonymous:response_processor")
+        self.trace = trace or langfuse.trace(name="anonymous:response_processor")
         # Initialize the XML parser with backwards compatibility
         self.xml_parser = XMLToolParser(strict_mode=False)
         self.is_agent_builder = is_agent_builder
         self.target_agent_id = target_agent_id
         self.agent_config = agent_config
 
-    async def _yield_message(self, message_obj: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    async def _yield_message(self, message_obj: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Helper to yield a message with proper formatting.
         
         Ensures that content and metadata are JSON strings for client compatibility.
         """
         if message_obj:
             return format_for_yield(message_obj)
+        return None
 
     async def _add_message_with_agent_info(
         self,
@@ -1246,7 +1245,7 @@ class ResponseProcessor:
             
             schema = tool_info['schema'].xml_schema
             params = {}
-            remaining_chunk = xml_chunk
+            remaining_chunk: str = xml_chunk
             
             # --- Store detailed parsing info ---
             parsing_details = {
@@ -1272,7 +1271,9 @@ class ResponseProcessor:
                 
                     elif mapping.node_type == "element":
                         # Extract element content
-                        content, remaining_chunk = self._extract_tag_content(remaining_chunk, mapping.path)
+                        content, new_remaining_chunk = self._extract_tag_content(remaining_chunk, mapping.path)
+                        if new_remaining_chunk is not None:
+                            remaining_chunk = new_remaining_chunk
                         if content is not None:
                             params[mapping.param_name] = content.strip()
                             parsing_details["elements"][mapping.param_name] = content.strip() # Store raw element content
@@ -1457,14 +1458,15 @@ class ResponseProcessor:
         except Exception as e:
             logger.error(f"Error in sequential tool execution: {str(e)}", exc_info=True)
             # Return partial results plus error results for remaining tools
-            completed_tool_names = [r[0].get('function_name', 'unknown') for r in results] if 'results' in locals() else []
+            completed_results = results if 'results' in locals() else []
+            completed_tool_names = [r[0].get('function_name', 'unknown') for r in completed_results]
             remaining_tools = [t for t in tool_calls if t.get('function_name', 'unknown') not in completed_tool_names]
             
             # Add error results for remaining tools
             error_results = [(tool, ToolResult(success=False, output=f"Execution error: {str(e)}")) 
                             for tool in remaining_tools]
                             
-            return (results if 'results' in locals() else []) + error_results
+            return completed_results + error_results
 
     async def _execute_tools_in_parallel(self, tool_calls: List[Dict[str, Any]]) -> List[Tuple[Dict[str, Any], ToolResult]]:
         """Execute tool calls in parallel and return results.
@@ -1794,7 +1796,7 @@ class ResponseProcessor:
             
         # <<< ADDED: Signal if this is a terminating tool >>>
         if context.function_name in ['ask', 'complete']:
-            metadata["agent_should_terminate"] = True
+            metadata["agent_should_terminate"] = "true"
             logger.info(f"Marking tool status for '{context.function_name}' with termination signal.")
             self.trace.event(name="marking_tool_status_for_termination", level="DEFAULT", status_message=(f"Marking tool status for '{context.function_name}' with termination signal."))
         # <<< END ADDED >>>

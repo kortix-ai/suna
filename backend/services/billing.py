@@ -14,7 +14,7 @@ from services.supabase import DBConnection
 from utils.auth_utils import get_current_user_id_from_jwt
 from pydantic import BaseModel
 from utils.constants import MODEL_ACCESS_TIERS, MODEL_NAME_ALIASES
-from litellm import cost_per_token, model_cost
+from litellm import cost_per_token
 import time
 
 # Initialize Stripe

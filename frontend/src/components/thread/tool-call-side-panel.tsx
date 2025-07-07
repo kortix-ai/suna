@@ -196,7 +196,7 @@ export function ToolCallSidePanel({
       displayIndex = completedIndex;
       displayTotalCalls = totalCompletedCalls;
     }
-  } 
+  }
 
   const currentToolName = displayToolCall?.assistantCall?.name || 'Tool Call';
   const CurrentToolIcon = getToolIcon(
@@ -434,8 +434,7 @@ export function ToolCallSidePanel({
                 <div className="pt-4 pl-4 pr-4">
                   <div className="flex items-center justify-between">
                     <div className="ml-2 flex items-center gap-2">
-                      <Computer className="h-4 w-4" />
-                      <h2 className="text-md font-medium text-zinc-900 dark:text-zinc-100">
+                      <h2 className="text-lg font-medium text-zinc-900 dark:text-zinc-100">
                         {agentName ? `${agentName}'s Computer` : 'Suna\'s Computer'}
                       </h2>
                     </div>
@@ -473,8 +472,7 @@ export function ToolCallSidePanel({
           <div className="pt-4 pl-4 pr-4">
             <div className="flex items-center justify-between">
               <div className="ml-2 flex items-center gap-2">
-                <Computer className="h-4 w-4" />
-                <h2 className="text-md font-medium text-zinc-900 dark:text-zinc-100">
+                <h2 className="text-lg font-medium text-zinc-900 dark:text-zinc-100">
                   {agentName ? `${agentName}'s Computer` : 'Suna\'s Computer'}
                 </h2>
               </div>
@@ -520,8 +518,7 @@ export function ToolCallSidePanel({
             <div className="pt-4 pl-4 pr-4">
               <div className="flex items-center justify-between">
                 <div className="ml-2 flex items-center gap-2">
-                  <Computer className="h-4 w-4" />
-                  <h2 className="text-md font-medium text-zinc-900 dark:text-zinc-100">
+                  <h2 className="text-lg font-medium text-zinc-900 dark:text-zinc-100">
                     {agentName ? `${agentName}'s Computer` : 'Suna\'s Computer'}
                   </h2>
                 </div>
@@ -567,8 +564,7 @@ export function ToolCallSidePanel({
           <div className="pt-4 pl-4 pr-4">
             <div className="flex items-center justify-between">
               <div className="ml-2 flex items-center gap-2">
-                <Computer className="h-4 w-4" />
-                <h2 className="text-md font-medium text-zinc-900 dark:text-zinc-100">
+                <h2 className="text-lg font-medium text-zinc-900 dark:text-zinc-100">
                   {agentName ? `${agentName}'s Computer` : 'Suna\'s Computer'}
                 </h2>
               </div>
@@ -612,14 +608,13 @@ export function ToolCallSidePanel({
 
     return (
       <div className="flex flex-col h-full">
-        <motion.div 
+        <motion.div
           layoutId={CONTENT_LAYOUT_ID}
           className="p-3"
         >
           <div className="flex items-center justify-between">
             <motion.div layoutId="tool-icon" className="ml-2 flex items-center gap-2">
-              <Computer className="h-4 w-4" />
-              <h2 className="text-md font-medium text-zinc-900 dark:text-zinc-100">
+              <h2 className="text-lg font-medium text-zinc-900 dark:text-zinc-100">
                 {agentName ? `${agentName}'s Computer` : 'Suna\'s Computer'}
               </h2>
             </motion.div>
@@ -695,16 +690,16 @@ export function ToolCallSidePanel({
             }
           }}
           className={cn(
-            'fixed top-2 right-2 bottom-4 border rounded-2xl flex flex-col z-30',
+            'fixed top-2 right-2 bottom-4 border rounded-3xl flex flex-col z-30',
             isMobile
               ? 'left-2'
               : 'w-[40vw] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[645px]',
           )}
-          style={{ 
-            overflow: 'hidden', 
+          style={{
+            overflow: 'hidden',
           }}
         >
-          <div className="flex-1 flex flex-col overflow-hidden bg-sidebar">
+          <div className="flex-1 flex flex-col overflow-hidden bg-card">
             {renderContent()}
           </div>
           {(displayTotalCalls > 1 || (isCurrentToolStreaming && totalCompletedCalls > 0)) && (

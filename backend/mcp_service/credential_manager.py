@@ -25,7 +25,6 @@ from services.supabase import DBConnection
 
 db = DBConnection()
 
-
 @dataclass
 class MCPCredential:
     """Represents an MCP credential"""
@@ -326,52 +325,7 @@ class CredentialManager:
         except Exception as e:
             logger.error(f"Error deleting credential for {mcp_qualified_name}: {str(e)}")
             return False
-    
-    async def test_credential(self, account_id: str, mcp_qualified_name: str) -> bool:
-        """Test if a credential is valid by attempting to connect"""
-        try:
-            credential = await self.get_credential(account_id, mcp_qualified_name)
-            if not credential:
-                return False
-            
-            # Import here to avoid circular imports
-            from .client import MCPManager
-            
-            # Create a test MCP configuration
-            test_config = {
-                "name": credential.display_name,
-                "qualifiedName": credential.mcp_qualified_name,
-                "config": credential.config,
-                "enabledTools": []  # Empty for testing
-            }
-            
-            # Try to connect
-            mcp_manager = MCPManager()
-            try:
-                await mcp_manager.connect_server(test_config)
-                await self._log_credential_usage(
-                    credential.credential_id, 
-                    None, 
-                    "test_connection", 
-                    True
-                )
-                return True
-            except Exception as e:
-                await self._log_credential_usage(
-                    credential.credential_id, 
-                    None, 
-                    "test_connection", 
-                    False, 
-                    str(e)
-                )
-                return False
-            finally:
-                await mcp_manager.disconnect_all()
-                
-        except Exception as e:
-            logger.error(f"Error testing credential for {mcp_qualified_name}: {str(e)}")
-            return False
-    
+      
     async def _log_credential_usage(
         self, 
         credential_id: str, 

@@ -11,7 +11,7 @@ This module provides comprehensive conversation management, including:
 """
 
 import json
-from typing import List, Dict, Any, Optional, Type, Union, AsyncGenerator, Literal
+from typing import List, Dict, Any, Optional, Type, Union, AsyncGenerator, Literal, cast
 from services.llm import make_llm_api_call
 from agentpress.tool import Tool
 from agentpress.tool_registry import ToolRegistry
@@ -112,8 +112,8 @@ class ThreadManager:
             data_to_insert['agent_version_id'] = agent_version_id
 
         try:
-            # Add returning='representation' to get the inserted row data including the id
-            result = await client.table('messages').insert(data_to_insert, returning='representation').execute()
+            # Insert the message and get the inserted row data including the id
+            result = await client.table('messages').insert(data_to_insert).execute()
             logger.info(f"Successfully added message to thread {thread_id}")
 
             if result.data and len(result.data) > 0 and isinstance(result.data[0], dict) and 'message_id' in result.data[0]:
@@ -242,15 +242,18 @@ class ThreadManager:
         # Log model info
         logger.info(f"🤖 Thread {thread_id}: Using model {llm_model}")
 
+        # Ensure processor_config is not None
+        config = processor_config or ProcessorConfig()
+
         # Apply max_xml_tool_calls if specified and not already set in config
-        if max_xml_tool_calls > 0 and not processor_config.max_xml_tool_calls:
-            processor_config.max_xml_tool_calls = max_xml_tool_calls
+        if max_xml_tool_calls > 0 and not config.max_xml_tool_calls:
+            config.max_xml_tool_calls = max_xml_tool_calls
 
         # Create a working copy of the system prompt to potentially modify
         working_system_prompt = system_prompt.copy()
 
         # Add XML examples to system prompt if requested, do this only ONCE before the loop
-        if include_xml_examples and processor_config.xml_tool_calling:
+        if include_xml_examples and config.xml_tool_calling:
             xml_examples = self.tool_registry.get_xml_examples()
             if xml_examples:
                 examples_content = """
@@ -298,9 +301,9 @@ Here are the XML tools available with examples:
         # Define inner function to handle a single run
         async def _run_once(temp_msg=None):
             try:
-                # Ensure processor_config is available in this scope
-                nonlocal processor_config
-                # Note: processor_config is now guaranteed to exist due to check above
+                # Ensure config is available in this scope
+                nonlocal config
+                # Note: config is now guaranteed to exist due to check above
 
                 # 1. Get messages from thread for LLM call
                 messages = await self.get_llm_messages(thread_id)
@@ -312,25 +315,6 @@ Here are the XML tools available with examples:
                     token_count = token_counter(model=llm_model, messages=[working_system_prompt] + messages)
                     token_threshold = self.context_manager.token_threshold
                     logger.info(f"Thread {thread_id} token count: {token_count}/{token_threshold} ({(token_count/token_threshold)*100:.1f}%)")
-
-                    # if token_count >= token_threshold and enable_context_manager:
-                    #     logger.info(f"Thread token count ({token_count}) exceeds threshold ({token_threshold}), summarizing...")
-                    #     summarized = await self.context_manager.check_and_summarize_if_needed(
-                    #         thread_id=thread_id,
-                    #         add_message_callback=self.add_message,
-                    #         model=llm_model,
-                    #         force=True
-                    #     )
-                    #     if summarized:
-                    #         logger.info("Summarization complete, fetching updated messages with summary")
-                    #         messages = await self.get_llm_messages(thread_id)
-                    #         # Recount tokens after summarization, using the modified prompt
-                    #         new_token_count = token_counter(model=llm_model, messages=[working_system_prompt] + messages)
-                    #         logger.info(f"After summarization: token count reduced from {token_count} to {new_token_count}")
-                    #     else:
-                    #         logger.warning("Summarization failed or wasn't needed - proceeding with original messages")
-                    # elif not enable_context_manager:
-                    #     logger.info("Automatic summarization disabled. Skipping token count check and summarization.")
 
                 except Exception as e:
                     logger.error(f"Error counting tokens or summarizing: {str(e)}")
@@ -360,7 +344,7 @@ Here are the XML tools available with examples:
 
                 # 4. Prepare tools for LLM call
                 openapi_tool_schemas = None
-                if processor_config.native_tool_calling:
+                if config.native_tool_calling:
                     openapi_tool_schemas = self.tool_registry.get_openapi_schemas()
                     logger.debug(f"Retrieved {len(openapi_tool_schemas) if openapi_tool_schemas else 0} OpenAPI tool schemas")
 
@@ -389,7 +373,7 @@ Here are the XML tools available with examples:
                         temperature=llm_temperature,
                         max_tokens=llm_max_tokens,
                         tools=openapi_tool_schemas,
-                        tool_choice=tool_choice if processor_config.native_tool_calling else None,
+                        tool_choice=tool_choice if config.native_tool_calling else "none",
                         stream=stream,
                         enable_thinking=enable_thinking,
                         reasoning_effort=reasoning_effort
@@ -403,13 +387,24 @@ Here are the XML tools available with examples:
                 # 6. Process LLM response using the ResponseProcessor
                 if stream:
                     logger.debug("Processing streaming response")
-                    response_generator = self.response_processor.process_streaming_response(
-                        llm_response=llm_response,
-                        thread_id=thread_id,
-                        config=processor_config,
-                        prompt_messages=prepared_messages,
-                        llm_model=llm_model,
-                    )
+                    # Ensure we have an async generator for streaming
+                    if hasattr(llm_response, '__aiter__'):
+                        response_generator = self.response_processor.process_streaming_response(
+                            llm_response=cast(AsyncGenerator, llm_response),
+                            thread_id=thread_id,
+                            config=config,
+                            prompt_messages=prepared_messages,
+                            llm_model=llm_model,
+                        )
+                    else:
+                        # Fallback to non-streaming if response is not iterable
+                        response_generator = self.response_processor.process_non_streaming_response(
+                            llm_response=llm_response,
+                            thread_id=thread_id,
+                            config=config,
+                            prompt_messages=prepared_messages,
+                            llm_model=llm_model,
+                        )
 
                     return response_generator
                 else:
@@ -418,7 +413,7 @@ Here are the XML tools available with examples:
                     response_generator = self.response_processor.process_non_streaming_response(
                         llm_response=llm_response,
                         thread_id=thread_id,
-                        config=processor_config,
+                        config=config,
                         prompt_messages=prepared_messages,
                         llm_model=llm_model,
                     )
@@ -454,25 +449,29 @@ Here are the XML tools available with examples:
 
                     # Process each chunk
                     try:
-                        async for chunk in response_gen:
-                            # Check if this is a finish reason chunk with tool_calls or xml_tool_limit_reached
-                            if chunk.get('type') == 'finish':
-                                if chunk.get('finish_reason') == 'tool_calls':
-                                    # Only auto-continue if enabled (max > 0)
-                                    if native_max_auto_continues > 0:
-                                        logger.info(f"Detected finish_reason='tool_calls', auto-continuing ({auto_continue_count + 1}/{native_max_auto_continues})")
-                                        auto_continue = True
-                                        auto_continue_count += 1
-                                        # Don't yield the finish chunk to avoid confusing the client
-                                        continue
-                                elif chunk.get('finish_reason') == 'xml_tool_limit_reached':
-                                    # Don't auto-continue if XML tool limit was reached
-                                    logger.info(f"Detected finish_reason='xml_tool_limit_reached', stopping auto-continue")
-                                    auto_continue = False
-                                    # Still yield the chunk to inform the client
+                        if hasattr(response_gen, '__aiter__'):
+                            async for chunk in cast(AsyncGenerator, response_gen):
+                                # Check if this is a finish reason chunk with tool_calls or xml_tool_limit_reached
+                                if chunk.get('type') == 'finish':
+                                    if chunk.get('finish_reason') == 'tool_calls':
+                                        # Only auto-continue if enabled (max > 0)
+                                        if native_max_auto_continues > 0:
+                                            logger.info(f"Detected finish_reason='tool_calls', auto-continuing ({auto_continue_count + 1}/{native_max_auto_continues})")
+                                            auto_continue = True
+                                            auto_continue_count += 1
+                                            # Don't yield the finish chunk to avoid confusing the client
+                                            continue
+                                    elif chunk.get('finish_reason') == 'xml_tool_limit_reached':
+                                        # Don't auto-continue if XML tool limit was reached
+                                        logger.info(f"Detected finish_reason='xml_tool_limit_reached', stopping auto-continue")
+                                        auto_continue = False
+                                        # Still yield the chunk to inform the client
 
-                            # Otherwise just yield the chunk normally
-                            yield chunk
+                                # Otherwise just yield the chunk normally
+                                yield chunk
+                        else:
+                            # response_gen is not iterable (likely an error dict), yield it directly
+                            yield response_gen
 
                         # If not auto-continuing, we're done
                         if not auto_continue:

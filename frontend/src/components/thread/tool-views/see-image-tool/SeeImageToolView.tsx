@@ -35,11 +35,11 @@ function SafeImage({ src, alt, filePath, className }: { src: string; alt: string
               'Authorization': `Bearer ${session?.access_token}`
             }
           });
-          
+
           if (!response.ok) {
             throw new Error(`Failed to load image: ${response.status} ${response.statusText}`);
           }
-          
+
           const blob = await response.blob();
           const url = URL.createObjectURL(blob);
           setImgSrc(url);
@@ -51,11 +51,11 @@ function SafeImage({ src, alt, filePath, className }: { src: string; alt: string
         setImgSrc(src);
       }
     };
-    
+
     setupAuthenticatedImage();
     setError(false);
     setAttempts(0);
-    
+
     return () => {
       if (imgSrc && imgSrc.startsWith('blob:')) {
         URL.revokeObjectURL(imgSrc);
@@ -67,7 +67,7 @@ function SafeImage({ src, alt, filePath, className }: { src: string; alt: string
     if (attempts < 3) {
       setAttempts(attempts + 1);
       console.log(`Image load failed (attempt ${attempts + 1}). Trying alternative:`, filePath);
-      
+
       if (attempts === 0) {
         setImgSrc(filePath);
       } else if (attempts === 1) {
@@ -103,7 +103,7 @@ function SafeImage({ src, alt, filePath, className }: { src: string; alt: string
   const handleDownload = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!imgSrc) return;
-    
+
     const link = document.createElement('a');
     link.href = imgSrc;
     link.download = filePath.split('/').pop() || 'image';
@@ -146,7 +146,7 @@ function SafeImage({ src, alt, filePath, className }: { src: string; alt: string
   return (
     <div className="flex flex-col items-center">
       <div className={cn(
-        "overflow-hidden transition-all duration-300 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 mb-3",
+        "overflow-hidden transition-all duration-300 rounded-3xl border bg-card mb-3",
         isZoomed ? "cursor-zoom-out" : "cursor-zoom-in"
       )}>
         <div className="relative flex items-center justify-center">
@@ -156,8 +156,8 @@ function SafeImage({ src, alt, filePath, className }: { src: string; alt: string
             onClick={handleZoomToggle}
             className={cn(
               "max-w-full object-contain transition-all duration-300 ease-in-out",
-              isZoomed 
-                ? "max-h-[80vh]" 
+              isZoomed
+                ? "max-h-[80vh]"
                 : "max-h-[500px] hover:scale-[1.01]",
               className
             )}
@@ -169,12 +169,12 @@ function SafeImage({ src, alt, filePath, className }: { src: string; alt: string
         </div>
       </div>
 
-      <div className="flex items-center justify-between w-full px-2 py-2 bg-zinc-50 dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800">
+      <div className="flex items-center justify-between w-full px-2 py-2 bg-zinc-50 dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800">
         <Badge variant="secondary" className="bg-white/90 dark:bg-black/70 text-zinc-700 dark:text-zinc-300 shadow-sm">
           <ImageIcon className="h-3 w-3 mr-1" />
           {filePath.split('.').pop()?.toUpperCase()}
         </Badge>
-        
+
         <div className="flex items-center gap-1">
           <Button
             variant="outline"
@@ -197,9 +197,9 @@ function SafeImage({ src, alt, filePath, className }: { src: string; alt: string
           >
             <ZoomIn className="h-4 w-4" />
           </Button>
-          
+
           <span className="w-px h-6 bg-zinc-200 dark:bg-zinc-700 mx-2"></span>
-          
+
           <Button
             variant="outline"
             size="icon"
@@ -226,7 +226,7 @@ export function SeeImageToolView({
   project,
 }: ToolViewProps) {
   const [progress, setProgress] = useState(0);
-  
+
   const {
     filePath,
     description,
@@ -241,7 +241,7 @@ export function SeeImageToolView({
     toolTimestamp,
     assistantTimestamp
   );
-  
+
   console.log('Final file path:', filePath);
 
   useEffect(() => {
@@ -289,11 +289,11 @@ export function SeeImageToolView({
   const isAnimated = ['gif', 'webp'].includes(fileExt.toLowerCase());
 
   return (
-    <Card className="flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-white dark:bg-zinc-950">
+    <Card className="flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-b p-2 px-4 space-y-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-          <div className={cn("relative p-2 rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/20 transition-colors", config.bgColor)}>
+            <div className={cn("relative p-2 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/20 transition-colors", config.bgColor)}>
               <ImageIcon className={cn("w-5 h-5", config.color)} />
             </div>
             <div>
@@ -309,13 +309,13 @@ export function SeeImageToolView({
               </div>
             </div>
           </div>
-          
+
           {!isStreaming ? (
             <Badge variant="secondary" className={cn(
-              "px-2.5 py-1 transition-colors flex items-center gap-1.5", 
-              actualIsSuccess 
-                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300" 
-                  : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
+              "px-2.5 py-1 transition-colors flex items-center gap-1.5",
+              actualIsSuccess
+                ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
+                : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
             )}>
               {actualIsSuccess ? (
                 <>
@@ -337,7 +337,7 @@ export function SeeImageToolView({
           )}
         </div>
       </CardHeader>
-      
+
       <CardContent className="p-0 flex-1 overflow-hidden relative">
         {isStreaming ? (
           <div className="flex flex-col items-center justify-center h-full p-12 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
@@ -349,7 +349,7 @@ export function SeeImageToolView({
               </div>
               <Skeleton className="h-48 w-full rounded-lg mb-6" />
               <div className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
-                <div 
+                <div
                   className="h-full bg-gradient-to-r from-blue-400 to-blue-500 dark:from-blue-600 dark:to-blue-400 rounded-full transition-all duration-300 ease-out"
                   style={{ width: `${progress}%` }}
                 ></div>
@@ -370,7 +370,7 @@ export function SeeImageToolView({
           </div>
         )}
       </CardContent>
-      
+
       <div className="h-10 px-4 py-2 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
         <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
           <Badge className="py-0.5 h-6 bg-gradient-to-b from-blue-50 to-blue-100 text-blue-700 border border-blue-200/50 dark:from-blue-900/30 dark:to-blue-800/20 dark:text-blue-400 dark:border-blue-800/30">
@@ -383,7 +383,7 @@ export function SeeImageToolView({
             </Badge>
           )}
         </div>
-        
+
         <div className="text-xs text-zinc-500 dark:text-zinc-400">
           {actualToolTimestamp && !isStreaming
             ? formatTimestamp(actualToolTimestamp)

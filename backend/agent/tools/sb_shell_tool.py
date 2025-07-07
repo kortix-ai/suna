@@ -1,5 +1,7 @@
+import asyncio
 from typing import Optional, Dict, Any
 import time
+import asyncio
 from uuid import uuid4
 from agentpress.tool import ToolResult, openapi_schema, xml_schema
 from sandbox.tool_base import SandboxToolsBase
@@ -141,34 +143,40 @@ class SandboxShellTool(SandboxToolsBase):
             full_command = f"cd {cwd} && {command}"
             wrapped_command = full_command.replace('"', '\\"')  # Escape double quotes
             
-            # Send command to tmux session
-            await self._execute_raw_command(f'tmux send-keys -t {session_name} "{wrapped_command}" Enter')
-            
             if blocking:
-                # For blocking execution, wait and capture output
+                # For blocking execution, use a more reliable approach
+                # Add a unique marker to detect command completion
+                marker = f"COMMAND_DONE_{str(uuid4())[:8]}"
+                completion_command = f"{command} ; echo {marker}"
+                wrapped_completion_command = completion_command.replace('"', '\\"')
+                
+                # Send the command with completion marker
+                await self._execute_raw_command(f'tmux send-keys -t {session_name} "cd {cwd} && {wrapped_completion_command}" Enter')
+                
                 start_time = time.time()
+                final_output = ""
+                
                 while (time.time() - start_time) < timeout:
-                    # Wait a bit before checking
-                    time.sleep(2)
+                    # Wait a shorter interval for more responsive checking
+                    await asyncio.sleep(0.5)
                     
                     # Check if session still exists (command might have exited)
                     check_result = await self._execute_raw_command(f"tmux has-session -t {session_name} 2>/dev/null || echo 'ended'")
                     if "ended" in check_result.get("output", ""):
                         break
                         
-                    # Get current output and check for common completion indicators
+                    # Get current output and check for our completion marker
                     output_result = await self._execute_raw_command(f"tmux capture-pane -t {session_name} -p -S - -E -")
                     current_output = output_result.get("output", "")
                     
-                    # Check for prompt indicators that suggest command completion
-                    last_lines = current_output.split('\n')[-3:]
-                    completion_indicators = ['$', '#', '>', 'Done', 'Completed', 'Finished', '✓']
-                    if any(indicator in line for indicator in completion_indicators for line in last_lines):
+                    if marker in current_output:
+                        final_output = current_output
                         break
                 
-                # Capture final output
-                output_result = await self._execute_raw_command(f"tmux capture-pane -t {session_name} -p -S - -E -")
-                final_output = output_result.get("output", "")
+                # If we didn't get the marker, capture whatever output we have
+                if not final_output:
+                    output_result = await self._execute_raw_command(f"tmux capture-pane -t {session_name} -p -S - -E -")
+                    final_output = output_result.get("output", "")
                 
                 # Kill the session after capture
                 await self._execute_raw_command(f"tmux kill-session -t {session_name}")
@@ -180,6 +188,9 @@ class SandboxShellTool(SandboxToolsBase):
                     "completed": True
                 })
             else:
+                # Send command to tmux session for non-blocking execution
+                await self._execute_raw_command(f'tmux send-keys -t {session_name} "{wrapped_command}" Enter')
+                
                 # For non-blocking, just return immediately
                 return self.success_response({
                     "session_name": session_name,
@@ -203,7 +214,7 @@ class SandboxShellTool(SandboxToolsBase):
         session_id = await self._ensure_session("raw_commands")
         
         # Execute command in session
-        from sandbox.sandbox import SessionExecuteRequest
+        from daytona_sdk import SessionExecuteRequest
         req = SessionExecuteRequest(
             command=command,
             var_async=False,

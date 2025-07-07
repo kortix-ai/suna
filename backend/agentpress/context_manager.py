@@ -9,15 +9,10 @@ import json
 from typing import List, Dict, Any, Optional, Union
 
 from litellm.utils import token_counter
-from litellm.cost_calculator import completion_cost
 from services.supabase import DBConnection
-from services.llm import make_llm_api_call
 from utils.logger import logger
 
-# Constants for token management
-DEFAULT_TOKEN_THRESHOLD = 120000  # 80k tokens threshold for summarization
-SUMMARY_TARGET_TOKENS = 10000    # Target ~10k tokens for the summary message
-RESERVE_TOKENS = 5000            # Reserve tokens for new messages
+DEFAULT_TOKEN_THRESHOLD = 120000
 
 class ContextManager:
     """Manages thread context including token counting and summarization."""

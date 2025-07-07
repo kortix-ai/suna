@@ -35,7 +35,7 @@ export function ExposePortToolView({
   assistantTimestamp,
   toolTimestamp,
 }: ToolViewProps) {
-  
+
   const {
     port,
     url,
@@ -52,26 +52,26 @@ export function ExposePortToolView({
   );
 
   return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-white dark:bg-zinc-950">
+    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-          <div className="relative p-2 rounded-lg bg-gradient-to-br from-green-500/20 to-green-600/10 border border-green-500/20">
-            <Computer className="w-5 h-5 text-green-500 dark:text-green-400" />
-          </div>
+            <div className="relative p-2 rounded-lg bg-gradient-to-br from-green-500/20 to-green-600/10 border border-green-500/20">
+              <Computer className="w-5 h-5 text-green-500 dark:text-green-400" />
+            </div>
             <div>
               <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
                 Port Exposure
               </CardTitle>
             </div>
           </div>
-          
+
           {!isStreaming && (
-            <Badge 
-              variant="secondary" 
+            <Badge
+              variant="secondary"
               className={
-                actualIsSuccess 
-                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300" 
+                actualIsSuccess
+                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
                   : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
               }
             >
@@ -88,7 +88,7 @@ export function ExposePortToolView({
 
       <CardContent className="p-0 h-full flex-1 overflow-hidden relative">
         {isStreaming ? (
-          <LoadingState 
+          <LoadingState
             icon={Computer}
             iconColor="text-emerald-500 dark:text-emerald-400"
             bgColor="bg-gradient-to-b from-emerald-100 to-emerald-50 shadow-inner dark:from-emerald-800/40 dark:to-emerald-900/60 dark:shadow-emerald-950/20"
@@ -174,7 +174,7 @@ export function ExposePortToolView({
             </Badge>
           )}
         </div>
-        
+
         <div className="text-xs text-zinc-500 dark:text-zinc-400">
           {actualToolTimestamp && formatTimestamp(actualToolTimestamp)}
         </div>

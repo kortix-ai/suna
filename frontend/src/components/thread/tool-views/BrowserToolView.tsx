@@ -74,7 +74,7 @@ export function BrowserToolView({
         try {
           const cleanedOutput = outputString.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\u([0-9a-fA-F]{4})/g, (match, grp) => String.fromCharCode(parseInt(grp, 16)));
           const outputJson = JSON.parse(cleanedOutput);
-    
+
           if (outputJson.image_url) {
             screenshotUrl = outputJson.image_url;
           }
@@ -84,21 +84,21 @@ export function BrowserToolView({
         } catch (parseError) {
         }
       }
-      
+
       if (!screenshotUrl) {
         const imageUrlMatch = innerContentString.match(/"image_url":\s*"([^"]+)"/);
         if (imageUrlMatch) {
           screenshotUrl = imageUrlMatch[1];
         }
       }
-      
+
       if (!browserStateMessageId) {
         const messageIdMatch = innerContentString.match(/"message_id":\s*"([^"]+)"/);
         if (messageIdMatch) {
           browserStateMessageId = messageIdMatch[1];
         }
       }
-      
+
       if (!browserStateMessageId && !screenshotUrl) {
         const outputMatch = innerContentString.match(/\boutput='(.*?)'(?=\s*\))/);
         const outputString = outputMatch ? outputMatch[1] : null;
@@ -117,17 +117,17 @@ export function BrowserToolView({
         }
       }
     } else if (innerContentString && typeof innerContentString === "object") {
-        screenshotUrl = (() => {
-          if (!innerContentString) return null;
-          if (!("tool_execution" in innerContentString)) return null;
-          if (!("result" in innerContentString.tool_execution)) return null;
-          if (!("output" in innerContentString.tool_execution.result)) return null;
-          if (!("image_url" in innerContentString.tool_execution.result.output)) return null;
-          if (typeof innerContentString.tool_execution.result.output.image_url !== "string") return null;
-          return innerContentString.tool_execution.result.output.image_url;
-        })()
-      }
-    
+      screenshotUrl = (() => {
+        if (!innerContentString) return null;
+        if (!("tool_execution" in innerContentString)) return null;
+        if (!("result" in innerContentString.tool_execution)) return null;
+        if (!("output" in innerContentString.tool_execution.result)) return null;
+        if (!("image_url" in innerContentString.tool_execution.result.output)) return null;
+        if (typeof innerContentString.tool_execution.result.output.image_url !== "string") return null;
+        return innerContentString.tool_execution.result.output.image_url;
+      })()
+    }
+
   } catch (error) {
   }
 
@@ -139,7 +139,7 @@ export function BrowserToolView({
     );
 
     if (browserStateMessage) {
-      const browserStateContent = safeJsonParse<{ 
+      const browserStateContent = safeJsonParse<{
         screenshot_base64?: string;
         image_url?: string;
       }>(
@@ -266,11 +266,11 @@ export function BrowserToolView({
   };
 
   return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-white dark:bg-zinc-950">
+    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-          <div className="relative p-2 rounded-lg bg-gradient-to-br from-purple-500/20 to-purple-600/10 border border-purple-500/20">
+            <div className="relative p-2 rounded-lg bg-gradient-to-br from-purple-500/20 to-purple-600/10 border border-purple-500/20">
               <MonitorPlay className="w-5 h-5 text-purple-500 dark:text-purple-400" />
             </div>
             <div>
@@ -279,13 +279,13 @@ export function BrowserToolView({
               </CardTitle>
             </div>
           </div>
-          
+
           {!isRunning && (
-            <Badge 
-              variant="secondary" 
+            <Badge
+              variant="secondary"
               className={
-                isSuccess 
-                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300" 
+                isSuccess
+                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
                   : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
               }
             >
@@ -339,9 +339,9 @@ export function BrowserToolView({
                 </h3>
                 {url && (
                   <div className="mt-4">
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
+                    <Button
+                      variant="outline"
+                      size="sm"
                       className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 shadow-sm hover:shadow-md transition-shadow"
                       asChild
                     >
@@ -355,52 +355,52 @@ export function BrowserToolView({
               </div>
             )
           ) :
-          (screenshotUrl || screenshotBase64) ? (
-            <div className="flex items-center justify-center w-full h-full overflow-auto relative p-4">
-              {imageLoading && (
-                <ImageLoader />
-              )}
-              <Card className={`p-0 overflow-hidden border ${imageLoading ? 'hidden' : 'block'}`}>
-                {screenshotUrl ? (
-                  <img
-                    src={screenshotUrl}
-                    alt="Browser Screenshot"
-                    className="max-w-full max-h-full object-contain"
-                    onLoad={handleImageLoad}
-                    onError={handleImageError}
-                  />
-                ) : (
-                  <img
-                    src={`data:image/jpeg;base64,${screenshotBase64}`}
-                    alt="Browser Screenshot"
-                    className="max-w-full max-h-full object-contain"
-                    onLoad={handleImageLoad}
-                    onError={handleImageError}
-                  />
+            (screenshotUrl || screenshotBase64) ? (
+              <div className="flex items-center justify-center w-full h-full overflow-auto relative p-4">
+                {imageLoading && (
+                  <ImageLoader />
                 )}
-              </Card>
-              {imageError && !imageLoading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-zinc-50 dark:bg-zinc-900">
-                  <div className="text-center text-zinc-500 dark:text-zinc-400">
-                    <AlertTriangle className="h-8 w-8 mx-auto mb-2" />
-                    <p>Failed to load screenshot</p>
+                <Card className={`p-0 overflow-hidden border ${imageLoading ? 'hidden' : 'block'}`}>
+                  {screenshotUrl ? (
+                    <img
+                      src={screenshotUrl}
+                      alt="Browser Screenshot"
+                      className="max-w-full max-h-full object-contain"
+                      onLoad={handleImageLoad}
+                      onError={handleImageError}
+                    />
+                  ) : (
+                    <img
+                      src={`data:image/jpeg;base64,${screenshotBase64}`}
+                      alt="Browser Screenshot"
+                      className="max-w-full max-h-full object-contain"
+                      onLoad={handleImageLoad}
+                      onError={handleImageError}
+                    />
+                  )}
+                </Card>
+                {imageError && !imageLoading && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-zinc-50 dark:bg-zinc-900">
+                    <div className="text-center text-zinc-500 dark:text-zinc-400">
+                      <AlertTriangle className="h-8 w-8 mx-auto mb-2" />
+                      <p>Failed to load screenshot</p>
+                    </div>
                   </div>
-                </div>
-              )}
-            </div>
-          ) : (
-            <div className="p-8 h-full flex flex-col items-center justify-center w-full bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900 text-zinc-700 dark:text-zinc-400">
-              <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60">
-                <MonitorPlay className="h-10 w-10 text-zinc-400 dark:text-zinc-600" />
+                )}
               </div>
-              <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
-                No Browser State Available
-              </h3>
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                Browser state image not found for this action
-              </p>
-            </div>
-          )}
+            ) : (
+              <div className="p-8 h-full flex flex-col items-center justify-center w-full bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900 text-zinc-700 dark:text-zinc-400">
+                <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60">
+                  <MonitorPlay className="h-10 w-10 text-zinc-400 dark:text-zinc-600" />
+                </div>
+                <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
+                  No Browser State Available
+                </h3>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                  Browser state image not found for this action
+                </p>
+              </div>
+            )}
         </div>
       </CardContent>
 
@@ -418,7 +418,7 @@ export function BrowserToolView({
             </span>
           )}
         </div>
-        
+
         <div className="text-xs text-zinc-500 dark:text-zinc-400">
           {toolTimestamp && !isRunning
             ? formatTimestamp(toolTimestamp)

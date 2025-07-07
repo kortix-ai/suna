@@ -194,7 +194,7 @@ export function AgentSelector({
               <DropdownMenuSeparator />
               
               <DropdownMenuItem onClick={handleCreateAgent} className="cursor-pointer">
-                Agent Playground
+                Agents
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

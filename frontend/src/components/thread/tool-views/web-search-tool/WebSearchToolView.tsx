@@ -87,11 +87,11 @@ export function WebSearchToolView({
   };
 
   return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-white dark:bg-zinc-950">
+    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/20">
+            <div className="relative p-2 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/20">
               <Search className="w-5 h-5 text-blue-500 dark:text-blue-400" />
             </div>
             <div>
@@ -194,7 +194,7 @@ export function WebSearchToolView({
                   return (
                     <div
                       key={idx}
-                      className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-sm hover:shadow transition-shadow"
+                      className="bg-card border rounded-lg shadow-sm hover:shadow transition-shadow"
                     >
                       <div className="p-4">
                         <div className="flex items-start gap-3 mb-2">

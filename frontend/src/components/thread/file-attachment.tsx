@@ -294,7 +294,7 @@ export function FileAttachment({
             <button
                 onClick={handleClick}
                 className={cn(
-                    "group relative min-h-[54px] rounded-xl cursor-pointer",
+                    "group relative min-h-[54px] rounded-2xl cursor-pointer",
                     "border border-black/10 dark:border-white/10",
                     "bg-black/5 dark:bg-black/20",
                     "p-0 overflow-hidden", // No padding, content touches borders
@@ -387,8 +387,8 @@ export function FileAttachment({
             <div
                 className={cn(
                     "group relative rounded-xl w-full",
-                    "border border-black/10 dark:border-white/10",
-                    "bg-black/5 dark:bg-black/20",
+                    "border",
+                    "bg-card",
                     "overflow-hidden",
                     "h-[300px]", // Fixed height for previews
                     "pt-10", // Room for header
@@ -462,7 +462,7 @@ export function FileAttachment({
                 </div>
 
                 {/* Header with filename */}
-                <div className="absolute top-0 left-0 right-0 bg-black/5 dark:bg-white/5 p-2 z-10 flex items-center justify-between">
+                <div className="absolute top-0 left-0 right-0 bg-accent p-2 z-10 flex items-center justify-between">
                     <div className="text-sm font-medium truncate">{filename}</div>
                     {onClick && (
                         <button

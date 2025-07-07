@@ -286,7 +286,7 @@ export function HeroSection() {
               <div className="relative z-10">
                 <Card className="shadow-none w-full max-w-8xl mx-auto bg-transparent border-none rounded-3xl overflow-hidden">
                   <div className="w-full text-sm flex flex-col justify-between items-start rounded-2xl">
-                    <CardContent className="w-full p-1.5 pb-2 bg-sidebar rounded-3xl border">
+                    <CardContent className="w-full p-1.5 pb-2 bg-card rounded-3xl border">
                       <div className="relative flex flex-col w-full h-full gap-2 justify-between">
                         <div className="flex flex-col gap-1 px-2">
                           <Textarea
@@ -364,9 +364,7 @@ export function HeroSection() {
           </div>
         </div>
       </div>
-      <div className="mb-10 sm:mt-40 max-w-4xl mx-auto">
-        <HeroVideoSection />
-      </div>
+      <div className="mb-16 sm:mt-52 max-w-4xl mx-auto"></div>
 
       {/* Auth Dialog */}
       <Dialog open={authDialogOpen} onOpenChange={setAuthDialogOpen}>

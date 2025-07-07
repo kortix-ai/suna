@@ -360,7 +360,7 @@ export default function AgentConfigurationPage() {
                     <AccordionTrigger className="hover:no-underline text-sm md:text-base">
                       <div className="flex items-center gap-2">
                         <Settings2 className="h-4 w-4" />
-                        AgentPress Tools
+                        Default Tools
                       </div>
                     </AccordionTrigger>
                     <AccordionContent className="pb-4 overflow-x-hidden">

@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Search, ChevronLeft, ChevronRight, Shield, Loader2, ArrowLeft, Key, ExternalLink, Plus, Globe } from 'lucide-react';
-import { usePopularMCPServersV2, useMCPServers, useMCPServerDetails } from '@/hooks/react-query/mcp/use-mcp-servers';
+import { usePopularMCPServers, useMCPServers, useMCPServerDetails } from '@/hooks/react-query/mcp/use-mcp-servers';
 import { useCreateCredentialProfile, type CreateCredentialProfileRequest } from '@/hooks/react-query/mcp/use-credential-profiles';
 import { toast } from 'sonner';
 
@@ -140,7 +140,7 @@ export const EnhancedAddCredentialDialog: React.FC<EnhancedAddCredentialDialogPr
     is_default: false
   });
 
-  const { data: popularServersV2, isLoading: isLoadingV2 } = usePopularMCPServersV2(currentPage, pageSize);
+  const { data: popularServers, isLoading: isLoading } = usePopularMCPServers(currentPage, pageSize);
   const { data: searchResults, isLoading: isSearching } = useMCPServers(
     searchQuery.length > 2 ? searchQuery : undefined
   );
@@ -150,7 +150,7 @@ export const EnhancedAddCredentialDialog: React.FC<EnhancedAddCredentialDialogPr
   );
   const createProfileMutation = useCreateCredentialProfile();
 
-  const categories = popularServersV2?.success ? Object.keys(popularServersV2.categorized) : [];
+  const categories = popularServers?.success ? Object.keys(popularServers.categorized) : [];
 
   useEffect(() => {
     setCurrentPage(1);
@@ -272,14 +272,14 @@ export const EnhancedAddCredentialDialog: React.FC<EnhancedAddCredentialDialogPr
       return searchResults.servers || [];
     }
 
-    if (!popularServersV2?.success) return [];
+    if (!popularServers?.success) return [];
 
     if (selectedCategory) {
-      return popularServersV2.categorized[selectedCategory] || [];
+      return popularServers.categorized[selectedCategory] || [];
     }
 
     // Flatten all servers from all categories
-    return Object.values(popularServersV2.categorized).flat();
+    return Object.values(popularServers.categorized).flat();
   };
 
   const serversToDisplay = getServersToDisplay();
@@ -322,14 +322,14 @@ export const EnhancedAddCredentialDialog: React.FC<EnhancedAddCredentialDialogPr
                   categories={categories}
                   selectedCategory={selectedCategory}
                   onCategorySelect={setSelectedCategory}
-                  categorizedServers={popularServersV2?.categorized || {}}
+                  categorizedServers={popularServers?.categorized || {}}
                 />
               )}
               
               <div className="flex-1 overflow-hidden">
                 <ScrollArea className="h-full">
                   <div className="space-y-3 p-1">
-                    {(isLoadingV2 || isSearching) ? (
+                    {(isLoading || isSearching) ? (
                       <div className="flex items-center justify-center py-8">
                         <Loader2 className="h-6 w-6 animate-spin mr-2" />
                         <span>Loading MCP servers...</span>
@@ -354,10 +354,10 @@ export const EnhancedAddCredentialDialog: React.FC<EnhancedAddCredentialDialogPr
               </div>
             </div>
 
-            {!searchQuery && popularServersV2?.success && popularServersV2.pagination && (
+            {!searchQuery && popularServers?.success && popularServers.pagination && (
               <div className="flex items-center justify-between border-t pt-4">
                 <div className="text-sm text-muted-foreground">
-                  Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, popularServersV2.pagination.totalCount)} of {popularServersV2.pagination.totalCount} servers
+                  Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, popularServers.pagination.totalCount)} of {popularServers.pagination.totalCount} servers
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
@@ -370,13 +370,13 @@ export const EnhancedAddCredentialDialog: React.FC<EnhancedAddCredentialDialogPr
                     Previous
                   </Button>
                   <span className="text-sm text-muted-foreground">
-                    Page {currentPage} of {popularServersV2.pagination.totalPages}
+                    Page {currentPage} of {popularServers.pagination.totalPages}
                   </span>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setCurrentPage(prev => Math.min(popularServersV2.pagination.totalPages, prev + 1))}
-                    disabled={currentPage >= popularServersV2.pagination.totalPages}
+                    onClick={() => setCurrentPage(prev => Math.min(popularServers.pagination.totalPages, prev + 1))}
+                    disabled={currentPage >= popularServers.pagination.totalPages}
                   >
                     Next
                     <ChevronRight className="h-4 w-4" />

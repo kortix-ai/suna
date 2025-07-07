@@ -6,9 +6,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { 
-  Search, Database, FileText, Link2, Key, AlertTriangle, 
-  Copy, Globe, FileCode, Table, BookOpen, ExternalLink 
+import {
+  Search, Database, FileText, Link2, Key, AlertTriangle,
+  Copy, Globe, FileCode, Table, BookOpen, ExternalLink
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
@@ -39,12 +39,12 @@ function SearchResultsRenderer({ data, metadata }: { data: any; metadata?: any }
   // Normalize search results from various formats
   const normalizeResults = (data: any): SearchResult[] => {
     let items: any[] = [];
-    
+
     if (data?.results) items = data.results;
     else if (data?.data) items = data.data;
     else if (Array.isArray(data)) items = data;
     else return [];
-    
+
     return items.map((item, index) => ({
       ...item,
       url: item.url || item.link || item.href,
@@ -53,10 +53,10 @@ function SearchResultsRenderer({ data, metadata }: { data: any; metadata?: any }
       title: item.title || item.name || `Result ${index + 1}`
     })).filter(item => item.title || item.url);
   };
-  
+
   const results = normalizeResults(data);
   const meta = metadata || data;
-  
+
   return (
     <div className="p-3">
       <div className="flex items-center justify-between mb-4">
@@ -72,18 +72,18 @@ function SearchResultsRenderer({ data, metadata }: { data: any; metadata?: any }
           </div>
         )}
       </div>
-      
+
       {(meta?.autopromptString || meta?.query) && (
         <div className="mb-4 p-2 bg-zinc-50 dark:bg-zinc-900 rounded text-xs text-zinc-600 dark:text-zinc-400">
           <span className="font-medium">Query: </span>
           <span className="italic">{meta.autopromptString || meta.query}</span>
         </div>
       )}
-      
+
       <ScrollArea className="max-h-96">
         <div className="space-y-3">
           {results.map((result, idx) => (
-            <Card key={idx} className="p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors">
+            <Card key={idx} className="p-3 bg-card border border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors">
               <div className="space-y-2">
                 <div className="flex items-start gap-2">
                   <Badge variant="outline" className="text-xs shrink-0 mt-0.5">
@@ -95,8 +95,8 @@ function SearchResultsRenderer({ data, metadata }: { data: any; metadata?: any }
                     </h4>
                   </div>
                   {result.image && (
-                    <img 
-                      src={result.image} 
+                    <img
+                      src={result.image}
                       alt=""
                       className="w-16 h-12 object-cover rounded border border-zinc-200 dark:border-zinc-700"
                       onError={(e) => {
@@ -105,7 +105,7 @@ function SearchResultsRenderer({ data, metadata }: { data: any; metadata?: any }
                     />
                   )}
                 </div>
-                
+
                 {(result.author || result.date) && (
                   <div className="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
                     {result.author && <span>By {result.author}</span>}
@@ -114,12 +114,12 @@ function SearchResultsRenderer({ data, metadata }: { data: any; metadata?: any }
                     )}
                   </div>
                 )}
-                
+
                 {result.url && (
                   <div className="flex items-center gap-1.5 text-xs">
                     {result.favicon && (
-                      <img 
-                        src={result.favicon} 
+                      <img
+                        src={result.favicon}
                         alt=""
                         className="w-4 h-4"
                         onError={(e) => {
@@ -128,9 +128,9 @@ function SearchResultsRenderer({ data, metadata }: { data: any; metadata?: any }
                       />
                     )}
                     <Globe className="h-3 w-3 text-zinc-500" />
-                    <a 
-                      href={result.url} 
-                      target="_blank" 
+                    <a
+                      href={result.url}
+                      target="_blank"
                       rel="noopener noreferrer"
                       className="text-blue-600 dark:text-blue-400 hover:underline truncate flex-1"
                     >
@@ -155,7 +155,7 @@ function SearchResultsRenderer({ data, metadata }: { data: any; metadata?: any }
                     </TooltipProvider>
                   </div>
                 )}
-                
+
                 {result.summary && (
                   <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
                     {result.summary}
@@ -174,9 +174,9 @@ function SearchResultsRenderer({ data, metadata }: { data: any; metadata?: any }
 function TableRenderer({ data }: { data: any }) {
   const renderAsTable = (items: any[]) => {
     if (!items.length) return null;
-    
+
     const headers = Object.keys(items[0]);
-    
+
     return (
       <div className="p-3">
         <div className="flex items-center gap-2 mb-3">
@@ -212,11 +212,11 @@ function TableRenderer({ data }: { data: any }) {
       </div>
     );
   };
-  
+
   if (Array.isArray(data)) {
     return renderAsTable(data);
   }
-  
+
   return <JsonRenderer data={data} />;
 }
 
@@ -246,7 +246,7 @@ function KeyValueRenderer({ content }: { content: string }) {
     const [key, ...valueParts] = line.split(':');
     return { key: key.trim(), value: valueParts.join(':').trim() };
   });
-  
+
   return (
     <div className="p-3">
       <div className="flex items-center gap-2 mb-3">
@@ -274,7 +274,7 @@ function KeyValueRenderer({ content }: { content: string }) {
 // Renderer for URL lists
 function UrlListRenderer({ content }: { content: string }) {
   const urls = content.match(/https?:\/\/\S+/g) || [];
-  
+
   return (
     <div className="p-3">
       <div className="flex items-center gap-2 mb-3">
@@ -287,9 +287,9 @@ function UrlListRenderer({ content }: { content: string }) {
         {urls.map((url, idx) => (
           <div key={idx} className="flex items-center gap-2">
             <ExternalLink className="h-3 w-3 text-zinc-500" />
-            <a 
-              href={url} 
-              target="_blank" 
+            <a
+              href={url}
+              target="_blank"
               rel="noopener noreferrer"
               className="text-xs text-blue-600 dark:text-blue-400 hover:underline truncate"
             >
@@ -337,21 +337,21 @@ function TextRenderer({ content }: { content: string }) {
 // Main renderer component
 export function MCPContentRenderer({ detectionResult, rawContent }: MCPContentRendererProps) {
   const { format, confidence, metadata, parsedData } = detectionResult;
-  
+
   // Convert content to string if needed
   const contentStr = typeof rawContent === 'string' ? rawContent : JSON.stringify(rawContent, null, 2);
-  
+
   // Select appropriate renderer based on detected format
   switch (format) {
     case ContentFormat.SEARCH_RESULTS:
       return <SearchResultsRenderer data={parsedData || rawContent} metadata={metadata} />;
-      
+
     case ContentFormat.TABLE:
       return <TableRenderer data={parsedData || rawContent} />;
-      
+
     case ContentFormat.JSON:
       return <JsonRenderer data={parsedData || rawContent} />;
-      
+
     case ContentFormat.MARKDOWN:
       return (
         <div className="p-3">
@@ -364,19 +364,19 @@ export function MCPContentRenderer({ detectionResult, rawContent }: MCPContentRe
           <MarkdownRenderer content={contentStr} />
         </div>
       );
-      
+
     case ContentFormat.CSV:
       return <CsvRenderer content={contentStr} />;
-      
+
     case ContentFormat.KEY_VALUE:
       return <KeyValueRenderer content={contentStr} />;
-      
+
     case ContentFormat.URL_LIST:
       return <UrlListRenderer content={contentStr} />;
-      
+
     case ContentFormat.ERROR:
       return <ErrorRenderer content={contentStr} />;
-      
+
     case ContentFormat.CODE:
       return (
         <div className="p-3">
@@ -393,7 +393,7 @@ export function MCPContentRenderer({ detectionResult, rawContent }: MCPContentRe
           </ScrollArea>
         </div>
       );
-      
+
     default:
       return <TextRenderer content={contentStr} />;
   }

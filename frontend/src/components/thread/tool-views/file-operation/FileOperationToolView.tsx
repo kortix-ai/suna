@@ -107,7 +107,7 @@ export function FileOperationToolView({
   const processedFilePath = processFilePath(filePath);
   const fileName = getFileName(processedFilePath);
   const fileExtension = getFileExtension(fileName);
-  
+
   const isMarkdown = isFileType.markdown(fileExtension);
   const isHtml = isFileType.html(fileExtension);
   const isCsv = isFileType.csv(fileExtension);
@@ -269,7 +269,7 @@ export function FileOperationToolView({
   };
 
   return (
-    <Card className="flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-white dark:bg-zinc-950">
+    <Card className="flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <Tabs defaultValue={'preview'} className="w-full h-full">
         <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2 mb-0">
           <div className="flex flex-row items-center justify-between">

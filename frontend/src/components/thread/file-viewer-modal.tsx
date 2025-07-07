@@ -1551,7 +1551,7 @@ export function FileViewerModal({
                     {files.map((file) => (
                       <button
                         key={file.path}
-                        className={`flex flex-col items-center p-3 rounded-lg border hover:bg-muted/50 transition-colors ${selectedFilePath === file.path
+                        className={`flex flex-col items-center p-3 rounded-2xl border hover:bg-muted/50 transition-colors ${selectedFilePath === file.path
                           ? 'bg-muted border-primary/20'
                           : ''
                           }`}

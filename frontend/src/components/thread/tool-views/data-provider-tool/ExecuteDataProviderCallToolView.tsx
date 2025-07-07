@@ -32,7 +32,7 @@ const PROVIDER_CONFIG = {
     borderColor: 'border-blue-200 dark:border-blue-800'
   },
   'twitter': {
-    name: 'Twitter Data Provider', 
+    name: 'Twitter Data Provider',
     icon: MessageCircle,
     color: 'from-sky-400 to-sky-500',
     bgColor: 'bg-sky-50 dark:bg-sky-900/20',
@@ -82,7 +82,7 @@ export function ExecuteDataProviderCallToolView({
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
-  
+
   const {
     serviceName,
     route,
@@ -100,18 +100,18 @@ export function ExecuteDataProviderCallToolView({
   );
 
   const providerKey = serviceName?.toLowerCase() as keyof typeof PROVIDER_CONFIG;
-  const providerConfig = providerKey && PROVIDER_CONFIG[providerKey] 
-    ? PROVIDER_CONFIG[providerKey] 
+  const providerConfig = providerKey && PROVIDER_CONFIG[providerKey]
+    ? PROVIDER_CONFIG[providerKey]
     : PROVIDER_CONFIG['linkedin'];
-  
+
   const IconComponent = providerConfig.icon;
 
   return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-white dark:bg-zinc-950">
+    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-lg bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/20">
+            <div className="relative p-2 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/20">
               <Globe className="w-5 h-5 text-blue-500 dark:text-blue-400" />
             </div>
             <div>
@@ -120,14 +120,14 @@ export function ExecuteDataProviderCallToolView({
               </CardTitle>
             </div>
           </div>
-          
+
           {!isStreaming && (
-            <Badge 
-              variant="secondary" 
+            <Badge
+              variant="secondary"
               className={cn(
                 "text-xs font-medium",
-                actualIsSuccess 
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800" 
+                actualIsSuccess
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800"
                   : "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800"
               )}
             >
@@ -167,7 +167,7 @@ export function ExecuteDataProviderCallToolView({
               )}>
                 <IconComponent className="h-6 w-6 text-white drop-shadow-sm" />
               </div>
-              
+
               <div className="flex-1">
                 <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
                   {providerConfig.name}
@@ -178,7 +178,7 @@ export function ExecuteDataProviderCallToolView({
                   </p>
                 )}
               </div>
-              
+
               {route && (
                 <Badge variant="outline" className="text-xs font-mono">
                   {route}
@@ -209,7 +209,7 @@ export function ExecuteDataProviderCallToolView({
                 </div>
                 <div className="grid gap-3">
                   {Object.entries(payload).map(([key, value]) => (
-                    <div 
+                    <div
                       key={key}
                       className="flex items-center justify-between p-3 bg-white dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
                     >
@@ -231,7 +231,7 @@ export function ExecuteDataProviderCallToolView({
                     <span>Raw JSON</span>
                     <ChevronRight className="h-3 w-3 text-zinc-400 group-open:rotate-90 transition-transform" />
                   </summary>
-                  
+
                   <div className="mt-3 p-4 bg-zinc-900 dark:bg-zinc-950 rounded-lg border border-zinc-200 dark:border-zinc-800">
                     <pre className="text-xs font-mono text-emerald-400 dark:text-emerald-300 overflow-x-auto">
                       {JSON.stringify(payload, null, 2)}

@@ -20,10 +20,10 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatTimestamp } from '../utils';
 import { detectMCPFormat } from '../mcp-format-detector';
 import { MCPContentRenderer } from '../mcp-content-renderer';
-import { 
-  parseMCPResult, 
-  parseMCPToolCall, 
-  getMCPServerIcon, 
+import {
+  parseMCPResult,
+  parseMCPToolCall,
+  getMCPServerIcon,
   getMCPServerColor,
   formatMCPToolDisplayName,
   MCPResult,
@@ -46,16 +46,16 @@ export function McpToolView({
 
   const parsedTool = parseMCPToolCall(assistantContent || '');
   const result = toolContent ? parseMCPResult(toolContent) : null;
-  
+
   const serverName = result?.mcp_metadata?.server_name || parsedTool.serverName;
   const toolName = result?.mcp_metadata?.tool_name || parsedTool.toolName;
   const fullToolName = result?.mcp_metadata?.full_tool_name || parsedTool.fullToolName;
   const argumentsCount = result?.mcp_metadata?.arguments_count ?? Object.keys(parsedTool.arguments).length;
-  
-  const displayName = result?.mcp_metadata ? 
+
+  const displayName = result?.mcp_metadata ?
     formatMCPToolDisplayName(serverName, toolName) :
     parsedTool.displayName;
-  
+
   const ServerIcon = getMCPServerIcon(serverName);
   const serverColor = getMCPServerColor(serverName);
 
@@ -79,7 +79,7 @@ export function McpToolView({
   const hasArguments = Object.keys(parsedTool.arguments).length > 0;
 
   return (
-    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-white dark:bg-zinc-950">
+    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-3">
@@ -101,13 +101,13 @@ export function McpToolView({
               </p>
             </div>
           </div>
-          
+
           {!isStreaming && (
-            <Badge 
-              variant="secondary" 
+            <Badge
+              variant="secondary"
               className={
                 isSuccess && result && !result.isError
-                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300" 
+                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
                   : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
               }
             >
@@ -149,7 +149,7 @@ export function McpToolView({
         ) : (
           <ScrollArea className="h-full w-full">
             <div className="p-4 space-y-4">
-              
+
               {/* Tool Information */}
               <div className="bg-zinc-50/70 dark:bg-zinc-900/30 p-4 rounded-lg border border-zinc-100 dark:border-zinc-800">
                 <div className="flex items-center gap-2 mb-3">
@@ -187,7 +187,7 @@ export function McpToolView({
                     </span>
                   </div>
                 </div>
-                
+
                 {/* Show error type if available */}
                 {result?.error_type && (
                   <div className="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-700">
@@ -208,7 +208,7 @@ export function McpToolView({
                     ? "border-emerald-200 dark:border-emerald-800 bg-emerald-50/30 dark:bg-emerald-900/10"
                     : "border-red-200 dark:border-red-800 bg-red-50/30 dark:bg-red-900/10"
                 )}>
-                  <div 
+                  <div
                     className="p-3 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                     onClick={() => setExpandedResult(!expandedResult)}
                   >
@@ -237,10 +237,10 @@ export function McpToolView({
                       )}
                     </div>
                   </div>
-                  
+
                   {expandedResult && (
                     <div className="border-t border-zinc-200 dark:border-zinc-800">
-                      <MCPContentRenderer 
+                      <MCPContentRenderer
                         detectionResult={detectMCPFormat(result.data || '')}
                         rawContent={result.data || ''}
                       />

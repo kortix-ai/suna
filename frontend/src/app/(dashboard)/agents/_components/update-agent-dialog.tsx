@@ -299,7 +299,7 @@ export const UpdateAgentDialog = ({ agentId, isOpen, onOpenChange, onAgentUpdate
                     value="tools" 
                   >
                     <Settings2 className="h-4 w-4" />
-                    AgentPress Tools
+                    Default Tools
                   </TabsTrigger>
                   <TabsTrigger 
                     value="mcp" 

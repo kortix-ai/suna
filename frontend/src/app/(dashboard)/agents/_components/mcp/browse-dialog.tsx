@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
-import { usePopularMCPServersV2, useMCPServers } from '@/hooks/react-query/mcp/use-mcp-servers';
+import { usePopularMCPServers, useMCPServers } from '@/hooks/react-query/mcp/use-mcp-servers';
 import { McpServerCard } from './mcp-server-card';
 import { CategorySidebar } from './category-sidebar';
 import { SearchResults } from './search-results';
@@ -27,12 +27,12 @@ export const BrowseDialog: React.FC<BrowseDialogProps> = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize] = useState(100);
 
-  const { data: popularServersV2, isLoading: isLoadingV2 } = usePopularMCPServersV2(currentPage, pageSize);
+  const { data: popularServers, isLoading: isLoading } = usePopularMCPServers(currentPage, pageSize);
   const { data: searchResults, isLoading: isSearching } = useMCPServers(
     searchQuery.length > 2 ? searchQuery : undefined
   );
 
-  const categories = popularServersV2?.success ? Object.keys(popularServersV2.categorized) : [];
+  const categories = popularServers?.success ? Object.keys(popularServers.categorized) : [];
 
   
   useEffect(() => {
@@ -70,7 +70,7 @@ export const BrowseDialog: React.FC<BrowseDialogProps> = ({
               categories={categories}
               selectedCategory={selectedCategory}
               onCategorySelect={setSelectedCategory}
-              categorizedServers={popularServersV2?.categorized || {}}
+              categorizedServers={popularServers?.categorized || {}}
             />
           )}
           <div className="flex-1 overflow-hidden">
@@ -85,11 +85,11 @@ export const BrowseDialog: React.FC<BrowseDialogProps> = ({
                 )}
                 {!searchQuery && (
                   <>
-                    {isLoadingV2 ? (
+                    {isLoading ? (
                       <McpListLoader />
-                    ) : popularServersV2?.success ? (
+                    ) : popularServers?.success ? (
                       <CategorizedServersList
-                        categorizedServers={popularServersV2.categorized}
+                        categorizedServers={popularServers.categorized}
                         selectedCategory={selectedCategory}
                         onServerSelect={onServerSelect}
                         onCategorySelect={setSelectedCategory}
@@ -102,10 +102,10 @@ export const BrowseDialog: React.FC<BrowseDialogProps> = ({
           </div>
         </div>
         <DialogFooter className='w-full'>
-          {!searchQuery && popularServersV2?.success && popularServersV2.pagination && (
+          {!searchQuery && popularServers?.success && popularServers.pagination && (
             <div className="flex items-center justify-between w-full">
               <div className="text-sm text-muted-foreground">
-                Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, popularServersV2.pagination.totalCount)} of {popularServersV2.pagination.totalCount} servers
+                Showing {((currentPage - 1) * pageSize) + 1} to {Math.min(currentPage * pageSize, popularServers.pagination.totalCount)} of {popularServers.pagination.totalCount} servers
               </div>
               <div className="flex items-center gap-2">
                 <Button
@@ -118,13 +118,13 @@ export const BrowseDialog: React.FC<BrowseDialogProps> = ({
                   Previous
                 </Button>
                 <span className="text-sm text-muted-foreground">
-                  Page {currentPage} of {popularServersV2.pagination.totalPages}
+                  Page {currentPage} of {popularServers.pagination.totalPages}
                 </span>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setCurrentPage(prev => Math.min(popularServersV2.pagination.totalPages, prev + 1))}
-                  disabled={currentPage >= popularServersV2.pagination.totalPages}
+                  onClick={() => setCurrentPage(prev => Math.min(popularServers.pagination.totalPages, prev + 1))}
+                  disabled={currentPage >= popularServers.pagination.totalPages}
                 >
                   Next
                   <ChevronRight className="h-4 w-4" />

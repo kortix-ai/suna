@@ -133,7 +133,7 @@ export function DeployToolView({
     }, [deployResult?.output]);
 
     return (
-        <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-white dark:bg-zinc-950">
+        <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
             <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
                 <div className="flex flex-row items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -223,7 +223,7 @@ export function DeployToolView({
                                     {/* Terminal Output */}
                                     {cleanOutput.length > 0 && (
                                         <div className="bg-zinc-100 dark:bg-neutral-900 rounded-lg overflow-hidden border border-zinc-200/20">
-                                            <div className="bg-zinc-200 dark:bg-zinc-800 px-4 py-2 flex items-center gap-2">
+                                            <div className="bg-accent px-4 py-2 flex items-center gap-2">
                                                 <TerminalIcon className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
                                                 <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                                                     Deployment Log
@@ -259,7 +259,7 @@ export function DeployToolView({
                                     {/* Raw Error Output */}
                                     {rawContent && (
                                         <div className="bg-zinc-100 dark:bg-neutral-900 rounded-lg overflow-hidden border border-zinc-200/20">
-                                            <div className="bg-zinc-200 dark:bg-zinc-800 px-4 py-2 flex items-center gap-2">
+                                            <div className="bg-accent px-4 py-2 flex items-center gap-2">
                                                 <TerminalIcon className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
                                                 <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                                                     Error Details

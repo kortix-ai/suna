@@ -111,11 +111,11 @@ export function renderMarkdownContent(
     if (isNewXmlFormat(content)) {
         const contentParts: React.ReactNode[] = [];
         let lastIndex = 0;
-        
+
         // Find all function_calls blocks
         const functionCallsRegex = /<function_calls>([\s\S]*?)<\/function_calls>/gi;
         let match;
-        
+
         while ((match = functionCallsRegex.exec(content)) !== null) {
             // Add text before the function_calls block
             if (match.index > lastIndex) {
@@ -128,22 +128,22 @@ export function renderMarkdownContent(
                     );
                 }
             }
-            
+
             // Parse the tool calls in this block
             const toolCalls = parseXmlToolCalls(match[0]);
-            
+
             toolCalls.forEach((toolCall, index) => {
                 const toolName = toolCall.functionName.replace(/_/g, '-');
-                
+
                 if (toolName === 'ask') {
                     // Handle ask tool specially - extract text and attachments
                     const askText = toolCall.parameters.text || '';
                     const attachments = toolCall.parameters.attachments || [];
-                    
+
                     // Convert single attachment to array for consistent handling
-                    const attachmentArray = Array.isArray(attachments) ? attachments : 
-                                          (typeof attachments === 'string' ? attachments.split(',').map(a => a.trim()) : []);
-                    
+                    const attachmentArray = Array.isArray(attachments) ? attachments :
+                        (typeof attachments === 'string' ? attachments.split(',').map(a => a.trim()) : []);
+
                     // Render ask tool content with attachment UI
                     contentParts.push(
                         <div key={`ask-${match.index}-${index}`} className="space-y-3">
@@ -153,7 +153,7 @@ export function renderMarkdownContent(
                     );
                 } else {
                     const IconComponent = getToolIcon(toolName);
-                    
+
                     // Extract primary parameter for display
                     let paramDisplay = '';
                     if (toolCall.parameters.file_path) {
@@ -165,12 +165,12 @@ export function renderMarkdownContent(
                     } else if (toolCall.parameters.url) {
                         paramDisplay = toolCall.parameters.url;
                     }
-                    
+
                     contentParts.push(
                         <div key={`tool-${match.index}-${index}`} className="my-1">
                             <button
                                 onClick={() => handleToolClick(messageId, toolName)}
-                                className="inline-flex items-center gap-1.5 py-1 px-1 text-xs text-muted-foreground bg-muted hover:bg-muted/80 rounded-md transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50"
+                                className="inline-flex items-center gap-1.5 py-1 px-1 pr-1.5 text-xs text-muted-foreground bg-muted hover:bg-muted/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50"
                             >
                                 <div className='border-2 bg-gradient-to-br from-neutral-200 to-neutral-300 dark:from-neutral-700 dark:to-neutral-800 flex items-center justify-center p-0.5 rounded-sm border-neutral-400/20 dark:border-neutral-600'>
                                     <IconComponent className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
@@ -182,10 +182,10 @@ export function renderMarkdownContent(
                     );
                 }
             });
-            
+
             lastIndex = match.index + match[0].length;
         }
-        
+
         // Add any remaining text after the last function_calls block
         if (lastIndex < content.length) {
             const remainingText = content.substring(lastIndex);
@@ -197,7 +197,7 @@ export function renderMarkdownContent(
                 );
             }
         }
-        
+
         return contentParts.length > 0 ? contentParts : <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words">{content}</Markdown>;
     }
 
@@ -252,7 +252,7 @@ export function renderMarkdownContent(
                 <div key={toolCallKey} className="my-1">
                     <button
                         onClick={() => handleToolClick(messageId, toolName)}
-                        className="inline-flex items-center gap-1.5 py-1 px-1 text-xs text-muted-foreground bg-muted hover:bg-muted/80 rounded-md transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50"
+                        className="inline-flex items-center gap-1.5 py-1 px-1 pr-1.5 text-xs text-muted-foreground bg-muted hover:bg-muted/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50"
                     >
                         <div className='border-2 bg-gradient-to-br from-neutral-200 to-neutral-300 dark:from-neutral-700 dark:to-neutral-800 flex items-center justify-center p-0.5 rounded-sm border-neutral-400/20 dark:border-neutral-600'>
                             <IconComponent className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
@@ -261,7 +261,7 @@ export function renderMarkdownContent(
                         {paramDisplay && <span className="ml-1 text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
                     </button>
                 </div>
-            ); 
+            );
         }
         lastIndex = xmlRegex.lastIndex;
     }
@@ -329,7 +329,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
     // React Query file preloader
     const { preloadFiles } = useFilePreloader();
 
-    const containerClassName = isPreviewMode 
+    const containerClassName = isPreviewMode
         ? "flex-1 overflow-y-auto scrollbar-thin scrollbar-track-secondary/0 scrollbar-thumb-primary/10 scrollbar-thumb-rounded-full hover:scrollbar-thumb-primary/10 px-6 py-4 pb-72"
         : "flex-1 overflow-y-auto scrollbar-thin scrollbar-track-secondary/0 scrollbar-thumb-primary/10 scrollbar-thumb-rounded-full hover:scrollbar-thumb-primary/10 px-6 py-4 pb-72 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60";
 
@@ -429,14 +429,14 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                         groupedMessages.push({ type: 'user', messages: [message], key });
                                     } else if (messageType === 'assistant' || messageType === 'tool' || messageType === 'browser_state') {
                                         // Check if we can add to existing assistant group (same agent)
-                                        const canAddToExistingGroup = currentGroup && 
+                                        const canAddToExistingGroup = currentGroup &&
                                             currentGroup.type === 'assistant_group' &&
                                             (() => {
                                                 // For assistant messages, check if agent matches
                                                 if (messageType === 'assistant') {
                                                     const lastAssistantMsg = currentGroup.messages.findLast(m => m.type === 'assistant');
                                                     if (!lastAssistantMsg) return true; // No assistant message yet, can add
-                                                    
+
                                                     // Compare agent info - both null/undefined should be treated as same (default agent)
                                                     const currentAgentId = message.agent_id;
                                                     const lastAgentId = lastAssistantMsg.agent_id;
@@ -568,7 +568,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                         if (debugMode) {
                                             return (
                                                 <div key={group.key} className="flex justify-end">
-                                                    <div className="flex max-w-[85%] rounded-xl bg-primary/10 px-4 py-3 break-words overflow-hidden">
+                                                    <div className="flex max-w-[85%] rounded-2xl bg-card px-4 py-3 break-words overflow-hidden">
                                                         <pre className="text-xs font-mono whitespace-pre-wrap overflow-x-auto min-w-0 flex-1">
                                                             {message.content}
                                                         </pre>
@@ -591,7 +591,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
 
                                         return (
                                             <div key={group.key} className="flex justify-end">
-                                                <div className="flex max-w-[85%] rounded-xl bg-primary/10 px-4 py-3 break-words overflow-hidden">
+                                                <div className="flex max-w-[85%] rounded-3xl rounded-br-lg bg-card border px-4 py-3 break-words overflow-hidden">
                                                     <div className="space-y-3 min-w-0 flex-1">
                                                         {cleanContent && (
                                                             <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-wrap-anywhere">{cleanContent}</Markdown>
@@ -610,14 +610,14 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                     <div className="flex items-center">
                                                         <div className="rounded-md flex items-center justify-center">
                                                             {(() => {
-                                                                const firstAssistantWithAgent = group.messages.find(msg => 
+                                                                const firstAssistantWithAgent = group.messages.find(msg =>
                                                                     msg.type === 'assistant' && (msg.agents?.avatar || msg.agents?.avatar_color)
                                                                 );
                                                                 if (firstAssistantWithAgent?.agents?.avatar) {
                                                                     const avatar = firstAssistantWithAgent.agents.avatar;
                                                                     const color = firstAssistantWithAgent.agents.avatar_color;
                                                                     return (
-                                                                        <div 
+                                                                        <div
                                                                             className="h-4 w-5 flex items-center justify-center rounded text-xs"
                                                                         >
                                                                             <span className="text-lg">{avatar}</span>
@@ -629,7 +629,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                         </div>
                                                         <p className='ml-2 text-sm text-muted-foreground'>
                                                             {(() => {
-                                                                const firstAssistantWithAgent = group.messages.find(msg => 
+                                                                const firstAssistantWithAgent = group.messages.find(msg =>
                                                                     msg.type === 'assistant' && msg.agents?.name
                                                                 );
                                                                 if (firstAssistantWithAgent?.agents?.name) {
@@ -639,9 +639,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                             })()}
                                                         </p>
                                                     </div>
-                                                    
+
                                                     {/* Message content - ALL messages in the group */}
-                                                    <div className="flex max-w-[90%] rounded-lg text-sm break-words overflow-hidden">
+                                                    <div className="flex max-w-[90%] text-sm break-words overflow-hidden">
                                                         <div className="space-y-2 min-w-0 flex-1">
                                                             {(() => {
                                                                 // In debug mode, just show raw messages content
@@ -691,7 +691,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                     if (message.type === 'assistant') {
                                                                         const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
                                                                         const msgKey = message.message_id || `submsg-assistant-${msgIndex}`;
-                                                                        
+
                                                                         if (!parsedContent.content) return;
 
                                                                         const renderedContent = renderMarkdownContent(
@@ -711,7 +711,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                 </div>
                                                                             </div>
                                                                         );
-                                                                        
+
                                                                         assistantMessageCount++; // Increment after adding the element
                                                                     }
                                                                 });
@@ -771,7 +771,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                 {detectedTag && detectedTag !== 'function_calls' && (
                                                                                     <div className="mt-2 mb-1">
                                                                                         <button
-                                                                                            className="animate-shimmer inline-flex items-center gap-1.5 py-1 px-1 text-xs font-medium text-primary bg-muted hover:bg-muted/80 rounded-md transition-colors cursor-pointer border border-primary/20"
+                                                                                            className="animate-shimmer inline-flex items-center gap-1.5 py-1 px-1 pr-1.5 text-xs font-medium text-primary bg-muted hover:bg-muted/80 rounded-md transition-colors cursor-pointer border border-primary/20"
                                                                                         >
                                                                                             <div className='border-2 bg-gradient-to-br from-neutral-200 to-neutral-300 dark:from-neutral-700 dark:to-neutral-800 flex items-center justify-center p-0.5 rounded-sm border-neutral-400/20 dark:border-neutral-600'>
                                                                                                 <CircleDashed className="h-3.5 w-3.5 text-primary flex-shrink-0 animate-spin animation-duration-2000" />
@@ -784,7 +784,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                 {detectedTag === 'function_calls' && (
                                                                                     <div className="mt-2 mb-1">
                                                                                         <button
-                                                                                            className="animate-shimmer inline-flex items-center gap-1.5 py-1 px-1 text-xs font-medium text-primary bg-muted hover:bg-muted/80 rounded-md transition-colors cursor-pointer border border-primary/20"
+                                                                                            className="animate-shimmer inline-flex items-center gap-1.5 py-1 px-1 pr-1.5 text-xs font-medium text-primary bg-muted hover:bg-muted/80 rounded-md transition-colors cursor-pointer border border-primary/20"
                                                                                         >
                                                                                             <div className='border-2 bg-gradient-to-br from-neutral-200 to-neutral-300 dark:from-neutral-700 dark:to-neutral-800 flex items-center justify-center p-0.5 rounded-sm border-neutral-400/20 dark:border-neutral-600'>
                                                                                                 <CircleDashed className="h-3.5 w-3.5 text-primary flex-shrink-0 animate-spin animation-duration-2000" />
@@ -807,7 +807,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                             const paramDisplay = extractPrimaryParam(toolName, streamingToolCall.arguments || '');
                                                                                             return (
                                                                                                 <button
-                                                                                                    className="animate-shimmer inline-flex items-center gap-1.5 py-1 px-1 text-xs font-medium text-primary bg-muted hover:bg-muted/80 rounded-md transition-colors cursor-pointer border border-primary/20"
+                                                                                                    className="animate-shimmer inline-flex items-center gap-1.5 py-1 px-1 pr-1.5 text-xs font-medium text-primary bg-muted hover:bg-muted/80 rounded-md transition-colors cursor-pointer border border-primary/20"
                                                                                                 >
                                                                                                     <div className='border-2 bg-gradient-to-br from-neutral-200 to-neutral-300 dark:from-neutral-700 dark:to-neutral-800 flex items-center justify-center p-0.5 rounded-sm border-neutral-400/20 dark:border-neutral-600'>
                                                                                                         <CircleDashed className="h-3.5 w-3.5 text-primary flex-shrink-0 animate-spin animation-duration-2000" />
@@ -878,11 +878,11 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                                 >
                                                                                                     <CircleDashed className="h-3.5 w-3.5 text-primary flex-shrink-0 animate-spin animation-duration-2000" />
                                                                                                     <span className="font-mono text-xs text-primary">
-                                                                                                        {detectedTag === 'function_calls' ? 
+                                                                                                        {detectedTag === 'function_calls' ?
                                                                                                             (() => {
                                                                                                                 const extractedToolName = extractToolNameFromStream(streamingText);
                                                                                                                 return extractedToolName ? getUserFriendlyToolName(extractedToolName) : 'Using Tool...';
-                                                                                                            })() : 
+                                                                                                            })() :
                                                                                                             getUserFriendlyToolName(detectedTag)
                                                                                                         }
                                                                                                     </span>
@@ -931,7 +931,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                 </div>
                                                 <p className='ml-2 text-sm text-muted-foreground'>{agentName || 'Suna'}</p>
                                             </div>
-                                            
+
                                             {/* Loader content */}
                                             <div className="space-y-2 w-full h-12">
                                                 <AgentLoader />
@@ -951,7 +951,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                             </div>
                                             <p className='ml-2 text-sm text-muted-foreground'>{agentName || 'Suna'}</p>
                                         </div>
-                                        
+
                                         {/* Tool call content */}
                                         <div className="space-y-2">
                                             <div className="animate-shimmer inline-flex items-center gap-1.5 py-1.5 px-3 text-xs font-medium text-primary bg-primary/10 rounded-md border border-primary/20">
@@ -976,7 +976,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                             </div>
                                             <p className='ml-2 text-sm text-muted-foreground'>{agentName || 'Suna'}</p>
                                         </div>
-                                        
+
                                         {/* Streaming indicator content */}
                                         <div className="max-w-[90%] px-4 py-3 text-sm">
                                             <div className="flex items-center gap-1.5 py-1">
