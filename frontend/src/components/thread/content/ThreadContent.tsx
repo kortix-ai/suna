@@ -18,6 +18,44 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { AgentLoader } from './loader';
 import { parseXmlToolCalls, isNewXmlFormat, extractToolNameFromStream } from '@/components/thread/tool-views/xml-parser';
 import { parseToolResult } from '@/components/thread/tool-views/tool-result-parser';
+import MessageActions from '@/components/thread/message-actions';
+
+// Utility function to extract clean markdown content with formatting preserved
+function extractCleanMarkdownContent(content: string): string {
+  if (!content) return '';
+
+  let processedContent = content;
+  
+  // Extract text from new format <function_calls><invoke name="ask"><parameter name="text">...</parameter></invoke></function_calls>
+  const newFormatAskRegex = /<function_calls>[\s\S]*?<invoke\s+name=["']ask["']>[\s\S]*?<parameter\s+name=["']text["']>([\s\S]*?)<\/parameter>[\s\S]*?<\/invoke>[\s\S]*?<\/function_calls>/gi;
+  const newFormatMatches = [...processedContent.matchAll(newFormatAskRegex)];
+  
+  for (const match of newFormatMatches) {
+    const askText = match[1].trim();
+    processedContent = processedContent.replace(match[0], askText);
+  }
+  
+  // Extract text from old format <ask>...</ask>
+  const oldFormatAskRegex = /<ask[^>]*>([\s\S]*?)<\/ask>/gi;
+  const oldFormatMatches = [...processedContent.matchAll(oldFormatAskRegex)];
+  
+  for (const match of oldFormatMatches) {
+    const askText = match[1].trim();
+    processedContent = processedContent.replace(match[0], askText);
+  }
+  
+  // Remove remaining <function_calls> blocks
+  processedContent = processedContent.replace(/<function_calls>[\s\S]*?<\/function_calls>/gi, '');
+  
+  // Remove other individual XML tool call tags (but not ask, since we handled those)
+  processedContent = processedContent.replace(/<(?!inform\b)([a-zA-Z\-_]+)(?:\s+[^>]*)?>(?:[\s\S]*?)<\/\1>|<(?!inform\b)([a-zA-Z\-_]+)(?:\s+[^>]*)?\/>/g, '');
+  
+  // Clean up extra whitespace and newlines while preserving markdown structure
+  return processedContent
+    .replace(/\n\s*\n\s*\n/g, '\n\n') // Replace multiple newlines with double newlines
+    .replace(/^\s+|\s+$/g, '') // Trim leading/trailing whitespace
+    .trim();
+}
 
 // Define the set of  tags whose raw XML should be hidden during streaming
 const HIDE_STREAMING_XML_TAGS = new Set([
@@ -409,6 +447,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                     type: 'user' | 'assistant_group';
                                     messages: UnifiedMessage[];
                                     key: string;
+                                    processedContent?: string;
                                 };
                                 const groupedMessages: MessageGroup[] = [];
                                 let currentGroup: MessageGroup | null = null;
@@ -605,7 +644,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                     } else if (group.type === 'assistant_group') {
                                         return (
                                             <div key={group.key} ref={groupIndex === groupedMessages.length - 1 ? latestMessageRef : null}>
-                                                <div className="flex flex-col gap-2">
+                                                <div className="flex flex-col gap-2 group">
                                                     <div className="flex items-center">
                                                         <div className="rounded-md flex items-center justify-center">
                                                             {(() => {
@@ -686,6 +725,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                 const elements: React.ReactNode[] = [];
                                                                 let assistantMessageCount = 0; // Move this outside the loop
 
+                                                                // Collect processed content for the Feedback component
+                                                                const processedContentParts: string[] = [];
+
                                                                 group.messages.forEach((message, msgIndex) => {
                                                                     if (message.type === 'assistant') {
                                                                         const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
@@ -693,6 +735,12 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
 
                                                                         if (!parsedContent.content) return;
 
+                                                                        // Extract clean content for copying
+                                                                        const cleanContent = extractCleanMarkdownContent(parsedContent.content);
+                                                                        if (cleanContent) {
+                                                                            processedContentParts.push(cleanContent);
+                                                                        }
+                                                                        
                                                                         const renderedContent = renderMarkdownContent(
                                                                             parsedContent.content,
                                                                             handleToolClick,
@@ -714,6 +762,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                         assistantMessageCount++; // Increment after adding the element
                                                                     }
                                                                 });
+
+                                                                // Store the processed content for the Feedback component
+                                                                const processedContent = processedContentParts.join('\n\n');
+                                                                group.processedContent = processedContent;
 
                                                                 return elements;
                                                             })()}
@@ -897,6 +949,34 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                             )}
                                                         </div>
                                                     </div>
+
+                                                    {(() => {
+                                                        const firstAssistant = group.messages.find(msg => msg.type === 'assistant');
+                                                        const messageId = firstAssistant?.message_id;
+                                                        if (!messageId) return null;
+
+                                                        // Check if this group is currently streaming
+                                                        const isCurrentlyStreaming = (() => {
+                                                            const isLastGroup = groupIndex === finalGroupedMessages.length - 1;
+                                                            const hasStreamingContent = streamingTextContent || streamingToolCall;
+                                                            return isLastGroup && hasStreamingContent;
+                                                        })();
+
+                                                        // Don't show actions for streaming messages
+                                                        if (isCurrentlyStreaming) return null;
+
+                                                        // Get the processed content that was stored during rendering
+                                                        const processedContent = group.processedContent;
+                                                        return (
+                                                            <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                                                                <MessageActions 
+                                                                    messageId={messageId} 
+                                                                    initialFeedback={firstAssistant?.user_feedback ?? null}
+                                                                    processedContent={processedContent}
+                                                                />
+                                                            </div>
+                                                        );
+                                                    })()}
                                                 </div>
                                             </div>
                                         );

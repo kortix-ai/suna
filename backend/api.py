@@ -24,6 +24,7 @@ from flags import api as feature_flags_api
 from services import transcription as transcription_api
 import sys
 from services import email_api
+from feedback import api as feedback_api
 from triggers import api as triggers_api
 
 
@@ -169,6 +170,8 @@ api_router.include_router(email_api.router)
 
 from knowledge_base import api as knowledge_base_api
 api_router.include_router(knowledge_base_api.router)
+
+app.include_router(feedback_api.router, prefix="/api")
 
 from triggers import api as triggers_api
 from triggers import unified_oauth_api
