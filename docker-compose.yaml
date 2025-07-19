@@ -37,7 +37,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./backend/.env:/app/.env:ro
+      - ./backend/.env:/app/.env
     env_file:
       - ./backend/.env
     environment:

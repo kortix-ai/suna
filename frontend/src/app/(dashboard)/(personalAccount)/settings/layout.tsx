@@ -3,6 +3,7 @@
 import { Separator } from '@/components/ui/separator';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { isLocalMode } from '@/lib/config';
 
 export default function PersonalAccountSettingsPage({
   children,
@@ -15,6 +16,7 @@ export default function PersonalAccountSettingsPage({
     // { name: "Teams", href: "/settings/teams" },
     { name: 'Billing', href: '/settings/billing' },
     { name: 'Usage Logs', href: '/settings/usage-logs' },
+    ...(isLocalMode() ? [{ name: 'Local .Env Manager', href: '/settings/env-manager' }] : []),
   ];
   return (
     <>

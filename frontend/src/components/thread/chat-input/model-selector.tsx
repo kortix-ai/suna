@@ -14,7 +14,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
-import { Check, ChevronDown, Search, AlertTriangle, Crown, ArrowUpRight, Brain, Plus, Edit, Trash, Cpu } from 'lucide-react';
+import { Check, ChevronDown, Search, AlertTriangle, Crown, ArrowUpRight, Brain, Plus, Edit, Trash, Cpu, Key, KeyRound } from 'lucide-react';
 import {
   ModelOption,
   SubscriptionStatus,
@@ -32,6 +32,7 @@ import { cn } from '@/lib/utils';
 import { useRouter } from 'next/navigation';
 import { isLocalMode } from '@/lib/config';
 import { CustomModelDialog, CustomModelFormData } from './custom-model-dialog';
+import Link from 'next/link';
 
 interface CustomModel {
   id: string;
@@ -674,6 +675,22 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                 <div className="px-3 py-3 flex justify-between items-center">
                   <span className="text-xs font-medium text-muted-foreground">All Models</span>
                   {isLocalMode() && (
+                    <div className="flex items-center gap-1">
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Link
+                              href="/settings/env-manager"
+                              className="h-6 w-6 p-0 flex items-center justify-center"
+                            >
+                              <KeyRound className="h-3.5 w-3.5" />
+                            </Link>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="text-xs">
+                          Local .Env Manager
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -694,6 +711,7 @@ export const ModelSelector: React.FC<ModelSelectorProps> = ({
                         </TooltipContent>
                       </Tooltip>
                     </TooltipProvider>
+                    </div>
                   )}
                 </div>
                 {uniqueModels

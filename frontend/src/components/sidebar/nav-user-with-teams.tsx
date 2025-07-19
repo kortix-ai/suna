@@ -17,6 +17,7 @@ import {
   AudioWaveform,
   Sun,
   Moon,
+  KeyRound,
 } from 'lucide-react';
 import { useAccounts } from '@/hooks/use-accounts';
 import NewTeamForm from '@/components/basejump/new-team-form';
@@ -48,6 +49,7 @@ import {
 } from '@/components/ui/dialog';
 import { createClient } from '@/lib/supabase/client';
 import { useTheme } from 'next-themes';
+import { isLocalMode } from '@/lib/config';
 
 export function NavUserWithTeams({
   user,
@@ -286,6 +288,12 @@ export function NavUserWithTeams({
                     Billing
                   </Link>
                 </DropdownMenuItem>
+                {isLocalMode() && <DropdownMenuItem asChild>
+                  <Link href="/settings/env-manager">
+                    <KeyRound className="h-4 w-4" />
+                    Local .Env Manager
+                  </Link>
+                </DropdownMenuItem>}
                 {/* <DropdownMenuItem asChild>
                   <Link href="/settings">
                     <Settings className="mr-2 h-4 w-4" />

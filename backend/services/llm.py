@@ -19,6 +19,7 @@ import litellm
 from litellm.files.main import ModelResponse
 from utils.logger import logger
 from utils.config import config
+from utils.constants import PROVIDERS
 
 # litellm.set_verbose=True
 litellm.modify_params=True
@@ -38,8 +39,7 @@ class LLMRetryError(LLMError):
 
 def setup_api_keys() -> None:
     """Set up API keys from environment variables."""
-    providers = ['OPENAI', 'ANTHROPIC', 'GROQ', 'OPENROUTER', 'XAI']
-    for provider in providers:
+    for provider in PROVIDERS:
         key = getattr(config, f'{provider}_API_KEY')
         if key:
             logger.debug(f"API key set for provider: {provider}")
