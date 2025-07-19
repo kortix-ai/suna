@@ -25,6 +25,7 @@ export interface UnifiedMessage {
     avatar?: string;
     avatar_color?: string;
   }; // Agent information from join
+  user_feedback?: boolean | null; // Feedback provided by current user: true (liked), false (disliked), null / undefined (no feedback)
 }
 
 // Helper type for parsed content - structure depends on message.type
