@@ -20,6 +20,7 @@ export interface ApiMessageType extends BaseApiMessageType {
   metadata?: string;
   created_at?: string;
   updated_at?: string;
+  user_feedback?: boolean | null;
 }
 
 export interface StreamingToolCall {

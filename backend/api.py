@@ -28,6 +28,7 @@ from flags import api as feature_flags_api
 from services import transcription as transcription_api
 import sys
 from services import email_api
+from feedback import api as feedback_api
 from triggers import api as triggers_api
 from triggers.endpoints.workflows import router as workflows_router
 
@@ -189,6 +190,8 @@ api_router.include_router(pipedream_api.router)
 
 from auth import phone_verification_supabase_mfa
 api_router.include_router(phone_verification_supabase_mfa.router)
+
+api_router.include_router(feedback_api.router)
 
 @api_router.get("/health")
 async def health_check():
