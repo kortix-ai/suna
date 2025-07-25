@@ -220,19 +220,24 @@ export default function ThreadPage({
         toolName.includes('file') ||
         toolName === 'create-file' ||
         toolName === 'delete-file' ||
-        toolName === 'full-file-rewrite'
+        toolName === 'full-file-rewrite' ||
+        toolName === 'edit-file'
       ) {
         // For file operations, check if toolArguments contains a file path
         // If it's just a raw file path, format it properly
-        const fileOpTags = ['create-file', 'delete-file', 'full-file-rewrite'];
+        const fileOpTags = ['create-file', 'delete-file', 'full-file-rewrite', 'edit-file'];
         const matchingTag = fileOpTags.find((tag) => toolName === tag);
         if (matchingTag) {
           // Check if arguments already have the proper XML format
-          if (!toolArguments.includes(`<${matchingTag}>`) && !toolArguments.includes('file_path=')) {
+          if (!toolArguments.includes(`<${matchingTag}>`) && !toolArguments.includes('file_path=') && !toolArguments.includes('target_file=')) {
             // If toolArguments looks like a raw file path, format it properly
             const filePath = toolArguments.trim();
             if (filePath && !filePath.startsWith('<')) {
+              if (matchingTag === 'edit-file') {
+                formattedContent = `<${matchingTag} target_file="${filePath}">`;
+              } else {
               formattedContent = `<${matchingTag} file_path="${filePath}">`;
+              }
             } else {
               formattedContent = `<${matchingTag}>${toolArguments}</${matchingTag}>`;
             }

@@ -56,6 +56,7 @@ const defaultRegistry: ToolViewRegistryType = {
   'delete-file': FileOperationToolView,
   'full-file-rewrite': FileOperationToolView,
   'read-file': FileOperationToolView,
+  'edit-file': FileOperationToolView,
 
   'str-replace': StrReplaceToolView,
 

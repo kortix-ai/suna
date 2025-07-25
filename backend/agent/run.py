@@ -435,6 +435,33 @@ async def run_agent(
         
         system_content += mcp_info
     
+    # Add conditional instructions for edit_file tool
+    if enabled_tools is None:
+        # All tools enabled - edit_file is available
+        edit_file_available = True
+    else:
+        # Check if sb_files_tool is enabled (which includes edit_file)
+        edit_file_available = enabled_tools.get('sb_files_tool', {}).get('enabled', False)
+    
+    if edit_file_available:
+        edit_file_info = "\n\n--- INTELLIGENT FILE EDITING ---\n"
+        edit_file_info += "You have access to the `edit_file` tool for AI-powered intelligent file editing.\n\n"
+        edit_file_info += "**PREFERRED FILE EDITING APPROACH:**\n"
+        edit_file_info += "1. **For intelligent edits:** Use `edit_file` with natural language instructions\n"
+        edit_file_info += "   - Ideal for: Code and Doc Editing, adding features, refactoring, complex modifications, following patterns\n"
+        edit_file_info += "   - Provide clear instructions and use `// ... existing code ...` format\n"
+        edit_file_info += "   - Example: \"Add error handling to the login function\" or \"Update the CSS to use dark theme\"\n\n"
+        edit_file_info += "2. **For simple replacements:** Use `str_replace` when you need exact text replacement\n"
+        edit_file_info += "   - Ideal for: Simple text substitutions, specific string changes\n\n"
+        edit_file_info += "3. **For complete rewrites:** Use `full_file_rewrite` when replacing entire file content\n\n"
+        edit_file_info += "**TOOL SELECTION PRIORITY:**\n"
+        edit_file_info += "- Prefer `edit_file` for most editing tasks that require intelligence or pattern-following\n"
+        edit_file_info += "- Use `str_replace` only when you need single line text substitution\n"
+        edit_file_info += "- Use `full_file_rewrite` only when completely replacing file contents\n\n"
+        edit_file_info += "The `edit_file` tool is designed to apply changes intelligently and quickly, making it ideal for most code and doc modifications.\n"
+        
+        system_content += edit_file_info
+
     system_message = { "role": "system", "content": system_content }
 
     iteration_count = 0

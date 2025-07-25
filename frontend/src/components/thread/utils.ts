@@ -106,6 +106,8 @@ export const getToolIcon = (toolName: string): ElementType => {
       return FilePlus;
     case 'read-file':
       return FileText;
+    case 'edit-file':
+      return FileEdit;
 
     // Shell commands
     case 'execute-command':
@@ -242,6 +244,11 @@ export const extractPrimaryParam = (
         match = content.match(/file_path=(?:"|')([^"|']+)(?:"|')/);
         // Return just the filename part
         return match ? match[1].split('/').pop() || match[1] : null;
+      case 'edit-file':
+        // Try to match target_file attribute for edit-file
+        match = content.match(/target_file=(?:"|')([^"|']+)(?:"|')/);
+        // Return just the filename part
+        return match ? match[1].split('/').pop() || match[1] : null;
 
       // Shell commands
       case 'execute-command':
@@ -296,6 +303,7 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['full-file-rewrite', 'Rewriting File'],
   ['str-replace', 'Editing Text'],
   ['str_replace', 'Editing Text'],
+  ['edit_file', 'AI File Edit'],
   
   ['browser-click-element', 'Clicking Element'],
   ['browser-close-tab', 'Closing Tab'],
@@ -314,7 +322,7 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['browser-wait', 'Waiting'],
 
   ['execute-data-provider-call', 'Calling data provider'],
-  ['execute_data_provider_call', 'Calling data provider'],
+  ['execute_data-provider_call', 'Calling data provider'],
   ['get-data-provider-endpoints', 'Getting endpoints'],
   
   ['deploy', 'Deploying'],
@@ -348,6 +356,7 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['delete_file', 'Deleting File'],
   ['full_file_rewrite', 'Rewriting File'],
   ['str_replace', 'Editing Text'],
+  ['edit_file', 'AI File Edit'],
   
   ['browser_click_element', 'Clicking Element'],
   ['browser_close_tab', 'Closing Tab'],

@@ -1,6 +1,6 @@
 import { LucideIcon, FilePen, Replace, Trash2, FileCode, FileSpreadsheet, File } from 'lucide-react';
 
-export type FileOperation = 'create' | 'rewrite' | 'delete';
+export type FileOperation = 'create' | 'rewrite' | 'delete' | 'edit';
 
 export interface OperationConfig {
   icon: LucideIcon;
@@ -82,6 +82,7 @@ export const getOperationType = (name?: string, assistantContent?: any): FileOpe
     if (name.includes('create')) return 'create';
     if (name.includes('rewrite')) return 'rewrite';
     if (name.includes('delete')) return 'delete';
+    if (name.includes('edit')) return 'edit';
   }
 
   if (!assistantContent) return 'create';
@@ -92,6 +93,7 @@ export const getOperationType = (name?: string, assistantContent?: any): FileOpe
 
   if (contentStr.includes('<create-file>')) return 'create';
   if (contentStr.includes('<full-file-rewrite>')) return 'rewrite';
+  if (contentStr.includes('<edit-file>')) return 'edit';
   if (
     contentStr.includes('delete-file') ||
     contentStr.includes('<delete>')
@@ -101,46 +103,60 @@ export const getOperationType = (name?: string, assistantContent?: any): FileOpe
   if (contentStr.toLowerCase().includes('create file')) return 'create';
   if (contentStr.toLowerCase().includes('rewrite file'))
     return 'rewrite';
+  if (contentStr.toLowerCase().includes('edit file')) return 'edit';
   if (contentStr.toLowerCase().includes('delete file')) return 'delete';
 
   return 'create';
 };
 
-export const getOperationConfigs = (): Record<FileOperation, OperationConfig> => ({
+export const getOperationConfigs = (): Record<FileOperation, OperationConfig> => {
+  return {
   create: {
     icon: FilePen,
-    color: 'text-emerald-600 dark:text-emerald-400',
+      color: 'text-green-600',
     successMessage: 'File created successfully',
     progressMessage: 'Creating file...',
-    bgColor: 'bg-gradient-to-b from-emerald-100 to-emerald-50 shadow-inner dark:from-emerald-800/40 dark:to-emerald-900/60 dark:shadow-emerald-950/20',
-    gradientBg: 'bg-gradient-to-br from-emerald-500/20 to-emerald-600/10',
-    borderColor: 'border-emerald-500/20',
-    badgeColor: 'bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 shadow-sm dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300',
-    hoverColor: 'hover:bg-neutral-200 dark:hover:bg-neutral-800'
+      bgColor: 'bg-green-50',
+      gradientBg: 'from-green-50 to-green-100',
+      borderColor: 'border-green-200',
+      badgeColor: 'bg-green-100 text-green-700 border-green-200',
+      hoverColor: 'hover:bg-green-100',
+    },
+    edit: {
+      icon: Replace,
+      color: 'text-blue-600',
+      successMessage: 'File edited successfully',
+      progressMessage: 'Editing file...',
+      bgColor: 'bg-blue-50',
+      gradientBg: 'from-blue-50 to-blue-100',
+      borderColor: 'border-blue-200',
+      badgeColor: 'bg-blue-100 text-blue-700 border-blue-200',
+      hoverColor: 'hover:bg-blue-100',
   },
   rewrite: {
     icon: Replace,
-    color: 'text-blue-600 dark:text-blue-400',
+      color: 'text-amber-600',
     successMessage: 'File rewritten successfully',
     progressMessage: 'Rewriting file...',
-    bgColor: 'bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20',
-    gradientBg: 'bg-gradient-to-br from-blue-500/20 to-blue-600/10',
-    borderColor: 'border-blue-500/20',
-    badgeColor: 'bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 shadow-sm dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300',
-    hoverColor: 'hover:bg-neutral-200 dark:hover:bg-neutral-800'
+      bgColor: 'bg-amber-50',
+      gradientBg: 'from-amber-50 to-amber-100',
+      borderColor: 'border-amber-200',
+      badgeColor: 'bg-amber-100 text-amber-700 border-amber-200',
+      hoverColor: 'hover:bg-amber-100',
   },
   delete: {
     icon: Trash2,
-    color: 'text-rose-600 dark:text-rose-400',
+      color: 'text-red-600',
     successMessage: 'File deleted successfully',
     progressMessage: 'Deleting file...',
-    bgColor: 'bg-gradient-to-b from-rose-100 to-rose-50 shadow-inner dark:from-rose-800/40 dark:to-rose-900/60 dark:shadow-rose-950/20',
-    gradientBg: 'bg-gradient-to-br from-rose-500/20 to-rose-600/10',
-    borderColor: 'border-rose-500/20',
-    badgeColor: 'bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 shadow-sm dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300',
-    hoverColor: 'hover:bg-neutral-200 dark:hover:bg-neutral-800'
+      bgColor: 'bg-red-50',
+      gradientBg: 'from-red-50 to-red-100',
+      borderColor: 'border-red-200',
+      badgeColor: 'bg-red-100 text-red-700 border-red-200',
+      hoverColor: 'hover:bg-red-100',
   },
-});
+  };
+};
 
 export const getFileIcon = (fileName: string): LucideIcon => {
   if (fileName.endsWith('.md')) return FileCode;

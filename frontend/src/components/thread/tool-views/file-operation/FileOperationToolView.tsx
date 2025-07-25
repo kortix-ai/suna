@@ -95,11 +95,11 @@ export function FileOperationToolView({
     fileContent = isStreaming
       ? extractStreamingFileContent(
         assistantContent,
-        operation === 'create' ? 'create-file' : 'full-file-rewrite',
+        operation === 'create' ? 'create-file' : operation === 'edit' ? 'edit-file' : 'full-file-rewrite',
       ) || ''
       : extractFileContent(
         assistantContent,
-        operation === 'create' ? 'create-file' : 'full-file-rewrite',
+        operation === 'create' ? 'create-file' : operation === 'edit' ? 'edit-file' : 'full-file-rewrite',
       );
   }
 

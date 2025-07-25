@@ -27,6 +27,7 @@ const HIDE_STREAMING_XML_TAGS = new Set([
     'create-file',
     'delete-file',
     'full-file-rewrite',
+    'edit-file',
     'str-replace',
     'browser-click-element',
     'browser-close-tab',
