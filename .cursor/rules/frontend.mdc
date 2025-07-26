@@ -1,0 +1,143 @@
+---
+globs: frontend/**/*
+alwaysApply: false
+---
+
+# Frontend Development Guidelines
+
+## TypeScript Standards
+
+- Use TypeScript strictly - no `any` types unless absolutely necessary
+- Define proper interfaces and types for all components and functions
+- Use type imports: `import type { ComponentProps } from 'react'`
+- Leverage TypeScript 5+ features like `satisfies` operator
+
+## Next.js App Router
+
+- Use App Router with `app/` directory structure
+- Follow file naming: kebab-case for files, PascalCase for components
+- Organize components in feature-based folders
+- Keep reusable components in `src/components/`
+
+## UI Framework - shadcn/ui Default
+
+### Setup
+
+```bash
+npx shadcn-ui@latest init
+npx shadcn-ui@latest add button input form card dropdown-menu dialog
+```
+
+### Usage
+
+```typescript
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+// Use shadcn/ui components directly
+const AgentCard = ({ agent }: { agent: Agent }) => (
+  <Card>
+    <CardHeader>
+      <CardTitle>{agent.name}</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <p>{agent.description}</p>
+      <Button>Run Agent</Button>
+    </CardContent>
+  </Card>
+);
+```
+
+## State Management
+
+- **Server State**: `@tanstack/react-query` for data fetching
+- **Local State**: React hooks (`useState`, `useReducer`)
+- **Forms**: React Hook Form with Zod validation
+
+```typescript
+// Query pattern
+function useAgents() {
+  return useQuery({
+    queryKey: ["agents"],
+    queryFn: () => agentService.getAgents(),
+  });
+}
+
+// Form pattern with shadcn/ui
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import {
+  Form,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormControl,
+} from "@/components/ui/form";
+
+const form = useForm({
+  resolver: zodResolver(schema),
+});
+```
+
+## Supabase Integration
+
+```typescript
+// Auth hook
+function useAuth() {
+  const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) =>
+      setUser(session?.user ?? null)
+    );
+    return () => subscription.unsubscribe();
+  }, []);
+
+  return { user };
+}
+```
+
+## Performance
+
+- Use `lazy()` and `Suspense` for code splitting
+- Use `memo()` and `useMemo()` for expensive computations
+- Use `useCallback()` for stable function references
+
+## Key Dependencies
+
+### Core Framework
+
+- Next.js 15+ with App Router and Turbopack
+- React 18+ with TypeScript 5+
+
+### UI & Styling
+
+- shadcn/ui for components
+- Tailwind CSS for styling
+- Lucide React for icons
+
+### State & Data
+
+- @tanstack/react-query for server state
+- @supabase/supabase-js for database
+- react-hook-form + zod for forms
+
+## Essential shadcn/ui Components
+
+Add these commonly used components:
+
+```bash
+npx shadcn-ui@latest add button input textarea select checkbox form card dialog dropdown-menu badge table tabs toast
+```
+
+## Best Practices
+
+- Use shadcn/ui components as the default choice
+- Follow shadcn/ui patterns for consistent styling
+- Use the `cn` utility for conditional classes
+- Implement proper loading and error states
+- Use semantic HTML elements
+- Ensure keyboard navigation works

@@ -1,0 +1,146 @@
+---
+alwaysApply: true
+---
+
+# Suna AI Agent Project - Cursor Rules
+
+## Project Overview
+
+Suna is an open-source generalist AI agent with a full-stack architecture:
+
+- **Frontend**: Next.js 15+ with TypeScript, Tailwind CSS, Radix UI, React Query
+- **Backend**: Python 3.11+ with FastAPI, Supabase, Redis, LiteLLM, Dramatiq
+- **Agent System**: Isolated Docker environments with comprehensive tool execution
+- **Database**: Supabase for persistence, authentication, real-time features, and RLS
+
+## Architecture Components
+
+### Core Stack
+
+- **Frontend**: Next.js App Router + TypeScript + Tailwind + Radix UI
+- **Backend**: FastAPI + Supabase + Redis + LiteLLM + Dramatiq workers
+- **Database**: PostgreSQL via Supabase with Row Level Security
+- **Agent Runtime**: Docker containers with browser automation, code interpreter
+- **Authentication**: Supabase Auth with JWT validation
+- **Monitoring**: Langfuse tracing, Sentry error tracking, Prometheus metrics
+
+### File Organization
+
+```txt
+project/
+├── frontend/               # Next.js application
+│   └── src/
+│       ├── app/           # Next.js app router pages
+│       ├── components/    # Reusable React components
+│       ├── hooks/         # Custom React hooks
+│       ├── lib/          # Utilities and configurations
+│       ├── providers/    # Context providers
+│       └── contexts/     # React contexts
+├── backend/               # Python FastAPI backend
+│   ├── agent/            # AI agent core implementation
+│   ├── services/         # Business logic services
+│   ├── utils/           # Shared utilities
+│   ├── supabase/        # Database migrations & config
+│   ├── tools/           # Agent tool implementations
+│   ├── auth/            # Authentication logic
+│   ├── triggers/        # Event-driven triggers
+│   └── api.py           # Main FastAPI application
+└── docs/                 # Documentation
+```
+
+## Development Principles
+
+### Code Quality Standards
+
+- **Type Safety**: Strict TypeScript frontend, comprehensive Python type hints
+- **Error Handling**: Structured error responses, proper exception handling
+- **Logging**: Structured logging with context throughout the stack
+- **Testing**: Unit tests for core logic, integration tests for APIs
+- **Security**: Input validation, authentication, encryption for sensitive data
+
+### Performance Guidelines
+
+- **Frontend**: Code splitting, lazy loading, optimized bundle size
+- **Backend**: Async/await patterns, connection pooling, Redis caching
+- **Database**: Proper indexing, query optimization, RLS policies
+- **Agent**: Timeout handling, resource limits, sandbox isolation
+
+### Integration Patterns
+
+- **LLM Integration**: LiteLLM for multi-provider support, structured prompts
+- **Tool System**: Dual schema decorators (OpenAPI + XML), consistent ToolResult
+- **Real-time**: Supabase subscriptions for live updates
+- **Background Jobs**: Dramatiq for async processing, QStash for scheduling
+
+## Key Technologies
+
+### Frontend Dependencies
+
+- Next.js 15+, React 18+, TypeScript 5+
+- @tanstack/react-query, @supabase/supabase-js
+- @radix-ui components, @tailwindcss/typography
+- @hookform/resolvers, react-hook-form
+
+### Backend Dependencies
+
+- FastAPI 0.115+, Python 3.11+
+- Supabase 2.17+, Redis 5.2+, LiteLLM 1.72+
+- Dramatiq 1.18+, Pydantic for validation
+- Sentry, Langfuse, Prometheus for observability
+
+## Advanced Patterns
+
+### Agent System Architecture
+
+- **Versioning**: Multiple agent versions with `agent_versions` table
+- **Configuration**: JSONB config storage with validation
+- **Workflows**: Step-by-step execution with `agent_workflows`
+- **Triggers**: Scheduled and event-based automation
+- **Builder Tools**: Dynamic agent creation and management
+
+### Security & Authentication
+
+- **JWT Validation**: Supabase token verification without signature check
+- **Row Level Security**: Database-level access control
+- **Credential Encryption**: Secure storage of sensitive API keys
+- **Input Validation**: Pydantic models for all user inputs
+
+### Database Patterns
+
+- **Migrations**: Idempotent SQL with proper error handling
+- **Indexing**: Foreign keys and query optimization
+- **Triggers**: Automated timestamp management
+- **Enums**: Safe enum creation with duplicate handling
+
+## Development Workflow
+
+### Environment Setup
+
+- Use `mise.toml` for tool version management
+- Docker Compose for local development stack
+- Environment-specific configurations (LOCAL/STAGING/PRODUCTION)
+
+### Code Standards
+
+- Follow established naming conventions
+- Implement proper error boundaries
+- Use consistent logging patterns
+- Handle loading and error states
+
+### Testing Strategy
+
+- Unit tests for business logic
+- Integration tests for API endpoints
+- E2E tests for critical user flows
+- Performance testing for agent execution
+
+## When in Doubt
+
+- Follow existing patterns in the codebase
+- Check similar implementations for guidance
+- Use established error handling and logging
+- Prioritize type safety and security
+- Consult domain-specific rule files for detailed guidance
+- Check similar implementations for guidance
+- Use the established error handling patterns
+- Follow the logging conventions with structured logging
