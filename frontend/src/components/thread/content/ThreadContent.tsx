@@ -702,7 +702,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                     Type: {message.type} | ID: {message.message_id || 'no-id'}
                                                                                 </div>
                                                                                 <pre className="text-xs font-mono whitespace-pre-wrap overflow-x-auto p-2 border border-border rounded-md bg-muted/30">
-                                                                                    {message.content}
+                                                                                    {JSON.stringify(message.content, null, 2)}
                                                                                 </pre>
                                                                                 {message.metadata && message.metadata !== '{}' && (
                                                                                     <div className="mt-2">
@@ -710,7 +710,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                             Metadata:
                                                                                         </div>
                                                                                         <pre className="text-xs font-mono whitespace-pre-wrap overflow-x-auto p-2 border border-border rounded-md bg-muted/30">
-                                                                                            {message.metadata}
+                                                                                            {JSON.stringify(message.metadata, null, 2)}
                                                                                         </pre>
                                                                                     </div>
                                                                                 )}
