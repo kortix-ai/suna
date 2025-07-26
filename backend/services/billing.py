@@ -1197,9 +1197,14 @@ async def get_available_models(
                     if '/' in model:
                         models_to_try.append(model.split('/', 1)[1])
                     
-                    # Special handling for Google models accessed via OpenRouter
-                    if model.startswith('openrouter/google/'):
-                        google_model_name = model.replace('openrouter/', '')
+                    # Special handling for Google models accessed via Google API
+                    if model.startswith('gemini/'):
+                        google_model_name = model.replace('gemini/', '')
+                        models_to_try.append(google_model_name)
+                    
+                    # Special handling for Google models accessed via Google API
+                    if model.startswith('gemini/'):
+                        google_model_name = model.replace('gemini/', '')
                         models_to_try.append(google_model_name)
                     
                     # Try each model name variation until we find one that works
