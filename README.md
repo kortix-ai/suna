@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/kortix-ai-suna-badge.png)](https://mseep.ai/app/kortix-ai-suna)
+
 <div align="center">
 
 # Suna - Open Source Generalist AI Agent
