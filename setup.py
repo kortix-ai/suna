@@ -692,6 +692,7 @@ class SetupWizard:
                 "2": ("Anthropic", "ANTHROPIC_API_KEY"),
                 "3": ("Google Gemini", "GEMINI_API_KEY"),
                 "4": ("OpenRouter", "OPENROUTER_API_KEY"),
+                "5": ("z.ai", "Z_AI_API_KEY"),
             }
             print(
                 f"\n{Colors.CYAN}Select LLM providers to configure (e.g., 1,3):{Colors.ENDC}"
@@ -743,6 +744,10 @@ class SetupWizard:
                 self.env_vars["llm"][
                     "MODEL_TO_USE"
                 ] = "gemini/gemini-2.5-pro"
+            elif self.env_vars["llm"].get("Z_AI_API_KEY"):
+                self.env_vars["llm"][
+                    "MODEL_TO_USE"
+                ] = "z.ai/claude-3-5-sonnet"
             elif self.env_vars["llm"].get("OPENROUTER_API_KEY"):
                 self.env_vars["llm"][
                     "MODEL_TO_USE"

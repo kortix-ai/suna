@@ -38,7 +38,7 @@ class LLMRetryError(LLMError):
 
 def setup_api_keys() -> None:
     """Set up API keys from environment variables."""
-    providers = ['OPENAI', 'ANTHROPIC', 'GROQ', 'OPENROUTER', 'XAI', 'MORPH', 'GEMINI']
+    providers = ['OPENAI', 'ANTHROPIC', 'GROQ', 'OPENROUTER', 'XAI', 'MORPH', 'GEMINI', 'Z_AI']
     for provider in providers:
         key = getattr(config, f'{provider}_API_KEY')
         if key:
@@ -50,6 +50,13 @@ def setup_api_keys() -> None:
     if config.OPENROUTER_API_KEY and config.OPENROUTER_API_BASE:
         os.environ['OPENROUTER_API_BASE'] = config.OPENROUTER_API_BASE
         logger.debug(f"Set OPENROUTER_API_BASE to {config.OPENROUTER_API_BASE}")
+
+    # Set up z.ai API configuration
+    if config.Z_AI_API_KEY:
+        os.environ['Z_AI_API_KEY'] = config.Z_AI_API_KEY
+        # z.ai uses OpenAI-compatible API, so we can set the base URL
+        os.environ['Z_AI_API_BASE'] = 'https://api.z.ai/v1'
+        logger.debug(f"Set Z_AI_API_KEY and Z_AI_API_BASE for z.ai provider")
 
     # Set up AWS Bedrock credentials
     aws_access_key = config.AWS_ACCESS_KEY_ID
@@ -77,6 +84,8 @@ def get_openrouter_fallback(model_name: str) -> Optional[str]:
         "anthropic/claude-sonnet-4-20250514": "openrouter/anthropic/claude-sonnet-4",
         "xai/grok-4": "openrouter/x-ai/grok-4",
         "gemini/gemini-2.5-pro": "openrouter/google/gemini-2.5-pro",
+        "z.ai/claude-3-5-sonnet": "openrouter/anthropic/claude-3.5-sonnet",
+        "z.ai/gpt-4o": "openrouter/openai/gpt-4o",
     }
     
     # Check for exact match first
@@ -93,6 +102,8 @@ def get_openrouter_fallback(model_name: str) -> Optional[str]:
         return "openrouter/anthropic/claude-sonnet-4"
     elif "xai" in model_name.lower() or "grok" in model_name.lower():
         return "openrouter/x-ai/grok-4"
+    elif "z.ai" in model_name.lower():
+        return "openrouter/anthropic/claude-3.5-sonnet"  # Default z.ai fallback
     
     return None
 
@@ -187,6 +198,17 @@ def prepare_params(
         if not model_id and "anthropic.claude-3-7-sonnet" in model_name:
             params["model_id"] = "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
             logger.debug(f"Auto-set model_id for Claude 3.7 Sonnet: {params['model_id']}")
+
+    # Add z.ai-specific parameters
+    if model_name.startswith("z.ai/"):
+        logger.debug(f"Preparing z.ai parameters for model: {model_name}")
+        # Use the official z.ai API endpoint
+        params["api_base"] = "https://api.z.ai/api/paas/v4/chat/completions"
+        # Use the API key from config
+        params["api_key"] = config.Z_AI_API_KEY
+        # Remove the z.ai/ prefix for the actual model name
+        params["model"] = model_name.replace("z.ai/", "")
+        logger.debug(f"Prepared z.ai params: {params}")
 
     fallback_model = get_openrouter_fallback(model_name)
     if fallback_model:

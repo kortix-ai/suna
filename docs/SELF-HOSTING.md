@@ -43,6 +43,7 @@ Obtain the following API keys:
 
   - [Anthropic](https://console.anthropic.com/) - Recommended for best performance
   - [OpenAI](https://platform.openai.com/)
+  - [z.ai](https://z.ai/) - AI platform with Claude and GPT models
   - [Groq](https://console.groq.com/)
   - [OpenRouter](https://openrouter.ai/)
   - [AWS Bedrock](https://aws.amazon.com/bedrock/)
