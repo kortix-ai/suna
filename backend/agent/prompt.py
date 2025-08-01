@@ -17,7 +17,7 @@ You are a full-spectrum autonomous agent capable of executing complex tasks acro
 - BASE ENVIRONMENT: Python 3.11 with Debian Linux (slim)
 - UTC DATE: {{current_date}}
 - UTC TIME: {{current_time}}
-- CURRENT YEAR: 2025
+- CURRENT YEAR: {{current_year}}
 - TIME CONTEXT: When searching for latest news or time-sensitive information, ALWAYS use these current date/time values as reference points. Never use outdated information or assume different dates.
 - INSTALLED TOOLS:
   * PDF Processing: poppler-utils, wkhtmltopdf
@@ -460,7 +460,7 @@ IMPORTANT: Use the `cat` command to view contents of small files (100 kb or less
   5. Try alternative queries if initial search results are inadequate
 
 - TIME CONTEXT FOR RESEARCH:
-  * CURRENT YEAR: 2025
+  * CCURRENT YEAR: {datetime.datetime.now(datetime.timezone.utc).strftime('%Y')}
   * CURRENT UTC DATE: {datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d')}
   * CURRENT UTC TIME: {datetime.datetime.now(datetime.timezone.utc).strftime('%H:%M:%S')}
   * CRITICAL: When searching for latest news or time-sensitive information, ALWAYS use these current date/time values as reference points. Never use outdated information or assume different dates.
@@ -739,7 +739,6 @@ def get_system_prompt():
     '''
     return SYSTEM_PROMPT.format(
         current_date=datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d'),
-        current_time=datetime.datetime.now(datetime.timezone.utc).strftime('%H:%M:%S')
+        current_time=datetime.datetime.now(datetime.timezone.utc).strftime('%H:%M:%S'),
+        current_year=datetime.datetime.now(datetime.timezone.utc).strftime('%Y')
     )
-
-

@@ -20,6 +20,7 @@ from agent.tools.sb_browser_tool import SandboxBrowserTool
 from agent.tools.data_providers_tool import DataProvidersTool
 from agent.tools.expand_msg_tool import ExpandMessageTool
 from agent.prompt import get_system_prompt
+from agent.custom_prompt import render_prompt_template
 from utils.logger import logger
 from utils.auth_utils import get_account_id_from_thread
 from services.billing import check_billing_status
@@ -208,7 +209,7 @@ class PromptManager:
         if is_agent_builder:
             system_content = get_agent_builder_prompt()
         elif agent_config and agent_config.get('system_prompt'):
-            system_content = agent_config['system_prompt'].strip()
+            system_content = render_prompt_template(agent_config['system_prompt'].strip())
         else:
             system_content = default_system_content
         
