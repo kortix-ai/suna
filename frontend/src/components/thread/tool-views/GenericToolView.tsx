@@ -6,13 +6,17 @@ import {
   AlertTriangle,
   Clock,
   Wrench,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { ToolViewProps } from './types';
 import { formatTimestamp, getToolTitle, extractToolData } from './utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Button } from '@/components/ui/button';
 import { LoadingState } from './shared/LoadingState';
+import { toast } from 'sonner';
 
 export function GenericToolView({
   name = 'generic-tool',
@@ -119,6 +123,47 @@ export function GenericToolView({
     [toolContent],
   );
 
+  // Add copy functionality state
+  const [isCopyingInput, setIsCopyingInput] = React.useState(false);
+  const [isCopyingOutput, setIsCopyingOutput] = React.useState(false);
+
+  // Copy functions
+  const copyToClipboard = React.useCallback(async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+      return false;
+    }
+  }, []);
+
+  const handleCopyInput = React.useCallback(async () => {
+    if (!formattedAssistantContent) return;
+    
+    setIsCopyingInput(true);
+    const success = await copyToClipboard(formattedAssistantContent);
+    if (success) {
+      toast.success('File content copied to clipboard');
+    } else {
+      toast.error('Failed to copy file content');
+    }
+    setTimeout(() => setIsCopyingInput(false), 500);
+  }, [formattedAssistantContent, copyToClipboard]);
+
+  const handleCopyOutput = React.useCallback(async () => {
+    if (!formattedToolContent) return;
+    
+    setIsCopyingOutput(true);
+    const success = await copyToClipboard(formattedToolContent);
+    if (success) {
+      toast.success('File content copied to clipboard');
+    } else {
+      toast.error('Failed to copy file content');
+    }
+    setTimeout(() => setIsCopyingOutput(false), 500);
+  }, [formattedToolContent, copyToClipboard]);
+
   return (
     <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
@@ -169,9 +214,25 @@ export function GenericToolView({
             <div className="p-4 space-y-4">
               {formattedAssistantContent && (
                 <div className="space-y-2">
-                  <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center">
-                    <Wrench className="h-4 w-4 mr-2 text-zinc-500 dark:text-zinc-400" />
-                    Input
+                  <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
+                    <div className="flex items-center">
+                      <Wrench className="h-4 w-4 mr-2 text-zinc-500 dark:text-zinc-400" />
+                      Input
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleCopyInput}
+                      disabled={isCopyingInput}
+                      className="h-6 w-6 p-0"
+                      title="Copy file content"
+                    >
+                      {isCopyingInput ? (
+                        <Check className="h-3 w-3" />
+                      ) : (
+                        <Copy className="h-3 w-3" />
+                      )}
+                    </Button>
                   </div>
                   <div className="border-muted bg-muted/20 rounded-lg overflow-hidden border">
                     <div className="p-4">
@@ -185,9 +246,25 @@ export function GenericToolView({
 
               {formattedToolContent && (
                 <div className="space-y-2">
-                  <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center">
-                    <Wrench className="h-4 w-4 mr-2 text-zinc-500 dark:text-zinc-400" />
-                    Output
+                  <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
+                    <div className="flex items-center">
+                      <Wrench className="h-4 w-4 mr-2 text-zinc-500 dark:text-zinc-400" />
+                      Output
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleCopyOutput}
+                      disabled={isCopyingOutput}
+                      className="h-6 w-6 p-0"
+                      title="Copy file content"
+                    >
+                      {isCopyingOutput ? (
+                        <Check className="h-3 w-3" />
+                      ) : (
+                        <Copy className="h-3 w-3" />
+                      )}
+                    </Button>
                   </div>
                   <div className="border-muted bg-muted/20 rounded-lg overflow-hidden border">
                     <div className="p-4">

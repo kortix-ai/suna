@@ -6,12 +6,13 @@ import React from 'react';
 import { Slider } from '@/components/ui/slider';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiMessageType } from '@/components/thread/types';
-import { CircleDashed, X, ChevronLeft, ChevronRight, Computer, Radio, Maximize2, Minimize2 } from 'lucide-react';
+import { CircleDashed, X, ChevronLeft, ChevronRight, Computer, Radio, Maximize2, Minimize2, Copy, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Button } from '@/components/ui/button';
 import { ToolView } from './tool-views/wrapper';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
 
 export interface ToolCallInput {
   assistantCall: {
@@ -81,6 +82,9 @@ export function ToolCallSidePanel({
   const [navigationMode, setNavigationMode] = React.useState<'live' | 'manual'>('live');
   const [toolCallSnapshots, setToolCallSnapshots] = React.useState<ToolCallSnapshot[]>([]);
   const [isInitialized, setIsInitialized] = React.useState(false);
+
+  // Add copy functionality state
+  const [isCopyingContent, setIsCopyingContent] = React.useState(false);
 
   const isMobile = useIsMobile();
 
@@ -214,6 +218,54 @@ export function ToolCallSidePanel({
   };
 
   const isSuccess = isStreaming ? true : getActualSuccess(displayToolCall);
+
+  // Copy functions
+  const copyToClipboard = React.useCallback(async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+      return false;
+    }
+  }, []);
+
+  const handleCopyContent = React.useCallback(async () => {
+    const toolContent = displayToolCall?.toolResult?.content;
+    if (!toolContent || toolContent === 'STREAMING') return;
+    
+    // Try to extract file content from tool result
+    let fileContent = '';
+    
+    // If the tool result is JSON, try to extract file content
+    try {
+      const parsed = JSON.parse(toolContent);
+      if (parsed.content && typeof parsed.content === 'string') {
+        fileContent = parsed.content;
+      } else if (parsed.file_content && typeof parsed.file_content === 'string') {
+        fileContent = parsed.file_content;
+      } else if (parsed.result && typeof parsed.result === 'string') {
+        fileContent = parsed.result;
+      } else if (parsed.toolOutput && typeof parsed.toolOutput === 'string') {
+        fileContent = parsed.toolOutput;
+      } else {
+        // If no string content found, stringify the object
+        fileContent = JSON.stringify(parsed, null, 2);
+      }
+    } catch (e) {
+      // If it's not JSON, use the content as is
+      fileContent = typeof toolContent === 'string' ? toolContent : JSON.stringify(toolContent, null, 2);
+    }
+    
+    setIsCopyingContent(true);
+    const success = await copyToClipboard(fileContent);
+    if (success) {
+      toast.success('File content copied to clipboard');
+    } else {
+      toast.error('Failed to copy file content');
+    }
+    setTimeout(() => setIsCopyingContent(false), 500);
+  }, [displayToolCall?.toolResult?.content, copyToClipboard]);
 
   const internalNavigate = React.useCallback((newIndex: number, source: string = 'internal') => {
     if (newIndex < 0 || newIndex >= totalCalls) return;

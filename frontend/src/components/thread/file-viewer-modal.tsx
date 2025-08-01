@@ -21,6 +21,8 @@ import {
   FileText,
   ChevronDown,
   Archive,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -159,6 +161,10 @@ export function FileViewerModal({
     total: number;
     currentFile: string;
   } | null>(null);
+
+  // Add state for copy functionality
+  const [isCopyingPath, setIsCopyingPath] = useState(false);
+  const [isCopyingContent, setIsCopyingContent] = useState(false);
 
   // Setup project with sandbox URL if not provided directly
   useEffect(() => {
@@ -849,6 +855,43 @@ export function FileViewerModal({
     return filePath ? filePath.toLowerCase().endsWith('.md') : false;
   }, []);
 
+  // Copy functions
+  const copyToClipboard = useCallback(async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+      return false;
+    }
+  }, []);
+
+  const handleCopyPath = useCallback(async () => {
+    if (!textContentForRenderer) return;
+    
+    setIsCopyingPath(true);
+    const success = await copyToClipboard(textContentForRenderer);
+    if (success) {
+      toast.success('File content copied to clipboard');
+    } else {
+      toast.error('Failed to copy file content');
+    }
+    setTimeout(() => setIsCopyingPath(false), 500);
+  }, [textContentForRenderer, copyToClipboard]);
+
+  const handleCopyContent = useCallback(async () => {
+    if (!textContentForRenderer) return;
+    
+    setIsCopyingContent(true);
+    const success = await copyToClipboard(textContentForRenderer);
+    if (success) {
+      toast.success('File content copied to clipboard');
+    } else {
+      toast.error('Failed to copy file content');
+    }
+    setTimeout(() => setIsCopyingContent(false), 500);
+  }, [textContentForRenderer, copyToClipboard]);
+
   // Handle PDF export for markdown files
   const handleExportPdf = useCallback(
     async (orientation: 'portrait' | 'landscape' = 'portrait') => {
@@ -1313,6 +1356,24 @@ export function FileViewerModal({
           <div className="flex items-center gap-2 flex-shrink-0">
             {selectedFilePath && (
               <>
+                {/* Copy content button - only show for text files */}
+                {textContentForRenderer && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCopyContent}
+                    disabled={isCopyingContent || isCachedFileLoading}
+                    className="h-8 gap-1"
+                  >
+                    {isCopyingContent ? (
+                      <Check className="h-4 w-4" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                    <span className="hidden sm:inline">Copy</span>
+                  </Button>
+                )}
+
                 <Button
                   variant="outline"
                   size="sm"
