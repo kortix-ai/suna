@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback } from 'react';
+import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { ArrowDown, CircleDashed, CheckCircle, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/components/thread/types';
@@ -340,7 +340,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const latestMessageRef = useRef<HTMLDivElement>(null);
     const [showScrollButton, setShowScrollButton] = useState(false);
-    const [, setUserHasScrolled] = useState(false);
+    const [userHasScrolled, setUserHasScrolled] = useState(false);
     const { session } = useAuth();
 
     // React Query file preloader
@@ -417,13 +417,61 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
         if (!messagesContainerRef.current) return;
         const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
         const isScrolledUp = scrollHeight - scrollTop - clientHeight > 100;
-        setShowScrollButton(isScrolledUp);
+        
+        // Show scroll button if user has scrolled up OR if streaming is happening and user is not at bottom
+        const isStreaming = agentStatus === 'running' || agentStatus === 'connecting';
+        const userNotAtBottom = !isUserAtBottom();
+        const shouldShowButton = isScrolledUp || (isStreaming && userNotAtBottom);
+        
+        setShowScrollButton(shouldShowButton);
         setUserHasScrolled(isScrolledUp);
     };
 
     const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
         messagesEndRef.current?.scrollIntoView({ behavior });
     }, []);
+
+    // Check if user is at the bottom of the chat
+    const isUserAtBottom = useCallback(() => {
+        if (!messagesContainerRef.current) return true;
+        const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+        return scrollHeight - scrollTop - clientHeight < 50; // 50px threshold
+    }, []);
+
+    // Consolidated auto-scroll effect for all streaming scenarios
+    useEffect(() => {
+        const isStreaming = agentStatus === 'running' || agentStatus === 'connecting';
+        
+        const shouldAutoScroll = (
+            // Only auto-scroll if user is at bottom AND streaming is happening
+            (isStreaming && isUserAtBottom()) ||
+            // Streaming text content is present and user is at bottom
+            (streamingTextContent && isStreaming && isUserAtBottom()) ||
+            // Streaming tool call is present and user is at bottom
+            (streamingToolCall && isStreaming && isUserAtBottom()) ||
+            // New messages during streaming and user is at bottom
+            (messages.length > 0 && isStreaming && isUserAtBottom()) ||
+            // Playback mode streaming text and user is at bottom
+            (readOnly && isStreamingText && streamingText && isUserAtBottom()) ||
+            // Playback mode tool call and user is at bottom
+            (readOnly && currentToolCall && isUserAtBottom())
+        );
+
+        if (shouldAutoScroll) {
+            scrollToBottom('smooth');
+        }
+    }, [
+        agentStatus,
+        streamingTextContent,
+        streamingToolCall,
+        messages.length,
+        readOnly,
+        isStreamingText,
+        streamingText,
+        currentToolCall,
+        scrollToBottom,
+        isUserAtBottom
+    ]);
 
     // Preload all message attachments when messages change or sandboxId is provided
     React.useEffect(() => {
@@ -988,14 +1036,18 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
 
             {/* Scroll to bottom button */}
             {showScrollButton && (
-                <Button
-                    variant="outline"
-                    size="icon"
-                    className="fixed bottom-20 right-6 z-10 h-8 w-8 rounded-full shadow-md"
-                    onClick={() => scrollToBottom('smooth')}
-                >
-                    <ArrowDown className="h-4 w-4" />
-                </Button>
+                <div className="relative">
+                    <div className="mx-auto max-w-3xl md:px-8 min-w-0">
+                        <Button
+                            variant="outline"
+                            size="icon"
+                            className="absolute bottom-32 left-1/2 transform -translate-x-1/2 z-50 h-10 w-10 rounded-full shadow-lg bg-background/95 backdrop-blur border-border hover:bg-background"
+                            onClick={() => scrollToBottom('smooth')}
+                        >
+                            <ArrowDown className="h-5 w-5" />
+                        </Button>
+                    </div>
+                </div>
             )}
         </>
     );

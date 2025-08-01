@@ -82,12 +82,27 @@ export const AgentBuilderChat = React.memo(function AgentBuilderChat({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  // Check if user is at the bottom of the chat
+  const isUserAtBottom = useCallback(() => {
+    if (!messagesEndRef.current?.parentElement) return true;
+    const container = messagesEndRef.current.parentElement;
+    const { scrollTop, scrollHeight, clientHeight } = container;
+    return scrollHeight - scrollTop - clientHeight < 50; // 50px threshold
+  }, []);
+
   useEffect(() => {
     if (messages && messages.length > previousMessageCountRef.current) {
       scrollToBottom();
     }
     previousMessageCountRef.current = messages?.length || 0;
   }, [messages, messages?.length]);
+
+  // Auto-scroll during streaming only if user is at bottom
+  useEffect(() => {
+    if ((agentStatus === 'running' || agentStatus === 'connecting') && isUserAtBottom()) {
+      scrollToBottom();
+    }
+  }, [agentStatus, isUserAtBottom]);
 
   useEffect(() => {
     if (chatHistoryQuery.data && chatHistoryQuery.status === 'success' && !hasInitiallyLoadedRef.current) {
