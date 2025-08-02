@@ -4,3 +4,4 @@ pyautogui==0.9.54
 pillow==10.2.0
 pydantic==2.6.1
 pytesseract==0.3.13
+pandas==2.3.0
