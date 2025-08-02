@@ -1001,7 +1001,7 @@ export const streamAgent = (
       eventSource.onmessage = (event) => {
         try {
           const rawData = event.data;
-          if (rawData.includes('"type":"ping"')) return;
+          if (rawData.includes('"type": "ping"')) return;
 
           // Log raw data for debugging (truncated for readability)
           console.log(
@@ -1055,18 +1055,15 @@ export const streamAgent = (
 
           // Check for completion messages
           if (
-            rawData.includes('"type":"status"') &&
-            rawData.includes('"status":"completed"')
+            rawData.includes('"type": "status"') &&
+            rawData.includes('"status": "completed"')
           ) {
             console.log(
               `[STREAM] Detected completion status message for ${agentRunId}`,
             );
 
             // Check for specific completion messages that indicate we should stop checking
-            if (
-              rawData.includes('Run data not available for streaming') ||
-              rawData.includes('Stream ended with status: completed')
-            ) {
+            if (rawData.includes('Agent run completed successfully')) {
               console.log(
                 `[STREAM] Detected final completion message for ${agentRunId}, adding to non-running set`,
               );
@@ -1087,24 +1084,15 @@ export const streamAgent = (
 
           // Check for thread run end message
           if (
-            rawData.includes('"type":"status"') &&
-            rawData.includes('"status_type":"thread_run_end"')
+            rawData.includes('"type": "status"') &&
+            rawData.includes('thread_run_end')
           ) {
             console.log(
               `[STREAM] Detected thread run end message for ${agentRunId}`,
             );
 
-            // Add to non-running set
-            nonRunningAgentRuns.add(agentRunId);
-
             // Notify about the message
             callbacks.onMessage(rawData);
-
-            // Clean up
-            eventSource.close();
-            activeStreams.delete(agentRunId);
-            callbacks.onClose();
-
             return;
           }
 
