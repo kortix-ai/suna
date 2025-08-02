@@ -467,7 +467,7 @@ export function FileAttachment({
                     {onClick && (
                         <button
                             onClick={handleClick}
-                            className="p-1 rounded-full hover:bg-black/10 dark:hover:bg-white/10"
+                            className="cursor-pointer p-1 rounded-full hover:bg-black/10 dark:hover:bg-white/10"
                         >
                             <ExternalLink size={14} />
                         </button>
