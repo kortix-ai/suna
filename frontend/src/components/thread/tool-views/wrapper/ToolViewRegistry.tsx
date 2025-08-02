@@ -25,6 +25,7 @@ import { CheckProfileConnectionToolView } from '../check-profile-connection/chec
 import { ConfigureProfileForAgentToolView } from '../configure-profile-for-agent/configure-profile-for-agent';
 import { GetCredentialProfilesToolView } from '../get-credential-profiles/get-credential-profiles';
 import { GetCurrentAgentConfigToolView } from '../get-current-agent-config/get-current-agent-config';
+import { TaskListToolView } from '../task-list/TaskListToolView';
 
 
 export type ToolViewComponent = React.ComponentType<ToolViewProps>;
@@ -76,6 +77,12 @@ const defaultRegistry: ToolViewRegistryType = {
   'configure-profile-for-agent': ConfigureProfileForAgentToolView,
   'get-credential-profiles': GetCredentialProfilesToolView,
   'get-current-agent-config': GetCurrentAgentConfigToolView,
+  'create-tasks': TaskListToolView,
+  'view-tasks': TaskListToolView,
+  'update-tasks': TaskListToolView,
+  'delete-tasks': TaskListToolView,
+  'clear-all': TaskListToolView,
+
 
   'expose-port': ExposePortToolView,
 

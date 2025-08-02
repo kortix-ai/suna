@@ -29,6 +29,7 @@ from services.langfuse import langfuse
 from langfuse.client import StatefulTraceClient
 from agent.gemini_prompt import get_gemini_system_prompt
 from agent.tools.mcp_tool_wrapper import MCPToolWrapper
+from agent.tools.task_list_tool import TaskListTool
 from agentpress.tool import SchemaType
 
 load_dotenv()
@@ -69,7 +70,7 @@ class ToolManager:
         self.thread_manager.add_tool(SandboxWebSearchTool, project_id=self.project_id, thread_manager=self.thread_manager)
         self.thread_manager.add_tool(SandboxVisionTool, project_id=self.project_id, thread_id=self.thread_id, thread_manager=self.thread_manager)
         self.thread_manager.add_tool(SandboxImageEditTool, project_id=self.project_id, thread_id=self.thread_id, thread_manager=self.thread_manager)
-        
+        self.thread_manager.add_tool(TaskListTool, project_id=self.project_id, thread_manager=self.thread_manager, thread_id=self.thread_id)
         if config.RAPID_API_KEY:
             self.thread_manager.add_tool(DataProvidersTool)
     
@@ -91,6 +92,7 @@ class ToolManager:
     def register_custom_tools(self, enabled_tools: Dict[str, Any]):
         self.thread_manager.add_tool(ExpandMessageTool, thread_id=self.thread_id, thread_manager=self.thread_manager)
         self.thread_manager.add_tool(MessageTool)
+        self.thread_manager.add_tool(TaskListTool, project_id=self.project_id, thread_manager=self.thread_manager, thread_id=self.thread_id)
 
         def safe_tool_check(tool_name: str) -> bool:
             try:
