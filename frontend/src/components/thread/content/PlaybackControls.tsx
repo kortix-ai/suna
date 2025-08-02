@@ -110,7 +110,7 @@ export const PlaybackControls = ({
     if (!isPlaying && !isSidePanelOpen) {
       onToggleSidePanel();
     }
-  }, [isPlaying, isSidePanelOpen, onToggleSidePanel]);
+  }, [isPlaying, isSidePanelOpen, onToggleSidePanel, updatePlaybackState]);
 
   const resetPlayback = useCallback(() => {
     updatePlaybackState({
@@ -122,7 +122,10 @@ export const PlaybackControls = ({
       currentToolCall: null,
       toolPlaybackIndex: -1,
     });
-  }, [updatePlaybackState]);
+    if (isSidePanelOpen) {
+      onToggleSidePanel();
+    }
+  }, [updatePlaybackState, isSidePanelOpen, onToggleSidePanel]);
 
   const skipToEnd = useCallback(() => {
     updatePlaybackState({
