@@ -14,7 +14,7 @@ import os
 from agentpress.thread_manager import ThreadManager
 from services.supabase import DBConnection
 from services import redis
-from utils.auth_utils import get_current_user_id_from_jwt, get_user_id_from_stream_auth, verify_thread_access, verify_admin_api_key
+from utils.auth_utils import get_current_user_id_from_jwt, get_user_id_from_stream_auth, verify_thread_access, verify_admin_api_key, verify_agent_access
 from utils.logger import logger, structlog
 from services.billing import check_billing_status, can_use_model
 from utils.config import config
@@ -1266,7 +1266,13 @@ async def get_agents(
     has_agentpress_tools: Optional[bool] = Query(None, description="Filter by agents with AgentPress tools"),
     tools: Optional[str] = Query(None, description="Comma-separated list of tools to filter by")
 ):
-    """Get agents for the current user with pagination, search, sort, and filter support."""
+    """Get agents for the current user with pagination, search, sort, and filter support.
+    Access control:
+    - Regular users see their own agents
+    - Team owners see all agents from team members
+    - Admin users see all agents
+    - Public agents are visible to everyone
+    """
     if not await is_enabled("custom_agents"):
         raise HTTPException(
             status_code=403, 
@@ -1279,8 +1285,8 @@ async def get_agents(
         # Calculate offset
         offset = (page - 1) * limit
         
-        # Start building the query
-        query = client.table('agents').select('*', count='exact').eq("account_id", user_id)
+        # Start building the query - get agents with access control handled by database RLS policies
+        query = client.table('agents').select('*', count='exact')
         
         # Apply search filter
         if search:
@@ -1500,7 +1506,13 @@ async def get_agents(
 
 @router.get("/agents/{agent_id}", response_model=AgentResponse)
 async def get_agent(agent_id: str, user_id: str = Depends(get_current_user_id_from_jwt)):
-    """Get a specific agent by ID with current version information. Only the owner can access non-public agents."""
+    """Get a specific agent by ID with current version information. 
+    Access control:
+    - Agent owners can access their own agents
+    - Team owners can access all agents from team members
+    - Admin users can access all agents
+    - Anyone can access public agents
+    """
     if not await is_enabled("custom_agents"):
         raise HTTPException(
             status_code=403, 
@@ -1511,17 +1523,8 @@ async def get_agent(agent_id: str, user_id: str = Depends(get_current_user_id_fr
     client = await db.client
     
     try:
-        # Get agent
-        agent = await client.table('agents').select('*').eq("agent_id", agent_id).execute()
-        
-        if not agent.data:
-            raise HTTPException(status_code=404, detail="Agent not found")
-        
-        agent_data = agent.data[0]
-        
-        # Check ownership - only owner can access non-public agents
-        if agent_data['account_id'] != user_id and not agent_data.get('is_public', False):
-            raise HTTPException(status_code=403, detail="Access denied")
+        # Verify agent access using the new access control function
+        agent_data = await verify_agent_access(client, agent_id, user_id)
         
         # Use versioning system to get current version data
         current_version = None
@@ -1612,34 +1615,36 @@ async def get_agent(agent_id: str, user_id: str = Depends(get_current_user_id_fr
 
 @router.get("/agents/{agent_id}/export", response_model=AgentExportData)
 async def export_agent(agent_id: str, user_id: str = Depends(get_current_user_id_from_jwt)):
-    """Export an agent configuration as JSON"""
+    """Export an agent configuration as JSON.
+    Access control:
+    - Agent owners can export their own agents
+    - Team owners can export all agents from team members
+    - Admin users can export all agents
+    - Anyone can export public agents
+    """
     logger.info(f"Exporting agent {agent_id} for user: {user_id}")
     
     try:
         client = await db.client
         
-        # Get agent data
-        agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', user_id).execute()
-        if not agent_result.data:
-            raise HTTPException(status_code=404, detail="Agent not found")
-        
-        agent = agent_result.data[0]
+        # Verify agent access using the new access control function
+        agent_data = await verify_agent_access(client, agent_id, user_id)
         
         # Get current version data if available
         current_version = None
-        if agent.get('current_version_id'):
-            version_result = await client.table('agent_versions').select('*').eq('version_id', agent['current_version_id']).execute()
+        if agent_data.get('current_version_id'):
+            version_result = await client.table('agent_versions').select('*').eq('version_id', agent_data['current_version_id']).execute()
             if version_result.data:
                 current_version = version_result.data[0]
         
         # Extract configuration using existing helper
         from agent.config_helper import extract_agent_config
-        config = extract_agent_config(agent, current_version)
+        config = extract_agent_config(agent_data, current_version)
         
         # Clean metadata for export (remove instance-specific data)
         export_metadata = {}
-        if agent.get('metadata'):
-            export_metadata = {k: v for k, v in agent['metadata'].items() 
+        if agent_data.get('metadata'):
+            export_metadata = {k: v for k, v in agent_data['metadata'].items() 
                              if k not in ['is_suna_default', 'centrally_managed', 'installation_date', 'last_central_update']}
         
         # Create export data
@@ -1652,7 +1657,7 @@ async def export_agent(agent_id: str, user_id: str = Depends(get_current_user_id
             custom_mcps=config.get('custom_mcps', []),
             avatar=config.get('avatar'),
             avatar_color=config.get('avatar_color'),
-            tags=agent.get('tags', []),
+            tags=agent_data.get('tags', []),
             metadata=export_metadata,
             exported_at=datetime.utcnow().isoformat(),
             exported_by=user_id
@@ -1871,6 +1876,12 @@ async def update_agent(
     agent_data: AgentUpdateRequest,
     user_id: str = Depends(get_current_user_id_from_jwt)
 ):
+    """Update an agent.
+    Access control:
+    - Agent owners can update their own agents
+    - Team owners can update all agents from team members
+    - Admin users can update all agents
+    """
     if not await is_enabled("custom_agents"):
         raise HTTPException(
             status_code=403, 
@@ -1880,12 +1891,8 @@ async def update_agent(
     client = await db.client
     
     try:
-        existing_agent = await client.table('agents').select('*').eq("agent_id", agent_id).eq("account_id", user_id).maybe_single().execute()
-        
-        if not existing_agent.data:
-            raise HTTPException(status_code=404, detail="Agent not found")
-        
-        existing_data = existing_agent.data
+        # Verify agent access using the new access control function
+        existing_data = await verify_agent_access(client, agent_id, user_id)
 
         agent_metadata = existing_data.get('metadata', {})
         is_suna_agent = agent_metadata.get('is_suna_default', False)
@@ -2207,6 +2214,12 @@ async def update_agent(
 
 @router.delete("/agents/{agent_id}")
 async def delete_agent(agent_id: str, user_id: str = Depends(get_current_user_id_from_jwt)):
+    """Delete an agent.
+    Access control:
+    - Agent owners can delete their own agents
+    - Team owners can delete all agents from team members
+    - Admin users can delete all agents
+    """
     if not await is_enabled("custom_agents"):
         raise HTTPException(
             status_code=403, 
@@ -2216,15 +2229,10 @@ async def delete_agent(agent_id: str, user_id: str = Depends(get_current_user_id
     client = await db.client
     
     try:
-        agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).execute()
-        if not agent_result.data:
-            raise HTTPException(status_code=404, detail="Agent not found")
+        # Verify agent access using the new access control function
+        agent_data = await verify_agent_access(client, agent_id, user_id)
         
-        agent = agent_result.data[0]
-        if agent['account_id'] != user_id:
-            raise HTTPException(status_code=403, detail="Access denied")
-        
-        if agent['is_default']:
+        if agent_data['is_default']:
             raise HTTPException(status_code=400, detail="Cannot delete default agent")
         
         await client.table('agents').delete().eq('agent_id', agent_id).execute()
@@ -2243,7 +2251,13 @@ async def get_agent_builder_chat_history(
     agent_id: str,
     user_id: str = Depends(get_current_user_id_from_jwt)
 ):
-    """Get chat history for agent builder sessions for a specific agent."""
+    """Get chat history for agent builder sessions for a specific agent.
+    Access control:
+    - Agent owners can access their own agents
+    - Team owners can access all agents from team members
+    - Admin users can access all agents
+    - Anyone can access public agents
+    """
     if not await is_enabled("custom_agents"):
         raise HTTPException(
             status_code=403, 
@@ -2254,10 +2268,8 @@ async def get_agent_builder_chat_history(
     client = await db.client
     
     try:
-        # First verify the agent exists and belongs to the user
-        agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', user_id).execute()
-        if not agent_result.data:
-            raise HTTPException(status_code=404, detail="Agent not found or access denied")
+        # Verify agent access using the new access control function
+        agent_data = await verify_agent_access(client, agent_id, user_id)
         
         # Get all threads for this user with metadata field included
         threads_result = await client.table('threads').select('thread_id, created_at, metadata').eq('account_id', user_id).order('created_at', desc=True).execute()
@@ -2686,29 +2698,31 @@ async def get_agent_tools(
     agent_id: str,
     user_id: str = Depends(get_current_user_id_from_jwt)
 ):
+    """Get tools for a specific agent.
+    Access control:
+    - Agent owners can access their own agents
+    - Team owners can access all agents from team members
+    - Admin users can access all agents
+    - Anyone can access public agents
+    """
     if not await is_enabled("custom_agents"):
         raise HTTPException(status_code=403, detail="Custom agents currently disabled")
         
     logger.info(f"Fetching enabled tools for agent: {agent_id} by user: {user_id}")
     client = await db.client
 
-    agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).execute()
-    if not agent_result.data:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    agent = agent_result.data[0]
-    if agent['account_id'] != user_id and not agent.get('is_public', False):
-        raise HTTPException(status_code=403, detail="Access denied")
-
+    # Verify agent access using the new access control function
+    agent_data = await verify_agent_access(client, agent_id, user_id)
 
     # Extract configuration using the unified config approach
     version_data = None
-    if agent.get('current_version_id'):
+    if agent_data.get('current_version_id'):
         try:
             version_service = await _get_version_service()
 
             version_obj = await version_service.get_version(
                 agent_id=agent_id,
-                version_id=agent['current_version_id'],
+                version_id=agent_data['current_version_id'],
                 user_id=user_id
             )
             version_data = version_obj.to_dict()
@@ -2716,7 +2730,7 @@ async def get_agent_tools(
             logger.warning(f"Failed to fetch version data for tools endpoint: {e}")
     
     from agent.config_helper import extract_agent_config
-    agent_config = extract_agent_config(agent, version_data)
+    agent_config = extract_agent_config(agent_data, version_data)
     
     agentpress_tools_config = agent_config['agentpress_tools']
     configured_mcps = agent_config['configured_mcps'] 

@@ -404,7 +404,13 @@ async def verify_admin_api_key(x_admin_api_key: Optional[str] = Header(None)):
 
 async def verify_agent_access(client, agent_id: str, user_id: str) -> dict:
     """
-    Verify that a user has access to a specific agent based on ownership.
+    Verify that a user has access to a specific agent based on ownership, team ownership, or admin status.
+    
+    Access control rules:
+    - Agent owners can access their own agents
+    - Team owners can access all agents from team members
+    - Admin users can access all agents
+    - Anyone can access public agents
     
     Args:
         client: The Supabase client
@@ -418,15 +424,64 @@ async def verify_agent_access(client, agent_id: str, user_id: str) -> dict:
         HTTPException: If the user doesn't have access to the agent or agent doesn't exist
     """
     try:
-        agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', user_id).execute()
+        # Get the agent data
+        agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).execute()
         
         if not agent_result.data:
-            raise HTTPException(status_code=404, detail="Agent not found or access denied")
+            raise HTTPException(status_code=404, detail="Agent not found")
         
-        return agent_result.data[0]
+        agent_data = agent_result.data[0]
+        
+        # Check if agent is public - anyone can access public agents
+        if agent_data.get('is_public', False):
+            return agent_data
+            
+        # Check if user is the owner of the agent
+        if agent_data['account_id'] == user_id:
+            return agent_data
+            
+        # Check if user is an admin
+        admin_check = await client.schema('basejump').table('config').select('*').eq('user_id', user_id).eq('is_admin', True).execute()
+        if admin_check.data:
+            # User is an admin, can access all agents
+            return agent_data
+            
+        # Check if user is a team owner for the agent's account
+        # A user is a team owner if:
+        # 1. They are an owner of an account
+        # 2. The agent's owner is a member of that same account
+        team_owner_check = await client.schema('basejump').table('account_user').select('*').eq('user_id', user_id).eq('account_role', 'owner').execute()
+        if team_owner_check.data:
+            # User is an owner of at least one account
+            # Check if the agent's owner is a member of any account where the user is an owner
+            for owner_record in team_owner_check.data:
+                account_id = owner_record['account_id']
+                # Check if the agent's owner is a member of this account
+                member_check = await client.schema('basejump').table('account_user').select('*').eq('account_id', account_id).eq('user_id', agent_data['account_id']).execute()
+                if member_check.data:
+                    # The agent's owner is a member of an account where the current user is an owner
+                    return agent_data
+        
+        raise HTTPException(status_code=403, detail="Access denied")
         
     except HTTPException:
         raise
     except Exception as e:
         structlog.error(f"Error verifying agent access for agent {agent_id}, user {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to verify agent access")
+
+async def is_user_admin(user_id: str) -> bool:
+    """
+    Check if a user is an admin based on the KORTIX_ADMIN_API_KEY configuration.
+    
+    Args:
+        user_id: The user ID to check
+        
+    Returns:
+        bool: True if the user is an admin, False otherwise
+    """
+    # In this implementation, we're using the admin API key as the indicator
+    # In a more robust implementation, you might have a dedicated admins table
+    # For now, we'll check if the user has provided a valid admin API key
+    # This is a simplified check - in practice, you'd want a more sophisticated admin user system
+    return config.KORTIX_ADMIN_API_KEY is not None and len(config.KORTIX_ADMIN_API_KEY) > 0
