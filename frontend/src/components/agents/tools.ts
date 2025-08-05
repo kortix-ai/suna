@@ -1,7 +1,7 @@
 export const AGENTPRESS_TOOL_DEFINITIONS: Record<string, { enabled: boolean; description: string; icon: string; color: string }> = {
     'sb_shell_tool': { enabled: true, description: 'Execute shell commands in tmux sessions for terminal operations, CLI tools, and system management', icon: '💻', color: 'bg-slate-100 dark:bg-slate-800' },
     'sb_files_tool': { enabled: true, description: 'Create, read, update, and delete files in the workspace with comprehensive file management', icon: '📁', color: 'bg-blue-100 dark:bg-blue-800/50' },
-    'sb_browser_tool': { enabled: true, description: 'Browser automation for web navigation, clicking, form filling, and page interaction', icon: '🌐', color: 'bg-indigo-100 dark:bg-indigo-800/50' },
+    'stagehand_browser_tool': { enabled: true, description: 'Browser automation for web navigation, clicking, form filling, and page interaction using local Stagehand', icon: '🌐', color: 'bg-indigo-100 dark:bg-indigo-800/50' },
     'sb_deploy_tool': { enabled: true, description: 'Deploy applications and services with automated deployment capabilities', icon: '🚀', color: 'bg-green-100 dark:bg-green-800/50' },
     'sb_expose_tool': { enabled: true, description: 'Expose services and manage ports for application accessibility', icon: '🔌', color: 'bg-orange-100 dark:bg-orange-800/20' },
     'web_search_tool': { enabled: true, description: 'Search the web using Tavily API and scrape webpages with Firecrawl for research', icon: '🔍', color: 'bg-yellow-100 dark:bg-yellow-800/50' },
@@ -19,7 +19,7 @@ export const getToolDisplayName = (toolName: string): string => {
     const displayNames: Record<string, string> = {
       'sb_shell_tool': 'Terminal',
       'sb_files_tool': 'File Manager',
-      'sb_browser_tool': 'Browser Automation',
+      'stagehand_browser_tool': 'Browser Automation',
       'sb_deploy_tool': 'Deploy Tool',
       'sb_expose_tool': 'Port Exposure',
       'web_search_tool': 'Web Search',

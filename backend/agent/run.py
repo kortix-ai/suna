@@ -16,7 +16,6 @@ from agentpress.thread_manager import ThreadManager
 from agentpress.response_processor import ProcessorConfig
 from agent.tools.sb_shell_tool import SandboxShellTool
 from agent.tools.sb_files_tool import SandboxFilesTool
-from agent.tools.sb_browser_tool import SandboxBrowserTool
 from agent.tools.data_providers_tool import DataProvidersTool
 from agent.tools.expand_msg_tool import ExpandMessageTool
 from agent.prompt import get_system_prompt
@@ -66,7 +65,6 @@ class ToolManager:
         
         self.thread_manager.add_tool(SandboxShellTool, project_id=self.project_id, thread_manager=self.thread_manager)
         self.thread_manager.add_tool(SandboxFilesTool, project_id=self.project_id, thread_manager=self.thread_manager)
-        self.thread_manager.add_tool(SandboxBrowserTool, project_id=self.project_id, thread_id=self.thread_id, thread_manager=self.thread_manager)
         self.thread_manager.add_tool(SandboxDeployTool, project_id=self.project_id, thread_manager=self.thread_manager)
         self.thread_manager.add_tool(SandboxExposeTool, project_id=self.project_id, thread_manager=self.thread_manager)
         self.thread_manager.add_tool(SandboxWebSearchTool, project_id=self.project_id, thread_manager=self.thread_manager)
@@ -76,6 +74,12 @@ class ToolManager:
         self.thread_manager.add_tool(SandboxSheetsTool, project_id=self.project_id, thread_manager=self.thread_manager)
         if config.RAPID_API_KEY:
             self.thread_manager.add_tool(DataProvidersTool)
+        
+
+        
+        # Add Stagehand Browser Tool (replaces sandbox browser tool)
+        from agent.tools.stagehand_browser_tool import StagehandBrowserTool
+        self.thread_manager.add_tool(StagehandBrowserTool, project_id=self.project_id, thread_id=self.thread_id, thread_manager=self.thread_manager)
     
     def register_agent_builder_tools(self, agent_id: str):
         from agent.tools.agent_builder_tools.agent_config_tool import AgentConfigTool
@@ -112,8 +116,6 @@ class ToolManager:
             self.thread_manager.add_tool(SandboxShellTool, project_id=self.project_id, thread_manager=self.thread_manager)
         if safe_tool_check('sb_files_tool'):
             self.thread_manager.add_tool(SandboxFilesTool, project_id=self.project_id, thread_manager=self.thread_manager)
-        if safe_tool_check('sb_browser_tool'):
-            self.thread_manager.add_tool(SandboxBrowserTool, project_id=self.project_id, thread_id=self.thread_id, thread_manager=self.thread_manager)
         if safe_tool_check('sb_deploy_tool'):
             self.thread_manager.add_tool(SandboxDeployTool, project_id=self.project_id, thread_manager=self.thread_manager)
         if safe_tool_check('sb_expose_tool'):
@@ -126,6 +128,11 @@ class ToolManager:
             self.thread_manager.add_tool(SandboxSheetsTool, project_id=self.project_id, thread_manager=self.thread_manager)
         if config.RAPID_API_KEY and safe_tool_check('data_providers_tool'):
             self.thread_manager.add_tool(DataProvidersTool)
+
+        
+        if safe_tool_check('stagehand_browser_tool'):
+            from agent.tools.stagehand_browser_tool import StagehandBrowserTool
+            self.thread_manager.add_tool(StagehandBrowserTool, project_id=self.project_id, thread_id=self.thread_id, thread_manager=self.thread_manager)
 
 
 class MCPManager:
