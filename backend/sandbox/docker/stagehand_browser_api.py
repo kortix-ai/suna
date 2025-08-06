@@ -8,7 +8,7 @@ import base64
 import os
 import traceback
 from datetime import datetime
-import random
+
 
 # Import Stagehand
 from stagehand import Stagehand, StagehandConfig
@@ -73,13 +73,10 @@ class StagehandBrowserAutomation:
     def __init__(self):
         self.router = APIRouter()
         self.logger = logging.getLogger("stagehand_browser_automation")
-        self.screenshot_dir = os.path.join(os.getcwd(), "screenshots")
-        os.makedirs(self.screenshot_dir, exist_ok=True)
         
         # Stagehand session management
         self.stagehand: Optional[Stagehand] = None
         self.browser_initialized = False
-        self._startup_called = False  # Prevent double initialization
         self.current_api_key: Optional[str] = None  # Store current API key
         
         # Core Stagehand endpoints
@@ -88,7 +85,7 @@ class StagehandBrowserAutomation:
         self.router.post("/stagehand/extract")(self.extract)
         self.router.post("/stagehand/screenshot")(self.screenshot)
         self.router.post("/stagehand/observe")(self.observe)
-
+    
     async def ensure_initialized(self, model_api_key: str):
         """Ensure Stagehand is initialized (simple browser_api pattern)"""
         if self.browser_initialized and self.current_api_key == model_api_key:
@@ -106,7 +103,6 @@ class StagehandBrowserAutomation:
             
         try:
             print("Starting Stagehand browser initialization...")
-            self._startup_called = True
             
             # API key must be provided via request parameter
             if not model_api_key:
@@ -119,57 +115,33 @@ class StagehandBrowserAutomation:
             # Use same pattern as working browser_api (no X server dependencies)
             print("Creating StagehandConfig using browser_api pattern...")
             
-            # Try browser launch strategies like browser_api does
-            browser_configs = [
-                # First attempt: non-headless (like browser_api)
-                {
-                    "headless": False,
-                    "timeout": 60000,
-                    "accept_downloads": True,
-                    "downloads_path": "/workspace"
-                },
-                # Fallback: minimal options (like browser_api)
-                {
-                    "timeout": 90000,
-                    "accept_downloads": True,
-                    "downloads_path": "/workspace"
-                }
-            ]
+            # Define single browser launch configuration
+            # Single browser configuration (no fallback)
+            browser_options = {
+            "headless": False,
+            "timeout": 60000,
+            "accept_downloads": True,
+            "downloads_path": "/workspace",
+        }
+
+            try:
+                print("Initializing browser (headless=False)...")
+                config = StagehandConfig(
+                env="LOCAL",
+                model_name="anthropic/claude-3-5-sonnet-20241022",
+                    model_api_key=self.current_api_key,
+                enable_caching=True,
+                    dom_settle_timeout_ms=30000,
+                verbose=2,
+                local_browser_launch_options=browser_options,
+            )
             
-            config = None
-            last_error = None
-            
-            for i, browser_options in enumerate(browser_configs):
-                try:
-                    print(f"Trying browser config {i+1}/{len(browser_configs)}... ({'headless' if browser_options.get('headless') else 'non-headless'})")
-                    config = StagehandConfig(
-                        env="LOCAL",
-                        model_name="anthropic/claude-3-5-sonnet-20241022",
-                        model_api_key=self.current_api_key,
-                        enable_caching=True,
-                        dom_settle_timeout_ms=30000,
-                        verbose=2,
-                        local_browser_launch_options=browser_options,
-                    )
-                    
-                    # Test the config by trying to create Stagehand instance
-                    test_stagehand = Stagehand(config)
-                    await test_stagehand.init()
-                    
-                    # If we get here, the config works
-                    print(f"✅ Browser config {i+1} succeeded!")
-                    await test_stagehand.close()  # Clean up test instance
-                    break
-                    
-                except Exception as e:
-                    last_error = e
-                    error_str = str(e)
-                    print(f"❌ Browser config {i+1} failed: {error_str}")
-                    config = None  # Reset config for next iteration
-                    continue
-            
-            if not config:
-                raise RuntimeError(f"All browser configurations failed. Last error: {last_error}")
+                # Validate configuration by launching once
+                test_stagehand = Stagehand(config)
+                await test_stagehand.init()
+                await test_stagehand.close()
+            except Exception as e:
+                raise RuntimeError(f"Browser configuration failed: {e}")
             
             # Initialize the actual Stagehand instance (config was already tested)
             print("Creating final Stagehand instance...")
@@ -209,7 +181,6 @@ class StagehandBrowserAutomation:
         except Exception as e:
             print(f"❌ Stagehand startup error: {str(e)}")
             traceback.print_exc()
-            self._startup_called = False  # Reset flag on error
             self.browser_initialized = False
             raise RuntimeError(f"Stagehand initialization failed: {str(e)}")
             
@@ -233,7 +204,6 @@ class StagehandBrowserAutomation:
         # Reset state
         self.stagehand = None
         self.browser_initialized = False
-        self._startup_called = False
         self.current_api_key = None
         print("Stagehand session state reset")
 
@@ -300,8 +270,30 @@ class StagehandBrowserAutomation:
                 if "Page crashed" in str(action_error) or "Target closed" in str(action_error):
                     print(f"Detected browser crash during {action_type}, attempting recovery...")
                     try:
+                        # Try to get current URL before shutdown for recovery
+                        current_url = None
+                        try:
+                            if self.stagehand and hasattr(self.stagehand, 'page'):
+                                current_url = self.stagehand.page.url
+                                print(f"Preserving URL for recovery: {current_url}")
+                        except:
+                            print("Could not get current URL before shutdown")
+                        
                         # Reinitialize the browser
+                        # Close existing (crashed) browser and start fresh
+                        await self.shutdown()
                         await self.ensure_initialized(model_api_key)
+                        
+                        # Navigate back to the original page if we have it
+                        if current_url and current_url != "https://www.google.com" and action_type != "navigate":
+                            try:
+                                print(f"Recovering original page: {current_url}")
+                                await self.stagehand.page.goto(current_url, wait_until="domcontentloaded", timeout=30000)
+                                await asyncio.sleep(1)  # Brief pause to let page settle
+                            except Exception as nav_error:
+                                print(f"Could not recover original URL {current_url}: {nav_error}")
+                                # Continue anyway, will use Google.com
+                        
                         # Retry the action once
                         if action_type == "navigate":
                             return await self._navigate_stagehand(params['url'])
@@ -397,23 +389,8 @@ class StagehandBrowserAutomation:
             if "Page crashed" in error_msg:
                 error_msg += ". Browser page crashed - this may be due to browser configuration issues in the Docker environment. Consider using the regular browser_api on port 8003 instead."
             
-            # Try to get some state info even after error (like browser_api)
-            try:
-                screenshot, page_info = await self._get_stagehand_state("navigate_error_recovery")
-                return BrowserActionResult(
-                    success=False,
-                    message=error_msg,
-                    url=page_info['url'],
-                    title=page_info['title'],
-                    screenshot_base64=screenshot,
-                    error=f"Navigation failed: {error_msg}"
-                )
-            except:
-                # Complete fallback
-                return BrowserActionResult(
-                    success=False,
-                    error=f"Navigation failed: {error_msg}"
-                )
+            # Propagate exception so outer logic can restart the browser and retry
+            raise RuntimeError(f"Navigation failed due to page crash: {error_msg}")
 
     async def _act_stagehand(self, action: str) -> BrowserActionResult:
         """Execute an action using Stagehand"""
@@ -448,9 +425,9 @@ class StagehandBrowserAutomation:
             error_msg = str(e)
             print(f"Stagehand action error: {error_msg}")
             
-            # Check if it's a page crash
-            if "Page crashed" in error_msg:
-                error_msg += ". Browser page crashed during action execution."
+            # Check if it's a page crash - re-raise so recovery logic can handle it
+            if "Page crashed" in error_msg or "Target closed" in error_msg:
+                raise RuntimeError(f"Action failed due to page crash: {error_msg}")
             
             return BrowserActionResult(
                 success=False,
@@ -499,9 +476,9 @@ class StagehandBrowserAutomation:
             error_msg = str(e)
             print(f"Stagehand extraction error: {error_msg}")
             
-            # Check if it's a page crash
-            if "Page crashed" in error_msg:
-                error_msg += ". Browser page crashed during content extraction."
+            # Check if it's a page crash - re-raise so recovery logic can handle it
+            if "Page crashed" in error_msg or "Target closed" in error_msg:
+                raise RuntimeError(f"Extraction failed due to page crash: {error_msg}")
             
             return BrowserActionResult(
                 success=False,
@@ -544,9 +521,9 @@ class StagehandBrowserAutomation:
             error_msg = str(e)
             print(f"Stagehand screenshot error: {error_msg}")
             
-            # Check if it's a page crash
-            if "Page crashed" in error_msg:
-                error_msg += ". Browser page crashed during screenshot."
+            # Check if it's a page crash - re-raise so recovery logic can handle it
+            if "Page crashed" in error_msg or "Target closed" in error_msg:
+                raise RuntimeError(f"Screenshot failed due to page crash: {error_msg}")
             
             return BrowserActionResult(
                 success=False,
@@ -572,6 +549,7 @@ class StagehandBrowserAutomation:
             )
             
             # Format observations for response
+            
             observation_content = []
             if observations:
                 for i, obs in enumerate(observations, 1):
@@ -583,7 +561,7 @@ class StagehandBrowserAutomation:
                     else:
                         # Convert to dict if possible
                         obs_dict = obs.__dict__ if hasattr(obs, '__dict__') else {"observation": str(obs)}
-                    
+                        
                     observation_content.append(f"Observation {i}: {json.dumps(obs_dict, indent=2)}")
             
             formatted_content = "\n\n".join(observation_content) if observation_content else "No observations found"
@@ -597,8 +575,7 @@ class StagehandBrowserAutomation:
                 url=page_info['url'],
                 title=page_info['title'],
                 screenshot_base64=screenshot,
-                content=formatted_content,
-                element_count=len(observations) if observations else 0
+                content=formatted_content
             )
             
         except asyncio.TimeoutError:
@@ -612,9 +589,9 @@ class StagehandBrowserAutomation:
             error_msg = str(e)
             print(f"Stagehand observation error: {error_msg}")
             
-            # Check if it's a page crash
-            if "Page crashed" in error_msg:
-                error_msg += ". Browser page crashed during observation."
+            # Check if it's a page crash - re-raise so recovery logic can handle it
+            if "Page crashed" in error_msg or "Target closed" in error_msg:
+                raise RuntimeError(f"Observation failed due to page crash: {error_msg}")
             
             return BrowserActionResult(
                 success=False,

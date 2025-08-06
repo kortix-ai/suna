@@ -6,13 +6,14 @@ import React from 'react';
 import { Slider } from '@/components/ui/slider';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiMessageType } from '@/components/thread/types';
-import { CircleDashed, X, ChevronLeft, ChevronRight, Computer, Radio, Maximize2, Minimize2, Copy, Check } from 'lucide-react';
+import { CircleDashed, X, ChevronLeft, ChevronRight, Computer, Minimize2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Button } from '@/components/ui/button';
 import { ToolView } from './tool-views/wrapper';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
+import { useVncPreloader } from '@/hooks/useVncPreloader';
 
 export interface ToolCallInput {
   assistantCall: {
@@ -87,6 +88,78 @@ export function ToolCallSidePanel({
   const [isCopyingContent, setIsCopyingContent] = React.useState(false);
 
   const isMobile = useIsMobile();
+
+  // Use VNC preloader hook for connection management
+  const { isPreloaded: isVncReady, preloadedIframe } = useVncPreloader(project);
+  const [lastProjectSandboxId, setLastProjectSandboxId] = React.useState<string | null>(null);
+
+  // Reset state when project/sandbox changes
+  React.useEffect(() => {
+    const currentSandboxId = project?.sandbox?.id;
+    if (currentSandboxId && currentSandboxId !== lastProjectSandboxId) {
+      setLastProjectSandboxId(currentSandboxId);
+    }
+  }, [project?.sandbox?.id, lastProjectSandboxId]);
+
+
+
+  // Reuse the preloaded iframe instead of creating a new one
+  const persistentVncIframe = React.useMemo(() => {
+    const sandbox = project?.sandbox;
+    if (!sandbox?.vnc_preview || !sandbox?.pass) return null;
+    
+    return (
+      <div className="w-full h-full overflow-hidden relative">
+        {/* Reuse preloaded iframe if available */}
+        {isVncReady && preloadedIframe ? (
+          <div
+            ref={(container) => {
+              if (container && preloadedIframe && preloadedIframe.parentNode !== container) {
+                // Move the preloaded iframe to this container and style it for display
+                preloadedIframe.style.position = 'static';
+                preloadedIframe.style.left = '0';
+                preloadedIframe.style.top = '0';
+                preloadedIframe.style.width = 'calc(100% + 10px)';
+                preloadedIframe.style.height = 'calc(100% + 100px)';
+                preloadedIframe.style.marginTop = '-70px';
+                preloadedIframe.style.marginLeft = '-10px';
+                preloadedIframe.style.marginBottom = '-30px';
+                preloadedIframe.style.marginRight = '-10px';
+                preloadedIframe.style.border = '0';
+                preloadedIframe.className = 'w-full border-0';
+                preloadedIframe.title = 'Persistent Browser Preview';
+                
+                // Move iframe to the display container
+                container.appendChild(preloadedIframe);
+              }
+            }}
+            className="w-full h-full"
+          />
+        ) : (
+          /* Show loading state while VNC is connecting */
+          <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+            <div className="bg-white dark:bg-zinc-900 rounded-lg p-4 shadow-lg max-w-sm mx-4">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+                <h3 className="font-medium text-zinc-900 dark:text-zinc-100">
+                  Connecting to Browser...
+                </h3>
+              </div>
+              <p className="text-sm text-zinc-600 dark:text-zinc-400">
+                Establishing VNC connection, please wait...
+              </p>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }, [project?.sandbox, isVncReady, preloadedIframe]);
+
+
+
+
+
+
 
   const handleClose = React.useCallback(() => {
     onClose();
@@ -623,6 +696,27 @@ export function ToolCallSidePanel({
       );
     }
 
+    // Check if this is a browser tool to show/hide persistent iframe
+    const toolName = displayToolCall.assistantCall.name?.toLowerCase() || '';
+    const isBrowserTool = ['browser-navigate-to', 'browser-act', 'browser-extract-content', 'browser-observe', 'browser-screenshot'].includes(toolName);
+    
+    // Determine if this is the last tool call (same logic as before)
+    const isLastToolCall = displayIndex === displayTotalCalls - 1;
+    
+    // Check if browser is currently running
+    const isRunning = isStreaming || agentStatus === 'running';
+    
+    // Check if tool has screenshot content
+    const hasScreenshot = displayToolCall?.toolResult?.content && 
+                          typeof displayToolCall.toolResult.content === 'string' && 
+                          (displayToolCall.toolResult.content.includes('image_url') || 
+                           displayToolCall.toolResult.content.includes('screenshot_base64'));
+    
+    // Show iframe when: browser tool + last tool call + (running OR no screenshot)
+    const shouldShowIframe = isBrowserTool && isLastToolCall && (isRunning || !hasScreenshot);
+    
+
+
     const toolView = (
       <ToolView
         name={displayToolCall.assistantCall.name}
@@ -638,6 +732,7 @@ export function ToolCallSidePanel({
         currentIndex={displayIndex}
         totalCalls={displayTotalCalls}
         onFileClick={onFileClick}
+        shouldShowParentIframe={shouldShowIframe}
       />
     );
 
@@ -700,8 +795,20 @@ export function ToolCallSidePanel({
           </div>
         </motion.div>
 
-        <div className="flex-1 overflow-auto scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700 scrollbar-track-transparent">
+        <div className="flex-1 overflow-auto scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700 scrollbar-track-transparent relative">
           {toolView}
+          
+          {/* Persistent VNC iframe - ALWAYS in DOM, visibility controlled by CSS */}
+          {persistentVncIframe && (
+            <div 
+              className={`absolute inset-0 z-10 ${shouldShowIframe ? 'block pointer-events-auto' : 'hidden pointer-events-none'}`}
+              style={{ 
+                top: '56px',
+              }}
+            >
+              {persistentVncIframe}
+            </div>
+          )}
         </div>
       </div>
     );
