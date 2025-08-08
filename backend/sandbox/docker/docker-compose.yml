@@ -6,12 +6,12 @@ services:
       dockerfile: ${DOCKERFILE:-Dockerfile}
       args:
         TARGETPLATFORM: ${TARGETPLATFORM:-linux/amd64}
-    image: chirkoot/suna:0.3.15
+    image: chirkoot/suna:0.3.33
     ports:
       - "6080:6080"  # noVNC web interface
       - "5901:5901"  # VNC port
       - "9222:9222"  # Chrome remote debugging port
-      - "8004:8004"  # Stagehand API server port
+      - "8004:8004"  # Browser API server port
       - "8080:8080"  # HTTP server port
     environment:
       - ANONYMIZED_TELEMETRY=${ANONYMIZED_TELEMETRY:-false}

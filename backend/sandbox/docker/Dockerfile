@@ -91,26 +91,24 @@ ARG TARGETPLATFORM=linux/amd64
 
 # Set up working directory
 WORKDIR /app
+COPY package*.json tsconfig.json ./
+RUN npm ci
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright separately to avoid platform issues
-RUN pip install playwright==1.44.0
-
 # Install Playwright and browsers with system dependencies
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 # Then install dependencies and browsers
-RUN playwright install-deps
-RUN playwright install chromium
+RUN npx playwright install-deps
+RUN npx playwright install chromium
 # Verify installation
-RUN python -c "from playwright.sync_api import sync_playwright; print('Playwright installation verified')"
+RUN node -e "import('playwright').then(() => console.log('Playwright installation verified')).catch(e => { console.error('Playwright verification failed:', e); process.exit(1); })"
 
 # Copy server scripts
 COPY . /app
 COPY server.py /app/server.py
-COPY stagehand_browser_api.py /app/stagehand_browser_api.py
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
