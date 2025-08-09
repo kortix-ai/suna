@@ -236,6 +236,7 @@ export function SidebarSearch() {
                     onClick={(e) =>
                       handleThreadClick(e, thread.threadId, thread.url)
                     }
+                    prefetch={false}
                     className="flex items-center justify-between w-full"
                   >
                     <div className="flex items-center">

@@ -13,7 +13,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ConditionalStep } from '@/components/agents/workflows/conditional-workflow-builder';
 import { getStepIconAndColor } from './workflow-definitions';
-import { PipedreamRegistry } from '@/components/agents/pipedream/pipedream-registry';
+
 import { ComposioRegistry } from '@/components/agents/composio/composio-registry';
 import { CustomMCPDialog } from '@/components/agents/mcp/custom-mcp-dialog';
 import { useAgent, useUpdateAgent } from '@/hooks/react-query/agents/use-agents';
@@ -74,7 +74,7 @@ export function WorkflowSidePanel({
     versionData,
     onToolsUpdate
 }: WorkflowSidePanelProps) {
-    const [showPipedreamRegistry, setShowPipedreamRegistry] = useState(false);
+
     const [showComposioRegistry, setShowComposioRegistry] = useState(false);
     const [showCustomMCPDialog, setShowCustomMCPDialog] = useState(false);
     const queryClient = useQueryClient();

@@ -11,7 +11,6 @@ import { toast } from 'sonner';
 import type { MarketplaceTemplate } from '@/components/agents/installation/types';
 import { AGENTPRESS_TOOL_DEFINITIONS } from '@/components/agents/tools';
 import { useComposioToolkitIcon } from '@/hooks/react-query/composio/use-composio';
-import { usePipedreamAppIcon } from '@/hooks/react-query/pipedream/use-pipedream';
 
 interface MarketplaceAgentPreviewDialogProps {
   agent: MarketplaceTemplate | null;
@@ -22,13 +21,6 @@ interface MarketplaceAgentPreviewDialogProps {
 }
 
 const extractAppInfo = (qualifiedName: string, customType?: string) => {
-  if (customType === 'pipedream') {
-    const qualifiedMatch = qualifiedName.match(/^pipedream_([^_]+)_/);
-    if (qualifiedMatch) {
-      return { type: 'pipedream', slug: qualifiedMatch[1] };
-    }
-  }
-  
   if (customType === 'composio') {
     if (qualifiedName.startsWith('composio.')) {
       const extractedSlug = qualifiedName.substring(9);
@@ -48,20 +40,13 @@ const IntegrationLogo: React.FC<{
 }> = ({ qualifiedName, displayName, customType }) => {
   const appInfo = extractAppInfo(qualifiedName, customType);
   
-  const { data: pipedreamIconData } = usePipedreamAppIcon(
-    appInfo?.type === 'pipedream' ? appInfo.slug : '', 
-    { enabled: appInfo?.type === 'pipedream' }
-  );
-  
   const { data: composioIconData } = useComposioToolkitIcon(
     appInfo?.type === 'composio' ? appInfo.slug : '',
     { enabled: appInfo?.type === 'composio' }
   );
   
   let logoUrl: string | undefined;
-  if (appInfo?.type === 'pipedream') {
-    logoUrl = pipedreamIconData?.icon_url;
-  } else if (appInfo?.type === 'composio') {
+  if (appInfo?.type === 'composio') {
     logoUrl = composioIconData?.icon_url;
   }
 

@@ -358,7 +358,7 @@ export default function AgentsPage() {
       }
 
       const customRequirements = item.mcp_requirements?.filter(req => 
-        req.custom_type && req.custom_type !== 'pipedream'
+        req.custom_type
       ) || [];
       const missingCustomConfigs = customRequirements.filter(req => 
         !customMcpConfigs || !customMcpConfigs[req.qualified_name] || 
@@ -368,20 +368,6 @@ export default function AgentsPage() {
       if (missingCustomConfigs.length > 0) {
         const missingNames = missingCustomConfigs.map(req => req.display_name).join(', ');
         toast.error(`Please provide all required configuration for: ${missingNames}`);
-        return;
-      }
-
-      const pipedreamRequirements = item.mcp_requirements?.filter(req => 
-        req.custom_type === 'pipedream'
-      ) || [];
-      const missingPipedreamConfigs = pipedreamRequirements.filter(req => 
-        !customMcpConfigs || !customMcpConfigs[req.qualified_name] || 
-        !customMcpConfigs[req.qualified_name].profile_id
-      );
-      
-      if (missingPipedreamConfigs.length > 0) {
-        const missingNames = missingPipedreamConfigs.map(req => req.display_name).join(', ');
-        toast.error(`Please select Pipedream profiles for: ${missingNames}`);
         return;
       }
 
@@ -566,7 +552,6 @@ export default function AgentsPage() {
         </div>
       </div>
       <div className="container mx-auto max-w-7xl px-4 py-2">
-        {/* Fixed height container to prevent layout shifts on tab change */}
         <div className="w-full min-h-[calc(100vh-300px)]">
           {activeTab === "my-agents" && (
             <MyAgentsTab

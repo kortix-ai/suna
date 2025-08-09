@@ -21,7 +21,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { LoadingState } from '../shared/LoadingState';
 import { Separator } from "@/components/ui/separator";
 import { extractConnectCredentialProfileData } from './_utils';
-import { usePipedreamAppIcon } from '@/hooks/react-query/pipedream/use-pipedream';
 
 export function ConnectCredentialProfileToolView({
   name = 'connect-credential-profile',
@@ -57,12 +56,7 @@ export function ConnectCredentialProfileToolView({
 
   const toolTitle = getToolTitle(name);
 
-  // Fetch app icon using the logo hook
-  const { data: iconData } = usePipedreamAppIcon(app_slug || '', {
-    enabled: !!app_slug
-  });
-
-  const logoUrl = iconData?.icon_url;
+  const logoUrl = undefined;
 
   // Update countdown timer
   useEffect(() => {

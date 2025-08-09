@@ -166,7 +166,7 @@ export function getStepIconAndColor(stepType: any): { icon: any; color: string }
         const toolName = stepType.config?.tool_name;
         // Use more appropriate icons for different integration types
         let icon = FileText; // Default icon for integrations
-        if (toolName?.includes('pipedream')) {
+                  if (toolName?.includes('composio')) {
             icon = Globe;
         } else if (toolName?.includes('mcp')) {
             icon = Cog;

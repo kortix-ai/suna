@@ -4,8 +4,8 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Search, Zap, X, Settings, ChevronDown, ChevronUp, Loader2 } from 'lucide-react';
-import { useComposioToolkits, useComposioCategories, useComposioToolkitsInfinite } from '@/hooks/react-query/composio/use-composio';
+import { Search, Zap, X, Settings, ChevronDown, ChevronUp, Loader2, Server } from 'lucide-react';
+import { useComposioCategories, useComposioToolkitsInfinite } from '@/hooks/react-query/composio/use-composio';
 import { useComposioProfiles } from '@/hooks/react-query/composio/use-composio-profiles';
 import { useAgent, useUpdateAgent } from '@/hooks/react-query/agents/use-agents';
 import { ComposioConnector } from './composio-connector';
@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 import { useQueryClient } from '@tanstack/react-query';
 import { AgentSelector } from '../../thread/chat-input/agent-selector';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Switch } from '@/components/ui/switch';
+import { CustomMCPDialog } from '../mcp/custom-mcp-dialog';
 
 const CATEGORY_EMOJIS: Record<string, string> = {
   'popular': '🔥',
@@ -76,7 +76,6 @@ const getAgentConnectedApps = (
   return connectedApps;
 };
 
-// Helper function to check if an app is connected to the agent
 const isAppConnectedToAgent = (
   agent: any,
   appSlug: string,
@@ -289,6 +288,7 @@ export const ComposioRegistry: React.FC<ComposioRegistryProps> = ({
   const [showConnectedApps, setShowConnectedApps] = useState(true);
   const [showToolsManager, setShowToolsManager] = useState(false);
   const [selectedConnectedApp, setSelectedConnectedApp] = useState<ConnectedApp | null>(null);
+  const [showCustomMCPDialog, setShowCustomMCPDialog] = useState(false);
   
   const [internalSelectedAgentId, setInternalSelectedAgentId] = useState<string | undefined>(selectedAgentId);
   const queryClient = useQueryClient();
@@ -404,6 +404,41 @@ export const ComposioRegistry: React.FC<ComposioRegistryProps> = ({
     }
   };
 
+  const handleCustomMCPSave = async (customConfig: any): Promise<void> => {
+    if (!currentAgentId) {
+      throw new Error('Please select an agent first');
+    }
+
+    // Create MCP configuration for agent
+    const mcpConfig = {
+      name: customConfig.name || 'Custom MCP',
+      type: customConfig.type || 'sse',
+      config: customConfig.config || {},
+      enabledTools: customConfig.enabledTools || [],
+    };
+
+    // Get current custom MCPs from agent
+    const currentCustomMcps = agent?.custom_mcps || [];
+    const updatedCustomMcps = [...currentCustomMcps, mcpConfig];
+
+    // Return a promise that resolves/rejects based on the mutation result
+    return new Promise((resolve, reject) => {
+      updateAgent({
+        agentId: currentAgentId,
+        custom_mcps: updatedCustomMcps
+      }, {
+        onSuccess: () => {
+          toast.success(`Custom MCP "${customConfig.name}" added successfully`);
+          queryClient.invalidateQueries({ queryKey: ['agent', currentAgentId] });
+          resolve();
+        },
+        onError: (error: any) => {
+          reject(new Error(error.message || 'Failed to add custom MCP'));
+        }
+      });
+    });
+  };
+
   const categories = categoriesData?.categories || [];
 
   return (
@@ -483,6 +518,17 @@ export const ComposioRegistry: React.FC<ComposioRegistryProps> = ({
                     onAgentSelect={handleAgentSelect}
                     isSunaAgent={agent?.metadata?.is_suna_default}
                   />
+                )}
+                {mode !== 'profile-only' && currentAgentId && (
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => setShowCustomMCPDialog(true)}
+                    className="flex items-center gap-2"
+                  >
+                    <Server className="h-4 w-4" />
+                    Add Custom MCP
+                  </Button>
                 )}
               </div>
             </div>
@@ -663,6 +709,11 @@ export const ComposioRegistry: React.FC<ComposioRegistryProps> = ({
           }}
         />
       )}
+      <CustomMCPDialog
+        open={showCustomMCPDialog}
+        onOpenChange={setShowCustomMCPDialog}
+        onSave={handleCustomMCPSave}
+      />
     </div>
   );
 }; 

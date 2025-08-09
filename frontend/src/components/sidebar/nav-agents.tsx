@@ -428,6 +428,7 @@ export function NavAgents() {
                             onClick={(e) =>
                               handleThreadClick(e, thread.threadId, thread.url)
                             }
+                            prefetch={false}
                             className="flex items-center flex-1 min-w-0"
                           >
                             {isThreadLoading ? (

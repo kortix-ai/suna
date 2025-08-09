@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional, List
 
 import croniter
 import pytz
-from qstash.client import QStash
+from services.supabase import DBConnection
 
 from services.supabase import DBConnection
 from utils.logger import logger
@@ -41,19 +41,11 @@ class TriggerProvider(ABC):
 class ScheduleProvider(TriggerProvider):
     def __init__(self):
         super().__init__("schedule", TriggerType.SCHEDULE)
-        self._qstash_token = os.getenv("QSTASH_TOKEN")
-        self._webhook_base_url = os.getenv("WEBHOOK_BASE_URL", "http://localhost:3000")
-        
-        if not self._qstash_token:
-            logger.warning("QSTASH_TOKEN not found. Schedule provider will not work without it.")
-            self._qstash = None
-        else:
-            self._qstash = QStash(token=self._qstash_token)
+        # This should point to your backend base URL since Supabase Cron will POST to backend
+        self._webhook_base_url = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
+        self._db = DBConnection()
     
     async def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        if not self._qstash:
-            raise ValueError("QSTASH_TOKEN environment variable is required for scheduled triggers")
-        
         if 'cron_expression' not in config:
             raise ValueError("cron_expression is required for scheduled triggers")
         
@@ -81,10 +73,6 @@ class ScheduleProvider(TriggerProvider):
         return config
     
     async def setup_trigger(self, trigger: Trigger) -> bool:
-        if not self._qstash:
-            logger.error("QStash client not available")
-            return False
-        
         try:
             webhook_url = f"{self._webhook_base_url}/api/triggers/{trigger.trigger_id}/webhook"
             cron_expression = trigger.config['cron_expression']
@@ -104,63 +92,71 @@ class ScheduleProvider(TriggerProvider):
                 "timestamp": datetime.now(timezone.utc).isoformat()
             }
             
-            headers = {
+            headers: Dict[str, Any] = {
                 "Content-Type": "application/json",
                 "X-Trigger-Source": "schedule"
             }
-            
+
+            # Include simple shared secret header for backend auth
+            secret = os.getenv("TRIGGER_WEBHOOK_SECRET")
+            if secret:
+                headers["X-Trigger-Secret"] = secret
             if config.ENV_MODE == EnvMode.STAGING:
                 vercel_bypass_key = os.getenv("VERCEL_PROTECTION_BYPASS_KEY", "")
                 if vercel_bypass_key:
                     headers["X-Vercel-Protection-Bypass"] = vercel_bypass_key
-            
-            schedule_id = await asyncio.to_thread(
-                self._qstash.schedule.create,
-                destination=webhook_url,
-                cron=cron_expression,
-                body=json.dumps(payload),
-                headers=headers,
-                retries=3,
-                delay="5s"
-            )
-            
-            trigger.config['qstash_schedule_id'] = schedule_id
-            logger.info(f"Created QStash schedule {schedule_id} for trigger {trigger.trigger_id}")
+
+            # Supabase Cron job names are case-sensitive; we keep a stable name per trigger
+            job_name = f"trigger_{trigger.trigger_id}"
+
+            # Schedule via Supabase Cron RPC helper
+            client = await self._db.client
+            try:
+                result = await client.rpc(
+                    "schedule_trigger_http",
+                    {
+                        "job_name": job_name,
+                        "schedule": cron_expression,
+                        "url": webhook_url,
+                        "headers": headers,
+                        "body": payload,
+                        "timeout_ms": 8000,
+                    },
+                ).execute()
+            except Exception as rpc_err:
+                logger.error(f"Failed to schedule Supabase Cron job via RPC: {rpc_err}")
+                return False
+
+            trigger.config['cron_job_name'] = job_name
+            try:
+                trigger.config['cron_job_id'] = result.data
+            except Exception:
+                trigger.config['cron_job_id'] = None
+            logger.info(f"Created Supabase Cron job '{job_name}' for trigger {trigger.trigger_id}")
             return True
             
         except Exception as e:
-            logger.error(f"Failed to setup QStash schedule for trigger {trigger.trigger_id}: {e}")
+            logger.error(f"Failed to setup Supabase Cron schedule for trigger {trigger.trigger_id}: {e}")
             return False
     
     async def teardown_trigger(self, trigger: Trigger) -> bool:
-        if not self._qstash:
-            logger.warning("QStash client not available, skipping teardown")
-            return True
-        
         try:
-            schedule_id = trigger.config.get('qstash_schedule_id')
-            if schedule_id:
-                try:
-                    await asyncio.to_thread(self._qstash.schedule.delete, schedule_id)
-                    logger.info(f"Deleted QStash schedule {schedule_id} for trigger {trigger.trigger_id}")
-                    return True
-                except Exception as e:
-                    logger.warning(f"Failed to delete QStash schedule {schedule_id}: {e}")
-            
-            schedules = await asyncio.to_thread(self._qstash.schedule.list)
-            webhook_url = f"{self._webhook_base_url}/api/triggers/{trigger.trigger_id}/webhook"
-            
-            for schedule in schedules:
-                if schedule.get('destination') == webhook_url:
-                    await asyncio.to_thread(self._qstash.schedule.delete, schedule['scheduleId'])
-                    logger.info(f"Deleted QStash schedule {schedule['scheduleId']} for trigger {trigger.trigger_id}")
-                    return True
-            
-            logger.warning(f"No QStash schedule found for trigger {trigger.trigger_id}")
-            return True
+            job_name = trigger.config.get('cron_job_name') or f"trigger_{trigger.trigger_id}"
+            client = await self._db.client
+
+            try:
+                await client.rpc(
+                    "unschedule_job_by_name",
+                    {"job_name": job_name},
+                ).execute()
+                logger.info(f"Unschedule requested for Supabase Cron job '{job_name}' (trigger {trigger.trigger_id})")
+                return True
+            except Exception as rpc_err:
+                logger.warning(f"Failed to unschedule job '{job_name}' via RPC: {rpc_err}")
+                return False
             
         except Exception as e:
-            logger.error(f"Failed to teardown QStash schedule for trigger {trigger.trigger_id}: {e}")
+            logger.error(f"Failed to teardown Supabase Cron schedule for trigger {trigger.trigger_id}: {e}")
             return False
     
     async def process_event(self, trigger: Trigger, event: TriggerEvent) -> TriggerResult:

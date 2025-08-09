@@ -53,25 +53,6 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
     if (!item?.mcp_requirements) return [];
     
     const steps: SetupStep[] = [];
-    
-    item.mcp_requirements
-      .filter(req => req.custom_type === 'pipedream')
-      .forEach(req => {
-        const app_slug = req.qualified_name.startsWith('pipedream:') 
-          ? req.qualified_name.substring('pipedream:'.length)
-          : req.qualified_name;
-        
-        steps.push({
-          id: req.qualified_name,
-          title: `Connect ${req.display_name}`,
-          description: `Select an existing ${req.display_name} profile or create a new one`,
-          type: 'pipedream_profile',
-          service_name: req.display_name,
-          qualified_name: req.qualified_name,
-          app_slug: app_slug
-        });
-      });
-
     item.mcp_requirements
       .filter(req => req.custom_type === 'composio')
       .forEach(req => {
@@ -110,7 +91,7 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
       });
 
     item.mcp_requirements
-      .filter(req => req.custom_type && req.custom_type !== 'pipedream' && req.custom_type !== 'composio')
+      .filter(req => req.custom_type && req.custom_type !== 'composio')
       .forEach(req => {
         steps.push({
           id: req.qualified_name,
@@ -174,7 +155,6 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
     
     switch (step.type) {
       case 'credential_profile':
-      case 'pipedream_profile':
       case 'composio_profile':
         return !!profileMappings[step.qualified_name];
       case 'custom_server':
@@ -205,18 +185,7 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
     const finalCustomConfigs = { ...customMcpConfigs };
     
     setupSteps.forEach(step => {
-      if (step.type === 'pipedream_profile') {
-        const profileId = profileMappings[step.qualified_name];
-        if (profileId) {
-          finalCustomConfigs[step.qualified_name] = {
-            url: 'https://remote.mcp.pipedream.net',
-            headers: {
-              'x-pd-app-slug': step.app_slug,
-            },
-            profile_id: profileId
-          };
-        }
-      } else if (step.type === 'composio_profile') {
+      if (step.type === 'composio_profile') {
         const profileId = profileMappings[step.qualified_name];
         if (profileId) {
           finalCustomConfigs[step.qualified_name] = {
@@ -298,7 +267,7 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
         </div>
 
         <div>
-          {(currentStepData.type === 'credential_profile' || currentStepData.type === 'pipedream_profile' || currentStepData.type === 'composio_profile') && (
+          {(currentStepData.type === 'credential_profile' || currentStepData.type === 'composio_profile') && (
             <ProfileConnector
               step={currentStepData}
               selectedProfileId={profileMappings[currentStepData.qualified_name]}

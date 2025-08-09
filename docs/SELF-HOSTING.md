@@ -59,7 +59,7 @@ Obtain the following API keys:
   - [Daytona](https://app.daytona.io/) - For secure agent execution
 
 - **Background Job Processing**:
-  - [QStash](https://console.upstash.com/qstash) - For workflows, automated tasks, and webhook handling
+  - Supabase Cron - For workflows, automated tasks, and webhook handling
 
 #### Optional
 
@@ -131,14 +131,6 @@ As part of the setup, you'll need to:
    - Image name: `kortix/suna:0.1.3`
    - Entrypoint: `/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf`
 
-### 5. QStash Configuration
-
-QStash is required for background job processing, workflows, and webhook handling:
-
-1. Create an account at [Upstash Console](https://console.upstash.com/qstash)
-2. Get your QStash token and signing keys
-3. Configure a publicly accessible webhook base URL for workflow callbacks
-
 ## Manual Configuration
 
 If you prefer to configure your installation manually, or if you need to modify the configuration after installation, here's what you need to know:
@@ -185,11 +177,7 @@ DAYTONA_SERVER_URL=https://app.daytona.io/api
 DAYTONA_TARGET=us
 
 # Background job processing (Required)
-QSTASH_URL=https://qstash.upstash.io
-QSTASH_TOKEN=your-qstash-token
-QSTASH_CURRENT_SIGNING_KEY=your-current-signing-key
-QSTASH_NEXT_SIGNING_KEY=your-next-signing-key
-WEBHOOK_BASE_URL=https://yourdomain.com
+WEBHOOK_BASE_URL=https://your-domain.ngrok.io
 
 # MCP Configuration
 MCP_CREDENTIAL_ENCRYPTION_KEY=your-generated-encryption-key
@@ -297,13 +285,7 @@ uv run dramatiq run_agent_background
    - Verify Daytona API key
    - Check if the container image is correctly configured
 
-5. **QStash/Webhook issues**
-
-   - Verify QStash token and signing keys
-   - Ensure webhook base URL is publicly accessible
-   - Check QStash console for delivery status
-
-6. **Setup wizard issues**
+5. **Setup wizard issues**
 
    - Delete `.setup_progress` file to reset the setup wizard
    - Check that all required tools are installed and accessible
@@ -318,7 +300,7 @@ docker compose logs -f
 
 # Frontend logs (manual setup)
 cd frontend
-npm run dev -- --turbopack
+npm run dev
 
 # Backend logs (manual setup)
 cd backend

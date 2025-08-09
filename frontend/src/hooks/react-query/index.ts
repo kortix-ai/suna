@@ -25,6 +25,4 @@ export * from './usage/use-health';
 
 export * from './knowledge-base/use-knowledge-base-queries';
 
-export * from './triggers';
-
-export * from './pipedream'; 
+export * from './triggers'; 

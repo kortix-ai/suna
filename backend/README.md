@@ -96,11 +96,6 @@ DAYTONA_API_KEY=your-daytona-key
 DAYTONA_SERVER_URL=https://app.daytona.io/api
 DAYTONA_TARGET=us
 
-# Background Job Processing (Required)
-QSTASH_URL=https://qstash.upstash.io
-QSTASH_TOKEN=your-qstash-token
-QSTASH_CURRENT_SIGNING_KEY=your-current-signing-key
-QSTASH_NEXT_SIGNING_KEY=your-next-signing-key
 WEBHOOK_BASE_URL=https://yourdomain.com
 
 # MCP Configuration

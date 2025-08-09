@@ -1,6 +1,0 @@
-I found a bug in the composio integration.
-
-When I create a new connection, it fails with the following error:
-
-{"event": "Failed to create profile: Error code: 400 - {'error': {'message': 'Default auth config not found', 'code': 302, 'status': 400, 'request_id': '4dd2fda0-49fe-4a26-b305-381915236743', 'suggested_fix': ''}}", "level": "error", "lineno": 208, "func_name": "create_profile", "filename": "api.py", "timestamp": "2025-08-08T14:18:21.936200Z", "user_id": "527d14fe-8120-41f2-908c-0f65a557e829", "query_params": "", "client_ip": "127.0.0.1", "request_id": "ee22e79f-7e33-445b-bfe0-36767b632d6e", "auth_method": "jwt", "method": "POST", "path": "/api/composio/profiles"}
-

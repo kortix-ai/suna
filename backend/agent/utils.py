@@ -1,6 +1,7 @@
 import json
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone, timedelta
+from utils.cache import Cache
 from utils.logger import logger
 from utils.config import config
 from services import redis
@@ -88,6 +89,10 @@ async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
         Dict with 'can_start' (bool), 'running_count' (int), 'running_thread_ids' (list)
     """
     try:
+        result = await Cache.get(f"agent_run_limit:{account_id}")
+        if result:
+            return result
+
         # Calculate 24 hours ago
         twenty_four_hours_ago = datetime.now(timezone.utc) - timedelta(hours=24)
         twenty_four_hours_ago_iso = twenty_four_hours_ago.isoformat()
@@ -117,12 +122,14 @@ async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
         
         logger.info(f"Account {account_id} has {running_count} running agent runs in the past 24 hours")
         
-        return {
+        result = {
             'can_start': running_count < config.MAX_PARALLEL_AGENT_RUNS,
             'running_count': running_count,
             'running_thread_ids': running_thread_ids
         }
-        
+        await Cache.set(f"agent_run_limit:{account_id}", result)
+        return result
+
     except Exception as e:
         logger.error(f"Error checking agent run limit for account {account_id}: {str(e)}")
         # In case of error, allow the run to proceed but log the error
@@ -130,4 +137,4 @@ async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
             'can_start': True,
             'running_count': 0,
             'running_thread_ids': []
-        } 
+        }

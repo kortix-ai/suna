@@ -305,8 +305,8 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['full-file-rewrite', 'Rewriting File'],
   ['str-replace', 'Editing Text'],
   ['str_replace', 'Editing Text'],
-  ['edit_file', 'AI File Edit'],
-  ['edit-file', 'AI File Edit'],
+  ['edit_file', 'Editing File'],
+  ['edit-file', 'Editing File'],
 
   ['create-tasks', 'Creating Tasks'],
   ['update-tasks', 'Updating Tasks'],
@@ -357,7 +357,7 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['delete_file', 'Deleting File'],
   ['full_file_rewrite', 'Rewriting File'],
   ['str_replace', 'Editing Text'],
-  ['edit_file', 'AI File Edit'],
+  ['edit_file', 'Editing File'],
   
   ['browser_navigate_to', 'Navigating to Page'],
   ['browser_act', 'Performing Action'],

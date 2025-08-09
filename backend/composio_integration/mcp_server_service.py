@@ -36,29 +36,21 @@ class MCPServerService:
         self.client = ComposioClient.get_client(api_key)
     
     def _generate_cuid(self, length: int = 8) -> str:
-        """Generate a random CUID with letters and numbers only"""
         return ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(length))
     
     def _generate_server_name(self, toolkit_name: str) -> str:
-        """Generate a valid server name: appname-cuid (4-30 chars, letters/numbers/spaces/hyphens only)"""
-        # Clean the toolkit name: remove invalid chars, convert to lowercase
         clean_name = ''.join(c.lower() if c.isalnum() else '-' for c in toolkit_name)
-        clean_name = clean_name.strip('-')  # Remove leading/trailing hyphens
+        clean_name = clean_name.strip('-')
         
-        # Generate CUID
         cuid = self._generate_cuid(8)
-        
-        # Create server name
+
         server_name = f"{clean_name}-{cuid}"
         
-        # Ensure it's within 4-30 characters
         if len(server_name) > 30:
-            # Truncate the app name to fit
-            max_app_name_length = 30 - len(cuid) - 1  # -1 for the hyphen
+            max_app_name_length = 30 - len(cuid) - 1
             clean_name = clean_name[:max_app_name_length]
             server_name = f"{clean_name}-{cuid}"
         
-        # Ensure minimum length
         if len(server_name) < 4:
             server_name = f"app-{cuid}"
         
@@ -82,7 +74,6 @@ class MCPServerService:
             
             logger.info(f"Using MCP server name: {name}")
             
-            # Try different possible API paths
             try:
                 response = self.client.mcp.create(
                     auth_config_ids=auth_config_ids,
@@ -90,14 +81,12 @@ class MCPServerService:
                     allowed_tools=allowed_tools
                 )
             except AttributeError:
-                # Fallback: try direct method call
                 response = self.client.create_mcp_server(
                     auth_config_ids=auth_config_ids,
                     name=name,
                     allowed_tools=allowed_tools
                 )
-            
-            # Access Pydantic model attributes directly
+
             commands_obj = getattr(response, 'commands', None)
             
             commands = MCPCommands(

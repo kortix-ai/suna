@@ -19,7 +19,7 @@
     "@hookform/resolvers": "^5.0.1",
     "@next/third-parties": "^15.3.1",
     "@number-flow/react": "^0.5.7",
-    "@pipedream/sdk": "^1.7.0",
+
     "@radix-ui/react-accordion": "^1.2.11",
     "@radix-ui/react-alert-dialog": "^1.1.11",
     "@radix-ui/react-avatar": "^1.1.4",

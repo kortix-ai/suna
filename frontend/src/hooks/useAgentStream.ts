@@ -98,8 +98,37 @@ export function useAgentStream(
       .reduce((acc, curr) => acc + curr.content, '');
   }, [textContent]);
 
-  // Update refs if threadId or setMessages changes
+  // Refs to capture current state for persistence
+  const statusRef = useRef(status);
+  const agentRunIdRef = useRef(agentRunId);
+  const textContentRef = useRef(textContent);
+  
+  // Update refs whenever state changes
   useEffect(() => {
+    statusRef.current = status;
+  }, [status]);
+  
+  useEffect(() => {
+    agentRunIdRef.current = agentRunId;
+  }, [agentRunId]);
+  
+  useEffect(() => {
+    textContentRef.current = textContent;
+  }, [textContent]);
+
+  // On thread change, ensure any existing stream is cleaned up to avoid stale subscriptions
+  useEffect(() => {
+    const previousThreadId = threadIdRef.current;
+    if (previousThreadId && previousThreadId !== threadId && streamCleanupRef.current) {
+      // Close the existing stream for the previous thread
+      streamCleanupRef.current();
+      streamCleanupRef.current = null;
+      setStatus('idle');
+      setTextContent([]);
+      setToolCall(null);
+      setAgentRunId(null);
+      currentRunIdRef.current = null;
+    }
     threadIdRef.current = threadId;
   }, [threadId]);
 
@@ -171,7 +200,7 @@ export function useAgentStream(
       updateStatus(finalStatus);
       setAgentRunId(null);
       currentRunIdRef.current = null;
-
+      
       // Message refetch disabled - optimistic messages will handle updates
 
       // If the run was stopped or completed, try to get final status to update nonRunning set (keep this)
@@ -470,23 +499,14 @@ export function useAgentStream(
   useEffect(() => {
     isMountedRef.current = true;
 
-    // Cleanup function for when the component unmounts or agentRunId changes
+    // Cleanup function - be more conservative about stream cleanup
     return () => {
       isMountedRef.current = false;
-      console.log(
-        '[useAgentStream] Unmounting or agentRunId changing. Cleaning up stream.',
-      );
-      if (streamCleanupRef.current) {
-        streamCleanupRef.current();
-        streamCleanupRef.current = null;
-      }
-      // Reset state on unmount if needed, though finalizeStream should handle most cases
-      setStatus('idle');
-      setTextContent([]);
-      setToolCall(null);
-      setError(null);
-      setAgentRunId(null);
-      currentRunIdRef.current = null;
+      console.log('[useAgentStream] Component unmounting/navigation.');
+      
+      // Don't automatically cleanup streams on navigation
+      // Only set mounted flag to false to prevent new operations
+      // Streams will be cleaned up when they naturally complete or on explicit stop
     };
   }, []); // Empty dependency array for mount/unmount effect
 
@@ -496,13 +516,13 @@ export function useAgentStream(
     async (runId: string) => {
       if (!isMountedRef.current) return;
       console.log(
-        `[useAgentStream] Received request to start streaming for ${runId}`,
+        `[STREAM_FIX] Thread ${threadId} received request to start streaming for ${runId}`,
       );
 
       // Clean up any previous stream
       if (streamCleanupRef.current) {
         console.log(
-          '[useAgentStream] Cleaning up existing stream before starting new one.',
+          `[STREAM_FIX] Thread ${threadId} cleaning up existing stream before starting new one.`,
         );
         streamCleanupRef.current();
         streamCleanupRef.current = null;
@@ -538,12 +558,38 @@ export function useAgentStream(
           `[useAgentStream] Agent run ${runId} confirmed running. Setting up EventSource.`,
         );
         const cleanup = streamAgent(runId, {
-          onMessage: handleStreamMessage,
-          onError: handleStreamError,
-          onClose: handleStreamClose,
+          onMessage: (data) => {
+            // Ignore messages if threadId changed while the EventSource stayed open
+            if (threadIdRef.current !== threadId) return;
+            handleStreamMessage(data);
+          },
+          onError: (err) => {
+            if (threadIdRef.current !== threadId) return;
+            handleStreamError(err);
+          },
+          onClose: () => {
+            if (threadIdRef.current !== threadId) return;
+            handleStreamClose();
+          },
         });
         streamCleanupRef.current = cleanup;
         // Status will be updated to 'streaming' by the first message received in handleStreamMessage
+        // If for some reason no message arrives shortly, verify liveness again to avoid zombie state
+        setTimeout(async () => {
+          if (!isMountedRef.current) return;
+          if (currentRunIdRef.current !== runId) return; // Another run started
+          if (statusRef.current === 'streaming') return; // Already streaming
+          try {
+            const latest = await getAgentStatus(runId);
+            if (!isMountedRef.current) return;
+            if (currentRunIdRef.current !== runId) return;
+            if (latest.status !== 'running') {
+              finalizeStream(mapAgentStatus(latest.status) || 'agent_not_running', runId);
+            }
+          } catch {
+            // ignore
+          }
+        }, 1500);
       } catch (err) {
         if (!isMountedRef.current) return; // Check mount status after async call
 

@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Settings, X, Sparkles, Key, AlertTriangle } from 'lucide-react';
 import { MCPConfiguration } from './types';
 import { useCredentialProfilesForMcp } from '@/hooks/react-query/mcp/use-credential-profiles';
-import { usePipedreamAppIcon } from '@/hooks/react-query/pipedream/use-pipedream';
+
 import { useComposioToolkits } from '@/hooks/react-query/composio/use-composio';
 
 interface ConfiguredMcpListProps {
@@ -15,20 +15,7 @@ interface ConfiguredMcpListProps {
   onConfigureTools?: (index: number) => void;
 }
 
-const extractAppSlug = (mcp: MCPConfiguration): { type: 'pipedream' | 'composio', slug: string } | null => {
-  if (mcp.customType === 'pipedream') {
-    if ((mcp as any).app_slug) {
-      return { type: 'pipedream', slug: (mcp as any).app_slug };
-    }
-    if (mcp.config?.headers?.['x-pd-app-slug']) {
-      return { type: 'pipedream', slug: mcp.config.headers['x-pd-app-slug'] };
-    }
-    const qualifiedMatch = mcp.qualifiedName.match(/^pipedream_([^_]+)_/);
-    if (qualifiedMatch) {
-      return { type: 'pipedream', slug: qualifiedMatch[1] };
-    }
-  }
-  
+const extractAppSlug = (mcp: MCPConfiguration): { type: 'composio', slug: string } | null => {
   if (mcp.customType === 'composio' || mcp.isComposio) {
     const slug = mcp.toolkitSlug || (mcp as any).toolkit_slug || mcp.config?.toolkit_slug;
     if (slug) {
@@ -49,10 +36,6 @@ const extractAppSlug = (mcp: MCPConfiguration): { type: 'pipedream' | 'composio'
 
 const MCPLogo: React.FC<{ mcp: MCPConfiguration }> = ({ mcp }) => {
   const appInfo = extractAppSlug(mcp);
-  const { data: pipedreamIconData } = usePipedreamAppIcon(
-    appInfo?.type === 'pipedream' ? appInfo.slug : '', 
-    { enabled: appInfo?.type === 'pipedream' }
-  );
   
   const { data: composioToolkits } = useComposioToolkits(
     appInfo?.type === 'composio' ? appInfo.slug : undefined,
@@ -60,9 +43,7 @@ const MCPLogo: React.FC<{ mcp: MCPConfiguration }> = ({ mcp }) => {
   );
   
   let logoUrl: string | undefined;
-  if (appInfo?.type === 'pipedream') {
-    logoUrl = pipedreamIconData?.icon_url;
-  } else if (appInfo?.type === 'composio' && composioToolkits?.toolkits?.[0]) {
+  if (appInfo?.type === 'composio' && composioToolkits?.toolkits?.[0]) {
     logoUrl = composioToolkits.toolkits[0].logo;
   }
 

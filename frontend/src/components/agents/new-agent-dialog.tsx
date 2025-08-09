@@ -107,8 +107,6 @@ export function NewAgentDialog({ open, onOpenChange, onSuccess }: NewAgentDialog
             .
           </AlertDialogDescription>
         </AlertDialogHeader>
-
-        {/* Hidden file input */}
         <input
           ref={fileInputRef}
           type="file"
@@ -116,7 +114,6 @@ export function NewAgentDialog({ open, onOpenChange, onSuccess }: NewAgentDialog
           onChange={handleFileChange}
           className="hidden"
         />
-
         <AlertDialogFooter className="flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2 space-y-2 space-y-reverse sm:space-y-0 pt-6">
           <AlertDialogCancel disabled={isLoading} className="mt-2 sm:mt-0">
             Cancel
@@ -128,12 +125,12 @@ export function NewAgentDialog({ open, onOpenChange, onSuccess }: NewAgentDialog
           >
             {createNewAgentMutation.isPending ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                <Loader2 className="h-4 w-4 animate-spin" />
                 Creating...
               </>
             ) : (
               <>
-                <Plus className="h-4 w-4 mr-2" />
+                <Plus className="h-4 w-4" />
                 Create Agent
               </>
             )}

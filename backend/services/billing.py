@@ -10,6 +10,7 @@ import stripe
 from datetime import datetime, timezone, timedelta
 
 from supabase import Client as SupabaseClient
+from utils.cache import Cache
 from utils.logger import logger
 from utils.config import config, EnvMode
 from services.supabase import DBConnection
@@ -166,13 +167,20 @@ class SubscriptionStatus(BaseModel):
 # Helper functions
 async def get_stripe_customer_id(client: SupabaseClient, user_id: str) -> Optional[str]:
     """Get the Stripe customer ID for a user."""
+
+    result = await Cache.get(f"stripe_customer_id:{user_id}")
+    if result:
+        return result
+
     result = await client.schema('basejump').from_('billing_customers') \
         .select('id') \
         .eq('account_id', user_id) \
         .execute()
-    
+
     if result.data and len(result.data) > 0:
-        return result.data[0]['id']
+        customer_id = result.data[0]['id']
+        await Cache.set(f"stripe_customer_id:{user_id}", customer_id, ttl=24 * 60)
+        return customer_id
 
     customer_result = await stripe.Customer.search_async(
         query=f"metadata['user_id']:'{user_id}' OR metadata['basejump_account_id']:'{user_id}'"
@@ -232,12 +240,17 @@ async def create_stripe_customer(client, user_id: str, email: str) -> str:
 async def get_user_subscription(user_id: str) -> Optional[Dict]:
     """Get the current subscription for a user from Stripe."""
     try:
+        result = await Cache.get(f"user_subscription:{user_id}")
+        if result:
+            return result
+
         # Get customer ID
         db = DBConnection()
         client = await db.client
         customer_id = await get_stripe_customer_id(client, user_id)
         
         if not customer_id:
+            await Cache.set(f"user_subscription:{user_id}", None, ttl=1 * 60)
             return None
             
         # Get all active subscriptions for the customer
@@ -249,6 +262,7 @@ async def get_user_subscription(user_id: str) -> Optional[Dict]:
         
         # Check if we have any subscriptions
         if not subscriptions or not subscriptions.get('data'):
+            await Cache.set(f"user_subscription:{user_id}", None, ttl=1 * 60)
             return None
             
         # Filter subscriptions to only include our product's subscriptions
@@ -275,6 +289,7 @@ async def get_user_subscription(user_id: str) -> Optional[Dict]:
                     our_subscriptions.append(sub)
         
         if not our_subscriptions:
+            await Cache.set(f"user_subscription:{user_id}", None, ttl=1 * 60)
             return None
             
         # If there are multiple active subscriptions, we need to handle this
@@ -297,8 +312,10 @@ async def get_user_subscription(user_id: str) -> Optional[Dict]:
                         logger.error(f"Error cancelling subscription {sub['id']}: {str(e)}")
             
             return most_recent
-            
-        return our_subscriptions[0]
+
+        result = our_subscriptions[0]
+        await Cache.set(f"user_subscription:{user_id}", result, ttl=1 * 60)
+        return result
         
     except Exception as e:
         logger.error(f"Error getting subscription from Stripe: {str(e)}")
@@ -306,6 +323,10 @@ async def get_user_subscription(user_id: str) -> Optional[Dict]:
 
 async def calculate_monthly_usage(client, user_id: str) -> float:
     """Calculate total agent run minutes for the current month for a user."""
+    result = await Cache.get(f"monthly_usage:{user_id}")
+    if result:
+        return result
+
     start_time = time.time()
     
     # Use get_usage_logs to fetch all usage data (it already handles the date filtering and batching)
@@ -334,6 +355,7 @@ async def calculate_monthly_usage(client, user_id: str) -> float:
     execution_time = end_time - start_time
     logger.info(f"Calculate monthly usage took {execution_time:.3f} seconds, total cost: {total_cost}")
     
+    await Cache.set(f"monthly_usage:{user_id}", total_cost, ttl=2 * 60)
     return total_cost
 
 
@@ -529,6 +551,10 @@ async def get_allowed_models_for_user(client, user_id: str):
         List of model names allowed for the user's subscription tier.
     """
 
+    result = await Cache.get(f"allowed_models_for_user:{user_id}")
+    if result:
+        return result
+
     subscription = await get_user_subscription(user_id)
     tier_name = 'free'
     
@@ -545,7 +571,9 @@ async def get_allowed_models_for_user(client, user_id: str):
             tier_name = tier_info['name']
     
     # Return allowed models for this tier
-    return MODEL_ACCESS_TIERS.get(tier_name, MODEL_ACCESS_TIERS['free'])  # Default to free tier if unknown
+    result = MODEL_ACCESS_TIERS.get(tier_name, MODEL_ACCESS_TIERS['free'])  # Default to free tier if unknown
+    await Cache.set(f"allowed_models_for_user:{user_id}", result, ttl=1 * 60)
+    return result
 
 
 async def can_use_model(client, user_id: str, model_name: str):

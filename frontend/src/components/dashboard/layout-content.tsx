@@ -13,26 +13,29 @@ import { useApiHealth } from '@/hooks/react-query';
 import { MaintenancePage } from '@/components/maintenance/maintenance-page';
 import { DeleteOperationProvider } from '@/contexts/DeleteOperationContext';
 import { StatusOverlay } from '@/components/ui/status-overlay';
-import type { IMaintenanceNotice } from '@/lib/edge-flags';
 import { MaintenanceNotice } from './maintenance-notice';
 import { MaintenanceBanner } from './maintenance-banner';
+import { useMaintenanceNoticeQuery } from '@/hooks/react-query/edge-flags';
 
 interface DashboardLayoutContentProps {
   children: React.ReactNode;
-  maintenanceNotice: IMaintenanceNotice;
 }
 
 export default function DashboardLayoutContent({
   children,
-  maintenanceNotice,
 }: DashboardLayoutContentProps) {
+  const maintenanceNoticeQuery = useMaintenanceNoticeQuery();
   // const [showPricingAlert, setShowPricingAlert] = useState(false)
   const [showMaintenanceAlert, setShowMaintenanceAlert] = useState(false);
   const { data: accounts } = useAccounts();
   const personalAccount = accounts?.find((account) => account.personal_account);
   const { user, isLoading } = useAuth();
   const router = useRouter();
-  const { data: healthData, isLoading: isCheckingHealth, error: healthError } = useApiHealth();
+  const {
+    data: healthData,
+    isLoading: isCheckingHealth,
+    error: healthError,
+  } = useApiHealth();
 
   useEffect(() => {
     // setShowPricingAlert(false)
@@ -49,10 +52,10 @@ export default function DashboardLayoutContent({
     }
   }, [user, isLoading, router]);
 
-  if (maintenanceNotice.enabled) {
+  if (maintenanceNoticeQuery.data?.enabled) {
     const now = new Date();
-    const startTime = maintenanceNotice.startTime;
-    const endTime = maintenanceNotice.endTime;
+    const startTime = new Date(maintenanceNoticeQuery.data.startTime);
+    const endTime = new Date(maintenanceNoticeQuery.data.endTime);
 
     if (now > startTime) {
       return (
@@ -66,11 +69,11 @@ export default function DashboardLayoutContent({
   }
 
   let mantenanceBanner: React.ReactNode | null = null;
-  if (maintenanceNotice.enabled) {
+  if (maintenanceNoticeQuery.data?.enabled) {
     mantenanceBanner = (
       <MaintenanceBanner
-        startTime={maintenanceNotice.startTime.toISOString()}
-        endTime={maintenanceNotice.endTime.toISOString()}
+        startTime={maintenanceNoticeQuery.data.startTime}
+        endTime={maintenanceNoticeQuery.data.endTime}
       />
     );
   }

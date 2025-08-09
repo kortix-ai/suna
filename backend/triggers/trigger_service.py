@@ -135,7 +135,8 @@ class TriggerService:
         
         trigger.updated_at = datetime.now(timezone.utc)
         
-        if config is not None or (is_active is True and not trigger.is_active):
+        # Reconcile provider scheduling when config changes or activation state toggles
+        if (config is not None) or (is_active is not None):
             from .provider_service import get_provider_service
             provider_service = get_provider_service(self._db)
             

@@ -4,8 +4,8 @@ import { getAll } from '@vercel/edge-config';
 export type IMaintenanceNotice =
   | {
       enabled: true;
-      startTime: Date;
-      endTime: Date;
+      startTime: string; // Date
+      endTime: string; // Date
     }
   | {
       enabled: false;
@@ -18,7 +18,6 @@ export const maintenanceNoticeFlag = flag({
   async decide() {
     try {
       if (!process.env.EDGE_CONFIG) {
-        console.warn('Edge config is not set');
         return { enabled: false } as const;
       }
 
@@ -43,8 +42,8 @@ export const maintenanceNoticeFlag = flag({
 
       return {
         enabled: true,
-        startTime,
-        endTime,
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
       } as const;
     } catch (cause) {
       console.error(

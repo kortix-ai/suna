@@ -6,6 +6,7 @@ import os
 import uuid
 from datetime import datetime, timezone
 import json
+import hmac
 
 from services.supabase import DBConnection
 from utils.auth_utils import get_current_user_id_from_jwt
@@ -452,6 +453,18 @@ async def trigger_webhook(
         raise HTTPException(status_code=403, detail="Agent triggers are not enabled")
     
     try:
+        # Simple header-based auth using a shared secret
+        # Configure the secret via environment variable: TRIGGER_WEBHOOK_SECRET
+        secret = os.getenv("TRIGGER_WEBHOOK_SECRET")
+        if not secret:
+            logger.error("TRIGGER_WEBHOOK_SECRET is not configured")
+            raise HTTPException(status_code=500, detail="Webhook secret not configured")
+
+        incoming_secret = request.headers.get("x-trigger-secret", "")
+        if not hmac.compare_digest(incoming_secret, secret):
+            logger.warning(f"Invalid webhook secret for trigger {trigger_id}")
+            raise HTTPException(status_code=401, detail="Unauthorized")
+
         # Get raw data from request
         raw_data = {}
         try:

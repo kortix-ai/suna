@@ -70,7 +70,6 @@ project/
 - **LLM Integration**: LiteLLM for multi-provider support, structured prompts
 - **Tool System**: Dual schema decorators (OpenAPI + XML), consistent ToolResult
 - **Real-time**: Supabase subscriptions for live updates
-- **Background Jobs**: Dramatiq for async processing, QStash for scheduling
 
 ## Key Technologies
 

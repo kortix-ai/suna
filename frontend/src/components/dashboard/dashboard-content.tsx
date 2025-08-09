@@ -29,11 +29,14 @@ import { ModalProviders } from '@/providers/modal-providers';
 import { useAgents } from '@/hooks/react-query/agents/use-agents';
 import { cn } from '@/lib/utils';
 import { useModal } from '@/hooks/use-modal-store';
+import { useAgentSelection } from '@/lib/stores/agent-selection-store';
 import { Examples } from './examples';
 import { useThreadQuery } from '@/hooks/react-query/threads/use-threads';
 import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
 import { KortixLogo } from '../sidebar/kortix-logo';
 import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog';
+import { useFeatureFlag } from '@/lib/feature-flags';
+import { CustomAgentsSection } from './custom-agents-section';
 
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 
@@ -41,7 +44,12 @@ export function DashboardContent() {
   const [inputValue, setInputValue] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [autoSubmit, setAutoSubmit] = useState(false);
-  const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>();
+  const { 
+    selectedAgentId, 
+    setSelectedAgent, 
+    initializeFromAgents,
+    getCurrentAgent
+  } = useAgentSelection();
   const [initiatedThreadId, setInitiatedThreadId] = useState<string | null>(null);
   const { billingError, handleBillingError, clearBillingError } =
     useBillingError();
@@ -60,6 +68,9 @@ export function DashboardContent() {
   const initiateAgentMutation = useInitiateAgentWithInvalidation();
   const { onOpen } = useModal();
 
+  // Feature flag for custom agents section
+  const { enabled: customAgentsEnabled } = useFeatureFlag('custom_agents');
+
   // Fetch agents to get the selected agent's name
   const { data: agentsResponse } = useAgents({
     limit: 100,
@@ -77,15 +88,22 @@ export function DashboardContent() {
 
   const threadQuery = useThreadQuery(initiatedThreadId || '');
 
+  // Initialize agent selection from agents list
+  useEffect(() => {
+    if (agents.length > 0) {
+      initializeFromAgents(agents);
+    }
+  }, [agents, initializeFromAgents]);
+
   useEffect(() => {
     const agentIdFromUrl = searchParams.get('agent_id');
     if (agentIdFromUrl && agentIdFromUrl !== selectedAgentId) {
-      setSelectedAgentId(agentIdFromUrl);
+      setSelectedAgent(agentIdFromUrl);
       const newUrl = new URL(window.location.href);
       newUrl.searchParams.delete('agent_id');
       router.replace(newUrl.pathname + newUrl.search, { scroll: false });
     }
-  }, [searchParams, selectedAgentId, router]);
+  }, [searchParams, selectedAgentId, router, setSelectedAgent]);
 
   useEffect(() => {
     if (threadQuery.data && initiatedThreadId) {
@@ -99,9 +117,6 @@ export function DashboardContent() {
       setInitiatedThreadId(null);
     }
   }, [threadQuery.data, initiatedThreadId, router]);
-
-  const secondaryGradient =
-    'bg-gradient-to-r from-blue-500 to-blue-500 bg-clip-text text-transparent';
 
   const handleSubmit = async (
     message: string,
@@ -202,7 +217,7 @@ export function DashboardContent() {
   return (
     <>
       <ModalProviders />
-      <div className="flex flex-col h-screen w-full">
+      <div className="flex flex-col h-screen w-full overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700 scrollbar-track-transparent">
         {isMobile && (
           <div className="absolute top-4 left-4 z-10">
             <Tooltip>
@@ -221,49 +236,45 @@ export function DashboardContent() {
             </Tooltip>
           </div>
         )}
-        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-[650px] max-w-[90%]">
-          <div className="flex flex-col items-center text-center w-full">
-            {/* <div className="flex items-center gap-1">
-              <h1 className="tracking-tight text-4xl text-muted-foreground leading-tight">
-                Hey, I am
-              </h1>
-              <h1 className="ml-1 tracking-tight text-4xl font-semibold leading-tight text-primary flex items-center gap-3">
-                {displayName}
-                {isSunaAgent ? (
-                  <span className="ml-2 flex items-center">
-                    <KortixLogo size={24} />
-                  </span>
-                ) : agentAvatar && (
-                  <span className="text-muted-foreground ml-2">
-                    {agentAvatar}
-                  </span>
-                )}
-              </h1>
-            </div> */}
-            <p className="tracking-tight text-3xl font-normal text-muted-foreground/80 mt-2">
-              What would you like to do today?
-            </p>
+        <div className={cn(
+          "flex flex-col min-h-screen px-4 items-center justify-center",
+          // customAgentsEnabled ? "items-center pt-20" : "items-center justify-center"
+        )}>
+          <div className="w-[650px] max-w-[90%]">
+            <div className="flex flex-col items-center text-center w-full">
+              <p className="tracking-tight text-3xl font-normal text-muted-foreground/80 mt-2">
+                What would you like to do today?
+              </p>
+            </div>
+            <div className={cn(
+              "w-full mb-2",
+              "max-w-full",
+              "sm:max-w-3xl"
+            )}>
+              <ChatInput
+                ref={chatInputRef}
+                onSubmit={handleSubmit}
+                loading={isSubmitting}
+                placeholder="Describe what you need help with..."
+                value={inputValue}
+                onChange={setInputValue}
+                hideAttachments={false}
+                selectedAgentId={selectedAgentId}
+                onAgentSelect={setSelectedAgent}
+                enableAdvancedConfig={true}
+                onConfigureAgent={(agentId) => router.push(`/agents/config/${agentId}`)}
+              />
+            </div>
+            <Examples onSelectPrompt={setInputValue} />
           </div>
-          <div className={cn(
-            "w-full mb-2",
-            "max-w-full",
-            "sm:max-w-3xl"
-          )}>
-            <ChatInput
-              ref={chatInputRef}
-              onSubmit={handleSubmit}
-              loading={isSubmitting}
-              placeholder="Describe what you need help with..."
-              value={inputValue}
-              onChange={setInputValue}
-              hideAttachments={false}
-              selectedAgentId={selectedAgentId}
-              onAgentSelect={setSelectedAgentId}
-              enableAdvancedConfig={true}
-              onConfigureAgent={(agentId) => router.push(`/agents/config/${agentId}`)}
-            />
-          </div>
-          <Examples onSelectPrompt={setInputValue} />
+          
+          {/* {customAgentsEnabled && (
+            <div className="w-full max-w-none mt-16 mb-8">
+              <CustomAgentsSection 
+                onAgentSelect={setSelectedAgentId}
+              />
+            </div>
+          )} */}
         </div>
         <BillingErrorAlert
           message={billingError?.message}
@@ -281,7 +292,7 @@ export function DashboardContent() {
           onOpenChange={setShowAgentLimitDialog}
           runningCount={agentLimitData.runningCount}
           runningThreadIds={agentLimitData.runningThreadIds}
-          projectId={undefined} // Dashboard doesn't have a specific project context
+          projectId={undefined}
         />
       )}
     </>

@@ -306,12 +306,15 @@ async def verify_thread_access(client, thread_id: str, user_id: str):
     """
     try:
         # Query the thread to get account information
-        thread_result = await client.table('threads').select('*,project_id').eq('thread_id', thread_id).execute()
+        thread_result = await client.table('threads').select('*').eq('thread_id', thread_id).execute()
 
         if not thread_result.data or len(thread_result.data) == 0:
             raise HTTPException(status_code=404, detail="Thread not found")
         
         thread_data = thread_result.data[0]
+
+        if thread_data['account_id'] == user_id:
+            return True
         
         # Check if project is public
         project_id = thread_data.get('project_id')

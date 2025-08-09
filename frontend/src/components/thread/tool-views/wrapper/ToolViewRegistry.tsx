@@ -28,6 +28,7 @@ import { GetCredentialProfilesToolView } from '../get-credential-profiles/get-cr
 import { GetCurrentAgentConfigToolView } from '../get-current-agent-config/get-current-agent-config';
 import { TaskListToolView } from '../task-list/TaskListToolView';
 import { SheetsToolView } from '../sheets-tools/sheets-tool-view';
+import { GetProjectStructureView } from '../web-dev/GetProjectStructureView';
 
 
 export type ToolViewComponent = React.ComponentType<ToolViewProps>;
@@ -92,6 +93,9 @@ const defaultRegistry: ToolViewRegistryType = {
   'visualize-sheet': SheetsToolView,
   'format-sheet': SheetsToolView,
 
+  'get-project-structure': GetProjectStructureView,
+  'list-web-projects': GenericToolView,
+
   'default': GenericToolView,
 };
 
@@ -101,7 +105,6 @@ class ToolViewRegistry {
   constructor(initialRegistry: Partial<ToolViewRegistryType> = {}) {
     this.registry = { ...defaultRegistry };
 
-    // Only add non-undefined values from initialRegistry
     Object.entries(initialRegistry).forEach(([key, value]) => {
       if (value !== undefined) {
         this.registry[key] = value;

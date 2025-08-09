@@ -163,7 +163,6 @@ class ToolkitService:
                 )
                 toolkits.append(toolkit)
             
-            # Return pagination response structure
             result = {
                 "items": toolkits,
                 "total_items": response_data.get("total_items", len(toolkits)),
@@ -209,9 +208,9 @@ class ToolkitService:
             result = {
                 "items": limited_results,
                 "total_items": len(filtered_toolkits),
-                "total_pages": 1,  # For search, we'll keep it simple with one page
+                "total_pages": 1,
                 "current_page": 1,
-                "next_cursor": None  # For search, we don't use cursor pagination
+                "next_cursor": None
             }
             
             logger.info(f"Found {len(filtered_toolkits)} toolkits with OAUTH2 in both auth schemes matching query: {query}" + (f" in category {category}" if category else ""))
@@ -262,7 +261,6 @@ class ToolkitService:
             
             logger.info(f"Raw toolkit response for {toolkit_slug}: {toolkit_response}")
             
-            # Parse the response
             meta = toolkit_dict.get('meta', {})
             if hasattr(meta, '__dict__'):
                 meta = meta.__dict__
@@ -272,13 +270,12 @@ class ToolkitService:
                 name=toolkit_dict.get('name', ''),
                 description=meta.get('description', '') if isinstance(meta, dict) else getattr(meta, 'description', ''),
                 logo=meta.get('logo') if isinstance(meta, dict) else getattr(meta, 'logo', None),
-                tags=[],  # Will populate from meta if available
+                tags=[],
                 auth_schemes=toolkit_dict.get('composio_managed_auth_schemes', []),
                 categories=[],
                 base_url=toolkit_dict.get('base_url')
             )
             
-            # Parse categories properly
             categories_data = meta.get('categories', []) if isinstance(meta, dict) else getattr(meta, 'categories', [])
             detailed_toolkit.categories = [
                 cat.get('name', '') if isinstance(cat, dict) else getattr(cat, 'name', '') 
@@ -287,18 +284,15 @@ class ToolkitService:
             
             logger.info(f"Parsed basic toolkit info: {detailed_toolkit}")
             
-            # Parse auth_config_details
             auth_config_details = []
             raw_auth_configs = toolkit_dict.get('auth_config_details', [])
             
             for config in raw_auth_configs:
-                # Handle both dict and object formats
                 if hasattr(config, '__dict__'):
                     config_dict = config.__dict__
                 else:
                     config_dict = config
                 
-                # Extract fields - this could be a nested object
                 fields_obj = config_dict.get('fields')
                 if hasattr(fields_obj, '__dict__'):
                     fields_dict = fields_obj.__dict__
@@ -307,7 +301,6 @@ class ToolkitService:
                 
                 auth_fields = {}
                 
-                # Parse each field type (auth_config_creation, connected_account_initiation, etc.)
                 for field_type, field_type_obj in fields_dict.items():
                     auth_fields[field_type] = {}
                     
@@ -316,7 +309,6 @@ class ToolkitService:
                     else:
                         field_type_dict = field_type_obj or {}
                     
-                    # Parse required and optional fields
                     for requirement_level in ['required', 'optional']:
                         field_list = field_type_dict.get(requirement_level, [])
                         
@@ -329,7 +321,7 @@ class ToolkitService:
                             
                             auth_config_fields.append(AuthConfigField(
                                 name=field_dict.get('name', ''),
-                                displayName=field_dict.get('display_name', ''),  # Note: display_name not displayName
+                                displayName=field_dict.get('display_name', ''),
                                 type=field_dict.get('type', 'string'),
                                 description=field_dict.get('description'),
                                 required=field_dict.get('required', False),
@@ -346,10 +338,8 @@ class ToolkitService:
             
             detailed_toolkit.auth_config_details = auth_config_details
             
-            # Extract connected_account_initiation fields specifically
             connected_account_initiation = None
             for config in raw_auth_configs:
-                # Handle both dict and object formats
                 if hasattr(config, '__dict__'):
                     config_dict = config.__dict__
                 else:

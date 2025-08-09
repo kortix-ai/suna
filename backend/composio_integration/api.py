@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, Query
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from pydantic import BaseModel
 from uuid import uuid4
 from utils.auth_utils import get_current_user_id_from_jwt
@@ -9,10 +9,8 @@ from datetime import datetime
 
 from .composio_service import (
     get_integration_service,
-    ComposioIntegrationService,
-    ComposioIntegrationResult
 )
-from .toolkit_service import ToolkitInfo, ToolkitService, CategoryInfo, DetailedToolkitInfo
+from .toolkit_service import ToolkitService
 from .composio_profile_service import ComposioProfileService, ComposioProfile
 
 router = APIRouter(prefix="/composio", tags=["composio"])
@@ -58,7 +56,7 @@ class ProfileResponse(BaseModel):
     display_name: str
     toolkit_slug: str
     toolkit_name: str
-    mcp_url: str  # The complete MCP URL
+    mcp_url: str
     redirect_url: Optional[str] = None
     is_connected: bool
     is_default: bool
@@ -72,7 +70,7 @@ class ProfileResponse(BaseModel):
             display_name=profile.display_name,
             toolkit_slug=profile.toolkit_slug,
             toolkit_name=profile.toolkit_name,
-            mcp_url=profile.mcp_url,  # Include the complete MCP URL
+            mcp_url=profile.mcp_url,
             redirect_url=profile.redirect_url,
             is_connected=profile.is_connected,
             is_default=profile.is_default,

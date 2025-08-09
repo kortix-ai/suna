@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Check, AlertCircle, Plus, Clock, ExternalLink, Zap, ChevronRight, Search, Save, Loader2, User, Settings, Info } from 'lucide-react';
+import { ArrowLeft, Check, AlertCircle, Plus, ExternalLink, ChevronRight, Search, Save, Loader2, User, Settings, Info } from 'lucide-react';
 import { useCreateComposioProfile } from '@/hooks/react-query/composio/use-composio';
 import { useComposioProfiles } from '@/hooks/react-query/composio/use-composio-profiles';
 import { useComposioToolkitDetails } from '@/hooks/react-query/composio/use-composio';
@@ -328,7 +328,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
   const [showToolsManager, setShowToolsManager] = useState(false);
   const [direction, setDirection] = useState<'forward' | 'backward'>('forward');
   
-  // State for initiation fields
   const [initiationFields, setInitiationFields] = useState<Record<string, string>>({});
   const [initiationFieldsErrors, setInitiationFieldsErrors] = useState<Record<string, string>>({});
 
@@ -342,7 +341,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
   const { mutate: createProfile, isPending: isCreating } = useCreateComposioProfile();
   const { data: profiles, isLoading: isLoadingProfiles } = useComposioProfiles();
   
-  // Fetch toolkit details when in ProfileCreate step
   const { data: toolkitDetails, isLoading: isLoadingToolkitDetails } = useComposioToolkitDetails(
     app.slug,
     { enabled: open && step === Step.ProfileCreate }
@@ -436,7 +434,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
 
   const handleInitiationFieldChange = (fieldName: string, value: string) => {
     setInitiationFields(prev => ({ ...prev, [fieldName]: value }));
-    // Clear error when user starts typing
     if (initiationFieldsErrors[fieldName]) {
       setInitiationFieldsErrors(prev => ({ ...prev, [fieldName]: '' }));
     }
@@ -452,13 +449,10 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
           const value = initiationFields[field.name];
           const isEmpty = !value || value.trim() === '';
           
-          // For boolean fields, we consider 'false' as a valid value
           if (field.type.toLowerCase() === 'boolean') {
-            // Boolean fields are always valid as they have a default state
             continue;
           }
           
-          // For number fields, check if it's a valid number
           if ((field.type.toLowerCase() === 'number' || field.type.toLowerCase() === 'double') && value) {
             if (isNaN(Number(value))) {
               newErrors[field.name] = `${field.displayName} must be a valid number`;
@@ -466,7 +460,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
             }
           }
           
-          // Check if required field is empty
           if (isEmpty) {
             newErrors[field.name] = `${field.displayName} is required`;
           }
@@ -546,13 +539,11 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
   };
 
   const handleCreateProfile = () => {
-    // Validate profile name
     if (!profileName.trim()) {
       toast.error('Profile name is required');
       return;
     }
     
-    // Validate initiation fields if they exist
     if (!validateInitiationFields()) {
       toast.error('Please fill in all required fields');
       return;
@@ -797,8 +788,7 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                         </span>
                         <div className="h-px bg-border flex-1" />
                       </div>
-                      
-                                              <Button
+                        <Button
                           onClick={() => navigateToStep(Step.ProfileCreate)}
                           variant={existingProfiles.length > 0 ? "outline" : "default"}
                           className="w-full"
@@ -814,7 +804,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                           <Plus className="h-4 w-4" />
                         </Button>
                     </div>
-
                     <div className="flex gap-3 pt-2">
                       <Button
                         variant="outline"
@@ -836,7 +825,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                     </div>
                   </motion.div>
                 )}
-
                 {step === Step.ProfileCreate && (
                   <motion.div
                     key="profile-create"
@@ -861,8 +849,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                         Choose a memorable name to identify this connection
                       </p>
                     </div>
-
-                    {/* Loading toolkit details */}
                     {isLoadingToolkitDetails && (
                       <div className="space-y-3">
                         <div className="text-sm text-muted-foreground">Loading connection requirements...</div>
@@ -873,15 +859,11 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                         </div>
                       </div>
                     )}
-
-                    {/* Initiation Fields */}
                     {!isLoadingToolkitDetails && toolkitDetails?.toolkit.connected_account_initiation_fields && (
                       <div className="space-y-4">
                         <div className="text-sm font-medium text-muted-foreground">
                           Connection Requirements
                         </div>
-                        
-                        {/* Required Fields */}
                         {(toolkitDetails.toolkit.connected_account_initiation_fields.required?.length ?? 0) > 0 && (
                           <div className="space-y-3">
                             {toolkitDetails.toolkit.connected_account_initiation_fields.required.map((field) => (
@@ -895,8 +877,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                             ))}
                           </div>
                         )}
-
-                        {/* Optional Fields */}
                         {(toolkitDetails.toolkit.connected_account_initiation_fields.optional?.length ?? 0) > 0 && (
                           <div className="space-y-3">
                             <div className="text-xs text-muted-foreground">Optional</div>
@@ -913,7 +893,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                         )}
                       </div>
                     )}
-
                     <div className="flex gap-3 pt-2">
                       <Button
                         variant="outline"
@@ -944,7 +923,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                     </div>
                   </motion.div>
                 )}
-
                 {step === Step.Connecting && (
                   <motion.div
                     key="connecting"
@@ -960,7 +938,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                       <div className="w-20 h-20 mx-auto border rounded-2xl bg-primary/10 flex items-center justify-center">
                         <ExternalLink className="h-10 w-10 text-primary animate-pulse" />
                       </div>
-                      
                       <div className="space-y-1">
                         <h3 className="font-semibold text-lg">Complete Authentication</h3>
                         <p className="text-sm text-muted-foreground max-w-sm mx-auto">
@@ -969,7 +946,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                         </p>
                       </div>
                     </div>
-
                     {redirectUrl && (
                       <Alert className="bg-muted/50 border-muted">
                         <AlertCircle className="h-4 w-4" />
@@ -984,7 +960,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                         </AlertDescription>
                       </Alert>
                     )}
-
                     <Button
                       onClick={handleAuthComplete}
                       className="w-full"
@@ -994,7 +969,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                     </Button>
                   </motion.div>
                 )}
-
                 {step === Step.Success && (
                   <motion.div
                     key="success"
@@ -1010,7 +984,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                       <div className="w-18 h-18 mx-auto rounded-full bg-green-400 dark:bg-green-600 flex items-center justify-center">
                         <Check className="h-10 w-10 text-white" />
                       </div>
-                      
                       <div className="space-y-1">
                         <h3 className="font-semibold text-lg">Successfully Connected!</h3>
                         <p className="text-sm text-muted-foreground">
@@ -1048,7 +1021,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                 </div>
               </div>
             </DialogHeader>
-
             <AnimatePresence mode="wait" custom={direction}>
               {step === Step.ToolsSelection && (
                 <motion.div
@@ -1072,7 +1044,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                           className="pl-10 h-10 bg-background/50 border-input/50 focus:bg-background"
                         />
                       </div>
-                      
                       <div className="flex items-center gap-3">
                         <span className="text-sm text-muted-foreground whitespace-nowrap">
                           {filteredTools.length} {searchTerm && `of ${availableTools.length}`} tools
@@ -1083,7 +1054,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                             {selectedCount}
                           </Badge>
                         )}
-                        
                         {filteredTools.length > 0 && (
                           <Button
                             variant="outline"
@@ -1105,7 +1075,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                           <AlertDescription>{toolsError}</AlertDescription>
                         </Alert>
                       )}
-
                       {isLoadingTools ? (
                         <div className="space-y-3">
                           {Array.from({ length: 6 }).map((_, i) => (
@@ -1145,7 +1114,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                           'No tools selected'
                         )}
                       </div>
-                      
                       <div className="flex gap-3">
                         <Button
                           variant="outline"
@@ -1184,4 +1152,4 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
       </DialogContent>
     </Dialog>
   );
-}; 
+};

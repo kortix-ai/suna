@@ -21,7 +21,6 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { LoadingState } from '../shared/LoadingState';
 import { Separator } from "@/components/ui/separator";
 import { extractCreateCredentialProfileData, CredentialProfile } from './_utils';
-import { usePipedreamAppIcon } from '@/hooks/react-query/pipedream/use-pipedream';
 
 export function CreateCredentialProfileToolView({
   name = 'create-credential-profile',
@@ -52,12 +51,7 @@ export function CreateCredentialProfileToolView({
 
   const toolTitle = getToolTitle(name);
 
-  // Fetch app icon using the logo hook
-  const { data: iconData } = usePipedreamAppIcon(toolkit_slug || '', {
-    enabled: !!toolkit_slug
-  });
-
-  const logoUrl = iconData?.icon_url;
+  const logoUrl = undefined;
 
   const formatCreatedAt = (dateString: string) => {
     try {

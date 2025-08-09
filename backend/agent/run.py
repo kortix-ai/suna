@@ -397,7 +397,10 @@ class AgentRunner:
         project_data = project.data[0]
         sandbox_info = project_data.get('sandbox', {})
         if not sandbox_info.get('id'):
-            raise ValueError(f"No sandbox found for project {self.config.project_id}")
+            # Sandbox is created lazily by tools when required. Do not fail setup
+            # if no sandbox is present — tools will call `_ensure_sandbox()`
+            # which will create and persist the sandbox metadata when needed.
+            logger.info(f"No sandbox found for project {self.config.project_id}; will create lazily when needed")
     
     async def setup_tools(self):
         tool_manager = ToolManager(self.thread_manager, self.config.project_id, self.config.thread_id)

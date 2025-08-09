@@ -41,7 +41,6 @@ Before contributing, ensure you have access to:
 - Daytona account (for agent execution)
 - Tavily API key (for search)
 - Firecrawl API key (for web scraping)
-- QStash account (for background jobs)
 
 **Optional:**
 

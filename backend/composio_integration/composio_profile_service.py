@@ -22,7 +22,7 @@ class ComposioProfile:
     config_hash: str
     toolkit_slug: str
     toolkit_name: str
-    mcp_url: str  # The complete MCP URL
+    mcp_url: str
     redirect_url: Optional[str] = None
     is_active: bool = True
     is_default: bool = False
@@ -57,7 +57,7 @@ class ComposioProfileService:
         self,
         toolkit_slug: str,
         toolkit_name: str,
-        mcp_url: str,  # The complete MCP URL
+        mcp_url: str,
         redirect_url: Optional[str] = None,
         user_id: str = "default"
     ) -> Dict[str, Any]:
@@ -65,20 +65,18 @@ class ComposioProfileService:
             "type": "composio",
             "toolkit_slug": toolkit_slug,
             "toolkit_name": toolkit_name,
-            "mcp_url": mcp_url,  # Store the complete URL
+            "mcp_url": mcp_url,
             "redirect_url": redirect_url,
             "user_id": user_id,
             "created_at": datetime.now(timezone.utc).isoformat()
         }
 
     async def _generate_unique_profile_name(self, base_name: str, account_id: str, mcp_qualified_name: str, client) -> str:
-        """Generate a unique profile name by appending a number if needed"""
         original_name = base_name
         counter = 1
         current_name = base_name
         
         while True:
-            # Check if this name exists
             existing = await client.table('user_mcp_credential_profiles').select('profile_id').eq(
                 'account_id', account_id
             ).eq('mcp_qualified_name', mcp_qualified_name).eq('profile_name', current_name).execute()
@@ -86,7 +84,6 @@ class ComposioProfileService:
             if not existing.data:
                 return current_name
             
-            # Generate next name
             counter += 1
             current_name = f"{original_name} ({counter})"
 
@@ -96,7 +93,7 @@ class ComposioProfileService:
         profile_name: str,
         toolkit_slug: str,
         toolkit_name: str,
-        mcp_url: str,  # The complete MCP URL from Composio
+        mcp_url: str,
         redirect_url: Optional[str] = None,
         user_id: str = "default",
         is_default: bool = False
@@ -118,7 +115,6 @@ class ComposioProfileService:
             
             client = await self.db.client
             
-            # Generate unique profile name if needed
             unique_profile_name = await self._generate_unique_profile_name(
                 profile_name, account_id, mcp_qualified_name, client
             )
@@ -126,13 +122,11 @@ class ComposioProfileService:
             if unique_profile_name != profile_name:
                 logger.info(f"Generated unique profile name: {unique_profile_name} (original: {profile_name})")
             
-            # Set other profiles as non-default if this is default
             if is_default:
                 await client.table('user_mcp_credential_profiles').update({
                     'is_default': False
                 }).eq('account_id', account_id).eq('mcp_qualified_name', mcp_qualified_name).execute()
             
-            # Insert new profile
             result = await client.table('user_mcp_credential_profiles').insert({
                 'profile_id': profile_id,
                 'account_id': account_id,
@@ -220,7 +214,6 @@ class ComposioProfileService:
             
             profile_data = result.data[0]
             
-            # Decrypt the config to get the MCP URL
             config = self._decrypt_config(profile_data['encrypted_config'])
             
             if config.get('type') != 'composio':
@@ -238,7 +231,6 @@ class ComposioProfileService:
             raise
 
     async def get_profile_config(self, profile_id: str) -> Dict[str, Any]:
-        """Get decrypted config for a profile"""
         try:
             client = await self.db.client
             
@@ -270,7 +262,6 @@ class ComposioProfileService:
             
             profiles = []
             for row in result.data:
-                # Decrypt and parse config
                 config = self._decrypt_config(row['encrypted_config'])
                 
                 profile = ComposioProfile(
