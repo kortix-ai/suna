@@ -39,7 +39,11 @@ export interface ChatInputHandles {
 export interface ChatInputProps {
   onSubmit: (
     message: string,
-    options?: { model_name?: string; enable_thinking?: boolean },
+    options?: {
+      model_name?: string;
+      enable_thinking?: boolean;
+      agent_id?: string;
+    },
   ) => void;
   placeholder?: string;
   loading?: boolean;
@@ -240,6 +244,7 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
       posthog.capture("task_prompt_submitted", { message });
 
       onSubmit(message, {
+        agent_id: selectedAgentId,
         model_name: baseModelName,
         enable_thinking: thinkingEnabled,
       });
