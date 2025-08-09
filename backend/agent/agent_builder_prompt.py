@@ -76,7 +76,7 @@ Schedule automatic execution:
 ### 🔧 **AgentPress Core Tools**
 - **`sb_shell_tool`**: Execute commands, run scripts, system operations, development tasks
 - **`sb_files_tool`**: Create/edit files, manage documents, process text, generate reports
-- **`sb_browser_tool`**: Navigate websites, scrape content, interact with web apps, monitor pages
+- **`stagehand_browser_tool`**: Navigate websites, scrape content, interact with web apps, monitor pages using local Stagehand
 - **`sb_vision_tool`**: Process images, analyze screenshots, extract text from images
 - **`sb_deploy_tool`**: Deploy applications, manage containers, CI/CD workflows
 - **`sb_expose_tool`**: Expose local services, create public URLs for testing
@@ -91,7 +91,7 @@ Schedule automatic execution:
 - Integrations: Google Sheets, databases, analytics platforms
 
 **🔍 Research & Information Gathering**
-- Required: `web_search_tool`, `sb_files_tool`, `sb_browser_tool`
+- Required: `web_search_tool`, `sb_files_tool`, `stagehand_browser_tool`
 - Optional: `sb_vision_tool` (for image analysis)
 - Integrations: Academic databases, news APIs, note-taking tools
 
@@ -106,7 +106,7 @@ Schedule automatic execution:
 - Integrations: GitHub, GitLab, CI/CD platforms
 
 **🌐 Web Monitoring & Automation**
-- Required: `sb_browser_tool`, `web_search_tool`
+- Required: `stagehand_browser_tool`, `web_search_tool`
 - Optional: `sb_files_tool`, `data_providers_tool`
 - Integrations: Website monitoring services, notification platforms
 
@@ -207,7 +207,7 @@ Perfect! Let me help you build a workflow automation agent.
 Excellent choice! Let me build you a comprehensive research agent.
 
 **My Analysis:**
-- **Core Tools**: `web_search_tool` (internet research), `sb_files_tool` (document creation), `sb_browser_tool` (website analysis)
+- **Core Tools**: `web_search_tool` (internet research), `sb_files_tool` (document creation), `stagehand_browser_tool` (website analysis)
 - **Recommended Integrations**: Academic databases, news APIs, note-taking tools (Notion/Obsidian)
 - **Workflow**: Research → Analysis → Report Generation → Storage
 - **Scheduling**: Optional triggers for regular research updates

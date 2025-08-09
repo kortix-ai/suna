@@ -82,22 +82,11 @@ export function safeJsonParse<T>(
 // Helper function to get an icon based on tool name
 export const getToolIcon = (toolName: string): ElementType => {
   switch (toolName?.toLowerCase()) {
-    case 'web-browser-takeover':
     case 'browser-navigate-to':
-    case 'browser-click-element':
-    case 'browser-input-text':
-    case 'browser-scroll-down':
-    case 'browser-scroll-up':
-    case 'browser-click-coordinates':
-    case 'browser-send-keys':
-    case 'browser-switch-tab':
-    case 'browser-go-back':
-    case 'browser-close-tab':
-    case 'browser-drag-drop':
-    case 'browser-get-dropdown-options':
-    case 'browser-select-dropdown-option':
-    case 'browser-scroll-to-text':
-    case 'browser-wait':
+    case 'browser-act':
+    case 'browser-extract-content':
+    case 'browser-observe':
+    case 'browser-screenshot':
       return Globe;
 
     // File operations
@@ -207,7 +196,7 @@ export const extractPrimaryParam = (
 
   try {
     // Handle browser tools with a prefix check
-    if (toolName?.toLowerCase().startsWith('browser-')) {
+    if (toolName?.toLowerCase().startsWith('browser_')) {
       // Try to extract URL for navigation
       const urlMatch = content.match(/url=(?:"|')([^"|']+)(?:"|')/);
       if (urlMatch) return urlMatch[1];
@@ -322,21 +311,10 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['create-tasks', 'Creating Tasks'],
   ['update-tasks', 'Updating Tasks'],
   
-  ['browser-click-element', 'Clicking Element'],
-  ['browser-close-tab', 'Closing Tab'],
-  ['browser-drag-drop', 'Dragging Element'],
-  ['browser-get-dropdown-options', 'Getting Options'],
-  ['browser-go-back', 'Going Back'],
-  ['browser-input-text', 'Entering Text'],
-  ['browser-navigate-to', 'Navigating to Page'],
-  ['browser-scroll-down', 'Scrolling Down'],
-  ['browser-scroll-to-text', 'Scrolling to Text'],
-  ['browser-scroll-up', 'Scrolling Up'],
-  ['browser-select-dropdown-option', 'Selecting Option'],
-  ['browser-click-coordinates', 'Clicking Coordinates'],
-  ['browser-send-keys', 'Pressing Keys'],
-  ['browser-switch-tab', 'Switching Tab'],
-  ['browser-wait', 'Waiting'],
+  ['browser_navigate_to', 'Navigating to Page'],
+  ['browser_act', 'Performing Action'],
+  ['browser_extract_content', 'Extracting Content'],
+  ['browser_screenshot', 'Taking Screenshot'],
 
   ['execute-data-provider-call', 'Calling data provider'],
   ['execute_data-provider_call', 'Calling data provider'],
@@ -381,21 +359,10 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['str_replace', 'Editing Text'],
   ['edit_file', 'Editing File'],
   
-  ['browser_click_element', 'Clicking Element'],
-  ['browser_close_tab', 'Closing Tab'],
-  ['browser_drag_drop', 'Dragging Element'],
-  ['browser_get_dropdown_options', 'Getting Options'],
-  ['browser_go_back', 'Going Back'],
-  ['browser_input_text', 'Entering Text'],
   ['browser_navigate_to', 'Navigating to Page'],
-  ['browser_scroll_down', 'Scrolling Down'],
-  ['browser_scroll_to_text', 'Scrolling to Text'],
-  ['browser_scroll_up', 'Scrolling Up'],
-  ['browser_select_dropdown_option', 'Selecting Option'],
-  ['browser_click_coordinates', 'Clicking Coordinates'],
-  ['browser_send_keys', 'Pressing Keys'],
-  ['browser_switch_tab', 'Switching Tab'],
-  ['browser_wait', 'Waiting'],
+  ['browser_act', 'Performing Action'],
+  ['browser_extract_content', 'Extracting Content'],
+  ['browser_screenshot', 'Taking Screenshot'],
 
   ['execute_data_provider_call', 'Calling data provider'],
   ['get_data_provider_endpoints', 'Getting endpoints'],

@@ -35,7 +35,7 @@ _AgentPressTools_descriptions = {
     "sb_deploy_tool": "Deploy web applications",
     "sb_expose_tool": "Expose local services to the internet",
     "sb_vision_tool": "Analyze and understand images",
-    "sb_browser_tool": "Browse websites and interact with web pages",
+    "stagehand_browser_tool": "Browse websites and interact with web pages using local Stagehand",
     "web_search_tool": "Search the web for information",
     "sb_image_edit_tool": "Edit and manipulate images",
     "data_providers_tool": "Access structured data from various providers",
@@ -48,7 +48,7 @@ class AgentPressTools(str, Enum):
     SB_DEPLOY_TOOL = "sb_deploy_tool"
     SB_EXPOSE_TOOL = "sb_expose_tool"
     SB_VISION_TOOL = "sb_vision_tool"
-    SB_BROWSER_TOOL = "sb_browser_tool"
+    STAGEHAND_BROWSER_TOOL = "stagehand_browser_tool"
     WEB_SEARCH_TOOL = "web_search_tool"
     DATA_PROVIDERS_TOOL = "data_providers_tool"
 

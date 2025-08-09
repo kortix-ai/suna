@@ -91,6 +91,8 @@ ARG TARGETPLATFORM=linux/amd64
 
 # Set up working directory
 WORKDIR /app
+COPY package*.json tsconfig.json ./
+RUN npm ci
 
 # Copy requirements and install Python dependencies
 COPY requirements.txt .
@@ -98,18 +100,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Install Playwright and browsers with system dependencies
 ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-# Install Playwright package first
-RUN pip install playwright
 # Then install dependencies and browsers
-RUN playwright install-deps
-RUN playwright install chromium
+RUN npx playwright install-deps
+RUN npx playwright install chromium
 # Verify installation
-RUN python -c "from playwright.sync_api import sync_playwright; print('Playwright installation verified')"
+RUN node -e "import('playwright').then(() => console.log('Playwright installation verified')).catch(e => { console.error('Playwright verification failed:', e); process.exit(1); })"
 
-# Copy server script
+# Copy server scripts
 COPY . /app
 COPY server.py /app/server.py
-COPY browser_api.py /app/browser_api.py
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
@@ -128,6 +127,6 @@ ENV CHROME_FLAGS="--single-process --no-first-run --no-default-browser-check --d
 RUN mkdir -p /var/log/supervisor
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
-EXPOSE 7788 6080 5901 8000 8080
+EXPOSE 7788 6080 5901 8000 8004 8080
 
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

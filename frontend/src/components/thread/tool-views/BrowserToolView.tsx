@@ -1,11 +1,9 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import {
   Globe,
   MonitorPlay,
-  ExternalLink,
   CheckCircle,
   AlertTriangle,
-  CircleDashed,
 } from 'lucide-react';
 import { ToolViewProps } from './types';
 import {
@@ -34,6 +32,7 @@ export function BrowserToolView({
   messages = [],
   currentIndex = 0,
   totalCalls = 1,
+  shouldShowParentIframe = false,
 }: ToolViewProps) {
   // Try to extract data using the new parser first
   const assistantToolData = extractToolData(assistantContent);
@@ -151,45 +150,10 @@ export function BrowserToolView({
     }
   }
 
-  const vncPreviewUrl = project?.sandbox?.vnc_preview
-    ? `${project.sandbox.vnc_preview}/vnc_lite.html?password=${project?.sandbox?.pass}&autoconnect=true&scale=local&width=1024&height=768`
-    : undefined;
-
   const isRunning = isStreaming || agentStatus === 'running';
   const isLastToolCall = currentIndex === totalCalls - 1;
 
-  const vncIframe = useMemo(() => {
-    if (!vncPreviewUrl) return null;
 
-    return (
-      <iframe
-        src={vncPreviewUrl}
-        title="Browser preview"
-        className="w-full h-full border-0 min-h-[600px]"
-        style={{ width: '100%', height: '100%', minHeight: '600px' }}
-      />
-    );
-  }, [vncPreviewUrl]);
-
-  const [progress, setProgress] = React.useState(100);
-
-  React.useEffect(() => {
-    if (isRunning) {
-      setProgress(0);
-      const timer = setInterval(() => {
-        setProgress((prevProgress) => {
-          if (prevProgress >= 95) {
-            clearInterval(timer);
-            return prevProgress;
-          }
-          return prevProgress + 2;
-        });
-      }, 500);
-      return () => clearInterval(timer);
-    } else {
-      setProgress(100);
-    }
-  }, [isRunning]);
 
   // Reset loading state when screenshot changes
   React.useEffect(() => {
@@ -217,7 +181,7 @@ export function BrowserToolView({
           {imageLoading && (
             <ImageLoader />
           )}
-          <Card className={`p-0 overflow-hidden border ${imageLoading ? 'hidden' : 'block'}`}>
+          <Card className={`p-0 relative mb-16 overflow-hidden border ${imageLoading ? 'hidden' : 'block'}`}>
             <img
               src={screenshotUrl}
               alt="Browser Screenshot"
@@ -299,108 +263,49 @@ export function BrowserToolView({
           )}
 
           {isRunning && (
-            <Badge className="bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300">
-              <CircleDashed className="h-3.5 w-3.5 animate-spin" />
-              Executing browser action
-            </Badge>
+            <Badge
+            variant="outline"
+            className="px-3 py-1.5 rounded-lg shadow-lg backdrop-blur-md "
+          >
+            <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              Live Preview
+          </Badge>
           )}
         </div>
       </CardHeader>
 
       <CardContent className="p-0 flex-1 overflow-hidden relative" style={{ height: 'calc(100vh - 150px)', minHeight: '600px' }}>
         <div className="flex-1 flex h-full items-stretch bg-white dark:bg-black">
-          {isLastToolCall ? (
-            isRunning && vncIframe ? (
-              <div className="flex flex-col items-center justify-center w-full h-full min-h-[600px]" style={{ minHeight: '600px' }}>
-                <div className="relative w-full h-full min-h-[600px]" style={{ minHeight: '600px' }}>
-                  {vncIframe}
-                  <div className="absolute top-4 right-4 z-10">
-                    <Badge className="bg-blue-500/90 text-white border-none shadow-lg animate-pulse">
-                      <CircleDashed className="h-3 w-3 animate-spin" />
-                      {operation} in progress
-                    </Badge>
-                  </div>
-                </div>
+          {shouldShowParentIframe ? (
+            /* Parent iframe should be visible, show transparent background */
+            <div className="w-full h-full min-h-[600px] bg-transparent" />
+          ) : (screenshotUrl || screenshotBase64) ? (
+            /* Show screenshot when parent iframe shouldn't be visible */
+            renderScreenshot()
+          ) : isLastToolCall ? (
+            /* Last tool call with no screenshot and no iframe: Show fallback */
+            <div className="p-8 flex flex-col items-center justify-center w-full bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900 text-zinc-700 dark:text-zinc-400">
+              <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-purple-100 to-purple-50 shadow-inner dark:from-purple-800/40 dark:to-purple-900/60">
+                <MonitorPlay className="h-10 w-10 text-purple-400 dark:text-purple-600" />
               </div>
-            ) : (screenshotUrl || screenshotBase64) ? (
-              renderScreenshot()
-            ) : vncIframe ? (
-              // Use the memoized iframe
-              <div className="flex flex-col items-center justify-center w-full h-full min-h-[600px]" style={{ minHeight: '600px' }}>
-                {vncIframe}
+              <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
+                Browser preview not available
+              </h3>
+            </div>
+          ) : (
+            /* Previous tool calls with no screenshot: Show fallback message */
+            <div className="p-8 flex flex-col items-center justify-center w-full bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900 text-zinc-700 dark:text-zinc-400">
+              <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60">
+                <MonitorPlay className="h-10 w-10 text-zinc-400 dark:text-zinc-600" />
               </div>
-            ) : (
-              <div className="p-8 flex flex-col items-center justify-center w-full bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900 text-zinc-700 dark:text-zinc-400">
-                <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-purple-100 to-purple-50 shadow-inner dark:from-purple-800/40 dark:to-purple-900/60">
-                  <MonitorPlay className="h-10 w-10 text-purple-400 dark:text-purple-600" />
-                </div>
-                <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
-                  Browser preview not available
-                </h3>
-                {url && (
-                  <div className="mt-4">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-700 shadow-sm hover:shadow-md transition-shadow"
-                      asChild
-                    >
-                      <a href={url} target="_blank" rel="noopener noreferrer">
-                        <ExternalLink className="h-3.5 w-3.5 mr-2" />
-                        Visit URL
-                      </a>
-                    </Button>
-                  </div>
-                )}
-              </div>
-            )
-          ) :
-            (screenshotUrl || screenshotBase64) ? (
-              <div className="flex items-center justify-center w-full h-full overflow-auto relative p-4">
-                {imageLoading && (
-                  <ImageLoader />
-                )}
-                <Card className={`p-0 overflow-hidden border ${imageLoading ? 'hidden' : 'block'}`}>
-                  {screenshotUrl ? (
-                    <img
-                      src={screenshotUrl}
-                      alt="Browser Screenshot"
-                      className="max-w-full max-h-full object-contain"
-                      onLoad={handleImageLoad}
-                      onError={handleImageError}
-                    />
-                  ) : (
-                    <img
-                      src={`data:image/jpeg;base64,${screenshotBase64}`}
-                      alt="Browser Screenshot"
-                      className="max-w-full max-h-full object-contain"
-                      onLoad={handleImageLoad}
-                      onError={handleImageError}
-                    />
-                  )}
-                </Card>
-                {imageError && !imageLoading && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-zinc-50 dark:bg-zinc-900">
-                    <div className="text-center text-zinc-500 dark:text-zinc-400">
-                      <AlertTriangle className="h-8 w-8 mx-auto mb-2" />
-                      <p>Failed to load screenshot</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="p-8 h-full flex flex-col items-center justify-center w-full bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900 text-zinc-700 dark:text-zinc-400">
-                <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60">
-                  <MonitorPlay className="h-10 w-10 text-zinc-400 dark:text-zinc-600" />
-                </div>
-                <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
-                  No Browser State Available
-                </h3>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                  Browser state image not found for this action
-                </p>
-              </div>
-            )}
+              <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
+                No Browser State Available
+              </h3>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                Browser state image not found for this action
+              </p>
+            </div>
+          )}
         </div>
       </CardContent>
 

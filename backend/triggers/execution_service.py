@@ -459,7 +459,7 @@ class WorkflowExecutor:
         tool_mapping = {
             'sb_shell_tool': ['execute_command'],
             'sb_files_tool': ['create_file', 'str_replace', 'full_file_rewrite', 'delete_file'],
-            'sb_browser_tool': ['browser_navigate_to', 'browser_take_screenshot'],
+            'stagehand_browser_tool': ['browser_navigate_to', 'browser_screenshot'],
             'sb_vision_tool': ['see_image'],
             'sb_deploy_tool': ['deploy'],
             'sb_expose_tool': ['expose_port'],
