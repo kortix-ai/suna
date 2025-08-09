@@ -16,6 +16,7 @@ import json
 import asyncio
 from openai import OpenAIError
 import litellm
+from litellm.router import Router
 from litellm.files.main import ModelResponse
 from utils.logger import logger
 from utils.config import config
@@ -29,6 +30,8 @@ litellm.drop_params = True
 MAX_RETRIES = 2
 RATE_LIMIT_DELAY = 30
 RETRY_DELAY = 0.1
+provider_router = None
+
 
 class LLMError(Exception):
     """Base exception for LLM-related errors."""
@@ -40,9 +43,19 @@ class LLMRetryError(LLMError):
 
 def setup_api_keys() -> None:
     """Set up API keys from environment variables."""
-    providers = ['OPENAI', 'ANTHROPIC', 'GROQ', 'OPENROUTER', 'XAI', 'MORPH', 'GEMINI']
+    providers = [
+        "OPENAI",
+        "ANTHROPIC",
+        "GROQ",
+        "OPENROUTER",
+        "XAI",
+        "MORPH",
+        "GEMINI",
+        "SILICONFLOW",
+        "OPENAI_COMPATIBLE",
+    ]
     for provider in providers:
-        key = getattr(config, f'{provider}_API_KEY')
+        key = getattr(config, f"{provider}_API_KEY")
         if key:
             logger.debug(f"API key set for provider: {provider}")
         else:
@@ -50,8 +63,13 @@ def setup_api_keys() -> None:
 
     # Set up OpenRouter API base if not already set
     if config.OPENROUTER_API_KEY and config.OPENROUTER_API_BASE:
-        os.environ['OPENROUTER_API_BASE'] = config.OPENROUTER_API_BASE
+        os.environ["OPENROUTER_API_BASE"] = config.OPENROUTER_API_BASE
         logger.debug(f"Set OPENROUTER_API_BASE to {config.OPENROUTER_API_BASE}")
+
+    # Set up SiliconFlow API base
+    if config.SILICONFLOW_API_KEY and config.SILICONFLOW_API_BASE:
+        os.environ["SILICONFLOW_API_BASE"] = config.SILICONFLOW_API_BASE
+        logger.debug(f"Set SILICONFLOW_API_BASE to {config.SILICONFLOW_API_BASE}")
 
     # Set up AWS Bedrock credentials
     aws_access_key = config.AWS_ACCESS_KEY_ID
@@ -61,11 +79,41 @@ def setup_api_keys() -> None:
     if aws_access_key and aws_secret_key and aws_region:
         logger.debug(f"AWS credentials set for Bedrock in region: {aws_region}")
         # Configure LiteLLM to use AWS credentials
-        os.environ['AWS_ACCESS_KEY_ID'] = aws_access_key
-        os.environ['AWS_SECRET_ACCESS_KEY'] = aws_secret_key
-        os.environ['AWS_REGION_NAME'] = aws_region
+        os.environ["AWS_ACCESS_KEY_ID"] = aws_access_key
+        os.environ["AWS_SECRET_ACCESS_KEY"] = aws_secret_key
+        os.environ["AWS_REGION_NAME"] = aws_region
     else:
         logger.warning(f"Missing AWS credentials for Bedrock integration - access_key: {bool(aws_access_key)}, secret_key: {bool(aws_secret_key)}, region: {aws_region}")
+
+
+def setup_provider_router(openai_compatible_api_key: str = None, openai_compatible_api_base: str = None):
+    global provider_router
+    model_list = [
+        {
+            "model_name": "openai-compatible/*", # support OpenAI-Compatible LLM provider
+            "litellm_params": {
+                "model": "openai/*",
+                "api_key": openai_compatible_api_key or config.OPENAI_COMPATIBLE_API_KEY,
+                "api_base": openai_compatible_api_base or config.OPENAI_COMPATIBLE_API_BASE,
+            },
+        },
+        {
+            "model_name": "siliconflow/*",  # support more OpenAI-Compatible LLM provider
+            "litellm_params": {
+                "model": "openai/*",
+                "api_key": config.SILICONFLOW_API_KEY,
+                "api_base": config.SILICONFLOW_API_BASE,
+            },
+        },
+        {
+            "model_name": "*", # supported LLM provider by LiteLLM
+            "litellm_params": {
+                "model": "*",
+            },
+        },
+    ]
+    provider_router = Router(model_list=model_list)
+
 
 def get_openrouter_fallback(model_name: str) -> Optional[str]:
     """Get OpenRouter fallback model for a given model name."""
@@ -119,7 +167,7 @@ def prepare_params(
     top_p: Optional[float] = None,
     model_id: Optional[str] = None,
     enable_thinking: Optional[bool] = False,
-    reasoning_effort: Optional[str] = 'low'
+    reasoning_effort: Optional[str] = "low",
 ) -> Dict[str, Any]:
     """Prepare parameters for the API call."""
     params = {
@@ -138,6 +186,17 @@ def prepare_params(
     if model_id:
         params["model_id"] = model_id
 
+    if model_name.startswith("openai-compatible/"):
+        # Check if have required config either from parameters or environment
+        if (not api_key and not config.OPENAI_COMPATIBLE_API_KEY) or (
+            not api_base and not config.OPENAI_COMPATIBLE_API_BASE
+        ):
+            raise LLMError(
+                "OPENAI_COMPATIBLE_API_KEY and OPENAI_COMPATIBLE_API_BASE is required for openai-compatible models. If just updated the environment variables,  wait a few minutes or restart the service to ensure they are loaded."
+            )
+        
+        setup_provider_router(api_key, api_base)
+
     # Handle token limits
     if max_tokens is not None:
         # For Claude 3.7 in Bedrock, do not set max_tokens or max_tokens_to_sample
@@ -153,10 +212,7 @@ def prepare_params(
 
     # Add tools if provided
     if tools:
-        params.update({
-            "tools": tools,
-            "tool_choice": tool_choice
-        })
+        params.update({"tools": tools, "tool_choice": tool_choice})
         logger.debug(f"Added {len(tools)} tools to API parameters")
 
     # # Add Claude-specific headers
@@ -249,14 +305,14 @@ def prepare_params(
         }
 
     if is_anthropic and use_thinking:
-        effort_level = reasoning_effort if reasoning_effort else 'low'
+        effort_level = reasoning_effort if reasoning_effort else "low"
         params["reasoning_effort"] = effort_level
         params["temperature"] = 1.0 # Required by Anthropic when reasoning_effort is used
         logger.info(f"Anthropic thinking enabled with reasoning_effort='{effort_level}'")
 
     # Add reasoning_effort for xAI models if enabled
     if is_xai and use_thinking:
-        effort_level = reasoning_effort if reasoning_effort else 'low'
+        effort_level = reasoning_effort if reasoning_effort else "low"
         params["reasoning_effort"] = effort_level
         logger.info(f"xAI thinking enabled with reasoning_effort='{effort_level}'")
 
@@ -281,7 +337,7 @@ async def make_llm_api_call(
     top_p: Optional[float] = None,
     model_id: Optional[str] = None,
     enable_thinking: Optional[bool] = False,
-    reasoning_effort: Optional[str] = 'low'
+    reasoning_effort: Optional[str] = "low",
 ) -> Union[Dict[str, Any], AsyncGenerator, ModelResponse]:
     """
     Make an API call to a language model using LiteLLM.
@@ -326,7 +382,7 @@ async def make_llm_api_call(
         top_p=top_p,
         model_id=model_id,
         enable_thinking=enable_thinking,
-        reasoning_effort=reasoning_effort
+        reasoning_effort=reasoning_effort,
     )
     last_error = None
     for attempt in range(MAX_RETRIES):
@@ -334,12 +390,16 @@ async def make_llm_api_call(
             logger.debug(f"Attempt {attempt + 1}/{MAX_RETRIES}")
             # logger.debug(f"API request parameters: {json.dumps(params, indent=2)}")
 
-            response = await litellm.acompletion(**params)
+            response = await provider_router.acompletion(**params)
             logger.debug(f"Successfully received API response from {model_name}")
             # logger.debug(f"Response: {response}")
             return response
 
-        except (litellm.exceptions.RateLimitError, OpenAIError, json.JSONDecodeError) as e:
+        except (
+            litellm.exceptions.RateLimitError,
+            OpenAIError,
+            json.JSONDecodeError,
+        ) as e:
             last_error = e
             await handle_error(e, attempt, MAX_RETRIES)
 
@@ -355,3 +415,4 @@ async def make_llm_api_call(
 
 # Initialize API keys on module import
 setup_api_keys()
+setup_provider_router()

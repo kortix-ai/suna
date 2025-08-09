@@ -160,8 +160,11 @@ REDIS_SSL=false
 ANTHROPIC_API_KEY=your-anthropic-key
 OPENAI_API_KEY=your-openai-key
 OPENROUTER_API_KEY=your-openrouter-key
-GEMINI_API_KEY=your-gemini-api-key
-MORPH_API_KEY=
+GEMINI_API_KEY=your-gemini-key
+MORPH_API_KEY=your-morph-key
+SILICONFLOW_API_KEY=your-siliconflow-key
+OPENAI_COMPATIBLE_API_KEY=your-openai-compatible-api-key
+OPENAI_COMPATIBLE_API_BASE=your-openai-compatible-api-base
 MODEL_TO_USE=anthropic/claude-sonnet-4-20250514
 
 # WEB SEARCH

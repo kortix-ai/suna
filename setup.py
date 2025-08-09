@@ -131,6 +131,7 @@ def load_existing_env_vars():
             "OPENROUTER_API_KEY": backend_env.get("OPENROUTER_API_KEY", ""),
             "MORPH_API_KEY": backend_env.get("MORPH_API_KEY", ""),
             "GEMINI_API_KEY": backend_env.get("GEMINI_API_KEY", ""),
+            "SILICONFLOW_API_KEY": backend_env.get("SILICONFLOW_API_KEY", ""),
             "MODEL_TO_USE": backend_env.get("MODEL_TO_USE", ""),
         },
         "search": {
@@ -713,6 +714,7 @@ class SetupWizard:
                 "2": ("Anthropic", "ANTHROPIC_API_KEY"),
                 "3": ("Google Gemini", "GEMINI_API_KEY"),
                 "4": ("OpenRouter", "OPENROUTER_API_KEY"),
+                "5": ("SiliconFlow","SILICONFLOW_API_KEY")
             }
             print(
                 f"\n{Colors.CYAN}Select LLM providers to configure (e.g., 1,3):{Colors.ENDC}"
@@ -768,6 +770,10 @@ class SetupWizard:
                 self.env_vars["llm"][
                     "MODEL_TO_USE"
                 ] = "openrouter/google/gemini-2.5-pro"
+            elif self.env_vars["llm"].get("SILICONFLOW_API_KEY"):
+                self.env_vars["llm"][
+                    "MODEL_TO_USE"
+                ] = "siliconflow/deepseek-ai/deepseek-v3"
 
         print_success(
             f"LLM keys saved. Default model: {self.env_vars['llm'].get('MODEL_TO_USE', 'Not set')}"
