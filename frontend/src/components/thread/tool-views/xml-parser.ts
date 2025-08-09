@@ -13,6 +13,7 @@ export interface ParsedToolCall {
   functionName: string;
   parameters: Record<string, any>;
   rawXml: string;
+  rawXmlWithWrapper: string;
 }
 
 
@@ -46,7 +47,8 @@ export function parseXmlToolCalls(content: string): ParsedToolCall[] {
       toolCalls.push({
         functionName,
         parameters,
-        rawXml: invokeMatch[0]
+        rawXml: invokeMatch[0],
+        rawXmlWithWrapper: `<function_calls>${invokeMatch[0]}</function_calls>`
       });
     }
   }

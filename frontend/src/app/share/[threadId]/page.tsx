@@ -288,33 +288,6 @@ export default function ThreadPage({
     [],
   );
 
-  // useEffect(() => {
-  //   if (!isPlaying || messages.length === 0) return;
-
-  //   let playbackTimeout: NodeJS.Timeout;
-
-  //   const playbackNextMessage = async () => {
-  //     if (currentMessageIndex >= messages.length) {
-  //       setIsPlaying(false);
-  //       return;
-  //     }
-
-  //     const currentMessage = messages[currentMessageIndex];
-  //     console.log(
-  //       `Playing message ${currentMessageIndex}:`,
-  //       currentMessage.type,
-  //       currentMessage.message_id,
-  //     );
-
-  //     setCurrentMessageIndex((prevIndex) => prevIndex + 1);
-  //   };
-  //   playbackTimeout = setTimeout(playbackNextMessage, 500);
-
-  //   return () => {
-  //     clearTimeout(playbackTimeout);
-  //   };
-  // }, [isPlaying, currentMessageIndex, messages]);
-
   const {
     status: streamHookStatus,
     toolCall: streamingToolCall,
@@ -616,6 +589,8 @@ export default function ThreadPage({
     setFileViewerOpen(true);
   }, []);
 
+  const [navigationMode, setNavigationMode] = useState<'live' | 'manual'>('live');
+
   const playbackController: PlaybackController = PlaybackControls({
     messages,
     isSidePanelOpen,
@@ -624,6 +599,7 @@ export default function ThreadPage({
     setCurrentToolIndex,
     onFileViewerOpen: handleOpenFileViewer,
     projectName: projectName || 'Shared Conversation',
+    navigationMode,
   });
 
   const {
@@ -809,6 +785,7 @@ export default function ThreadPage({
       </div>
 
       <MemoizedToolCallSidePanel
+        onNavigateModeChange={setNavigationMode}
         isOpen={isSidePanelOpen}
         onClose={() => {
           setIsSidePanelOpen(false);
