@@ -351,14 +351,14 @@ class MessageManager:
                             "type": "image_url",
                             "image_url": {
                                 "url": screenshot_url,
-                                "format": "image/jpeg"
+                                "format": "image/png"
                             }
                         })
                     elif screenshot_base64:
                         temp_message_content_list.append({
                             "type": "image_url",
                             "image_url": {
-                                "url": f"data:image/jpeg;base64,{screenshot_base64}",
+                                "url": f"data:image/png;base64,{screenshot_base64}",
                             }
                         })
 

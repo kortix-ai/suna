@@ -8,6 +8,7 @@ from daytona_sdk import AsyncSandbox
 from sandbox.sandbox import get_or_start_sandbox, create_sandbox, delete_sandbox
 from utils.logger import logger
 from utils.files_utils import clean_path
+from utils.config import config
 
 class SandboxToolsBase(Tool):
     """Base class for all sandbox tools that provides project-based sandbox access."""
@@ -50,9 +51,19 @@ class SandboxToolsBase(Tool):
                     sandbox_obj = await create_sandbox(sandbox_pass, self.project_id)
                     sandbox_id = sandbox_obj.id
                     
-                    # Wait for sandbox services to start up
+                    # Wait 5 seconds for services to start up
                     logger.info(f"Waiting 5 seconds for sandbox {sandbox_id} services to initialize...")
                     await asyncio.sleep(5)
+                    # Initialize the browser in background after services start up
+                    try:
+                        model_api_key = config.ANTHROPIC_API_KEY
+                        logger.info(f"Initializing browser for sandbox {sandbox_id}")
+                        asyncio.create_task(
+                            sandbox_obj.process.exec(f"curl -X POST 'http://localhost:8004/api/init' -H 'Content-Type: application/json' -d '{{\"api_key\": \"{model_api_key}\"}}'", timeout=90)
+                        )
+                    except Exception:
+                        logger.warning(f"Failed to initialize browser for sandbox {sandbox_id}", exc_info=True)
+                    
 
                     # Gather preview links and token (best-effort parsing)
                     try:
