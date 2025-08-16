@@ -26,12 +26,13 @@ import { SubscriptionStatus } from '@/components/thread/chat-input/_use-model-se
 import { UnifiedMessage, ApiMessageType, ToolCallInput, Project } from '../_types';
 import { useThreadData, useToolCalls, useBilling, useKeyboardShortcuts } from '../_hooks';
 import { ThreadError, UpgradeDialog, ThreadLayout } from '../_components';
-import { useVncPreloader } from '@/hooks/useVncPreloader';
+
 import { useThreadAgent, useAgents } from '@/hooks/react-query/agents/use-agents';
 import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog';
 import { useAgentSelection } from '@/lib/stores/agent-selection-store';
 import { useQueryClient } from '@tanstack/react-query';
 import { threadKeys } from '@/hooks/react-query/threads/keys';
+import { useProjectRealtime } from '@/hooks/useProjectRealtime';
 
 export default function ThreadPage({
   params,
@@ -132,6 +133,9 @@ export default function ThreadPage({
     billingStatusQuery,
   } = useBilling(project?.account_id, agentStatus, initialLoadCompleted);
 
+  // Real-time project updates (for sandbox creation)
+  useProjectRealtime(projectId);
+
   // Keyboard shortcuts
   useKeyboardShortcuts({
     isSidePanelOpen,
@@ -164,11 +168,6 @@ export default function ThreadPage({
   const subscriptionStatus: SubscriptionStatus = subscriptionData?.status === 'active'
     ? 'active'
     : 'no_subscription';
-
-  const memoizedProject = useMemo(() => project, [project?.id, project?.sandbox?.vnc_preview, project?.sandbox?.pass]);
-
-  useVncPreloader(memoizedProject);
-
 
   const handleProjectRenamed = useCallback((newName: string) => {
   }, []);

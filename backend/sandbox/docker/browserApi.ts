@@ -187,9 +187,14 @@ class BrowserAutomation {
             }
         } catch (error) {
             console.error(error);
+            const page_info = await this.get_stagehand_state();
             res.status(500).json({
-                "status": "error",
-                "message": "Failed to navigate to " + req.body.url
+                success: false,
+                message: "Failed to navigate to " + req.body.url,
+                url: page_info.url,
+                title: page_info.title,
+                screenshot_base64: page_info.screenshot_base64,
+                error
             })
         }
     }
@@ -215,8 +220,9 @@ class BrowserAutomation {
         } catch (error) {
             console.error(error);
             res.status(500).json({
-                "status": "error",
-                "message": "Failed to take screenshot"
+                success: false,
+                message: "Failed to take screenshot",
+                error
             })
         }
     }
@@ -244,9 +250,14 @@ class BrowserAutomation {
             }
         } catch (error) {
             console.error(error);
+            const page_info = await this.get_stagehand_state();
             res.status(500).json({
-                "status": "error",
-                "message": "Failed to act"
+                success: false,
+                message: "Failed to act",
+                url: page_info.url,
+                title: page_info.title,
+                screenshot_base64: page_info.screenshot_base64,
+                error
             })
         }
     }
@@ -269,9 +280,14 @@ class BrowserAutomation {
             }
         } catch (error) {
             console.error(error);
+            const page_info = await this.get_stagehand_state();
             res.status(500).json({
-                "status": "error",
-                "message": "Failed to extract"
+                success: false,
+                message: "Failed to extract",
+                url: page_info.url,
+                title: page_info.title,
+                screenshot_base64: page_info.screenshot_base64,
+                error
             })
         }
     }

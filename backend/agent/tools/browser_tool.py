@@ -24,7 +24,7 @@ class BrowserTool(SandboxToolsBase):
     - browser_extract_content: Extract content from pages
     - browser_screenshot: Take screenshots
     """
-    _sandbox_created = False
+
 
     def __init__(self, project_id: str, thread_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
@@ -134,11 +134,7 @@ class BrowserTool(SandboxToolsBase):
         """Check if the Stagehand API server is running and accessible"""
         try:
             await self._ensure_sandbox()
-
-            if not self.__class__._sandbox_created:
-                logger.info("Sandbox just created, waiting for server to start")
-                await asyncio.sleep(5)
-                self.__class__._sandbox_created = True
+            
             
             # Simple health check curl command
             curl_cmd = "curl -s -X GET 'http://localhost:8004/api' -H 'Content-Type: application/json'"

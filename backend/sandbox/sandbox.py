@@ -95,8 +95,8 @@ async def create_sandbox(password: str, project_id: str = None) -> AsyncSandbox:
         labels=labels,
         env_vars={
             "CHROME_PERSISTENT_SESSION": "true",
-            "RESOLUTION": "1024x768x24",
-            "RESOLUTION_WIDTH": "1024",
+            "RESOLUTION": "1048x768x24",
+            "RESOLUTION_WIDTH": "1048",
             "RESOLUTION_HEIGHT": "768",
             "VNC_PASSWORD": password,
             "ANONYMIZED_TELEMETRY": "false",
@@ -111,7 +111,7 @@ async def create_sandbox(password: str, project_id: str = None) -> AsyncSandbox:
             memory=4,
             disk=5,
         ),
-        auto_stop_interval=15,
+        auto_stop_interval=120,
         auto_archive_interval=2 * 60,
     )
     
