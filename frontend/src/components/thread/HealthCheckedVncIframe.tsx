@@ -27,33 +27,16 @@ export function HealthCheckedVncIframe({ sandbox, className }: HealthCheckedVncI
 
 
 
-  // No VNC URL yet - waiting for browser setup
-  if (!sandbox.vnc_preview) {
-    return (
-      <div className={cn('rounded-xl overflow-hidden m-4', className)}>
-        <div className='flex flex-col items-center justify-center p-8 bg-blue-50 dark:bg-blue-950/30 rounded-xl border border-blue-200 dark:border-blue-800'>
-          <Loader2 className="h-8 w-8 animate-spin text-blue-600 mb-3" />
-          <p className="text-sm font-medium text-center mb-2">Setting up browser environment...</p>
-          <p className="text-xs text-muted-foreground mb-2 text-center">
-            Browser will be ready when you use browser tools
-          </p>
-          <p className="text-xs text-blue-600 text-center">
-            📡 Waiting for real-time updates...
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   // VNC URL received but preloading in progress
   if (status === 'loading') {
     return (
-      <div className={cn('rounded-xl overflow-hidden m-4', className)}>
-        <div className='flex flex-col items-center justify-center p-8 bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800'>
+      <div className={cn('rounded-xl overflow-hidden m-2 sm:m-4', className)}>
+        <div className='flex flex-col items-center justify-center p-4 sm:p-8 bg-amber-50 dark:bg-amber-950/30 rounded-xl border border-amber-200 dark:border-amber-800'>
           <Loader2 className="h-8 w-8 animate-spin text-amber-600 mb-3" />
           <p className="text-sm font-medium text-center mb-2">Connecting to browser...</p>
           <p className="text-xs text-muted-foreground mb-2 text-center">
-            Testing VNC connection in background
+            Testing VNC connection
           </p>
           {retryCount > 0 && (
             <p className="text-xs text-amber-600 text-center">
@@ -68,8 +51,8 @@ export function HealthCheckedVncIframe({ sandbox, className }: HealthCheckedVncI
   // VNC preload failed after retries
   if (status === 'error') {
     return (
-      <div className={cn('rounded-xl overflow-hidden m-4', className)}>
-        <div className='flex flex-col items-center justify-center p-8 bg-destructive/10 rounded-xl border border-destructive/20'>
+      <div className={cn('rounded-xl overflow-hidden m-2 sm:m-4', className)}>
+        <div className='flex flex-col items-center justify-center p-4 sm:p-8 bg-destructive/10 rounded-xl border border-destructive/20'>
           <AlertCircle className="h-8 w-8 text-destructive mb-3" />
           <p className="text-sm font-medium text-center mb-2">Connection Failed</p>
           <p className="text-xs text-muted-foreground mb-4 text-center">
@@ -88,20 +71,15 @@ export function HealthCheckedVncIframe({ sandbox, className }: HealthCheckedVncI
     );
   }
 
-  // Show VNC iframe - we have URL and no connection issues
   if (isPreloaded) {
     return (
-      <div className={cn('rounded-xl overflow-hidden m-4 relative', className)}>
-        <div className='overflow-hidden xl:h-[400px] lg:h-[339px] md:h-[303px] h-[400px]'>
+      <div className={cn('rounded-xl overflow-hidden m-2 sm:m-4 relative', className)}>
+        <div className='relative w-full aspect-[4/3] sm:aspect-[5/3] md:aspect-[16/11] overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-800'>
           <iframe
-            key={iframeKey} // Force reload when key changes
+            key={iframeKey}
             src={`${sandbox.vnc_preview}/vnc_lite.html?password=${sandbox.pass}&autoconnect=true&scale=local`}
             title="Browser preview"
-            className="border-0 xl:translate-y-[-140px] lg:translate-y-[-75px] md:translate-y-[-67px] translate-y-[-80px] sm:translate-y-[-75px] lg:translate-x-[-5px] translate-x-[-5px] xl:translate-x-[-6px] h-[100%] md:h-[370px] lg:h-[420px] xl:h-[600px] w-[100%] md:w-[474px] lg:w-[524px] xl:w-[621px]"
-            style={{
-              objectFit: 'cover',
-              objectPosition: 'center'
-            }}
+            className="absolute inset-0 w-full h-full border-0 md:w-[102%] md:h-[130%] md:-translate-y-[4.4rem] lg:-translate-y-[4.7rem] xl:-translate-y-[5.4rem] md:left-0 md:-translate-x-2"
             onLoad={() => console.log('✅ VNC iframe displayed')}
             onError={() => console.log('❌ VNC iframe error')}
           />

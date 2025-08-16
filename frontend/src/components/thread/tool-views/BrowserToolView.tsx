@@ -6,6 +6,7 @@ import {
   CheckCircle,
   AlertTriangle,
   CircleDashed,
+  RefreshCw,
 } from 'lucide-react';
 import { ToolViewProps } from './types';
 import {
@@ -20,6 +21,48 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ImageLoader } from './shared/ImageLoader';
+
+interface BrowserHeaderProps {
+  isConnected: boolean;
+  onRefresh?: () => void;
+}
+
+export const BrowserHeader: React.FC<BrowserHeaderProps> = ({ isConnected, onRefresh }) => {
+  return (
+    <div className={`flex items-center justify-between px-3 md:px-4 py-2 border border-border ${!isConnected ? 'bg-muted/30 border-b' : ''}`}>
+      <div className="flex items-center gap-2 justify-between min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <div className="relative p-2 rounded-lg bg-gradient-to-br from-purple-500/20 to-purple-600/10 border border-purple-500/20">
+            <Globe className="w-5 h-5 text-purple-500 dark:text-purple-400" />
+          </div>
+          <div>
+            <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
+              Browser
+            </CardTitle>
+          </div>
+        </div>
+        <Badge variant="outline" className="gap-1.5 p-2 rounded-3xl">
+          <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500/80 animate-pulse' : 'bg-gray-400'}`}></div>
+          <span className="sm:inline">Live Preview</span>
+        </Badge>
+      </div>
+      
+      <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
+        {isConnected && onRefresh && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onRefresh}
+            className="h-7 w-7 p-0 hover:bg-muted"
+            title="Refresh browser view"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+};
 
 export function BrowserToolView({
   name = 'browser-operation',

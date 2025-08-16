@@ -6,14 +6,16 @@ import React from 'react';
 import { Slider } from '@/components/ui/slider';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiMessageType } from '@/components/thread/types';
-import { CircleDashed, X, ChevronLeft, ChevronRight, Computer, Radio, Maximize2, Minimize2, Copy, Check, Globe, RefreshCw, Wrench } from 'lucide-react';
+import { CircleDashed, X, ChevronLeft, ChevronRight, Computer, Radio, Maximize2, Minimize2, Copy, Check, Globe, Wrench } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { ToolView } from './tool-views/wrapper';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import { HealthCheckedVncIframe } from './HealthCheckedVncIframe';
+import { BrowserHeader } from './tool-views/BrowserToolView';
 
 import {
   Drawer,
@@ -96,7 +98,7 @@ const ViewToggle: React.FC<ViewToggleProps> = ({ currentView, onViewChange }) =>
       <Button
         size="sm"
         onClick={() => onViewChange('tools')}
-        className={`relative z-10 h-7 w-7 p-0 rounded-xl bg-transparent hover:bg-transparent ${
+        className={`relative z-10 h-7 w-7 p-0 rounded-xl bg-transparent hover:bg-transparent shadow-none ${
           currentView === 'tools'
             ? 'text-black'
             : 'text-gray-500 dark:text-gray-400'
@@ -109,7 +111,7 @@ const ViewToggle: React.FC<ViewToggleProps> = ({ currentView, onViewChange }) =>
       <Button
         size="sm"
         onClick={() => onViewChange('browser')}
-        className={`relative z-10 h-7 w-7 p-0 rounded-xl bg-transparent hover:bg-transparent ${
+        className={`relative z-10 h-7 w-7 p-0 rounded-xl bg-transparent hover:bg-transparent shadow-none ${
           currentView === 'browser'
             ? 'text-black'
             : 'text-gray-500 dark:text-gray-400'
@@ -198,7 +200,7 @@ const PanelHeader: React.FC<PanelHeaderProps> = ({
           <div className="flex items-center gap-2">
             <ViewToggle 
               currentView={currentView} 
-              onViewChange={onViewChange || (() => {})} 
+              onViewChange={onViewChange} 
             />
             {isStreaming && (
               <div className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400 flex items-center gap-1.5">
@@ -230,17 +232,17 @@ const PanelHeader: React.FC<PanelHeaderProps> = ({
               {title}
             </h2>
           </div>
-          <ViewToggle 
-            currentView={currentView} 
-            onViewChange={onViewChange || (() => {})} 
-          />
         </div>
         <div className="flex items-center gap-2">
+          <ViewToggle 
+            currentView={currentView} 
+            onViewChange={onViewChange} 
+          />
           {isStreaming && (
-            <div className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400 flex items-center gap-1.5">
+            <Badge variant="outline" className="gap-1.5 p-2 rounded-3xl">
               <CircleDashed className="h-3 w-3 animate-spin" />
               <span>Running</span>
-            </div>
+            </Badge>
           )}
           <Button
             variant="ghost"
@@ -329,6 +331,9 @@ export function ToolCallSidePanel({
 
   // Auto-switch to browser view when browser tools are detected
   React.useEffect(() => {
+    // Only auto-switch when agent is actively running to avoid flickering on tool completion
+    if (agentStatus !== 'running') return;
+    
     const safeIndex = Math.min(internalIndex, Math.max(0, toolCallSnapshots.length - 1));
     const currentSnapshot = toolCallSnapshots[safeIndex];
     const currentToolCall = currentSnapshot?.toolCall;
@@ -337,21 +342,21 @@ export function ToolCallSidePanel({
     
     const toolName = currentToolCall.assistantCall?.name;
     const isCurrentBrowserTool = isBrowserTool(toolName);
-    const isToolStreaming = currentToolCall.toolResult?.content === 'STREAMING';
+    const isCurrentToolStreaming = currentToolCall.toolResult?.content === 'STREAMING';
     
-            // Simple auto-switch logic: only switch when tool is actively streaming
-      if (isToolStreaming) {
-        // Switch to browser view when a browser tool is streaming
-        if (isCurrentBrowserTool && currentViewRef.current === 'tools') {
-          setCurrentView('browser');
-        }
-        
-        // Switch to tools view when a non-browser tool is streaming
-        if (!isCurrentBrowserTool && currentViewRef.current === 'browser') {
-          setCurrentView('tools');
-        }
-      }
-   }, [toolCallSnapshots, internalIndex, isBrowserTool]);
+    // Only switch views for actively streaming tools to avoid switching on completed tools
+    if (!isCurrentToolStreaming) return;
+    
+    // Switch to browser view when a browser tool is actively running
+    if (isCurrentBrowserTool && currentViewRef.current === 'tools') {
+      setCurrentView('browser');
+    }
+    
+    // Switch to tools view when a non-browser tool is actively running
+    if (!isCurrentBrowserTool && currentViewRef.current === 'browser') {
+      setCurrentView('tools');
+    }
+   }, [toolCallSnapshots, internalIndex, isBrowserTool, agentStatus]);
 
   const handleClose = React.useCallback(() => {
     onClose();
@@ -923,33 +928,7 @@ export function ToolCallSidePanel({
           {/* Always render VNC iframe to maintain connection when available */}
           {persistentVncIframe && (
             <div className={`${currentView === 'browser' ? 'h-full flex flex-col' : 'hidden'}`}>
-              {/* Browser-like header */}
-              <div className="flex items-center justify-between px-3 md:px-4 py-2 bg-muted/50 border-b border-border">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-full bg-red-500/80"></div>
-                    <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/80"></div>
-                    <div className="w-2.5 h-2.5 rounded-full bg-green-500/80"></div>
-                  </div>
-                  <div className="h-4 w-px bg-border mx-1 md:mx-2"></div>
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <span className="font-medium hidden sm:inline">Remote Browser</span>
-                    <span className="font-medium sm:hidden">Browser</span>
-                  </div>
-                </div>
-                
-                <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleVncRefresh}
-                    className="h-7 w-7 p-0 hover:bg-muted"
-                    title="Refresh browser view"
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </div>
+              <BrowserHeader isConnected={true} onRefresh={handleVncRefresh} />
               
               {/* VNC iframe container - unchanged */}
               <div className="flex-1 overflow-hidden">
@@ -961,24 +940,7 @@ export function ToolCallSidePanel({
           {/* Show browser not available message when no VNC and browser tab is selected */}
           {!persistentVncIframe && currentView === 'browser' && (
             <div className="h-full flex flex-col">
-              {/* Browser-like header for disconnected state */}
-              <div className="flex items-center justify-between px-3 md:px-4 py-2 bg-muted/30 border-b border-border">
-                <div className="flex items-center gap-2 min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-2.5 h-2.5 rounded-full bg-zinc-300 dark:bg-zinc-600"></div>
-                    <div className="w-2.5 h-2.5 rounded-full bg-zinc-300 dark:bg-zinc-600"></div>
-                    <div className="w-2.5 h-2.5 rounded-full bg-zinc-300 dark:bg-zinc-600"></div>
-                  </div>
-                  <div className="h-4 w-px bg-border mx-1 md:mx-2"></div>
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <span className="font-medium hidden sm:inline">Remote Browser</span>
-                    <span className="font-medium sm:hidden">Browser</span>
-                  </div>
-                </div>
-                
-                <div className="flex items-center gap-1 md:gap-2 flex-shrink-0">
-                </div>
-              </div>
+              <BrowserHeader isConnected={false} />
               
               {/* Message content */}
               <div className="flex-1 flex flex-col items-center justify-center p-8 bg-zinc-50 dark:bg-zinc-900/50">
