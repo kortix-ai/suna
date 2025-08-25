@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from bs4 import BeautifulSoup, NavigableString
+from bs4 import BeautifulSoup, NavigableString, Comment
 
 # Create router
 router = APIRouter(prefix="/api/html", tags=["visual-editor"])
@@ -78,6 +78,24 @@ async def get_editable_elements(file_path: str):
         # Find all elements that could contain text
         all_elements = soup.find_all(TEXT_ELEMENTS + ['div'])
         
+        # Filter out elements that only contain comments
+        filtered_elements = []
+        for element in all_elements:
+            # Check if element only contains comments
+            only_comments = True
+            for child in element.children:
+                if isinstance(child, Comment):
+                    continue
+                if isinstance(child, NavigableString) and not child.strip():
+                    continue
+                only_comments = False
+                break
+                
+            if not only_comments:
+                filtered_elements.append(element)
+                
+        all_elements = filtered_elements
+        
         for element in all_elements:
             # Strategy 1: Elements with ONLY text content (no child elements)
             if element.string and element.string.strip():
@@ -99,6 +117,9 @@ async def get_editable_elements(file_path: str):
                 has_mixed_content = False
                 # Process each child node
                 for child in list(element.contents):  # Use list() to avoid modification during iteration
+                    # Skip comment nodes (Comments are a subclass of NavigableString)
+                    if isinstance(child, Comment):
+                        continue
                     # Check if it's a NavigableString (raw text) with actual content
                     if (isinstance(child, NavigableString) and child.strip()):
                         
@@ -335,6 +356,24 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
     # Find all elements that could contain text
     all_elements = soup.find_all(TEXT_ELEMENTS + ['div'])
     
+    # Filter out elements that only contain comments
+    filtered_elements = []
+    for element in all_elements:
+        # Check if element only contains comments
+        only_comments = True
+        for child in element.children:
+            if isinstance(child, Comment):
+                continue
+            if isinstance(child, NavigableString) and not child.strip():
+                continue
+            only_comments = False
+            break
+            
+        if not only_comments:
+            filtered_elements.append(element)
+            
+    all_elements = filtered_elements
+    
     for element in all_elements:
         # Strategy 1: Elements with ONLY text content (no child elements)
         if element.string and element.string.strip():
@@ -347,6 +386,9 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
             has_mixed_content = False
             # Process each child node
             for child in list(element.contents):  # Use list() to avoid modification during iteration
+                # Skip comment nodes (Comments are a subclass of NavigableString)
+                if isinstance(child, Comment):
+                    continue
                 # Check if it's a NavigableString (raw text) with actual content
                 if (isinstance(child, NavigableString) and child.strip()):
                     
