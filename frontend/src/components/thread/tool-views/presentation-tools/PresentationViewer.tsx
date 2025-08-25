@@ -79,6 +79,7 @@ export function PresentationViewer({
   const [isFullScreenOpen, setIsFullScreenOpen] = useState(false);
   const [fullScreenInitialSlide, setFullScreenInitialSlide] = useState<number | null>(null);
   const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
+  const [isDownloadingPPTX, setIsDownloadingPPTX] = useState(false);
 
   // Extract presentation info from tool data
   const { toolResult } = extractToolData(toolContent);
@@ -505,6 +506,36 @@ export function PresentationViewer({
     }
   };
 
+  const downloadPresentationAsPPTX = async (sandboxUrl: string, presentationName: string): Promise<void> => {
+    try {
+      const response = await fetch(`${sandboxUrl}/presentation/convert-to-pptx`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          presentation_path: `/workspace/presentations/${presentationName}`,
+          download: true
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to download PPTX');
+      }
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${presentationName}.pptx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading PPTX:', error);
+      toast.error(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
 
   const handlePDFDownload = useCallback(async (setIsDownloadingPDF: (isDownloading: boolean) => void) => {
     
@@ -517,6 +548,20 @@ export function PresentationViewer({
       console.error('Error downloading PDF:', error);
     } finally {
       setIsDownloadingPDF(false);
+    }
+  }, [project?.sandbox?.sandbox_url, extractedPresentationName]);
+
+  const handlePPTXDownload = useCallback(async (setIsDownloadingPPTX: (isDownloading: boolean) => void) => {
+    
+    if (!project?.sandbox?.sandbox_url || !extractedPresentationName) return;
+
+    setIsDownloadingPPTX(true);
+    try{
+      await downloadPresentationAsPPTX(project.sandbox.sandbox_url, extractedPresentationName);
+    } catch (error) {
+      console.error('Error downloading PPTX:', error);
+    } finally {
+      setIsDownloadingPPTX(false);
     }
   }, [project?.sandbox?.sandbox_url, extractedPresentationName]);
 
@@ -560,7 +605,7 @@ export function PresentationViewer({
                       className="h-8 w-8 p-0"
                       title="Export presentation"
                     >
-                      {isDownloadingPDF ? (
+                      {(isDownloadingPDF || isDownloadingPPTX) ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       ) : (
                         <Download className="h-3.5 w-3.5" />
@@ -571,16 +616,15 @@ export function PresentationViewer({
                     <DropdownMenuItem 
                       onClick={() => handlePDFDownload(setIsDownloadingPDF)}
                       className="cursor-pointer"
+                      disabled={isDownloadingPPTX}
                     >
                       <FileText className="h-4 w-4 mr-2" />
                       PDF
                     </DropdownMenuItem>
                     <DropdownMenuItem 
-                      onClick={() => {
-                        // TODO: Implement PPTX export
-                        console.log('Export as PPTX');
-                      }}
+                      onClick={() => handlePPTXDownload(setIsDownloadingPPTX)}
                       className="cursor-pointer"
+                      disabled={isDownloadingPDF}
                     >
                       <Presentation className="h-4 w-4 mr-2" />
                       PPTX
@@ -591,6 +635,7 @@ export function PresentationViewer({
                         console.log('Export to Google Slides');
                       }}
                       className="cursor-pointer"
+                      disabled={isDownloadingPDF || isDownloadingPPTX}
                     >
                       <ExternalLink className="h-4 w-4 mr-2" />
                       Google Slides
@@ -781,6 +826,7 @@ export function PresentationViewer({
         sandboxUrl={project?.sandbox?.sandbox_url}
         initialSlide={fullScreenInitialSlide || visibleSlide || currentSlideNumber || slides[0]?.number || 1}
         onPDFDownload={handlePDFDownload}
+        onPPTXDownload={handlePPTXDownload}
       />
     </Card>
   );

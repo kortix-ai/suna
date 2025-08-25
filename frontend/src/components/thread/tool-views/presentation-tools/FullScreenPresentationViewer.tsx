@@ -46,6 +46,7 @@ interface FullScreenPresentationViewerProps {
   sandboxUrl?: string;
   initialSlide?: number;
   onPDFDownload?: (setIsDownloadingPDF: (isDownloading: boolean) => void) => void;
+  onPPTXDownload?: (setIsDownloadingPPTX: (isDownloading: boolean) => void) => void;
 }
 
 export function FullScreenPresentationViewer({
@@ -55,6 +56,7 @@ export function FullScreenPresentationViewer({
   sandboxUrl,
   initialSlide = 1,
   onPDFDownload,
+  onPPTXDownload,
 }: FullScreenPresentationViewerProps) {
   const [metadata, setMetadata] = useState<PresentationMetadata | null>(null);
   const [currentSlide, setCurrentSlide] = useState(initialSlide);
@@ -65,6 +67,7 @@ export function FullScreenPresentationViewer({
   const [showControls, setShowControls] = useState(true);
   const [showEditor, setShowEditor] = useState(false);
   const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
+  const [isDownloadingPPTX, setIsDownloadingPPTX] = useState(false);
   
   // Create a stable refresh timestamp when metadata changes (like PresentationViewer)
   const refreshTimestamp = useMemo(() => Date.now(), [metadata]);
@@ -418,7 +421,7 @@ export function FullScreenPresentationViewer({
                   className="h-8 w-8 p-0"
                   title="Export presentation"
                 >
-                  {isDownloadingPDF ? (
+                  {(isDownloadingPDF || isDownloadingPPTX) ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
                     <Download className="h-3.5 w-3.5" />
@@ -430,7 +433,7 @@ export function FullScreenPresentationViewer({
                   <FileText className="h-4 w-4 mr-2" />
                   PDF
                 </DropdownMenuItem>
-                <DropdownMenuItem className="cursor-pointer">
+                <DropdownMenuItem className="cursor-pointer" onClick={() => onPPTXDownload(setIsDownloadingPPTX)}>
                   <Presentation className="h-4 w-4 mr-2" />
                   PPTX
                 </DropdownMenuItem>
