@@ -241,7 +241,7 @@ export default function APIKeysPage() {
             <h1 className="text-2xl font-bold">API Keys</h1>
           </div>
           <p className="text-muted-foreground">
-            Manage your API keys for programmatic access to Suna
+            Manage your API keys for programmatic access to your agents
           </p>
         </div>
 
@@ -277,6 +277,59 @@ export default function APIKeysPage() {
                     className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
                   >
                     <span>View SDK Documentation</span>
+                    <ExternalLink className="w-4 h-4" />
+                  </a>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Claude Code Integration Notice */}
+        <Card className="border-purple-200/60 bg-gradient-to-br from-purple-50/80 to-violet-50/40 dark:from-purple-950/20 dark:to-violet-950/10 dark:border-purple-800/30">
+          <CardContent className="p-6">
+            <div className="flex items-start gap-4">
+              <div className="relative">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500/20 to-violet-600/10 border border-purple-500/20">
+                  <Shield className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div className="absolute -top-1 -right-1">
+                  <Badge variant="secondary" className="h-5 px-1.5 text-xs bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900/30 dark:text-purple-300 dark:border-purple-700">
+                    New
+                  </Badge>
+                </div>
+              </div>
+              <div className="flex-1 space-y-3">
+                <div>
+                  <h3 className="text-base font-semibold text-purple-900 dark:text-purple-100 mb-1">
+                    Claude Code Integration
+                  </h3>
+                  <p className="text-sm text-purple-700 dark:text-purple-300 leading-relaxed mb-3">
+                    Connect your agents to Claude Code for seamless AI-powered collaboration. 
+                    Use your API key to add an MCP server in Claude Code.
+                  </p>
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-purple-800 dark:text-purple-200 mb-1">
+                    Connection Command:
+                  </p>
+                  <div className="bg-purple-900/10 dark:bg-purple-900/30 border border-purple-200/50 dark:border-purple-700/50 rounded-lg p-3">
+                    <code className="text-xs font-mono text-purple-800 dark:text-purple-200 break-all">
+                      claude mcp add AgentPress https://YOUR_DOMAIN/api/mcp --header "Authorization=Bearer YOUR_API_KEY"
+                    </code>
+                  </div>
+                  <p className="text-xs text-purple-600 dark:text-purple-400">
+                    Replace  <code className="bg-purple-100 dark:bg-purple-900/50 px-1 rounded">YOUR_DOMAIN</code> and <code className="bg-purple-100 dark:bg-purple-900/50 px-1 rounded">YOUR_API_KEY</code> with your actual API key from below.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <a 
+                    href="https://docs.anthropic.com/en/docs/claude-code/mcp" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 text-sm font-medium text-purple-600 hover:text-purple-800 dark:text-purple-400 dark:hover:text-purple-300 transition-colors"
+                  >
+                    <span>Learn about Claude Code MCP</span>
                     <ExternalLink className="w-4 h-4" />
                   </a>
                 </div>

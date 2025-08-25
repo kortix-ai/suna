@@ -133,7 +133,20 @@ async def log_requests_middleware(request: Request, call_next):
 allowed_origins = ["https://www.suna.so", "https://suna.so"]
 allow_origin_regex = None
 
-# Add staging-specific origins
+# Add Claude Code origins for MCP
+allowed_origins.extend([
+    "https://claude.ai",
+    "https://www.claude.ai", 
+    "https://app.claude.ai",
+    "http://localhost",
+    "http://127.0.0.1",
+    "http://192.168.1.1"
+])
+
+# Add wildcard for local development and Claude Code CLI
+allow_origin_regex = r"https://.*\.claude\.ai|http://localhost.*|http://127\.0\.0\.1.*|http://192\.168\..*|http://10\..*"
+
+# Add local environment origins
 if config.ENV_MODE == EnvMode.LOCAL:
     allowed_origins.append("http://localhost:3000")
 
@@ -149,7 +162,7 @@ app.add_middleware(
     allow_origin_regex=allow_origin_regex,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Project-Id", "X-MCP-URL", "X-MCP-Type", "X-MCP-Headers", "X-Refresh-Token", "X-API-Key"],
+    allow_headers=["Content-Type", "Authorization", "X-Project-Id", "X-MCP-URL", "X-MCP-Type", "X-MCP-Headers", "X-Refresh-Token", "X-API-Key", "Mcp-Session-Id"],
 )
 
 # Create a main API router
@@ -190,6 +203,41 @@ api_router.include_router(admin_api.router)
 
 from composio_integration import api as composio_api
 api_router.include_router(composio_api.router)
+
+# Include MCP Kortix Layer
+from mcp_kortix_layer import mcp_router
+api_router.include_router(mcp_router)
+
+# Add OAuth discovery endpoints at root level for Claude Code MCP
+@api_router.get("/.well-known/oauth-authorization-server")
+async def oauth_authorization_server():
+    """OAuth authorization server metadata for Claude Code MCP"""
+    return {
+        "issuer": "https://api2.restoned.app",
+        "authorization_endpoint": "https://api2.restoned.app/api/mcp/oauth/authorize",
+        "token_endpoint": "https://api2.restoned.app/api/mcp/oauth/token",
+        "registration_endpoint": "https://api2.restoned.app/register",
+        "response_types_supported": ["code"],
+        "grant_types_supported": ["authorization_code"],
+        "token_endpoint_auth_methods_supported": ["none"]
+    }
+
+@api_router.get("/.well-known/oauth-protected-resource")
+async def oauth_protected_resource():
+    """OAuth protected resource metadata for Claude Code MCP"""
+    return {
+        "resource": "https://api2.restoned.app/api/mcp",
+        "authorization_servers": ["https://api2.restoned.app"]
+    }
+
+@api_router.post("/register")
+async def oauth_register():
+    """OAuth client registration for Claude Code MCP"""
+    return {
+        "client_id": "claude-code-mcp-client",
+        "client_secret": "not-required-for-api-key-auth",
+        "message": "AgentPress MCP uses API key authentication - provide your key via Authorization header"
+    }
 
 @api_router.get("/health")
 async def health_check():
