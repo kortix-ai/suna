@@ -604,6 +604,7 @@ export function PresentationViewer({
                       size="sm" 
                       className="h-8 w-8 p-0"
                       title="Export presentation"
+                      disabled={isDownloadingPDF || isDownloadingPPTX}
                     >
                       {(isDownloadingPDF || isDownloadingPPTX) ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -616,7 +617,7 @@ export function PresentationViewer({
                     <DropdownMenuItem 
                       onClick={() => handlePDFDownload(setIsDownloadingPDF)}
                       className="cursor-pointer"
-                      disabled={isDownloadingPPTX}
+                      disabled={isDownloadingPDF}
                     >
                       <FileText className="h-4 w-4 mr-2" />
                       PDF
@@ -624,7 +625,7 @@ export function PresentationViewer({
                     <DropdownMenuItem 
                       onClick={() => handlePPTXDownload(setIsDownloadingPPTX)}
                       className="cursor-pointer"
-                      disabled={isDownloadingPDF}
+                      disabled={isDownloadingPPTX}
                     >
                       <Presentation className="h-4 w-4 mr-2" />
                       PPTX

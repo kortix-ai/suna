@@ -420,6 +420,7 @@ export function FullScreenPresentationViewer({
                   size="sm" 
                   className="h-8 w-8 p-0"
                   title="Export presentation"
+                  disabled={isDownloadingPDF || isDownloadingPPTX}
                 >
                   {(isDownloadingPDF || isDownloadingPPTX) ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -429,11 +430,11 @@ export function FullScreenPresentationViewer({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-32">
-                <DropdownMenuItem className="cursor-pointer" onClick={() => onPDFDownload(setIsDownloadingPDF)}>
+                <DropdownMenuItem className="cursor-pointer" onClick={() => onPDFDownload(setIsDownloadingPDF)} disabled={isDownloadingPDF}>
                   <FileText className="h-4 w-4 mr-2" />
                   PDF
                 </DropdownMenuItem>
-                <DropdownMenuItem className="cursor-pointer" onClick={() => onPPTXDownload(setIsDownloadingPPTX)}>
+                <DropdownMenuItem className="cursor-pointer" onClick={() => onPPTXDownload(setIsDownloadingPPTX)} disabled={isDownloadingPPTX}>
                   <Presentation className="h-4 w-4 mr-2" />
                   PPTX
                 </DropdownMenuItem>
