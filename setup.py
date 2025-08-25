@@ -148,11 +148,6 @@ def load_existing_env_vars():
             "WEBHOOK_BASE_URL": backend_env.get("WEBHOOK_BASE_URL", ""),
             "TRIGGER_WEBHOOK_SECRET": backend_env.get("TRIGGER_WEBHOOK_SECRET", ""),
         },
-        "slack": {
-            "SLACK_CLIENT_ID": backend_env.get("SLACK_CLIENT_ID", ""),
-            "SLACK_CLIENT_SECRET": backend_env.get("SLACK_CLIENT_SECRET", ""),
-            "SLACK_REDIRECT_URI": backend_env.get("SLACK_REDIRECT_URI", ""),
-        },
         "mcp": {
             "MCP_CREDENTIAL_ENCRYPTION_KEY": backend_env.get(
                 "MCP_CREDENTIAL_ENCRYPTION_KEY", ""
@@ -271,7 +266,6 @@ class SetupWizard:
             "search": existing_env_vars["search"],
             "rapidapi": existing_env_vars["rapidapi"],
             "cron": existing_env_vars.get("cron", {}),
-            "slack": existing_env_vars["slack"],
             "webhook": existing_env_vars["webhook"],
             "mcp": existing_env_vars["mcp"],
             "pipedream": existing_env_vars["pipedream"],
@@ -330,33 +324,35 @@ class SetupWizard:
 
         # Check RapidAPI (optional)
         if self.env_vars["rapidapi"]["RAPID_API_KEY"]:
-            config_items.append(f"{Colors.GREEN}✓{Colors.ENDC} RapidAPI (optional)")
+            config_items.append(
+                f"{Colors.GREEN}✓{Colors.ENDC} RapidAPI (optional)")
         else:
-            config_items.append(f"{Colors.CYAN}○{Colors.ENDC} RapidAPI (optional)")
+            config_items.append(
+                f"{Colors.CYAN}○{Colors.ENDC} RapidAPI (optional)")
 
         # Check Cron/Webhook setup
         if self.env_vars["webhook"]["WEBHOOK_BASE_URL"]:
-            config_items.append(f"{Colors.GREEN}✓{Colors.ENDC} Supabase Cron & Webhooks")
+            config_items.append(
+                f"{Colors.GREEN}✓{Colors.ENDC} Supabase Cron & Webhooks")
         else:
-            config_items.append(f"{Colors.YELLOW}○{Colors.ENDC} Supabase Cron & Webhooks")
+            config_items.append(
+                f"{Colors.YELLOW}○{Colors.ENDC} Supabase Cron & Webhooks")
 
         # Check MCP encryption key
         if self.env_vars["mcp"]["MCP_CREDENTIAL_ENCRYPTION_KEY"]:
-            config_items.append(f"{Colors.GREEN}✓{Colors.ENDC} MCP encryption key")
+            config_items.append(
+                f"{Colors.GREEN}✓{Colors.ENDC} MCP encryption key")
         else:
-            config_items.append(f"{Colors.YELLOW}○{Colors.ENDC} MCP encryption key")
+            config_items.append(
+                f"{Colors.YELLOW}○{Colors.ENDC} MCP encryption key")
 
         # Check Pipedream configuration
         if self.env_vars["pipedream"]["PIPEDREAM_PROJECT_ID"]:
-            config_items.append(f"{Colors.GREEN}✓{Colors.ENDC} Pipedream (optional)")
+            config_items.append(
+                f"{Colors.GREEN}✓{Colors.ENDC} Pipedream (optional)")
         else:
-            config_items.append(f"{Colors.CYAN}○{Colors.ENDC} Pipedream (optional)")
-
-        # Check Slack configuration
-        if self.env_vars["slack"]["SLACK_CLIENT_ID"]:
-            config_items.append(f"{Colors.GREEN}✓{Colors.ENDC} Slack (optional)")
-        else:
-            config_items.append(f"{Colors.CYAN}○{Colors.ENDC} Slack (optional)")
+            config_items.append(
+                f"{Colors.CYAN}○{Colors.ENDC} Pipedream (optional)")
 
         # Check Webhook configuration
         if self.env_vars["webhook"]["WEBHOOK_BASE_URL"]:
@@ -366,11 +362,14 @@ class SetupWizard:
 
         # Check Morph (optional but recommended)
         if self.env_vars["llm"].get("MORPH_API_KEY"):
-            config_items.append(f"{Colors.GREEN}✓{Colors.ENDC} Morph (Code Editing)")
+            config_items.append(
+                f"{Colors.GREEN}✓{Colors.ENDC} Morph (Code Editing)")
         elif self.env_vars["llm"].get("OPENROUTER_API_KEY"):
-            config_items.append(f"{Colors.CYAN}○{Colors.ENDC} Morph (fallback to OpenRouter)")
+            config_items.append(
+                f"{Colors.CYAN}○{Colors.ENDC} Morph (fallback to OpenRouter)")
         else:
-            config_items.append(f"{Colors.YELLOW}○{Colors.ENDC} Morph (recommended)")
+            config_items.append(
+                f"{Colors.YELLOW}○{Colors.ENDC} Morph (recommended)")
 
         # Check Kortix configuration
         if self.env_vars["kortix"]["KORTIX_ADMIN_API_KEY"]:
@@ -408,12 +407,11 @@ class SetupWizard:
             self.run_step(10, self.collect_webhook_keys)
             self.run_step(11, self.collect_mcp_keys)
             self.run_step(12, self.collect_pipedream_keys)
-            self.run_step(13, self.collect_slack_keys)
             # Removed duplicate webhook collection step
-            self.run_step(14, self.configure_env_files)
-            self.run_step(15, self.setup_supabase_database)
-            self.run_step(16, self.install_dependencies)
-            self.run_step(17, self.start_suna)
+            self.run_step(13, self.configure_env_files)
+            self.run_step(14, self.setup_supabase_database)
+            self.run_step(15, self.install_dependencies)
+            self.run_step(16, self.start_suna)
 
             self.final_instructions()
 
@@ -669,8 +667,10 @@ class SetupWizard:
             f"Visit {Colors.GREEN}https://app.daytona.io/dashboard/snapshots{Colors.ENDC}{Colors.CYAN} to create a snapshot."
         )
         print_info("Create a snapshot with these exact settings:")
-        print_info(f"   - Name:\t\t{Colors.GREEN}kortix/suna:0.1.3.11{Colors.ENDC}")
-        print_info(f"   - Snapshot name:\t{Colors.GREEN}kortix/suna:0.1.3.11{Colors.ENDC}")
+        print_info(
+            f"   - Name:\t\t{Colors.GREEN}kortix/suna:0.1.3.11{Colors.ENDC}")
+        print_info(
+            f"   - Snapshot name:\t{Colors.GREEN}kortix/suna:0.1.3.11{Colors.ENDC}")
         print_info(
             f"   - Entrypoint:\t{Colors.GREEN}/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf{Colors.ENDC}"
         )
@@ -690,7 +690,8 @@ class SetupWizard:
             print_info("Found existing LLM API keys:")
             for key, value in existing_keys.items():
                 provider_name = key.split("_")[0].capitalize()
-                print_info(f"  - {provider_name}: {mask_sensitive_value(value)}")
+                print_info(
+                    f"  - {provider_name}: {mask_sensitive_value(value)}")
             print_info(
                 "You can add more providers or press Enter to keep existing configuration."
             )
@@ -722,7 +723,8 @@ class SetupWizard:
                 status = (
                     f" {Colors.GREEN}(configured){Colors.ENDC}" if current_value else ""
                 )
-                print(f"{Colors.CYAN}[{key}] {Colors.GREEN}{name}{Colors.ENDC}{status}")
+                print(
+                    f"{Colors.CYAN}[{key}] {Colors.GREEN}{name}{Colors.ENDC}{status}")
 
             # Allow Enter to skip if we already have keys configured
             if has_existing:
@@ -735,10 +737,12 @@ class SetupWizard:
                 choices_input = input("Select providers: ").strip()
 
             choices = choices_input.replace(",", " ").split()
-            selected_keys = {providers[c][1] for c in choices if c in providers}
+            selected_keys = {providers[c][1]
+                             for c in choices if c in providers}
 
             if not selected_keys and not has_existing:
-                print_error("Invalid selection. Please choose at least one provider.")
+                print_error(
+                    "Invalid selection. Please choose at least one provider.")
                 continue
 
             for key in selected_keys:
@@ -756,32 +760,37 @@ class SetupWizard:
 
     def collect_morph_api_key(self):
         """Collects the optional MorphLLM API key for code editing."""
-        print_step(6, self.total_steps, "Configure AI-Powered Code Editing (Optional)")
+        print_step(6, self.total_steps,
+                   "Configure AI-Powered Code Editing (Optional)")
 
         existing_key = self.env_vars["llm"].get("MORPH_API_KEY", "")
         openrouter_key = self.env_vars["llm"].get("OPENROUTER_API_KEY", "")
 
         if existing_key:
-            print_info(f"Found existing Morph API key: {mask_sensitive_value(existing_key)}")
+            print_info(
+                f"Found existing Morph API key: {mask_sensitive_value(existing_key)}")
             print_info("AI-powered code editing is enabled using Morph.")
             return
 
         print_info("Suna uses Morph for fast, intelligent code editing.")
-        print_info("This is optional but highly recommended for the best experience.")
+        print_info(
+            "This is optional but highly recommended for the best experience.")
 
         if openrouter_key:
             print_info(
                 f"An OpenRouter API key is already configured. It can be used as a fallback for code editing if you don't provide a Morph key."
             )
-        
+
         while True:
-            choice = input("Do you want to add a Morph API key now? (y/n): ").lower().strip()
+            choice = input(
+                "Do you want to add a Morph API key now? (y/n): ").lower().strip()
             if choice in ['y', 'n', '']:
                 break
             print_error("Invalid input. Please enter 'y' or 'n'.")
-        
+
         if choice == 'y':
-            print_info("Great! Please get your API key from: https://morphllm.com/api-keys")
+            print_info(
+                "Great! Please get your API key from: https://morphllm.com/api-keys")
             morph_api_key = self._get_input(
                 "Enter your Morph API key (or press Enter to skip): ",
                 validate_api_key,
@@ -791,21 +800,27 @@ class SetupWizard:
             )
             if morph_api_key:
                 self.env_vars["llm"]["MORPH_API_KEY"] = morph_api_key
-                print_success("Morph API key saved. AI-powered code editing is enabled.")
+                print_success(
+                    "Morph API key saved. AI-powered code editing is enabled.")
             else:
                 if openrouter_key:
-                    print_info("Skipping Morph key. OpenRouter will be used for code editing.")
+                    print_info(
+                        "Skipping Morph key. OpenRouter will be used for code editing.")
                 else:
-                    print_warning("Skipping Morph key. Code editing will use a less capable model.")
+                    print_warning(
+                        "Skipping Morph key. Code editing will use a less capable model.")
         else:
             if openrouter_key:
-                print_info("Okay, OpenRouter will be used as a fallback for code editing.")
+                print_info(
+                    "Okay, OpenRouter will be used as a fallback for code editing.")
             else:
-                print_warning("Okay, code editing will use a less capable model without a Morph or OpenRouter key.")
+                print_warning(
+                    "Okay, code editing will use a less capable model without a Morph or OpenRouter key.")
 
     def collect_search_api_keys(self):
         """Collects API keys for search and web scraping tools."""
-        print_step(7, self.total_steps, "Collecting Search and Scraping API Keys")
+        print_step(7, self.total_steps,
+                   "Collecting Search and Scraping API Keys")
 
         # Check if we already have values configured
         has_existing = any(self.env_vars["search"].values())
@@ -814,7 +829,8 @@ class SetupWizard:
                 "Found existing search API keys. Press Enter to keep current values or type new ones."
             )
         else:
-            print_info("Suna uses Tavily for search and Firecrawl for web scraping.")
+            print_info(
+                "Suna uses Tavily for search and Firecrawl for web scraping.")
             print_info(
                 "Get a Tavily key at https://tavily.com and a Firecrawl key at https://firecrawl.dev"
             )
@@ -877,7 +893,8 @@ class SetupWizard:
             )
             print_info("Press Enter to keep current value or type a new one.")
         else:
-            print_info("A RapidAPI key enables extra tools like LinkedIn scraping.")
+            print_info(
+                "A RapidAPI key enables extra tools like LinkedIn scraping.")
             print_info(
                 "Get a key at https://rapidapi.com/. You can skip this and add it later."
             )
@@ -907,12 +924,12 @@ class SetupWizard:
             )
             print_info("Using existing admin API key.")
         else:
-            print_info("Generating a secure admin API key for Kortix administrative functions...")
+            print_info(
+                "Generating a secure admin API key for Kortix administrative functions...")
             self.env_vars["kortix"]["KORTIX_ADMIN_API_KEY"] = generate_admin_api_key()
             print_success("Kortix admin API key generated.")
 
         print_success("Kortix admin configuration saved.")
-
 
     def collect_mcp_keys(self):
         """Collects the MCP configuration."""
@@ -926,7 +943,8 @@ class SetupWizard:
             )
             print_info("Using existing encryption key.")
         else:
-            print_info("Generating a secure encryption key for MCP credentials...")
+            print_info(
+                "Generating a secure encryption key for MCP credentials...")
             self.env_vars["mcp"][
                 "MCP_CREDENTIAL_ENCRYPTION_KEY"
             ] = generate_encryption_key()
@@ -936,7 +954,8 @@ class SetupWizard:
 
     def collect_pipedream_keys(self):
         """Collects the optional Pipedream configuration."""
-        print_step(12, self.total_steps, "Collecting Pipedream Configuration (Optional)")
+        print_step(12, self.total_steps,
+                   "Collecting Pipedream Configuration (Optional)")
 
         # Check if we already have values configured
         has_existing = any(self.env_vars["pipedream"].values())
@@ -945,13 +964,16 @@ class SetupWizard:
                 "Found existing Pipedream configuration. Press Enter to keep current values or type new ones."
             )
         else:
-            print_info("Pipedream enables workflow automation and MCP integrations.")
-            print_info("Create a Pipedream Connect project at https://pipedream.com/connect to get your credentials.")
+            print_info(
+                "Pipedream enables workflow automation and MCP integrations.")
+            print_info(
+                "Create a Pipedream Connect project at https://pipedream.com/connect to get your credentials.")
             print_info("You can skip this step and configure Pipedream later.")
 
         # Ask if user wants to configure Pipedream
         if not has_existing:
-            configure_pipedream = input("Do you want to configure Pipedream integration? (y/N): ").lower().strip()
+            configure_pipedream = input(
+                "Do you want to configure Pipedream integration? (y/N): ").lower().strip()
             if configure_pipedream != 'y':
                 print_info("Skipping Pipedream configuration.")
                 return
@@ -963,7 +985,7 @@ class SetupWizard:
             allow_empty=True,
             default_value=self.env_vars["pipedream"]["PIPEDREAM_PROJECT_ID"],
         )
-        
+
         if self.env_vars["pipedream"]["PIPEDREAM_PROJECT_ID"]:
             self.env_vars["pipedream"]["PIPEDREAM_CLIENT_ID"] = self._get_input(
                 "Enter your Pipedream Client ID: ",
@@ -971,81 +993,29 @@ class SetupWizard:
                 "Invalid Pipedream Client ID format. It should be a valid client ID.",
                 default_value=self.env_vars["pipedream"]["PIPEDREAM_CLIENT_ID"],
             )
-            
+
             self.env_vars["pipedream"]["PIPEDREAM_CLIENT_SECRET"] = self._get_input(
                 "Enter your Pipedream Client Secret: ",
                 validate_api_key,
                 "Invalid Pipedream Client Secret format. It should be a valid client secret.",
                 default_value=self.env_vars["pipedream"]["PIPEDREAM_CLIENT_SECRET"],
             )
-            
+
             # Set default environment if not already configured
             if not self.env_vars["pipedream"]["PIPEDREAM_X_PD_ENVIRONMENT"]:
                 self.env_vars["pipedream"]["PIPEDREAM_X_PD_ENVIRONMENT"] = "development"
-            
+
             self.env_vars["pipedream"]["PIPEDREAM_X_PD_ENVIRONMENT"] = self._get_input(
                 "Enter your Pipedream Environment (development/production): ",
-                lambda x, allow_empty=False: x.lower() in ["development", "production"] or allow_empty,
+                lambda x, allow_empty=False: x.lower(
+                ) in ["development", "production"] or allow_empty,
                 "Invalid environment. Please enter 'development' or 'production'.",
                 default_value=self.env_vars["pipedream"]["PIPEDREAM_X_PD_ENVIRONMENT"],
             )
-            
+
             print_success("Pipedream configuration saved.")
         else:
             print_info("Skipping Pipedream configuration.")
-
-    def collect_slack_keys(self):
-        """Collects the optional Slack configuration."""
-        print_step(13, self.total_steps, "Collecting Slack Configuration (Optional)")
-
-        # Check if we already have values configured
-        has_existing = any(self.env_vars["slack"].values())
-        if has_existing:
-            print_info(
-                "Found existing Slack configuration. Press Enter to keep current values or type new ones."
-            )
-        else:
-            print_info("Slack integration enables communication and notifications.")
-            print_info("Create a Slack app at https://api.slack.com/apps to get your credentials.")
-            print_info("You can skip this step and configure Slack later.")
-
-        # Ask if user wants to configure Slack
-        if not has_existing:
-            configure_slack = input("Do you want to configure Slack integration? (y/N): ").lower().strip()
-            if configure_slack != 'y':
-                print_info("Skipping Slack configuration.")
-                return
-
-        self.env_vars["slack"]["SLACK_CLIENT_ID"] = self._get_input(
-            "Enter your Slack Client ID (or press Enter to skip): ",
-            validate_api_key,
-            "Invalid Slack Client ID format. It should be a valid API key.",
-            allow_empty=True,
-            default_value=self.env_vars["slack"]["SLACK_CLIENT_ID"],
-        )
-        
-        if self.env_vars["slack"]["SLACK_CLIENT_ID"]:
-            self.env_vars["slack"]["SLACK_CLIENT_SECRET"] = self._get_input(
-                "Enter your Slack Client Secret: ",
-                validate_api_key,
-                "Invalid Slack Client Secret format. It should be a valid API key.",
-                default_value=self.env_vars["slack"]["SLACK_CLIENT_SECRET"],
-            )
-            
-            # Set default redirect URI if not already configured
-            if not self.env_vars["slack"]["SLACK_REDIRECT_URI"]:
-                self.env_vars["slack"]["SLACK_REDIRECT_URI"] = "http://localhost:3000/api/integrations/slack/callback"
-            
-            self.env_vars["slack"]["SLACK_REDIRECT_URI"] = self._get_input(
-                "Enter your Slack Redirect URI: ",
-                validate_url,
-                "Invalid Slack Redirect URI format. It should be a valid URL.",
-                default_value=self.env_vars["slack"]["SLACK_REDIRECT_URI"],
-            )
-            
-            print_success("Slack configuration saved.")
-        else:
-            print_info("Skipping Slack configuration.")
 
     def collect_webhook_keys(self):
         """Collects the webhook configuration."""
@@ -1059,9 +1029,12 @@ class SetupWizard:
             )
             print_info("Press Enter to keep current value or type a new one.")
         else:
-            print_info("Webhook base URL is required for workflows to receive callbacks.")
-            print_info("This must be a publicly accessible URL where Suna API can receive webhooks from Supabase Cron.")
-            print_info("For local development, you can use services like ngrok or localtunnel to expose http://localhost:8000 to the internet.")
+            print_info(
+                "Webhook base URL is required for workflows to receive callbacks.")
+            print_info(
+                "This must be a publicly accessible URL where Suna API can receive webhooks from Supabase Cron.")
+            print_info(
+                "For local development, you can use services like ngrok or localtunnel to expose http://localhost:8000 to the internet.")
 
         self.env_vars["webhook"]["WEBHOOK_BASE_URL"] = self._get_input(
             "Enter your webhook base URL (e.g., https://your-domain.ngrok.io): ",
@@ -1072,11 +1045,14 @@ class SetupWizard:
 
         # Ensure a webhook secret exists; generate a strong default if missing
         if not self.env_vars["webhook"].get("TRIGGER_WEBHOOK_SECRET"):
-            print_info("Generating a secure TRIGGER_WEBHOOK_SECRET for webhook authentication...")
-            self.env_vars["webhook"]["TRIGGER_WEBHOOK_SECRET"] = generate_webhook_secret()
+            print_info(
+                "Generating a secure TRIGGER_WEBHOOK_SECRET for webhook authentication...")
+            self.env_vars["webhook"]["TRIGGER_WEBHOOK_SECRET"] = generate_webhook_secret(
+            )
             print_success("Webhook secret generated.")
         else:
-            print_info("Found existing TRIGGER_WEBHOOK_SECRET. Keeping existing value.")
+            print_info(
+                "Found existing TRIGGER_WEBHOOK_SECRET. Keeping existing value.")
 
         print_success("Webhook configuration saved.")
 
@@ -1088,6 +1064,12 @@ class SetupWizard:
         is_docker = self.env_vars["setup_method"] == "docker"
         redis_host = "redis" if is_docker else "localhost"
 
+        # Generate ENCRYPTION_KEY using the same logic as generate_encryption_key()
+        import base64
+        import secrets
+        encryption_key = base64.b64encode(
+            secrets.token_bytes(32)).decode("utf-8")
+
         backend_env = {
             "ENV_MODE": "local",
             **self.env_vars["supabase"],
@@ -1097,12 +1079,12 @@ class SetupWizard:
             **self.env_vars["search"],
             **self.env_vars["rapidapi"],
             **self.env_vars.get("cron", {}),
-            **self.env_vars["slack"],
             **self.env_vars["webhook"],
             **self.env_vars["mcp"],
             **self.env_vars["pipedream"],
             **self.env_vars["daytona"],
             **self.env_vars["kortix"],
+            "ENCRYPTION_KEY": encryption_key,
             "NEXT_PUBLIC_URL": "http://localhost:3000",
         }
 
@@ -1112,7 +1094,7 @@ class SetupWizard:
 
         with open(os.path.join("backend", ".env"), "w") as f:
             f.write(backend_env_content)
-        print_success("Created backend/.env file.")
+        print_success("Created backend/.env file with ENCRYPTION_KEY.")
 
         # --- Frontend .env.local ---
         frontend_env = {
@@ -1177,7 +1159,8 @@ class SetupWizard:
             print_error(
                 "Supabase CLI not found. Install it from: https://supabase.com/docs/guides/cli"
             )
-            print_info("You can skip this step and set up the database manually later.")
+            print_info(
+                "You can skip this step and set up the database manually later.")
             skip_due_to_cli = (
                 input("Skip database setup due to missing CLI? (y/N): ").lower().strip()
             )
@@ -1189,7 +1172,8 @@ class SetupWizard:
         supabase_url = self.env_vars["supabase"]["SUPABASE_URL"]
         match = re.search(r"https://([^.]+)\.supabase\.co", supabase_url)
         if not match:
-            print_error(f"Could not extract project reference from URL: {supabase_url}")
+            print_error(
+                f"Could not extract project reference from URL: {supabase_url}")
             sys.exit(1)
         project_ref = match.group(1)
         print_info(f"Detected Supabase project reference: {project_ref}")
@@ -1212,7 +1196,8 @@ class SetupWizard:
             )
             print_success("Database migrations pushed successfully.")
 
-            print_warning("IMPORTANT: You must manually expose the 'basejump' schema.")
+            print_warning(
+                "IMPORTANT: You must manually expose the 'basejump' schema.")
             print_info(
                 "In your Supabase dashboard, go to: Project Settings -> Data API -> Exposed schemas"
             )
@@ -1265,7 +1250,8 @@ class SetupWizard:
 
         except subprocess.SubprocessError as e:
             print_error(f"Failed to install dependencies: {e}")
-            print_info("Please install dependencies manually and run the script again.")
+            print_info(
+                "Please install dependencies manually and run the script again.")
             sys.exit(1)
 
     def start_suna(self):
@@ -1301,11 +1287,13 @@ class SetupWizard:
                 )
                 sys.exit(1)
         else:
-            print_info("All configurations are complete. Manual start is required.")
+            print_info(
+                "All configurations are complete. Manual start is required.")
 
     def final_instructions(self):
         """Shows final instructions to the user."""
-        print(f"\n{Colors.GREEN}{Colors.BOLD}✨ Suna Setup Complete! ✨{Colors.ENDC}\n")
+        print(
+            f"\n{Colors.GREEN}{Colors.BOLD}✨ Suna Setup Complete! ✨{Colors.ENDC}\n")
 
         print_info(
             f"Suna is configured with your LLM API keys and ready to use."
@@ -1338,10 +1326,12 @@ class SetupWizard:
             )
             print(f"{Colors.CYAN}   docker compose up redis -d{Colors.ENDC}")
 
-            print(f"\n{Colors.BOLD}2. Start Frontend (in a new terminal):{Colors.ENDC}")
+            print(
+                f"\n{Colors.BOLD}2. Start Frontend (in a new terminal):{Colors.ENDC}")
             print(f"{Colors.CYAN}   cd frontend && npm run dev{Colors.ENDC}")
 
-            print(f"\n{Colors.BOLD}3. Start Backend (in a new terminal):{Colors.ENDC}")
+            print(
+                f"\n{Colors.BOLD}3. Start Backend (in a new terminal):{Colors.ENDC}")
             print(f"{Colors.CYAN}   cd backend && uv run api.py{Colors.ENDC}")
 
             print(

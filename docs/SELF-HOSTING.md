@@ -1,328 +1,274 @@
 # Suna Self-Hosting Guide
 
-This guide provides detailed instructions for setting up and hosting your own instance of Suna, an open-source generalist AI Worker.
+This guide walks you through hosting your own Suna instance, including required environment variables and two deployment options: with Docker and without Docker.
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Prerequisites](#prerequisites)
-- [Installation Steps](#installation-steps)
-- [Manual Configuration](#manual-configuration)
-- [Post-Installation Steps](#post-installation-steps)
-- [Troubleshooting](#troubleshooting)
+- Overview
+- Prerequisites
+  - 1.  Supabase Project
+  - 2.  API Keys (Required vs Optional)
+  - 3.  Required Software
+- Installation Steps
+- Environment Configuration
+  - Backend (.env)
+  - Frontend (.env.local)
+- Hosting Options
+  - A. With Docker (recommended)
+  - B. Without Docker (manual)
+- Post‑Installation Checks
+- Troubleshooting
 
 ## Overview
 
-Suna consists of four main components:
+Suna is composed of:
 
-1. **Backend API** - Python/FastAPI service for REST endpoints, thread management, and LLM integration
-2. **Backend Worker** - Python/Dramatiq worker service for handling agent tasks
-3. **Frontend** - Next.js/React application providing the user interface
-4. **Agent Docker** - Isolated execution environment for each agent
-5. **Supabase Database** - Handles data persistence and authentication
+1. Backend API (FastAPI) - REST endpoints, thread management, LLM orchestration
+2. Backend Worker (Dramatiq) - background agent task execution
+3. Frontend (Next.js) - web UI
+4. Agent Sandbox (Daytona) - isolated runtime for agent actions
+5. Supabase - database and auth
 
 ## Prerequisites
 
-Before starting the installation process, you'll need to set up the following:
-
 ### 1. Supabase Project
 
-1. Create an account at [Supabase](https://supabase.com/)
-2. Create a new project
-3. Note down the following information (found in Project Settings → API):
-   - Project URL (e.g., `https://abcdefg.supabase.co`)
-   - API keys (anon key and service role key)
+1. Create a project at https://supabase.com/
+2. From Project Settings → API, copy:
+   - Project URL (e.g., https://<your>.supabase.co)
+   - anon key
+   - service role key
+
+Also expose the basejump schema: Project Settings → API → Add `basejump` to Exposed Schemas.
 
 ### 2. API Keys
 
-Obtain the following API keys:
+Below is a summary of environment variables detected from the codebase and whether they are required for the backend to boot. Some are optional in the code, but functionally you’ll want at least one LLM provider.
 
-#### Required
+Backend keys (by purpose):
 
-- **LLM Provider** (at least one of the following):
+| Purpose       | Key                           |                         Required to boot | Default                    | Notes                                                               |
+| ------------- | ----------------------------- | ---------------------------------------: | -------------------------- | ------------------------------------------------------------------- |
+| Environment   | ENV_MODE                      |                                       No | local                      | local, staging, production                                          |
+| Database/Auth | SUPABASE_URL                  |                                      Yes | -                          | Supabase project URL                                                |
+|               | SUPABASE_ANON_KEY             |                                      Yes | -                          | Supabase anon key                                                   |
+|               | SUPABASE_SERVICE_ROLE_KEY     |                                      Yes | -                          | Supabase service role key                                           |
+| Redis         | REDIS_HOST                    |                                      Yes | redis                      | Use `redis` with Docker, `localhost` without                        |
+|               | REDIS_PORT                    |                                       No | 6379                       |                                                                     |
+|               | REDIS_PASSWORD                |                                       No | -                          |                                                                     |
+|               | REDIS_SSL                     |                                       No | true                       | Set false for local/Docker compose                                  |
+| LLM providers | ANTHROPIC_API_KEY             | Functionally required (at least one LLM) | -                          | Any one of Anthropic/OpenAI/Groq/OpenRouter/Gemini/X.ai/AWS Bedrock |
+|               | OPENAI_API_KEY                |                                        " | -                          |                                                                     |
+|               | GROQ_API_KEY                  |                                        " | -                          |                                                                     |
+|               | OPENROUTER_API_KEY            |                                        " | -                          |                                                                     |
+|               | GEMINI_API_KEY                |                                        " | -                          |                                                                     |
+|               | XAI_API_KEY                   |                                        " | -                          |                                                                     |
+|               | AWS_ACCESS_KEY_ID             |                     " (if using Bedrock) | -                          |                                                                     |
+|               | AWS_SECRET_ACCESS_KEY         |                     " (if using Bedrock) | -                          |                                                                     |
+|               | AWS_REGION_NAME               |                     " (if using Bedrock) | -                          |                                                                     |
+| Web search    | TAVILY_API_KEY                |                                      Yes | -                          | Used by search tools                                                |
+| Web scraping  | FIRECRAWL_API_KEY             |                                      Yes | -                          | Used by scraping tools                                              |
+| Data APIs     | RAPID_API_KEY                 |                                      Yes | -                          | Enables LinkedIn scraping and other data tools                      |
+| Agent sandbox | DAYTONA_API_KEY               |                                      Yes | -                          | Required by Daytona SDK                                             |
+|               | DAYTONA_SERVER_URL            |                                      Yes | https://app.daytona.io/api |                                                                     |
+|               | DAYTONA_TARGET                |                                      Yes | us                         | region/target                                                       |
+| Observability | LANGFUSE_PUBLIC_KEY           |                                       No | -                          | Optional tracing                                                    |
+|               | LANGFUSE_SECRET_KEY           |                                       No | -                          |                                                                     |
+|               | LANGFUSE_HOST                 |                                       No | https://cloud.langfuse.com |                                                                     |
+| Credentials   | MCP_CREDENTIAL_ENCRYPTION_KEY |                              Recommended | -                          | Used to encrypt stored credentials; generated if missing            |
+| Triggers      | WEBHOOK_BASE_URL              |                                       No | http://localhost:8000      | Public base URL for inbound webhooks                                |
+|               | TRIGGER_WEBHOOK_SECRET        |                              Recommended | -                          | Verifies inbound triggers                                           |
+| Billing       | STRIPE\_\*                    |                                       No | -                          | Only if you enable billing                                          |
+| Admin         | KORTIX_ADMIN_API_KEY          |                                       No | -                          | Protects admin APIs                                                 |
+| Integrations  | COMPOSIO\_\*                  |                                       No | -                          | Optional Composio integration                                       |
 
-  - [Anthropic](https://console.anthropic.com/) - Recommended for best performance
-  - [OpenAI](https://platform.openai.com/)
-  - [Groq](https://console.groq.com/)
-  - [OpenRouter](https://openrouter.ai/)
-  - [AWS Bedrock](https://aws.amazon.com/bedrock/)
+Frontend keys:
 
-- **AI-Powered Code Editing (Optional but Recommended)**:
-  - [Morph](https://morphllm.com/api-keys) - For intelligent code editing capabilities
+| Key                           | Required | Default               | Notes                               |
+| ----------------------------- | -------: | --------------------- | ----------------------------------- |
+| NEXT_PUBLIC_ENV_MODE          |       No | local                 |                                     |
+| NEXT_PUBLIC_SUPABASE_URL      |      Yes | -                     | Must match backend Supabase project |
+| NEXT_PUBLIC_SUPABASE_ANON_KEY |      Yes | -                     | Supabase anon key                   |
+| NEXT_PUBLIC_BACKEND_URL       |      Yes | http://localhost:8000 | Backend API base URL                |
+| NEXT_PUBLIC_URL               |       No | http://localhost:3000 | Public site URL                     |
 
-- **Search and Web Scraping**:
+Notes:
 
-  - [Tavily](https://tavily.com/) - For enhanced search capabilities
-  - [Firecrawl](https://firecrawl.dev/) - For web scraping capabilities
-
-- **Agent Execution**:
-  - [Daytona](https://app.daytona.io/) - For secure agent execution
-
-- **Background Job Processing**:
-  - Supabase Cron - For workflows, automated tasks, and webhook handling
-
-#### Optional
-
-- **RapidAPI** - For accessing additional API services (enables LinkedIn scraping and other tools)
-- **Custom MCP Servers** - For extending functionality with custom tools
+- At least one LLM provider key is functionally required to run agents.
+- Daytona keys are required by configuration. If you don’t plan to use sandboxes, you can supply placeholder values to boot, but related features won’t be usable.
 
 ### 3. Required Software
 
-Ensure the following tools are installed on your system:
+- Docker
+- Git
+- Python 3.11+
+- Node.js 18+ and npm
 
-- **[Docker](https://docs.docker.com/get-docker/)**
-- **[Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started)**
-- **[Git](https://git-scm.com/downloads)**
-- **[Python 3.11](https://www.python.org/downloads/)**
+Optional (but supported):
 
-For manual setup, you'll also need:
-
-- **[uv](https://docs.astral.sh/uv/)**
-- **[Node.js & npm](https://nodejs.org/en/download/)**
+- uv (Python package manager/runner)
+- Supabase CLI
 
 ## Installation Steps
 
-### 1. Clone the Repository
+1. Clone the repository
 
 ```bash
 git clone https://github.com/kortix-ai/suna.git
 cd suna
 ```
 
-### 2. Run the Setup Wizard
+2. Prepare environment files
 
-The setup wizard will guide you through the installation process:
+- Backend: copy `backend/.env.example` to `backend/.env` and fill the required keys
+- Frontend: copy `frontend/.env.example` to `frontend/.env.local` and fill the required keys
 
-```bash
-python setup.py
-```
+## Environment Configuration
 
-The wizard will:
+### Backend (`backend/.env`)
 
-- Check if all required tools are installed
-- Collect your API keys and configuration information
-- Set up the Supabase database
-- Configure environment files
-- Install dependencies
-- Start Suna using your preferred method
+Minimal example (required keys only):
 
-The setup wizard has 14 steps and includes progress saving, so you can resume if interrupted.
-
-### 3. Supabase Configuration
-
-During setup, you'll need to:
-
-1. Log in to the Supabase CLI
-2. Link your local project to your Supabase project
-3. Push database migrations
-4. Manually expose the 'basejump' schema in Supabase:
-   - Go to your Supabase project
-   - Navigate to Project Settings → API
-   - Add 'basejump' to the Exposed Schema section
-
-### 4. Daytona Configuration
-
-As part of the setup, you'll need to:
-
-1. Create a Daytona account
-2. Generate an API key
-3. Create a Snapshot:
-   - Name: `kortix/suna:0.1.3.11`
-   - Image name: `kortix/suna:0.1.3.11`
-   - Entrypoint: `/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf`
-
-## Manual Configuration
-
-If you prefer to configure your installation manually, or if you need to modify the configuration after installation, here's what you need to know:
-
-### Backend Configuration (.env)
-
-The backend configuration is stored in `backend/.env`
-
-Example configuration:
-
-```sh
-# Environment Mode
+```env
 ENV_MODE=local
 
-# DATABASE
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+SUPABASE_URL=YOUR_SUPABASE_URL
+SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY=YOUR_SUPABASE_SERVICE_ROLE_KEY
 
-# REDIS
+# Redis: use redis for Docker, localhost for manual
 REDIS_HOST=redis
 REDIS_PORT=6379
-REDIS_PASSWORD=
 REDIS_SSL=false
 
-# LLM Providers
-ANTHROPIC_API_KEY=your-anthropic-key
-OPENAI_API_KEY=your-openai-key
-OPENROUTER_API_KEY=your-openrouter-key
-GEMINI_API_KEY=your-gemini-api-key
-MORPH_API_KEY=
-OPENAI_COMPATIBLE_API_KEY=your-openai-compatible-api-key
-OPENAI_COMPATIBLE_API_BASE=your-openai-compatible-api-base
+# LLM provider: provide at least one
+# OPENAI_API_KEY=...
+# ANTHROPIC_API_KEY=...
 
+TAVILY_API_KEY=YOUR_TAVILY_API_KEY
+FIRECRAWL_API_KEY=YOUR_FIRECRAWL_API_KEY
 
-# WEB SEARCH
-TAVILY_API_KEY=your-tavily-key
-
-# WEB SCRAPE
-FIRECRAWL_API_KEY=your-firecrawl-key
-FIRECRAWL_URL=https://api.firecrawl.dev
-
-# Sandbox container provider
-DAYTONA_API_KEY=your-daytona-key
+DAYTONA_API_KEY=YOUR_DAYTONA_API_KEY
 DAYTONA_SERVER_URL=https://app.daytona.io/api
 DAYTONA_TARGET=us
 
-# Background job processing (Required)
-WEBHOOK_BASE_URL=https://your-domain.ngrok.io
+# Data APIs required by configuration
+RAPID_API_KEY=YOUR_RAPID_API_KEY
 
-# MCP Configuration
-MCP_CREDENTIAL_ENCRYPTION_KEY=your-generated-encryption-key
+MCP_CREDENTIAL_ENCRYPTION_KEY=GENERATED_FERNET_KEY
+WEBHOOK_BASE_URL=http://localhost:8000
+TRIGGER_WEBHOOK_SECRET=your_random_string
+```
 
-# Optional APIs
-RAPID_API_KEY=your-rapidapi-key
-# MCP server configurations in database
+To generate a Fernet key for MCP_CREDENTIAL_ENCRYPTION_KEY:
 
+```bash
+python - << 'PY'
+from cryptography.fernet import Fernet
+print(Fernet.generate_key().decode())
+PY
+```
+
+### Frontend (`frontend/.env.local`)
+
+```env
+NEXT_PUBLIC_ENV_MODE=local
+NEXT_PUBLIC_SUPABASE_URL=YOUR_SUPABASE_URL
+NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_SUPABASE_ANON_KEY
+NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
 NEXT_PUBLIC_URL=http://localhost:3000
 ```
 
-### Frontend Configuration (.env.local)
+## Hosting Options
 
-The frontend configuration is stored in `frontend/.env.local` and includes:
+### A. With Docker (recommended)
 
-- Supabase connection details
-- Backend API URL
+This uses the root `docker-compose.yaml` to bring up Redis, backend, worker, and frontend.
 
-Example configuration:
-
-```sh
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-NEXT_PUBLIC_BACKEND_URL=http://localhost:8000/api
-NEXT_PUBLIC_URL=http://localhost:3000
-NEXT_PUBLIC_ENV_MODE=LOCAL
-```
-
-## Post-Installation Steps
-
-After completing the installation, you'll need to:
-
-1. **Create an account** - Use Supabase authentication to create your first account
-2. **Verify installations** - Check that all components are running correctly
-
-## Startup Options
-
-Suna can be started in two ways:
-
-### 1. Using Docker Compose (Recommended)
-
-This method starts all required services in Docker containers:
+1. Ensure `backend/.env` and `frontend/.env.local` are filled.
+2. From the project root:
 
 ```bash
-docker compose up -d # Use `docker compose down` to stop it later
-# or
-python start.py # Use the same to stop it later
+docker compose up -d --build
 ```
 
-### 2. Manual Startup
+3. Access:
 
-This method requires you to start each component separately:
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
 
-1. Start Redis (required for backend):
+4. Logs and lifecycle:
 
 ```bash
-docker compose up redis -d
-# or
-python start.py # Use the same to stop it later
+docker compose logs -f
+docker compose ps
+docker compose down
 ```
 
-2. Start the frontend (in one terminal):
+Redis is already included in this compose file. No extra steps are needed.
+
+### B. Without Docker (manual)
+
+You’ll run Redis in Docker, then start backend and worker locally, and the frontend via npm.
+
+1. Start Redis in Docker
+
+```bash
+docker compose up -d redis
+```
+
+2. Backend API and Worker (Python venv)
+
+```bash
+cd backend
+python -m venv .venv
+source .venv/Scripts/activate
+python -m pip install -e .
+
+# Start the worker (terminal 1)
+python -m dramatiq run_agent_background --processes 4 --threads 4
+
+# Start the API (terminal 2)
+uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Alternative using uv:
+
+```bash
+# terminal 1
+cd backend
+uv run dramatiq --processes 4 --threads 4 run_agent_background
+
+# terminal 2
+cd backend
+uv run uvicorn api:app --host 0.0.0.0 --port 8000 --reload
+```
+
+3. Frontend
 
 ```bash
 cd frontend
+npm install
 npm run dev
 ```
 
-3. Start the backend (in another terminal):
+Visit http://localhost:3000 and sign up via Supabase auth.
 
-```bash
-cd backend
-uv run api.py
-```
+## Post‑Installation Checks
 
-4. Start the worker (in one more terminal):
-
-```bash
-cd backend
-uv run dramatiq run_agent_background
-```
+- Frontend loads at http://localhost:3000
+- Backend health: http://localhost:8000/health returns OK
+- Create an account and start an agent; verify logs for worker activity
 
 ## Troubleshooting
 
-### Common Issues
+- Docker services fail: check `docker compose logs -f` and port conflicts (3000, 8000, 6379)
+- Supabase errors: confirm URL and keys; basejump schema is exposed
+- LLM errors: ensure at least one LLM API key is set and not rate-limited
+- Daytona errors: verify API key/URL/target; sandbox operations require valid Daytona setup
+- Redis connection errors: ensure `REDIS_HOST=redis` when using Docker, `localhost` when fully local
+- if you get an issue saying `ghcr.io/suna-ai/suna-backend:latest` already exists, then try running the docker command again, it should work the second time automatically.
 
-1. **Docker services not starting**
+If you get a startup error complaining about missing configuration fields, it means a required key from the table above is missing in `backend/.env`.
 
-   - Check Docker logs: `docker compose logs`
-   - Ensure Docker is running correctly
-   - Verify port availability (3000 for frontend, 8000 for backend)
-
-2. **Database connection issues**
-
-   - Verify Supabase configuration
-   - Check if 'basejump' schema is exposed in Supabase
-
-3. **LLM API key issues**
-
-   - Verify API keys are correctly entered
-   - Check for API usage limits or restrictions
-
-4. **Daytona connection issues**
-
-   - Verify Daytona API key
-   - Check if the container image is correctly configured
-
-5. **Setup wizard issues**
-
-   - Delete `.setup_progress` file to reset the setup wizard
-   - Check that all required tools are installed and accessible
-
-### Logs
-
-To view logs and diagnose issues:
-
-```bash
-# Docker Compose logs
-docker compose logs -f
-
-# Frontend logs (manual setup)
-cd frontend
-npm run dev
-
-# Backend logs (manual setup)
-cd backend
-uv run api.py
-
-# Worker logs (manual setup)
-cd backend
-uv run dramatiq run_agent_background
-```
-
-### Resuming Setup
-
-If the setup wizard is interrupted, you can resume from where you left off by running:
-
-```bash
-python setup.py
-```
-
-The wizard will detect your progress and continue from the last completed step.
-
----
-
-For further assistance, join the [Suna Discord Community](https://discord.gg/Py6pCBUUPw) or check the [GitHub repository](https://github.com/kortix-ai/suna) for updates and issues.
+For help, join the Suna Discord or open an issue on GitHub.
