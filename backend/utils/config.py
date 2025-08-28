@@ -409,9 +409,9 @@ class Configuration:
         self._load_from_env()
         
         # Auto-generate admin API key if not present
-        if not self.KORTIX_ADMIN_API_KEY:
-            self.KORTIX_ADMIN_API_KEY = self._generate_admin_api_key()
-            logger.info("Auto-generated KORTIX_ADMIN_API_KEY for administrative functions")
+        if not self.OMNI_ADMIN_API_KEY:
+            self.OMNI_ADMIN_API_KEY = self._generate_admin_api_key()
+            logger.info("Auto-generated OMNI_ADMIN_API_KEY for administrative functions")
         
         # Perform validation
         self._validate()

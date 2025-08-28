@@ -79,7 +79,7 @@ Backend keys (by purpose):
 | Triggers      | WEBHOOK_BASE_URL              |                                       No | http://localhost:8000      | Public base URL for inbound webhooks                                |
 |               | TRIGGER_WEBHOOK_SECRET        |                              Recommended | -                          | Verifies inbound triggers                                           |
 | Billing       | STRIPE\_\*                    |                                       No | -                          | Only if you enable billing                                          |
-| Admin         | KORTIX_ADMIN_API_KEY          |                                       No | -                          | Protects admin APIs                                                 |
+| Admin         | OMNI_ADMIN_API_KEY          |                                       No | -                          | Protects admin APIs                                                 |
 | Integrations  | COMPOSIO\_\*                  |                                       No | -                          | Optional Composio integration                                       |
 
 Frontend keys:

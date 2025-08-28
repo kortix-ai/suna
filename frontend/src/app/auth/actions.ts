@@ -6,10 +6,10 @@ import { redirect } from 'next/navigation';
 async function sendWelcomeEmail(email: string, name?: string) {
   try {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
-    const adminApiKey = process.env.KORTIX_ADMIN_API_KEY;
+    const adminApiKey = process.env.OMNI_ADMIN_API_KEY;
     
     if (!adminApiKey) {
-      console.error('KORTIX_ADMIN_API_KEY not configured');
+      console.error('OMNI_ADMIN_API_KEY not configured');
       return;
     }
     
