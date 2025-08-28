@@ -366,7 +366,7 @@ export function FileAttachment({
                     }}
                     title={filename}
                 >
-                    <div className="absolute inset-0 flex items-end justify-center pb-4">
+                    <div className="absolute inset-0 flex items-center justify-center">
                         <Loader2 className="h-8 w-8 text-primary animate-spin" />
                     </div>
                 </button>
@@ -552,6 +552,7 @@ export function FileAttachment({
                                     content={fileContent}
                                     previewUrl={fileUrl}
                                     className="h-full w-full"
+                                    project={project}
                                 />
                             )}
                         </>
@@ -589,19 +590,19 @@ export function FileAttachment({
 
                     {/* Loading state */}
                     {fileContentLoading && !isPdf && (
-                        <div className="absolute inset-0 flex items-end justify-center bg-background/50 z-10 pb-8">
+                        <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
                             <Loader2 className="h-8 w-8 text-primary animate-spin" />
                         </div>
                     )}
 
                     {isPdf && pdfLoading && !pdfBlobUrl && (
-                        <div className="absolute inset-0 flex items-end justify-center bg-background/50 z-10 pb-8">
+                        <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
                             <Loader2 className="h-8 w-8 text-primary animate-spin" />
                         </div>
                     )}
 
                     {isXlsx && xlsxLoading && !xlsxBlobUrl && (
-                        <div className="absolute inset-0 flex items-end justify-center bg-background/50 z-10 pb-8">
+                        <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10">
                             <Loader2 className="h-8 w-8 text-primary animate-spin" />
                         </div>
                     )}

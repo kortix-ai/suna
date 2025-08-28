@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useTheme } from 'next-themes';
 import { toast } from 'sonner';
 import { Icons } from './home/icons';
-import { FaGithub } from "react-icons/fa";
+// Using proper GitHub brand icon from Icons component
 import { useAuthMethodTracking } from '@/lib/stores/auth-tracking';
 import { Loader2 } from 'lucide-react';
 
@@ -158,7 +158,7 @@ export default function GitHubSignIn({ returnUrl }: GitHubSignInProps) {
         {isLoading ? (
           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
         ) : (
-          <FaGithub className="w-4 h-4 mr-2" />
+          <Icons.github className="w-4 h-4 mr-2" />
         )}
         <span className="font-medium">
           {isLoading ? 'Signing in...' : 'Continue with GitHub'}

@@ -66,6 +66,23 @@ export function getToolTitle(toolName: string): string {
     'create-presentation-outline': 'Create Presentation Outline',
     'list-presentation-templates': 'List Presentation Templates',
     'upload-file': 'Upload File',
+    
+    // Agent Creation Tools
+    'create-new-agent': 'Create New Agent',
+    'search-mcp-servers-for-agent': 'Search MCP Servers for Agent',
+    'get-mcp-server-details': 'Get MCP Server Details',
+    'create-credential-profile-for-agent': 'Create Credential Profile for Agent',
+    'discover-mcp-tools-for-agent': 'Discover MCP Tools for Agent',
+    'configure-agent-integration': 'Configure Agent Integration',
+    'list-available-integrations': 'List Available Integrations',
+    'create-agent-workflow': 'Create Agent Workflow',
+    'list-agent-workflows': 'List Agent Workflows',
+    'activate-agent-workflow': 'Activate Agent Workflow',
+    'create-agent-scheduled-trigger': 'Create Scheduled Trigger',
+    'list-agent-scheduled-triggers': 'List Scheduled Triggers',
+    'delete-agent-workflow': 'Delete Agent Workflow',
+    'delete-agent-scheduled-trigger': 'Delete Scheduled Trigger',
+    'toggle-agent-scheduled-trigger': 'Toggle Scheduled Trigger',
 
     'generic-tool': 'Tool',
     'default': 'Tool',

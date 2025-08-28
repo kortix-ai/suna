@@ -19,6 +19,7 @@ from enum import Enum
 from typing import Dict, Any, Optional, get_type_hints, Union
 from dotenv import load_dotenv
 import logging
+import secrets
 
 logger = logging.getLogger(__name__)
 
@@ -383,6 +384,12 @@ class Configuration:
             return self.STRIPE_PRODUCT_ID_STAGING
         return self.STRIPE_PRODUCT_ID_PROD
     
+    def _generate_admin_api_key(self) -> str:
+        """Generate a secure admin API key for Kortix administrative functions."""
+        # Generate 32 random bytes and encode as hex for a readable API key
+        key_bytes = secrets.token_bytes(32)
+        return key_bytes.hex()
+
     def __init__(self):
         """Initialize configuration by loading from environment variables."""
         # Load environment variables from .env file if it exists
@@ -400,6 +407,11 @@ class Configuration:
         
         # Load configuration from environment variables
         self._load_from_env()
+        
+        # Auto-generate admin API key if not present
+        if not self.KORTIX_ADMIN_API_KEY:
+            self.KORTIX_ADMIN_API_KEY = self._generate_admin_api_key()
+            logger.info("Auto-generated KORTIX_ADMIN_API_KEY for administrative functions")
         
         # Perform validation
         self._validate()

@@ -79,7 +79,8 @@ function shouldFilterAskTool(toolName: string, assistantContent: any, toolConten
 export function useToolCalls(
   messages: UnifiedMessage[],
   setLeftSidebarOpen: (open: boolean) => void,
-  agentStatus?: AgentStatus
+  agentStatus?: AgentStatus,
+  compact?: boolean
 ): UseToolCallsReturn {
   const [toolCalls, setToolCalls] = useState<ToolCallInput[]>([]);
   const [currentToolIndex, setCurrentToolIndex] = useState<number>(0);
@@ -232,13 +233,13 @@ export function useToolCalls(
         setCurrentToolIndex(historicalToolPairs.length - 1);
       } else if (isSidePanelOpen && !userClosedPanelRef.current && !userNavigatedRef.current) {
         setCurrentToolIndex(historicalToolPairs.length - 1);
-      } else if (!isSidePanelOpen && !autoOpenedPanel && !userClosedPanelRef.current && !isMobile) {
+      } else if (!isSidePanelOpen && !autoOpenedPanel && !userClosedPanelRef.current && !isMobile && !compact) {
         setCurrentToolIndex(historicalToolPairs.length - 1);
         setIsSidePanelOpen(true);
         setAutoOpenedPanel(true);
       }
     }
-  }, [messages, isSidePanelOpen, autoOpenedPanel, agentStatus, isMobile]);
+  }, [messages, isSidePanelOpen, autoOpenedPanel, agentStatus, isMobile, compact]);
 
   // Reset user navigation flag when agent stops
   useEffect(() => {
@@ -389,9 +390,11 @@ export function useToolCalls(
         });
       }
       
-      setIsSidePanelOpen(true);
+      if (!compact) {
+        setIsSidePanelOpen(true);
+      }
     },
-    [toolCalls.length],
+    [toolCalls.length, compact],
   );
 
   return {

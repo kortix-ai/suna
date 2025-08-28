@@ -322,6 +322,7 @@ export function constructImageUrl(filePath: string, project?: { sandbox?: { sand
     return cleanPath;
   }
   
+  // PREFER backend API (requires authentication but more reliable)
   const sandboxId = typeof project?.sandbox === 'string' 
     ? project.sandbox 
     : project?.sandbox?.id;
@@ -336,6 +337,7 @@ export function constructImageUrl(filePath: string, project?: { sandbox?: { sand
     return apiEndpoint;
   }
   
+  // Fallback to sandbox_url for direct access
   if (project?.sandbox?.sandbox_url) {
     const sandboxUrl = project.sandbox.sandbox_url.replace(/\/$/, '');
     let normalizedPath = cleanPath;

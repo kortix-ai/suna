@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
-import { FcGoogle } from "react-icons/fc";
+import { Icons } from './home/icons';
 import { Loader2 } from 'lucide-react';
 
 interface GoogleSignInProps {
@@ -46,7 +46,7 @@ export default function GoogleSignIn({ returnUrl }: GoogleSignInProps) {
       {isLoading ? (
         <Loader2 className="w-4 h-4 mr-2 animate-spin" />
       ) : (
-        <FcGoogle className="w-4 h-4 mr-2" />
+        <Icons.google className="w-4 h-4 mr-2" />
       )}
       <span className="font-medium">
         {isLoading ? 'Signing in...' : 'Continue with Google'}

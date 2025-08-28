@@ -183,11 +183,11 @@ export function FileOperationToolView({
 
     if (isHtml && htmlPreviewUrl) {
       return (
-        <div className="flex flex-col h-[calc(100vh-16rem)]">
+        <div className="w-full h-full">
           <iframe
             src={htmlPreviewUrl}
             title={`HTML Preview of ${fileName}`}
-            className="flex-grow border-0"
+            className="w-full h-full border-0"
             sandbox="allow-same-origin allow-scripts"
           />
         </div>
@@ -199,6 +199,7 @@ export function FileOperationToolView({
         <div className="p-1 py-0 prose dark:prose-invert prose-zinc max-w-none">
           <MarkdownRenderer
             content={processUnicodeContent(fileContent)}
+            project={project}
           />
         </div>
       );
@@ -206,8 +207,8 @@ export function FileOperationToolView({
 
     if (isCsv) {
       return (
-        <div className="h-full w-full p-4">
-          <div className="h-[calc(100vh-17rem)] w-full bg-muted/20 border rounded-xl overflow-auto">
+        <div className="h-full w-full p-4 flex flex-col">
+          <div className="flex-1 min-h-[400px] w-full bg-muted/20 border rounded-xl overflow-hidden">
             <CsvRenderer content={processUnicodeContent(fileContent)} />
           </div>
         </div>
@@ -216,8 +217,8 @@ export function FileOperationToolView({
 
     if (isXlsx) {
       return (
-        <div className="h-full w-full p-4">
-          <div className="h-[calc(100vh-17rem)] w-full bg-muted/20 border rounded-xl overflow-auto">
+        <div className="h-full w-full p-4 flex flex-col">
+          <div className="flex-1 min-h-[400px] w-full bg-muted/20 border rounded-xl overflow-hidden">
             <XlsxRenderer 
               content={fileContent}
               filePath={processedFilePath}
@@ -379,7 +380,7 @@ export function FileOperationToolView({
 
         <CardContent className="p-0 -my-2 h-full flex-1 overflow-hidden relative">
           <TabsContent value="code" className="flex-1 h-full mt-0 p-0 overflow-hidden">
-            <ScrollArea className="h-screen w-full min-h-0">
+            <ScrollArea className="h-full w-full min-h-0">
               {isStreaming && !fileContent ? (
                 <LoadingState
                   icon={Icon}
@@ -411,31 +412,47 @@ export function FileOperationToolView({
           </TabsContent>
 
           <TabsContent value="preview" className="w-full flex-1 h-full mt-0 p-0 overflow-hidden">
-            <ScrollArea className="h-full w-full min-h-0">
-              {isStreaming && !fileContent ? (
-                <LoadingState
-                  icon={Icon}
-                  iconColor={config.color}
-                  bgColor={config.bgColor}
-                  title={config.progressMessage}
-                  filePath={processedFilePath || 'Processing file...'}
-                  subtitle="Please wait while the file is being processed"
-                  showProgress={false}
-                />
-              ) : operation === 'delete' ? (
-                renderDeleteOperation()
-              ) : (
-                renderFilePreview()
-              )}
-              {isStreaming && fileContent && (
-                <div className="sticky bottom-4 right-4 float-right mr-4 mb-4">
-                  <Badge className="bg-blue-500/90 text-white border-none shadow-lg animate-pulse">
-                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                    Streaming...
-                  </Badge>
-                </div>
-              )}
-            </ScrollArea>
+            {isHtml && htmlPreviewUrl ? (
+              // For HTML files, render iframe directly without ScrollArea for full viewport
+              <div className="w-full h-full relative">
+                {renderFilePreview()}
+                {isStreaming && fileContent && (
+                  <div className="absolute bottom-4 right-4 z-10">
+                    <Badge className="bg-blue-500/90 text-white border-none shadow-lg animate-pulse">
+                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                      Streaming...
+                    </Badge>
+                  </div>
+                )}
+              </div>
+            ) : (
+              // For non-HTML files, use ScrollArea as before
+              <ScrollArea className="h-full w-full min-h-0">
+                {isStreaming && !fileContent ? (
+                  <LoadingState
+                    icon={Icon}
+                    iconColor={config.color}
+                    bgColor={config.bgColor}
+                    title={config.progressMessage}
+                    filePath={processedFilePath || 'Processing file...'}
+                    subtitle="Please wait while the file is being processed"
+                    showProgress={false}
+                  />
+                ) : operation === 'delete' ? (
+                  renderDeleteOperation()
+                ) : (
+                  renderFilePreview()
+                )}
+                {isStreaming && fileContent && (
+                  <div className="sticky bottom-4 right-4 float-right mr-4 mb-4">
+                    <Badge className="bg-blue-500/90 text-white border-none shadow-lg animate-pulse">
+                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                      Streaming...
+                    </Badge>
+                  </div>
+                )}
+              </ScrollArea>
+            )}
           </TabsContent>
         </CardContent>
 

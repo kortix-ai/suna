@@ -3,10 +3,6 @@ import { createClient } from '@/lib/supabase/client';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
-// =====================================================
-// TYPES
-// =====================================================
-
 export interface MCPCredential {
   credential_id: string;
   mcp_qualified_name: string;
@@ -207,20 +203,33 @@ export function useDeleteCredential() {
   });
 }
 
-// =====================================================
-// TEMPLATE MANAGEMENT HOOKS
-// =====================================================
+export interface MarketplacePaginationInfo {
+  current_page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
+  has_next: boolean;
+  has_previous: boolean;
+}
+
+export interface MarketplaceTemplatesResponse {
+  templates: AgentTemplate[];
+  pagination: MarketplacePaginationInfo;
+}
 
 export function useMarketplaceTemplates(params?: {
+  page?: number;
   limit?: number;
-  offset?: number;
   search?: string;
   tags?: string;
   is_kortix_team?: boolean;
+  mine?: boolean;
+  sort_by?: string;
+  sort_order?: string;
 }) {
   return useQuery({
     queryKey: ['secure-mcp', 'marketplace-templates', params],
-    queryFn: async (): Promise<AgentTemplate[]> => {
+    queryFn: async (): Promise<MarketplaceTemplatesResponse> => {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
 
@@ -229,11 +238,14 @@ export function useMarketplaceTemplates(params?: {
       }
 
       const searchParams = new URLSearchParams();
+      if (params?.page) searchParams.set('page', params.page.toString());
       if (params?.limit) searchParams.set('limit', params.limit.toString());
-      if (params?.offset) searchParams.set('offset', params.offset.toString());
       if (params?.search) searchParams.set('search', params.search);
       if (params?.tags) searchParams.set('tags', params.tags);
       if (params?.is_kortix_team !== undefined) searchParams.set('is_kortix_team', params.is_kortix_team.toString());
+      if (params?.mine !== undefined) searchParams.set('mine', params.mine.toString());
+      if (params?.sort_by) searchParams.set('sort_by', params.sort_by);
+      if (params?.sort_order) searchParams.set('sort_order', params.sort_order);
 
       const response = await fetch(`${API_URL}/templates/marketplace?${searchParams}`, {
         headers: {
@@ -313,10 +325,16 @@ export function useCreateTemplate() {
   });
 }
 
-export function useMyTemplates() {
+export function useMyTemplates(params?: {
+  page?: number;
+  limit?: number;
+  search?: string;
+  sort_by?: string;
+  sort_order?: string;
+}) {
   return useQuery({
-    queryKey: ['secure-mcp', 'my-templates'],
-    queryFn: async (): Promise<AgentTemplate[]> => {
+    queryKey: ['secure-mcp', 'my-templates', params],
+    queryFn: async (): Promise<MarketplaceTemplatesResponse> => {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
 
@@ -324,7 +342,14 @@ export function useMyTemplates() {
         throw new Error('You must be logged in to view your templates');
       }
 
-      const response = await fetch(`${API_URL}/templates/my`, {
+      const searchParams = new URLSearchParams();
+      if (params?.page) searchParams.set('page', params.page.toString());
+      if (params?.limit) searchParams.set('limit', params.limit.toString());
+      if (params?.search) searchParams.set('search', params.search);
+      if (params?.sort_by) searchParams.set('sort_by', params.sort_by);
+      if (params?.sort_order) searchParams.set('sort_order', params.sort_order);
+
+      const response = await fetch(`${API_URL}/templates/my?${searchParams}`, {
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
         },

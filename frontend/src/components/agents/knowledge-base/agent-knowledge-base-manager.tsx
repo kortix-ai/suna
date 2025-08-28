@@ -62,27 +62,25 @@ import { toast } from 'sonner';
 import JSZip from 'jszip';
 
 import { 
-  SiJavascript, 
-  SiTypescript, 
-  SiPython, 
-  SiReact, 
-  SiHtml5, 
-  SiCss3, 
-  SiJson,
-  SiMarkdown,
-  SiYaml,
-  SiXml
-} from 'react-icons/si';
-import { 
-  FaFilePdf, 
-  FaFileWord, 
-  FaFileExcel, 
-  FaFileImage, 
-  FaFileArchive, 
-  FaFileCode,
-  FaFileAlt,
-  FaFile
-} from 'react-icons/fa';
+  Code2 as SiJavascript, 
+  Code2 as SiTypescript, 
+  Code2 as SiPython, 
+  Code2 as SiReact, 
+  Code2 as SiHtml5, 
+  Code2 as SiCss3, 
+  FileText as SiJson,
+  FileText as SiMarkdown,
+  FileText as SiYaml,
+  FileText as SiXml,
+  FileText as FaFilePdf, 
+  FileText as FaFileWord, 
+  FileText as FaFileExcel, 
+  FileImage as FaFileImage, 
+  Archive as FaFileArchive, 
+  Code as FaFileCode,
+  FileText as FaFileAlt,
+  File as FaFile
+} from 'lucide-react';
 
 interface AgentKnowledgeBaseManagerProps {
   agentId: string;

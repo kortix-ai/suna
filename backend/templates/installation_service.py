@@ -553,11 +553,19 @@ class InstallationService:
             
             workflow_id = None
             if trigger_config.get('execution_type') == 'workflow':
-                workflow_name = trigger_config.get('workflow_name')
-                if workflow_name and workflow_name in workflow_name_to_id:
-                    workflow_id = workflow_name_to_id[workflow_name]
+                existing_workflow_id = trigger_config.get('workflow_id')
+                if existing_workflow_id:
+                    workflow_id = existing_workflow_id
+                    logger.debug(f"Using existing workflow_id {workflow_id} for trigger '{trigger.get('name')}'")
                 else:
-                    logger.warning(f"Workflow '{workflow_name}' not found for trigger '{trigger.get('name')}'")
+                    workflow_name = trigger_config.get('workflow_name')
+                    if workflow_name and workflow_name in workflow_name_to_id:
+                        workflow_id = workflow_name_to_id[workflow_name]
+                        logger.debug(f"Resolved workflow_name '{workflow_name}' to workflow_id {workflow_id} for trigger '{trigger.get('name')}'")
+                    elif workflow_name:
+                        logger.warning(f"Workflow '{workflow_name}' not found for trigger '{trigger.get('name')}'")
+                    else:
+                        logger.warning(f"No workflow_name or workflow_id specified for workflow execution trigger '{trigger.get('name')}'")
             
             if provider_id == 'composio':
                 qualified_name = trigger_config.get('qualified_name')
@@ -585,6 +593,13 @@ class InstallationService:
                 else:
                     failed_count += 1
             else:
+                updated_trigger_config = trigger_config.copy()
+                if workflow_id:
+                    updated_trigger_config['workflow_id'] = workflow_id
+                
+                execution_type = trigger_config.get('execution_type', 'agent')
+                trigger_workflow_id = workflow_id if execution_type == 'workflow' else None
+                
                 trigger_data = {
                     'trigger_id': str(uuid4()),
                     'agent_id': agent_id,
@@ -592,14 +607,16 @@ class InstallationService:
                     'name': trigger.get('name', 'Unnamed Trigger'),
                     'description': trigger.get('description'),
                     'is_active': trigger.get('is_active', True),
-                    'config': trigger_config,
+                    'config': updated_trigger_config,
+                    'workflow_id': trigger_workflow_id,
+                    'execution_type': execution_type,
                     'created_at': datetime.now(timezone.utc).isoformat(),
                     'updated_at': datetime.now(timezone.utc).isoformat()
                 }
                 result = await client.table('agent_triggers').insert(trigger_data).execute()
                 if result.data:
                     created_count += 1
-                    logger.debug(f"Restored trigger '{trigger_data['name']}' for agent {agent_id}")
+                    logger.debug(f"Restored trigger '{trigger_data['name']}' with workflow_id {trigger_workflow_id} for agent {agent_id}")
                 else:
                     failed_count += 1
                     logger.warning(f"Failed to insert trigger '{trigger.get('name')}' for agent {agent_id}")

@@ -74,7 +74,7 @@ class AgentConfigTool(AgentBuilderBaseTool):
         <parameter name="name">Research Assistant</parameter>
         <parameter name="description">An AI assistant specialized in conducting research and providing comprehensive analysis</parameter>
         <parameter name="system_prompt">Act as a research analyst. Always verify sources</parameter>
-                        <parameter name="agentpress_tools">{"web_search_tool": true, "sb_files_tool": true, "sb_shell_tool": false}</parameter>
+        <parameter name="agentpress_tools">{"web_search_tool": true, "sb_files_tool": true, "sb_shell_tool": false}</parameter>
         <parameter name="avatar">🔬</parameter>
         <parameter name="avatar_color">#4F46E5</parameter>
         </invoke>
@@ -92,6 +92,7 @@ class AgentConfigTool(AgentBuilderBaseTool):
     ) -> ToolResult:
         try:
             account_id = await self._get_current_account_id()
+            
             client = await self.db.client
             
             agent_result = await client.table('agents').select('*').eq('agent_id', self.agent_id).execute()
@@ -160,9 +161,7 @@ class AgentConfigTool(AgentBuilderBaseTool):
                         return self.fail_response("No current version found to update from")
                     
                     if system_prompt is not None:
-                        existing_prompt = current_version.get('system_prompt', '')
-                        priority_addition = f"\n\n=== CRITICAL ADDITION ===\n{system_prompt}\n=== END CRITICAL ADDITION ==="
-                        current_system_prompt = f"{existing_prompt}{priority_addition}" if existing_prompt else system_prompt
+                        current_system_prompt = system_prompt
                     else:
                         current_system_prompt = current_version.get('system_prompt', '')
                     
@@ -198,21 +197,25 @@ class AgentConfigTool(AgentBuilderBaseTool):
                         merged_mcps = []
                         existing_identifiers = set()
                         
+                        # Add existing MCPs
                         for existing_mcp in current_configured_mcps:
                             identifier = get_mcp_identifier(existing_mcp)
                             if identifier:
                                 existing_identifiers.add(identifier)
                             merged_mcps.append(existing_mcp)
                         
+                        # Process new MCPs
                         for new_mcp in configured_mcps:
                             identifier = get_mcp_identifier(new_mcp)
                             
                             if identifier and identifier in existing_identifiers:
+                                # Update existing MCP
                                 for i, existing_mcp in enumerate(merged_mcps):
                                     if get_mcp_identifier(existing_mcp) == identifier:
                                         merged_mcps[i] = new_mcp
                                         break
                             else:
+                                # Add new MCP
                                 merged_mcps.append(new_mcp)
                                 if identifier:
                                     existing_identifiers.add(identifier)
@@ -240,8 +243,8 @@ class AgentConfigTool(AgentBuilderBaseTool):
                     logger.debug(f"Created new version {new_version.version_id} for agent {self.agent_id}")
                     
                 except Exception as e:
-                    logger.error(f"Failed to create new version: {e}")
-                    return self.fail_response(f"Failed to create new version: {str(e)}")
+                    logger.error(f"Failed to create new version: {str(e)}")
+                    return self.fail_response("Failed to create new version")
             
             agent_result = await client.table('agents').select('*').eq('agent_id', self.agent_id).execute()
             updated_agent = agent_result.data[0] if agent_result.data else current_agent
@@ -258,7 +261,8 @@ class AgentConfigTool(AgentBuilderBaseTool):
             })
             
         except Exception as e:
-            return self.fail_response(f"Error updating agent: {str(e)}")
+            logger.error(f"Error updating agent: {str(e)}")
+            return self.fail_response("Error updating agent")
 
     @openapi_schema({
         "type": "function",
@@ -304,7 +308,6 @@ class AgentConfigTool(AgentBuilderBaseTool):
             agent_config = extract_agent_config(agent_data, version_data)
             
             config_summary = {
-                "agent_id": agent_config["agent_id"],
                 "name": agent_config.get("name", "Untitled Agent"),
                 "description": agent_config.get("description", "No description set"),
                 "system_prompt": agent_config.get("system_prompt", "No system prompt set"),
@@ -338,4 +341,5 @@ class AgentConfigTool(AgentBuilderBaseTool):
             })
             
         except Exception as e:
-            return self.fail_response(f"Error getting agent configuration: {str(e)}") 
+            logger.error(f"Error getting agent configuration: {str(e)}")
+            return self.fail_response("Error getting agent configuration") 

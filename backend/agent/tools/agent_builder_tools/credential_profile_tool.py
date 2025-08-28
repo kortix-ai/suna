@@ -49,15 +49,14 @@ class CredentialProfileTool(AgentBuilderBaseTool):
             for profile in profiles:
                 formatted_profiles.append({
                     "profile_id": profile.profile_id,
+                    "connected_account_id": getattr(profile, 'connected_account_id', None),
+                    "account_id": profile.account_id,
                     "profile_name": profile.profile_name,
                     "display_name": profile.display_name,
                     "toolkit_slug": profile.toolkit_slug,
                     "toolkit_name": profile.toolkit_name,
-                    "mcp_url": profile.mcp_url,
                     "is_connected": profile.is_connected,
-                    "is_default": profile.is_default,
-                    "created_at": profile.created_at.isoformat() if profile.created_at else None,
-                    "updated_at": profile.updated_at.isoformat() if profile.updated_at else None
+                    "is_default": profile.is_default
                 })
             
             return self.success_response({
@@ -67,7 +66,7 @@ class CredentialProfileTool(AgentBuilderBaseTool):
             })
             
         except Exception as e:
-            return self.fail_response(f"Error getting credential profiles: {str(e)}")
+            return self.fail_response("Error getting credential profiles")
 
     @openapi_schema({
         "type": "function",
@@ -127,12 +126,10 @@ class CredentialProfileTool(AgentBuilderBaseTool):
             response_data = {
                 "message": f"Successfully created credential profile '{profile_name}' for {result.toolkit.name}",
                 "profile": {
-                    "profile_id": result.profile_id,
                     "profile_name": profile_name,
                     "display_name": display_name or profile_name,
                     "toolkit_slug": toolkit_slug,
                     "toolkit_name": result.toolkit.name,
-                    "mcp_url": result.final_mcp_url,
                     "is_connected": False,
                     "auth_required": bool(result.connected_account.redirect_url)
                 }
@@ -155,7 +152,7 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
             return self.success_response(response_data)
             
         except Exception as e:
-            return self.fail_response(f"Error creating credential profile: {str(e)}")
+            return self.fail_response("Error creating credential profile")
 
     @openapi_schema({
         "type": "function",
@@ -303,14 +300,12 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
                 "message": f"Profile '{profile.profile_name}' configured with {len(enabled_tools)} tools and registered in current runtime",
                 "enabled_tools": enabled_tools,
                 "total_tools": len(enabled_tools),
-                "version_id": new_version.version_id,
-                "version_name": new_version.version_name,
                 "runtime_registration": "success"
             })
             
         except Exception as e:
             logger.error(f"Error configuring profile for agent: {e}", exc_info=True)
-            return self.fail_response(f"Error configuring profile for agent: {str(e)}")
+            return self.fail_response("Error configuring profile for agent")
 
     @openapi_schema({
         "type": "function",
@@ -386,7 +381,7 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
                                 change_description=f"Deleted credential profile {profile.display_name}"
                             )
                         except Exception as e:
-                            return self.fail_response(f"Failed to update agent config: {str(e)}")
+                            return self.fail_response("Failed to update agent config")
             
             # Delete the profile
             await profile_service.delete_profile(profile_id)
@@ -394,11 +389,10 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
             return self.success_response({
                 "message": f"Successfully deleted credential profile '{profile.display_name}' for {profile.toolkit_name}",
                 "deleted_profile": {
-                    "profile_id": profile.profile_id,
                     "profile_name": profile.profile_name,
                     "toolkit_name": profile.toolkit_name
                 }
             })
             
         except Exception as e:
-            return self.fail_response(f"Error deleting credential profile: {str(e)}") 
+            return self.fail_response("Error deleting credential profile") 

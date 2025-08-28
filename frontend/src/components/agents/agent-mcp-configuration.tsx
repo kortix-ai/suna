@@ -45,18 +45,23 @@ export const AgentMCPConfiguration: React.FC<AgentMCPConfigurationProps> = ({
         };
       }
       
+      // Map 'sse' backend type to 'http' for frontend display
+      const displayType = customMcp.type === 'sse' ? 'http' : (customMcp.type || customMcp.customType);
+      
       return {
         name: customMcp.name,
-        qualifiedName: customMcp.qualifiedName || `custom_${customMcp.type || customMcp.customType}_${customMcp.name.replace(' ', '_').toLowerCase()}`,
+        qualifiedName: customMcp.qualifiedName || `custom_${displayType}_${customMcp.name.replace(' ', '_').toLowerCase()}`,
         config: customMcp.config,
         enabledTools: customMcp.enabledTools,
         isCustom: true,
-        customType: customMcp.type || customMcp.customType
+        customType: displayType
       };
     })
   ];
 
   const handleConfigurationChange = (mcps: any[]) => {
+    console.log('[AgentMCPConfiguration] Configuration changed:', mcps);
+    
     const configured = mcps.filter(mcp => !mcp.isCustom);
     const custom = mcps
       .filter(mcp => mcp.isCustom)
@@ -71,15 +76,20 @@ export const AgentMCPConfiguration: React.FC<AgentMCPConfigurationProps> = ({
           };
         }
         
+        // Map 'http' to 'sse' for backend compatibility
+        const backendType = mcp.customType === 'http' ? 'sse' : mcp.customType;
+        
         return {
           name: mcp.name,
-          type: mcp.customType,
+          type: backendType,
           customType: mcp.customType,
           config: mcp.config,
           enabledTools: mcp.enabledTools
         };
       });
 
+    console.log('[AgentMCPConfiguration] Sending to parent - configured:', configured, 'custom:', custom);
+    
     onMCPChange({
       configured_mcps: configured,
       custom_mcps: custom

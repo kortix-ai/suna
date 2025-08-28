@@ -87,9 +87,12 @@ function formatToolkitName(toolkitSlug: string): string {
 }
 
 function extractToolkitInfoFromContext(content: string, urlStartIndex: number): { toolkitName: string | null; toolkitSlug: string | null } {
-  const contextBefore = content.substring(Math.max(0, urlStartIndex - 500), urlStartIndex);
-  const contextAfter = content.substring(urlStartIndex, Math.min(content.length, urlStartIndex + 200));
-  const fullContext = contextBefore + contextAfter;
+  // Use a smaller, more focused context window
+  const contextBefore = content.substring(Math.max(0, urlStartIndex - 200), urlStartIndex);
+  const contextAfter = content.substring(urlStartIndex, Math.min(content.length, urlStartIndex + 100));
+  
+  // Look for the most recent/closest pattern before the URL
+  // Pattern 1: [toolkit:slug:name] Authentication:
   let match = contextBefore.match(/\[toolkit:([^:]+):([^\]]+)\]\s+Authentication:\s*$/i);
   if (match) {
     const toolkitSlug = match[1].trim();
@@ -97,6 +100,7 @@ function extractToolkitInfoFromContext(content: string, urlStartIndex: number): 
     return { toolkitName, toolkitSlug };
   }
   
+  // Pattern 2: Service Name Authentication:
   match = contextBefore.match(/([A-Za-z]+(?:\s+[A-Za-z]+)*)\s+Authentication:\s*$/i);
   if (match) {
     const serviceName = match[1].trim();
@@ -104,54 +108,54 @@ function extractToolkitInfoFromContext(content: string, urlStartIndex: number): 
     return { toolkitName: serviceName, toolkitSlug: slug };
   }
   
-  match = contextBefore.match(/\d+\.\s*([A-Za-z]+)\s+Authentication(?:\s+\([^)]*\))?\s*:?\s*$/i);
+  // Pattern 3: Numbered list with service name
+  match = contextBefore.match(/\d+\.\s*([A-Za-z]+(?:\s+[A-Za-z]+)*)\s+(?:Integration|Authentication)(?:\s+[^:\n]*)?:?\s*$/i);
   if (match) {
     const serviceName = match[1].trim();
     const slug = serviceName.toLowerCase().replace(/\s+/g, '_');
     return { toolkitName: serviceName, toolkitSlug: slug };
   }
   
-  match = contextBefore.match(/([A-Za-z]+)\s+Authentication\s+\(for[^)]*\)\s*:?\s*$/i);
+  // Pattern 3b: Handle numbered list with emojis
+  match = contextBefore.match(/\d+\.\s*([A-Za-z]+(?:\s+[A-Za-z]+)*)\s+(?:Integration|Authentication)\s*[^\w\n]*\s*$/i);
   if (match) {
     const serviceName = match[1].trim();
     const slug = serviceName.toLowerCase().replace(/\s+/g, '_');
     return { toolkitName: serviceName, toolkitSlug: slug };
   }
   
-  match = fullContext.match(/Successfully created credential profile[^f]*for\s+([^.!?\n]+)/i);
-  if (match) {
-    return { toolkitName: match[1].trim(), toolkitSlug: match[1].toLowerCase().replace(/\s+/g, '_') };
-  }
-  
-  match = fullContext.match(/connect your\s+([^a]+)\s+account/i);
-  if (match) {
-    const name = match[1].trim();
-    return { toolkitName: name, toolkitSlug: name.toLowerCase().replace(/\s+/g, '_') };
-  }
-  
-  match = fullContext.match(/authorize access to your\s+([^a]+)\s+account/i);
-  if (match) {
-    const name = match[1].trim();
-    return { toolkitName: name, toolkitSlug: name.toLowerCase().replace(/\s+/g, '_') };
-  }
-  
-  match = fullContext.match(/Sign in to\s+([^.!?\n]+)/i);
-  if (match) {
-    const name = match[1].trim();
-    return { toolkitName: name, toolkitSlug: name.toLowerCase().replace(/\s+/g, '_') };
-  }
-  
-  match = contextBefore.match(/([A-Za-z]+)\s+authentication\s*(?:link|url)?:?\s*$/i);
+  // Pattern 4: Service Authentication (for...)
+  match = contextBefore.match(/([A-Za-z]+(?:\s+[A-Za-z]+)*)\s+Authentication\s+\([^)]*\)\s*:?\s*$/i);
   if (match) {
     const serviceName = match[1].trim();
     const slug = serviceName.toLowerCase().replace(/\s+/g, '_');
     return { toolkitName: serviceName, toolkitSlug: slug };
   }
   
+  // Pattern 5: Look for "Sign in to [Service]" in the URL context
+  const urlContext = contextAfter.substring(0, 100);
+  match = urlContext.match(/Sign\s+in\s+to\s+([A-Za-z]+(?:\s+[A-Za-z]+)*)/i);
+  if (match) {
+    const serviceName = match[1].trim();
+    const slug = serviceName.toLowerCase().replace(/\s+/g, '_');
+    return { toolkitName: serviceName, toolkitSlug: slug };
+  }
+  
+  // Pattern 6: Look in the immediate context before URL (within 100 chars)
+  const immediateContext = content.substring(Math.max(0, urlStartIndex - 100), urlStartIndex);
+  match = immediateContext.match(/([A-Za-z]+)\s+(?:authentication|auth|connect)\s*(?:link|url)?:?\s*$/i);
+  if (match) {
+    const serviceName = match[1].trim();
+    const slug = serviceName.toLowerCase().replace(/\s+/g, '_');
+    return { toolkitName: serviceName, toolkitSlug: slug };
+  }
+  
+  // Pattern 7: Look for common toolkit names in the immediate context only
   const commonToolkits = Object.keys(TOOLKIT_NAME_MAPPINGS);
   for (const toolkit of commonToolkits) {
     const toolkitName = TOOLKIT_NAME_MAPPINGS[toolkit];
-    if (fullContext.toLowerCase().includes(toolkitName.toLowerCase())) {
+    // Only check in the immediate context before the URL
+    if (immediateContext.toLowerCase().includes(toolkitName.toLowerCase())) {
       return { toolkitName, toolkitSlug: toolkit };
     }
   }
@@ -192,6 +196,14 @@ function detectComposioUrls(content: string): ComposioUrl[] {
       
       processedUrls.add(url);
       const { toolkitName, toolkitSlug } = extractToolkitInfoFromContext(content, match.index);
+      
+      // Debug logging to help identify what's being detected
+      console.log('ComposioUrlDetector Debug:', {
+        url: url.substring(0, 50) + '...',
+        toolkitName,
+        toolkitSlug,
+        contextBefore: content.substring(Math.max(0, match.index - 100), match.index)
+      });
       
       urls.push({
         url,

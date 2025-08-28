@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Zap, Server, Store } from 'lucide-react'
+import { Zap, Server, Store, Settings } from 'lucide-react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { MCPConfigurationProps, MCPConfiguration as MCPConfigurationType } from './types';
 import { ConfiguredMcpList } from './configured-mcp-list';
@@ -28,10 +28,6 @@ export const MCPConfigurationNew: React.FC<MCPConfigurationProps> = ({
   const [selectedMCPForTools, setSelectedMCPForTools] = useState<MCPConfigurationType | null>(null);
   const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>(agentId);
   const queryClient = useQueryClient();
-
-  useEffect(() => {
-    setSelectedAgentId(agentId);
-  }, [agentId]);
 
   const handleAgentChange = (newAgentId: string | undefined) => {
     setSelectedAgentId(newAgentId);
@@ -64,8 +60,7 @@ export const MCPConfigurationNew: React.FC<MCPConfigurationProps> = ({
   };
 
   const handleRemoveMCP = (index: number) => {
-    const newMCPs = [...configuredMCPs];
-    newMCPs.splice(index, 1);
+    const newMCPs = configuredMCPs.filter((_, i) => i !== index);
     onConfigurationChange(newMCPs);
   };
 
@@ -84,8 +79,9 @@ export const MCPConfigurationNew: React.FC<MCPConfigurationProps> = ({
 
   const handleToolsSelected = (profileId: string, selectedTools: string[], appName: string, appSlug: string) => {
     setShowRegistryDialog(false);
-    queryClient.invalidateQueries({ queryKey: ['agents'] });
-    queryClient.invalidateQueries({ queryKey: ['agent', selectedAgentId] });
+    if (selectedAgentId) {
+      queryClient.invalidateQueries({ queryKey: ['agents', 'detail', selectedAgentId] });
+    }
     queryClient.invalidateQueries({ queryKey: ['composio', 'profiles'] });
     toast.success(`Connected ${appName} integration!`);
   };
@@ -107,11 +103,11 @@ export const MCPConfigurationNew: React.FC<MCPConfigurationProps> = ({
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="flex gap-2">
-          <Button onClick={() => setShowRegistryDialog(true)} size="sm" variant="default" className="gap-2">
+          <Button onClick={() => setShowRegistryDialog(true)} size="sm" variant="default" className="gap-2" type="button">
             <Store className="h-4 w-4" />
             Browse Apps
           </Button>
-          <Button onClick={() => setShowCustomDialog(true)} size="sm" variant="outline" className="gap-2">
+          <Button onClick={() => setShowCustomDialog(true)} size="sm" variant="outline" className="gap-2" type="button">
             <Server className="h-4 w-4" />
             Custom MCP
           </Button>
@@ -155,8 +151,9 @@ export const MCPConfigurationNew: React.FC<MCPConfigurationProps> = ({
             onToolsSelected={handleToolsSelected}
             onClose={() => {
               setShowRegistryDialog(false);
-              queryClient.invalidateQueries({ queryKey: ['agents'] });
-              queryClient.invalidateQueries({ queryKey: ['agent', selectedAgentId] });
+              if (selectedAgentId) {
+                queryClient.invalidateQueries({ queryKey: ['agents', 'detail', selectedAgentId] });
+              }
             }}
           />
         </DialogContent>

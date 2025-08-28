@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from "@/components/ui/button"
-import { FolderOpen, Share2, Monitor } from "lucide-react"
+import { FolderOpen, ExternalLink, Monitor } from "lucide-react"
 import { usePathname } from "next/navigation"
 import { toast } from "sonner"
 import {
@@ -20,12 +20,6 @@ import { ShareModal } from "@/components/sidebar/share-modal"
 import { useQueryClient } from "@tanstack/react-query";
 import { projectKeys } from "@/hooks/react-query/sidebar/keys";
 import { threadKeys } from "@/hooks/react-query/threads/keys";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { useFeatureFlags } from "@/lib/feature-flags";
 
 interface ThreadSiteHeaderProps {
@@ -172,6 +166,16 @@ export function SiteHeader({
 
           {/* Show all buttons on both mobile and desktop - responsive tooltips */}
           <TooltipProvider>
+
+          <Button
+              variant="ghost"
+              onClick={openShareModal}
+              className="h-9 px-3 cursor-pointer gap-2"
+            >
+              <ExternalLink className="h-4 w-4" />
+              <span>Share</span>
+            </Button>
+
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -191,21 +195,7 @@ export function SiteHeader({
               </TooltipContent>
             </Tooltip>
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={openShareModal}
-                  className="h-9 w-9 cursor-pointer"
-                >
-                  <Share2 className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side={isMobile ? "bottom" : "bottom"}>
-                <p>Share Chat</p>
-              </TooltipContent>
-            </Tooltip>
+
 
             <Tooltip>
               <TooltipTrigger asChild>

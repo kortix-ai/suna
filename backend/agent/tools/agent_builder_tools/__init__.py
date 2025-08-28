@@ -35,7 +35,7 @@ class AgentBuilderToolRegistry:
         return self.tools.copy()
     
     def register_all_tools(self, thread_manager: ThreadManager, db_connection, agent_id: str):
-        """Register all agent builder tools with the thread manager."""
+        
         logger.debug(f"Registering {len(self.tools)} agent builder tools")
         
         for tool_name, tool_class in self.tools.items():

@@ -86,7 +86,8 @@ class MCPSearchTool(AgentBuilderBaseTool):
             )
                 
         except Exception as e:
-            return self.fail_response(f"Error searching Composio toolkits: {str(e)}")
+            logger.error(f"Error searching Composio toolkits: {str(e)}")
+            return self.fail_response("Error searching Composio toolkits")
 
     @openapi_schema({
         "type": "function",
@@ -140,7 +141,8 @@ class MCPSearchTool(AgentBuilderBaseTool):
             return self.success_response(result)
             
         except Exception as e:
-            return self.fail_response(f"Error getting toolkit details: {str(e)}")
+            logger.error(f"Error getting toolkit details: {str(e)}")
+            return self.fail_response("Error getting toolkit details")
 
     @openapi_schema({
         "type": "function",
@@ -196,14 +198,13 @@ class MCPSearchTool(AgentBuilderBaseTool):
             )
             
             if not result.success:
-                return self.fail_response(f"Failed to discover tools: {result.message}")
+                return self.fail_response("Failed to discover tools")
             
             available_tools = result.tools or []
             
             return self.success_response({
                 "message": f"Found {len(available_tools)} MCP tools available for {profile.toolkit_name} profile '{profile.profile_name}'",
                 "profile_info": {
-                    "profile_id": profile.profile_id,
                     "profile_name": profile.profile_name,
                     "toolkit_name": profile.toolkit_name,
                     "toolkit_slug": profile.toolkit_slug,
@@ -214,4 +215,5 @@ class MCPSearchTool(AgentBuilderBaseTool):
             })
             
         except Exception as e:
-            return self.fail_response(f"Error discovering MCP tools: {str(e)}") 
+            logger.error(f"Error discovering MCP tools: {str(e)}")
+            return self.fail_response("Error discovering MCP tools") 

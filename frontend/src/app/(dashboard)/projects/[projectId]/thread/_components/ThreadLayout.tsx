@@ -41,6 +41,7 @@ interface ThreadLayoutProps {
   initialLoadCompleted: boolean;
   agentName?: string;
   disableInitialAnimation?: boolean;
+  compact?: boolean;
 }
 
 export function ThreadLayout({
@@ -75,10 +76,77 @@ export function ThreadLayout({
   isMobile,
   initialLoadCompleted,
   agentName,
-  disableInitialAnimation = false
+  disableInitialAnimation = false,
+  compact = false
 }: ThreadLayoutProps) {
   const isActuallyMobile = useIsMobile();
   
+  // Compact mode for embedded use
+  if (compact) {
+    return (
+      <>
+        <div className="relative h-full">
+          {debugMode && (
+            <div className="absolute top-4 right-4 bg-amber-500 text-black text-xs px-2 py-1 rounded-md shadow-md z-50">
+              Debug Mode
+            </div>
+          )}
+
+          {/* Main content - always full width */}
+          <div className="flex flex-col h-full overflow-hidden">
+            {children}
+          </div>
+
+          {/* Tool Call Side Panel - Full replacement overlay for compact */}
+          {isSidePanelOpen && initialLoadCompleted && (
+            <div className="absolute inset-0 bg-background z-40">
+              <ToolCallSidePanel
+                isOpen={true}
+                onClose={onSidePanelClose}
+                toolCalls={toolCalls}
+                messages={messages}
+                externalNavigateToIndex={externalNavIndex}
+                agentStatus={agentStatus}
+                currentIndex={currentToolIndex}
+                onNavigate={onSidePanelNavigate}
+                project={project || undefined}
+                renderAssistantMessage={renderAssistantMessage}
+                renderToolResult={renderToolResult}
+                isLoading={!initialLoadCompleted || isLoading}
+                onFileClick={onViewFiles}
+                agentName={agentName}
+                disableInitialAnimation={disableInitialAnimation}
+                compact={true}
+              />
+            </div>
+          )}
+
+          {/* File Viewer Modal */}
+          {sandboxId && (
+            <FileViewerModal
+              open={fileViewerOpen}
+              onOpenChange={setFileViewerOpen}
+              sandboxId={sandboxId}
+              initialFilePath={fileToView}
+              project={project || undefined}
+              filePathList={filePathList}
+            />
+          )}
+
+          <BillingErrorAlert
+            message={billingData.message}
+            currentUsage={billingData.currentUsage}
+            limit={billingData.limit}
+            accountId={billingData.accountId}
+            onDismiss={onDismissBilling}
+            isOpen={showBillingAlert}
+          />
+        </div>
+      </>
+    );
+  }
+
+  // Full layout mode
   return (
     <div className="flex h-screen">
       {debugMode && (

@@ -18,7 +18,50 @@ class TriggerTool(AgentBuilderBaseTool):
     def __init__(self, thread_manager: ThreadManager, db_connection, agent_id: str):
         super().__init__(thread_manager, db_connection, agent_id)
 
-    # ===== SCHEDULED TRIGGERS =====
+    async def _sync_workflows_to_version_config(self) -> None:
+        try:
+            client = await self.db.client
+            
+            agent_result = await client.table('agents').select('current_version_id').eq('agent_id', self.agent_id).single().execute()
+            if not agent_result.data or not agent_result.data.get('current_version_id'):
+                logger.warning(f"No current version found for agent {self.agent_id}")
+                return
+            
+            current_version_id = agent_result.data['current_version_id']
+            
+            workflows_result = await client.table('agent_workflows').select('*').eq('agent_id', self.agent_id).execute()
+            workflows = workflows_result.data if workflows_result.data else []
+            
+            triggers_result = await client.table('agent_triggers').select('*').eq('agent_id', self.agent_id).execute()
+            triggers = []
+            if triggers_result.data:
+                import json
+                for trigger in triggers_result.data:
+                    trigger_copy = trigger.copy()
+                    if 'config' in trigger_copy and isinstance(trigger_copy['config'], str):
+                        try:
+                            trigger_copy['config'] = json.loads(trigger_copy['config'])
+                        except json.JSONDecodeError:
+                            logger.warning(f"Failed to parse trigger config for {trigger_copy.get('trigger_id')}")
+                            trigger_copy['config'] = {}
+                    triggers.append(trigger_copy)
+            
+            version_result = await client.table('agent_versions').select('config').eq('version_id', current_version_id).single().execute()
+            if not version_result.data:
+                logger.warning(f"Version {current_version_id} not found")
+                return
+            
+            config = version_result.data.get('config', {})
+            
+            config['workflows'] = workflows
+            config['triggers'] = triggers
+            
+            await client.table('agent_versions').update({'config': config}).eq('version_id', current_version_id).execute()
+            
+            logger.debug(f"Synced {len(workflows)} workflows and {len(triggers)} triggers to version config for agent {self.agent_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to sync workflows and triggers to version config: {e}")
 
     @openapi_schema({
         "type": "function",
@@ -143,27 +186,31 @@ class TriggerTool(AgentBuilderBaseTool):
                 
                 result_message += f"\nThe trigger is now active and will run according to the schedule."
                 
+                # Sync triggers to version config
+                try:
+                    await self._sync_workflows_to_version_config()
+                except Exception as e:
+                    logger.warning(f"Failed to sync triggers to version config: {e}")
+                
                 return self.success_response({
                     "message": result_message,
                     "trigger": {
-                        "id": trigger.trigger_id,
                         "name": trigger.name,
                         "description": trigger.description,
                         "cron_expression": cron_expression,
                         "execution_type": execution_type,
-                        "is_active": trigger.is_active,
-                        "created_at": trigger.created_at.isoformat()
+                        "is_active": trigger.is_active
                     }
                 })
             except ValueError as ve:
-                return self.fail_response(f"Validation error: {str(ve)}")
+                return self.fail_response("Validation error")
             except Exception as e:
                 logger.error(f"Error creating trigger through manager: {str(e)}")
-                return self.fail_response(f"Failed to create trigger: {str(e)}")
+                return self.fail_response("Failed to create trigger")
                     
         except Exception as e:
             logger.error(f"Error creating scheduled trigger: {str(e)}")
-            return self.fail_response(f"Error creating scheduled trigger: {str(e)}")
+            return self.fail_response("Error creating scheduled trigger")
 
     @openapi_schema({
         "type": "function",
@@ -212,13 +259,11 @@ class TriggerTool(AgentBuilderBaseTool):
             formatted_triggers = []
             for trigger in schedule_triggers:
                 formatted = {
-                    "id": trigger.trigger_id,
                     "name": trigger.name,
                     "description": trigger.description,
                     "cron_expression": trigger.config.get("cron_expression"),
                     "execution_type": trigger.config.get("execution_type", "agent"),
-                    "is_active": trigger.is_active,
-                    "created_at": trigger.created_at.isoformat()
+                    "is_active": trigger.is_active
                 }
                 
                 if trigger.config.get("execution_type") == "workflow":
@@ -237,7 +282,7 @@ class TriggerTool(AgentBuilderBaseTool):
                     
         except Exception as e:
             logger.error(f"Error getting scheduled triggers: {str(e)}")
-            return self.fail_response(f"Error getting scheduled triggers: {str(e)}")
+            return self.fail_response("Error getting scheduled triggers")
 
     @openapi_schema({
         "type": "function",
@@ -278,16 +323,21 @@ class TriggerTool(AgentBuilderBaseTool):
             success = await trigger_svc.delete_trigger(trigger_id)
             
             if success:
+                # Sync triggers to version config
+                try:
+                    await self._sync_workflows_to_version_config()
+                except Exception as e:
+                    logger.warning(f"Failed to sync triggers to version config: {e}")
+                
                 return self.success_response({
-                    "message": f"Scheduled trigger '{trigger_config.name}' deleted successfully",
-                    "trigger_id": trigger_id
+                    "message": f"Scheduled trigger '{trigger_config.name}' deleted successfully"
                 })
             else:
                 return self.fail_response("Failed to delete trigger")
                     
         except Exception as e:
             logger.error(f"Error deleting scheduled trigger: {str(e)}")
-            return self.fail_response(f"Error deleting scheduled trigger: {str(e)}")
+            return self.fail_response("Error deleting scheduled trigger")
 
     @openapi_schema({
         "type": "function",
@@ -337,10 +387,16 @@ class TriggerTool(AgentBuilderBaseTool):
             
             if updated_config:
                 status = "enabled" if is_active else "disabled"
+                
+                # Sync triggers to version config
+                try:
+                    await self._sync_workflows_to_version_config()
+                except Exception as e:
+                    logger.warning(f"Failed to sync triggers to version config: {e}")
+                
                 return self.success_response({
                     "message": f"Scheduled trigger '{updated_config.name}' has been {status}",
                     "trigger": {
-                        "id": updated_config.trigger_id,
                         "name": updated_config.name,
                         "is_active": updated_config.is_active
                     }
@@ -350,13 +406,11 @@ class TriggerTool(AgentBuilderBaseTool):
                     
         except Exception as e:
             logger.error(f"Error toggling scheduled trigger: {str(e)}")
-            return self.fail_response(f"Error toggling scheduled trigger: {str(e)}")
+            return self.fail_response("Error toggling scheduled trigger")
 
-    # ===== EVENT-BASED TRIGGERS (Non-Production Only) =====
+    # ===== EVENT-BASED TRIGGERS =====
 
-# Event trigger methods - only available in non-production environments  
-if config.ENV_MODE != EnvMode.PRODUCTION:
-
+# Event trigger methods - available in all environments
     @openapi_schema({
         "type": "function",
         "function": {
@@ -387,9 +441,7 @@ if config.ENV_MODE != EnvMode.PRODUCTION:
             })
         except Exception as e:
             logger.error(f"Error listing event trigger apps: {e}")
-            return self.fail_response(f"Error listing apps: {str(e)}")
-    
-    TriggerTool.list_event_trigger_apps = list_event_trigger_apps
+            return self.fail_response("Error listing apps")
 
     @openapi_schema({
         "type": "function",
@@ -429,64 +481,7 @@ if config.ENV_MODE != EnvMode.PRODUCTION:
             })
         except Exception as e:
             logger.error(f"Error listing triggers for app {toolkit_slug}: {e}")
-            return self.fail_response(f"Error listing triggers: {str(e)}")
-    
-    TriggerTool.list_app_event_triggers = list_app_event_triggers
-
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "list_event_profiles",
-            "description": "List connected Composio profiles for a toolkit. Use this to get profile_id and connected_account_id before creating a trigger.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "toolkit_slug": {
-                        "type": "string",
-                        "description": "Toolkit slug, e.g. 'gmail'"
-                    }
-                },
-                "required": ["toolkit_slug"]
-            }
-        }
-    })
-    @usage_example('''
-        <function_calls>
-        <invoke name="list_event_profiles">
-        <parameter name="toolkit_slug">gmail</parameter>
-        </invoke>
-        </function_calls>
-    ''')
-    async def list_event_profiles(self, toolkit_slug: str) -> ToolResult:
-        try:
-            client = await self.db.client
-            agent_rows = await client.table('agents').select('account_id').eq('agent_id', self.agent_id).execute()
-            if not agent_rows.data:
-                return self.fail_response("Agent not found")
-            account_id = agent_rows.data[0]['account_id']
-
-            profile_service = ComposioProfileService(self.db)
-            profiles = await profile_service.get_profiles(account_id, toolkit_slug)
-
-            items = []
-            for p in profiles:
-                items.append({
-                    "profile_id": p.profile_id,
-                    "display_name": p.display_name,
-                    "is_connected": p.is_connected,
-                    "connected_account_id": getattr(p, 'connected_account_id', None)
-                })
-
-            return self.success_response({
-                "message": f"Found {len(items)} profile(s) for {toolkit_slug}",
-                "items": items,
-                "total": len(items)
-            })
-        except Exception as e:
-            logger.error(f"Error listing event profiles: {e}")
-            return self.fail_response(f"Error listing profiles: {str(e)}")
-    
-    TriggerTool.list_event_profiles = list_event_profiles
+            return self.fail_response("Error listing triggers")
 
     @openapi_schema({
         "type": "function",
@@ -514,7 +509,9 @@ if config.ENV_MODE != EnvMode.PRODUCTION:
         <function_calls>
         <invoke name="list_event_trigger_apps"></invoke>
         <invoke name="list_app_event_triggers"><parameter name="toolkit_slug">gmail</parameter></invoke>
-        <invoke name="list_event_profiles"><parameter name="toolkit_slug">gmail</parameter></invoke>
+        <invoke name="get_credential_profiles">
+        <parameter name="toolkit_slug">[toolkit_slug]</parameter>
+        </invoke>        
         <invoke name="create_event_trigger">
           <parameter name="slug">GMAIL_NEW_GMAIL_MESSAGE</parameter>
           <parameter name="profile_id">profile_123</parameter>
@@ -544,15 +541,25 @@ if config.ENV_MODE != EnvMode.PRODUCTION:
             if route == "agent" and not agent_prompt:
                 return self.fail_response("agent_prompt is required when route is 'agent'")
 
-            # Resolve composio user id and connected account id from profile
+            # Get profile config
             profile_service = ComposioProfileService(self.db)
-            profile_cfg = await profile_service.get_profile_config(profile_id)
-            composio_user_id = profile_cfg.get("user_id")
+            try:
+                profile_config = await profile_service.get_profile_config(profile_id)
+            except Exception as e:
+                logger.error(f"Failed to get profile config: {e}")
+                return self.fail_response(f"Failed to get profile config: {str(e)}")
+                
+            composio_user_id = profile_config.get("user_id")
             if not composio_user_id:
                 return self.fail_response("Composio profile is missing user_id")
-            if not connected_account_id:
-                connected_account_id = profile_cfg.get("connected_account_id")
+            
+            # Get toolkit_slug and build qualified_name
+            toolkit_slug = profile_config.get("toolkit_slug")
+            if not toolkit_slug and slug:
+                toolkit_slug = slug.split('_')[0].lower() if '_' in slug else 'composio'
+            qualified_name = f'composio.{toolkit_slug}' if toolkit_slug and toolkit_slug != 'composio' else 'composio'
 
+            # API setup
             api_base = os.getenv("COMPOSIO_API_BASE", "https://backend.composio.dev").rstrip("/")
             api_key = os.getenv("COMPOSIO_API_KEY")
             if not api_key:
@@ -592,47 +599,35 @@ if config.ENV_MODE != EnvMode.PRODUCTION:
                                         coerced_config[key] = ",".join(str(x) for x in val)
                                     elif not isinstance(val, str):
                                         coerced_config[key] = str(val)
-                            except Exception:
+                            except Exception as e:
+                                logger.warning(f"Failed to coerce config key {key}: {e}")
                                 pass
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Failed to fetch trigger schema: {e}")
                 pass
 
-            # Upsert trigger instance with webhook
-            base_url = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000").rstrip("/")
-            secret = os.getenv("COMPOSIO_WEBHOOK_SECRET", "")
-            webhook_headers: Dict[str, str] = {"X-Composio-Secret": secret} if secret else {}
-            vercel_bypass = os.getenv("VERCEL_PROTECTION_BYPASS_KEY", "")
-            if vercel_bypass:
-                webhook_headers["X-Vercel-Protection-Bypass"] = vercel_bypass
-
-            body: Dict[str, Any] = {
+            # Build request body (simplified like in API)
+            body = {
                 "user_id": composio_user_id,
-                "userId": composio_user_id,
                 "trigger_config": coerced_config,
-                "triggerConfig": coerced_config,
-                "webhook": {
-                    "url": f"{base_url}/api/composio/webhook",
-                    "headers": webhook_headers,
-                    "method": "POST",
-                },
             }
             if connected_account_id:
-                body["connectedAccountId"] = connected_account_id
                 body["connected_account_id"] = connected_account_id
-                body["connectedAccountIds"] = [connected_account_id]
-                body["connected_account_ids"] = [connected_account_id]
 
+            # Upsert trigger instance
             upsert_url = f"{api_base}/api/v3/trigger_instances/{slug}/upsert"
             async with httpx.AsyncClient(timeout=20) as http_client:
                 resp = await http_client.post(upsert_url, headers=headers, json=body)
                 try:
                     resp.raise_for_status()
-                except httpx.HTTPStatusError:
+                except httpx.HTTPStatusError as e:
                     ct = resp.headers.get("content-type", "")
                     detail = resp.json() if "application/json" in ct else resp.text
+                    logger.error(f"Composio upsert error - status: {resp.status_code}, detail: {detail}")
                     return self.fail_response(f"Composio upsert error: {detail}")
                 created = resp.json()
 
+            # Extract trigger ID (same logic as API)
             def _extract_id(obj: Dict[str, Any]) -> Optional[str]:
                 if not isinstance(obj, dict):
                     return None
@@ -646,6 +641,7 @@ if config.ENV_MODE != EnvMode.PRODUCTION:
                 )
                 if cand:
                     return cand
+                # Nested shapes
                 for k in ("trigger", "trigger_instance", "triggerInstance", "data", "result"):
                     nested = obj.get(k)
                     if isinstance(nested, dict):
@@ -661,48 +657,46 @@ if config.ENV_MODE != EnvMode.PRODUCTION:
             composio_trigger_id = _extract_id(created) if isinstance(created, dict) else None
 
             if not composio_trigger_id:
-                # fallback to list active
-                try:
-                    params_lookup: Dict[str, Any] = {"limit": 50, "slug": slug, "userId": composio_user_id}
-                    if connected_account_id:
-                        params_lookup["connectedAccountId"] = connected_account_id
-                    list_url = f"{api_base}/api/v3/trigger_instances/active"
-                    async with httpx.AsyncClient(timeout=15) as http_client:
-                        lr = await http_client.get(list_url, headers=headers, params=params_lookup)
-                        if lr.status_code == 200:
-                            ldata = lr.json()
-                            items = ldata.get("items") if isinstance(ldata, dict) else (ldata if isinstance(ldata, list) else [])
-                            if items:
-                                composio_trigger_id = _extract_id(items[0] if isinstance(items[0], dict) else {})
-                except Exception:
-                    pass
-
-            if not composio_trigger_id:
                 return self.fail_response("Failed to get Composio trigger id from response")
-
-            # Build Suna trigger and save
+            
+            # Build Suna trigger config (same as API)
             suna_config: Dict[str, Any] = {
+                "provider_id": "composio",
                 "composio_trigger_id": composio_trigger_id,
                 "trigger_slug": slug,
-                "execution_type": route,
+                "qualified_name": qualified_name,
+                "execution_type": route if route in ("agent", "workflow") else "agent",
                 "profile_id": profile_id,
             }
-            if route == "agent":
+            if suna_config["execution_type"] == "agent":
                 if agent_prompt:
                     suna_config["agent_prompt"] = agent_prompt
             else:
+                if not workflow_id:
+                    return self.fail_response("workflow_id is required for workflow route")
                 suna_config["workflow_id"] = workflow_id
                 if workflow_input:
                     suna_config["workflow_input"] = workflow_input
-
+            
+            # Create Suna trigger
             trigger_svc = get_trigger_service(self.db)
-            trigger = await trigger_svc.create_trigger(
-                agent_id=self.agent_id,
-                provider_id="composio",
-                name=name or slug,
-                config=suna_config,
-                description=f"Composio event: {slug}"
-            )
+            try:
+                trigger = await trigger_svc.create_trigger(
+                    agent_id=self.agent_id,
+                    provider_id="composio",
+                    name=name or slug,
+                    config=suna_config,
+                    description=f"Composio event: {slug}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to create Suna trigger: {e}")
+                return self.fail_response(f"Failed to create Suna trigger: {str(e)}")
+
+            # Sync triggers to version config
+            try:
+                await self._sync_workflows_to_version_config()
+            except Exception as e:
+                logger.warning(f"Failed to sync triggers to version config: {e}")
 
             message = f"Event trigger '{trigger.name}' created successfully.\n"
             message += f"Route: {route}. "
@@ -714,17 +708,11 @@ if config.ENV_MODE != EnvMode.PRODUCTION:
             return self.success_response({
                 "message": message,
                 "trigger": {
-                    "id": trigger.trigger_id,
-                    "agent_id": trigger.agent_id,
                     "provider": "composio",
                     "slug": slug,
-                    "config": trigger.config,
-                    "is_active": trigger.is_active,
-                    "created_at": trigger.created_at.isoformat()
+                    "is_active": trigger.is_active
                 }
             })
         except Exception as e:
-            logger.error(f"Error creating event trigger: {e}", exc_info=True)
+            logger.error(f"Exception in create_event_trigger: {e}", exc_info=True)
             return self.fail_response(f"Error creating event trigger: {str(e)}")
-    
-    TriggerTool.create_event_trigger = create_event_trigger

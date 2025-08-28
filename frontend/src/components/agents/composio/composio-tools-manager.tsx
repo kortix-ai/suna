@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useComposioProfiles } from '@/hooks/react-query/composio/use-composio-profiles';
@@ -46,9 +46,39 @@ export const ComposioToolsManager: React.FC<ComposioToolsManagerProps> = ({
     enabled: !!currentProfile?.toolkit_slug
   });
 
+  // Load current tools when dialog opens
+  useEffect(() => {
+    const loadCurrentTools = async () => {
+      if (!open || !agentId || !profileId) return;
+
+      try {
+        const response = await backendApi.get(`/agents/${agentId}`);
+        if (response.success && response.data) {
+          const agent = response.data;
+          const composioMcps = agent.custom_mcps?.filter((mcp: any) =>
+            mcp.type === 'composio' && mcp.config?.profile_id === profileId
+          ) || [];
+
+          const enabledTools = composioMcps.flatMap((mcp: any) => mcp.enabledTools || []);
+          setSelectedTools(enabledTools);
+        }
+      } catch (error) {
+        console.error('Failed to load current tools:', error);
+        setSelectedTools([]);
+      }
+    };
+
+    if (open) {
+      loadCurrentTools();
+    } else {
+      // Reset when dialog closes
+      setSelectedTools([]);
+    }
+  }, [open, agentId, profileId]);
+
   const handleSave = async () => {
     if (!currentProfile) return;
-    
+
     const mcpConfigResponse = await composioApi.getMcpConfigForProfile(currentProfile.profile_id);
     const response = await backendApi.put(`/agents/${agentId}/custom-mcp-tools`, {
       custom_mcps: [{
@@ -71,9 +101,9 @@ export const ComposioToolsManager: React.FC<ComposioToolsManagerProps> = ({
         <DialogHeader className="p-6 pb-4 border-b flex-shrink-0">
           <div className="flex items-center gap-3">
             {iconData?.icon_url || appLogo ? (
-              <img 
-                src={iconData?.icon_url || appLogo} 
-                alt={currentProfile?.toolkit_name} 
+              <img
+                src={iconData?.icon_url || appLogo}
+                alt={currentProfile?.toolkit_name}
                 className="w-10 h-10 rounded-lg border object-contain bg-muted p-1"
               />
             ) : (
@@ -91,11 +121,12 @@ export const ComposioToolsManager: React.FC<ComposioToolsManagerProps> = ({
             </div>
           </div>
         </DialogHeader>
-        
+
         <ComposioToolsSelector
           profileId={currentProfile.profile_id}
           agentId={agentId}
           toolkitName={currentProfile.toolkit_name}
+          toolkitSlug={currentProfile.toolkit_slug}
           selectedTools={selectedTools}
           onToolsChange={setSelectedTools}
           onSave={handleSave}

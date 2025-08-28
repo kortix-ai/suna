@@ -122,6 +122,7 @@ class AgentUpdateRequest(BaseModel):
     icon_name: Optional[str] = None
     icon_color: Optional[str] = None
     icon_background: Optional[str] = None
+    replace_mcps: Optional[bool] = None
 
 class AgentResponse(BaseModel):
     agent_id: str
@@ -147,11 +148,15 @@ class AgentResponse(BaseModel):
     current_version: Optional[AgentVersionResponse] = None
     metadata: Optional[Dict[str, Any]] = None
 
+from utils.pagination import PaginationParams
+
 class PaginationInfo(BaseModel):
-    page: int
-    limit: int
-    total: int
-    pages: int
+    current_page: int
+    page_size: int
+    total_items: int
+    total_pages: int
+    has_next: bool
+    has_previous: bool
 
 class AgentsResponse(BaseModel):
     agents: List[AgentResponse]
@@ -163,7 +168,6 @@ class ThreadAgentResponse(BaseModel):
     message: str
 
 class AgentExportData(BaseModel):
-    """Exportable agent configuration data"""
     name: str
     description: Optional[str] = None
     system_prompt: str
@@ -1323,324 +1327,71 @@ async def get_agents(
     has_default: Optional[bool] = Query(None, description="Filter by default agents"),
     has_mcp_tools: Optional[bool] = Query(None, description="Filter by agents with MCP tools"),
     has_agentpress_tools: Optional[bool] = Query(None, description="Filter by agents with AgentPress tools"),
-    tools: Optional[str] = Query(None, description="Comma-separated list of tools to filter by")
+    tools: Optional[str] = Query(None, description="Comma-separated list of tools to filter by"),
+    content_type: Optional[str] = Query(None, description="Content type filter: 'agents', 'templates', or None for agents only")
 ):
-    """Get agents for the current user with pagination, search, sort, and filter support."""
     if not await is_enabled("custom_agents"):
         raise HTTPException(
             status_code=403, 
             detail="Custom agents currently disabled. This feature is not available at the moment."
         )
-    logger.debug(f"Fetching agents for user: {user_id} with page={page}, limit={limit}, search='{search}', sort_by={sort_by}, sort_order={sort_order}")
-    client = await db.client
-    
     try:
-        # Calculate offset
-        offset = (page - 1) * limit
+        from agent.services.agent_service import AgentService, AgentFilters
         
-        # Start building the query - simple approach
-        query = client.table('agents').select('*', count='exact').eq("account_id", user_id)
+        tools_list = []
+        if tools:
+            if isinstance(tools, str):
+                tools_list = [tool.strip() for tool in tools.split(',') if tool.strip()]
+            else:
+                logger.warning(f"Unexpected tools parameter type: {type(tools)}")
         
-        # Apply search filter
-        if search:
-            search_term = f"%{search}%"
-            query = query.or_(f"name.ilike.{search_term},description.ilike.{search_term}")
+        pagination_params = PaginationParams(
+            page=page,
+            page_size=limit
+        )
         
-        # Apply filters
-        if has_default is not None:
-            query = query.eq("is_default", has_default)
+        filters = AgentFilters(
+            search=search,
+            has_default=has_default,
+            has_mcp_tools=has_mcp_tools,
+            has_agentpress_tools=has_agentpress_tools,
+            tools=tools_list,
+            content_type=content_type,
+            sort_by=sort_by,
+            sort_order=sort_order
+        )
         
-        # Apply sorting
-        if sort_by == "name":
-            query = query.order("name", desc=(sort_order == "desc"))
-        elif sort_by == "updated_at":
-            query = query.order("updated_at", desc=(sort_order == "desc"))
-        elif sort_by == "created_at":
-            query = query.order("created_at", desc=(sort_order == "desc"))
-        else:
-            # Default to created_at
-            query = query.order("created_at", desc=(sort_order == "desc"))
+        client = await db.client
+        agent_service = AgentService(client)
+        paginated_result = await agent_service.get_agents_paginated(
+            user_id=user_id,
+            pagination_params=pagination_params,
+            filters=filters
+        )
         
-        # Get paginated data and total count in one request
-        query = query.range(offset, offset + limit - 1)
-        agents_result = await query.execute()
-        total_count = agents_result.count if agents_result.count is not None else 0
+        agent_responses = []
+        for agent_data in paginated_result.data:
+            agent_response = AgentResponse(**agent_data)
+            agent_responses.append(agent_response)
         
-        if not agents_result.data:
-            logger.debug(f"No agents found for user: {user_id}")
-            return {
-                "agents": [],
-                "pagination": {
-                    "page": page,
-                    "limit": limit,
-                    "total": 0,
-                    "pages": 0
-                }
-            }
-        
-        # Post-process for tool filtering and tools_count sorting
-        agents_data = agents_result.data
-        
-        # For MCP and AgentPress tools filtering, we'll need to do post-processing
-        # since Supabase doesn't have great JSON array/object filtering
-        
-        # First, fetch version data for all agents to ensure we have correct tool info
-        # Do this in a single batched query instead of per-agent service calls
-        agent_version_map = {}
-        version_ids = list({agent['current_version_id'] for agent in agents_data if agent.get('current_version_id')})
-        if version_ids:
-            try:
-                from utils.query_utils import batch_query_in
-                
-                versions_data = await batch_query_in(
-                    client=client,
-                    table_name='agent_versions',
-                    select_fields='version_id, agent_id, version_number, version_name, is_active, created_at, updated_at, created_by, config',
-                    in_field='version_id',
-                    in_values=version_ids
-                )
-
-                for row in versions_data:
-                    config = row.get('config') or {}
-                    tools = config.get('tools') or {}
-                    version_dict = {
-                        'version_id': row['version_id'],
-                        'agent_id': row['agent_id'],
-                        'version_number': row['version_number'],
-                        'version_name': row['version_name'],
-                        'system_prompt': config.get('system_prompt', ''),
-                        'configured_mcps': tools.get('mcp', []),
-                        'custom_mcps': tools.get('custom_mcp', []),
-                        'agentpress_tools': tools.get('agentpress', {}),
-                        'is_active': row.get('is_active', False),
-                        'created_at': row.get('created_at'),
-                        'updated_at': row.get('updated_at') or row.get('created_at'),
-                        'created_by': row.get('created_by'),
-                    }
-                    agent_version_map[row['agent_id']] = version_dict
-            except Exception as e:
-                logger.warning(f"Failed to batch load versions for agents: {e}")
-        
-        # Apply tool-based filters using version data
-        if has_mcp_tools is not None or has_agentpress_tools is not None or tools:
-            filtered_agents = []
-            tools_filter = []
-            if tools:
-                # Handle case where tools might be passed as dict instead of string
-                if isinstance(tools, str):
-                    tools_filter = [tool.strip() for tool in tools.split(',') if tool.strip()]
-                elif isinstance(tools, dict):
-                    # If tools is a dict, check if it's empty or has no enabled tools
-                    has_any_tools = False
-                    if tools.get('mcp') and len(tools['mcp']) > 0:
-                        has_any_tools = True
-                    if tools.get('custom_mcp') and len(tools['custom_mcp']) > 0:
-                        has_any_tools = True
-                    if tools.get('agentpress') and isinstance(tools['agentpress'], dict):
-                        if any(enabled for enabled in tools['agentpress'].values()):
-                            has_any_tools = True
-                    
-                    # If no tools are actually enabled, don't filter by tools at all
-                    if not has_any_tools:
-                        logger.info(f"Tools dict contains no enabled tools, skipping tools filter: {tools}")
-                        tools_filter = []
-                    else:
-                        # If tools is a dict with enabled tools, extract tool names from the structure
-                        logger.info(f"Converting tools dict to filter list: {tools}")
-                        tools_filter = []
-                        
-                        # Extract MCP tools
-                        if 'mcp' in tools and isinstance(tools['mcp'], list):
-                            for mcp_name in tools['mcp']:
-                                if mcp_name:  # Only add non-empty names
-                                    tools_filter.append(f"mcp:{mcp_name}")
-                        
-                        # Extract AgentPress tools (enabled ones)
-                        if 'agentpress' in tools and isinstance(tools['agentpress'], dict):
-                            agentpress_tools = tools['agentpress']
-                            for tool_name, enabled in agentpress_tools.items():
-                                if enabled:
-                                    tools_filter.append(f"agentpress:{tool_name}")
-                        
-                        # Extract custom MCP tools
-                        if 'custom_mcp' in tools and isinstance(tools['custom_mcp'], list):
-                            for custom_mcp_name in tools['custom_mcp']:
-                                if custom_mcp_name:  # Only add non-empty names
-                                    tools_filter.append(f"custom_mcp:{custom_mcp_name}")
-                        
-                        # Remove duplicates and clean up
-                        tools_filter = [str(tool).strip() for tool in tools_filter if str(tool).strip()]
-                        logger.info(f"Extracted tools filter: {tools_filter}")
-                elif isinstance(tools, list):
-                    # If tools is a list, use it directly
-                    tools_filter = [str(tool).strip() for tool in tools if str(tool).strip()]
-                else:
-                    logger.warning(f"Unexpected tools parameter type: {type(tools)}, value: {tools}")
-                    tools_filter = []
-            
-            for agent in agents_data:
-                # Get version data if available and extract configuration
-                version_data = agent_version_map.get(agent['agent_id'])
-                from agent.config_helper import extract_agent_config
-                agent_config = extract_agent_config(agent, version_data)
-                
-                configured_mcps = agent_config['configured_mcps']
-                custom_mcps = agent_config['custom_mcps']
-                agentpress_tools = agent_config['agentpress_tools']
-                
-                # Check MCP tools filter
-                if has_mcp_tools is not None:
-                    has_mcp = bool(configured_mcps and len(configured_mcps) > 0)
-                    if has_mcp_tools != has_mcp:
-                        continue
-                
-                # Check AgentPress tools filter
-                if has_agentpress_tools is not None:
-                    has_enabled_tools = any(
-                        tool_data and isinstance(tool_data, dict) and tool_data.get('enabled', False)
-                        for tool_data in agentpress_tools.values()
-                    )
-                    if has_agentpress_tools != has_enabled_tools:
-                        continue
-                
-                # Check specific tools filter
-                if tools_filter:
-                    agent_tools = set()
-                    # Add MCP tools
-                    for mcp in configured_mcps:
-                        if isinstance(mcp, dict) and 'name' in mcp:
-                            agent_tools.add(f"mcp:{mcp['name']}")
-                    
-                    # Add custom MCP tools
-                    for custom_mcp in custom_mcps:
-                        if isinstance(custom_mcp, dict) and 'name' in custom_mcp:
-                            agent_tools.add(f"custom_mcp:{custom_mcp['name']}")
-                    
-                    # Add enabled AgentPress tools
-                    for tool_name, tool_data in agentpress_tools.items():
-                        if tool_data and isinstance(tool_data, dict) and tool_data.get('enabled', False):
-                            agent_tools.add(f"agentpress:{tool_name}")
-                    
-                    # Check if any of the requested tools are present
-                    if not any(tool in agent_tools for tool in tools_filter):
-                        continue
-                
-                filtered_agents.append(agent)
-            
-            agents_data = filtered_agents
-        
-        # Handle tools_count sorting (post-processing required)
-        if sort_by == "tools_count":
-            def get_tools_count(agent):
-                # Get version data if available
-                version_data = agent_version_map.get(agent['agent_id'])
-                
-                # Use version data for tools if available, otherwise fallback to agent data
-                if version_data:
-                    configured_mcps = version_data.get('configured_mcps', [])
-                    agentpress_tools = version_data.get('agentpress_tools', {})
-                else:
-                    configured_mcps = agent.get('configured_mcps', [])
-                    agentpress_tools = agent.get('agentpress_tools', {})
-                
-                mcp_count = len(configured_mcps)
-                agentpress_count = sum(
-                    1 for tool_data in agentpress_tools.values()
-                    if tool_data and isinstance(tool_data, dict) and tool_data.get('enabled', False)
-                )
-                return mcp_count + agentpress_count
-            
-            agents_data.sort(key=get_tools_count, reverse=(sort_order == "desc"))
-        
-        # Apply additional pagination only if we did post-processing filters
-        if has_mcp_tools is not None or has_agentpress_tools is not None or tools or sort_by == "tools_count":
-            # We did post-processing, so need to re-paginate
-            total_count = len(agents_data)
-            agents_data = agents_data[offset:offset + limit]
-        
-        # Format the response  
-        agent_list = []
-        for agent in agents_data:
-            current_version = None
-            # Use already fetched version data from agent_version_map
-            version_dict = agent_version_map.get(agent['agent_id'])
-            if version_dict:
-                try:
-                    current_version = AgentVersionResponse(
-                        version_id=version_dict['version_id'],
-                        agent_id=version_dict['agent_id'],
-                        version_number=version_dict['version_number'],
-                        version_name=version_dict['version_name'],
-                        system_prompt=version_dict['system_prompt'],
-                        model=version_dict.get('model'),
-                        configured_mcps=version_dict.get('configured_mcps', []),
-                        custom_mcps=version_dict.get('custom_mcps', []),
-                        agentpress_tools=version_dict.get('agentpress_tools', {}),
-                        is_active=version_dict.get('is_active', True),
-                        created_at=version_dict['created_at'],
-                        updated_at=version_dict.get('updated_at', version_dict['created_at']),
-                        created_by=version_dict.get('created_by')
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to get version data for agent {agent['agent_id']}: {e}")
-            
-            # Extract configuration using the unified config approach
-            from agent.config_helper import extract_agent_config
-            agent_config = extract_agent_config(agent, version_dict)
-            
-            system_prompt = agent_config['system_prompt']
-            configured_mcps = agent_config['configured_mcps']
-            custom_mcps = agent_config['custom_mcps']
-            agentpress_tools = agent_config['agentpress_tools']
-            
-            agent_response = AgentResponse(
-                agent_id=agent['agent_id'],
-                name=agent['name'],
-                description=agent.get('description'),
-                system_prompt=system_prompt,
-                configured_mcps=configured_mcps,
-                custom_mcps=custom_mcps,
-                agentpress_tools=agentpress_tools,
-                is_default=agent.get('is_default', False),
-                is_public=agent.get('is_public', False),
-                tags=agent.get('tags', []),
-                avatar=agent_config.get('avatar'),
-                avatar_color=agent_config.get('avatar_color'),
-                profile_image_url=agent_config.get('profile_image_url'),
-                icon_name=agent_config.get('icon_name'),
-                icon_color=agent_config.get('icon_color'),
-                icon_background=agent_config.get('icon_background'),
-                created_at=agent['created_at'],
-                updated_at=agent['updated_at'],
-                current_version_id=agent.get('current_version_id'),
-                version_count=agent.get('version_count', 1),
-                current_version=current_version,
-                metadata=agent.get('metadata')
+        return AgentsResponse(
+            agents=agent_responses,
+            pagination=PaginationInfo(
+                current_page=paginated_result.pagination.current_page,
+                page_size=paginated_result.pagination.page_size,
+                total_items=paginated_result.pagination.total_items,
+                total_pages=paginated_result.pagination.total_pages,
+                has_next=paginated_result.pagination.has_next,
+                has_previous=paginated_result.pagination.has_previous
             )
-            
-            print(f"[DEBUG] get_agents RESPONSE item {agent['name']}: icon_name={agent_response.icon_name}, icon_color={agent_response.icon_color}, icon_background={agent_response.icon_background}")
-            agent_list.append(agent_response)
-        
-        total_pages = (total_count + limit - 1) // limit
-        
-        logger.debug(f"Found {len(agent_list)} agents for user: {user_id} (page {page}/{total_pages})")
-        return {
-            "agents": agent_list,
-            "pagination": {
-                "page": page,
-                "limit": limit,
-                "total": total_count,
-                "pages": total_pages
-            }
-        }
+        )
         
     except Exception as e:
-        logger.error(f"Error fetching agents for user {user_id}: {str(e)}")
+        logger.error(f"Error fetching agents for user {user_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to fetch agents: {str(e)}")
 
 @router.get("/agents/{agent_id}", response_model=AgentResponse)
 async def get_agent(agent_id: str, user_id: str = Depends(get_current_user_id_from_jwt)):
-    """Get a specific agent by ID with current version information. Only the owner can access non-public agents."""
     if not await is_enabled("custom_agents"):
         raise HTTPException(
             status_code=403, 
@@ -1649,14 +1400,9 @@ async def get_agent(agent_id: str, user_id: str = Depends(get_current_user_id_fr
     
     logger.debug(f"Fetching agent {agent_id} for user: {user_id}")
     
-    # Debug logging
-    if config.ENV_MODE == EnvMode.STAGING:
-        print(f"[DEBUG] get_agent: Starting to fetch agent {agent_id}")
-    
     client = await db.client
     
     try:
-        # Get agent
         agent = await client.table('agents').select('*').eq("agent_id", agent_id).execute()
         
         if not agent.data:
@@ -1664,17 +1410,14 @@ async def get_agent(agent_id: str, user_id: str = Depends(get_current_user_id_fr
         
         agent_data = agent.data[0]
         
-        # Debug logging for fetched agent data
         if config.ENV_MODE == EnvMode.STAGING:
             print(f"[DEBUG] get_agent: Fetched agent from DB - icon_name={agent_data.get('icon_name')}, icon_color={agent_data.get('icon_color')}, icon_background={agent_data.get('icon_background')}")
             print(f"[DEBUG] get_agent: Also has - profile_image_url={agent_data.get('profile_image_url')}, avatar={agent_data.get('avatar')}, avatar_color={agent_data.get('avatar_color')}")
         
-        # Check ownership - only owner can access non-public agents
         if agent_data['account_id'] != user_id and not agent_data.get('is_public', False):
             logger.warning(f"Access denied for agent {agent_id}: user={user_id}, agent_account={agent_data['account_id']}, is_public={agent_data.get('is_public', False)}")
             raise HTTPException(status_code=403, detail="Access denied")
         
-        # Use versioning system to get current version data
         current_version = None
         if agent_data.get('current_version_id'):
             try:
@@ -1769,13 +1512,6 @@ async def get_agent(agent_id: str, user_id: str = Depends(get_current_user_id_fr
             current_version=current_version,
             metadata=agent_data.get('metadata')
         )
-        
-        # Debug logging for the actual response
-        if config.ENV_MODE == EnvMode.STAGING:
-            print(f"[DEBUG] get_agent FINAL RESPONSE: agent_id={response.agent_id}")
-            print(f"[DEBUG] get_agent FINAL RESPONSE: icon_name={response.icon_name}, icon_color={response.icon_color}, icon_background={response.icon_background}")
-            print(f"[DEBUG] get_agent FINAL RESPONSE: profile_image_url={response.profile_image_url}, avatar={response.avatar}, avatar_color={response.avatar_color}")
-            print(f"[DEBUG] get_agent FINAL RESPONSE: Response being sent to frontend with icon fields from agent_config")
         
         return response
         
@@ -2373,16 +2109,32 @@ async def update_agent(
             print(f"[DEBUG] update_agent: Prepared update_data with icon fields - icon_name={update_data.get('icon_name')}, icon_color={update_data.get('icon_color')}, icon_background={update_data.get('icon_background')}")
         
         current_system_prompt = agent_data.system_prompt if agent_data.system_prompt is not None else current_version_data.get('system_prompt', '')
-        current_configured_mcps = agent_data.configured_mcps if agent_data.configured_mcps is not None else current_version_data.get('configured_mcps', [])
+
+        if agent_data.configured_mcps is not None:
+            if agent_data.replace_mcps:
+                current_configured_mcps = agent_data.configured_mcps
+                logger.debug(f"Replacing configured MCPs for agent {agent_id}: {current_configured_mcps}")
+            else:
+                current_configured_mcps = agent_data.configured_mcps
+        else:
+            current_configured_mcps = current_version_data.get('configured_mcps', [])
         
+        # Handle custom MCPs - either replace or merge based on the flag
         if agent_data.custom_mcps is not None:
-            current_custom_mcps = merge_custom_mcps(
-                current_version_data.get('custom_mcps', []),
-                agent_data.custom_mcps
-            )
+            if agent_data.replace_mcps:
+                # Replace mode: use the provided list as-is
+                current_custom_mcps = agent_data.custom_mcps
+                logger.debug(f"Replacing custom MCPs for agent {agent_id}: {current_custom_mcps}")
+            else:
+                # Merge mode: merge with existing MCPs (default behavior)
+                current_custom_mcps = merge_custom_mcps(
+                    current_version_data.get('custom_mcps', []),
+                    agent_data.custom_mcps
+                )
+                logger.debug(f"Merging custom MCPs for agent {agent_id}")
         else:
             current_custom_mcps = current_version_data.get('custom_mcps', [])
-            
+
         current_agentpress_tools = agent_data.agentpress_tools if agent_data.agentpress_tools is not None else current_version_data.get('agentpress_tools', {})
         current_avatar = agent_data.avatar if agent_data.avatar is not None else existing_data.get('avatar')
         current_avatar_color = agent_data.avatar_color if agent_data.avatar_color is not None else existing_data.get('avatar_color')

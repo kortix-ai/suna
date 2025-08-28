@@ -392,6 +392,17 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['get_popular_mcp_servers', 'Getting Popular MCP Servers'],
   ['test_mcp_server_connection', 'Testing MCP Server Connection'],
 
+
+  ['create-new-agent', 'Creating New Agent'],
+  ['search-mcp-servers-for-agent', 'Searching MCP Servers'],
+  ['create-credential-profile-for-agent', 'Creating Credential Profile'],
+  ['discover-mcp-tools-for-agent', 'Discovering MCP Tools'],
+  ['configure-agent-integration', 'Configuring Agent Integration'],
+  ['create-agent-workflow', 'Creating Agent Workflow'],
+  ['activate-agent-workflow', 'Activating Agent Workflow'],
+  ['create-agent-scheduled-trigger', 'Creating Scheduled Trigger'],
+  ['list-agent-workflows', 'Listing Agent Workflows'],
+  ['list-agent-scheduled-triggers', 'Listing Agent Scheduled Triggers'],
 ]);
 
 

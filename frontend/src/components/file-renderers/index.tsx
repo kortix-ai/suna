@@ -22,20 +22,26 @@ export type FileType =
   | 'csv'
   | 'xlsx';
 
+export interface FileRendererProject {
+  id?: string;
+  name?: string;
+  description?: string;
+  created_at?: string;
+  sandbox?: {
+    id?: string;
+    sandbox_url?: string;
+    vnc_preview?: string;
+    pass?: string;
+  };
+}
+
 interface FileRendererProps {
   content: string | null;
   binaryUrl: string | null;
   fileName: string;
   filePath?: string;
   className?: string;
-  project?: {
-    sandbox?: {
-      id?: string;
-      sandbox_url?: string;
-      vnc_preview?: string;
-      pass?: string;
-    };
-  };
+  project?: FileRendererProject;
   markdownRef?: React.RefObject<HTMLDivElement>;
   onDownload?: () => void;
   isDownloading?: boolean;
@@ -200,7 +206,7 @@ export function FileRenderer({
       ) : fileType === 'pdf' && binaryUrl ? (
         <PdfRenderer url={binaryUrl} />
       ) : fileType === 'markdown' ? (
-        <MarkdownRenderer content={content || ''} ref={markdownRef} />
+        <MarkdownRenderer content={content || ''} ref={markdownRef} project={project} />
       ) : fileType === 'csv' ? (
         <CsvRenderer content={content || ''} />
       ) : fileType === 'xlsx' ? (

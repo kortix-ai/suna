@@ -9,7 +9,7 @@ import {
   Trash2,
   MessagesSquare,
   Loader2,
-  Share2,
+  ExternalLink,
   X,
   Check,
   History
@@ -152,8 +152,8 @@ const ThreadItem: React.FC<{
                 setSelectedItem({ threadId: thread?.threadId, projectId: thread?.projectId })
                 setShowShareModal(true)
               }}>
-                <Share2 className="text-muted-foreground" />
-                <span>Share Chat</span>
+                <ExternalLink className="text-muted-foreground" />
+                <span>Share</span>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
                 <a

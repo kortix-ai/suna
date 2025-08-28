@@ -243,6 +243,7 @@ export function FileEditToolView({
         <div className="p-1 py-0 prose dark:prose-invert prose-zinc max-w-none">
           <MarkdownRenderer
             content={processUnicodeContent(updatedContent)}
+            project={project}
           />
         </div>
       );

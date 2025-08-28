@@ -89,31 +89,31 @@ const getStepIndex = (step: Step): number => {
 
 const StepIndicator = ({ currentStep, mode }: { currentStep: Step; mode: 'full' | 'profile-only' }) => {
   const currentIndex = getStepIndex(currentStep);
-  const visibleSteps = mode === 'profile-only' 
+  const visibleSteps = mode === 'profile-only'
     ? stepConfigs.filter(step => step.id !== Step.ToolsSelection && step.id !== Step.ProfileSelect)
     : stepConfigs;
-    
+
   const visibleCurrentIndex = visibleSteps.findIndex(step => step.id === currentStep);
 
   return (
     <div className="px-8 py-6">
       <div className="flex items-center justify-between relative">
         <div className="absolute left-0 right-0 top-[14px] h-[2px] bg-muted-foreground/20 -z-10" />
-        <motion.div 
+        <motion.div
           className="absolute left-0 top-[14px] h-[2px] bg-primary -z-10"
           initial={{ width: 0 }}
-          animate={{ 
-            width: `${(visibleCurrentIndex / (visibleSteps.length - 1)) * 100}%` 
+          animate={{
+            width: `${(visibleCurrentIndex / (visibleSteps.length - 1)) * 100}%`
           }}
           transition={{ duration: 0.5, ease: "easeInOut" }}
         />
-        
+
         {visibleSteps.map((step, index) => {
           const stepIndex = getStepIndex(step.id);
           const isCompleted = stepIndex < currentIndex;
           const isCurrent = step.id === currentStep;
           const isUpcoming = stepIndex > currentIndex;
-          
+
           return (
             <motion.div
               key={step.id}
@@ -195,7 +195,7 @@ const InitiationFieldInput = ({ field, value, onChange, error }: {
           {field.required && <span className="text-destructive ml-1">*</span>}
         </Label>
       </div>
-      
+
       {isBooleanField ? (
         <div className="flex items-center space-x-2">
           <input
@@ -220,7 +220,7 @@ const InitiationFieldInput = ({ field, value, onChange, error }: {
           step={isNumberField ? "any" : undefined}
         />
       )}
-      
+
       {field.description && !isBooleanField && (
         <div className="flex items-start gap-2 text-xs text-muted-foreground">
           <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
@@ -247,13 +247,13 @@ const ToolPreviewCard = ({ tool, searchTerm }: {
     if (!term) return text;
     const regex = new RegExp(`(${term})`, 'gi');
     const parts = text.split(regex);
-    return parts.map((part, index) => 
-      regex.test(part) ? 
-        <mark key={index} className="bg-yellow-200 dark:bg-yellow-900 px-0.5">{part}</mark> : 
+    return parts.map((part, index) =>
+      regex.test(part) ?
+        <mark key={index} className="bg-yellow-200 dark:bg-yellow-900 px-0.5">{part}</mark> :
         part
     );
   };
-  
+
   // Generate icon based on tool name/category
   const getToolIcon = (toolName: string) => {
     const name = toolName.toLowerCase();
@@ -282,9 +282,9 @@ const ToolPreviewCard = ({ tool, searchTerm }: {
       </div>
     );
   };
-  
+
   return (
-    <div 
+    <div
       className="border rounded-md p-2 hover:bg-muted/30 transition-colors group cursor-pointer"
       title={tool.description} // Show full description on hover
     >
@@ -322,7 +322,7 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
   const [showToolsManager, setShowToolsManager] = useState(false);
   const [direction, setDirection] = useState<'forward' | 'backward'>('forward');
   const [selectedConnectionType, setSelectedConnectionType] = useState<'existing' | 'new' | null>(null);
-  
+
   const [initiationFields, setInitiationFields] = useState<Record<string, string>>({});
   const [initiationFieldsErrors, setInitiationFieldsErrors] = useState<Record<string, string>>({});
 
@@ -330,13 +330,13 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
 
   const { mutate: createProfile, isPending: isCreating } = useCreateComposioProfile();
   const { data: profiles, isLoading: isLoadingProfiles } = useComposioProfiles();
-  
+
   const { data: toolkitDetails, isLoading: isLoadingToolkitDetails } = useComposioToolkitDetails(
     app.slug,
     { enabled: open && currentStep === Step.ProfileCreate }
   );
 
-  const existingProfiles = profiles?.filter(p => 
+  const existingProfiles = profiles?.filter(p =>
     p.toolkit_slug === app.slug && p.is_connected
   ) || [];
 
@@ -344,13 +344,13 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
 
   const [toolsPreviewSearchTerm, setToolsPreviewSearchTerm] = useState('');
   const { data: toolsResponse, isLoading: isLoadingToolsPreview } = useComposioTools(
-    app.slug, 
-    { 
+    app.slug,
+    {
       enabled: open && currentStep === Step.ProfileSelect,
-      limit: 50 
+      limit: 50
     }
   );
-  
+
   const availableToolsPreview = toolsResponse?.tools || [];
 
   useEffect(() => {
@@ -382,38 +382,38 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
   const validateInitiationFields = (): boolean => {
     const newErrors: Record<string, string> = {};
     const initiationRequirements = toolkitDetails?.toolkit.connected_account_initiation_fields;
-    
+
     if (initiationRequirements?.required) {
       for (const field of initiationRequirements.required) {
         if (field.required) {
           const value = initiationFields[field.name];
           const isEmpty = !value || value.trim() === '';
-          
+
           if (field.type.toLowerCase() === 'boolean') {
             continue;
           }
-          
+
           if ((field.type.toLowerCase() === 'number' || field.type.toLowerCase() === 'double') && value) {
             if (isNaN(Number(value))) {
               newErrors[field.name] = `${field.displayName} must be a valid number`;
               continue;
             }
           }
-          
+
           if (isEmpty) {
             newErrors[field.name] = `${field.displayName} is required`;
           }
         }
       }
     }
-    
+
     setInitiationFieldsErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleSaveTools = async () => {
     if (!selectedProfile || !agentId) return;
-    
+
     const mcpConfigResponse = await composioApi.getMcpConfigForProfile(selectedProfile.profile_id);
     const response = await backendApi.put(`/agents/${agentId}/custom-mcp-tools`, {
       custom_mcps: [{
@@ -458,12 +458,12 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
       toast.error('Profile name is required');
       return;
     }
-    
+
     if (!validateInitiationFields()) {
       toast.error('Please fill in all required fields');
       return;
     }
-    
+
     createProfile({
       toolkit_slug: app.slug,
       profile_name: profileName,
@@ -556,8 +556,8 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
     }
   };
 
-  const filteredToolsPreview = availableToolsPreview.filter(tool => 
-    !toolsPreviewSearchTerm || 
+  const filteredToolsPreview = availableToolsPreview.filter(tool =>
+    !toolsPreviewSearchTerm ||
     tool.name.toLowerCase().includes(toolsPreviewSearchTerm.toLowerCase()) ||
     tool.description.toLowerCase().includes(toolsPreviewSearchTerm.toLowerCase()) ||
     tool.tags?.some(tag => tag.toLowerCase().includes(toolsPreviewSearchTerm.toLowerCase()))
@@ -586,11 +586,11 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className={cn(
         "overflow-hidden gap-0",
-        currentStep === Step.ToolsSelection ? "max-w-2xl h-[85vh] p-0 flex flex-col" : 
-        currentStep === Step.ProfileSelect ? "max-w-2xl p-0" : "max-w-lg p-0"
+        currentStep === Step.ToolsSelection ? "max-w-2xl h-[85vh] p-0 flex flex-col" :
+          currentStep === Step.ProfileSelect ? "max-w-2xl p-0" : "max-w-lg p-0"
       )}>
         <StepIndicator currentStep={currentStep} mode={mode} />
-        
+
         {currentStep !== Step.ToolsSelection ? (
           <>
             <DialogHeader className="px-8 pb-2">
@@ -647,10 +647,10 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                               {showToolsManager ? 'Hide' : 'View'} Tools
                             </Button>
                           </div>
-                          
+
                           <div className="grid gap-3">
                             {existingProfiles.length > 0 && (
-                              <Card 
+                              <Card
                                 className={cn(
                                   "cursor-pointer p-0 transition-all",
                                   selectedConnectionType === 'existing' ? "border-primary bg-primary/5" : "border-border hover:border-border/80"
@@ -693,22 +693,22 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                                               <SelectValue placeholder="Select a profile..." />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                                                          {existingProfiles.map((profile) => (
-                                              <SelectItem key={profile.profile_id} value={profile.profile_id}>
-                                                <div className="flex items-center gap-3">
-                                                  {app.logo ? (
-                                                    <img src={app.logo} alt={app.name} className="w-5 h-5 rounded-lg object-contain bg-muted p-0.5 border flex-shrink-0" />
-                                                  ) : (
-                                                    <div className="w-5 h-5 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center text-primary text-xs font-semibold flex-shrink-0">
-                                                      {app.name.charAt(0)}
+                                              {existingProfiles.map((profile) => (
+                                                <SelectItem key={profile.profile_id} value={profile.profile_id}>
+                                                  <div className="flex items-center gap-3">
+                                                    {app.logo ? (
+                                                      <img src={app.logo} alt={app.name} className="w-5 h-5 rounded-lg object-contain bg-muted p-0.5 border flex-shrink-0" />
+                                                    ) : (
+                                                      <div className="w-5 h-5 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center text-primary text-xs font-semibold flex-shrink-0">
+                                                        {app.name.charAt(0)}
+                                                      </div>
+                                                    )}
+                                                    <div>
+                                                      <div className="text-sm font-medium">{profile.profile_name}</div>
                                                     </div>
-                                                  )}
-                                                  <div>
-                                                    <div className="text-sm font-medium">{profile.profile_name}</div>
                                                   </div>
-                                                </div>
-                                              </SelectItem>
-                                            ))}
+                                                </SelectItem>
+                                              ))}
                                             </SelectContent>
                                           </Select>
                                         </div>
@@ -718,7 +718,7 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                                 </CardContent>
                               </Card>
                             )}
-                            
+
                             <Card className={cn(
                               "cursor-pointer p-0 transition-all",
                               selectedConnectionType === 'new' ? "border-primary bg-primary/5" : "border-border hover:border-border/80"
@@ -748,51 +748,51 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                             </Card>
                           </div>
                         </div>
-                          <AnimatePresence>
-                            {showToolsManager && (
-                              <motion.div
-                                initial={{ height: 0, opacity: 0 }}
-                                animate={{ height: "auto", opacity: 1 }}
-                                exit={{ height: 0, opacity: 0 }}
-                                transition={{ duration: 0.3, ease: "easeInOut" }}
-                                className="overflow-hidden"
-                              >
-                                <div className="space-y-3">
-                                  <ScrollArea className="h-[200px] border rounded-md bg-muted/10">
-                                    <div className="p-2">
-                                      {isLoadingToolsPreview ? (
-                                        <div className="grid grid-cols-2 gap-1">
-                                          {[...Array(8)].map((_, i) => (
-                                            <div key={i} className="border rounded-md p-2 animate-pulse bg-background/50">
-                                              <div className="h-2 bg-muted rounded w-3/4 mb-1"></div>
-                                              <div className="h-2 bg-muted rounded w-1/2"></div>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      ) : filteredToolsPreview.length > 0 ? (
-                                        <div className="grid grid-cols-2 gap-1">
-                                          {filteredToolsPreview.map((tool) => (
-                                            <ToolPreviewCard
-                                              key={tool.slug}
-                                              tool={tool}
-                                              searchTerm={toolsPreviewSearchTerm}
-                                            />
-                                          ))}
-                                        </div>
-                                      ) : (
-                                        <div className="text-center py-6 text-muted-foreground">
-                                          <Search className="h-4 w-4 mx-auto mb-2" />
-                                          <p className="text-xs">
-                                            {toolsPreviewSearchTerm ? 'No matches' : 'No tools available'}
-                                          </p>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </ScrollArea>
-                                </div>
-                              </motion.div>
-                            )}
-                          </AnimatePresence>
+                        <AnimatePresence>
+                          {showToolsManager && (
+                            <motion.div
+                              initial={{ height: 0, opacity: 0 }}
+                              animate={{ height: "auto", opacity: 1 }}
+                              exit={{ height: 0, opacity: 0 }}
+                              transition={{ duration: 0.3, ease: "easeInOut" }}
+                              className="overflow-hidden"
+                            >
+                              <div className="space-y-3">
+                                <ScrollArea className="h-[200px] border rounded-md bg-muted/10">
+                                  <div className="p-2">
+                                    {isLoadingToolsPreview ? (
+                                      <div className="grid grid-cols-2 gap-1">
+                                        {[...Array(8)].map((_, i) => (
+                                          <div key={i} className="border rounded-md p-2 animate-pulse bg-background/50">
+                                            <div className="h-2 bg-muted rounded w-3/4 mb-1"></div>
+                                            <div className="h-2 bg-muted rounded w-1/2"></div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : filteredToolsPreview.length > 0 ? (
+                                      <div className="grid grid-cols-2 gap-1">
+                                        {filteredToolsPreview.map((tool) => (
+                                          <ToolPreviewCard
+                                            key={tool.slug}
+                                            tool={tool}
+                                            searchTerm={toolsPreviewSearchTerm}
+                                          />
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <div className="text-center py-6 text-muted-foreground">
+                                        <Search className="h-4 w-4 mx-auto mb-2" />
+                                        <p className="text-xs">
+                                          {toolsPreviewSearchTerm ? 'No matches' : 'No tools available'}
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </ScrollArea>
+                              </div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
                       </div>
                     </div>
 
@@ -800,10 +800,10 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                     <div className="px-6 py-4 border-t border-border/50 bg-muted/20 flex-shrink-0">
                       <div className="flex items-center justify-between">
                         <div className="text-sm text-muted-foreground">
-                          {selectedConnectionType === 'new' ? 'Ready to create new connection' : 
-                           selectedConnectionType === 'existing' && selectedProfileId ? 'Profile selected' :
-                           selectedConnectionType === 'existing' ? 'Select a profile to continue' :
-                           'Choose how you want to connect'}
+                          {selectedConnectionType === 'new' ? 'Ready to create new connection' :
+                            selectedConnectionType === 'existing' && selectedProfileId ? 'Profile selected' :
+                              selectedConnectionType === 'existing' ? 'Select a profile to continue' :
+                                'Choose how you want to connect'}
                         </div>
                         <div className="flex gap-3">
                           <Button
@@ -1021,9 +1021,9 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
             <DialogHeader className="px-8 border-border/50 flex-shrink-0 bg-muted/10">
               <div className="flex items-center gap-4">
                 {app.logo ? (
-                  <img 
-                    src={app.logo} 
-                    alt={app.name} 
+                  <img
+                    src={app.logo}
+                    alt={app.name}
                     className="w-14 h-14 rounded-xl object-contain bg-muted p-2 border"
                   />
                 ) : (
@@ -1058,6 +1058,7 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                       profileId={selectedProfile.profile_id}
                       agentId={agentId}
                       toolkitName={selectedProfile.toolkit_name || app.name}
+                      toolkitSlug={selectedProfile.toolkit_slug || app.slug}
                       selectedTools={selectedTools}
                       onToolsChange={setSelectedTools}
                       onSave={handleSaveTools}

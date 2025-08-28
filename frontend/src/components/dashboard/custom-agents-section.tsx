@@ -169,7 +169,7 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
   }
 
   // No agents found
-  if (!templates || templates.length === 0) {
+  if (!templates || !templates.templates || templates.templates.length === 0) {
     return (
       <div className="w-full">
         <TitleSection />
@@ -185,7 +185,7 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
       <div className="w-full">
         <TitleSection />
         <div className="grid gap-4 pb-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {templates.slice(0, 4).map((template) => (
+          {templates.templates.slice(0, 4).map((template) => (
             <div
               key={template.template_id}
               className={cn(

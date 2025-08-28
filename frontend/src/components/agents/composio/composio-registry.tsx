@@ -7,14 +7,14 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Search, Zap, X, Settings, ChevronDown, ChevronUp, Loader2, Server } from 'lucide-react';
 import { useComposioCategories, useComposioToolkitsInfinite } from '@/hooks/react-query/composio/use-composio';
 import { useComposioProfiles } from '@/hooks/react-query/composio/use-composio-profiles';
-import { useAgent, useUpdateAgent } from '@/hooks/react-query/agents/use-agents';
+import { useAgent } from '@/hooks/react-query/agents/use-agents';
+import { useUpdateAgentMCPs } from '@/hooks/react-query/agents/use-update-agent-mcps';
 import { ComposioConnector } from './composio-connector';
 import { ComposioToolsManager } from './composio-tools-manager';
 import type { ComposioToolkit, ComposioProfile } from '@/hooks/react-query/composio/utils';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useQueryClient } from '@tanstack/react-query';
-// import { AgentSelector } from '../../thread/chat-input/agent-selector';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { CustomMCPDialog } from '../mcp/custom-mcp-dialog';
 
@@ -168,6 +168,7 @@ const ConnectedAppCard = ({
             size="sm"
             onClick={() => onManageTools(connectedApp)}
             disabled={isUpdating}
+            type="button"
           >
             <Settings className="h-4 w-4" />
           </Button>
@@ -311,7 +312,7 @@ export const ComposioRegistry: React.FC<ComposioRegistryProps> = ({
 
   const currentAgentId = selectedAgentId ?? internalSelectedAgentId;
   const { data: agent, isLoading: isLoadingAgent } = useAgent(currentAgentId || '');
-  const { mutate: updateAgent, isPending: isUpdatingAgent } = useUpdateAgent();
+  const { mutate: updateAgent, isPending: isUpdatingAgent } = useUpdateAgentMCPs(); // Use the MCP-specific hook
 
   const handleAgentSelect = (agentId: string | undefined) => {
     if (onAgentChange) {
@@ -429,7 +430,8 @@ export const ComposioRegistry: React.FC<ComposioRegistryProps> = ({
     return new Promise((resolve, reject) => {
       updateAgent({
         agentId: currentAgentId,
-        custom_mcps: updatedCustomMcps
+        custom_mcps: updatedCustomMcps,
+        replace_mcps: true  // Use replace mode to ensure proper updates
       }, {
         onSuccess: () => {
           toast.success(`Custom MCP "${customConfig.name}" added successfully`);

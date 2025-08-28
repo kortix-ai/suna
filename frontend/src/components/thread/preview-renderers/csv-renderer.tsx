@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 interface CsvRendererProps {
     content: string;
     className?: string;
+    project?: any; // Optional to allow passing from file-attachment
 }
 
 /**

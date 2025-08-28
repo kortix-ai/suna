@@ -12,6 +12,7 @@ interface XlsxRendererProps {
     className?: string;
     onSheetChange?: (sheetIndex: number) => void; // Callback for sheet changes
     activeSheetIndex?: number; // Controlled sheet index
+    project?: any; // Optional to allow passing from file-attachment
 }
 
 /**

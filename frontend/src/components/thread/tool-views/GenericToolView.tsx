@@ -216,7 +216,6 @@ export function GenericToolView({
                 <div className="space-y-2">
                   <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
                     <div className="flex items-center">
-                      <Wrench className="h-4 w-4 mr-2 text-zinc-500 dark:text-zinc-400" />
                       Input
                     </div>
                     <Button
@@ -248,7 +247,6 @@ export function GenericToolView({
                 <div className="space-y-2">
                   <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
                     <div className="flex items-center">
-                      <Wrench className="h-4 w-4 mr-2 text-zinc-500 dark:text-zinc-400" />
                       Output
                     </div>
                     <Button

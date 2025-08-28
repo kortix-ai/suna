@@ -8,6 +8,8 @@ import rehypeSanitize from 'rehype-sanitize';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { CodeRenderer } from './code-renderer';
+import { useImageContent } from '@/hooks/use-image-content';
+import type { FileRendererProject } from './index';
 
 // Process Unicode escape sequences in content
 export const processUnicodeContent = (content: string): string => {
@@ -29,15 +31,62 @@ export const processUnicodeContent = (content: string): string => {
   });
 };
 
+// Authenticated image component using existing useImageContent hook
+interface AuthenticatedImageProps {
+  src: string;
+  alt?: string;
+  className?: string;
+  project?: FileRendererProject;
+}
+
+function AuthenticatedImage({ src, alt, className, project }: AuthenticatedImageProps) {
+  // For sandbox files, use the existing useImageContent hook
+  const sandboxId = typeof project?.sandbox === 'string' 
+    ? project.sandbox 
+    : project?.sandbox?.id;
+
+  const { data: imageUrl, isLoading, error } = useImageContent(sandboxId, src);
+
+  // If it's already a URL or data URL, use regular img
+  if (src.startsWith('http') || src.startsWith('data:')) {
+    return <img src={src} alt={alt || ''} className={className} />;
+  }
+
+  if (isLoading) {
+    return (
+      <span className={cn("inline-block p-2 bg-muted/30 rounded text-xs text-muted-foreground", className)}>
+        Loading image...
+      </span>
+    );
+  }
+
+  if (error || !imageUrl) {
+    return (
+      <span className={cn("inline-block p-2 bg-muted/30 rounded border border-dashed text-xs text-muted-foreground", className)}>
+        Failed to load: {alt || src}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      src={imageUrl}
+      alt={alt || ''}
+      className={className}
+    />
+  );
+}
+
 interface MarkdownRendererProps {
   content: string;
   className?: string;
+  project?: FileRendererProject;
 }
 
 export const MarkdownRenderer = forwardRef<
   HTMLDivElement,
   MarkdownRendererProps
->(({ content, className }, ref) => {
+>(({ content, className, project }, ref) => {
   // Process Unicode escape sequences in the content
   const processedContent = processUnicodeContent(content);
 
@@ -103,10 +152,11 @@ export const MarkdownRenderer = forwardRef<
               />
             ),
             img: ({ node, ...props }) => (
-              <img
-                className="max-w-full h-auto rounded-md my-2"
-                {...props}
+              <AuthenticatedImage
+                src={props.src || ''}
                 alt={props.alt || ''}
+                className="max-w-full h-auto rounded-md my-2"
+                project={project}
               />
             ),
             pre: ({ node, ...props }) => (

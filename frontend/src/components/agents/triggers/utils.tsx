@@ -1,4 +1,5 @@
-import { FaTelegram } from "react-icons/fa";
+// Replaced with lucide-react for smaller bundle
+import { Send as FaTelegram } from "lucide-react";
 import { SlackIcon } from "@/components/ui/icons/slack";
 import { Webhook, Clock } from "lucide-react";
 import { Zap } from "lucide-react";

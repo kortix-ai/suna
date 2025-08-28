@@ -35,7 +35,11 @@ export const AgentLoader = () => {
 
   return (
     <div className="flex py-2 items-center w-full">
-      <div>✨</div>
+      <div className="flex items-center gap-1">
+        <div className="h-1 w-1 rounded-full bg-primary/40 animate-pulse duration-1000" />
+        <div className="h-1 w-1 rounded-full bg-primary/40 animate-pulse duration-1000 delay-150" />
+        <div className="h-1 w-1 rounded-full bg-primary/40 animate-pulse duration-1000 delay-300" />
+      </div>
       <AnimatePresence>
       <motion.div
           key={items[index].id}

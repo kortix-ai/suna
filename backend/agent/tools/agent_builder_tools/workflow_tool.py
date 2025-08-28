@@ -275,7 +275,7 @@ class WorkflowTool(AgentBuilderBaseTool):
                 }
             })
         except Exception as e:
-            return self.fail_response(f"Error creating workflow: {str(e)}")
+            return self.fail_response("Error creating workflow")
 
     @openapi_schema({
         "type": "function",
@@ -336,7 +336,7 @@ class WorkflowTool(AgentBuilderBaseTool):
             })
             
         except Exception as e:
-            return self.fail_response(f"Error getting workflows: {str(e)}")
+            return self.fail_response("Error getting workflows")
 
     @openapi_schema({
         "type": "function",
@@ -482,7 +482,7 @@ class WorkflowTool(AgentBuilderBaseTool):
             })
             
         except Exception as e:
-            return self.fail_response(f"Error updating workflow: {str(e)}")
+            return self.fail_response("Error updating workflow")
 
     @openapi_schema({
         "type": "function",
@@ -523,12 +523,11 @@ class WorkflowTool(AgentBuilderBaseTool):
             await self._sync_workflows_to_version_config()
             
             return self.success_response({
-                "message": f"Workflow '{workflow_name}' deleted successfully",
-                "workflow_id": workflow_id
+                "message": f"Workflow '{workflow_name}' deleted successfully"
             })
             
         except Exception as e:
-            return self.fail_response(f"Error deleting workflow: {str(e)}")
+            return self.fail_response("Error deleting workflow")
 
     @openapi_schema({
         "type": "function",
@@ -579,12 +578,11 @@ class WorkflowTool(AgentBuilderBaseTool):
             action = "activated" if active else "deactivated"
             return self.success_response({
                 "message": f"Workflow '{workflow_name}' {action} successfully",
-                "workflow_id": workflow_id,
                 "status": new_status
             })
             
         except Exception as e:
-            return self.fail_response(f"Error updating workflow status: {str(e)}")
+            return self.fail_response("Error updating workflow status")
 
     def _convert_steps_to_json(self, steps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if not steps:
