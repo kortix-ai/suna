@@ -65,7 +65,8 @@ export const siteConfig = {
   keywords: ['AI Worker', 'Generalist AI', 'Open Source AI', 'Autonomous Agent'],
   links: {
     email: 'support@omnisciencelabs.com',
-    twitter: 'https://x.com/omnisciencelabs',
+    linkedin: 'https://www.linkedin.com/company/become-omni',
+    youtube: 'https://www.youtube.com/@BecomeOmni',
     // discord: 'https://discord.gg/kortixai',
     github: 'https://github.com/omniscience-labs/omni',
     instagram: 'https://instagram.com/omnisciencelabs',
