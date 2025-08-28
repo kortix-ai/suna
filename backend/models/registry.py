@@ -95,25 +95,25 @@ class ModelRegistry:
             recommended=True
         ))
         
-        # self.register(Model(
-        #     id="openai/gpt-5-mini",
-        #     name="GPT-5 Mini",
-        #     provider=ModelProvider.OPENAI,
-        #     aliases=["gpt-5-mini", "GPT-5 Mini"],
-        #     context_window=400_000,
-        #     capabilities=[
-        #         ModelCapability.CHAT,
-        #         ModelCapability.FUNCTION_CALLING,
-        #         ModelCapability.STRUCTURED_OUTPUT,
-        #     ],
-        #     pricing=ModelPricing(
-        #         input_cost_per_million_tokens=0.25,
-        #         output_cost_per_million_tokens=2.00
-        #     ),
-        #     tier_availability=["free", "paid"],
-        #     priority=85,
-        #     enabled=True
-        # ))
+        self.register(Model(
+            id="openai/gpt-5-mini",
+            name="GPT-5 Mini",
+            provider=ModelProvider.OPENAI,
+            aliases=["gpt-5-mini", "GPT-5 Mini"],
+            context_window=400_000,
+            capabilities=[
+                ModelCapability.CHAT,
+                ModelCapability.FUNCTION_CALLING,
+                ModelCapability.STRUCTURED_OUTPUT,
+            ],
+            pricing=ModelPricing(
+                input_cost_per_million_tokens=0.25,
+                output_cost_per_million_tokens=2.00
+            ),
+            tier_availability=["free", "paid"],
+            priority=85,
+            enabled=True
+        ))
         
         # self.register(Model(
         #     id="gemini/gemini-2.5-pro",
