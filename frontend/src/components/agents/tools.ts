@@ -7,6 +7,7 @@ export const AGENTPRESS_TOOL_DEFINITIONS: Record<string, { enabled: boolean; des
     'web_search_tool': { enabled: true, description: 'Search the web using Tavily API and scrape webpages with Firecrawl for research', icon: '🔍', color: 'bg-yellow-100 dark:bg-yellow-800/50' },
     'sb_vision_tool': { enabled: true, description: 'Vision and image processing capabilities for visual content analysis', icon: '👁️', color: 'bg-pink-100 dark:bg-pink-800/50' },
     'sb_image_edit_tool': { enabled: true, description: 'Generate new images or edit existing images using OpenAI GPT Image 1', icon: '🎨', color: 'bg-purple-100 dark:bg-purple-800/50' },
+    'sb_video_avatar_tool': { enabled: true, description: 'Create AI avatar videos with HeyGen - generate speaking avatars, interactive sessions, and downloadable MP4s', icon: '🎬', color: 'bg-rose-100 dark:bg-rose-800/50' },
     'sb_presentation_outline_tool': { enabled: false, description: 'Create structured presentation outlines with slide descriptions and speaker notes', icon: '📋', color: 'bg-purple-100 dark:bg-purple-800/50' },
     'sb_presentation_tool': { enabled: false, description: 'Create professional presentations with HTML slides, preview, and export capabilities', icon: '📊', color: 'bg-violet-100 dark:bg-violet-800/50' },
 
@@ -42,6 +43,7 @@ export const getToolDisplayName = (toolName: string): string => {
       'web_search_tool': 'Web Search',
       'sb_vision_tool': 'Image Processing',
       'sb_image_edit_tool': 'Image Editor',
+      'sb_video_avatar_tool': 'Video Avatar Creator',
       'sb_presentation_outline_tool': 'Presentation Outline',
       'sb_presentation_tool': 'Presentation Creator',
 
