@@ -58,12 +58,10 @@ export const AgentCountLimitDialog: React.FC<AgentCountLimitDialogProps> = ({
       size="xl"
       className="[&_.grid]:!grid-cols-4 [&_.grid]:gap-3 mt-8"
     >
-      <PricingSection 
-        returnUrl={returnUrl} 
-        showTitleAndTabs={false} 
-        insideDialog={true} 
-        showInfo={false}
-        noPadding={true}
+            <PricingSection
+        returnUrl={returnUrl}
+        showTitleAndTabs={false}
+        insideDialog={true}
       />
     </UpgradeDialog>
   );

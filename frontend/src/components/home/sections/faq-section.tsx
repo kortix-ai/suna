@@ -1,3 +1,5 @@
+'use client';
+
 import {
   Accordion,
   AccordionContent,
@@ -15,7 +17,6 @@ export function FAQSection() {
       id="faq"
       className="flex flex-col items-center justify-center gap-10 pb-10 w-full relative"
     >
-      <div className="w-full px-6">
       <SectionHeader>
         <h2 className="text-3xl md:text-4xl font-medium tracking-tighter text-center text-balance">
           {faqSection.title}
@@ -48,7 +49,6 @@ export function FAQSection() {
             </AccordionItem>
           ))}
         </Accordion>
-      </div>
       </div>
     </section>
   );

@@ -7,15 +7,12 @@ import { cn } from '@/lib/utils';
 import { Menu, X } from 'lucide-react';
 import { AnimatePresence, motion, useScroll } from 'motion/react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { useEffect, useState } from 'react';
-import { useTheme } from 'next-themes';
 import { useAuth } from '@/components/AuthProvider';
+import { ThreeSpinner } from '@/components/ui/three-spinner';
 
-import { useRouter, usePathname } from 'next/navigation';
-
-const INITIAL_WIDTH = '70rem';
-const MAX_WIDTH = '1000px';
+const INITIAL_WIDTH = '80rem';
+const MAX_WIDTH = '1400px';
 
 const overlayVariants = {
   hidden: { opacity: 0 },
@@ -30,7 +27,7 @@ const drawerVariants = {
     y: 0,
     rotate: 0,
     transition: {
-      type: 'spring',
+      type: 'spring' as const,
       damping: 15,
       stiffness: 200,
       staggerChildren: 0.03,
@@ -58,12 +55,8 @@ export function Navbar() {
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('hero');
-  const { theme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   const { user } = useAuth();
-
-  const router = useRouter();
-  const pathname = usePathname();
 
   useEffect(() => {
     setMounted(true);
@@ -103,17 +96,13 @@ export function Navbar() {
   const toggleDrawer = () => setIsDrawerOpen((prev) => !prev);
   const handleOverlayClick = () => setIsDrawerOpen(false);
 
-  const logoSrc = !mounted
-    ? '/kortix-logo.svg'
-    : resolvedTheme === 'dark'
-      ? '/kortix-logo-white.svg'
-      : '/kortix-logo.svg';
+
 
   return (
     <header
       className={cn(
-        'sticky z-50 flex justify-center transition-all duration-300',
-        hasScrolled ? 'top-6 mx-4 md:mx-0' : 'top-4 mx-2 md:mx-0',
+        'sticky z-50 mx-4 flex justify-center transition-all duration-300 md:mx-0 max-w-[95vw]',
+        hasScrolled ? 'top-6' : 'top-4 mx-0',
       )}
     >
       <motion.div
@@ -123,64 +112,53 @@ export function Navbar() {
       >
         <div
           className={cn(
-            'mx-auto max-w-7xl rounded-2xl transition-all duration-300 xl:px-0',
+            'mx-auto rounded-2xl transition-all duration-300 xl:px-0',
             hasScrolled
-              ? 'px-2 md:px-2 border border-border backdrop-blur-lg bg-background/75'
-              : 'shadow-none px-3 md:px-7',
+              ? 'px-4 border border-border backdrop-blur-lg bg-background/75'
+              : 'shadow-none px-8',
           )}
         >
-          <div className="flex h-[56px] items-center p-2 md:p-4">
-            {/* Left Section - Logo */}
-            <div className="flex items-center justify-start flex-shrink-0 w-auto md:w-[200px]">
-              <Link href="/" className="flex items-center gap-3">
-                <Image
-                  src={logoSrc}
-                  alt="Omni Logo"
-                  width={80}
-                  height={14}
-                  className="md:w-[100px] md:h-[18px]"
-                  priority
-                /> 
-              </Link>
-            </div>
-
-            {/* Center Section - Navigation Menu */}
-            <div className="hidden md:flex items-center justify-center flex-grow">
-              <NavMenu />
-            </div>
-
-            {/* Right Section - Actions */}
-            <div className="flex items-center justify-end flex-shrink-0 w-auto md:w-[200px] ml-auto">
-              <div className="flex flex-row items-center gap-2 md:gap-3 shrink-0">
-                <div className="flex items-center space-x-3">
-                  {user ? (
-                    <Link
-                      className="bg-secondary h-8 hidden md:flex items-center justify-center text-sm font-normal tracking-wide rounded-full text-primary-foreground dark:text-secondary-foreground w-fit px-4 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
-                      href="/dashboard"
-                    >
-                      Dashboard
-                    </Link>
-                  ) : (
-                    <Link
-                      className="bg-secondary h-8 hidden md:flex items-center justify-center text-sm font-normal tracking-wide rounded-full text-primary-foreground dark:text-secondary-foreground w-fit px-4 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
-                      href="/auth"
-                    >
-                      Try free
-                    </Link>
-                  )}
-                </div>
-                <ThemeToggle />
-                <button
-                  className="md:hidden border border-border size-8 rounded-md cursor-pointer flex items-center justify-center"
-                  onClick={toggleDrawer}
-                >
-                  {isDrawerOpen ? (
-                    <X className="size-5" />
-                  ) : (
-                    <Menu className="size-5" />
-                  )}
-                </button>
+          <div className="flex h-[56px] items-center justify-between p-4 gap-4">
+            <Link href="/" className="flex items-center gap-3 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <ThreeSpinner 
+                  size={32} 
+                  color="currentColor"
+                  className="flex-shrink-0"
+                />
+                <span className="font-semibold text-lg">Omni</span>
               </div>
+            </Link>
+
+            <NavMenu />
+
+            <div className="flex flex-row items-center gap-1 md:gap-3 flex-shrink-0">
+              {user ? (
+                <Link
+                  className="bg-secondary h-8 hidden md:flex items-center justify-center text-sm font-normal tracking-wide rounded-full text-primary-foreground dark:text-secondary-foreground w-fit px-4 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
+                  href="/dashboard"
+                >
+                  Dashboard
+                </Link>
+              ) : (
+                <Link
+                  className="bg-secondary h-8 hidden md:flex items-center justify-center text-sm font-normal tracking-wide rounded-full text-primary-foreground dark:text-secondary-foreground w-fit px-4 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
+                  href="/auth"
+                >
+                  Get started
+                </Link>
+              )}
+              <ThemeToggle />
+              <button
+                className="md:hidden border border-border size-8 rounded-md cursor-pointer flex items-center justify-center"
+                onClick={toggleDrawer}
+              >
+                {isDrawerOpen ? (
+                  <X className="size-5" />
+                ) : (
+                  <Menu className="size-5" />
+                )}
+              </button>
             </div>
           </div>
         </div>
@@ -211,16 +189,16 @@ export function Navbar() {
               <div className="flex flex-col gap-4">
                 <div className="flex items-center justify-between">
                   <Link href="/" className="flex items-center gap-3">
-                    <Image
-                      src={logoSrc}
-                      alt="Omni Logo"
-                      width={120}
-                      height={22}
-                      priority
-                    />
-                     <span className="font-medium text-primary text-sm">
-                      / Omni
-                     </span>
+                    <div className="flex items-center gap-2">
+                      <ThreeSpinner 
+                        size={28} 
+                        color="currentColor"
+                        className="flex-shrink-0"
+                      />
+                      <span className="font-medium text-primary text-sm">
+                        Omni
+                      </span>
+                    </div>
                   </Link>
                   <button
                     onClick={toggleDrawer}
@@ -244,21 +222,7 @@ export function Navbar() {
                         <a
                           href={item.href}
                           onClick={(e) => {
-                            // If it's an external link (not starting with #), let it navigate normally
-                            if (!item.href.startsWith('#')) {
-                              setIsDrawerOpen(false);
-                              return;
-                            }
-                            
                             e.preventDefault();
-                            
-                            // If we're not on the homepage, redirect to homepage with the section
-                            if (pathname !== '/') {
-                              router.push(`/${item.href}`);
-                              setIsDrawerOpen(false);
-                              return;
-                            }
-                            
                             const element = document.getElementById(
                               item.href.substring(1),
                             );
@@ -266,7 +230,7 @@ export function Navbar() {
                             setIsDrawerOpen(false);
                           }}
                           className={`underline-offset-4 hover:text-primary/80 transition-colors ${
-                            (item.href.startsWith('#') && pathname === '/' && activeSection === item.href.substring(1)) || (item.href === pathname)
+                            activeSection === item.href.substring(1)
                               ? 'text-primary font-medium'
                               : 'text-primary/60'
                           }`}
@@ -277,8 +241,6 @@ export function Navbar() {
                     ))}
                   </AnimatePresence>
                 </motion.ul>
-
-
 
                 {/* Action buttons */}
                 <div className="flex flex-col gap-2">
@@ -294,7 +256,7 @@ export function Navbar() {
                       href="/auth"
                       className="bg-secondary h-8 flex items-center justify-center text-sm font-normal tracking-wide rounded-full text-primary-foreground dark:text-secondary-foreground w-full px-4 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12] hover:bg-secondary/80 transition-all ease-out active:scale-95"
                     >
-                      Try free
+                      Get Started
                     </Link>
                   )}
                   <div className="flex justify-between">

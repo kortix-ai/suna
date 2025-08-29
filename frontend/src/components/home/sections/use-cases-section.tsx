@@ -5,6 +5,7 @@ import { siteConfig } from '@/lib/home';
 import { cn } from '@/lib/utils';
 import { motion } from 'motion/react';
 import { ArrowRight } from 'lucide-react';
+import { GradientText } from '@/components/animate-ui/text/gradient';
 
 interface UseCase {
   id: string;
@@ -26,20 +27,20 @@ export function UseCasesSection() {
   return (
     <section
       id="use-cases"
-      className="flex flex-col items-center justify-center gap-10 pb-10 w-full relative"
+      className="flex flex-col items-center justify-center gap-6 pb-10 w-full relative pt-4"
     >
       <SectionHeader>
         <h2 className="text-3xl md:text-4xl font-medium tracking-tighter text-center text-balance">
-          See Omni in action
+          See <GradientText text="Operator" /> in action
         </h2>
         <p className="text-muted-foreground text-center text-balance font-medium">
-          Explore real-world examples of how Omni completes complex tasks
+          Explore real-world examples of how <GradientText text="Operator" /> completes complex tasks
           autonomously
         </p>
       </SectionHeader>
 
       <div className="relative w-full h-full">
-        <div className="grid min-[650px]:grid-cols-2 min-[900px]:grid-cols-3 min-[1200px]:grid-cols-4 gap-4 w-full mx-auto px-6">
+        <div className="grid min-[650px]:grid-cols-2 min-[900px]:grid-cols-3 min-[1200px]:grid-cols-4 gap-4 w-full max-w-6xl mx-auto px-6">
           {featuredUseCases.map((useCase: UseCase) => (
             <div
               key={useCase.id}
@@ -76,9 +77,9 @@ export function UseCasesSection() {
                     <img
                       src={
                         useCase.image ||
-                        `https://placehold.co/800x400/f5f5f5/666666?text=Omni+${useCase.title.split(' ').join('+')}`
+                        `https://placehold.co/800x400/f5f5f5/666666?text=Operator+${useCase.title.split(' ').join('+')}`
                       }
-                      alt={`Omni ${useCase.title}`}
+                      alt={`Operator ${useCase.title}`}
                       className="w-full h-full object-cover"
                     />
                     <a

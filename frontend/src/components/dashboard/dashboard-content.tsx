@@ -34,6 +34,7 @@ import { toast } from 'sonner';
 import { ReleaseBadge } from '../auth/release-badge';
 import { useDashboardTour } from '@/hooks/use-dashboard-tour';
 import { TourConfirmationDialog } from '@/components/tour/TourConfirmationDialog';
+import { ThreeSpinner } from '@/components/ui/three-spinner';
 import { Calendar, MessageSquare, Plus, Sparkles, Zap } from 'lucide-react';
 
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
@@ -349,6 +350,10 @@ export function DashboardContent() {
             <div className="flex-1 flex items-center justify-center px-4 py-8">
               <div className="w-full max-w-[650px] flex flex-col items-center justify-center space-y-4 md:space-y-6">
                 <div className="flex flex-col items-center text-center w-full">
+                  {/* Omni Logo */}
+                  <div className="mb-4">
+                    <ThreeSpinner size={64} />
+                  </div>
                   <p 
                     className="tracking-tight text-2xl md:text-3xl font-normal text-foreground/90"
                     data-tour="dashboard-title"
