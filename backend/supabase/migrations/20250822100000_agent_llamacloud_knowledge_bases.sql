@@ -96,12 +96,70 @@ CREATE TRIGGER trigger_agent_llamacloud_kb_updated_at
     FOR EACH ROW
     EXECUTE FUNCTION update_agent_llamacloud_kb_timestamp();
 
+-- Migrate existing knowledge_bases data from agents table
+-- This takes the JSON array from agents.knowledge_bases and creates individual rows
+INSERT INTO agent_llamacloud_knowledge_bases (
+    agent_id,
+    account_id,
+    name,
+    index_name,
+    description,
+    is_active,
+    created_at,
+    updated_at
+)
+SELECT 
+    a.agent_id,
+    a.account_id,
+    kb_item->>'name' as name,
+    kb_item->>'index_name' as index_name,
+    kb_item->>'description' as description,
+    TRUE as is_active,  -- Default to active
+    a.created_at,
+    a.updated_at
+FROM agents a
+CROSS JOIN LATERAL jsonb_array_elements(
+    CASE 
+        WHEN jsonb_typeof(a.knowledge_bases) = 'array' THEN a.knowledge_bases
+        ELSE '[]'::jsonb
+    END
+) AS kb_item
+WHERE 
+    a.knowledge_bases IS NOT NULL 
+    AND jsonb_typeof(a.knowledge_bases) = 'array'
+    AND jsonb_array_length(a.knowledge_bases) > 0
+    AND kb_item->>'name' IS NOT NULL 
+    AND kb_item->>'index_name' IS NOT NULL
+    AND LENGTH(TRIM(kb_item->>'name')) > 0
+    AND LENGTH(TRIM(kb_item->>'index_name')) > 0;
+
+-- Log the migration results
+DO $$
+DECLARE
+    migrated_count INTEGER;
+    agents_with_kb_count INTEGER;
+BEGIN
+    -- Count how many records were migrated
+    SELECT COUNT(*) INTO migrated_count FROM agent_llamacloud_knowledge_bases;
+    
+    -- Count how many agents had knowledge bases
+    SELECT COUNT(*) INTO agents_with_kb_count 
+    FROM agents 
+    WHERE knowledge_bases IS NOT NULL 
+      AND jsonb_typeof(knowledge_bases) = 'array' 
+      AND jsonb_array_length(knowledge_bases) > 0;
+    
+    RAISE NOTICE 'Knowledge base migration completed:';
+    RAISE NOTICE '  - Agents with knowledge bases: %', agents_with_kb_count;
+    RAISE NOTICE '  - Total knowledge base entries migrated: %', migrated_count;
+END $$;
+
 -- Grant permissions
 GRANT ALL PRIVILEGES ON TABLE agent_llamacloud_knowledge_bases TO authenticated, service_role;
 GRANT EXECUTE ON FUNCTION get_agent_llamacloud_knowledge_bases TO authenticated, service_role;
 
 -- Add comments
-COMMENT ON TABLE agent_llamacloud_knowledge_bases IS 'Stores LlamaCloud knowledge base configurations for agents - completely separate from the file-based knowledge base system';
+COMMENT ON TABLE agent_llamacloud_knowledge_bases IS 'Stores LlamaCloud knowledge base configurations for agents - migrated from agents.knowledge_bases JSON column';
 COMMENT ON FUNCTION get_agent_llamacloud_knowledge_bases IS 'Retrieves all LlamaCloud knowledge base configurations for a specific agent';
 
 COMMIT;
