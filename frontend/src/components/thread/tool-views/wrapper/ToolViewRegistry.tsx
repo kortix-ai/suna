@@ -47,6 +47,7 @@ import CreateAgentWorkflowToolView from '../create-agent-workflow/create-agent-w
 import ActivateAgentWorkflowToolView from '../activate-agent-workflow/activate-agent-workflow';
 import CreateAgentScheduledTriggerToolView from '../create-agent-scheduled-trigger/create-agent-scheduled-trigger';
 import ListAgentWorkflowsToolView from '../list-agent-workflows/list-agent-workflows';
+import { VideoAvatarToolView } from '../video-avatar-tool/VideoAvatarToolView';
 
 
 export type ToolViewComponent = React.ComponentType<ToolViewProps>;
@@ -138,6 +139,14 @@ const defaultRegistry: ToolViewRegistryType = {
   'activate-agent-workflow': ActivateAgentWorkflowToolView,
   'create-agent-scheduled-trigger': CreateAgentScheduledTriggerToolView,
   'list-agent-workflows': ListAgentWorkflowsToolView,
+
+  // Video Avatar tools
+  'generate-avatar-video': VideoAvatarToolView,
+  'create-avatar-session': VideoAvatarToolView,
+  'make-avatar-speak': VideoAvatarToolView,
+  'check-video-status': VideoAvatarToolView,
+  'list-avatar-options': VideoAvatarToolView,
+  'close-avatar-session': VideoAvatarToolView,
 };
 
 class ToolViewRegistry {
