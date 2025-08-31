@@ -114,15 +114,27 @@ class SandboxPodcastTool(SandboxToolsBase):
             )
             
             if podcast_result.get('success'):
-                return self.success_response({
-                    "status": "Podcast generated successfully",
-                    "podcast_url": podcast_result.get('podcast_url'),
-                    "podcast_id": podcast_result.get('podcast_id'),
-                    "title": podcast_title,
-                    "agent_run_id": agent_run_id,
-                    "message_count": len(messages),
-                    "service_response": podcast_result
-                })
+                # Format user-friendly response with clickable links
+                audio_url = podcast_result.get('audio_url')
+                podcast_url = podcast_result.get('podcast_url')
+                podcast_id = podcast_result.get('podcast_id')
+                
+                response_text = f"""🎧 **Podcast Generated Successfully!**
+
+**"{podcast_title}"**
+
+🎵 **Audio Link**: {audio_url}
+📝 **Transcript Link**: {podcast_url}
+🆔 **Podcast ID**: {podcast_id}
+
+**Details:**
+• Agent Run: {agent_run_id}
+• Messages: {len(messages)}
+• TTS Model: {tts_model}
+
+**Click the audio link above to listen to your podcast!** 🎙️"""
+
+                return self.success_response(response_text)
             else:
                 return self.fail_response(f"Podcast generation failed: {podcast_result.get('error', 'Unknown error')}")
                 
@@ -536,16 +548,26 @@ class SandboxPodcastTool(SandboxToolsBase):
             )
             
             if podcast_result.get('success'):
-                return self.success_response({
-                    "status": "Podcast generated successfully from URL",
-                    "podcast_url": podcast_result.get('podcast_url'),
-                    "audio_url": podcast_result.get('audio_url'),
-                    "podcast_id": podcast_result.get('podcast_id'),
-                    "title": podcast_title,
-                    "source_url": url,
-                    "tts_model": tts_model,
-                    "service_response": podcast_result
-                })
+                # Format user-friendly response with clickable links
+                audio_url = podcast_result.get('audio_url')
+                podcast_url = podcast_result.get('podcast_url')
+                podcast_id = podcast_result.get('podcast_id')
+                
+                response_text = f"""🎧 **Podcast Generated Successfully from URL!**
+
+**"{podcast_title}"**
+
+🎵 **Audio Link**: {audio_url}
+📝 **Transcript Link**: {podcast_url}
+🆔 **Podcast ID**: {podcast_id}
+
+**Details:**
+• Source URL: {url}
+• TTS Model: {tts_model}
+
+**Click the audio link above to listen to your podcast!** 🎙️"""
+
+                return self.success_response(response_text)
             else:
                 error_msg = podcast_result.get('error', 'Unknown error')
                 return self.fail_response(f"Podcast generation failed: {error_msg}")
@@ -647,18 +669,28 @@ class SandboxPodcastTool(SandboxToolsBase):
             )
             
             if podcast_result.get('success'):
-                return self.success_response({
-                    "status": "Bite-sized podcast generated successfully",
-                    "podcast_url": podcast_result.get('podcast_url'),
-                    "audio_url": podcast_result.get('audio_url'),
-                    "podcast_id": podcast_result.get('podcast_id'),
-                    "title": podcast_title,
-                    "agent_run_id": agent_run_id,
-                    "message_count": len(messages),
-                    "is_bite_sized": True,
-                    "hosts": "Mike and Laurel",
-                    "service_response": podcast_result
-                })
+                # Format user-friendly response with clickable links
+                audio_url = podcast_result.get('audio_url')
+                podcast_url = podcast_result.get('podcast_url')
+                podcast_id = podcast_result.get('podcast_id')
+                
+                response_text = f"""🎧 **Bite-Sized Podcast Generated Successfully!**
+
+**"{podcast_title}"**
+
+🎵 **Audio Link**: {audio_url}
+📝 **Transcript Link**: {podcast_url}
+🆔 **Podcast ID**: {podcast_id}
+
+**Details:**
+• Agent Run: {agent_run_id}
+• Messages: {len(messages)} (bite-sized format)
+• Hosts: Mike and Laurel
+• TTS Model: {tts_model}
+
+**Click the audio link above to listen to your podcast!** 🎙️"""
+
+                return self.success_response(response_text)
             else:
                 return self.fail_response(f"Bite-sized podcast generation failed: {podcast_result.get('error', 'Unknown error')}")
                 
@@ -876,18 +908,28 @@ class SandboxPodcastTool(SandboxToolsBase):
                 
                 if response.status_code == 200:
                     result = response.json()
-                    return self.success_response({
-                        "status": "Fast podcast generated successfully from text",
-                        "podcast_url": result.get("podcast_url"),
-                        "audio_url": result.get("audio_url"), 
-                        "podcast_id": result.get("podcast_id"),
-                        "title": podcast_title,
-                        "tts_model": tts_model,
-                        "conversation_style": conversation_style,
-                        "text_length": len(text),
-                        "method": "direct_text_generation",
-                        "service_response": result
-                    })
+                    
+                    # Format user-friendly response with clickable links
+                    audio_url = result.get("audio_url")
+                    podcast_url = result.get("podcast_url") 
+                    podcast_id = result.get("podcast_id")
+                    
+                    response_text = f"""🎧 **Podcast Generated Successfully!**
+
+**"{podcast_title}"**
+
+🎵 **Audio Link**: {audio_url}
+📝 **Transcript Link**: {podcast_url}
+🆔 **Podcast ID**: {podcast_id}
+
+**Details:**
+• TTS Model: {tts_model}
+• Style: {conversation_style}
+• Length: {len(text)} characters
+
+**Click the audio link above to listen to your podcast!** 🎙️"""
+
+                    return self.success_response(response_text)
                 else:
                     error_text = response.text
                     logger.error(f"Podcastfy service error: {response.status_code} - {error_text}")
