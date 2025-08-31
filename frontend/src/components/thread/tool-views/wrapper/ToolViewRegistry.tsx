@@ -38,6 +38,7 @@ import { SheetsToolView } from '../sheets-tools/sheets-tool-view';
 import { GetProjectStructureView } from '../web-dev/GetProjectStructureView';
 import { ImageEditGenerateToolView } from '../image-edit-generate-tool/ImageEditGenerateToolView';
 import { UploadFileToolView } from '../UploadFileToolView';
+import { PodcastToolView } from '../podcast-tool/PodcastToolView';
 import { CreateNewAgentToolView } from '../create-new-agent/create-new-agent';
 import { SearchMcpServersForAgentToolView } from '../search-mcp-servers-for-agent/search-mcp-servers-for-agent';
 import { CreateCredentialProfileForAgentToolView } from '../create-credential-profile-for-agent/create-credential-profile-for-agent';
@@ -126,6 +127,9 @@ const defaultRegistry: ToolViewRegistryType = {
   'list-web-projects': GenericToolView,
 
   'upload-file': UploadFileToolView,
+  
+  // Podcast tool
+  'generate-podcast': PodcastToolView,
 
   'default': GenericToolView,
 
