@@ -62,7 +62,7 @@ export const siteConfig = {
   description: 'The Generalist AI Worker that can act on your behalf.',
   cta: 'Start Free',
   url: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-  keywords: ['AI Worker', 'Generalist AI', 'Open Source AI', 'Autonomous Agent'],
+  keywords: ['AI Worker', 'Generalist AI', 'Secure AI', 'Autonomous Agent'],
   links: {
     email: 'support@kortix.ai',
     twitter: 'https://x.com/kortixai',
@@ -75,7 +75,7 @@ export const siteConfig = {
       { id: 1, name: 'Home', href: '#hero' },
       { id: 2, name: 'Process', href: '#process' },
       // { id: 3, name: 'Use Cases', href: '#use-cases' },
-      { id: 4, name: 'Open Source', href: '#open-source' },
+      { id: 4, name: 'Security', href: '#security' },
       { id: 5, name: 'Pricing', href: '#pricing' },
       { id: 6, name: 'Enterprise', href: '/enterprise' },
     ],
@@ -107,11 +107,11 @@ export const siteConfig = {
         />
       </svg>
     ),
-    badge: '100% OPEN SOURCE',
+    badge: '100% SECURE',
     githubUrl: 'https://github.com/kortix-ai/suna',
-    title: 'Kortix – Build, manage and train your AI Workforce.',
+    title: 'Kortix – Build, manage and train your AI Workforce.',
     description:
-      'Kortix – open-source platform to build, manage and train your AI Workforce.',
+      'Kortix – secure platform to build, manage and train your AI Workforce.',
     inputPlaceholder: 'Ask Suna to...',
   },
   cloudPricingItems: [
@@ -601,12 +601,12 @@ export const siteConfig = {
     },
     {
       id: 4,
-      text: 'Access cutting-edge AI as an open source, transparent solution.',
+      text: 'Access cutting-edge AI as a secure, transparent solution.',
       image: '/Device-1.png',
     },
   ],
   growthSection: {
-    title: 'Open Source & Secure',
+    title: 'Security & Transparency',
     description:
       'Where advanced security meets complete transparency—designed to protect your data while providing full access to the code.',
     items: [
@@ -888,7 +888,7 @@ export const siteConfig = {
           </div>
         ),
 
-        title: 'Open Source Security',
+        title: 'Advanced Security',
         description:
           'Benefit from the security of open source code that thousands of eyes can review, audit, and improve.',
       },
@@ -916,7 +916,7 @@ export const siteConfig = {
     },
   },
   pricing: {
-    title: 'Open Source & Free Forever',
+    title: 'Secure & Free Forever',
     description:
       'Kortix Suna is 100% open source and free to use. No hidden fees, no premium features locked behind paywalls.',
     pricingItems: [

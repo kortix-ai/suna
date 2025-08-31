@@ -106,7 +106,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
     const defaultAgent = allAgents[0];
     const isDefaultAgentSuna = defaultAgent?.metadata?.is_suna_default || false;
     return {
-      name: defaultAgent?.name || 'Suna',
+      name: defaultAgent?.name || 'Kusor',
       icon: isDefaultAgentSuna ? <KortixLogo size={16} /> : (defaultAgent?.icon || <KortixLogo size={16} />)
     };
   };

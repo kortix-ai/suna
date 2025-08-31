@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { CsvTable } from '@/components/ui/csv-table';
-import * as XLSX from 'xlsx';
+import * as XLSX from '@e965/xlsx';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { ChevronDown } from 'lucide-react';

@@ -16,7 +16,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   agentId, 
   size = 16, 
   className = "", 
-  fallbackName = "Suna" 
+  fallbackName = "Kusor" 
 }) => {
   const { data: agent, isLoading } = useAgent(agentId || '');
 
@@ -78,7 +78,7 @@ interface AgentNameProps {
 
 export const AgentName: React.FC<AgentNameProps> = ({ 
   agentId, 
-  fallback = "Suna" 
+  fallback = "Kusor" 
 }) => {
   const { data: agent, isLoading } = useAgent(agentId || '');
 

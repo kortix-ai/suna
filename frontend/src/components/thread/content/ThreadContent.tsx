@@ -356,7 +356,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
     project,
     debugMode = false,
     isPreviewMode = false,
-    agentName = 'Suna',
+    agentName = 'Kusor',
     agentAvatar = <KortixLogo size={16} />,
     emptyStateComponent,
     threadMetadata,
@@ -411,7 +411,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
         }
 
         if (recentAssistantWithAgent?.agents?.name) {
-            const isSunaAgent = recentAssistantWithAgent.agents.name === 'Suna' || isSunaDefaultAgent;
+            const isSunaAgent = recentAssistantWithAgent.agents.name === 'Kusor' || isSunaDefaultAgent;
             // Prefer profile image if available on the agent payload
             const profileUrl = (recentAssistantWithAgent as any)?.agents?.profile_image_url;
             const avatar = profileUrl && !isSunaDefaultAgent ? (
@@ -442,7 +442,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
         // Fallback: if this is a Suna default agent, always show KortixLogo
         if (isSunaDefaultAgent) {
             return {
-                name: agentName || 'Suna',
+                name: agentName || 'Kusor',
                 avatar: (
                     <div className="h-5 w-5 flex items-center justify-center rounded text-xs">
                         <KortixLogo size={16} />
@@ -452,7 +452,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
         }
 
         return {
-            name: agentName || 'Suna',
+            name: agentName || 'Kusor',
             avatar: agentAvatar
         };
     }, [threadMetadata, displayMessages, agentName, agentAvatar, agentMetadata, agentData]);

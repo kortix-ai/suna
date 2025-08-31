@@ -274,7 +274,7 @@ export function FileAttachment({
             const parseSheetNames = async () => {
                 try {
                     // Import XLSX dynamically to avoid bundle size issues
-                    const XLSX = await import('xlsx');
+                    const XLSX = await import('@e965/xlsx');
 
                     // Convert blob URL to binary data
                     const response = await fetch(xlsxBlobUrl);
