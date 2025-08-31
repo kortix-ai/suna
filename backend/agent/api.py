@@ -915,17 +915,8 @@ async def stream_agent_run(
                     logger.warning(f"Error during unsubscribe operations: {e}")
             
             # Close pubsub connections
-            if pubsub_response:
-                try:
-                    await asyncio.wait_for(pubsub_response.aclose(), timeout=5.0)
-                except Exception as e:
-                    logger.warning(f"Error closing response pubsub: {e}")
-            
-            if pubsub_control:
-                try:
-                    await asyncio.wait_for(pubsub_control.aclose(), timeout=5.0)
-                except Exception as e:
-                    logger.warning(f"Error closing control pubsub: {e}")
+            if pubsub_response: await pubsub_response.close()
+            if pubsub_control: await pubsub_control.close()
 
             # Cancel and cleanup listener task
             if listener_task:
