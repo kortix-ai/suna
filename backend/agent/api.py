@@ -917,13 +917,13 @@ async def stream_agent_run(
             # Close pubsub connections
             if pubsub_response:
                 try:
-                    await asyncio.wait_for(pubsub_response.close(), timeout=5.0)
+                    await asyncio.wait_for(pubsub_response.aclose(), timeout=5.0)
                 except Exception as e:
                     logger.warning(f"Error closing response pubsub: {e}")
             
             if pubsub_control:
                 try:
-                    await asyncio.wait_for(pubsub_control.close(), timeout=5.0)
+                    await asyncio.wait_for(pubsub_control.aclose(), timeout=5.0)
                 except Exception as e:
                     logger.warning(f"Error closing control pubsub: {e}")
 
