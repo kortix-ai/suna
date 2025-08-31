@@ -889,48 +889,21 @@ async def stream_agent_run(
                  yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': f'Failed to start stream: {e}'})}\n\n"
         finally:
             terminate_stream = True
-            # Enhanced graceful shutdown with proper error handling
-            cleanup_tasks = []
-            
-            # Unsubscribe operations
-            if pubsub_response:
-                try:
-                    cleanup_tasks.append(asyncio.create_task(pubsub_response.unsubscribe(response_channel)))
-                except Exception as e:
-                    logger.warning(f"Error unsubscribing from response channel: {e}")
-            
-            if pubsub_control:
-                try:
-                    cleanup_tasks.append(asyncio.create_task(pubsub_control.unsubscribe(control_channel)))
-                except Exception as e:
-                    logger.warning(f"Error unsubscribing from control channel: {e}")
-            
-            # Wait for unsubscribe operations to complete
-            if cleanup_tasks:
-                try:
-                    await asyncio.wait_for(asyncio.gather(*cleanup_tasks, return_exceptions=True), timeout=5.0)
-                except asyncio.TimeoutError:
-                    logger.warning("Pubsub unsubscribe operations timed out")
-                except Exception as e:
-                    logger.warning(f"Error during unsubscribe operations: {e}")
-            
-            # Close pubsub connections
+            # Graceful shutdown order: unsubscribe → close → cancel
+            if pubsub_response: await pubsub_response.unsubscribe(response_channel)
+            if pubsub_control: await pubsub_control.unsubscribe(control_channel)
             if pubsub_response: await pubsub_response.close()
             if pubsub_control: await pubsub_control.close()
 
-            # Cancel and cleanup listener task
             if listener_task:
                 listener_task.cancel()
                 try:
-                    await asyncio.wait_for(listener_task, timeout=3.0)
+                    await listener_task  # Reap inner tasks & swallow their errors
                 except asyncio.CancelledError:
                     pass
-                except asyncio.TimeoutError:
-                    logger.warning("Listener task cancellation timed out")
                 except Exception as e:
                     logger.debug(f"listener_task ended with: {e}")
-            
-            # Brief wait for cleanup to complete
+            # Wait briefly for tasks to cancel
             await asyncio.sleep(0.1)
             logger.debug(f"Streaming cleanup complete for agent run: {agent_run_id}")
 
