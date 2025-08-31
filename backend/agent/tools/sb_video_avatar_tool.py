@@ -103,6 +103,11 @@ class SandboxVideoAvatarTool(SandboxToolsBase):
                         "type": "string",
                         "description": "Text for the avatar to speak in the video"
                     },
+                    "preserve_exact_text": {
+                        "type": "boolean",
+                        "description": "Force HeyGen to use exact text without AI modifications or improvements",
+                        "default": False
+                    },
                     "avatar_id": {
                         "type": "string",
                         "description": "HeyGen avatar ID to use. Use 'default' or specific avatar IDs from HeyGen",
@@ -164,6 +169,7 @@ class SandboxVideoAvatarTool(SandboxToolsBase):
     async def generate_avatar_video(
         self,
         text: str,
+        preserve_exact_text: bool = False,
         avatar_id: str = "default",
         voice_id: str = "default",
         video_title: str = "Avatar Video",
@@ -184,6 +190,22 @@ class SandboxVideoAvatarTool(SandboxToolsBase):
             logger.info(f"Starting avatar video generation: {video_title}")
             
             # Prepare video generation request
+            voice_config = {
+                "type": "text",
+                "input_text": text,
+                "voice_id": voice_id if voice_id != "default" else "1bd001e7e50f421d891986aad5158bc8"
+            }
+            
+            # Add exact text preservation settings if requested
+            if preserve_exact_text:
+                voice_config.update({
+                    "speed": 1.0,  # Normal speed
+                    "emotion": "neutral",  # Neutral emotion to avoid text changes
+                    "pause": 0,  # No extra pauses
+                    "emphasis": False  # No emphasis changes
+                })
+                logger.info(f"🔒 Exact text preservation enabled for: '{text}'")
+            
             video_data = {
                 "video_inputs": [{
                     "character": {
@@ -191,11 +213,7 @@ class SandboxVideoAvatarTool(SandboxToolsBase):
                         "avatar_id": avatar_id if avatar_id != "default" else "Kristin_public_3_20240108",
                         "avatar_style": "normal"
                     },
-                    "voice": {
-                        "type": "text",
-                        "input_text": text,
-                        "voice_id": voice_id if voice_id != "default" else "1bd001e7e50f421d891986aad5158bc8"
-                    },
+                    "voice": voice_config,
                     "background": {
                         "type": "color",
                         "value": background_color
@@ -238,7 +256,13 @@ class SandboxVideoAvatarTool(SandboxToolsBase):
                 if not video_id:
                     return self.fail_response("Failed to get video ID from HeyGen response")
                 
-                logger.info(f"Video generation started with ID: {video_id}")
+                # Enhanced job ID logging
+                logger.info(f"🎬 ===== VIDEO GENERATION STARTED =====")
+                logger.info(f"📋 JOB ID: {video_id}")
+                logger.info(f"📝 TEXT: '{text}'")
+                logger.info(f"👤 AVATAR: {avatar_id}")
+                logger.info(f"🔒 EXACT TEXT: {preserve_exact_text}")
+                logger.info(f"=========================================")
                 
                 # Smart async polling approach
                 if async_polling:
@@ -269,14 +293,16 @@ class SandboxVideoAvatarTool(SandboxToolsBase):
                     else:
                         return self.fail_response("Video generation timed out or failed")
                 else:
-                    # Quick return approach
+                    # Quick return approach - ALWAYS show job ID prominently
                     return self.success_response(
-                        f"🎬 Avatar video generation started successfully!\n\n"
-                        f"Video ID: {video_id}\n"
-                        f"Text: \"{text}\"\n"
-                        f"Avatar: {avatar_id}\n\n" 
-                        f"📹 Your video is now processing (typically takes 30-60 seconds).\n"
-                        f"Use check_video_status('{video_id}') to check progress and download when ready!"
+                        f"🎬 **AVATAR VIDEO GENERATION STARTED!**\n\n"
+                        f"📋 **JOB ID**: `{video_id}` ⭐\n"
+                        f"📝 **REQUESTED TEXT**: \"{text}\"\n"
+                        f"👤 **AVATAR**: {avatar_id}\n"
+                        f"🎙️ **VOICE**: {voice_id}\n\n" 
+                        f"📹 **STATUS**: Processing (typically 30-60 seconds)\n"
+                        f"🔍 **TRACK PROGRESS**: Use `check_video_status('{video_id}')` to check and download\n\n"
+                        f"**⚠️ IMPORTANT**: HeyGen may slightly modify your text for natural speech. The exact text above was requested."
                     )
                     
         except Exception as e:
