@@ -11,6 +11,7 @@ export const AGENTPRESS_TOOL_DEFINITIONS: Record<string, { enabled: boolean; des
     'sb_presentation_tool': { enabled: false, description: 'Create professional presentations with HTML slides, preview, and export capabilities', icon: '📊', color: 'bg-violet-100 dark:bg-violet-800/50' },
 
     'sb_sheets_tool': { enabled: true, description: 'Create, view, update, analyze, visualize, and format spreadsheets (XLSX/CSV) with Luckysheet viewer', icon: '📊', color: 'bg-purple-100 dark:bg-purple-800/50' },
+    'podcast_tool': { enabled: true, description: 'Generate audio podcasts from agent conversations using AI voices and professional formatting', icon: '🎧', color: 'bg-rose-100 dark:bg-rose-800/50' },
     'sb_web_dev_tool': { enabled: false, description: 'Create Next.js projects with shadcn/ui pre-installed, manage dependencies, build and deploy modern web applications', icon: '⚛️', color: 'bg-cyan-100 dark:bg-cyan-800/50' },
     
     // Browser and interaction tools
@@ -46,6 +47,7 @@ export const getToolDisplayName = (toolName: string): string => {
       'sb_presentation_tool': 'Presentation Creator',
 
       'sb_sheets_tool': 'Spreadsheets',
+      'podcast_tool': 'Podcast Generator',
       'sb_web_dev_tool': 'Web Development',
       
       'browser_tool': 'Browser Automation',
