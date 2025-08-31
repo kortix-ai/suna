@@ -45,6 +45,11 @@ class SandboxPodcastTool(SandboxToolsBase):
                         "description": "TTS model to use: 'openai' (cost-effective, ~307KB files) or 'elevenlabs' (premium quality, ~1.6MB files)",
                         "enum": ["openai", "elevenlabs"],
                         "default": "openai"
+                    },
+                    "async_mode": {
+                        "type": "boolean",
+                        "description": "If true, returns immediately with job ID for tracking. If false, waits for completion.",
+                        "default": True
                     }
                 },
                 "required": ["agent_run_id"]
@@ -65,7 +70,8 @@ class SandboxPodcastTool(SandboxToolsBase):
         agent_run_id: str,
         podcast_title: str = "",
         include_thinking: bool = False,
-        tts_model: str = "openai"
+        tts_model: str = "openai",
+        async_mode: bool = True
     ) -> ToolResult:
         """
         Generate a podcast from an agent run conversation.
@@ -109,17 +115,43 @@ class SandboxPodcastTool(SandboxToolsBase):
                 podcast_title = self._generate_podcast_title(messages, agent_run_data)
                 
             # Step 5: Call Podcastfy service
-            podcast_result = await self._call_podcastfy_service(
-                formatted_content, podcast_title, agent_run_id, tts_model
-            )
-            
-            if podcast_result.get('success'):
-                # Format user-friendly response with clickable links
-                audio_url = podcast_result.get('audio_url')
-                podcast_url = podcast_result.get('podcast_url')
-                podcast_id = podcast_result.get('podcast_id')
+            if async_mode:
+                # Start job and return immediately with job ID
+                job_id = await self._submit_podcast_job(
+                    formatted_content, podcast_title, agent_run_id, tts_model
+                )
                 
-                response_text = f"""🎧 **Podcast Generated Successfully!**
+                if job_id:
+                    response_text = f"""🎧 **Podcast Generation Started!**
+
+**"{podcast_title}"**
+
+📋 **Job ID**: `{job_id}` ⭐
+📝 **Agent Run**: {agent_run_id}
+🎙️ **TTS Model**: {tts_model}
+📊 **Messages**: {len(messages)}
+
+📹 **Status**: Processing (typically 30-120 seconds)
+🔍 **Track Progress**: Use `check_podcast_job_status('{job_id}')` to check and get links when ready!
+
+**Your podcast is being generated asynchronously!** 🚀"""
+
+                    return self.success_response(response_text)
+                else:
+                    return self.fail_response("Failed to submit podcast job")
+            else:
+                # Traditional blocking approach
+                podcast_result = await self._call_podcastfy_service(
+                    formatted_content, podcast_title, agent_run_id, tts_model
+                )
+                
+                if podcast_result.get('success'):
+                    # Format user-friendly response with clickable links
+                    audio_url = podcast_result.get('audio_url')
+                    podcast_url = podcast_result.get('podcast_url')
+                    podcast_id = podcast_result.get('podcast_id')
+                    
+                    response_text = f"""🎧 **Podcast Generated Successfully!**
 
 **"{podcast_title}"**
 
@@ -134,9 +166,9 @@ class SandboxPodcastTool(SandboxToolsBase):
 
 **Click the audio link above to listen to your podcast!** 🎙️"""
 
-                return self.success_response(response_text)
-            else:
-                return self.fail_response(f"Podcast generation failed: {podcast_result.get('error', 'Unknown error')}")
+                    return self.success_response(response_text)
+                else:
+                    return self.fail_response(f"Podcast generation failed: {podcast_result.get('error', 'Unknown error')}")
                 
         except Exception as e:
             logger.error(f"Error generating podcast for agent run {agent_run_id}: {str(e)}", exc_info=True)
@@ -252,6 +284,56 @@ class SandboxPodcastTool(SandboxToolsBase):
             formatted_lines.append("Mike: Until next time!")
         
         return "\n".join(formatted_lines)
+    
+    async def _submit_podcast_job(
+        self, 
+        content: str, 
+        title: str, 
+        agent_run_id: str,
+        tts_model: str = "openai"
+    ) -> Optional[str]:
+        """Submit podcast job and return job ID immediately (async mode)."""
+        try:
+            # Configure TTS model and voice
+            voice_config = self._get_tts_config(tts_model)
+            
+            # Prepare payload for Podcastfy service
+            payload = {
+                "text": content,
+                "title": title,
+                "tts_model": tts_model,
+                "voice_id": voice_config["voice_id"],
+                "metadata": {
+                    "agent_run_id": agent_run_id,
+                    "source": "omni_agent_conversation",
+                    "generated_at": datetime.now().isoformat(),
+                    "tts_model": tts_model,
+                    "quality": voice_config["quality"]
+                }
+            }
+            
+            # Submit job asynchronously and get job ID only
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                logger.info(f"🚀 Submitting async podcast job for: {title}")
+                
+                response = await client.post(
+                    f"{self.podcastfy_url}/api/generate/async", 
+                    json=payload,
+                    headers={"Content-Type": "application/json"}
+                )
+                
+                if response.status_code == 200:
+                    job_result = response.json()
+                    job_id = job_result.get("job_id")
+                    logger.info(f"📋 Podcast job submitted with ID: {job_id}")
+                    return job_id
+                else:
+                    logger.error(f"Job submission failed: {response.status_code} - {response.text}")
+                    return None
+                    
+        except Exception as e:
+            logger.error(f"Error submitting podcast job: {str(e)}")
+            return None
     
     def _generate_podcast_title(
         self, 
@@ -430,6 +512,69 @@ class SandboxPodcastTool(SandboxToolsBase):
             "error": f"Podcast generation timed out after {max_wait_time} seconds",
             "job_id": job_id
         }
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "check_podcast_job_status",
+            "description": "Check the status of a podcast generation job and get download links when ready.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "job_id": {
+                        "type": "string",
+                        "description": "Job ID to check status for"
+                    }
+                },
+                "required": ["job_id"]
+            }
+        }
+    })
+    async def check_podcast_job_status(self, job_id: str) -> ToolResult:
+        """Check the status of a podcast generation job."""
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.get(f"{self.podcastfy_url}/api/status/{job_id}")
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    status = result.get("status")
+                    progress = result.get("progress", 0)
+                    
+                    if status == "completed":
+                        audio_url = result.get("audio_url")
+                        podcast_url = result.get("podcast_url")
+                        podcast_id = result.get("podcast_id")
+                        
+                        response_text = f"""✅ **Podcast Generation Completed!**
+
+📋 **Job ID**: `{job_id}`
+
+🎵 **Audio Link**: {audio_url}
+📝 **Transcript Link**: {podcast_url}
+🆔 **Podcast ID**: {podcast_id}
+
+**Click the audio link above to listen to your podcast!** 🎙️"""
+
+                        return self.success_response(response_text)
+                        
+                    elif status == "failed":
+                        error_msg = result.get("error", "Unknown error")
+                        return self.fail_response(f"❌ Podcast generation failed: {error_msg}")
+                        
+                    else:
+                        return self.success_response(
+                            f"📊 **Podcast Job Status**\n\n"
+                            f"📋 **Job ID**: `{job_id}`\n"
+                            f"🔄 **Status**: {status}\n"
+                            f"📈 **Progress**: {progress}%\n\n"
+                            f"⏱️ Still processing... Check again in 30-60 seconds!"
+                        )
+                else:
+                    return self.fail_response(f"Failed to check job status: HTTP {response.status_code}")
+                    
+        except Exception as e:
+            return self.fail_response(f"Error checking job status: {str(e)}")
 
     @openapi_schema({
         "type": "function",
@@ -835,6 +980,11 @@ class SandboxPodcastTool(SandboxToolsBase):
                         "description": "Style of the podcast conversation",
                         "enum": ["informative", "casual", "formal", "educational", "news_analysis"],
                         "default": "informative"
+                    },
+                    "async_mode": {
+                        "type": "boolean",
+                        "description": "If true, returns immediately with job ID for tracking. If false, waits for completion.",
+                        "default": True
                     }
                 },
                 "required": ["text"]
@@ -856,7 +1006,8 @@ class SandboxPodcastTool(SandboxToolsBase):
         text: str,
         podcast_title: str = "Custom Text Podcast",
         tts_model: str = "openai",
-        conversation_style: str = "informative"
+        conversation_style: str = "informative",
+        async_mode: bool = True
     ) -> ToolResult:
         """
         Generate a podcast directly from text content - FASTEST method!
@@ -895,26 +1046,62 @@ class SandboxPodcastTool(SandboxToolsBase):
                 }
             }
             
-            # Call Podcastfy service directly (no database lookups!)
-            async with httpx.AsyncClient(timeout=180.0) as client:
-                # Make the podcast generation request
-                response = await client.post(
-                    f"{self.podcastfy_url}/api/generate", 
-                    json=payload,
-                    headers={"Content-Type": "application/json"}
-                )
-                
-                logger.info(f"Podcastfy response status: {response.status_code}")
-                
-                if response.status_code == 200:
-                    result = response.json()
+            # Call Podcastfy service 
+            if async_mode:
+                # Submit job and return immediately with job ID
+                async with httpx.AsyncClient(timeout=30.0) as client:
+                    logger.info(f"🚀 Submitting async text podcast job: {podcast_title}")
                     
-                    # Format user-friendly response with clickable links
-                    audio_url = result.get("audio_url")
-                    podcast_url = result.get("podcast_url") 
-                    podcast_id = result.get("podcast_id")
+                    response = await client.post(
+                        f"{self.podcastfy_url}/api/generate/async", 
+                        json=payload,
+                        headers={"Content-Type": "application/json"}
+                    )
                     
-                    response_text = f"""🎧 **Podcast Generated Successfully!**
+                    if response.status_code == 200:
+                        job_result = response.json()
+                        job_id = job_result.get("job_id")
+                        
+                        if job_id:
+                            response_text = f"""🎧 **Podcast Generation Started from Text!**
+
+**"{podcast_title}"**
+
+📋 **Job ID**: `{job_id}` ⭐
+🎙️ **TTS Model**: {tts_model}
+🎨 **Style**: {conversation_style}
+📝 **Length**: {len(text)} characters
+
+📹 **Status**: Processing (typically 30-120 seconds)
+🔍 **Track Progress**: Use `check_podcast_job_status('{job_id}')` to check and get links when ready!
+
+**Your podcast is being generated asynchronously!** 🚀"""
+
+                            return self.success_response(response_text)
+                        else:
+                            return self.fail_response("Failed to get job ID from podcast service")
+                    else:
+                        return self.fail_response(f"Failed to submit podcast job: HTTP {response.status_code}")
+            else:
+                # Traditional blocking approach (wait for completion)
+                async with httpx.AsyncClient(timeout=180.0) as client:
+                    response = await client.post(
+                        f"{self.podcastfy_url}/api/generate", 
+                        json=payload,
+                        headers={"Content-Type": "application/json"}
+                    )
+                    
+                    logger.info(f"Podcastfy response status: {response.status_code}")
+                    
+                    if response.status_code == 200:
+                        result = response.json()
+                        
+                        # Format user-friendly response with clickable links
+                        audio_url = result.get("audio_url")
+                        podcast_url = result.get("podcast_url") 
+                        podcast_id = result.get("podcast_id")
+                        
+                        response_text = f"""🎧 **Podcast Generated Successfully!**
 
 **"{podcast_title}"**
 
@@ -929,7 +1116,7 @@ class SandboxPodcastTool(SandboxToolsBase):
 
 **Click the audio link above to listen to your podcast!** 🎙️"""
 
-                    return self.success_response(response_text)
+                        return self.success_response(response_text)
                 else:
                     error_text = response.text
                     logger.error(f"Podcastfy service error: {response.status_code} - {error_text}")
