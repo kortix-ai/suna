@@ -1049,21 +1049,22 @@ class SandboxPodcastTool(SandboxToolsBase):
             # Call Podcastfy service 
             if async_mode:
                 # Submit job and return immediately with job ID
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    logger.info(f"🚀 Submitting async text podcast job: {podcast_title}")
-                    
-                    response = await client.post(
-                        f"{self.podcastfy_url}/api/generate/async", 
-                        json=payload,
-                        headers={"Content-Type": "application/json"}
-                    )
-                    
-                    if response.status_code == 200:
-                        job_result = response.json()
-                        job_id = job_result.get("job_id")
+                try:
+                    async with httpx.AsyncClient(timeout=30.0) as client:
+                        logger.info(f"🚀 Submitting async text podcast job: {podcast_title}")
                         
-                        if job_id:
-                            response_text = f"""🎧 **Podcast Generation Started from Text!**
+                        response = await client.post(
+                            f"{self.podcastfy_url}/api/generate/async", 
+                            json=payload,
+                            headers={"Content-Type": "application/json"}
+                        )
+                        
+                        if response.status_code == 200:
+                            job_result = response.json()
+                            job_id = job_result.get("job_id")
+                            
+                            if job_id:
+                                response_text = f"""🎧 **Podcast Generation Started from Text!**
 
 **"{podcast_title}"**
 
@@ -1077,31 +1078,38 @@ class SandboxPodcastTool(SandboxToolsBase):
 
 **Your podcast is being generated asynchronously!** 🚀"""
 
-                            return self.success_response(response_text)
+                                return self.success_response(response_text)
+                            else:
+                                return self.fail_response("Failed to get job ID from podcast service")
                         else:
-                            return self.fail_response("Failed to get job ID from podcast service")
-                    else:
-                        return self.fail_response(f"Failed to submit podcast job: HTTP {response.status_code}")
+                            return self.fail_response(f"Failed to submit podcast job: HTTP {response.status_code}")
+                            
+                except httpx.TimeoutException:
+                    return self.fail_response("Podcast job submission timed out. Please try again.")
+                except Exception as e:
+                    logger.error(f"Error submitting async podcast job: {str(e)}")
+                    return self.fail_response(f"Failed to submit podcast job: {str(e)}")
             else:
                 # Traditional blocking approach (wait for completion)
-                async with httpx.AsyncClient(timeout=180.0) as client:
-                    response = await client.post(
-                        f"{self.podcastfy_url}/api/generate", 
-                        json=payload,
-                        headers={"Content-Type": "application/json"}
-                    )
-                    
-                    logger.info(f"Podcastfy response status: {response.status_code}")
-                    
-                    if response.status_code == 200:
-                        result = response.json()
+                try:
+                    async with httpx.AsyncClient(timeout=180.0) as client:
+                        response = await client.post(
+                            f"{self.podcastfy_url}/api/generate", 
+                            json=payload,
+                            headers={"Content-Type": "application/json"}
+                        )
                         
-                        # Format user-friendly response with clickable links
-                        audio_url = result.get("audio_url")
-                        podcast_url = result.get("podcast_url") 
-                        podcast_id = result.get("podcast_id")
+                        logger.info(f"Podcastfy response status: {response.status_code}")
                         
-                        response_text = f"""🎧 **Podcast Generated Successfully!**
+                        if response.status_code == 200:
+                            result = response.json()
+                            
+                            # Format user-friendly response with clickable links
+                            audio_url = result.get("audio_url")
+                            podcast_url = result.get("podcast_url") 
+                            podcast_id = result.get("podcast_id")
+                            
+                            response_text = f"""🎧 **Podcast Generated Successfully!**
 
 **"{podcast_title}"**
 
@@ -1116,28 +1124,32 @@ class SandboxPodcastTool(SandboxToolsBase):
 
 **Click the audio link above to listen to your podcast!** 🎙️"""
 
-                        return self.success_response(response_text)
-                else:
-                    error_text = response.text
-                    logger.error(f"Podcastfy service error: {response.status_code} - {error_text}")
+                            return self.success_response(response_text)
+                        else:
+                            error_text = response.text
+                            logger.error(f"Podcastfy service error: {response.status_code} - {error_text}")
+                            
+                            # Provide user-friendly error messages
+                            if response.status_code == 502:
+                                user_error = "Podcast service is temporarily unavailable (Bad Gateway). Please try again later."
+                            elif response.status_code == 503:
+                                user_error = "Podcast service is temporarily unavailable. Please try again later."
+                            elif response.status_code == 500:
+                                user_error = "Internal server error in podcast service. Please try again later."
+                            else:
+                                user_error = f"Podcast service returned HTTP {response.status_code}"
+                            
+                            return self.fail_response(f"{user_error}: {error_text[:200] if error_text else 'No details'}")
+                            
+                except httpx.TimeoutException:
+                    logger.error("Podcastfy service timeout for text generation")
+                    return self.fail_response("Request to Podcastfy service timed out. Please try again.")
+                except Exception as e:
+                    logger.error(f"Error generating podcast from text: {str(e)}", exc_info=True)
+                    return self.fail_response(f"Failed to generate podcast from text: {str(e)}")
                     
-                    # Provide user-friendly error messages
-                    if response.status_code == 502:
-                        user_error = "Podcast service is temporarily unavailable (Bad Gateway). Please try again later."
-                    elif response.status_code == 503:
-                        user_error = "Podcast service is temporarily unavailable. Please try again later."
-                    elif response.status_code == 500:
-                        user_error = "Internal server error in podcast service. Please try again later."
-                    else:
-                        user_error = f"Podcast service returned HTTP {response.status_code}"
-                    
-                    return self.fail_response(f"{user_error}: {error_text[:200] if error_text else 'No details'}")
-                    
-        except httpx.TimeoutException:
-            logger.error("Podcastfy service timeout for text generation")
-            return self.fail_response("Request to Podcastfy service timed out. Please try again.")
         except Exception as e:
-            logger.error(f"Error generating podcast from text: {str(e)}", exc_info=True)
+            logger.error(f"Error in generate_podcast_from_text: {str(e)}", exc_info=True)
             return self.fail_response(f"Failed to generate podcast from text: {str(e)}")
 
 
