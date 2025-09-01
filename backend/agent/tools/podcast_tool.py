@@ -303,6 +303,10 @@ class SandboxPodcastTool(SandboxToolsBase):
                 "title": title,
                 "tts_model": tts_model,
                 "voice_id": voice_config["voice_id"],
+                "host_1_name": "Mike",
+                "host_2_name": "Laurel",
+                "preserve_exact_text": True,
+                "strict_formatting": True,
                 "metadata": {
                     "agent_run_id": agent_run_id,
                     "source": "omni_agent_conversation",
@@ -377,6 +381,10 @@ class SandboxPodcastTool(SandboxToolsBase):
                 "title": title,
                 "tts_model": tts_model,
                 "voice_id": voice_config["voice_id"],
+                "host_1_name": "Mike",
+                "host_2_name": "Laurel",
+                "preserve_exact_text": True,
+                "strict_formatting": True,
                 "metadata": {
                     "agent_run_id": agent_run_id,
                     "source": "omni_agent_conversation",
@@ -862,6 +870,10 @@ class SandboxPodcastTool(SandboxToolsBase):
                 "title": title,
                 "tts_model": tts_model,
                 "voice_id": voice_config["voice_id"],
+                "host_1_name": "Mike",
+                "host_2_name": "Laurel",
+                "preserve_exact_text": True,
+                "strict_formatting": True,
                 "metadata": {
                     "source_url": url,
                     "source": "omni_url_podcast",
@@ -985,6 +997,21 @@ class SandboxPodcastTool(SandboxToolsBase):
                         "type": "boolean",
                         "description": "If true, returns immediately with job ID for tracking. If false, waits for completion.",
                         "default": True
+                    },
+                    "preserve_exact_text": {
+                        "type": "boolean",
+                        "description": "Force preservation of exact text without AI modifications or improvements",
+                        "default": True
+                    },
+                    "host_1_name": {
+                        "type": "string",
+                        "description": "Name for the first podcast host",
+                        "default": "Mike"
+                    },
+                    "host_2_name": {
+                        "type": "string",
+                        "description": "Name for the second podcast host", 
+                        "default": "Laurel"
                     }
                 },
                 "required": ["text"]
@@ -1007,7 +1034,10 @@ class SandboxPodcastTool(SandboxToolsBase):
         podcast_title: str = "Custom Text Podcast",
         tts_model: str = "openai",
         conversation_style: str = "informative",
-        async_mode: bool = True
+        async_mode: bool = True,
+        preserve_exact_text: bool = True,
+        host_1_name: str = "Mike",
+        host_2_name: str = "Laurel"
     ) -> ToolResult:
         """
         Generate a podcast directly from text content - FASTEST method!
@@ -1038,6 +1068,10 @@ class SandboxPodcastTool(SandboxToolsBase):
                 "tts_model": tts_model,
                 "voice_id": voice_config["voice_id"],
                 "conversation_style": conversation_style,
+                "host_1_name": host_1_name,
+                "host_2_name": host_2_name, 
+                "preserve_exact_text": preserve_exact_text,
+                "strict_formatting": preserve_exact_text,  # Use same setting for strict formatting
                 "metadata": {
                     "source": "omni_direct_text",
                     "generated_at": datetime.now().isoformat(),
@@ -1072,6 +1106,8 @@ class SandboxPodcastTool(SandboxToolsBase):
 🎙️ **TTS Model**: {tts_model}
 🎨 **Style**: {conversation_style}
 📝 **Length**: {len(text)} characters
+👥 **Hosts**: {host_1_name} & {host_2_name}
+🔒 **Exact Text**: {"Yes" if preserve_exact_text else "No"}
 
 📹 **Status**: Processing (typically 30-120 seconds)
 🔍 **Track Progress**: Use `check_podcast_job_status('{job_id}')` to check and get links when ready!
@@ -1121,6 +1157,8 @@ class SandboxPodcastTool(SandboxToolsBase):
 • TTS Model: {tts_model}
 • Style: {conversation_style}
 • Length: {len(text)} characters
+• Hosts: {host_1_name} & {host_2_name}
+• Exact Text: {"Yes" if preserve_exact_text else "No"}
 
 **Click the audio link above to listen to your podcast!** 🎙️"""
 
