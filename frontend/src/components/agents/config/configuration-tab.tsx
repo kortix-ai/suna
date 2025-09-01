@@ -4,7 +4,6 @@ import { ExpandableMarkdownEditor } from '@/components/ui/expandable-markdown-ed
 import { AgentToolsConfiguration } from '../agent-tools-configuration';
 import { AgentMCPConfiguration } from '../agent-mcp-configuration';
 import { AgentKnowledgeBaseManager } from '../knowledge-base/agent-knowledge-base-manager';
-import { LlamaCloudKnowledgeBaseManager } from '../llamacloud-knowledge-base/llamacloud-kb-manager';
 import { AgentPlaybooksConfiguration } from '../playbooks/agent-playbooks-configuration';
 import { AgentTriggersConfiguration } from '../triggers/agent-triggers-configuration';
 import { AgentModelSelector } from './model-selector';
@@ -290,42 +289,6 @@ export function ConfigurationTab({
                   </div>
                 </div>
               )}
-            </div>
-            
-            <div className="group overflow-hidden rounded-2xl border border-border bg-card transition-all duration-300 hover:border-primary/10" data-tour="knowledge-section">
-              <button
-                className="w-full p-4 text-left group-hover:bg-muted/30 transition-all duration-300"
-                onClick={() => setOpenAccordion(openAccordion === 'llamacloud-knowledge' ? '' : 'llamacloud-knowledge')}
-                disabled={isLoading}
-              >
-                <div className="flex items-center gap-4 w-full">
-                  <div className="relative flex-shrink-0">
-                    <div className="bg-blue-100 dark:bg-blue-900/20 rounded-xl h-10 w-10 flex items-center justify-center transition-all duration-300 group-hover:scale-105">
-                      <BookOpen className="h-5 w-5 text-blue-600 dark:text-blue-400" />
-                    </div>
-                  </div>
-                  <div className="text-left flex-1 min-w-0">
-                    <h4 className="text-sm font-semibold text-foreground mb-1 group-hover:text-primary transition-colors duration-300">Knowledge Base - Cloud</h4>
-                    <p className="text-xs text-muted-foreground group-hover:text-foreground/70 transition-colors duration-300">Connect to existing Cloud Knowledge Base for dynamic search</p>
-                  </div>
-                  <ChevronDown className={`h-4 w-4 flex-shrink-0 transition-transform duration-300 ease-out ${openAccordion === 'llamacloud-knowledge' ? 'rotate-180' : ''}`} />
-                </div>
-              </button>
-              <div
-                className={`overflow-hidden transition-all duration-300 ease-out ${openAccordion === 'llamacloud-knowledge'
-                  ? 'max-h-[600px] opacity-100'
-                  : 'max-h-0 opacity-0'
-                  }`}
-              >
-                <div className="px-6 pb-6 pt-2">
-                  <div className="pt-4">
-                    <LlamaCloudKnowledgeBaseManager
-                      agentId={agentId}
-                      agentName={displayData.name || 'Agent'}
-                    />
-                  </div>
-                </div>
-              </div>
             </div>
             
             <div className="group overflow-hidden rounded-2xl border border-border bg-card transition-all duration-300 hover:border-primary/10">
