@@ -23,6 +23,7 @@ SUNA_CONFIG = {
         "sb_presentation_tool": False,
         "sb_video_avatar_tool": False,
         "sb_sheets_tool": True,
+        "podcast_tool": True,
         "browser_tool": True,
         "data_providers_tool": True,
         # "sb_web_dev_tool": True,
