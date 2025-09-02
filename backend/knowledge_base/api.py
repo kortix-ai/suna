@@ -554,7 +554,7 @@ async def get_agent_llamacloud_knowledge_bases(
         client = await db.client
 
         # Verify agent access
-        await verify_agent_access(client, agent_id, user_id)
+        await verify_and_get_agent_authorization(client, agent_id, user_id)
 
         result = await client.rpc('get_agent_llamacloud_knowledge_bases', {
             'p_agent_id': agent_id,
@@ -597,7 +597,7 @@ async def create_agent_llamacloud_knowledge_base(
         client = await db.client
         
         # Verify agent access and get agent data
-        agent_data = await verify_agent_access(client, agent_id, user_id)
+        agent_data = await verify_and_get_agent_authorization(client, agent_id, user_id)
         account_id = agent_data['account_id']
         
         # Format the name for tool function generation
@@ -656,7 +656,7 @@ async def update_llamacloud_knowledge_base(
         agent_id = kb['agent_id']
         
         # Verify agent access
-        await verify_agent_access(client, agent_id, user_id)
+        await verify_and_get_agent_authorization(client, agent_id, user_id)
         
         update_data = {}
         if kb_data.name is not None:
@@ -715,7 +715,7 @@ async def delete_llamacloud_knowledge_base(
         agent_id = kb['agent_id']
         
         # Verify agent access
-        await verify_agent_access(client, agent_id, user_id)
+        await verify_and_get_agent_authorization(client, agent_id, user_id)
         
         result = await client.table('agent_llamacloud_knowledge_bases').delete().eq('id', kb_id).execute()
         
@@ -740,7 +740,7 @@ async def test_llamacloud_search(
         client = await db.client
         
         # Verify agent access
-        await verify_agent_access(client, agent_id, user_id)
+        await verify_and_get_agent_authorization(client, agent_id, user_id)
         
         index_name = test_data.get('index_name')
         query = test_data.get('query')
