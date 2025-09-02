@@ -547,7 +547,7 @@ async def get_agent_knowledge_base_context(
 async def get_agent_llamacloud_knowledge_bases(
     agent_id: str,
     include_inactive: bool = False,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Get all LlamaCloud knowledge bases for an agent"""
     try:
@@ -590,7 +590,7 @@ async def get_agent_llamacloud_knowledge_bases(
 async def create_agent_llamacloud_knowledge_base(
     agent_id: str,
     kb_data: CreateLlamaCloudKnowledgeBaseRequest,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Create a new LlamaCloud knowledge base for an agent"""
     try:
@@ -640,7 +640,7 @@ async def create_agent_llamacloud_knowledge_base(
 async def update_llamacloud_knowledge_base(
     kb_id: str,
     kb_data: UpdateLlamaCloudKnowledgeBaseRequest,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Update a LlamaCloud knowledge base"""
     try:
@@ -699,7 +699,7 @@ async def update_llamacloud_knowledge_base(
 @router.delete("/llamacloud/{kb_id}")
 async def delete_llamacloud_knowledge_base(
     kb_id: str,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Delete a LlamaCloud knowledge base"""
     try:
@@ -733,7 +733,7 @@ async def delete_llamacloud_knowledge_base(
 async def test_llamacloud_search(
     agent_id: str,
     test_data: dict,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Test search functionality for a LlamaCloud index"""
     try:
