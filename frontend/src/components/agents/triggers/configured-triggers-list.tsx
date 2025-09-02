@@ -212,7 +212,7 @@ export const ConfiguredTriggersList: React.FC<ConfiguredTriggersListProps> = ({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDelete}
-              className="bg-destructive hover:bg-destructive/90"
+              className="bg-destructive hover:bg-destructive/90 text-white"
             >
               Delete Trigger
             </AlertDialogAction>

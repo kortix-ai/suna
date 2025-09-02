@@ -48,6 +48,7 @@ import { useAgentSelection } from '@/lib/stores/agent-selection-store';
 import { useQueryClient } from '@tanstack/react-query';
 import { threadKeys } from '@/hooks/react-query/threads/keys';
 import { useProjectRealtime } from '@/hooks/useProjectRealtime';
+import { handleGoogleSlidesUpload } from './tool-views/utils/presentation-utils';
 
 interface ThreadComponentProps {
   projectId: string;
@@ -173,6 +174,60 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   }, [threadId, queryClient]);
 
   useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    
+    if (urlParams.get('google_auth') === 'success') {
+      // Clean up the URL parameters first
+      window.history.replaceState({}, '', window.location.pathname);
+      
+      // Check if there was an intent to upload to Google Slides
+      const uploadIntent = sessionStorage.getItem('google_slides_upload_intent');
+      if (uploadIntent) {
+        sessionStorage.removeItem('google_slides_upload_intent');
+        
+        try {
+          const uploadData = JSON.parse(uploadIntent);
+          const { presentation_path, sandbox_url } = uploadData;
+          
+          if (presentation_path && sandbox_url) {
+            // Handle upload in async function
+            (async () => {
+              const uploadPromise = handleGoogleSlidesUpload(
+                sandbox_url,
+                presentation_path
+              );
+              
+              // Show loading toast and handle upload
+              const loadingToast = toast.loading('Google authentication successful! Uploading presentation...');
+              
+              try {
+                await uploadPromise;
+                // Success toast is now handled universally by handleGoogleSlidesUpload
+              } catch (error) {
+                console.error('Upload failed:', error);
+                // Error toast is also handled universally by handleGoogleSlidesUpload
+              } finally {
+                // Always dismiss loading toast
+                toast.dismiss(loadingToast);
+              }
+            })();
+          }
+        } catch (error) {
+          console.error('Error processing Google Slides upload from session:', error);
+          // Error toast is handled universally by handleGoogleSlidesUpload, no need to duplicate
+        }
+      } else {
+        toast.success('Google authentication successful!');
+      }
+    } else if (urlParams.get('google_auth') === 'error') {
+      const error = urlParams.get('error');
+      sessionStorage.removeItem('google_slides_upload_intent');
+      window.history.replaceState({}, '', window.location.pathname);
+      toast.error(`Google authentication failed: ${error || 'Unknown error'}`);
+    }
+  }, []);
+
+  useEffect(() => {
     if (agents.length > 0) {
       // If configuredAgentId is provided, use it as the forced selection
       // Otherwise, fall back to threadAgentId (existing behavior)
@@ -265,6 +320,13 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       if (message.type === 'tool') {
         setAutoOpenedPanel(false);
       }
+
+      // Auto-scroll to bottom (top: 0 in flex-col-reverse) when new messages arrive
+      setTimeout(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      }, 100);
     },
     [setMessages, setAutoOpenedPanel],
   );
@@ -353,6 +415,13 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
       setMessages((prev) => [...prev, optimisticUserMessage]);
       setNewMessage('');
+
+      // Auto-scroll to bottom when user sends a message
+      setTimeout(() => {
+        if (scrollContainerRef.current) {
+          scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      }, 100);
 
       try {
         const messagePromise = addUserMessageMutation.mutateAsync({
@@ -819,7 +888,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
                 agentAvatar={undefined}
                 agentMetadata={agent?.metadata}
                 agentData={agent}
-                scrollContainerRef={null}
+                scrollContainerRef={scrollContainerRef}
                 isPreviewMode={true}
               />
             </div>
@@ -843,6 +912,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
               }
               onStopAgent={handleStopAgent}
               autoFocus={!isLoading}
+              enableAdvancedConfig={false}
               onFileBrowse={handleOpenFileViewer}
               sandboxId={sandboxId || undefined}
               messages={messages}
@@ -974,6 +1044,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
               }
               onStopAgent={handleStopAgent}
               autoFocus={!isLoading}
+              enableAdvancedConfig={false}
               onFileBrowse={handleOpenFileViewer}
               sandboxId={sandboxId || undefined}
               messages={messages}

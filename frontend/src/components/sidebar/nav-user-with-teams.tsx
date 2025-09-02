@@ -20,6 +20,7 @@ import {
   Moon,
   KeyRound,
   Plug,
+  Zap,
 } from 'lucide-react';
 import { useAccounts } from '@/hooks/use-accounts';
 import NewTeamForm from '@/components/basejump/new-team-form';
@@ -52,8 +53,8 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import { useTheme } from 'next-themes';
 import { isLocalMode } from '@/lib/config';
-import { useFeatureFlag } from '@/lib/feature-flags';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
+import { BillingModal } from '@/components/billing/billing-modal';
 
 export function NavUserWithTeams({
   user,
@@ -68,8 +69,8 @@ export function NavUserWithTeams({
   const { isMobile } = useSidebar();
   const { data: accounts } = useAccounts();
   const [showNewTeamDialog, setShowNewTeamDialog] = React.useState(false);
+  const [showBillingModal, setShowBillingModal] = React.useState(false);
   const { theme, setTheme } = useTheme();
-  const { enabled: customAgentsEnabled, loading: flagLoading } = useFeatureFlag("custom_agents");
 
   // Prepare personal account and team accounts
   const personalAccount = React.useMemo(
@@ -289,13 +290,17 @@ export function NavUserWithTeams({
 
               {/* User Settings Section */}
               <DropdownMenuGroup>
+                <DropdownMenuItem onClick={() => setShowBillingModal(true)}>
+                  <Zap className="h-4 w-4" />
+                  Upgrade
+                </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link href="/settings/billing">
                     <CreditCard className="h-4 w-4" />
                     Billing
                   </Link>
                 </DropdownMenuItem>
-                {!flagLoading && customAgentsEnabled && (
+                {(
                   <DropdownMenuItem asChild>
                     <Link href="/settings/credentials">
                       <Plug className="h-4 w-4" />
@@ -303,7 +308,7 @@ export function NavUserWithTeams({
                     </Link>
                   </DropdownMenuItem>
                 )}
-                {!flagLoading && customAgentsEnabled && (
+                {(
                   <DropdownMenuItem asChild>
                     <Link href="/settings/api-keys">
                       <Key className="h-4 w-4" />
@@ -354,6 +359,13 @@ export function NavUserWithTeams({
         </DialogHeader>
         <NewTeamForm />
       </DialogContent>
+
+      {/* Billing Modal */}
+      <BillingModal
+        open={showBillingModal}
+        onOpenChange={setShowBillingModal}
+        returnUrl={typeof window !== 'undefined' ? window?.location?.href || '/' : '/'}
+      />
     </Dialog>
   );
 }

@@ -87,6 +87,7 @@ export function ThreadSkeleton({
                         isLoggedIn={true}
                         hideAgentSelection={true}
                         defaultShowSnackbar={false}
+                        enableAdvancedConfig={true}
                     />
                 </div>
             </div>
@@ -207,6 +208,7 @@ export function ThreadSkeleton({
                             isLoggedIn={true}
                             hideAgentSelection={true}
                             defaultShowSnackbar={false}
+                            enableAdvancedConfig={true}
                         />
                     </div>
                 </div>

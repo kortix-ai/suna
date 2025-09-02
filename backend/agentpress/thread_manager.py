@@ -521,7 +521,7 @@ When using the tools:
                 except Exception as e:
                     logger.warning(f"Failed to retrieve and inject memory context: {str(e)}")
 
-                prepared_messages = self.context_manager.compress_messages(prepared_messages, llm_model)
+                # prepared_messages = self.context_manager.compress_messages(prepared_messages, llm_model)
 
                 # 5. Make LLM API call
                 logger.debug("Making LLM API call")

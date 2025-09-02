@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{title}} - Document Viewer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f5f5f5;
+        }
+        
+        .header {
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+            padding: 1rem 2rem;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        
+        .header h1 {
+            font-size: 1.5rem;
+            color: #2c3e50;
+            margin-bottom: 0.5rem;
+        }
+        
+        .metadata {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.875rem;
+            color: #666;
+        }
+        
+        .metadata-item {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+        
+        .tag {
+            display: inline-block;
+            padding: 0.25rem 0.5rem;
+            background: #e3f2fd;
+            color: #1976d2;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            margin-right: 0.5rem;
+        }
+        
+        .content {
+            max-width: 900px;
+            margin: 2rem auto;
+            padding: 2rem;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        
+        /* Typography for content */
+        .content h1 { 
+            font-size: 2rem; 
+            margin: 1.5rem 0 1rem; 
+            color: #2c3e50;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 0.5rem;
+        }
+        
+        .content h2 { 
+            font-size: 1.5rem; 
+            margin: 1.5rem 0 1rem; 
+            color: #34495e;
+        }
+        
+        .content h3 { 
+            font-size: 1.25rem; 
+            margin: 1rem 0 0.5rem; 
+            color: #34495e;
+        }
+        
+        .content p { 
+            margin: 1rem 0; 
+            line-height: 1.8;
+        }
+        
+        .content ul, .content ol { 
+            margin: 1rem 0; 
+            padding-left: 2rem; 
+        }
+        
+        .content li { 
+            margin: 0.5rem 0; 
+        }
+        
+        .content blockquote {
+            margin: 1rem 0;
+            padding: 1rem;
+            background: #f8f9fa;
+            border-left: 4px solid #2196f3;
+            font-style: italic;
+        }
+        
+        .content code {
+            background: #f4f4f4;
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        
+        .content pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 1rem;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 1rem 0;
+        }
+        
+        .content pre code {
+            background: transparent;
+            color: inherit;
+            padding: 0;
+        }
+        
+        .content table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+        }
+        
+        .content th, .content td {
+            padding: 0.75rem;
+            text-align: left;
+            border: 1px solid #ddd;
+        }
+        
+        .content th {
+            background: #f8f9fa;
+            font-weight: 600;
+        }
+        
+        .content img {
+            max-width: 100%;
+            height: auto;
+            margin: 1rem 0;
+            border-radius: 5px;
+        }
+        
+        .content a {
+            color: #2196f3;
+            text-decoration: none;
+        }
+        
+        .content a:hover {
+            text-decoration: underline;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+            font-size: 0.875rem;
+        }
+        
+        @media (max-width: 768px) {
+            .header {
+                padding: 1rem;
+            }
+            
+            .content {
+                margin: 1rem;
+                padding: 1rem;
+            }
+            
+            .metadata {
+                flex-direction: column;
+                gap: 0.5rem;
+            }
+        }
+        
+        /* Dark mode support */
+        @media (prefers-color-scheme: dark) {
+            body {
+                background: #1a1a1a;
+                color: #e0e0e0;
+            }
+            
+            .header {
+                background: #2a2a2a;
+                border-bottom-color: #444;
+            }
+            
+            .header h1 {
+                color: #f0f0f0;
+            }
+            
+            .content {
+                background: #2a2a2a;
+            }
+            
+            .content h1, .content h2, .content h3 {
+                color: #f0f0f0;
+            }
+            
+            .content blockquote {
+                background: #333;
+            }
+            
+            .content code {
+                background: #333;
+            }
+            
+            .content th {
+                background: #333;
+            }
+            
+            .content th, .content td {
+                border-color: #444;
+            }
+            
+            .tag {
+                background: #1e3a5f;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>{{title}}</h1>
+        <div class="metadata">
+            {{#if author}}
+            <div class="metadata-item">
+                <span>Author: {{author}}</span>
+            </div>
+            {{/if}}
+            {{#if updated_at}}
+            <div class="metadata-item">
+                <span>Last updated: {{updated_at}}</span>
+            </div>
+            {{/if}}
+            {{#if format}}
+            <div class="metadata-item">
+                <span>Format: {{format}}</span>
+            </div>
+            {{/if}}
+        </div>
+        {{#if tags}}
+        <div style="margin-top: 0.5rem;">
+            {{#each tags}}
+            <span class="tag">{{this}}</span>
+            {{/each}}
+        </div>
+        {{/if}}
+    </div>
+    
+    <div class="content">
+        {{content}}
+    </div>
+    
+    <div class="footer">
+        <p>Document ID: {{doc_id}} | Generated by Suna Docs</p>
+    </div>
+</body>
+</html> 

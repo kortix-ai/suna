@@ -238,7 +238,7 @@ export function BillingModal({ open, onOpenChange, returnUrl = typeof window !==
                 </DialogHeader>
 
                 <>
-                    {/* Usage Limit Alert */}
+                    {/* Usage Limit Alert
                     {showUsageLimitAlert && (
                         <div className="mb-6">
                             <div className="flex items-start p-3 sm:p-4 bg-destructive/5 border border-destructive/50 rounded-lg">
@@ -255,7 +255,7 @@ export function BillingModal({ open, onOpenChange, returnUrl = typeof window !==
                                 </div>
                             </div>
                         </div>
-                    )}
+                    )} */}
 
                     {/* Usage section - show loading state or actual data */}
                     {isLoading || authLoading ? (

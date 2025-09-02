@@ -9,3 +9,5 @@ playwright>=1.40.0
 PyPDF2>=3.0.0
 bs4==0.0.2
 docxtpl==0.16.7
+python-pptx>=0.6.23
+openpyxl>=3.1.0

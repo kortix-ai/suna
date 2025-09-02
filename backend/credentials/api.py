@@ -4,7 +4,7 @@ from pydantic import BaseModel, field_validator
 import urllib.parse
 
 from utils.logger import logger
-from utils.auth_utils import get_current_user_id_from_jwt
+from utils.auth_utils import verify_and_get_user_id_from_jwt
 from services.supabase import DBConnection
 
 from .credential_service import (
@@ -118,7 +118,7 @@ def initialize(database: DBConnection):
 @router.post("/credentials", response_model=CredentialResponse)
 async def store_credential(
     request: StoreCredentialRequest,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
         credential_service = get_credential_service(db)
@@ -153,7 +153,7 @@ async def store_credential(
 
 @router.get("/credentials", response_model=List[CredentialResponse])
 async def get_user_credentials(
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
         credential_service = get_credential_service(db)
@@ -180,7 +180,7 @@ async def get_user_credentials(
 @router.delete("/credentials/{mcp_qualified_name:path}")
 async def delete_credential(
     mcp_qualified_name: str,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
         decoded_name = decode_mcp_qualified_name(mcp_qualified_name)
@@ -203,7 +203,7 @@ async def delete_credential(
 @router.post("/credential-profiles", response_model=CredentialProfileResponse)
 async def store_credential_profile(
     request: StoreCredentialProfileRequest,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
         profile_service = get_profile_service(db)
@@ -242,7 +242,7 @@ async def store_credential_profile(
 
 @router.get("/credential-profiles", response_model=List[CredentialProfileResponse])
 async def get_user_credential_profiles(
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
         profile_service = get_profile_service(db)
@@ -271,7 +271,7 @@ async def get_user_credential_profiles(
 @router.get("/credential-profiles/{mcp_qualified_name:path}", response_model=List[CredentialProfileResponse])
 async def get_credential_profiles_for_mcp(
     mcp_qualified_name: str,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
         decoded_name = decode_mcp_qualified_name(mcp_qualified_name)
@@ -302,7 +302,7 @@ async def get_credential_profiles_for_mcp(
 @router.get("/credential-profiles/profile/{profile_id}", response_model=CredentialProfileResponse)
 async def get_credential_profile(
     profile_id: str,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
         profile_service = get_profile_service(db)
@@ -333,7 +333,7 @@ async def get_credential_profile(
 @router.put("/credential-profiles/{profile_id}/set-default")
 async def set_default_credential_profile(
     profile_id: str,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
         profile_service = get_profile_service(db)
@@ -352,7 +352,7 @@ async def set_default_credential_profile(
 @router.delete("/credential-profiles/{profile_id}")
 async def delete_credential_profile(
     profile_id: str,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
         profile_service = get_profile_service(db)
@@ -371,7 +371,7 @@ async def delete_credential_profile(
 @router.post("/credential-profiles/bulk-delete", response_model=BulkDeleteProfilesResponse)
 async def bulk_delete_credential_profiles(
     request: BulkDeleteProfilesRequest,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
         profile_service = get_profile_service(db)
@@ -401,7 +401,7 @@ async def bulk_delete_credential_profiles(
 
 @router.get("/composio-profiles", response_model=ComposioCredentialsResponse)
 async def get_composio_profiles(
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
         profile_service = get_profile_service(db)
@@ -484,7 +484,7 @@ async def get_composio_profiles(
 @router.get("/composio-profiles/{profile_id}/mcp-url", response_model=ComposioMcpUrlResponse)
 async def get_composio_mcp_url(
     profile_id: str,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
         from composio_integration.composio_profile_service import ComposioProfileService

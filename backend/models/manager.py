@@ -19,8 +19,9 @@ class ModelManager:
             logger.debug(f"Resolved model '{model_id}' to '{resolved}'")
             return resolved
         
-        all_aliases = list(self.registry._aliases.keys())
-        logger.warning(f"Could not resolve model ID: '{model_id}'. Available aliases: {all_aliases[:10]}...")
+        # Silently return the original model_id if we can't resolve it
+        # This avoids spamming logs with warnings for unknown models
+        logger.debug(f"Could not resolve model ID: '{model_id}', returning as-is")
         return model_id
     
     def validate_model(self, model_id: str) -> Tuple[bool, str]:

@@ -114,6 +114,7 @@ export const useCreateTrigger = () => {
     mutationFn: createTrigger,
     onSuccess: (newTrigger) => {
       queryClient.invalidateQueries({ queryKey: ['agent-upcoming-runs', newTrigger.agent_id] });
+      queryClient.invalidateQueries({ queryKey: ['all-triggers'] });
       queryClient.setQueryData(
         ['agent-triggers', newTrigger.agent_id],
         (old: TriggerConfiguration[] | undefined) => {
@@ -131,6 +132,7 @@ export const useUpdateTrigger = () => {
     mutationFn: updateTrigger,
     onSuccess: (updatedTrigger) => {
       queryClient.invalidateQueries({ queryKey: ['agent-upcoming-runs', updatedTrigger.agent_id] });
+      queryClient.invalidateQueries({ queryKey: ['all-triggers'] });
       queryClient.setQueryData(
         ['agent-triggers', updatedTrigger.agent_id],
         (old: TriggerConfiguration[] | undefined) => {
@@ -152,6 +154,7 @@ export const useDeleteTrigger = () => {
     onSuccess: (_, { triggerId, agentId }) => {
       queryClient.invalidateQueries({ queryKey: ['agent-upcoming-runs', agentId] });
       queryClient.invalidateQueries({ queryKey: ['agent-triggers'] });
+      queryClient.invalidateQueries({ queryKey: ['all-triggers'] });
     },
   });
 };
@@ -168,6 +171,7 @@ export const useToggleTrigger = () => {
     },
     onSuccess: (updatedTrigger) => {
       queryClient.invalidateQueries({ queryKey: ['agent-upcoming-runs', updatedTrigger.agent_id] });
+      queryClient.invalidateQueries({ queryKey: ['all-triggers'] });
       queryClient.setQueryData(
         ['agent-triggers', updatedTrigger.agent_id],
         (old: TriggerConfiguration[] | undefined) => {

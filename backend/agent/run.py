@@ -11,17 +11,17 @@ from agent.tools.sb_expose_tool import SandboxExposeTool
 from agent.tools.web_search_tool import SandboxWebSearchTool
 from dotenv import load_dotenv
 from utils.config import config
-from agent.agent_builder_prompt import get_agent_builder_prompt
+from agent.prompts.agent_builder_prompt import get_agent_builder_prompt
 from agentpress.thread_manager import ThreadManager
 from agentpress.response_processor import ProcessorConfig
 from agent.tools.sb_shell_tool import SandboxShellTool
 from agent.tools.sb_files_tool import SandboxFilesTool
 from agent.tools.data_providers_tool import DataProvidersTool
 from agent.tools.expand_msg_tool import ExpandMessageTool
-from agent.prompt import get_system_prompt
+from agent.prompts.prompt import get_system_prompt
 
 from utils.logger import logger
-from utils.auth_utils import get_account_id_from_thread
+
 from services.billing import check_billing_status
 from agent.tools.sb_vision_tool import SandboxVisionTool
 from agent.tools.sb_image_edit_tool import SandboxImageEditTool
@@ -36,8 +36,9 @@ from agent.tools.mcp_tool_wrapper import MCPToolWrapper
 from agent.tools.task_list_tool import TaskListTool
 from agentpress.tool import SchemaType
 from agent.tools.sb_sheets_tool import SandboxSheetsTool
-from agent.tools.sb_web_dev_tool import SandboxWebDevTool
+# from agent.tools.sb_web_dev_tool import SandboxWebDevTool  # DEACTIVATED
 from agent.tools.sb_upload_file_tool import SandboxUploadFileTool
+from agent.tools.sb_docs_tool import SandboxDocsTool
 
 load_dotenv()
 
@@ -114,8 +115,9 @@ class ToolManager:
             ('sb_presentation_tool', SandboxPresentationTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
             ('sb_video_avatar_tool', SandboxVideoAvatarTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
             ('sb_sheets_tool', SandboxSheetsTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
-            ('sb_web_dev_tool', SandboxWebDevTool, {'project_id': self.project_id, 'thread_id': self.thread_id, 'thread_manager': self.thread_manager}),
+            # ('sb_web_dev_tool', SandboxWebDevTool, {'project_id': self.project_id, 'thread_id': self.thread_id, 'thread_manager': self.thread_manager}),  # DEACTIVATED
             ('sb_upload_file_tool', SandboxUploadFileTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
+            ('sb_docs_tool', SandboxDocsTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
         ]
         
         for tool_name, tool_class, kwargs in sandbox_tools:
@@ -278,7 +280,7 @@ class PromptManager:
         default_system_content = get_system_prompt()
         
         if "anthropic" not in model_name.lower():
-            sample_response_path = os.path.join(os.path.dirname(__file__), 'sample_responses/1.txt')
+            sample_response_path = os.path.join(os.path.dirname(__file__), 'prompts/samples/1.txt')
             with open(sample_response_path, 'r') as file:
                 sample_response = file.read()
             default_system_content = default_system_content + "\n\n <sample_assistant_response>" + sample_response + "</sample_assistant_response>"
@@ -319,14 +321,14 @@ class PromptManager:
                     # Construct a well-formatted knowledge base section
                     kb_section = f"""
 
-=== AGENT KNOWLEDGE BASE ===
-NOTICE: The following is your specialized knowledge base. This information should be considered authoritative for your responses and should take precedence over general knowledge when relevant.
+                    === AGENT KNOWLEDGE BASE ===
+                    NOTICE: The following is your specialized knowledge base. This information should be considered authoritative for your responses and should take precedence over general knowledge when relevant.
 
-{kb_result.data}
+                    {kb_result.data}
 
-=== END AGENT KNOWLEDGE BASE ===
+                    === END AGENT KNOWLEDGE BASE ===
 
-IMPORTANT: Always reference and utilize the knowledge base information above when it's relevant to user queries. This knowledge is specific to your role and capabilities."""
+                    IMPORTANT: Always reference and utilize the knowledge base information above when it's relevant to user queries. This knowledge is specific to your role and capabilities."""
                     
                     system_content += kb_section
                 else:
@@ -421,7 +423,7 @@ class MessageManager:
             )
             
             if has_builder_tools:
-                from agent.agent_builder_prompt import AGENT_BUILDER_SYSTEM_PROMPT
+                from agent.prompts.agent_builder_prompt import AGENT_BUILDER_SYSTEM_PROMPT
                 if system_message:
                     system_message += f"\n\n{AGENT_BUILDER_SYSTEM_PROMPT}"
                 else:
@@ -451,9 +453,16 @@ class AgentRunner:
         )
         
         self.client = await self.thread_manager.db.client
-        self.account_id = await get_account_id_from_thread(self.client, self.config.thread_id)
+        
+        response = await self.client.table('threads').select('account_id').eq('thread_id', self.config.thread_id).execute()
+        
+        if not response.data or len(response.data) == 0:
+            raise ValueError(f"Thread {self.config.thread_id} not found")
+        
+        self.account_id = response.data[0].get('account_id')
+        
         if not self.account_id:
-            raise ValueError("Could not determine account ID for thread")
+            raise ValueError(f"Thread {self.config.thread_id} has no associated account")
 
         project = await self.client.table('projects').select('*').eq('project_id', self.config.project_id).execute()
         if not project.data or len(project.data) == 0:
@@ -744,7 +753,7 @@ class AgentRunner:
                             generation.end(output=full_response, status_message="error_detected", level="ERROR")
                         break
                         
-                    if agent_should_terminate or last_tool_call in ['ask', 'complete', 'web-browser-takeover']:
+                    if agent_should_terminate or last_tool_call in ['ask', 'complete', 'web-browser-takeover', 'present_presentation']:
                         if generation:
                             generation.end(output=full_response, status_message="agent_stopped")
                         continue_execution = False

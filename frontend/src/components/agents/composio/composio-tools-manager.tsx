@@ -79,17 +79,34 @@ export const ComposioToolsManager: React.FC<ComposioToolsManagerProps> = ({
   const handleSave = async () => {
     if (!currentProfile) return;
 
-    const mcpConfigResponse = await composioApi.getMcpConfigForProfile(currentProfile.profile_id);
-    const response = await backendApi.put(`/agents/${agentId}/custom-mcp-tools`, {
-      custom_mcps: [{
-        ...mcpConfigResponse.mcp_config,
-        enabledTools: selectedTools
-      }]
-    });
-    if (response.data.success) {
-      toast.success(`Added ${selectedTools.length} ${currentProfile.toolkit_name} tools to your agent!`);
-      onToolsUpdate?.();
-      onOpenChange(false);
+    try {
+      const mcpConfigResponse = await composioApi.getMcpConfigForProfile(currentProfile.profile_id);
+      const response = await backendApi.put(`/agents/${agentId}/custom-mcp-tools`, {
+        custom_mcps: [{
+          ...mcpConfigResponse.mcp_config,
+          enabledTools: selectedTools
+        }]
+      });
+      
+      if (response?.data?.success) {
+        toast.success(`Added ${selectedTools.length} ${currentProfile.toolkit_name} tools to your agent!`);
+        onToolsUpdate?.();
+        onOpenChange(false);
+      } else {
+        throw new Error('Failed to update tools');
+      }
+    } catch (error: any) {
+      console.error('Failed to save tools:', error);
+      
+      if (error.response?.status === 403) {
+        toast.error('Access denied. Please check your permissions.');
+      } else if (error.response?.status === 404) {
+        toast.error('Agent not found');
+      } else if (error.response?.data?.detail) {
+        toast.error(error.response.data.detail);
+      } else {
+        toast.error('Failed to save tools. Please try again.');
+      }
     }
   };
 

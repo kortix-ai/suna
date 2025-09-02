@@ -1,6 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
-import { isFlagEnabled } from '@/lib/feature-flags';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
@@ -20,10 +19,6 @@ interface AgentToolsResponse {
 }
 
 const fetchAgentTools = async (agentId: string): Promise<AgentToolsResponse> => {
-  const agentPlaygroundEnabled = await isFlagEnabled('custom_agents');
-  if (!agentPlaygroundEnabled) {
-    throw new Error('Custom agents is not enabled');
-  }
 
   const supabase = createClient();
   const { data: { session } } = await supabase.auth.getSession();

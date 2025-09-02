@@ -8,7 +8,7 @@ adding, searching, and managing memories associated with user conversations.
 from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel, Field
-from utils.auth_utils import get_current_user_id_from_jwt
+from utils.auth_utils import verify_and_get_user_id_from_jwt
 from services.memory import memory_service
 from utils.logger import logger
 
@@ -87,7 +87,7 @@ async def health_check():
 @router.post("/add", response_model=AddMemoryResponse)
 async def add_memory(
     request: AddMemoryRequest,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """
     Add a memory for the current user.
@@ -133,7 +133,7 @@ async def add_memory(
 @router.post("/search", response_model=SearchMemoriesResponse)
 async def search_memories(
     request: SearchMemoriesRequest,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """
     Search memories for the current user.
@@ -176,7 +176,7 @@ async def search_memories(
 async def get_thread_memories(
     thread_id: str,
     limit: int = 50,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """
     Get all memories for a specific thread.
@@ -214,7 +214,7 @@ async def get_thread_memories(
 @router.delete("/memory/{memory_id}", response_model=DeleteMemoryResponse)
 async def delete_memory(
     memory_id: str,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """
     Delete a specific memory.
@@ -257,7 +257,7 @@ async def delete_memory(
 @router.delete("/thread/{thread_id}", response_model=DeleteMemoryResponse)
 async def clear_thread_memories(
     thread_id: str,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """
     Clear all memories for a specific thread.

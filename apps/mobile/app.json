@@ -1,0 +1,102 @@
+{
+  "expo": {
+    "name": "Suna",
+    "slug": "suna-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "owner": "kortix",
+    "scheme": "sunamobile",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "description": "Suna is a fully open source AI assistant that helps you accomplish real-world tasks with ease. Through natural conversation, Suna becomes your digital companion for research, data analysis, and everyday challenges.",
+    "primaryColor": "#121215",
+    "privacy": "public",
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "keywords": [
+      "AI",
+      "artificial intelligence",
+      "browser automation",
+      "web scraping",
+      "file management",
+      "AI assistant",
+      "open source",
+      "research",
+      "data analysis"
+    ],
+    "githubUrl": "https://github.com/kortix-ai/suna",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.kortix.suna",
+      "buildNumber": "1.0.0",
+      "infoPlist": {
+        "CFBundleDisplayName": "Suna",
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.kortix.suna",
+      "versionCode": 1,
+      "permissions": [
+        "INTERNET",
+        "CAMERA",
+        "RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "static",
+      "favicon": "./assets/images/favicon.png",
+      "name": "Suna - Open Source Generalist AI Agent",
+      "shortName": "Suna",
+      "description": "Suna is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.",
+      "startUrl": "/",
+      "display": "standalone",
+      "orientation": "portrait",
+      "themeColor": "#121215",
+      "backgroundColor": "#121215",
+      "lang": "en",
+      "scope": "/",
+      "crossorigin": "use-credentials"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/kortix-splash.png",
+          "imageWidth": 400,
+          "resizeMode": "contain",
+          "backgroundColor": "#121215"
+        }
+      ],
+      "expo-font",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "metadata": {
+        "applicationName": "Suna",
+        "authors": "Kortix Team",
+        "creator": "Kortix Team",
+        "publisher": "Kortix Team",
+        "category": "Technology",
+        "siteUrl": "https://suna.so",
+        "twitterHandle": "@kortixai"
+      }
+    }
+  }
+}

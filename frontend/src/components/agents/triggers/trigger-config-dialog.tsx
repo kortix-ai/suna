@@ -20,7 +20,7 @@ import {
   Loader2
 } from 'lucide-react';
 import { TriggerProvider, TriggerConfiguration, ScheduleTriggerConfig, EventTriggerConfig } from './types';
-import { ScheduleTriggerConfigForm } from './providers/schedule-config';
+import { SimplifiedScheduleConfig } from './providers/simplified-schedule-config';
 import { EventTriggerConfigForm } from './providers/event-config';
 import { getDialogIcon } from './utils';
 
@@ -32,6 +32,10 @@ interface TriggerConfigDialogProps {
   onCancel: () => void;
   isLoading?: boolean;
   agentId: string;
+  selectedAgent?: string;
+  onAgentSelect?: (agentId: string) => void;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export const TriggerConfigDialog: React.FC<TriggerConfigDialogProps> = ({
@@ -41,6 +45,10 @@ export const TriggerConfigDialog: React.FC<TriggerConfigDialogProps> = ({
   onCancel,
   isLoading = false,
   agentId,
+  selectedAgent,
+  onAgentSelect,
+  open = true,
+  onOpenChange
 }) => {
   const [name, setName] = useState(existingConfig?.name || '');
   const [description, setDescription] = useState(existingConfig?.description || '');
@@ -111,7 +119,7 @@ export const TriggerConfigDialog: React.FC<TriggerConfigDialogProps> = ({
     switch (provider.provider_id) {
       case 'schedule':
         return (
-          <ScheduleTriggerConfigForm
+          <SimplifiedScheduleConfig
             provider={provider}
             config={config as ScheduleTriggerConfig}
             onChange={setConfig}
@@ -123,6 +131,10 @@ export const TriggerConfigDialog: React.FC<TriggerConfigDialogProps> = ({
             onDescriptionChange={setDescription}
             isActive={isActive}
             onActiveChange={setIsActive}
+            selectedAgent={selectedAgent}
+            onAgentSelect={onAgentSelect}
+            open={false}
+            onOpenChange={() => {}}
           />
         );
       case 'composio':
@@ -170,70 +182,70 @@ export const TriggerConfigDialog: React.FC<TriggerConfigDialogProps> = ({
   };
 
   return (
-    <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-      <DialogHeader className='px-2'>
-        <DialogTitle className="flex items-center space-x-3">
-          <div className="p-2 rounded-lg bg-muted border">
-            {getDialogIcon(provider.trigger_type)}
-          </div>
-          <div>
-            <span>Configure {provider.name}</span>
-          </div>
-        </DialogTitle>
-        <DialogDescription>
-          {provider.description}
-        </DialogDescription>
-      </DialogHeader>
-      <div className="flex-1 px-2 overflow-y-auto space-y-6 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
+    <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-hidden p-0 flex flex-col">
+      <div className="flex-1 overflow-y-auto">
         {renderProviderSpecificConfig()}
         {provider.webhook_enabled && existingConfig?.webhook_url && (
-          <div className="border-t pt-6">
-            <h3 className="text-sm font-medium mb-4">Webhook Information</h3>
-            <div className="space-y-2">
-              <Label>Webhook URL</Label>
-              <div className="flex items-center space-x-2">
-                <Input
-                  value={existingConfig.webhook_url}
-                  readOnly
-                  className="font-mono text-sm"
-                />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => navigator.clipboard.writeText(existingConfig.webhook_url!)}
-                >
-                  <Copy className="h-4 w-4" />
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => window.open(existingConfig.webhook_url, '_blank')}
-                >
-                  <ExternalLink className="h-4 w-4" />
-                </Button>
+          <div className="px-6 pb-6">
+            <div className="border-t pt-6">
+              <h3 className="text-sm font-medium mb-4">Webhook Information</h3>
+              <div className="space-y-2">
+                <Label>Webhook URL</Label>
+                <div className="flex items-center space-x-2">
+                  <Input
+                    value={existingConfig.webhook_url}
+                    readOnly
+                    className="font-mono text-sm"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => navigator.clipboard.writeText(existingConfig.webhook_url!)}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.open(existingConfig.webhook_url, '_blank')}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Use this URL to configure the webhook in {provider.name}
+                </p>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Use this URL to configure the webhook in {provider.name}
-              </p>
             </div>
           </div>
         )}
       </div>
-      <DialogFooter className="px-2">
-        <Button variant="outline" onClick={onCancel} disabled={isLoading}>
-          Cancel
-        </Button>
-        <Button onClick={handleSave} disabled={isLoading}>
-          {isLoading ? (
-            <>
-              <Loader2 className="animate-spin rounded-full h-4 w-4" />
-              {existingConfig ? 'Updating...' : 'Creating...'}
-            </>
-          ) : (
-            `${existingConfig ? 'Update' : 'Create'} Trigger`
-          )}
-        </Button>
-      </DialogFooter>
+      <div className="flex-shrink-0 px-6 py-6 border-t bg-muted/20">
+        <div className="flex gap-3">
+          <Button 
+            variant="outline" 
+            onClick={onCancel} 
+            disabled={isLoading} 
+            className="px-8 h-11"
+          >
+            Cancel
+          </Button>
+          <Button 
+            onClick={handleSave} 
+            disabled={isLoading} 
+            className="flex-1 h-11 text-base font-medium"
+          >
+            {isLoading ? (
+              <>
+                <Loader2 className="animate-spin rounded-full h-4 w-4 mr-2" />
+                {existingConfig ? 'Updating Task...' : 'Creating Task...'}
+              </>
+            ) : (
+              `${existingConfig ? 'Update' : 'Create'} Task`
+            )}
+          </Button>
+        </div>
+      </div>
     </DialogContent>
   );
 }; 

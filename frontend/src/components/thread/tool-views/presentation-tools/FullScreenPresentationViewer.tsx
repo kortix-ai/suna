@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
+import { downloadPresentation, DownloadFormat, handleGoogleSlidesUpload } from '../utils/presentation-utils';
 
 interface SlideMetadata {
   title: string;
@@ -45,7 +46,6 @@ interface FullScreenPresentationViewerProps {
   presentationName?: string;
   sandboxUrl?: string;
   initialSlide?: number;
-  onPDFDownload?: (setIsDownloadingPDF: (isDownloading: boolean) => void) => void;
 }
 
 export function FullScreenPresentationViewer({
@@ -54,7 +54,6 @@ export function FullScreenPresentationViewer({
   presentationName,
   sandboxUrl,
   initialSlide = 1,
-  onPDFDownload,
 }: FullScreenPresentationViewerProps) {
   const [metadata, setMetadata] = useState<PresentationMetadata | null>(null);
   const [currentSlide, setCurrentSlide] = useState(initialSlide);
@@ -65,9 +64,11 @@ export function FullScreenPresentationViewer({
   const [showControls, setShowControls] = useState(true);
   const [showEditor, setShowEditor] = useState(false);
   const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
+  const [isDownloadingPPTX, setIsDownloadingPPTX] = useState(false);
+  const [isDownloadingGoogleSlides, setIsDownloadingGoogleSlides] = useState(false);
   
   // Create a stable refresh timestamp when metadata changes (like PresentationViewer)
-  const refreshTimestamp = useMemo(() => Date.now(), [metadata]);
+  const refreshTimestamp = useMemo(() => metadata?.updated_at || Date.now(), [metadata?.updated_at]);
 
   const slides = metadata ? Object.entries(metadata.slides)
     .map(([num, slide]) => ({ number: parseInt(num), ...slide }))
@@ -262,6 +263,32 @@ export function FullScreenPresentationViewer({
     }
   }, [isOpen]);
 
+  // Download handlers
+  const handleDownload = async (format: DownloadFormat) => {
+    if (!sandboxUrl || !presentationName) return;
+
+    const setDownloadState = format === DownloadFormat.PDF ? setIsDownloadingPDF : 
+                           format === DownloadFormat.PPTX ? setIsDownloadingPPTX : 
+                           setIsDownloadingGoogleSlides;
+
+    setDownloadState(true);
+    try {
+      if (format === DownloadFormat.GOOGLE_SLIDES) {
+        const result = await handleGoogleSlidesUpload(sandboxUrl, `/workspace/presentations/${presentationName}`);
+        // If redirected to auth, don't show error
+        if (result?.redirected_to_auth) {
+          return; // Don't set loading false, user is being redirected
+        }
+      } else {
+        await downloadPresentation(format, sandboxUrl, `/workspace/presentations/${presentationName}`, presentationName);
+      }
+    } catch (error) {
+      console.error(`Error downloading ${format}:`, error);
+    } finally {
+      setDownloadState(false);
+    }
+  };
+
   const currentSlideData = slides.find(slide => slide.number === currentSlide);
 
   // Memoized slide iframe component with proper scaling (matching PresentationViewer)
@@ -322,7 +349,7 @@ export function FullScreenPresentationViewer({
         <div className="w-full h-full flex items-center justify-center bg-transparent">
           <div 
             ref={setContainerRef}
-            className="relative bg-white dark:bg-zinc-900 rounded-lg overflow-hidden border border-zinc-200/40 dark:border-zinc-800/40"
+            className="relative bg-transparent rounded-lg overflow-hidden"
             style={{
               width: '100%',
               maxWidth: '100%',
@@ -417,8 +444,9 @@ export function FullScreenPresentationViewer({
                   size="sm" 
                   className="h-8 w-8 p-0"
                   title="Export presentation"
+                  disabled={isDownloadingPDF || isDownloadingPPTX || isDownloadingGoogleSlides}
                 >
-                  {isDownloadingPDF ? (
+                  {(isDownloadingPDF || isDownloadingPPTX || isDownloadingGoogleSlides) ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                   ) : (
                     <Download className="h-3.5 w-3.5" />
@@ -426,15 +454,27 @@ export function FullScreenPresentationViewer({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-32">
-                <DropdownMenuItem className="cursor-pointer" onClick={() => onPDFDownload(setIsDownloadingPDF)}>
+                <DropdownMenuItem 
+                  className="cursor-pointer" 
+                  onClick={() => handleDownload(DownloadFormat.PDF)} 
+                  disabled={isDownloadingPDF}
+                >
                   <FileText className="h-4 w-4 mr-2" />
                   PDF
                 </DropdownMenuItem>
-                <DropdownMenuItem className="cursor-pointer">
+                <DropdownMenuItem 
+                  className="cursor-pointer" 
+                  onClick={() => handleDownload(DownloadFormat.PPTX)} 
+                  disabled={isDownloadingPPTX}
+                >
                   <Presentation className="h-4 w-4 mr-2" />
                   PPTX
                 </DropdownMenuItem>
-                <DropdownMenuItem className="cursor-pointer">
+                <DropdownMenuItem 
+                  className="cursor-pointer" 
+                  onClick={() => handleDownload(DownloadFormat.GOOGLE_SLIDES)} 
+                  disabled={isDownloadingGoogleSlides}
+                >
                   <ExternalLink className="h-4 w-4 mr-2" />
                   Google Slides
                 </DropdownMenuItem>
@@ -456,7 +496,7 @@ export function FullScreenPresentationViewer({
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex items-center justify-center bg-zinc-100 dark:bg-zinc-900 p-8 min-h-0">
+      <div className="flex-1 flex items-center justify-center bg-zinc-100 dark:bg-zinc-900 p-2 min-h-0">
         {isLoading ? (
           <div className="text-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-zinc-600 mx-auto mb-4"></div>
@@ -494,14 +534,14 @@ export function FullScreenPresentationViewer({
             </Button>
           </div>
         ) : currentSlideData ? (
-          <div className="w-full h-full max-w-7xl mx-auto flex flex-col">
+          <div className="w-full h-full flex flex-col">
             {/* Presentation Container */}
-            <div className="flex-1 bg-white dark:bg-zinc-900 rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-800" style={{ aspectRatio: '16 / 9' }}>
+            <div className="flex-1 bg-transparent rounded-xl overflow-hidden" style={{ aspectRatio: '16 / 9' }}>
               {renderSlide}
             </div>
             
             {/* Controls below presentation */}
-            <div className="flex items-center justify-between mt-6 px-4">
+            <div className="flex items-center justify-between mt-3 px-4">
               {/* Left Controls */}
               <div className="flex items-center gap-2">
                 <Button

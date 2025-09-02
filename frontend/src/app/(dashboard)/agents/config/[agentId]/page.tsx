@@ -695,7 +695,7 @@ function AgentConfigurationContent() {
                           <button
                             onClick={() => handleStartTestWithPrompt("Enter agent builder mode. Help me configure you to be my perfect agent. Ask me detailed questions about what I want you to do, how you should behave, what tools you need, and what knowledge would be helpful. Then suggest improvements to your system prompt, tools, and configuration.")}
                             disabled={initiateAgentMutation.isPending}
-                            className="w-full text-left p-2 rounded border border-border hover:bg-accent text-xs transition-colors"
+                            className="w-full text-left p-2 rounded-xl border border-border hover:bg-accent text-xs transition-colors"
                           >
                             <span className="font-medium">Agent Builder Mode</span>
                             <br />
@@ -705,7 +705,7 @@ function AgentConfigurationContent() {
                           <button
                             onClick={() => handleStartTestWithPrompt("Hi! I want to test your capabilities. Can you tell me who you are, what you can do, and what tools and knowledge you have access to? Then let's do a quick test to see how well you work.")}
                             disabled={initiateAgentMutation.isPending}
-                            className="w-full text-left p-2 rounded border border-border hover:bg-accent text-xs transition-colors"
+                            className="w-full text-left p-2 rounded-xl border border-border hover:bg-accent text-xs transition-colors"
                           >
                             <span className="font-medium">Capability Test</span>
                             <br />
@@ -715,7 +715,7 @@ function AgentConfigurationContent() {
                           <button
                             onClick={() => handleStartTestWithPrompt("I need help with a specific task. Let me explain what I'm trying to accomplish and you can guide me through the process step by step.")}
                             disabled={initiateAgentMutation.isPending}
-                            className="w-full text-left p-2 rounded border border-border hover:bg-accent text-xs transition-colors"
+                            className="w-full text-left p-2 rounded-xl border border-border hover:bg-accent text-xs transition-colors"
                           >
                             <span className="font-medium">Task-Based Run</span>
                             <br />

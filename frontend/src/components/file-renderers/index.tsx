@@ -60,6 +60,7 @@ export function getFileTypeFromExtension(fileName: string): FileType {
     'html',
     'css',
     'json',
+    'doc',
     'py',
     'python',
     'java',
@@ -172,23 +173,73 @@ export function FileRenderer({
   const fileType = getFileTypeFromExtension(fileName);
   const language = getLanguageFromExtension(fileName);
   const isHtmlFile = fileName.toLowerCase().endsWith('.html');
+  const isDocFile = fileName.toLowerCase().endsWith('.doc');
 
-  // Create blob URL for HTML content if needed
+  const tiptapHtmlContent = React.useMemo(() => {
+    if (isDocFile && content) {
+      try {
+        const parsed = JSON.parse(content);
+        if (parsed.type === 'tiptap_document' && parsed.content) {
+          return parsed.content;
+        }
+      } catch {
+      }
+    }
+    return null;
+  }, [isDocFile, content]);
+
   const blobHtmlUrl = React.useMemo(() => {
     if (isHtmlFile && content && !project?.sandbox?.sandbox_url) {
       const blob = new Blob([content], { type: 'text/html' });
       return URL.createObjectURL(blob);
     }
+    // Also create blob URL for TipTap document HTML content
+    if (tiptapHtmlContent) {
+      const htmlWrapper = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body { 
+              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+              padding: 2rem; 
+              max-width: 900px; 
+              margin: 0 auto;
+              line-height: 1.6;
+            }
+            h1, h2, h3 { margin-top: 1.5rem; margin-bottom: 0.5rem; }
+            h1 { font-size: 2rem; }
+            h2 { font-size: 1.5rem; }
+            h3 { font-size: 1.25rem; }
+            p { margin: 1rem 0; }
+            ul, ol { margin: 1rem 0; padding-left: 2rem; }
+            code { background: #f5f5f5; padding: 0.2rem 0.4rem; border-radius: 3px; }
+            pre { background: #f5f5f5; padding: 1rem; border-radius: 5px; overflow-x: auto; }
+            blockquote { margin: 1rem 0; padding-left: 1rem; border-left: 3px solid #ddd; color: #666; }
+            table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+            th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
+            th { background-color: #f5f5f5; }
+            img { max-width: 100%; height: auto; }
+            a { color: #0066cc; }
+          </style>
+        </head>
+        <body>
+          ${tiptapHtmlContent}
+        </body>
+        </html>
+      `;
+      const blob = new Blob([htmlWrapper], { type: 'text/html' });
+      return URL.createObjectURL(blob);
+    }
     return undefined;
-  }, [isHtmlFile, content, project?.sandbox?.sandbox_url]);
+  }, [isHtmlFile, content, project?.sandbox?.sandbox_url, tiptapHtmlContent]);
 
-  // Construct HTML file preview URL if we have a sandbox and the file is HTML
   const htmlPreviewUrl =
     isHtmlFile && project?.sandbox?.sandbox_url && (filePath || fileName)
       ? constructHtmlPreviewUrl(project.sandbox.sandbox_url, filePath || fileName)
-      : blobHtmlUrl; // Use blob URL as fallback
+      : blobHtmlUrl;
 
-  // Clean up blob URL on unmount
   React.useEffect(() => {
     return () => {
       if (blobHtmlUrl) {
@@ -218,9 +269,9 @@ export function FileRenderer({
           onDownload={onDownload}
           isDownloading={isDownloading}
         />
-      ) : isHtmlFile ? (
+      ) : isHtmlFile || tiptapHtmlContent ? (
         <HtmlRenderer
-          content={content || ''}
+          content={tiptapHtmlContent || content || ''}
           previewUrl={htmlPreviewUrl || ''}
           className="w-full h-full"
         />
