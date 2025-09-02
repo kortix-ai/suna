@@ -2773,7 +2773,7 @@ async def can_purchase_credits(
 @router.get("/tool-cost/{tool_name}")
 async def get_tool_cost_endpoint(
     tool_name: str,
-    current_user_id: str = Depends(get_current_user_id_from_jwt)
+    current_user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Get the credit cost for a specific tool."""
     try:
