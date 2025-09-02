@@ -297,28 +297,9 @@ async def get_user_subscription(user_id: str) -> Optional[Dict]:
         if result:
             return result
 
-        # Get customer ID and check for admin override
+        # Get customer ID
         db = DBConnection()
         client = await db.client
-        
-        # Check for admin-granted access first
-        admin_customer_result = await client.schema('basejump').from_('billing_customers').select('*').eq('account_id', user_id).eq('provider', 'admin_grant').execute()
-        
-        if admin_customer_result.data and len(admin_customer_result.data) > 0:
-            # User has admin-granted max tier access
-            max_tier_subscription = {
-                'price_id': config.STRIPE_TIER_200_1000_ID,  # Max tier price ID
-                'plan_name': 'admin_max_tier',
-                'status': 'active',
-                'items': {
-                    'data': [{
-                        'price': {'id': config.STRIPE_TIER_200_1000_ID}
-                    }]
-                }
-            }
-            await Cache.set(f"user_subscription:{user_id}", max_tier_subscription, ttl=5 * 60)
-            return max_tier_subscription
-        
         customer_id = await get_stripe_customer_id(client, user_id)
         
         if not customer_id:
