@@ -34,10 +34,12 @@ import { ListPresentationsToolView } from '../presentation-tools/ListPresentatio
 import { DeleteSlideToolView } from '../presentation-tools/DeleteSlideToolView';
 import { DeletePresentationToolView } from '../presentation-tools/DeletePresentationToolView';
 import { PresentationStylesToolView } from '../presentation-tools/PresentationStylesToolView';
+import { PresentPresentationToolView } from '../presentation-tools/PresentPresentationToolView';
 import { SheetsToolView } from '../sheets-tools/sheets-tool-view';
 import { GetProjectStructureView } from '../web-dev/GetProjectStructureView';
 import { ImageEditGenerateToolView } from '../image-edit-generate-tool/ImageEditGenerateToolView';
 import { UploadFileToolView } from '../UploadFileToolView';
+import { DocsToolView, ListDocumentsToolView, DeleteDocumentToolView } from '../docs-tool';
 import { CreateNewAgentToolView } from '../create-new-agent/create-new-agent';
 import { SearchMcpServersForAgentToolView } from '../search-mcp-servers-for-agent/search-mcp-servers-for-agent';
 import { CreateCredentialProfileForAgentToolView } from '../create-credential-profile-for-agent/create-credential-profile-for-agent';
@@ -47,6 +49,8 @@ import CreateAgentWorkflowToolView from '../create-agent-workflow/create-agent-w
 import ActivateAgentWorkflowToolView from '../activate-agent-workflow/activate-agent-workflow';
 import CreateAgentScheduledTriggerToolView from '../create-agent-scheduled-trigger/create-agent-scheduled-trigger';
 import ListAgentWorkflowsToolView from '../list-agent-workflows/list-agent-workflows';
+import { createPresentationViewerToolContent, parsePresentationSlidePath } from '../utils/presentation-utils';
+import { extractToolData } from '../utils';
 
 
 export type ToolViewComponent = React.ComponentType<ToolViewProps>;
@@ -114,6 +118,7 @@ const defaultRegistry: ToolViewRegistryType = {
   'delete-slide': DeleteSlideToolView,
   'delete-presentation': DeletePresentationToolView,
   'presentation-styles': PresentationStylesToolView,
+  'present-presentation': PresentPresentationToolView,
   
   'create-sheet': SheetsToolView,
   'update-sheet': SheetsToolView,
@@ -126,6 +131,21 @@ const defaultRegistry: ToolViewRegistryType = {
   'list-web-projects': GenericToolView,
 
   'upload-file': UploadFileToolView,
+
+  // Document operations - using specific views for different operations
+  'create-document': DocsToolView,
+  'update-document': DocsToolView,
+  'read-document': DocsToolView,
+  'list-documents': ListDocumentsToolView,
+  'delete-document': DeleteDocumentToolView,
+  'export-document': DocsToolView,
+  'create_document': DocsToolView,
+  'update_document': DocsToolView,
+  'read_document': DocsToolView,
+  'list_documents': ListDocumentsToolView,
+  'delete_document': DeleteDocumentToolView,
+  'export_document': DocsToolView,
+  'get_tiptap_format_guide': DocsToolView,
 
   'default': GenericToolView,
 
@@ -184,7 +204,40 @@ export function useToolView(toolName: string): ToolViewComponent {
   return useMemo(() => toolViewRegistry.get(toolName), [toolName]);
 }
 
-export function ToolView({ name = 'default', ...props }: ToolViewProps) {
-  const ToolViewComponent = useToolView(name);
-  return <ToolViewComponent name={name} {...props} />;
+
+
+export function ToolView({ name = 'default', assistantContent, toolContent, ...props }: ToolViewProps) {
+  const toolToolData = extractToolData(toolContent);
+
+  // find the file path from the tool arguments
+  const toolArguments = toolToolData.arguments || {};
+  const filePath = toolArguments.file_path || toolArguments.target_file;
+
+  // check if the file path is a presentation slide
+  const { isValid: isPresentationSlide, presentationName, slideNumber } = parsePresentationSlidePath(filePath);
+  let modifiedToolContent = toolContent;
+
+  // define presentation-related tools that shouldn't be transformed
+  const presentationTools = [
+    'create-slide',
+    'list-slides',
+    'delete-slide',
+    'delete-presentation',
+    'presentation-styles',
+    'present-presentation',
+  ]
+
+  const isAlreadyPresentationTool = presentationTools.includes(name);
+
+  // if the file path is a presentation slide, we need to modify the tool content to match the expected structure for PresentationViewer
+  if (isPresentationSlide && filePath && presentationName && slideNumber && !isAlreadyPresentationTool) {
+    modifiedToolContent = createPresentationViewerToolContent(presentationName, filePath, slideNumber);
+  }
+  
+  // determine the effective tool name
+  const effectiveToolName = (isPresentationSlide && !isAlreadyPresentationTool) ? 'create-slide' : name;
+
+  // use the tool view component
+  const ToolViewComponent = useToolView(effectiveToolName);
+  return <ToolViewComponent name={effectiveToolName} toolContent={modifiedToolContent} {...props} />;
 }

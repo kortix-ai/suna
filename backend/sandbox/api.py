@@ -9,7 +9,7 @@ from daytona_sdk import AsyncSandbox
 
 from sandbox.sandbox import get_or_start_sandbox, delete_sandbox
 from utils.logger import logger
-from utils.auth_utils import get_optional_user_id
+from utils.auth_utils import get_optional_user_id, verify_and_get_user_id_from_jwt, verify_sandbox_access, verify_sandbox_access_optional
 from services.supabase import DBConnection
 
 # Initialize shared resources
@@ -66,45 +66,7 @@ def normalize_path(path: str) -> str:
         logger.error(f"Error normalizing path '{path}': {str(e)}")
         return path  # Return original path if decoding fails
 
-async def verify_sandbox_access(client, sandbox_id: str, user_id: Optional[str] = None):
-    """
-    Verify that a user has access to a specific sandbox based on account membership.
-    
-    Args:
-        client: The Supabase client
-        sandbox_id: The sandbox ID to check access for
-        user_id: The user ID to check permissions for. Can be None for public resource access.
-        
-    Returns:
-        dict: Project data containing sandbox information
-        
-    Raises:
-        HTTPException: If the user doesn't have access to the sandbox or sandbox doesn't exist
-    """
-    # Find the project that owns this sandbox
-    project_result = await client.table('projects').select('*').filter('sandbox->>id', 'eq', sandbox_id).execute()
-    
-    if not project_result.data or len(project_result.data) == 0:
-        raise HTTPException(status_code=404, detail="Sandbox not found")
-    
-    project_data = project_result.data[0]
 
-    if project_data.get('is_public'):
-        return project_data
-    
-    # For private projects, we must have a user_id
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Authentication required for this resource")
-    
-    account_id = project_data.get('account_id')
-    
-    # Verify account membership
-    if account_id:
-        account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', account_id).execute()
-        if account_user_result.data and len(account_user_result.data) > 0:
-            return project_data
-    
-    raise HTTPException(status_code=403, detail="Not authorized to access this sandbox")
 
 async def get_sandbox_by_id_safely(client, sandbox_id: str) -> AsyncSandbox:
     """
@@ -147,7 +109,7 @@ async def create_file(
     path: str = Form(...),
     file: UploadFile = File(...),
     request: Request = None,
-    user_id: Optional[str] = Depends(get_optional_user_id)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Create a file in the sandbox using direct file upload"""
     # Normalize the path to handle UTF-8 encoding correctly
@@ -175,6 +137,38 @@ async def create_file(
         logger.error(f"Error creating file in sandbox {sandbox_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.put("/sandboxes/{sandbox_id}/files")
+async def update_file(
+    sandbox_id: str,
+    request: Request = None,
+    user_id: Optional[str] = Depends(get_optional_user_id)
+):
+    try:
+        body = await request.json()
+        path = body.get('path')
+        content = body.get('content', '')
+        
+        if not path:
+            raise HTTPException(status_code=400, detail="Path is required")
+        
+        path = normalize_path(path)
+        
+        logger.debug(f"Received file update request for sandbox {sandbox_id}, path: {path}, user_id: {user_id}")
+        client = await db.client
+        
+        await verify_sandbox_access(client, sandbox_id, user_id)
+        
+        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        
+        content_bytes = content.encode('utf-8') if isinstance(content, str) else content
+        await sandbox.fs.upload_file(content_bytes, path)
+        logger.debug(f"File updated at {path} in sandbox {sandbox_id}")
+        
+        return {"status": "success", "updated": True, "path": path}
+    except Exception as e:
+        logger.error(f"Error updating file in sandbox {sandbox_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/sandboxes/{sandbox_id}/files")
 async def list_files(
     sandbox_id: str, 
@@ -182,15 +176,13 @@ async def list_files(
     request: Request = None,
     user_id: Optional[str] = Depends(get_optional_user_id)
 ):
-    """List files and directories at the specified path"""
-    # Normalize the path to handle UTF-8 encoding correctly
     path = normalize_path(path)
     
     logger.debug(f"Received list files request for sandbox {sandbox_id}, path: {path}, user_id: {user_id}")
     client = await db.client
     
     # Verify the user has access to this sandbox
-    await verify_sandbox_access(client, sandbox_id, user_id)
+    await verify_sandbox_access_optional(client, sandbox_id, user_id)
     
     try:
         # Get sandbox using the safer method
@@ -239,7 +231,7 @@ async def read_file(
     client = await db.client
     
     # Verify the user has access to this sandbox
-    await verify_sandbox_access(client, sandbox_id, user_id)
+    await verify_sandbox_access_optional(client, sandbox_id, user_id)
     
     try:
         # Get sandbox using the safer method
@@ -281,7 +273,7 @@ async def delete_file(
     sandbox_id: str, 
     path: str,
     request: Request = None,
-    user_id: Optional[str] = Depends(get_optional_user_id)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Delete a file from the sandbox"""
     # Normalize the path to handle UTF-8 encoding correctly
@@ -310,7 +302,7 @@ async def delete_file(
 async def delete_sandbox_route(
     sandbox_id: str,
     request: Request = None,
-    user_id: Optional[str] = Depends(get_optional_user_id)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Delete an entire sandbox"""
     logger.debug(f"Received sandbox delete request for sandbox {sandbox_id}, user_id: {user_id}")

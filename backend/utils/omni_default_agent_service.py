@@ -103,72 +103,73 @@ class OmniDefaultAgentService:
         logger.info("Installing Omni agents for all missing users")
         
         try:
-            # Get all accounts that don't have an Omni default agent
-            query = """
-            SELECT account_id 
-            FROM accounts 
-            WHERE account_id NOT IN (
-                SELECT DISTINCT account_id 
-                FROM agents 
-                WHERE COALESCE((metadata->>'is_omni_default')::boolean, false) = true
-            )
-            AND personal_account = true
-            """
+            client = await self._db.client
             
-            # TODO: Complex query needs to be refactored for Supabase query builder
-            # For now, returning empty result to avoid errors
-            accounts_result = []
+            # Get all personal accounts
+            accounts_result = await client.schema('basejump').table('accounts').select('id').eq('personal_account', True).execute()
+            all_account_ids = {row['id'] for row in accounts_result.data} if accounts_result.data else set()
             
-            if not accounts_result:
+            # Get existing Omni agents
+            existing_result = await client.table('agents').select('account_id').eq('metadata->>is_omni_default', True).execute()
+            existing_account_ids = {row['account_id'] for row in existing_result.data} if existing_result.data else set()
+            
+            # Find accounts without Omni agents
+            missing_accounts = all_account_ids - existing_account_ids
+            
+            if not missing_accounts:
                 return {
                     "installed_count": 0,
                     "failed_count": 0,
-                    "details": []
+                    "details": ["All users already have Omni agents"]
                 }
+            
+            logger.info(f"Installing Omni agents for {len(missing_accounts)} users")
             
             installed_count = 0
             failed_count = 0
             details = []
             
-            for account_row in accounts_result:
-                account_id = str(account_row['account_id'])
+            for account_id in missing_accounts:
                 try:
-                    agent_id = await self.install_omni_agent_for_user(account_id)
+                    agent_id = await self.install_omni_agent_for_user(str(account_id))
                     if agent_id:
                         installed_count += 1
                         details.append({
-                            "account_id": account_id,
+                            "account_id": str(account_id),
                             "agent_id": agent_id,
                             "status": "installed"
                         })
+                        logger.debug(f"✅ Installed Omni agent for user {account_id}")
                     else:
                         failed_count += 1
                         details.append({
-                            "account_id": account_id,
+                            "account_id": str(account_id),
                             "status": "failed",
                             "error": "Installation returned None"
                         })
                 except Exception as e:
-                    logger.error(f"Failed to install for user {account_id}: {e}")
                     failed_count += 1
+                    error_msg = f"Failed to install for user {account_id}: {str(e)}"
                     details.append({
-                        "account_id": account_id,
+                        "account_id": str(account_id),
                         "status": "failed",
                         "error": str(e)
                     })
+                    logger.error(error_msg)
             
             return {
                 "installed_count": installed_count,
                 "failed_count": failed_count,
-                "details": details
+                "details": details if details and isinstance(details[0], dict) else [f"Successfully installed for {installed_count} users"] if installed_count > 0 else []
             }
+            
         except Exception as e:
-            logger.error(f"Error installing Omni agents for all users: {e}")
+            error_msg = f"Installation operation failed: {str(e)}"
+            logger.error(error_msg)
             return {
                 "installed_count": 0,
                 "failed_count": 0,
-                "details": [],
-                "error": str(e)
+                "details": [error_msg]
             }
     
     async def install_omni_agent_for_user(self, account_id: str, replace_existing: bool = False) -> Optional[str]:

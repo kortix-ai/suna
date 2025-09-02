@@ -247,8 +247,8 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
                     </div>
                     <span className={cn(
                       compact 
-                        ? "truncate max-w-[60px] text-xs"
-                        : "hidden sm:inline-block truncate max-w-[80px] font-normal"
+                        ? "truncate max-w-[100px] text-xs font-medium"
+                        : "hidden sm:inline-block truncate max-w-[120px] font-medium"
                     )}>
                       {agentDisplay.name}
                     </span>

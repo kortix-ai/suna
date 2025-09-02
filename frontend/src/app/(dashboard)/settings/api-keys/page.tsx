@@ -4,8 +4,6 @@ import React, { useState, useEffect } from 'react';
 import { Key, Plus, Trash2, Copy, Shield, ExternalLink, Sparkles } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { useRouter } from 'next/navigation';
-import { useFeatureFlag } from '@/lib/feature-flags';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -59,9 +57,6 @@ interface NewAPIKeyData {
 }
 
 export default function APIKeysPage() {
-  const { enabled: customAgentsEnabled, loading: flagLoading } =
-    useFeatureFlag('custom_agents');
-  const router = useRouter();
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [newKeyData, setNewKeyData] = useState<NewAPIKeyData>({
     title: '',
@@ -73,11 +68,6 @@ export default function APIKeysPage() {
   const [showCreatedKey, setShowCreatedKey] = useState(false);
   const queryClient = useQueryClient();
 
-  useEffect(() => {
-    if (!flagLoading && !customAgentsEnabled) {
-      router.replace('/dashboard');
-    }
-  }, [flagLoading, customAgentsEnabled, router]);
 
   // Fetch API keys
   const {
@@ -211,26 +201,6 @@ export default function APIKeysPage() {
     return new Date(expiresAt) < new Date();
   };
 
-  if (flagLoading) {
-    return (
-      <div className="container mx-auto max-w-6xl px-6 py-6">
-        <div className="space-y-6">
-          <div className="animate-pulse space-y-4">
-            <div className="h-12 bg-muted rounded-lg"></div>
-            <div className="space-y-3">
-              {Array.from({ length: 3 }).map((_, index) => (
-                <div key={index} className="h-32 bg-muted rounded-lg"></div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!customAgentsEnabled) {
-    return null;
-  }
 
   return (
     <div className="container mx-auto max-w-6xl px-6 py-6">

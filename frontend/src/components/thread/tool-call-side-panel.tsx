@@ -23,6 +23,7 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from '@/components/ui/drawer';
+import { useDocumentModalStore } from '@/lib/stores/use-document-modal-store';
 
 export interface ToolCallInput {
   assistantCall: {
@@ -277,6 +278,7 @@ export function ToolCallSidePanel({
   }, [currentView]);
 
   const isMobile = useIsMobile();
+  const { isOpen: isDocumentModalOpen } = useDocumentModalStore();
 
   const sandbox = project?.sandbox;
   
@@ -395,39 +397,34 @@ export function ToolCallSidePanel({
       }
       setIsInitialized(true);
     } else if (hasNewSnapshots && navigationMode === 'live') {
-      const latestSnapshot = newSnapshots[newSnapshots.length - 1];
-      const isLatestStreaming = latestSnapshot?.toolCall.toolResult?.content === 'STREAMING';
-      if (isLatestStreaming) {
-        let lastCompletedIndex = -1;
-        for (let i = newSnapshots.length - 1; i >= 0; i--) {
-          const snapshot = newSnapshots[i];
-          if (snapshot.toolCall.toolResult?.content &&
-            snapshot.toolCall.toolResult.content !== 'STREAMING') {
-            lastCompletedIndex = i;
-            break;
-          }
-        }
-        if (lastCompletedIndex >= 0) {
-          setInternalIndex(lastCompletedIndex);
-        } else {
-          setInternalIndex(newSnapshots.length - 1);
-        }
-      } else {
+      // When in live mode and new snapshots arrive, always follow the true latest index.
+      // Display stability for streaming is handled separately by displayToolCall logic.
+      setInternalIndex(newSnapshots.length - 1);
+    } else if (hasNewSnapshots && navigationMode === 'manual') {
+      // When in manual mode and new snapshots arrive, check if we should auto-switch to live
+      // This happens when the user was at the latest snapshot before new ones arrived
+      const wasAtLatest = internalIndex === toolCallSnapshots.length - 1;
+      if (wasAtLatest && agentStatus === 'running') {
+        // Auto-switch to live mode when new snapshots arrive and we were at the latest
+        setNavigationMode('live');
         setInternalIndex(newSnapshots.length - 1);
       }
-    } else if (hasNewSnapshots && navigationMode === 'manual') {
     }
-  }, [toolCalls, navigationMode, toolCallSnapshots.length, isInitialized]);
+  }, [toolCalls, navigationMode, toolCallSnapshots.length, isInitialized, internalIndex, agentStatus]);
 
   React.useEffect(() => {
     // This is used to sync the internal index to the current index
-    setInternalIndex(Math.min(currentIndex, toolCallSnapshots.length - 1));
-  }, [currentIndex, toolCallSnapshots.length]);
+    // Only sync when we're not in live mode or when we're initializing
+    if (!isInitialized || navigationMode === 'manual') {
+      setInternalIndex(Math.min(currentIndex, toolCallSnapshots.length - 1));
+    }
+  }, [currentIndex, toolCallSnapshots.length, isInitialized, navigationMode]);
 
   const safeInternalIndex = Math.min(internalIndex, Math.max(0, toolCallSnapshots.length - 1));
   const currentSnapshot = toolCallSnapshots[safeInternalIndex];
   const currentToolCall = currentSnapshot?.toolCall;
   const totalCalls = toolCallSnapshots.length;
+  const latestIndex = Math.max(0, totalCalls - 1);
 
   const completedToolCalls = toolCallSnapshots.filter(snapshot =>
     snapshot.toolCall.toolResult?.content &&
@@ -435,22 +432,20 @@ export function ToolCallSidePanel({
   );
   const totalCompletedCalls = completedToolCalls.length;
 
+  // Derive a user-facing timeline that is stable and easy to reason about:
+  // - If the current tool is STREAMING, show the last completed result content;
+  // - Counters/slider always show the full timeline length, but the index snaps to
+  //   the last completed step while streaming so the user can still scrub.
   let displayToolCall = currentToolCall;
   let displayIndex = safeInternalIndex;
   let displayTotalCalls = totalCalls;
+  const isAtTrueLatest = safeInternalIndex === latestIndex;
 
   const isCurrentToolStreaming = currentToolCall?.toolResult?.content === 'STREAMING';
   if (isCurrentToolStreaming && totalCompletedCalls > 0) {
     const lastCompletedSnapshot = completedToolCalls[completedToolCalls.length - 1];
     displayToolCall = lastCompletedSnapshot.toolCall;
-    displayIndex = totalCompletedCalls - 1;
-    displayTotalCalls = totalCompletedCalls;
-  } else if (!isCurrentToolStreaming) {
-    const completedIndex = completedToolCalls.findIndex(snapshot => snapshot.id === currentSnapshot?.id);
-    if (completedIndex >= 0) {
-      displayIndex = completedIndex;
-      displayTotalCalls = totalCompletedCalls;
-    }
+    displayIndex = completedToolCalls.length - 1;
   }
 
   const currentToolName = displayToolCall?.assistantCall?.name || 'Tool Call';
@@ -553,51 +548,35 @@ export function ToolCallSidePanel({
   }, [totalCalls, onNavigate]);
 
   const isLiveMode = navigationMode === 'live';
-  const showJumpToLive = navigationMode === 'manual' && agentStatus === 'running';
-  const showJumpToLatest = navigationMode === 'manual' && agentStatus !== 'running';
+  const pointerIndex = isLiveMode ? latestIndex : safeInternalIndex;
 
   const navigateToPrevious = React.useCallback(() => {
-    if (displayIndex > 0) {
-      const targetCompletedIndex = displayIndex - 1;
-      const targetSnapshot = completedToolCalls[targetCompletedIndex];
-      if (targetSnapshot) {
-        const actualIndex = toolCallSnapshots.findIndex(s => s.id === targetSnapshot.id);
-        if (actualIndex >= 0) {
-          setNavigationMode('manual');
-          internalNavigate(actualIndex, 'user_explicit');
-        }
-      }
+    if (pointerIndex > 0) {
+      setNavigationMode('manual');
+      internalNavigate(pointerIndex - 1, 'user_explicit');
     }
-  }, [displayIndex, completedToolCalls, toolCallSnapshots, internalNavigate]);
+  }, [pointerIndex, internalNavigate]);
 
   const navigateToNext = React.useCallback(() => {
-    if (displayIndex < displayTotalCalls - 1) {
-      const targetCompletedIndex = displayIndex + 1;
-      const targetSnapshot = completedToolCalls[targetCompletedIndex];
-      if (targetSnapshot) {
-        const actualIndex = toolCallSnapshots.findIndex(s => s.id === targetSnapshot.id);
-        if (actualIndex >= 0) {
-          const isLatestCompleted = targetCompletedIndex === completedToolCalls.length - 1;
-          if (isLatestCompleted) {
-            setNavigationMode('live');
-          } else {
-            setNavigationMode('manual');
-          }
-          internalNavigate(actualIndex, 'user_explicit');
-        }
-      }
+    if (pointerIndex < latestIndex) {
+      const nextIndex = pointerIndex + 1;
+      setNavigationMode(nextIndex === latestIndex ? 'live' : 'manual');
+      internalNavigate(nextIndex, 'user_explicit');
     }
-  }, [displayIndex, displayTotalCalls, completedToolCalls, toolCallSnapshots, internalNavigate]);
+  }, [pointerIndex, latestIndex, internalNavigate]);
 
   const jumpToLive = React.useCallback(() => {
     setNavigationMode('live');
-    internalNavigate(totalCalls - 1, 'user_explicit');
-  }, [totalCalls, internalNavigate]);
+    setInternalIndex(latestIndex);
+    internalNavigate(latestIndex, 'user_explicit');
+  }, [latestIndex, internalNavigate]);
 
   const jumpToLatest = React.useCallback(() => {
+    // For idle state: jump to the latest completed (same as latestIndex here)
     setNavigationMode('manual');
-    internalNavigate(totalCalls - 1, 'user_explicit');
-  }, [totalCalls, internalNavigate]);
+    setInternalIndex(latestIndex);
+    internalNavigate(latestIndex, 'user_explicit');
+  }, [latestIndex, internalNavigate]);
 
   const renderStatusButton = React.useCallback(() => {
     const baseClasses = "flex items-center justify-center gap-1.5 px-2 py-0.5 rounded-full w-[116px]";
@@ -607,7 +586,10 @@ export function ToolCallSidePanel({
     if (isLiveMode) {
       if (agentStatus === 'running') {
         return (
-          <div className={`${baseClasses} bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800`}>
+          <div
+            className={`${baseClasses} bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors cursor-pointer`}
+            onClick={jumpToLive}
+          >
             <div className={`${dotClasses} bg-green-500 animate-pulse`} />
             <span className={`${textClasses} text-green-700 dark:text-green-400`}>Live Updates</span>
           </div>
@@ -646,26 +628,20 @@ export function ToolCallSidePanel({
   }, [isLiveMode, agentStatus, jumpToLive, jumpToLatest]);
 
   const handleSliderChange = React.useCallback(([newValue]: [number]) => {
-    const targetSnapshot = completedToolCalls[newValue];
-    if (targetSnapshot) {
-      const actualIndex = toolCallSnapshots.findIndex(s => s.id === targetSnapshot.id);
-      if (actualIndex >= 0) {
-        const isLatestCompleted = newValue === completedToolCalls.length - 1;
-        if (isLatestCompleted) {
-          setNavigationMode('live');
-        } else {
-          setNavigationMode('manual');
-        }
-
-        internalNavigate(actualIndex, 'user_explicit');
-      }
-    }
-  }, [completedToolCalls, toolCallSnapshots, internalNavigate]);
+    // Slider maps directly over all snapshots for simplicity and correctness
+    const bounded = Math.max(0, Math.min(newValue, latestIndex));
+    setNavigationMode(bounded === latestIndex ? 'live' : 'manual');
+    internalNavigate(bounded, 'user_explicit');
+  }, [latestIndex, internalNavigate]);
 
   React.useEffect(() => {
     if (!isOpen) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      // Don't handle side panel shortcuts when document modal is open
+      console.log('Side panel handler - document modal open:', isDocumentModalOpen, 'key:', event.key);
+      if (isDocumentModalOpen) return;
+      
       if ((event.metaKey || event.ctrlKey) && event.key === 'i') {
         event.preventDefault();
         handleClose();
@@ -674,7 +650,7 @@ export function ToolCallSidePanel({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, handleClose]);
+  }, [isOpen, handleClose, isDocumentModalOpen]);
 
   React.useEffect(() => {
     if (!isOpen) return;
@@ -969,7 +945,7 @@ export function ToolCallSidePanel({
 
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs text-zinc-600 dark:text-zinc-400 font-medium tabular-nums min-w-[44px]">
-                    {displayIndex + 1}/{displayTotalCalls}
+                    {safeInternalIndex + 1}/{totalCalls}
                   </span>
                   {renderStatusButton()}
                 </div>
@@ -1041,7 +1017,7 @@ export function ToolCallSidePanel({
                     variant="ghost"
                     size="icon"
                     onClick={navigateToNext}
-                    disabled={displayIndex >= displayTotalCalls - 1}
+                    disabled={safeInternalIndex >= latestIndex}
                     className="h-7 w-7 text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200"
                   >
                     <ChevronRight className="h-4 w-4" />
@@ -1051,9 +1027,9 @@ export function ToolCallSidePanel({
                 <div className="flex-1 relative">
                   <Slider
                     min={0}
-                    max={displayTotalCalls - 1}
+                    max={Math.max(0, totalCalls - 1)}
                     step={1}
-                    value={[displayIndex]}
+                    value={[safeInternalIndex]}
                     onValueChange={handleSliderChange}
                     className="w-full [&>span:first-child]:h-1.5 [&>span:first-child]:bg-zinc-200 dark:[&>span:first-child]:bg-zinc-800 [&>span:first-child>span]:bg-zinc-500 dark:[&>span:first-child>span]:bg-zinc-400 [&>span:first-child>span]:h-1.5"
                   />

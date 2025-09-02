@@ -143,7 +143,7 @@ class AgentConfigTool(AgentBuilderBaseTool):
             version_created = False
             if config_changed:
                 try:
-                    from agent.versioning.version_service import get_version_service
+                    from agent.handlers.versioning.version_service import get_version_service
                     current_version = None
                     if current_agent.get('current_version_id'):
                         try:
@@ -292,7 +292,7 @@ class AgentConfigTool(AgentBuilderBaseTool):
             version_data = None
             if agent_data.get('current_version_id'):
                 try:
-                    from agent.versioning.version_service import get_version_service
+                    from agent.handlers.versioning.version_service import get_version_service
                     account_id = await self._get_current_account_id()
                     version_service = await get_version_service()
                     version_obj = await version_service.get_version(

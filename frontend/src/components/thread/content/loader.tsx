@@ -34,25 +34,27 @@ export const AgentLoader = () => {
   }, []);
 
   return (
-    <div className="flex py-2 items-center w-full">
+    <div className="flex py-2 items-center w-full gap-3">
       <div className="flex items-center gap-1">
         <div className="h-1 w-1 rounded-full bg-primary/40 animate-pulse duration-1000" />
         <div className="h-1 w-1 rounded-full bg-primary/40 animate-pulse duration-1000 delay-150" />
         <div className="h-1 w-1 rounded-full bg-primary/40 animate-pulse duration-1000 delay-300" />
       </div>
-      <AnimatePresence>
-      <motion.div
-          key={items[index].id}
-          initial={{ y: 20, opacity: 0, filter: "blur(8px)" }}
-          animate={{ y: 0, opacity: 1, filter: "blur(0px)" }}
-          exit={{ y: -20, opacity: 0, filter: "blur(8px)" }}
-          transition={{ ease: "easeInOut" }}
-          style={{ position: "absolute" }}
-          className='ml-7'
-      >
-          <AnimatedShinyText className='text-xs'>{items[index].content}</AnimatedShinyText>
-      </motion.div>
-      </AnimatePresence>
+      <div className="relative flex-1 h-7">
+        <AnimatePresence mode="wait">
+          <motion.div
+              key={items[index].id}
+              initial={{ y: 10, opacity: 0, filter: "blur(4px)" }}
+              animate={{ y: 0, opacity: 1, filter: "blur(0px)" }}
+              exit={{ y: -10, opacity: 0, filter: "blur(4px)" }}
+              transition={{ ease: "easeInOut", duration: 0.3 }}
+              className="absolute left-0 top-0"
+          >
+              <AnimatedShinyText className='text-xs whitespace-nowrap'>{items[index].content}</AnimatedShinyText>
+          </motion.div>
+        </AnimatePresence>
+      </div>
     </div>
   );
 };
+

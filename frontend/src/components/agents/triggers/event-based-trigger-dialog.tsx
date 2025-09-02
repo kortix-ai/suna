@@ -25,6 +25,7 @@ interface EventBasedTriggerDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     agentId: string;
+    onTriggerCreated?: (triggerId: string) => void;
 }
 
 type JSONSchema = {
@@ -51,8 +52,8 @@ const ProgressStepper = ({ currentStep }: { currentStep: 'apps' | 'triggers' | '
                         <div className="flex items-center space-x-2">
                             <div className={cn(
                                 "flex items-center justify-center w-6 h-6 rounded-full text-xs font-medium",
-                                index <= currentIndex 
-                                    ? "bg-primary text-primary-foreground" 
+                                index <= currentIndex
+                                    ? "bg-primary text-primary-foreground"
                                     : "bg-muted text-muted-foreground"
                             )}>
                                 {index < currentIndex ? (
@@ -63,8 +64,8 @@ const ProgressStepper = ({ currentStep }: { currentStep: 'apps' | 'triggers' | '
                             </div>
                             <span className={cn(
                                 "text-sm font-medium",
-                                index <= currentIndex 
-                                    ? "text-foreground" 
+                                index <= currentIndex
+                                    ? "text-foreground"
                                     : "text-muted-foreground"
                             )}>
                                 {step.name}
@@ -100,17 +101,17 @@ const AppCard = ({ app, onClick, connectionStatus }: { app: any; onClick: () => 
                     {app.name}
                 </h3>
                 <p className="text-xs text-muted-foreground line-clamp-2">
-                    {connectionStatus.isConnected 
+                    {connectionStatus.isConnected
                         ? `Create automated triggers from ${app.name} events`
                         : connectionStatus.hasProfiles
-                        ? `Connect your ${app.name} account to create triggers`
-                        : `Set up ${app.name} connection to get started`
+                            ? `Connect your ${app.name} account to create triggers`
+                            : `Set up ${app.name} connection to get started`
                     }
                 </p>
             </div>
             <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />
         </div>
-        
+
         <div className="mt-3 pt-3 border-t border-border">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1">
@@ -295,7 +296,7 @@ const DynamicConfigForm: React.FC<{
     );
 };
 
-export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = ({ open, onOpenChange, agentId }) => {
+export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = ({ open, onOpenChange, agentId, onTriggerCreated }) => {
     const [step, setStep] = useState<'apps' | 'triggers' | 'config'>('apps');
     const [search, setSearch] = useState('');
     const [selectedApp, setSelectedApp] = useState<{ slug: string; name: string; logo?: string } | null>(null);
@@ -382,6 +383,15 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
         return { variableSpecs: vars, templateText: tpl };
     }, [selectedWorkflow]);
 
+    const isConfigValid = useMemo(() => {
+        if (!selectedTrigger?.config) return true;
+        const required = new Set(selectedTrigger.config.required || []);
+        return Array.from(required).every(key => {
+            const value = config[key];
+            return value !== undefined && value !== '' && value !== null;
+        });
+    }, [selectedTrigger?.config, config]);
+
     useEffect(() => {
         if (!selectedWorkflow || executionType !== 'workflow') return;
         if (!variableSpecs || variableSpecs.length === 0) return;
@@ -412,11 +422,41 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
             const payload = executionType === 'agent'
                 ? { ...base, route: 'agent' as const, agent_prompt: (prompt || 'Read this') }
                 : { ...base, route: 'workflow' as const, workflow_id: selectedWorkflowId, workflow_input: workflowInput };
-            await createTrigger.mutateAsync(payload);
-            toast.success('Event trigger created');
+            const result = await createTrigger.mutateAsync(payload);
+            toast.success('Task created');
+
+            if (onTriggerCreated && result?.trigger_id) {
+                onTriggerCreated(result.trigger_id);
+            }
+
             onOpenChange(false);
         } catch (e: any) {
-            toast.error(e?.message || 'Failed to create trigger');
+            // Handle nested error structure from API
+            let errorMessage = 'Failed to create trigger';
+            console.error('Error creating trigger:', e);
+            console.error('Error details:', e?.details);
+            console.error('Error keys:', Object.keys(e || {}));
+            if (e?.details) {
+                console.error('Details keys:', Object.keys(e.details));
+                console.error('Details content:', JSON.stringify(e.details, null, 2));
+            }
+
+            // Check for details property from api-client.ts error structure
+            if (e?.details?.detail?.error?.message) {
+                errorMessage = e.details.detail.error.message;
+            } else if (e?.details?.message) {
+                errorMessage = e.details.message;
+            } else if (e?.details?.detail?.message) {
+                errorMessage = e.details.detail.message;
+            } else if (e?.message && e.message !== 'HTTP 400: Bad Request') {
+                errorMessage = e.message;
+            } else if (e?.response?.data?.detail?.error?.message) {
+                errorMessage = e.response.data.detail.error.message;
+            } else if (e?.response?.data?.message) {
+                errorMessage = e.response.data.message;
+            }
+
+            toast.error(errorMessage);
         }
     };
 
@@ -470,8 +510,8 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
                                             />
                                         </div>
                                     </div>
-                                    <div 
-                                        className="flex-1 overflow-y-auto p-6" 
+                                    <div
+                                        className="flex-1 overflow-y-auto p-6"
                                         style={{ maxHeight: 'calc(90vh - 200px)' }}
                                     >
                                         {loadingApps ? (
@@ -532,8 +572,8 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
                                             </div>
                                         </div>
                                     </div>
-                                    <div 
-                                        className="flex-1 overflow-y-auto p-6" 
+                                    <div
+                                        className="flex-1 overflow-y-auto p-6"
                                         style={{ maxHeight: 'calc(90vh - 200px)' }}
                                     >
                                         {loadingTriggers ? (
@@ -574,13 +614,13 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
 
                             {step === 'config' && selectedTrigger && (
                                 <div className="h-full flex flex-col">
-                                    <div 
-                                        className="flex-1 overflow-y-auto p-6" 
+                                    <div
+                                        className="flex-1 overflow-y-auto p-6"
                                         style={{ maxHeight: 'calc(90vh - 250px)' }}
                                     >
                                         <div className="max-w-2xl mx-auto space-y-6">
                                             {selectedTrigger.instructions && (
-                                                <MarkdownRenderer 
+                                                <MarkdownRenderer
                                                     content={selectedTrigger.instructions}
                                                     className="text-sm w-full text-muted-foreground"
                                                 />
@@ -618,8 +658,8 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
                                                         <div className="space-y-4">
                                                             <div className="space-y-2">
                                                                 <Label className="text-sm">Connection Profile</Label>
-                                                                <Select 
-                                                                    value={profileId} 
+                                                                <Select
+                                                                    value={profileId}
                                                                     onValueChange={(value) => {
                                                                         if (value === '__create_new__') {
                                                                             setShowComposioConnector(true);
@@ -767,7 +807,7 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
                                             <div className="flex justify-end">
                                                 <Button
                                                     onClick={handleCreate}
-                                                    disabled={createTrigger.isPending || !name.trim() || !profileId || (executionType === 'agent' ? !prompt.trim() : !selectedWorkflowId)}
+                                                    disabled={createTrigger.isPending || !name.trim() || !profileId || !isConfigValid || (executionType === 'agent' ? !prompt.trim() : !selectedWorkflowId)}
                                                     size="sm"
                                                 >
                                                     {createTrigger.isPending ? (

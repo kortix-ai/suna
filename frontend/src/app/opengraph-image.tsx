@@ -31,7 +31,7 @@ export default async function Image() {
           }}
         >
           <img
-            src={`${baseUrl}/meta.png`}
+            src={`${baseUrl}/banner.png`}
             alt={alt}
             style={{
               width: '100%',

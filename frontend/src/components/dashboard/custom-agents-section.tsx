@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { AgentCountLimitDialog } from '@/components/agents/agent-count-limit-dialog';
 import type { MarketplaceTemplate } from '@/components/agents/installation/types';
 import { AgentCountLimitError } from '@/lib/api';
+import { AgentIconAvatar } from '@/components/agents/config/agent-icon-avatar';
 
 interface CustomAgentsSectionProps {
   onAgentSelect?: (templateId: string) => void;
@@ -198,29 +199,18 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
               
               <div className="h-full relative flex flex-col overflow-hidden w-full p-4">
                 <div className="flex items-center gap-3 mb-3">
-                  {template.profile_image_url ? (
-                    <img 
-                      src={template.profile_image_url}
-                      alt={template.name}
-                      className="h-10 w-10 object-cover rounded-xl flex-shrink-0"
+                  <div className="flex-shrink-0">
+                    <AgentIconAvatar
+                      profileImageUrl={template.profile_image_url}
+                      iconName={template.icon_name}
+                      iconColor={template.icon_color}
+                      backgroundColor={template.icon_background}
+                      agentName={template.name}
+                      size={40}
+                      className="shadow-md"
                     />
-                  ) : (
-                    <div 
-                      className="relative h-10 w-10 flex items-center justify-center rounded-xl text-lg shadow-md flex-shrink-0"
-                      style={{ 
-                        backgroundColor: template.avatar_color || '#3b82f6',
-                      }}
-                    >
-                      <span>{template.avatar || '🤖'}</span>
-                      <div
-                        className="absolute inset-0 rounded-xl pointer-events-none opacity-0 dark:opacity-100 transition-opacity"
-                        style={{
-                          boxShadow: `0 12px 36px -6px ${template.avatar_color || '#3b82f6'}70, 0 6px 18px -3px ${template.avatar_color || '#3b82f6'}50`
-                        }}
-                      />
-                    </div>
-                  )}
-                  <h3 className="text-base font-semibold text-foreground line-clamp-1 flex-1">
+                  </div>
+                  <h3 className="text-base font-semibold text-foreground line-clamp-1 flex-1 min-w-0">
                     {template.name}
                   </h3>
                 </div>

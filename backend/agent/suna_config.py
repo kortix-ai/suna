@@ -1,4 +1,4 @@
-from agent.prompt import SYSTEM_PROMPT
+from agent.prompts.prompt import SYSTEM_PROMPT
 
 # Suna default configuration - simplified and centralized
 SUNA_CONFIG = {
@@ -17,13 +17,14 @@ SUNA_CONFIG = {
         "sb_expose_tool": True,
         "web_search_tool": True,
         "sb_vision_tool": True,
+        "sb_docs_tool": True,
         "sb_image_edit_tool": True,
         "sb_presentation_outline_tool": False,
         "sb_presentation_tool": False,
-        "sb_sheets_tool": True,
+        "sb_sheets_tool": False,
         "browser_tool": True,
         "data_providers_tool": True,
-        "sb_web_dev_tool": True,
+        # "sb_web_dev_tool": True,
         "agent_config_tool": True,
         "agent_creation_tool": True,
         "mcp_search_tool": True,

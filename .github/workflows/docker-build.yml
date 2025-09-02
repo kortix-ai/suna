@@ -74,7 +74,8 @@ jobs:
           key: ${{ secrets.STAGING_KEY }}
           script: |
             cd /home/suna/backend
-            git pull
+            git fetch origin main
+            git reset --hard origin/main
             docker compose build
             docker compose up -d
 

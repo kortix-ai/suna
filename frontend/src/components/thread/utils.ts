@@ -310,6 +310,12 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['edit-file', 'Editing File'],
   ['upload-file', 'Uploading File'],
 
+  ['create-document', 'Creating Document'],
+  ['update-document', 'Updating Document'],
+  ['read-document', 'Reading Document'],
+  ['list-documents', 'Listing Documents'],
+  ['delete-document', 'Deleting Document'],
+
   ['create-tasks', 'Creating Tasks'],
   ['update-tasks', 'Updating Tasks'],
   
