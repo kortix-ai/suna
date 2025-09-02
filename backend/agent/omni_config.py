@@ -1,4 +1,4 @@
-from agent.prompt import SYSTEM_PROMPT
+from agent.prompts.prompt import SYSTEM_PROMPT
 
 # Omni default configuration - updated branding from Suna
 OMNI_CONFIG = {
@@ -21,6 +21,7 @@ OMNI_CONFIG = {
         "sb_presentation_outline_tool": False,
         "sb_presentation_tool": False,
         "sb_presentation_tool_v2": False,
+        "sb_video_avatar_tool": True,
         "sb_sheets_tool": True,
         "podcast_tool": True,
         "sb_web_dev_tool": False,

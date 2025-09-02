@@ -195,11 +195,6 @@ Approach each research task methodically, starting with broad searches and then 
 
             client = await self.db.client
             
-            from flags.flags import is_enabled
-            if not await is_enabled("custom_agents"):
-                return self.fail_response(
-                    "Custom agents are currently disabled. This feature is not available at the moment."
-                )
             
             from agent.utils import check_agent_count_limit
             limit_check = await check_agent_count_limit(client, account_id)
@@ -253,7 +248,7 @@ Approach each research task methodically, starting with broad searches and then 
             agent_id = agent['agent_id']
 
             try:
-                from agent.versioning.version_service import get_version_service
+                from agent.handlers.versioning.version_service import get_version_service
                 from models import model_manager
                 
                 version_service = await get_version_service()
@@ -750,7 +745,7 @@ Approach each research task methodically, starting with broad searches and then 
             current_tools['custom_mcp'] = updated_mcps
             current_config['tools'] = current_tools
             
-            from agent.versioning.version_service import get_version_service
+            from agent.handlers.versioning.version_service import get_version_service
             version_service = await get_version_service()
             
             new_version = await version_service.create_version(
@@ -1833,7 +1828,7 @@ Always provide actionable feedback with code examples when possible.</parameter>
                 version_changes = True
             
             if version_changes:
-                from agent.versioning.version_service import get_version_service
+                from agent.handlers.versioning.version_service import get_version_service
                 
                 version_service = await get_version_service()
                 

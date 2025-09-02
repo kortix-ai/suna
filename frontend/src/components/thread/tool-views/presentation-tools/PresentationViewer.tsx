@@ -30,11 +30,12 @@ import {
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
 import { formatTimestamp, extractToolData, getToolTitle } from '../utils';
+import { downloadPresentation, handleGoogleSlidesUpload } from '../utils/presentation-utils';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import { CodeBlockCode } from '@/components/ui/code-block';
 import { LoadingState } from '../shared/LoadingState';
 import { FullScreenPresentationViewer } from './FullScreenPresentationViewer';
-import { toast } from 'sonner';
+import { DownloadFormat } from '../utils/presentation-utils';
 
 interface SlideMetadata {
   title: string;
@@ -78,7 +79,7 @@ export function PresentationViewer({
   const [visibleSlide, setVisibleSlide] = useState<number | null>(null);
   const [isFullScreenOpen, setIsFullScreenOpen] = useState(false);
   const [fullScreenInitialSlide, setFullScreenInitialSlide] = useState<number | null>(null);
-  const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // Extract presentation info from tool data
   const { toolResult } = extractToolData(toolContent);
@@ -474,51 +475,28 @@ export function PresentationViewer({
     return <SlideIframe slide={slide} />;
   }, [SlideIframe]);
 
-  const downloadPresentationAsPDF = async (sandboxUrl: string, presentationName: string): Promise<void> => {
-    try {
-      const response = await fetch(`${sandboxUrl}/presentation/convert-to-pdf`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          presentation_path: `/workspace/presentations/${presentationName}`,
-          download: true
-        })
-      });
-      
-      if (!response.ok) {
-        throw new Error('Failed to download PDF');
-      }
-      
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${presentationName}.pdf`;
-      a.click();
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error('Error downloading PDF:', error);
-      // You could show a toast notification here
-      toast.error(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  };
-
-
-  const handlePDFDownload = useCallback(async (setIsDownloadingPDF: (isDownloading: boolean) => void) => {
+  const handleDownload = async (setIsDownloading: (isDownloading: boolean) => void, format: DownloadFormat) => {
     
     if (!project?.sandbox?.sandbox_url || !extractedPresentationName) return;
 
-    setIsDownloadingPDF(true);
+    setIsDownloading(true);
     try{
-      await downloadPresentationAsPDF(project.sandbox.sandbox_url, extractedPresentationName);
+      if (format === DownloadFormat.GOOGLE_SLIDES){
+        const result = await handleGoogleSlidesUpload(project!.sandbox!.sandbox_url, `/workspace/presentations/${extractedPresentationName}`);
+        // If redirected to auth, don't show error
+        if (result?.redirected_to_auth) {
+          return; // Don't set loading false, user is being redirected
+        }
+      } else{
+        await downloadPresentation(format, project.sandbox.sandbox_url, `/workspace/presentations/${extractedPresentationName}`, extractedPresentationName);
+      }
     } catch (error) {
       console.error('Error downloading PDF:', error);
     } finally {
-      setIsDownloadingPDF(false);
+      setIsDownloading(false);
     }
-  }, [project?.sandbox?.sandbox_url, extractedPresentationName]);
+  };
+  
 
   return (
     <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
@@ -559,8 +537,9 @@ export function PresentationViewer({
                       size="sm" 
                       className="h-8 w-8 p-0"
                       title="Export presentation"
+                      disabled={isDownloading}
                     >
-                      {isDownloadingPDF ? (
+                      {isDownloading ? (
                         <Loader2 className="h-3.5 w-3.5 animate-spin" />
                       ) : (
                         <Download className="h-3.5 w-3.5" />
@@ -569,28 +548,25 @@ export function PresentationViewer({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="w-32">
                     <DropdownMenuItem 
-                      onClick={() => handlePDFDownload(setIsDownloadingPDF)}
+                      onClick={() => handleDownload(setIsDownloading, DownloadFormat.PDF)}
                       className="cursor-pointer"
+                      disabled={isDownloading}
                     >
                       <FileText className="h-4 w-4 mr-2" />
                       PDF
                     </DropdownMenuItem>
                     <DropdownMenuItem 
-                      onClick={() => {
-                        // TODO: Implement PPTX export
-                        console.log('Export as PPTX');
-                      }}
+                      onClick={() => handleDownload(setIsDownloading, DownloadFormat.PPTX)}
                       className="cursor-pointer"
+                      disabled={isDownloading}
                     >
                       <Presentation className="h-4 w-4 mr-2" />
                       PPTX
                     </DropdownMenuItem>
                     <DropdownMenuItem 
-                      onClick={() => {
-                        // TODO: Implement Google Slides export
-                        console.log('Export to Google Slides');
-                      }}
+                      onClick={() => handleDownload(setIsDownloading, DownloadFormat.GOOGLE_SLIDES)}
                       className="cursor-pointer"
+                      disabled={isDownloading}
                     >
                       <ExternalLink className="h-4 w-4 mr-2" />
                       Google Slides
@@ -780,7 +756,6 @@ export function PresentationViewer({
         presentationName={extractedPresentationName}
         sandboxUrl={project?.sandbox?.sandbox_url}
         initialSlide={fullScreenInitialSlide || visibleSlide || currentSlideNumber || slides[0]?.number || 1}
-        onPDFDownload={handlePDFDownload}
       />
     </Card>
   );

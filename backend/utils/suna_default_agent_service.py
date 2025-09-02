@@ -46,3 +46,9 @@ class SunaDefaultAgentService:
     async def get_stats(self) -> Dict[str, Any]:
         """Get statistics about default agents"""
         return await self._omni_service.get_stats()
+
+    # Alias for compatibility with scripts that expect the old name
+    async def get_suna_agent_stats(self) -> Dict[str, Any]:
+        """Get statistics about default agents (compatibility alias)"""
+        return await self.get_stats()
+

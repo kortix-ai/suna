@@ -164,8 +164,7 @@ class XMLToolParser:
         
         # Return as string
         return value
-    
-    
+      
     def format_tool_call(self, function_name: str, parameters: Dict[str, Any]) -> str:
         """
         Format a tool call in the XML format.

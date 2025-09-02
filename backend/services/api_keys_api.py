@@ -18,7 +18,7 @@ from services.api_keys import (
     APIKeyCreateResponse,
 )
 from services.supabase import DBConnection
-from utils.auth_utils import get_current_user_id_from_jwt
+from utils.auth_utils import verify_and_get_user_id_from_jwt
 from utils.logger import logger
 
 router = APIRouter()
@@ -61,7 +61,7 @@ async def get_account_id_from_user_id(user_id: str) -> UUID:
 @router.post("/api-keys", response_model=APIKeyCreateResponse)
 async def create_api_key(
     request: APIKeyCreateRequest,
-    user_id: str = Depends(get_current_user_id_from_jwt),
+    user_id: str = Depends(verify_and_get_user_id_from_jwt),
     api_key_service: APIKeyService = Depends(get_api_key_service),
 ):
     """
@@ -105,7 +105,7 @@ async def create_api_key(
 
 @router.get("/api-keys", response_model=List[APIKeyResponse])
 async def list_api_keys(
-    user_id: str = Depends(get_current_user_id_from_jwt),
+    user_id: str = Depends(verify_and_get_user_id_from_jwt),
     api_key_service: APIKeyService = Depends(get_api_key_service),
 ):
     """
@@ -141,7 +141,7 @@ async def list_api_keys(
 @router.patch("/api-keys/{key_id}/revoke")
 async def revoke_api_key(
     key_id: UUID,
-    user_id: str = Depends(get_current_user_id_from_jwt),
+    user_id: str = Depends(verify_and_get_user_id_from_jwt),
     api_key_service: APIKeyService = Depends(get_api_key_service),
 ):
     """
@@ -185,7 +185,7 @@ async def revoke_api_key(
 @router.delete("/api-keys/{key_id}")
 async def delete_api_key(
     key_id: UUID,
-    user_id: str = Depends(get_current_user_id_from_jwt),
+    user_id: str = Depends(verify_and_get_user_id_from_jwt),
     api_key_service: APIKeyService = Depends(get_api_key_service),
 ):
     """

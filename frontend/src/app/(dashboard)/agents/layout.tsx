@@ -1,5 +1,3 @@
-import { agentPlaygroundFlagFrontend } from '@/flags';
-import { isFlagEnabled } from '@/lib/feature-flags';
 import { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 

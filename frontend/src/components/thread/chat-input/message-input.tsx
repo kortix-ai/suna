@@ -9,7 +9,6 @@ import { VoiceRecorder } from './voice-recorder';
 import { UnifiedConfigMenu } from './unified-config-menu';
 import { canAccessModel, SubscriptionStatus } from './_use-model-selection';
 import { isLocalMode } from '@/lib/config';
-import { useFeatureFlag } from '@/lib/feature-flags';
 import { TooltipContent } from '@/components/ui/tooltip';
 import { Tooltip } from '@/components/ui/tooltip';
 import { TooltipProvider, TooltipTrigger } from '@radix-ui/react-tooltip';
@@ -94,7 +93,6 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
   ) => {
     const [billingModalOpen, setBillingModalOpen] = useState(false);
     const [mounted, setMounted] = useState(false);
-    const { enabled: customAgentsEnabled, loading: flagsLoading } = useFeatureFlag('custom_agents');
 
     useEffect(() => {
       setMounted(true);
@@ -158,7 +156,7 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
     };
 
     const renderDropdown = () => {
-      const showAdvancedFeatures = isLoggedIn && (enableAdvancedConfig || (customAgentsEnabled && !flagsLoading));
+      const showAdvancedFeatures = isLoggedIn && enableAdvancedConfig;
       // Don't render dropdown components until after hydration to prevent ID mismatches
       if (!mounted) {
         return <div className="flex items-center gap-2 h-8" />; // Placeholder with same height
@@ -168,8 +166,8 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
         <div className="flex items-center gap-2" data-tour="agent-selector">
           <UnifiedConfigMenu
             isLoggedIn={isLoggedIn}
-            selectedAgentId={showAdvancedFeatures && !hideAgentSelection ? selectedAgentId : undefined}
-            onAgentSelect={showAdvancedFeatures && !hideAgentSelection ? onAgentSelect : undefined}
+            selectedAgentId={!hideAgentSelection ? selectedAgentId : undefined}
+            onAgentSelect={!hideAgentSelection ? onAgentSelect : undefined}
             selectedModel={selectedModel}
             onModelChange={onModelChange}
             modelOptions={modelOptions}

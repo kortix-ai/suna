@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
 import { ProfileConnector } from './streamlined-profile-connector';
 import { CustomServerStep } from './custom-server-step';
 import type { MarketplaceTemplate, SetupStep } from './types';
+import { AgentIconAvatar } from '@/components/agents/config/agent-icon-avatar';
 
 interface StreamlinedInstallDialogProps {
   item: MarketplaceTemplate | null;
@@ -218,10 +219,6 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
 
   const currentStepData = setupSteps[currentStep];
   const isOnFinalStep = currentStep >= setupSteps.length;
-  
-  const { avatar, color } = useMemo(() => {
-    return { avatar: '🤖', color: '#6366f1' };
-  }, []);
 
   if (!item) return null;
 
@@ -344,24 +341,18 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader className="space-y-4">
           <div className="flex items-center gap-3">
-            {item.profile_image_url ? (
-              <img 
-                src={item.profile_image_url} 
-                alt={item.name}
-                className="h-12 w-12 flex-shrink-0 rounded-lg object-cover shadow-lg"
+            <div className="flex-shrink-0">
+              <AgentIconAvatar
+                profileImageUrl={item.profile_image_url}
+                iconName={item.icon_name}
+                iconColor={item.icon_color}
+                backgroundColor={item.icon_background}
+                agentName={item.name}
+                size={48}
+                className="shadow-lg"
               />
-            ) : (
-              <div 
-                className="h-12 w-12 flex-shrink-0 rounded-lg flex items-center justify-center"
-                style={{ 
-                  backgroundColor: color,
-                  boxShadow: `0 16px 48px -8px ${color}70, 0 8px 24px -4px ${color}50`
-                }}
-              >
-                <span className="text-lg">{avatar}</span>
-              </div>
-            )}
-            <div>
+            </div>
+            <div className="min-w-0 flex-1">
               <DialogTitle className="text-left flex items-center gap-2">
                 Install {item.name}
               </DialogTitle>

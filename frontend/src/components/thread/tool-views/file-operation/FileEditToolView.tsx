@@ -41,7 +41,6 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   extractFileEditData,
   generateLineDiff,
@@ -73,6 +72,7 @@ const UnifiedDiffView: React.FC<{ oldCode: string; newCode: string }> = ({ oldCo
     newValue={newCode}
     splitView={false}
     hideLineNumbers={true}
+    showDiffOnly={false}
     useDarkTheme={document.documentElement.classList.contains('dark')}
     styles={{
       variables: {
@@ -377,53 +377,49 @@ export function FileEditToolView({
           </div>
         </CardHeader>
 
-        <CardContent className="p-0 -my-2 h-full flex-1 overflow-hidden relative">
-          <TabsContent value="code" className="flex-1 h-full mt-0 p-0 overflow-hidden">
-            <ScrollArea className="h-screen w-full min-h-0">
-              {isStreaming && !updatedContent ? (
-                <LoadingState
-                  icon={FileDiff}
-                  iconColor="text-blue-500 dark:text-blue-400"
-                  bgColor="bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20"
-                  title="Applying File Edit"
-                  filePath={processedFilePath || 'Processing file...'}
-                  subtitle="Please wait while the file is being modified"
-                  showProgress={false}
-                />
-              ) : shouldShowError ? (
-                <ErrorState message={errorMessage} />
-              ) : (
-                renderSourceCode()
-              )}
-            </ScrollArea>
+        <CardContent className="p-0 flex-1 overflow-auto">
+          <TabsContent value="code" className="mt-0 p-0">
+            {isStreaming && !updatedContent ? (
+              <LoadingState
+                icon={FileDiff}
+                iconColor="text-blue-500 dark:text-blue-400"
+                bgColor="bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20"
+                title="Applying File Edit"
+                filePath={processedFilePath || 'Processing file...'}
+                subtitle="Please wait while the file is being modified"
+                showProgress={false}
+              />
+            ) : shouldShowError ? (
+              <ErrorState message={errorMessage} />
+            ) : (
+              renderSourceCode()
+            )}
           </TabsContent>
 
-          <TabsContent value="preview" className="w-full flex-1 h-full mt-0 p-0 overflow-hidden">
-            <ScrollArea className="h-full w-full min-h-0">
-              {isStreaming && !updatedContent ? (
-                <LoadingState
-                  icon={FileDiff}
-                  iconColor="text-blue-500 dark:text-blue-400"
-                  bgColor="bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20"
-                  title="Applying File Edit"
-                  filePath={processedFilePath || 'Processing file...'}
-                  subtitle="Please wait while the file is being modified"
-                  showProgress={false}
-                />
-              ) : shouldShowError ? (
-                <ErrorState message={errorMessage} />
-              ) : (
-                renderFilePreview()
-              )}
-              {isStreaming && updatedContent && (
-                <div className="sticky bottom-4 right-4 float-right mr-4 mb-4">
-                  <Badge className="bg-blue-500/90 text-white border-none shadow-lg animate-pulse">
-                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                    Streaming...
-                  </Badge>
-                </div>
-              )}
-            </ScrollArea>
+          <TabsContent value="preview" className="mt-0 p-0">
+            {isStreaming && !updatedContent ? (
+              <LoadingState
+                icon={FileDiff}
+                iconColor="text-blue-500 dark:text-blue-400"
+                bgColor="bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20"
+                title="Applying File Edit"
+                filePath={processedFilePath || 'Processing file...'}
+                subtitle="Please wait while the file is being modified"
+                showProgress={false}
+              />
+            ) : shouldShowError ? (
+              <ErrorState message={errorMessage} />
+            ) : (
+              renderFilePreview()
+            )}
+            {isStreaming && updatedContent && (
+              <div className="sticky bottom-4 right-4 float-right mr-4 mb-4">
+                <Badge className="bg-blue-500/90 text-white border-none shadow-lg animate-pulse">
+                  <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                  Streaming...
+                </Badge>
+              </div>
+            )}
           </TabsContent>
         </CardContent>
 

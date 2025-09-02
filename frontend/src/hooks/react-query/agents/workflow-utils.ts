@@ -1,5 +1,4 @@
 import { createClient } from "@/lib/supabase/client";
-import { isFlagEnabled } from "@/lib/feature-flags";
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
@@ -144,10 +143,6 @@ export const generateLLMWorkflowPrompt = (workflow: AgentWorkflow): string => {
 
 export const getAgentWorkflows = async (agentId: string): Promise<AgentWorkflow[]> => {
   try {
-    const agentPlaygroundEnabled = await isFlagEnabled('custom_agents');
-    if (!agentPlaygroundEnabled) {
-      throw new Error('Custom agents is not enabled');
-    }
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
 
@@ -178,10 +173,6 @@ export const getAgentWorkflows = async (agentId: string): Promise<AgentWorkflow[
 
 export const createAgentWorkflow = async (agentId: string, workflow: CreateWorkflowRequest): Promise<AgentWorkflow> => {
   try {
-    const agentPlaygroundEnabled = await isFlagEnabled('custom_agents');
-    if (!agentPlaygroundEnabled) {
-      throw new Error('Custom agents is not enabled');
-    }
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
 
@@ -217,10 +208,6 @@ export const updateAgentWorkflow = async (
   workflow: UpdateWorkflowRequest
 ): Promise<AgentWorkflow> => {
   try {
-    const agentPlaygroundEnabled = await isFlagEnabled('custom_agents');
-    if (!agentPlaygroundEnabled) {
-      throw new Error('Custom agents is not enabled');
-    }
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
 
@@ -252,10 +239,6 @@ export const updateAgentWorkflow = async (
 
 export const deleteAgentWorkflow = async (agentId: string, workflowId: string): Promise<void> => {
   try {
-    const agentPlaygroundEnabled = await isFlagEnabled('custom_agents');
-    if (!agentPlaygroundEnabled) {
-      throw new Error('Custom agents is not enabled');
-    }
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
 
@@ -293,10 +276,6 @@ export const executeWorkflow = async (
   message?: string; 
 }> => {
   try {
-    const agentPlaygroundEnabled = await isFlagEnabled('custom_agents');
-    if (!agentPlaygroundEnabled) {
-      throw new Error('Custom agents is not enabled');
-    }
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
 
@@ -332,10 +311,6 @@ export const getWorkflowExecutions = async (
   limit: number = 20
 ): Promise<WorkflowExecution[]> => {
   try {
-    const agentPlaygroundEnabled = await isFlagEnabled('custom_agents');
-    if (!agentPlaygroundEnabled) {
-      throw new Error('Custom agents is not enabled');
-    }
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
 

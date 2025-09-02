@@ -1,7 +1,9 @@
 import { maintenanceNoticeFlag } from '@/lib/edge-flags';
-import { NextResponse } from 'next/server';
+
+export const runtime = 'edge';
 
 export async function GET() {
   const maintenanceNotice = await maintenanceNoticeFlag();
-  return NextResponse.json(maintenanceNotice);
+
+  return Response.json(maintenanceNotice);
 }

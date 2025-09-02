@@ -60,6 +60,7 @@ import { cn, truncateString } from '@/lib/utils';
 import { CreateKnowledgeBaseEntryRequest, KnowledgeBaseEntry, UpdateKnowledgeBaseEntryRequest, ProcessingJob } from '@/hooks/react-query/knowledge-base/types';
 import { toast } from 'sonner';
 import JSZip from 'jszip';
+import { LlamaCloudKnowledgeBaseManager } from '../llamacloud-knowledge-base/llamacloud-kb-manager';
 
 import { 
   Code2 as SiJavascript, 
@@ -282,7 +283,7 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
   const [deleteEntryId, setDeleteEntryId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [addDialogOpen, setAddDialogOpen] = useState(false);
-  const [addDialogMode, setAddDialogMode] = useState<'selection' | 'manual' | 'files'>('selection');
+  const [addDialogMode, setAddDialogMode] = useState<'selection' | 'manual' | 'files' | 'cloud'>('selection');
   const [dragActive, setDragActive] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -921,6 +922,21 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
                       </p>
                     </div>
                   </button>
+                  
+                  <button
+                    className="flex items-center gap-4 p-4 rounded-lg border bg-card hover:bg-muted/50 transition-colors text-left"
+                    onClick={() => setAddDialogMode('cloud')}
+                  >
+                    <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/20 border">
+                      <Globe className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="text-sm font-semibold mb-1">Cloud</h3>
+                      <p className="text-xs text-muted-foreground">
+                        Connect to existing Cloud Knowledge Base for dynamic search
+                      </p>
+                    </div>
+                  </button>
                 </div>
               </div>
             )}
@@ -1170,6 +1186,29 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
                     </div>
                   )}
                 </div>
+              </div>
+            )}
+
+            {addDialogMode === 'cloud' && (
+              <div className="p-6">
+                <div className="mb-6">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/20 border">
+                      <Globe className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-semibold">Cloud Knowledge Base</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Connect to existing Cloud Knowledge Base for dynamic search
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                
+                <LlamaCloudKnowledgeBaseManager 
+                  agentId={agentId} 
+                  agentName={agentName}
+                />
               </div>
             )}
           </div>
