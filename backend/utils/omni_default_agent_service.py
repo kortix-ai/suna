@@ -239,7 +239,6 @@ class OmniDefaultAgentService:
                 result = await client.table('agent_versions').insert({
                     'version_id': version_id,
                     'agent_id': agent_id,
-                    'account_id': account_id,
                     'version_number': 1,
                     'version_name': "v1",
                     'system_prompt': config.get("system_prompt", ""),
