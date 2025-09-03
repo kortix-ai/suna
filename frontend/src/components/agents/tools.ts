@@ -14,8 +14,6 @@ export const AGENTPRESS_TOOL_DEFINITIONS: Record<string, { enabled: boolean; des
     'sb_sheets_tool': { enabled: true, description: 'Create, view, update, analyze, visualize, and format spreadsheets (XLSX/CSV) with Luckysheet viewer', icon: '📊', color: 'bg-purple-100 dark:bg-purple-800/50' },
     'podcast_tool': { enabled: true, description: 'Generate audio podcasts from agent conversations using AI voices and professional formatting', icon: '🎧', color: 'bg-rose-100 dark:bg-rose-800/50' },
     'sb_docs_tool': { enabled: false, description: 'Create, read, update, and delete documents with TipTap editor', icon: '📄', color: 'bg-gray-100 dark:bg-gray-800/50' },
-
-    'sb_sheets_tool': { enabled: false, description: 'Create, view, update, analyze, visualize, and format spreadsheets (XLSX/CSV) with Luckysheet viewer', icon: '📊', color: 'bg-purple-100 dark:bg-purple-800/50' },
     // 'sb_web_dev_tool': { enabled: false, description: 'Create Next.js projects with shadcn/ui pre-installed, manage dependencies, build and deploy modern web applications', icon: '⚛️', color: 'bg-cyan-100 dark:bg-cyan-800/50' },    
     // Browser and interaction tools
     'browser_tool': { enabled: true, description: 'Browser automation for web navigation, clicking, form filling, and page interaction', icon: '🌐', color: 'bg-indigo-100 dark:bg-indigo-800/50' },
