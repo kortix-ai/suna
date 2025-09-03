@@ -271,7 +271,7 @@ class AgentDefaultFilesManager:
             
             # Create agent-defaults directory in sandbox
             try:
-                sandbox.fs.mkdir("/workspace/agent-defaults")
+                await sandbox.fs.mkdir("/workspace/agent-defaults")
             except:
                 # Directory might already exist
                 pass
@@ -289,7 +289,7 @@ class AgentDefaultFilesManager:
                 
                 # Upload to sandbox
                 try:
-                    sandbox.fs.upload_file(file_content, workspace_path)
+                    await sandbox.fs.upload_file(file_content, workspace_path)
                     downloaded_files.append(workspace_path)
                     logger.info(f"Downloaded default file to sandbox: {workspace_path}")
                 except Exception as e:
