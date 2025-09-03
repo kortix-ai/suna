@@ -33,26 +33,24 @@ async def upload_agent_default_file(
         
         # Get agent and verify ownership
         db = DBConnection()
-        db.user_id = user_id
+        client = await db.client
         
-        agent = await db.execute_query(
-            """
-            SELECT ac.agent_id as id, ac.account_id, acc.owner
-            FROM agents ac
-            JOIN basejump.accounts acc ON acc.id = ac.account_id
-            WHERE ac.agent_id = $1
-            """,
-            agent_id
-        )
+        # First get the agent
+        agent_result = await client.table('agents').select(
+            'agent_id, account_id'
+        ).eq('agent_id', agent_id).execute()
         
-        if not agent:
+        if not agent_result.data:
             raise HTTPException(status_code=404, detail="Agent not found")
         
-        # Check if user is the account owner
-        if str(agent[0]["owner"]) != user_id:
-            raise HTTPException(status_code=403, detail="Only account owners can upload default files")
+        agent = agent_result.data[0]
+        account_id = agent['account_id']
         
-        account_id = str(agent[0]["account_id"])
+        # Check if user is the account owner
+        account_result = await client.schema('basejump').from_('accounts').select('owner').eq('id', account_id).execute()
+        
+        if not account_result.data or str(account_result.data[0]['owner']) != user_id:
+            raise HTTPException(status_code=403, detail="Only account owners can upload default files")
         
         # Upload file
         files_manager = AgentDefaultFilesManager()
@@ -89,26 +87,24 @@ async def delete_agent_default_file(
     try:
         # Get agent and verify ownership
         db = DBConnection()
-        db.user_id = user_id
+        client = await db.client
         
-        agent = await db.execute_query(
-            """
-            SELECT ac.agent_id as id, ac.account_id, acc.owner
-            FROM agents ac
-            JOIN basejump.accounts acc ON acc.id = ac.account_id
-            WHERE ac.agent_id = $1
-            """,
-            agent_id
-        )
+        # First get the agent
+        agent_result = await client.table('agents').select(
+            'agent_id, account_id'
+        ).eq('agent_id', agent_id).execute()
         
-        if not agent:
+        if not agent_result.data:
             raise HTTPException(status_code=404, detail="Agent not found")
         
-        # Check if user is the account owner
-        if str(agent[0]["owner"]) != user_id:
-            raise HTTPException(status_code=403, detail="Only account owners can delete default files")
+        agent = agent_result.data[0]
+        account_id = agent['account_id']
         
-        account_id = str(agent[0]["account_id"])
+        # Check if user is the account owner
+        account_result = await client.schema('basejump').from_('accounts').select('owner').eq('id', account_id).execute()
+        
+        if not account_result.data or str(account_result.data[0]['owner']) != user_id:
+            raise HTTPException(status_code=403, detail="Only account owners can delete default files")
         
         # Delete file
         files_manager = AgentDefaultFilesManager()
@@ -140,21 +136,25 @@ async def list_agent_default_files(
     try:
         # Verify user has access to the agent
         db = DBConnection()
-        db.user_id = user_id
+        client = await db.client
         
-        agent = await db.execute_query(
-            """
-            SELECT ac.agent_id as id
-            FROM agents ac
-            JOIN basejump.accounts acc ON acc.id = ac.account_id
-            JOIN basejump.account_user au ON au.account_id = acc.id
-            WHERE ac.agent_id = $1 AND au.user_id = $2
-            """,
-            agent_id, user_id
-        )
+        # Check if user has access to the agent through account membership
+        agent_result = await client.from_('agents').select(
+            'agent_id, account_id'
+        ).eq('agent_id', agent_id).execute()
         
-        if not agent:
-            raise HTTPException(status_code=404, detail="Agent not found or access denied")
+        if not agent_result.data:
+            raise HTTPException(status_code=404, detail="Agent not found")
+        
+        agent = agent_result.data[0]
+        
+        # Check user has access to this account
+        access_result = await client.schema('basejump').from_('account_user').select(
+            'user_id'
+        ).eq('account_id', agent['account_id']).eq('user_id', user_id).execute()
+        
+        if not access_result.data:
+            raise HTTPException(status_code=403, detail="Access denied")
         
         # List files
         files_manager = AgentDefaultFilesManager()
