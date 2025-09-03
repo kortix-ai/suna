@@ -40,6 +40,9 @@ class Configuration:
     # Environment mode
     ENV_MODE: EnvMode = EnvMode.LOCAL
     
+    # Enterprise billing mode - enables enterprise credit-based billing system
+    ENTERPRISE_MODE: bool = False
+    
     # Subscription tier IDs - Production
     STRIPE_FREE_TIER_ID_PROD: str = 'price_1RILb4G6l1KZGqIrK4QLrx9i'
     STRIPE_TIER_2_20_ID_PROD: str = 'price_1RILb4G6l1KZGqIrhomjgDnO'
@@ -404,6 +407,10 @@ class Configuration:
             self.ENV_MODE = EnvMode.LOCAL
             
         logger.debug(f"Environment mode: {self.ENV_MODE.value}")
+        
+        # Set enterprise mode
+        self.ENTERPRISE_MODE = os.getenv("ENTERPRISE_MODE", "false").lower() == "true"
+        logger.debug(f"Enterprise mode: {self.ENTERPRISE_MODE}")
         
         # Load configuration from environment variables
         self._load_from_env()

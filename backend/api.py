@@ -190,6 +190,11 @@ api_router.include_router(pipedream_api.router)
 from admin import api as admin_api
 api_router.include_router(admin_api.router)
 
+# Enterprise admin API (only if enterprise mode is enabled)
+if config.ENTERPRISE_MODE:
+    from services import enterprise_admin_api
+    api_router.include_router(enterprise_admin_api.router)
+
 from composio_integration import api as composio_api
 api_router.include_router(composio_api.router)
 

@@ -17,7 +17,7 @@ from services.supabase import DBConnection
 from services import redis
 from utils.auth_utils import get_current_user_id_from_jwt, get_user_id_from_stream_auth, verify_thread_access, verify_admin_api_key
 from utils.logger import logger, structlog
-from services.billing import check_billing_status, can_use_model
+from services.billing_wrapper import check_billing_status, can_use_model
 from utils.config import config, EnvMode
 from sandbox.sandbox import create_sandbox, delete_sandbox, get_or_start_sandbox
 from services.llm import make_llm_api_call

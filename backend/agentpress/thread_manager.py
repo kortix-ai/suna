@@ -26,7 +26,8 @@ from utils.logger import logger
 from langfuse.client import StatefulGenerationClient, StatefulTraceClient
 from services.langfuse import langfuse
 from litellm.utils import token_counter
-from services.billing import calculate_token_cost, handle_usage_with_credits
+from services.billing import calculate_token_cost
+from services.billing_wrapper import handle_usage_with_credits
 import re
 from datetime import datetime, timezone, timedelta
 import aiofiles
