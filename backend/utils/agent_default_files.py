@@ -210,8 +210,8 @@ class AgentDefaultFilesManager:
                 """
                 SELECT agent_default_files.*, accounts.id as source_account_id
                 FROM agent_default_files
-                JOIN agent_config ON agent_config.id = agent_default_files.agent_id
-                JOIN accounts ON accounts.id = agent_config.account_id
+                JOIN agents ON agents.agent_id = agent_default_files.agent_id
+                JOIN basejump.accounts accounts ON accounts.id = agents.account_id
                 WHERE agent_default_files.agent_id = $1
                 """,
                 source_agent_id

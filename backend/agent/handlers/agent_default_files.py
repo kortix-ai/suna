@@ -37,10 +37,10 @@ async def upload_agent_default_file(
         
         agent = await db.execute_query(
             """
-            SELECT ac.id, ac.account_id, acc.owner
-            FROM agent_config ac
-            JOIN accounts acc ON acc.id = ac.account_id
-            WHERE ac.id = $1
+            SELECT ac.agent_id as id, ac.account_id, acc.owner
+            FROM agents ac
+            JOIN basejump.accounts acc ON acc.id = ac.account_id
+            WHERE ac.agent_id = $1
             """,
             agent_id
         )
@@ -93,10 +93,10 @@ async def delete_agent_default_file(
         
         agent = await db.execute_query(
             """
-            SELECT ac.id, ac.account_id, acc.owner
-            FROM agent_config ac
-            JOIN accounts acc ON acc.id = ac.account_id
-            WHERE ac.id = $1
+            SELECT ac.agent_id as id, ac.account_id, acc.owner
+            FROM agents ac
+            JOIN basejump.accounts acc ON acc.id = ac.account_id
+            WHERE ac.agent_id = $1
             """,
             agent_id
         )
@@ -144,11 +144,11 @@ async def list_agent_default_files(
         
         agent = await db.execute_query(
             """
-            SELECT ac.id
-            FROM agent_config ac
-            JOIN accounts acc ON acc.id = ac.account_id
-            JOIN user_accounts ua ON ua.account_id = acc.id
-            WHERE ac.id = $1 AND ua.user_id = $2
+            SELECT ac.agent_id as id
+            FROM agents ac
+            JOIN basejump.accounts acc ON acc.id = ac.account_id
+            JOIN basejump.account_user au ON au.account_id = acc.id
+            WHERE ac.agent_id = $1 AND au.user_id = $2
             """,
             agent_id, user_id
         )
