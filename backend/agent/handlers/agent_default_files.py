@@ -47,9 +47,9 @@ async def upload_agent_default_file(
         account_id = agent['account_id']
         
         # Check if user is the account owner
-        account_result = await client.schema('basejump').from_('accounts').select('owner').eq('id', account_id).execute()
+        account_result = await client.schema('basejump').from_('accounts').select('primary_owner_user_id').eq('id', account_id).execute()
         
-        if not account_result.data or str(account_result.data[0]['owner']) != user_id:
+        if not account_result.data or str(account_result.data[0]['primary_owner_user_id']) != user_id:
             raise HTTPException(status_code=403, detail="Only account owners can upload default files")
         
         # Upload file
@@ -101,9 +101,9 @@ async def delete_agent_default_file(
         account_id = agent['account_id']
         
         # Check if user is the account owner
-        account_result = await client.schema('basejump').from_('accounts').select('owner').eq('id', account_id).execute()
+        account_result = await client.schema('basejump').from_('accounts').select('primary_owner_user_id').eq('id', account_id).execute()
         
-        if not account_result.data or str(account_result.data[0]['owner']) != user_id:
+        if not account_result.data or str(account_result.data[0]['primary_owner_user_id']) != user_id:
             raise HTTPException(status_code=403, detail="Only account owners can delete default files")
         
         # Delete file
