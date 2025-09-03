@@ -56,7 +56,7 @@ async def upload_agent_default_file(
         
         # Upload file
         files_manager = AgentDefaultFilesManager()
-        file_metadata = await files_manager.upload_file(account_id, agent_id, file)
+        file_metadata = await files_manager.upload_file(account_id, agent_id, file, user_id)
         
         return JSONResponse(
             status_code=201,

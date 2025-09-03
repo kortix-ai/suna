@@ -18,7 +18,7 @@ class AgentDefaultFilesManager:
         """Generate storage path for agent default file."""
         return f"{account_id}/{agent_id}/{filename}"
     
-    async def upload_file(self, account_id: str, agent_id: str, file: UploadFile) -> Dict[str, Any]:
+    async def upload_file(self, account_id: str, agent_id: str, file: UploadFile, user_id: Optional[str] = None) -> Dict[str, Any]:
         """Upload a default file for an agent."""
         try:
             # Read file content
@@ -92,20 +92,20 @@ class AgentDefaultFilesManager:
             
             # Save metadata to database
             db = DBConnection()
+            client = await db.client
             
             # Insert file metadata
-            file_record = await db.execute_query(
-                """
-                INSERT INTO agent_default_files 
-                (agent_id, account_id, name, storage_path, size, mime_type, uploaded_by)
-                VALUES ($1, $2, $3, $4, $5, $6, $7)
-                RETURNING id, name, storage_path, size, mime_type, uploaded_at
-                """,
-                agent_id, account_id, file.filename, file_path, len(content), 
-                file.content_type, db.user_id
-            )
+            file_record = await client.table('agent_default_files').insert({
+                'agent_id': agent_id,
+                'account_id': account_id,
+                'name': file.filename,
+                'storage_path': file_path,
+                'size': len(content),
+                'mime_type': file.content_type,
+                'uploaded_by': user_id
+            }).execute()
             
-            if not file_record:
+            if not file_record.data:
                 # Try to clean up the uploaded file
                 try:
                     await client.storage.from_(self.bucket_name).remove([file_path])
@@ -114,13 +114,14 @@ class AgentDefaultFilesManager:
                 raise RuntimeError("Failed to save file metadata")
             
             # Return file metadata
+            file_data = file_record.data[0]
             file_metadata = {
-                "id": str(file_record[0]["id"]),
-                "name": file_record[0]["name"],
-                "storage_path": file_record[0]["storage_path"],
-                "size": file_record[0]["size"],
-                "mime_type": file_record[0]["mime_type"],
-                "uploaded_at": file_record[0]["uploaded_at"].isoformat(),
+                "id": str(file_data["id"]),
+                "name": file_data["name"],
+                "storage_path": file_data["storage_path"],
+                "size": file_data["size"],
+                "mime_type": file_data["mime_type"],
+                "uploaded_at": file_data["uploaded_at"],
                 "public_url": public_url
             }
             
@@ -143,16 +144,11 @@ class AgentDefaultFilesManager:
             client = await db.client
             
             # Delete from database first
-            deleted = await db.execute_query(
-                """
-                DELETE FROM agent_default_files 
-                WHERE agent_id = $1 AND name = $2
-                RETURNING id
-                """,
-                agent_id, filename
-            )
+            deleted = await client.table('agent_default_files').delete().eq(
+                'agent_id', agent_id
+            ).eq('name', filename).execute()
             
-            if not deleted:
+            if not deleted.data:
                 logger.warning(f"File metadata not found in database: {filename}")
                 return False
             
@@ -173,16 +169,14 @@ class AgentDefaultFilesManager:
         """List all default files for an agent."""
         try:
             db = DBConnection()
+            client = await db.client
             
-            files = await db.execute_query(
-                """
-                SELECT id, name, storage_path, size, mime_type, uploaded_at
-                FROM agent_default_files
-                WHERE agent_id = $1
-                ORDER BY uploaded_at DESC
-                """,
-                agent_id
-            )
+            files = await client.table('agent_default_files').select(
+                'id, name, storage_path, size, mime_type, uploaded_at'
+            ).eq('agent_id', agent_id).order('uploaded_at', desc=True).execute()
+            
+            if not files.data:
+                return []
             
             # Format the response
             return [{
@@ -191,8 +185,8 @@ class AgentDefaultFilesManager:
                 "storage_path": f["storage_path"],
                 "size": f["size"],
                 "mime_type": f["mime_type"],
-                "uploaded_at": f["uploaded_at"].isoformat()
-            } for f in files]
+                "uploaded_at": f["uploaded_at"]
+            } for f in files.data]
             
         except Exception as e:
             logger.error(f"Error listing agent default files: {e}")
@@ -206,20 +200,16 @@ class AgentDefaultFilesManager:
             client = await db.client
             
             # Get source files from database
-            source_files = await db.execute_query(
-                """
-                SELECT agent_default_files.*, accounts.id as source_account_id
-                FROM agent_default_files
-                JOIN agents ON agents.agent_id = agent_default_files.agent_id
-                JOIN basejump.accounts accounts ON accounts.id = agents.account_id
-                WHERE agent_default_files.agent_id = $1
-                """,
-                source_agent_id
-            )
+            source_files = await client.from_('agent_default_files').select(
+                '*, agents!inner(account_id)'
+            ).eq('agent_id', source_agent_id).execute()
             
             copied_files = []
             
-            for file_info in source_files:
+            if not source_files.data:
+                return []
+                
+            for file_info in source_files.data:
                 source_path = file_info['storage_path']
                 dest_path = self._get_file_path(dest_account_id, dest_agent_id, file_info['name'])
                 
@@ -239,25 +229,24 @@ class AgentDefaultFilesManager:
                     )
                     
                     # Save metadata for copied file
-                    copied_record = await db.execute_query(
-                        """
-                        INSERT INTO agent_default_files 
-                        (agent_id, account_id, name, storage_path, size, mime_type, uploaded_by)
-                        VALUES ($1, $2, $3, $4, $5, $6, $7)
-                        RETURNING id, name, storage_path, size, mime_type, uploaded_at
-                        """,
-                        dest_agent_id, dest_account_id, file_info['name'], dest_path, 
-                        file_info['size'], file_info['mime_type'], db.user_id
-                    )
+                    copied_record = await client.table('agent_default_files').insert({
+                        'agent_id': dest_agent_id,
+                        'account_id': dest_account_id,
+                        'name': file_info['name'],
+                        'storage_path': dest_path,
+                        'size': file_info['size'],
+                        'mime_type': file_info['mime_type'],
+                        'uploaded_by': None  # No user context
+                    }).execute()
                     
-                    if copied_record:
+                    if copied_record.data:
                         copied_files.append({
-                            "id": str(copied_record[0]["id"]),
-                            "name": copied_record[0]["name"],
-                            "storage_path": copied_record[0]["storage_path"],
-                            "size": copied_record[0]["size"],
-                            "mime_type": copied_record[0]["mime_type"],
-                            "uploaded_at": copied_record[0]["uploaded_at"].isoformat()
+                            "id": str(copied_record.data[0]["id"]),
+                            "name": copied_record.data[0]["name"],
+                            "storage_path": copied_record.data[0]["storage_path"],
+                            "size": copied_record.data[0]["size"],
+                            "mime_type": copied_record.data[0]["mime_type"],
+                            "uploaded_at": copied_record.data[0]["uploaded_at"]
                         })
                     
                 except Exception as upload_error:
