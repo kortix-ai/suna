@@ -225,7 +225,8 @@ class TemplateService:
                 "include_integrations": True,
                 "include_knowledge_bases": True,
                 "include_playbooks": True,
-                "include_triggers": True
+                "include_triggers": True,
+                "default_files": True
             }
         
         # Apply sharing preferences during sanitization
@@ -246,7 +247,10 @@ class TemplateService:
             icon_name=agent.get('icon_name'),
             icon_color=agent.get('icon_color'),
             icon_background=agent.get('icon_background'),
-            metadata=agent.get('metadata', {}),
+            metadata={
+                **agent.get('metadata', {}),
+                'source_agent_id': agent_id
+            },
             sharing_preferences=sharing_preferences
 
         )
@@ -397,7 +401,8 @@ class TemplateService:
                 "include_integrations": True,
                 "include_knowledge_bases": True,
                 "include_playbooks": True,
-                "include_triggers": True
+                "include_triggers": True,
+                "default_files": True
             }
         
         client = await self._db.client

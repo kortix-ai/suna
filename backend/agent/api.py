@@ -6,6 +6,7 @@ from .handlers.agent_crud import router as agent_crud_router
 from .handlers.agent_tools import router as agent_tools_router
 from .handlers.agent_json import router as agent_json_router
 from .handlers.threads import router as threads_router
+from .handlers.agent_default_files import router as agent_default_files_router
 from utils.omni_default_agent_service import OmniDefaultAgentService
 
 router = APIRouter()
@@ -17,6 +18,7 @@ router.include_router(agent_crud_router)
 router.include_router(agent_tools_router)
 router.include_router(agent_json_router)
 router.include_router(threads_router)
+router.include_router(agent_default_files_router)
 
 # Re-export the initialize and cleanup functions
 __all__ = ['router', 'initialize', 'cleanup']

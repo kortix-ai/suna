@@ -1,5 +1,5 @@
 import React from 'react';
-import { Settings, Wrench, Server, BookOpen, Workflow, Zap, ChevronDown, Brain } from 'lucide-react';
+import { Settings, Wrench, Server, BookOpen, Workflow, Zap, ChevronDown, Brain, FileText } from 'lucide-react';
 import { ExpandableMarkdownEditor } from '@/components/ui/expandable-markdown-editor';
 import { AgentToolsConfiguration } from '../agent-tools-configuration';
 import { AgentMCPConfiguration } from '../agent-mcp-configuration';
@@ -7,6 +7,7 @@ import { AgentKnowledgeBaseManager } from '../knowledge-base/agent-knowledge-bas
 import { AgentPlaybooksConfiguration } from '../playbooks/agent-playbooks-configuration';
 import { AgentTriggersConfiguration } from '../triggers/agent-triggers-configuration';
 import { AgentModelSelector } from './model-selector';
+import { AgentDefaultFiles } from '../default-files/agent-default-files';
 import { toast } from 'sonner';
 import { OmniLogo } from '../../sidebar/omni-logo';
 
@@ -74,7 +75,7 @@ export function ConfigurationTab({
     if (isSunaAgent && (val === 'system' || val === 'tools')) {
       return 'integrations';
     }
-    if (['system', 'tools', 'integrations', 'knowledge', 'playbooks', 'triggers'].includes(val || '')) {
+    if (['system', 'tools', 'integrations', 'knowledge', 'playbooks', 'default-files', 'triggers'].includes(val || '')) {
       return val!;
     }
     return isSunaAgent ? 'integrations' : 'system';
@@ -362,6 +363,43 @@ export function ConfigurationTab({
                 </div>
               </div>
             </div>
+            
+            <div className="group overflow-hidden rounded-2xl border border-border bg-card transition-all duration-300 hover:border-primary/10" data-tour="default-files-section">
+              <button
+                className="w-full p-4 text-left group-hover:bg-muted/30 transition-all duration-300"
+                onClick={() => setOpenAccordion(openAccordion === 'default-files' ? '' : 'default-files')}
+                disabled={isLoading}
+              >
+                <div className="flex items-center gap-4 w-full">
+                  <div className="relative flex-shrink-0">
+                    <div className="bg-muted rounded-xl h-10 w-10 flex items-center justify-center transition-all duration-300 group-hover:scale-105">
+                      <FileText className="h-5 w-5 text-muted-foreground" />
+                    </div>
+                  </div>
+                  <div className="text-left flex-1 min-w-0">
+                    <h4 className="text-sm font-semibold text-foreground mb-1 group-hover:text-primary transition-colors duration-300">Default Files</h4>
+                    <p className="text-xs text-muted-foreground group-hover:text-foreground/70 transition-colors duration-300">Files available in every chat session</p>
+                  </div>
+                  <ChevronDown className={`h-4 w-4 flex-shrink-0 transition-transform duration-300 ease-out ${openAccordion === 'default-files' ? 'rotate-180' : ''}`} />
+                </div>
+              </button>
+              <div
+                className={`overflow-hidden transition-all duration-300 ease-out ${openAccordion === 'default-files'
+                  ? 'max-h-[600px] opacity-100'
+                  : 'max-h-0 opacity-0'
+                  }`}
+              >
+                <div className="px-6 pb-6 pt-2">
+                  <div className="pt-4">
+                    <AgentDefaultFiles 
+                      agentId={agentId}
+                      isOwner={true}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+            
             {/* <div className="group overflow-hidden rounded-2xl border border-border bg-card transition-all duration-300 hover:border-primary/10" data-tour="triggers-section">
               <button
                 className="w-full p-4 text-left group-hover:bg-muted/30 transition-all duration-300"
