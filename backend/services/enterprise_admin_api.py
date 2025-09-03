@@ -19,7 +19,7 @@ from pydantic import BaseModel, Field
 from decimal import Decimal
 
 from utils.auth_utils import verify_and_get_user_id_from_jwt
-from services.supabase import get_supabase_client
+from services.supabase import DBConnection
 from services.enterprise_billing import enterprise_billing
 from utils.logger import logger, structlog
 from utils.config import config
@@ -93,7 +93,8 @@ async def create_enterprise_account(
         raise HTTPException(status_code=400, detail="Enterprise mode not enabled")
     
     try:
-        client = await get_supabase_client()
+        db = DBConnection()
+        client = await db.client
         
         # Create enterprise account
         account_data = {
@@ -159,7 +160,8 @@ async def list_enterprise_accounts(
         raise HTTPException(status_code=400, detail="Enterprise mode not enabled")
     
     try:
-        client = await get_supabase_client()
+        db = DBConnection()
+        client = await db.client
         
         # Build query
         query = client.table('enterprise_billing_accounts')\
@@ -202,7 +204,8 @@ async def get_enterprise_account(
         raise HTTPException(status_code=400, detail="Enterprise mode not enabled")
     
     try:
-        client = await get_supabase_client()
+        db = DBConnection()
+        client = await db.client
         
         # Get account with members
         result = await client.table('enterprise_billing_accounts')\
@@ -285,7 +288,8 @@ async def add_user_to_enterprise(
         raise HTTPException(status_code=400, detail="Enterprise mode not enabled")
     
     try:
-        client = await get_supabase_client()
+        db = DBConnection()
+        client = await db.client
         
         # Check if enterprise account exists
         enterprise_check = await client.table('enterprise_billing_accounts')\
@@ -386,7 +390,8 @@ async def remove_user_from_enterprise(
         raise HTTPException(status_code=400, detail="Enterprise mode not enabled")
     
     try:
-        client = await get_supabase_client()
+        db = DBConnection()
+        client = await db.client
         
         # Deactivate membership instead of deleting for audit purposes
         result = await client.table('enterprise_account_members')\
@@ -470,7 +475,8 @@ async def get_user_usage_in_enterprise(
         raise HTTPException(status_code=400, detail="Enterprise mode not enabled")
     
     try:
-        client = await get_supabase_client()
+        db = DBConnection()
+        client = await db.client
         
         # Verify user is in the enterprise
         membership = await client.table('enterprise_account_members')\
@@ -539,7 +545,8 @@ async def reset_monthly_usage(
         raise HTTPException(status_code=400, detail="Enterprise mode not enabled")
     
     try:
-        client = await get_supabase_client()
+        db = DBConnection()
+        client = await db.client
         
         # Call the database function
         result = await client.rpc('reset_enterprise_monthly_usage').execute()

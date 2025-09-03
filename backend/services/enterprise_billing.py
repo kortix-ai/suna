@@ -17,7 +17,7 @@ from decimal import Decimal
 import asyncio
 from datetime import datetime, timezone
 
-from services.supabase import get_supabase_client
+from services.supabase import DBConnection
 from utils.logger import logger, structlog
 from utils.config import config
 from utils.cache import Cache
@@ -56,7 +56,8 @@ class EnterpriseBillingService:
             return cached_result
         
         try:
-            client = await get_supabase_client()
+            db = DBConnection()
+            client = await db.client
             result = await client.rpc('get_enterprise_billing_status', {
                 'p_account_id': account_id
             }).execute()
@@ -85,7 +86,8 @@ class EnterpriseBillingService:
             Tuple[bool, str, Optional[Dict]]: (can_run, message, billing_info)
         """
         try:
-            client = await get_supabase_client()
+            db = DBConnection()
+            client = await db.client
             
             # Get comprehensive billing status
             result = await client.rpc('get_enterprise_billing_status', {
@@ -169,7 +171,8 @@ class EnterpriseBillingService:
             Tuple[bool, str]: (success, message)
         """
         try:
-            client = await get_supabase_client()
+            db = DBConnection()
+            client = await db.client
             
             # Use the database function for atomic credit deduction
             result = await client.rpc('use_enterprise_credits', {
@@ -236,7 +239,8 @@ class EnterpriseBillingService:
             Tuple[bool, str]: (success, message)
         """
         try:
-            client = await get_supabase_client()
+            db = DBConnection()
+            client = await db.client
             
             # Use database function for atomic credit loading
             result = await client.rpc('load_enterprise_credits', {
@@ -298,7 +302,8 @@ class EnterpriseBillingService:
             Dict containing usage statistics and member details
         """
         try:
-            client = await get_supabase_client()
+            db = DBConnection()
+            client = await db.client
             
             # Get enterprise account info
             enterprise_info = await client.table('enterprise_billing_accounts')\
@@ -387,7 +392,8 @@ class EnterpriseBillingService:
             Dict containing enterprise membership info or None if not enterprise
         """
         try:
-            client = await get_supabase_client()
+            db = DBConnection()
+            client = await db.client
             
             result = await client.rpc('get_enterprise_billing_status', {
                 'p_account_id': account_id
@@ -420,7 +426,8 @@ class EnterpriseBillingService:
             Tuple[bool, str]: (success, message)
         """
         try:
-            client = await get_supabase_client()
+            db = DBConnection()
+            client = await db.client
             
             # Validate limit
             if new_limit < 0:
