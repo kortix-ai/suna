@@ -1,19 +1,3 @@
-#!/usr/bin/env python3
-"""
-HTML Presentation to PPTX Converter - Perfect 1:1 Approach
-
-This script provides PERFECT 1:1 conversion by:
-- Capturing the ENTIRE slide as a pixel-perfect background image (including all icons, gradients, decorations)
-- Making text transparent for the background capture
-- Extracting text elements separately for editable PowerPoint text boxes
-- Overlaying editable text on the perfect background
-
-Usage:
-    python html_to_pptx_perfect.py [presentation_directory] [output_pptx_path]
-
-Example:
-    python html_to_pptx_perfect.py . perfect_presentation.pptx
-"""
 
 import json
 import os
@@ -27,6 +11,7 @@ import subprocess
 from dataclasses import dataclass
 import base64
 import io
+import datetime
 
 try:
     from playwright.async_api import async_playwright
@@ -64,7 +49,7 @@ except ImportError:
 
 @dataclass
 class TextElement:
-    """Text element information for editable text boxes"""
+    """Text element information for editable text boxes with enhanced styling"""
     text: str
     x: float
     y: float
@@ -77,6 +62,7 @@ class TextElement:
     text_align: str
     line_height: float
     tag: str
+    style: Dict[str, str] = None
 
 
 class CSSParser:
@@ -166,10 +152,19 @@ class PerfectHTMLToPPTXConverter:
             
             for slide_num, slide_data in slides.items():
                 filename = slide_data.get('filename')
+                file_path = slide_data.get('file_path')
                 title = slide_data.get('title', f'Slide {slide_num}')
                 
-                if filename:
-                    html_path = self.presentation_dir / filename
+                if file_path:
+                    # Handle both absolute and relative paths
+                    print(f"file_path: {file_path}")
+                    if Path(file_path).is_absolute():
+                        html_path = Path(file_path)
+                    else:
+                        html_path = Path(f"{file_path}")
+                        print(f"html_path: {html_path}")
+                    
+                    # Verify the path exists
                     if html_path.exists():
                         self.slides_info.append({
                             'number': int(slide_num),
@@ -177,13 +172,12 @@ class PerfectHTMLToPPTXConverter:
                             'filename': filename,
                             'path': html_path
                         })
-                    else:
-                        print(f"Warning: HTML file not found: {html_path}")
             
             # Sort slides by number
             self.slides_info.sort(key=lambda x: x['number'])
             
             if not self.slides_info:
+                print(f"---")
                 raise ValueError("No valid slides found in metadata.json")
             
             # Set default output path if not provided
@@ -292,26 +286,459 @@ class PerfectHTMLToPPTXConverter:
         finally:
             await page.close()
     
-    async def extract_text_elements(self, browser, html_path: Path) -> List[TextElement]:
-        """
-        Extract all text elements with precise positioning for editable text boxes.
+    async def extract_visual_elements(self, page, html_path: Path, temp_dir: Path) -> List[Dict]:
+        """Extract all visual elements (non-text) as individual images with positioning."""
+        visual_elements = []
         
-        Args:
-            browser: Playwright browser instance
-            html_path: Path to HTML file
+        try:
+            # Set viewport and load HTML
+            await page.set_viewport_size({"width": 1920, "height": 1080})
+            await page.emulate_media(media='screen')
             
-        Returns:
-            List of TextElement objects
-        """
-        page = await browser.new_page()
-        text_elements = []
+            with open(html_path, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+            
+            await page.set_content(html_content, wait_until="domcontentloaded", timeout=10000)
+            await page.wait_for_timeout(1000)
+            
+            def handle_console(msg):
+                print(f"BROWSER CONSOLE: {msg.text}")
+
+            page.on("console", handle_console)
+            
+            # Step 1: First extract icons BEFORE making text transparent
+            icon_data = await page.evaluate(r"""
+                () => {
+                    function isIcon(element) {
+                        // Check for Font Awesome icons
+                        if (element.classList.contains('fas') || 
+                            element.classList.contains('far') || 
+                            element.classList.contains('fab') || 
+                            element.classList.contains('fa')) {
+                            return true;
+                        }
+                        
+                        return false;
+                    }
+                    
+                    function extractIconElements(element, depth = 0) {
+                        if (!element || element.nodeType !== Node.ELEMENT_NODE) return [];
+                        
+                        const computed = window.getComputedStyle(element);
+                        const rect = element.getBoundingClientRect();
+                        
+                        // Skip if no dimensions or hidden
+                        if (rect.width === 0 || rect.height === 0) return [];
+                        if (computed.display === 'none' || computed.visibility === 'hidden') return [];
+                        
+                        const results = [];
+                        
+                        // Check if this element is an icon
+                        if (isIcon(element)) {
+                            console.log('ICON ELEMENT FOUND:', element.tagName, element.textContent?.trim().substring(0, 30));
+                            
+                            results.push({
+                                type: 'icon',
+                                x: Math.round(rect.left * 100) / 100,
+                                y: Math.round(rect.top * 100) / 100,
+                                width: Math.round(rect.width * 100) / 100,
+                                height: Math.round(rect.height * 100) / 100,
+                                tag: element.tagName.toLowerCase(),
+                                className: element.className,
+                                id: element.id,
+                                depth: depth,
+                                // Add debug info
+                                debugInfo: {
+                                    textContent: element.textContent?.trim().substring(0, 50) || 'No text'
+                                }
+                            });
+                        }
+                        
+                        // Process children for nested icons
+                        Array.from(element.children).forEach(child => {
+                            results.push(...extractIconElements(child, depth + 1));
+                        });
+                        
+                        return results;
+                    }
+                    
+                    // Execute icon extraction
+                    const allIconElements = extractIconElements(document.body);
+                    
+                    return allIconElements;
+                }
+            """)
+            
+            # Capture icons as visual elements
+            print(f"🔍 Total icon elements found: {len(icon_data) if icon_data else 0}")
+            icon_visual_elements = []
+            
+            for i, data in enumerate(icon_data or []):
+                if data and data['type'] == 'icon':
+                    try:
+                        # Ensure coordinates are within viewport bounds
+                        x = max(0, min(data['x'], 1920))
+                        y = max(0, min(data['y'], 1080))
+                        width = min(data['width'], 1920 - x)
+                        height = min(data['height'], 1080 - y)
+                        
+                        # Skip if area is too small
+                        if width < 5 or height < 5:
+                            continue
+                        
+                        # Capture the icon
+                        element_path = temp_dir / f"icon_element_{html_path.stem}_{i:03d}.png"
+                        await page.screenshot(
+                            path=str(element_path),
+                            full_page=False,
+                            clip={"x": x, "y": y, "width": width, "height": height}
+                        )
+                        
+                        icon_element = {
+                            'type': 'visual',  # Treat as visual element for consistency
+                            'x': data['x'],
+                            'y': data['y'],
+                            'width': data['width'],
+                            'height': data['height'],
+                            'tag': data['tag'],
+                            'image_path': element_path,
+                            'depth': data['depth'],
+                            'isIcon': True
+                        }
+                        
+                        icon_visual_elements.append(icon_element)
+                        
+                    except Exception as e:
+                        print(f"Failed to capture icon element {i}: {e}")
+            
+            # Step 2: Now make all text transparent while preserving visual styling
+            await page.evaluate(r"""
+                () => {
+                    function makeTextTransparent(element) {
+                        if (element.nodeType === Node.ELEMENT_NODE) {
+                            const computed = window.getComputedStyle(element);
+                            
+                            // If element has text content, make it transparent
+                            if (element.textContent && element.textContent.trim()) {
+                                element.style.color = 'transparent';
+                                element.style.textShadow = 'none';
+                                element.style.webkitTextStroke = 'none';
+                                element.style.webkitTextFillColor = 'transparent';
+                            }
+                            
+                            // Process children
+                            Array.from(element.children).forEach(makeTextTransparent);
+                        }
+                    }
+                    
+                    makeTextTransparent(document.body);
+                }
+            """)
+            
+            await page.wait_for_timeout(500)
+            
+            # Step 3: Extract other visual elements by depth and visual properties
+            visual_data = await page.evaluate(r"""
+    () => {
+        function hasActualVisualContent(element, computed) {
+            
+            // Always include explicit visual elements
+            if (['IMG', 'SVG', 'CANVAS', 'VIDEO', 'IFRAME'].includes(element.tagName)) {
+                return true;
+            }
+            
+            // 2. Check for actual background images and gradients (not just 'none')
+            if (computed.backgroundImage && computed.backgroundImage !== 'none') {
+                return true;
+            }
+            
+            // 3. Check for meaningful background colors (not just transparent)
+            const bgColor = computed.backgroundColor;
+            if (bgColor && 
+                bgColor !== 'rgba(0, 0, 0, 0)' && 
+                bgColor !== 'transparent' && 
+                bgColor !== 'inherit' &&
+                bgColor !== 'initial' &&
+                bgColor !== 'unset') {
+                return true;
+            }
+            
+            // 4. Check for borders (but ignore default/none)
+            if (computed.borderStyle && 
+                computed.borderStyle !== 'none' && 
+                computed.borderStyle !== 'initial' &&
+                computed.borderWidth && 
+                computed.borderWidth !== '0px') {
+                return true;
+            }
+            
+            // 5. Check for box shadows
+            if (computed.boxShadow && 
+                computed.boxShadow !== 'none' && 
+                computed.boxShadow !== 'initial') {
+                return true;
+            }
+            
+            // 6. Check for gradients in background (comprehensive check)
+            if (computed.background && 
+                (computed.background.includes('gradient') || 
+                 computed.background.includes('url('))) {
+                return true;
+            }
+            
+            // Also check backgroundImage for gradients (browsers often store gradients here)
+            if (computed.backgroundImage && 
+                (computed.backgroundImage.includes('gradient') ||
+                 computed.backgroundImage.includes('url('))) {
+                return true;
+            }
+            
+            return false;
+        }
+                          
+        function shouldSkipElement(element, computed) {
+            // Skip text-only elements
+            const textOnlyTags = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'P', 'A', 'SPAN', 
+                                'STRONG', 'EM', 'U', 'BUTTON', 'LABEL', 'SMALL', 'CODE'];
+            if (textOnlyTags.includes(element.tagName)) {
+                return true;
+            }
+            
+            // Skip hidden elements
+            if (computed.display === 'none' || computed.visibility === 'hidden') {
+                return true;
+            }
+            
+            return false;
+        }
+                                    
+        function extractVisualElements(element, depth = 0) {
+            if (!element || element.nodeType !== Node.ELEMENT_NODE) return [];
+            
+            const computed = window.getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            
+            // Skip if no dimensions
+            if (rect.width === 0 || rect.height === 0) {
+                return [];
+            }
+            
+            // Skip if should be filtered out
+            if (shouldSkipElement(element, computed)) {
+                return [];
+            }
+            
+            const results = [];
+            
+            // Check if element has actual visual content
+            if (hasActualVisualContent(element, computed)) {
+                console.log('VISUAL ELEMENT FOUND:', element.tagName, element.textContent?.trim().substring(0, 30));
+                console.log('backgroundImage:', computed.backgroundImage);
+                console.log('backgroundColor:', computed.backgroundColor);
+                console.log('borderStyle:', computed.borderStyle);
+                
+                // Skip very large elements that are likely backgrounds
+                const isLikelyBackground = rect.width > 1200 || rect.height > 900;
+                
+                if (!isLikelyBackground) {
+                    results.push({
+                        type: 'visual',
+                        x: Math.round(rect.left * 100) / 100,
+                        y: Math.round(rect.top * 100) / 100,
+                        width: Math.round(rect.width * 100) / 100,
+                        height: Math.round(rect.height * 100) / 100,
+                        tag: element.tagName.toLowerCase(),
+                        className: element.className,
+                        id: element.id,
+                        depth: depth,
+                        hasBackground: computed.backgroundImage !== 'none' || 
+                                      (computed.backgroundColor !== 'rgba(0, 0, 0, 0)' && 
+                                       computed.backgroundColor !== 'transparent'),
+                        hasBorder: computed.borderStyle !== 'none',
+                        hasShadow: computed.boxShadow !== 'none',
+                        // Add debug info
+                        debugInfo: {
+                            backgroundColor: computed.backgroundColor,
+                            backgroundImage: computed.backgroundImage,
+                            borderStyle: computed.borderStyle,
+                            textContent: element.textContent?.trim().substring(0, 50) || 'No text'
+                        }
+                    });
+                }
+            }
+            
+            // Process children for nested elements
+            Array.from(element.children).forEach(child => {
+                results.push(...extractVisualElements(child, depth + 1));
+            });
+            
+            return results;
+        }
         
+        // Actually execute the extraction and return results
+        const allVisualElements = extractVisualElements(document.body);
+        
+        // Sort by depth (background elements first) then by position
+        allVisualElements.sort((a, b) => {
+            if (a.depth !== b.depth) return a.depth - b.depth;
+            if (Math.abs(a.y - b.y) < 5) return a.x - b.x;
+            return a.y - b.y;
+        });
+        
+        return allVisualElements;
+    }
+""")
+            
+            # Debug: Log what we found in Python console
+            print(f"🔍 Total visual elements found: {len(visual_data) if visual_data else 0}")
+            if visual_data:
+                for i, data in enumerate(visual_data):  # Show first 5
+                    print(f"🔍 Element {i}: {data['tag']} - {data.get('className', 'No class')}")
+                    print(f"   Position: ({data['x']}, {data['y']}) {data['width']}x{data['height']}")
+                    print(f"   Has background: {data.get('hasBackground', False)}")
+                    print(f"   Has border: {data.get('hasBorder', False)}")
+                    print(f"   Has shadow: {data.get('hasShadow', False)}")
+                    print("--- 🔍", data)
+            
+            # Step 3: Capture each visual element as an image
+            for i, data in enumerate(visual_data or []):
+                if data and data['type'] == 'visual':
+                    try:
+                        # Ensure coordinates are within viewport bounds
+                        x = max(0, min(data['x'], 1920))
+                        y = max(0, min(data['y'], 1080))
+                        width = min(data['width'], 1920 - x)
+                        height = min(data['height'], 1920 - y)
+                        
+                        # Skip if area is too small
+                        if width < 5 or height < 5:
+                            continue
+                        
+                        # Temporarily hide child elements to prevent interference
+                        await page.evaluate(r"""
+                            (elementData) => {
+                                // Find the element to capture
+                                const elements = document.querySelectorAll('*');
+                                for (let el of elements) {
+                                    const rect = el.getBoundingClientRect();
+                                    if (Math.abs(rect.left - elementData.x) < 2 && 
+                                        Math.abs(rect.top - elementData.y) < 2 &&
+                                        Math.abs(rect.width - elementData.width) < 2 &&
+                                        Math.abs(rect.height - elementData.height) < 2) {
+                                        
+                                        // Store original visibility of children
+                                        const children = el.querySelectorAll('*');
+                                        children.forEach(child => {
+                                            child.setAttribute('data-original-visibility', child.style.visibility);
+                                            child.style.visibility = 'hidden';
+                                        });
+                                        
+                                        // Mark this element for restoration
+                                        el.setAttribute('data-capture-in-progress', 'true');
+                                        break;
+                                    }
+                                }
+                            }
+                        """, data)
+                        
+                        # Capture the element
+                        element_path = temp_dir / f"visual_element_{html_path.stem}_{i:03d}.png"
+                        await page.screenshot(
+                            path=str(element_path),
+                            full_page=False,
+                            clip={"x": x, "y": y, "width": width, "height": height}
+                        )
+                        
+                        # Restore child elements visibility
+                        await page.evaluate(r"""
+                            (elementData) => {
+                                const elements = document.querySelectorAll('*');
+                                for (let el of elements) {
+                                    if (el.getAttribute('data-capture-in-progress')) {
+                                        // Restore children visibility
+                                        const children = el.querySelectorAll('*');
+                                        children.forEach(child => {
+                                            const originalVisibility = child.getAttribute('data-original-visibility');
+                                            if (originalVisibility) {
+                                                child.style.visibility = originalVisibility;
+                                                child.removeAttribute('data-original-visibility');
+                                            } else {
+                                                child.style.visibility = 'visible';
+                                            }
+                                        });
+                                        
+                                        // Clean up
+                                        el.removeAttribute('data-capture-in-progress');
+                                        break;
+                                    }
+                                }
+                            }
+                        """, data)
+                        
+                        visual_element = {
+                            'type': 'visual',
+                            'x': data['x'],
+                            'y': data['y'],
+                            'width': data['width'],
+                            'height': data['height'],
+                            'tag': data['tag'],
+                            'image_path': element_path,
+                            'depth': data['depth'],
+                            'hasBackground': data.get('hasBackground', False),
+                            'hasBorder': data.get('hasBorder', False),
+                            'hasShadow': data.get('hasShadow', False)
+                        }
+                        
+                        visual_elements.append(visual_element)
+                        
+                    except Exception as e:
+                        print(f"Failed to capture visual element {i}: {e}")
+                        # Ensure we restore visibility even if capture fails
+                        try:
+                            await page.evaluate(r"""
+                                (elementData) => {
+                                    const elements = document.querySelectorAll('*');
+                                    for (let el of elements) {
+                                        if (el.getAttribute('data-capture-in-progress')) {
+                                            const children = el.querySelectorAll('*');
+                                            children.forEach(child => {
+                                                const originalVisibility = child.getAttribute('data-original-visibility');
+                                                if (originalVisibility) {
+                                                    child.style.visibility = originalVisibility;
+                                                    child.removeAttribute('data-original-visibility');
+                                                } else {
+                                                    child.style.visibility = 'visible';
+                                                }
+                                            });
+                                            el.removeAttribute('data-capture-in-progress');
+                                            break;
+                                        }
+                                    }
+                                }
+                            """, data)
+                        except:
+                            pass
+                        continue
+            
+            # Add the previously captured icon elements to our visual elements collection
+            if icon_visual_elements:
+                print(f"Adding {len(icon_visual_elements)} icon elements to visual elements")
+                visual_elements.extend(icon_visual_elements)
+            
+            return visual_elements
+            
+        except Exception as e:
+            print(f"Visual element extraction failed: {e}")
+            return []
+
+    async def capture_clean_background(self, page, html_path: Path, temp_dir: Path, visual_elements: List[Dict]) -> Path:
+        """Capture the clean background with visual elements temporarily hidden."""
         try:
             # Set exact viewport dimensions
             await page.set_viewport_size({"width": 1920, "height": 1080})
             await page.emulate_media(media='screen')
             
-            # Force device pixel ratio to 1
+            # Force device pixel ratio to 1 for exact measurements
             await page.evaluate(r"""
                 () => {
                     Object.defineProperty(window, 'devicePixelRatio', {
@@ -320,14 +747,122 @@ class PerfectHTMLToPPTXConverter:
                 }
             """)
             
-            # Navigate to HTML file
-            file_url = f"file://{html_path.absolute()}"
-            await page.goto(file_url, wait_until="networkidle", timeout=30000)
+            # Load HTML content directly
+            with open(html_path, 'r', encoding='utf-8') as f:
+                html_content = f.read()
             
-            # Wait for fonts and content to load
-            await page.wait_for_timeout(5000)
+            await page.set_content(html_content, wait_until="domcontentloaded", timeout=10000)
             
-            # Extract all text elements with precise positioning
+            # Reduced wait time
+            await page.wait_for_timeout(2000)
+            
+            # Make text completely invisible AND hide visual elements to get clean background
+            await page.evaluate(r"""
+                (visualElementsData) => {
+                    // Function to make text completely invisible
+                    function makeTextInvisible(element) {
+                        if (element.nodeType === Node.TEXT_NODE) return;
+                        if (element.nodeType === Node.ELEMENT_NODE) {
+                            const computedStyle = window.getComputedStyle(element);
+                            const hasText = element.textContent && element.textContent.trim();
+                            if (hasText) {
+                                // Make text completely invisible
+                                element.style.color = 'transparent';
+                                element.style.textShadow = 'none';
+                                element.style.webkitTextStroke = 'none';
+                                element.style.webkitTextFillColor = 'transparent';
+                                
+                                // Also hide any background text effects
+                                if (computedStyle.webkitBackgroundClip === 'text') {
+                                    element.style.background = 'transparent';
+                                    element.style.webkitBackgroundClip = 'initial';
+                                }
+                            }
+                            Array.from(element.children).forEach(makeTextInvisible);
+                        }
+                    }
+                    
+                    // Function to hide visual elements (but preserve main background)
+                    function hideVisualElements() {
+                        visualElementsData.forEach(visualData => {
+                            // Skip very large elements that are likely the main background
+                            if (visualData.width > 1000 || visualData.height > 800) {
+                                return;
+                            }
+                            
+                            // Find elements that match the visual element criteria
+                            const elements = document.querySelectorAll('*');
+                            for (let el of elements) {
+                                const rect = el.getBoundingClientRect();
+                                if (Math.abs(rect.left - visualData.x) < 5 && 
+                                    Math.abs(rect.top - visualData.y) < 5 &&
+                                    Math.abs(rect.width - visualData.width) < 5 &&
+                                    Math.abs(rect.height - visualData.height) < 5) {
+                                    
+                                    // Hide this visual element
+                                    el.style.visibility = 'hidden';
+                                    break;
+                                }
+                            }
+                        });
+                    }
+                    
+                    // Apply both transformations
+                    makeTextInvisible(document.body);
+                    hideVisualElements();
+                }
+            """, visual_elements or [])
+            
+            # Reduced wait time
+            await page.wait_for_timeout(500)
+            
+            # Take clean background screenshot
+            background_path = temp_dir / f"clean_background_{html_path.stem}.png"
+            await page.screenshot(
+                path=str(background_path),
+                full_page=False,
+                clip={"x": 0, "y": 0, "width": 1920, "height": 1080}
+            )
+            
+            return background_path
+            
+        except Exception as e:
+            # Create a simple white background as fallback
+            from PIL import Image
+            background_path = temp_dir / f"clean_background_{html_path.stem}.png"
+            blank_bg = Image.new('RGB', (1920, 1080), color='white')
+            blank_bg.save(background_path)
+            return background_path
+    
+    async def extract_text_elements(self, page, html_path: Path) -> List[TextElement]:
+        """Extract all text elements with precise positioning for editable text boxes."""
+        text_elements = []
+        
+        try:
+            # Set exact viewport dimensions
+            await page.set_viewport_size({"width": 1920, "height": 1080})
+            await page.emulate_media(media='screen')
+            
+            # Force device pixel ratio to 1 for exact measurements
+            await page.evaluate(r"""
+                () => {
+                    Object.defineProperty(window, 'devicePixelRatio', {
+                        get: () => 1
+                    });
+                }
+            """)
+            
+            # Load HTML content directly
+            with open(html_path, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+            
+            await page.set_content(html_content, wait_until="domcontentloaded", timeout=10000)
+            
+            # Reduced wait time
+            await page.wait_for_timeout(2000)
+            
+            # Extract all text elements with precise positioning and styling
+            # // Enhanced text extraction JavaScript to include in your page.evaluate()
             text_data = await page.evaluate(r"""
                 () => {
                     function extractTextFromElement(element) {
@@ -351,25 +886,72 @@ class PerfectHTMLToPPTXConverter:
                         }
                         directText = directText.trim();
                         
-                        // If this element has direct text content, extract it
+                        // If this element has direct text content, extract it with styling
                         if (directText && directText.length > 0) {
                             const fontSizeMatch = computedStyle.fontSize.match(/([0-9.]+)px/);
                             const actualFontSize = fontSizeMatch ? parseFloat(fontSizeMatch[1]) : 16;
                             
-                            results.push({
-                                text: directText,
-                                x: Math.round(rect.left * 100) / 100,
-                                y: Math.round(rect.top * 100) / 100,
-                                width: Math.round(rect.width * 100) / 100,
-                                height: Math.round(rect.height * 100) / 100,
+                            // Get the actual text node position, not the container
+                            const textNodes = [];
+                            for (let node of element.childNodes) {
+                                if (node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+                                    const range = document.createRange();
+                                    range.selectNodeContents(node);
+                                    const textRect = range.getBoundingClientRect();
+                                    textNodes.push({
+                                        text: node.textContent.trim(),
+                                        rect: textRect
+                                    });
+                                }
+                            }
+                            
+                            // Enhanced styling extraction
+                            const textStyle = {
                                 fontFamily: computedStyle.fontFamily,
-                                actualFontSizePx: actualFontSize,
+                                fontSize: computedStyle.fontSize,
                                 fontWeight: computedStyle.fontWeight,
+                                fontStyle: computedStyle.fontStyle,
                                 color: computedStyle.color,
                                 textAlign: computedStyle.textAlign,
                                 lineHeight: computedStyle.lineHeight,
-                                tag: element.tagName.toLowerCase()
-                            });
+                                letterSpacing: computedStyle.letterSpacing,
+                                textShadow: computedStyle.textShadow,
+                                webkitTextStroke: computedStyle.webkitTextStroke,
+                                webkitTextFillColor: computedStyle.webkitTextFillColor,
+                                background: computedStyle.background,
+                                backgroundImage: computedStyle.backgroundImage,
+                                webkitBackgroundClip: computedStyle.webkitBackgroundClip,
+                                textDecoration: computedStyle.textDecoration,
+                                textTransform: computedStyle.textTransform
+                            };
+                            
+                            // Use text node position if available, otherwise fall back to container
+                            if (textNodes.length > 0) {
+                                textNodes.forEach(textNode => {
+                                    results.push({
+                                        text: textNode.text,
+                                        x: Math.round(textNode.rect.left * 100) / 100,
+                                        y: Math.round(textNode.rect.top * 100) / 100,
+                                        width: Math.round(textNode.rect.width * 100) / 100,
+                                        height: Math.round(textNode.rect.height * 100) / 100,
+                                        actualFontSizePx: actualFontSize,
+                                        tag: element.tagName.toLowerCase(),
+                                        style: textStyle
+                                    });
+                                });
+                            } else {
+                                // Fallback to container position
+                                results.push({
+                                    text: directText,
+                                    x: Math.round(rect.left * 100) / 100,
+                                    y: Math.round(rect.top * 100) / 100,
+                                    width: Math.round(rect.width * 100) / 100,
+                                    height: Math.round(rect.height * 100) / 100,
+                                    actualFontSizePx: actualFontSize,
+                                    tag: element.tagName.toLowerCase(),
+                                    style: textStyle
+                                });
+                            }
                         }
                         
                         // Process children for nested text
@@ -385,7 +967,7 @@ class PerfectHTMLToPPTXConverter:
                     
                     // Sort by position (top to bottom, left to right)
                     allTextElements.sort((a, b) => {
-                        if (Math.abs(a.y - b.y) < 5) {  // Same line
+                        if (Math.abs(a.y - b.y) < 5) {
                             return a.x - b.x;
                         }
                         return a.y - b.y;
@@ -395,32 +977,50 @@ class PerfectHTMLToPPTXConverter:
                 }
             """)
             
-            # Convert to TextElement objects
-            for data in text_data:
+            # Convert to TextElement objects with enhanced styling
+            for data in text_data or []:
                 if data and data['text']:
+                    style = data.get('style', {})
+                    
                     # Parse font family
-                    font_family = data['fontFamily']
+                    font_family = style.get('fontFamily', 'Arial')
                     if font_family:
                         font_family = font_family.split(',')[0].strip().strip('"\'')
                         font_family_map = {
                             'roboto': 'Roboto', 'arial': 'Arial', 'helvetica': 'Helvetica',
-                            'sans-serif': 'Arial', 'serif': 'Times New Roman', 'monospace': 'Courier New'
+                            'sans-serif': 'Arial', 'serif': 'Times New Roman', 'monospace': 'Courier New',
+                            'jetbrains mono': 'Courier New', 'courier new': 'Courier New'
                         }
                         font_family = font_family_map.get(font_family.lower(), font_family)
                     else:
                         font_family = 'Arial'
                     
-                    # Parse line height
+                    # Parse line height (same for both text and icons)
                     line_height = 1.2
-                    if data['lineHeight'] and data['lineHeight'] != 'normal':
-                        if data['lineHeight'].endswith('px'):
-                            px_value = float(data['lineHeight'][:-2])
+                    line_height_str = style.get('lineHeight', 'normal')
+                    if line_height_str and line_height_str != 'normal':
+                        if line_height_str.endswith('px'):
+                            px_value = float(line_height_str[:-2])
                             line_height = px_value / data['actualFontSizePx']
                         else:
                             try:
-                                line_height = float(data['lineHeight'])
+                                line_height = float(line_height_str)
                             except:
                                 line_height = 1.2
+                    
+                    # Parse color - handle complex color scenarios
+                    color = style.get('color', '#000000')
+                    
+                    # Handle gradient text (webkit background clip)
+                    if style.get('webkitBackgroundClip') == 'text' and style.get('backgroundImage'):
+                        bg_image = style.get('backgroundImage', '')
+                        if 'linear-gradient' in bg_image:
+                            import re
+                            color_match = re.search(r'#[0-9a-fA-F]{6}', bg_image)
+                            if color_match:
+                                color = color_match.group(0)
+                            else:
+                                color = '#3B82F6'  # Default blue for gradients
                     
                     text_element = TextElement(
                         text=data['text'],
@@ -430,38 +1030,45 @@ class PerfectHTMLToPPTXConverter:
                         height=data['height'],
                         font_family=font_family,
                         font_size=data['actualFontSizePx'] * 0.75,  # Convert px to points
-                        font_weight=data['fontWeight'],
-                        color=data['color'],
-                        text_align=data['textAlign'],
+                        font_weight=style.get('fontWeight', 'normal'),
+                        color=color,
+                        text_align=style.get('textAlign', 'left'),
                         line_height=line_height,
-                        tag=data['tag']
+                        tag=data['tag'],
+                        style=style
                     )
                     
                     text_elements.append(text_element)
             
-            print(f"    ✓ Extracted {len(text_elements)} text elements")
             return text_elements
             
-        except Exception as e:
-            raise RuntimeError(f"Error extracting text elements: {e}")
-        finally:
-            await page.close()
+        except Exception:
+            return []
     
     def create_text_box(self, slide, text_element: TextElement) -> None:
-        """
-        Create an editable text box in PowerPoint with exact positioning.
-        
-        Args:
-            slide: PowerPoint slide object
-            text_element: TextElement with positioning and styling
-        """
+        """Create an editable text box in PowerPoint with exact positioning and enhanced styling."""
         # Convert pixel coordinates to inches
         left = Inches(text_element.x / 96.0)
         top = Inches(text_element.y / 96.0)
-        width = Inches(max(text_element.width, 10) / 96.0)
-        height = Inches(max(text_element.height, 10) / 96.0)
         
-        print(f"    📝 Text: '{text_element.text[:40]}...' at ({text_element.x:.1f}, {text_element.y:.1f})")
+        # Calculate proper width - ensure it's wide enough for the text content
+        text_width = text_element.width
+        
+        # For large fonts, increase the width calculation significantly
+        font_size_factor = max(1.0, text_element.font_size / 20.0)  # Scale factor based on font size
+        
+        if text_width < 100:  # If width is too small, estimate based on text length and font size
+            # More generous estimate: each character needs more space for larger fonts
+            chars_per_pixel = 8 / font_size_factor  # Fewer characters per pixel for larger fonts
+            estimated_width = len(text_element.text) * chars_per_pixel
+            text_width = max(text_width, estimated_width)
+        
+        # Add generous padding to prevent text from being cut off
+        padding = max(20, text_element.font_size * 0.5)  # Padding scales with font size
+        final_width = text_width + (padding * 2)
+        
+        width = Inches(final_width / 96.0)
+        height = Inches(max(text_element.height, 10) / 96.0)
         
         # Create text box
         textbox = slide.shapes.add_textbox(left, top, width, height)
@@ -500,17 +1107,100 @@ class PerfectHTMLToPPTXConverter:
         font.size = Pt(max(text_element.font_size, 8))
         font.bold = CSSParser.parse_font_weight(text_element.font_weight)
         
-        # Set font color
+        # Enhanced styling from the style object
+        if text_element.style:
+            style = text_element.style
+            
+            # Handle letter spacing
+            letter_spacing = style.get('letterSpacing', 'normal')
+            if letter_spacing != 'normal' and letter_spacing.endswith('px'):
+                try:
+                    spacing_px = float(letter_spacing[:-2])
+                    if hasattr(font, 'character_spacing'):
+                        font.character_spacing = spacing_px
+                except:
+                    pass
+            
+            # Handle text transform
+            text_transform = style.get('textTransform', 'none')
+            if text_transform == 'uppercase':
+                p.text = p.text.upper()
+            elif text_transform == 'lowercase':
+                p.text = p.text.lower()
+            elif text_transform == 'capitalize':
+                p.text = p.text.title()
+        
+        # Set font color with enhanced handling
         try:
-            r, g, b = CSSParser.parse_color(text_element.color)
-            font.color.rgb = RGBColor(r, g, b)
-        except Exception as e:
-            print(f"    Warning: Could not parse color '{text_element.color}': {e}")
+            # Handle gradient text (webkit background clip)
+            if text_element.style and text_element.style.get('webkitBackgroundClip') == 'text':
+                r, g, b = CSSParser.parse_color(text_element.color)
+                font.color.rgb = RGBColor(r, g, b)
+            else:
+                # Regular color handling
+                r, g, b = CSSParser.parse_color(text_element.color)
+                font.color.rgb = RGBColor(r, g, b)
+        except Exception:
             font.color.rgb = RGBColor(0, 0, 0)
         
         # Make textbox transparent (no background, no border)
         textbox.fill.background()
         textbox.line.fill.background()
+    
+    def add_visual_element_to_slide(self, slide, visual_element: Dict) -> None:
+        """Add a visual element as an image to the PowerPoint slide with exact positioning."""
+        if visual_element['image_path'].exists():
+            # Convert pixel coordinates to inches
+            left = Inches(visual_element['x'] / 96.0)
+            top = Inches(visual_element['y'] / 96.0)
+            width = Inches(visual_element['width'] / 96.0)
+            height = Inches(visual_element['height'] / 96.0)
+            
+            # Add the image to the slide
+            picture = slide.shapes.add_picture(str(visual_element['image_path']), left, top, width, height)
+            
+            # Special handling for background elements
+            if visual_element['tag'] == 'clean_background':
+                picture.z_order = 0
+    
+    async def build_slide_from_analysis(self, presentation, slide_analysis: Dict, temp_dir: Path) -> None:
+        """Build a PowerPoint slide from pre-analyzed data."""
+        slide_info = slide_analysis['slide_info']
+        visual_elements = slide_analysis['visual_elements']
+        background_path = slide_analysis['background_path']
+        text_elements = slide_analysis['text_elements']
+        
+        # Add blank slide
+        blank_slide_layout = presentation.slide_layouts[6]  # Blank layout
+        slide = presentation.slides.add_slide(blank_slide_layout)
+        
+        # Step 1: Add the clean background as the base layer
+        if background_path and background_path.exists():
+            background_element = {
+                'type': 'background',
+                'x': 0,
+                'y': 0,
+                'width': 1920,
+                'height': 1080,
+                'tag': 'clean_background',
+                'image_path': background_path,
+                'depth': -1
+            }
+            self.add_visual_element_to_slide(slide, background_element)
+        
+        # Step 2: Add individual visual elements on top of background
+        if visual_elements:
+            for visual_element in visual_elements:
+                if visual_element['tag'] != 'full_background':
+                    self.add_visual_element_to_slide(slide, visual_element)
+        
+        # Step 3: Create editable text boxes on top of everything
+        if text_elements:
+            for text_element in text_elements:
+                try:
+                    self.create_text_box(slide, text_element)
+                except Exception:
+                    pass
     
     async def convert_slide_perfect(self, browser, slide_info: Dict, presentation, temp_dir: Path) -> None:
         """
@@ -557,25 +1247,13 @@ class PerfectHTMLToPPTXConverter:
         print(f"  🎉 Slide {slide_num}: PERFECT background + {len(text_elements)} editable text elements")
     
     async def convert_to_pptx_perfect(self) -> None:
-        """Main perfect conversion method"""
+        """Main perfect conversion method - optimized and reliable."""
         print("🎯 Starting PERFECT 1:1 HTML to PPTX conversion...")
-        print("📋 Method: Perfect background rasterization + Editable text overlay")
+        print("📋 Method: Clean background + Visual elements + Editable text overlay")
         print("=" * 80)
         
         # Load metadata
         self.load_metadata()
-        
-        # Create new PowerPoint presentation
-        presentation = Presentation()
-        
-        # Set slide dimensions to 1920x1080 (16:9)
-        presentation.slide_width = Inches(20)  # 1920px at 96 DPI
-        presentation.slide_height = Inches(11.25)  # 1080px at 96 DPI
-        
-        # Remove default slide
-        if len(presentation.slides) > 0:
-            xml_slides = presentation.slides._sldIdLst
-            xml_slides.remove(xml_slides[0])
         
         # Create temporary directory for images
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -595,23 +1273,164 @@ class PerfectHTMLToPPTXConverter:
                         '--disable-background-timer-throttling',
                         '--disable-backgrounding-occluded-windows',
                         '--disable-renderer-backgrounding',
-                        '--disable-features=VizDisplayCompositor'
+                        '--disable-features=VizDisplayCompositor',
+                        '--disable-extensions',
+                        '--disable-plugins',
+                        '--disable-web-security',
+                        '--disable-features=TranslateUI',
+                        '--disable-ipc-flooding-protection'
                     ]
                 )
                 
                 try:
-                    # Process each slide
-                    for slide_info in self.slides_info:
-                        await self.convert_slide_perfect(browser, slide_info, presentation, temp_path)
+                    # Process all slides in parallel
+                    # Create semaphore to limit concurrent operations
+                    semaphore = asyncio.Semaphore(2)  # Reduced to 2 for optimal performance
+                    
+                    async def process_single_slide(slide_info: Dict) -> Dict:
+                        """Process a single slide with controlled concurrency."""
+                        async with semaphore:
+                            slide_num = slide_info['number']
+                            
+                            try:
+                                # Create a new page for this slide
+                                page = await browser.new_page()
+                                
+                                # Set exact viewport dimensions
+                                await page.set_viewport_size({"width": 1920, "height": 1080})
+                                await page.emulate_media(media='screen')
+                                
+                                # Force device pixel ratio to 1
+                                await page.evaluate(r"""
+                                    () => {
+                                        Object.defineProperty(window, 'devicePixelRatio', {
+                                            get: () => 1
+                                        });
+                                    }
+                                """)
+                                
+                                try:
+                                    # Extract visual elements
+                                    visual_elements = await self.extract_visual_elements(page, slide_info['path'], temp_path)
+                                    
+                                    # Capture clean background
+                                    background_path = await self.capture_clean_background(page, slide_info['path'], temp_path, visual_elements)
+                                    
+                                    # Extract text elements
+                                    text_elements = await self.extract_text_elements(page, slide_info['path'])
+                                    
+                                    slide_analysis = {
+                                        'slide_info': slide_info,
+                                        'visual_elements': visual_elements,
+                                        'background_path': background_path,
+                                        'text_elements': text_elements
+                                    }
+                                    
+                                    return slide_analysis
+                                    
+                                except Exception as e:
+                                    return {
+                                        'slide_info': slide_info,
+                                        'visual_elements': [],
+                                        'background_path': None,
+                                        'text_elements': [],
+                                        'error': str(e)
+                                    }
+                                    
+                                finally:
+                                    # Always close the page to free memory
+                                    await page.close()
+                                    
+                            except Exception as e:
+                                return {
+                                    'slide_info': slide_info,
+                                    'visual_elements': [],
+                                    'background_path': None,
+                                    'text_elements': [],
+                                    'error': f"Page creation failed: {str(e)}"
+                                }
+                    
+                    # Launch ALL slides in parallel
+                    parallel_tasks = [
+                        process_single_slide(slide_info) 
+                        for slide_info in self.slides_info
+                    ]
+                    
+                    # Wait for ALL slides to complete in parallel
+                    slide_analyses = await asyncio.gather(*parallel_tasks, return_exceptions=True)
+                    
+                    # Handle any top-level exceptions
+                    processed_analyses = []
+                    for i, result in enumerate(slide_analyses):
+                        if isinstance(result, Exception):
+                            error_analysis = {
+                                'slide_info': self.slides_info[i],
+                                'visual_elements': [],
+                                'background_path': None,
+                                'text_elements': [],
+                                'error': str(result)
+                            }
+                            processed_analyses.append(error_analysis)
+                        else:
+                            processed_analyses.append(result)
+                    
+                    all_slide_analyses = processed_analyses
                     
                 finally:
                     await browser.close()
+            
+            # Build PPTX presentation
+            # Create new PowerPoint presentation
+            presentation = Presentation()
+            
+            # Set slide dimensions to 1920x1080 (16:9)
+            presentation.slide_width = Inches(20)  # 1920px at 96 DPI
+            presentation.slide_height = Inches(11.25)  # 1080px at 96 DPI
+            
+            # Remove default slide
+            if len(presentation.slides) > 0:
+                xml_slides = presentation.slides._sldIdLst
+                xml_slides.remove(xml_slides[0])
+            
+            # Build slides using the analyzed data
+            successful_slides = 0
+            for i, slide_analysis in enumerate(all_slide_analyses, 1):
+                try:
+                    if 'error' in slide_analysis and slide_analysis['error']:
+                        # Create a blank slide with error message
+                        blank_slide_layout = presentation.slide_layouts[6]
+                        slide = presentation.slides.add_slide(blank_slide_layout)
+                        
+                        # Add error text box
+                        textbox = slide.shapes.add_textbox(Inches(1), Inches(4), Inches(18), Inches(2))
+                        text_frame = textbox.text_frame
+                        text_frame.clear()
+                        p = text_frame.paragraphs[0]
+                        p.text = f"Error processing slide: {slide_analysis['error']}"
+                        p.font.size = Pt(18)
+                        p.font.color.rgb = RGBColor(255, 0, 0)
+                    else:
+                        await self.build_slide_from_analysis(presentation, slide_analysis, temp_path)
+                        successful_slides += 1
+                        
+                except Exception as e:
+                    # Create error slide
+                    blank_slide_layout = presentation.slide_layouts[6]
+                    slide = presentation.slides.add_slide(blank_slide_layout)
+                    
+                    textbox = slide.shapes.add_textbox(Inches(1), Inches(4), Inches(18), Inches(2))
+                    text_frame = textbox.text_frame
+                    text_frame.clear()
+                    p = text_frame.paragraphs[0]
+                    p.text = f"Error building slide: {str(e)}"
+                    p.font.size = Pt(18)
+                    p.font.color.rgb = RGBColor(255, 0, 0)
         
         # Save PowerPoint presentation
         presentation.save(str(self.output_path))
         print(f"\n🎉 PERFECT 1:1 PPTX created successfully: {self.output_path}")
         print(f"📊 Total slides: {len(presentation.slides)}")
-        print(f"✨ Perfect visual fidelity + Fully editable text!")
+        print(f"✨ Clean background + Visual elements + Fully editable text!")
 
 
 def check_dependencies():
@@ -647,7 +1466,7 @@ def main():
     """Main CLI entry point"""
     print("🎯 HTML Presentation to PPTX Converter - PERFECT 1:1 MODE")
     print("=" * 80)
-    print("🎨 Perfect background capture + Editable text overlay")
+    print("🎨 Clean background + Visual elements + Editable text overlay")
     print()
     
     # Check dependencies

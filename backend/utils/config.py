@@ -16,6 +16,7 @@ Usage:
 
 import os
 from enum import Enum
+from re import S
 from typing import Dict, Any, Optional, get_type_hints, Union
 from dotenv import load_dotenv
 import logging
@@ -261,6 +262,9 @@ class Configuration:
     GROQ_API_KEY: Optional[str] = None
     OPENROUTER_API_KEY: Optional[str] = None
     XAI_API_KEY: Optional[str] = None
+    
+    # Video generation API keys
+    HEYGEN_API_KEY: Optional[str] = None
     MORPH_API_KEY: Optional[str] = None
     GEMINI_API_KEY: Optional[str] = None
     OPENROUTER_API_BASE: Optional[str] = "https://openrouter.ai/api/v1"
@@ -280,6 +284,7 @@ class Configuration:
     SUPABASE_URL: str
     SUPABASE_ANON_KEY: str
     SUPABASE_SERVICE_ROLE_KEY: str
+    SUPABASE_JWT_SECRET: str
     
     # Redis configuration
     REDIS_HOST: str
@@ -313,8 +318,8 @@ class Configuration:
     STRIPE_PRODUCT_ID_STAGING: str = 'prod_SCgIj3G7yPOAWY'
     
     # Sandbox configuration
-    SANDBOX_IMAGE_NAME = "kortix/suna:0.1.3.11"
-    SANDBOX_SNAPSHOT_NAME = "kortix/suna:0.1.3.11"
+    SANDBOX_IMAGE_NAME = "kortix/suna:0.1.3.12"
+    SANDBOX_SNAPSHOT_NAME = "kortix/suna:0.1.3.12"
     SANDBOX_ENTRYPOINT = "/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf"
 
     # LangFuse configuration
@@ -355,6 +360,31 @@ class Configuration:
         'tier_2_17_yearly_commitment': 5,
         'tier_6_42_yearly_commitment': 20,
         'tier_25_170_yearly_commitment': 100,
+    }
+
+    # Project limits per billing tier
+    # Note: These limits are bypassed in local mode (ENV_MODE=local) where unlimited projects are allowed
+    PROJECT_LIMITS = {
+        'free': 3,
+        'tier_2_20': 100,
+        'tier_6_50': 500,
+        'tier_12_100': 1000,
+        'tier_25_200': 2500,
+        'tier_50_400': 5000,
+        'tier_125_800': 10000,
+        'tier_200_1000': 25000,
+        # Yearly plans have same limits as monthly
+        'tier_2_20_yearly': 100,
+        'tier_6_50_yearly': 500,
+        'tier_12_100_yearly': 1000,
+        'tier_25_200_yearly': 2500,
+        'tier_50_400_yearly': 5000,
+        'tier_125_800_yearly': 10000,
+        'tier_200_1000_yearly': 25000,
+        # Yearly commitment plans
+        'tier_2_17_yearly_commitment': 100,
+        'tier_6_42_yearly_commitment': 500,
+        'tier_25_170_yearly_commitment': 2500,
     }
 
     @property

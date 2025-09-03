@@ -28,12 +28,12 @@ import { useThreadQuery } from '@/hooks/react-query/threads/use-threads';
 import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
 import { OmniLogo } from '../sidebar/omni-logo';
 import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog';
-import { useFeatureFlag } from '@/lib/feature-flags';
 import { CustomAgentsSection } from './custom-agents-section';
 import { toast } from 'sonner';
 import { ReleaseBadge } from '../auth/release-badge';
 import { useDashboardTour } from '@/hooks/use-dashboard-tour';
 import { TourConfirmationDialog } from '@/components/tour/TourConfirmationDialog';
+import { ThreeSpinner } from '@/components/ui/three-spinner';
 import { Calendar, MessageSquare, Plus, Sparkles, Zap } from 'lucide-react';
 
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
@@ -102,7 +102,6 @@ export function DashboardContent() {
   } = useDashboardTour();
 
   // Feature flag for custom agents section
-  const { enabled: customAgentsEnabled } = useFeatureFlag('custom_agents');
 
   // Fetch agents to get the selected agent's name
   const { data: agentsResponse } = useAgents({
@@ -341,7 +340,7 @@ export function DashboardContent() {
       <div className="flex flex-col h-screen w-full overflow-hidden">
         <div className="flex-1 overflow-y-auto">
           <div className="min-h-full flex flex-col">
-            {customAgentsEnabled && (
+            {(
               <div className="flex justify-center px-4 pt-4 md:pt-8">
                 <ReleaseBadge text="Custom Agents, Playbooks, and more!" link="/agents?tab=my-agents" />
               </div>
@@ -349,6 +348,10 @@ export function DashboardContent() {
             <div className="flex-1 flex items-center justify-center px-4 py-8">
               <div className="w-full max-w-[650px] flex flex-col items-center justify-center space-y-4 md:space-y-6">
                 <div className="flex flex-col items-center text-center w-full">
+                  {/* Omni Logo */}
+                  <div className="mb-4">
+                    <ThreeSpinner size={64} />
+                  </div>
                   <p 
                     className="tracking-tight text-2xl md:text-3xl font-normal text-foreground/90"
                     data-tour="dashboard-title"
@@ -376,7 +379,7 @@ export function DashboardContent() {
                 </div>
               </div>
             </div>
-            {enabledEnvironment && customAgentsEnabled && (
+            {enabledEnvironment && (
               <div className="w-full px-4 pb-8" data-tour="custom-agents">
                 <div className="max-w-7xl mx-auto">
                   <CustomAgentsSection 

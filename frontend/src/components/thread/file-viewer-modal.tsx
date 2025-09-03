@@ -23,6 +23,7 @@ import {
   Archive,
   Copy,
   Check,
+  Edit,
 } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -49,6 +50,7 @@ import {
 } from '@/hooks/react-query/files';
 import JSZip from 'jszip';
 import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
+import { TipTapDocumentModal } from './tiptap-document-modal';
 
 // Define API_URL
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
@@ -156,6 +158,10 @@ export function FileViewerModal({
   // Add state for copy functionality
   const [isCopyingPath, setIsCopyingPath] = useState(false);
   const [isCopyingContent, setIsCopyingContent] = useState(false);
+  
+  // Add state for TipTap document editor
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [editorDocumentData, setEditorDocumentData] = useState<any>(null);
 
   // Setup project with sandbox URL if not provided directly
   useEffect(() => {
@@ -625,7 +631,7 @@ export function FileViewerModal({
       const isImageFile = FileCache.isImageFile(selectedFilePath);
       const isPdfFile = FileCache.isPdfFile(selectedFilePath);
       const extension = selectedFilePath.split('.').pop()?.toLowerCase();
-      const isOfficeFile = ['xlsx', 'xls', 'docx', 'doc', 'pptx', 'ppt'].includes(extension || '');
+      const isOfficeFile = ['xlsx', 'xls', 'docx', 'pptx', 'ppt'].includes(extension || '');
       const isBinaryFile = isImageFile || isPdfFile || isOfficeFile;
 
       // Store raw content
@@ -723,8 +729,24 @@ export function FileViewerModal({
   const isMarkdownFile = useCallback((filePath: string | null) => {
     return filePath ? filePath.toLowerCase().endsWith('.md') : false;
   }, []);
+  
 
-  // Copy functions
+  const isDocumentFile = useCallback((filePath: string | null) => {
+    if (!filePath) return false;
+    const lower = filePath.toLowerCase();
+    return lower.endsWith('.doc');
+  }, []);
+  
+  const isTipTapDocumentContent = useCallback((content: string | null) => {
+    if (!content) return false;
+    try {
+      const parsed = JSON.parse(content);
+      return parsed.type === 'tiptap_document';
+    } catch {
+      return false;
+    }
+  }, []);
+
   const copyToClipboard = useCallback(async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -759,6 +781,50 @@ export function FileViewerModal({
     }
     setTimeout(() => setIsCopyingContent(false), 500);
   }, [textContentForRenderer, copyToClipboard]);
+  
+  // Handle opening the TipTap document editor
+  const handleOpenEditor = useCallback(() => {
+    if (!selectedFilePath || !textContentForRenderer || !isDocumentFile(selectedFilePath)) {
+      return;
+    }
+    
+    // Check if it's actually a TipTap document by examining content
+    if (!isTipTapDocumentContent(textContentForRenderer)) {
+      toast.error('This document format is not supported for editing');
+      return;
+    }
+    
+    // Parse the TipTap document JSON
+    try {
+      const documentData = JSON.parse(textContentForRenderer);
+      setEditorDocumentData(documentData);
+      setIsEditorOpen(true);
+    } catch (error) {
+      toast.error('Failed to parse document data');
+    }
+  }, [selectedFilePath, textContentForRenderer, isDocumentFile, isTipTapDocumentContent]);
+  
+  // Handle document save from editor
+  const handleDocumentSave = useCallback(() => {
+    // Refresh the file content after saving
+    if (selectedFilePath) {
+      // Clear cache for this file to force reload
+      const normalizedPath = normalizePath(selectedFilePath);
+      const contentType = FileCache.getContentTypeFromPath(normalizedPath);
+      const cacheKey = `${sandboxId}:${normalizedPath}:${contentType}`;
+      FileCache.delete(cacheKey);
+      
+      // Re-open the file to reload content
+      const fileName = selectedFilePath.split('/').pop() || '';
+      openFile({
+        name: fileName,
+        path: normalizedPath,
+        is_dir: false,
+        size: 0,
+        mod_time: new Date().toISOString(),
+      });
+    }
+  }, [selectedFilePath, sandboxId, normalizePath, openFile]);
 
   // Handle PDF export for markdown files
   const handleExportPdf = useCallback(
@@ -1097,7 +1163,8 @@ export function FileViewerModal({
 
   // --- Render --- //
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <>
+      <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[90vw] md:max-w-[1200px] w-[95vw] h-[90vh] max-h-[900px] flex flex-col p-0 gap-0 overflow-hidden">
         <DialogHeader className="px-4 py-2 border-b flex-shrink-0 flex flex-row gap-4 items-center">
           <DialogTitle className="text-lg font-semibold">
@@ -1228,6 +1295,20 @@ export function FileViewerModal({
                     <span className="hidden sm:inline">Copy</span>
                   </Button>
                 )}
+                
+                {/* Edit button - only show for document files that are TipTap format */}
+                {isDocumentFile(selectedFilePath) && textContentForRenderer && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleOpenEditor}
+                    disabled={isCachedFileLoading}
+                    className="h-8 gap-1"
+                  >
+                    <Edit className="h-4 w-4" />
+                    <span className="hidden sm:inline">Edit</span>
+                  </Button>
+                )}
 
                 <Button
                   variant="outline"
@@ -1244,7 +1325,6 @@ export function FileViewerModal({
                   <span className="hidden sm:inline">Download</span>
                 </Button>
 
-                {/* Replace the Export as PDF button with a dropdown */}
                 {isMarkdownFile(selectedFilePath) && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -1409,7 +1489,7 @@ export function FileViewerModal({
                     const isImageFile = FileCache.isImageFile(selectedFilePath);
                     const isPdfFile = FileCache.isPdfFile(selectedFilePath);
                     const extension = selectedFilePath?.split('.').pop()?.toLowerCase();
-                    const isOfficeFile = ['xlsx', 'xls', 'docx', 'doc', 'pptx', 'ppt'].includes(extension || '');
+                    const isOfficeFile = ['xlsx', 'xls', 'docx', 'pptx', 'ppt'].includes(extension || '');
                     const isBinaryFile = isImageFile || isPdfFile || isOfficeFile;
 
                     // For binary files, only render if we have a blob URL
@@ -1495,5 +1575,18 @@ export function FileViewerModal({
         </div>
       </DialogContent>
     </Dialog>
+    
+    {/* TipTap Document Editor Modal */}
+    {selectedFilePath && isDocumentFile(selectedFilePath) && editorDocumentData && (
+      <TipTapDocumentModal
+        open={isEditorOpen}
+        onOpenChange={setIsEditorOpen}
+        filePath={selectedFilePath}
+        documentData={editorDocumentData}
+        sandboxId={sandboxId}
+        onSave={handleDocumentSave}
+      />
+    )}
+    </>
   );
 }

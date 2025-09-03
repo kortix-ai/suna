@@ -21,7 +21,7 @@ import { toast } from 'sonner';
 interface NewAgentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSuccess?: () => void;
+  onSuccess?: (agentId: string) => void;
 }
 
 export function NewAgentDialog({ open, onOpenChange, onSuccess }: NewAgentDialogProps) {
@@ -35,9 +35,9 @@ export function NewAgentDialog({ open, onOpenChange, onSuccess }: NewAgentDialog
 
   const handleCreateNewAgent = () => {
     createNewAgentMutation.mutate(undefined, {
-      onSuccess: () => {
+      onSuccess: (newAgent) => {
         onOpenChange(false);
-        onSuccess?.();
+        onSuccess?.(newAgent.agent_id);
       },
       onError: (error) => {
         if (error instanceof AgentCountLimitError) {
@@ -127,7 +127,7 @@ export function NewAgentDialog({ open, onOpenChange, onSuccess }: NewAgentDialog
           <AlertDialogCancel disabled={isLoading} className="mt-2 sm:mt-0">
             Cancel
           </AlertDialogCancel>
-          <AlertDialogAction 
+          <AlertDialogAction
             onClick={handleCreateNewAgent}
             disabled={isLoading}
             className="min-w-[120px]"
@@ -153,10 +153,10 @@ export function NewAgentDialog({ open, onOpenChange, onSuccess }: NewAgentDialog
         onSuccess={(agentId) => {
           setShowJsonImport(false);
           onOpenChange(false);
-          onSuccess?.();
+          onSuccess?.(agentId);
         }}
       />
-      
+
       {agentLimitError && (
         <AgentCountLimitDialog
           open={showAgentLimitDialog}

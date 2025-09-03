@@ -5,7 +5,7 @@ from uuid import UUID
 from datetime import datetime
 
 from utils.logger import logger
-from utils.auth_utils import get_current_user_id_from_jwt
+from utils.auth_utils import verify_and_get_user_id_from_jwt
 from .profile_service import ProfileService, Profile, ProfileServiceError, ProfileNotFoundError, ProfileAlreadyExistsError, InvalidConfigError, EncryptionError
 from .connection_service import ConnectionService
 from .app_service import get_app_service
@@ -162,7 +162,7 @@ def _handle_pipedream_exception(e: Exception) -> HTTPException:
 @router.post("/connection-token", response_model=ConnectionTokenResponse)
 async def create_connection_token(
     request: CreateConnectionTokenRequest,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     logger.debug(f"Creating Pipedream connection token for user: {user_id}, app: {request.app}")
     
@@ -190,7 +190,7 @@ async def create_connection_token(
 
 @router.get("/connections", response_model=ConnectionResponse)
 async def get_user_connections(
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     logger.debug(f"Getting connections for user: {user_id}")
     
@@ -228,7 +228,7 @@ async def get_user_connections(
 @router.post("/mcp/discover", response_model=MCPDiscoveryResponse)
 async def discover_mcp_servers(
     request: MCPDiscoveryRequest,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     logger.debug(f"Discovering MCP servers for user: {user_id}, app: {request.app_slug}")
     
@@ -277,7 +277,7 @@ async def discover_mcp_servers(
 @router.post("/mcp/discover-profile", response_model=MCPDiscoveryResponse)
 async def discover_mcp_servers_for_profile(
     request: MCPProfileDiscoveryRequest,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     logger.debug(f"Discovering MCP servers for profile: {request.external_user_id}")
     
@@ -326,7 +326,7 @@ async def discover_mcp_servers_for_profile(
 @router.post("/mcp/connect", response_model=MCPConnectionResponse)
 async def create_mcp_connection(
     request: MCPConnectionRequest,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     logger.debug(f"Creating MCP connection for user: {user_id}, app: {request.app_slug}")
     
@@ -535,7 +535,7 @@ async def get_app_tools(app_slug: str):
 @router.post("/profiles", response_model=ProfileResponse)
 async def create_credential_profile(
     request: ProfileRequest,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     logger.debug(f"Creating credential profile for user: {user_id}, app: {request.app_slug}")
     
@@ -563,7 +563,7 @@ async def create_credential_profile(
 async def get_credential_profiles(
     app_slug: Optional[str] = Query(None),
     is_active: Optional[bool] = Query(None),
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     logger.debug(f"Getting credential profiles for user: {user_id}, app: {app_slug}")
     
@@ -581,7 +581,7 @@ async def get_credential_profiles(
 @router.get("/profiles/{profile_id}", response_model=ProfileResponse)
 async def get_credential_profile(
     profile_id: str,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     logger.debug(f"Getting credential profile: {profile_id} for user: {user_id}")
     
@@ -603,7 +603,7 @@ async def get_credential_profile(
 async def update_credential_profile(
     profile_id: str,
     request: UpdateProfileRequest,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     logger.debug(f"Updating credential profile: {profile_id} for user: {user_id}")
     
@@ -628,7 +628,7 @@ async def update_credential_profile(
 @router.delete("/profiles/{profile_id}")
 async def delete_credential_profile(
     profile_id: str,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     logger.debug(f"Deleting credential profile: {profile_id} for user: {user_id}")
     
@@ -649,7 +649,7 @@ async def delete_credential_profile(
 async def connect_credential_profile(
     profile_id: str,
     app: Optional[str] = Query(None),
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     logger.debug(f"Connecting credential profile: {profile_id} for user: {user_id}")
     
@@ -686,7 +686,7 @@ async def connect_credential_profile(
 @router.get("/profiles/{profile_id}/connections")
 async def get_profile_connections(
     profile_id: str,
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     logger.debug(f"Getting connections for profile: {profile_id}, user: {user_id}")
     

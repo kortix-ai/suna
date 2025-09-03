@@ -1,7 +1,7 @@
 'use client';
 
 import { Button } from "@/components/ui/button"
-import { FolderOpen, ExternalLink, Monitor } from "lucide-react"
+import { FolderOpen, ExternalLink, Monitor, Copy, Check } from "lucide-react"
 import { usePathname } from "next/navigation"
 import { toast } from "sonner"
 import {
@@ -20,17 +20,17 @@ import { ShareModal } from "@/components/sidebar/share-modal"
 import { useQueryClient } from "@tanstack/react-query";
 import { projectKeys } from "@/hooks/react-query/sidebar/keys";
 import { threadKeys } from "@/hooks/react-query/threads/keys";
-import { useFeatureFlags } from "@/lib/feature-flags";
 
 interface ThreadSiteHeaderProps {
-  threadId: string;
-  projectId: string;
+  threadId?: string;
+  projectId?: string;
   projectName: string;
   onViewFiles: (filePath?: string, filePathList?: string[]) => void;
   onToggleSidePanel: () => void;
   onProjectRenamed?: (newName: string) => void;
   isMobileView?: boolean;
   debugMode?: boolean;
+  variant?: 'default' | 'shared';
 }
 
 export function SiteHeader({
@@ -42,6 +42,7 @@ export function SiteHeader({
   onProjectRenamed,
   isMobileView,
   debugMode,
+  variant = 'default',
 }: ThreadSiteHeaderProps) {
   const pathname = usePathname()
   const [isEditing, setIsEditing] = useState(false)
@@ -49,9 +50,8 @@ export function SiteHeader({
   const inputRef = useRef<HTMLInputElement>(null)
   const [showShareModal, setShowShareModal] = useState(false);
   const [showKnowledgeBase, setShowKnowledgeBase] = useState(false);
+  const [copied, setCopied] = useState(false);
   const queryClient = useQueryClient();
-  const { flags, loading: flagsLoading } = useFeatureFlags(['knowledge_base']);
-  const knowledgeBaseEnabled = flags.knowledge_base;
 
   const isMobile = useIsMobile() || isMobileView
   const updateProjectMutation = useUpdateProject()
@@ -63,6 +63,17 @@ export function SiteHeader({
   const openKnowledgeBase = () => {
     setShowKnowledgeBase(true)
   }
+
+  const copyShareLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      toast.success("Share link copied to clipboard!");
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      toast.error("Failed to copy link");
+    }
+  };
 
   const startEditing = () => {
     setEditName(projectName);
@@ -133,7 +144,14 @@ export function SiteHeader({
 
 
         <div className="flex flex-1 items-center gap-2 px-3">
-          {isEditing ? (
+          {variant === 'shared' ? (
+            <div className="text-base font-medium text-muted-foreground flex items-center gap-2">
+              {projectName}
+              <span className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 px-2 py-0.5 rounded-full">
+                Shared
+              </span>
+            </div>
+          ) : isEditing ? (
             <Input
               ref={inputRef}
               value={editName}
@@ -166,15 +184,32 @@ export function SiteHeader({
 
           {/* Show all buttons on both mobile and desktop - responsive tooltips */}
           <TooltipProvider>
-
-          <Button
-              variant="ghost"
-              onClick={openShareModal}
-              className="h-9 px-3 cursor-pointer gap-2"
-            >
-              <ExternalLink className="h-4 w-4" />
-              <span>Share</span>
-            </Button>
+            {variant === 'shared' ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    onClick={copyShareLink}
+                    className="h-9 px-3 cursor-pointer gap-2"
+                  >
+                    {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                    <span>{copied ? 'Copied!' : 'Copy Link'}</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side={isMobile ? "bottom" : "bottom"}>
+                  <p>Copy share link</p>
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              <Button
+                variant="ghost"
+                onClick={openShareModal}
+                className="h-9 px-3 cursor-pointer gap-2"
+              >
+                <ExternalLink className="h-4 w-4" />
+                <span>Share</span>
+              </Button>
+            )}
 
             <Tooltip>
               <TooltipTrigger asChild>
@@ -215,13 +250,14 @@ export function SiteHeader({
           </TooltipProvider>
         </div>
       </header>
-      <ShareModal
-        isOpen={showShareModal}
-        onClose={() => setShowShareModal(false)}
-        threadId={threadId}
-        projectId={projectId}
-      />
-      
+      {variant === 'default' && threadId && projectId && (
+        <ShareModal
+          isOpen={showShareModal}
+          onClose={() => setShowShareModal(false)}
+          threadId={threadId}
+          projectId={projectId}
+        />
+      )}
     </>
   )
 } 

@@ -188,7 +188,7 @@ export const EventTriggerConfigForm: React.FC<EventTriggerConfigFormProps> = ({
 
   return (
     <div className="space-y-6">
-      <Card className="border-none bg-transparent shadow-none p-0">
+      <Card className="border-none bg-transparent shadow-none p-6">
         <CardContent className="p-0">
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             <div className="space-y-4">
@@ -216,7 +216,7 @@ export const EventTriggerConfigForm: React.FC<EventTriggerConfigFormProps> = ({
                       className="text-sm"
                     />
                   </div>
-                  
+
                   <div>
                     <Label className="text-sm font-medium mb-2 block">Status</Label>
                     <Tabs value={isActive ? 'enabled' : 'disabled'} onValueChange={(value) => onActiveChange(value === 'enabled')} className="w-full">

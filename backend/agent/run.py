@@ -13,14 +13,14 @@ from agent.tools.sb_expose_tool import SandboxExposeTool
 from agent.tools.web_search_tool import SandboxWebSearchTool
 from dotenv import load_dotenv
 from utils.config import config
-from agent.agent_builder_prompt import get_agent_builder_prompt
+from agent.prompts.agent_builder_prompt import get_agent_builder_prompt
 from agentpress.thread_manager import ThreadManager
 from agentpress.response_processor import ProcessorConfig
 from agent.tools.sb_shell_tool import SandboxShellTool
 from agent.tools.sb_files_tool import SandboxFilesTool
 from agent.tools.data_providers_tool import DataProvidersTool
 from agent.tools.expand_msg_tool import ExpandMessageTool
-from agent.prompt import get_system_prompt
+from agent.prompts.prompt import get_system_prompt
 
 from utils.logger import logger
 
@@ -428,7 +428,7 @@ class MessageManager:
             )
             
             if has_builder_tools:
-                from agent.agent_builder_prompt import AGENT_BUILDER_SYSTEM_PROMPT
+                from agent.prompts.agent_builder_prompt import AGENT_BUILDER_SYSTEM_PROMPT
                 if system_message:
                     system_message += f"\n\n{AGENT_BUILDER_SYSTEM_PROMPT}"
                 else:

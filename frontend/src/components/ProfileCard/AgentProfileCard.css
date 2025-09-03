@@ -1,0 +1,110 @@
+/* Agent Profile Card Animations */
+
+@keyframes glare-sweep {
+  0% {
+    transform: translateX(-100%) skewX(-15deg);
+  }
+  50% {
+    transform: translateX(100%) skewX(-15deg);
+  }
+  100% {
+    transform: translateX(100%) skewX(-15deg);
+  }
+}
+
+@keyframes glare-sweep-colored {
+  0% {
+    transform: translateX(-100%) skewX(-10deg);
+  }
+  60% {
+    transform: translateX(100%) skewX(-10deg);
+  }
+  100% {
+    transform: translateX(100%) skewX(-10deg);
+  }
+}
+
+/* Glare animation classes */
+.glare-sweep-animation {
+  transform: translateX(-100%);
+}
+
+.group:hover .glare-sweep-animation {
+  animation: glare-sweep 2.5s ease-in-out infinite;
+}
+
+.glare-sweep-colored-animation {
+  transform: translateX(-100%);
+}
+
+.group:hover .glare-sweep-colored-animation {
+  animation: glare-sweep-colored 3s ease-in-out infinite 0.5s;
+}
+
+/* Additional sparkle effect for extra flair */
+@keyframes sparkle {
+  0%, 100% {
+    opacity: 0;
+    transform: scale(0);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Subtle pulse animation for the avatar on hover */
+.group:hover .agent-avatar {
+  animation: subtle-pulse 2s ease-in-out infinite;
+}
+
+@keyframes subtle-pulse {
+  0%, 100% {
+    box-shadow: 0 4px 15px var(--agent-color, #3B82F6)20;
+  }
+  50% {
+    box-shadow: 0 6px 25px var(--agent-color, #3B82F6)40;
+  }
+}
+
+/* Enhanced border glow effect */
+.group:hover .card-border-glow {
+  animation: border-glow-pulse 2s ease-in-out infinite;
+}
+
+@keyframes border-glow-pulse {
+  0%, 100% {
+    filter: blur(8px);
+  }
+  50% {
+    filter: blur(12px);
+  }
+}
+
+/* Custom scrollbar styles for read more functionality */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 2px;
+  opacity: 0.6;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--border));
+  opacity: 0.8;
+}
+
+.scrollbar-track-transparent::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scrollbar-thumb-border::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+}

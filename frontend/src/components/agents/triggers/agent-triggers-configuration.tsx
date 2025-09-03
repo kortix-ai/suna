@@ -59,7 +59,7 @@ export const AgentTriggersConfiguration: React.FC<AgentTriggersConfigurationProp
         triggerId: trigger.trigger_id,
         agentId: trigger.agent_id
       });
-      toast.success('Trigger deleted successfully');
+      toast.success('Task deleted successfully');
     } catch (error) {
       toast.error('Failed to delete trigger');
       console.error('Error deleting trigger:', error);

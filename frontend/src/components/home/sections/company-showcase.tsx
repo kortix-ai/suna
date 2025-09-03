@@ -10,9 +10,9 @@ export function CompanyShowcase() {
       className="flex flex-col items-center justify-center gap-10 py-10 pt-20 w-full relative px-6"
     >
       <p className="text-muted-foreground font-medium">
-        Trusted by fast-growing startups
+        Trusted by Enterprise
       </p>
-      <div className="grid w-full grid-cols-2 md:grid-cols-4 overflow-hidden border-y border-border items-center justify-center z-20">
+      <div className="grid w-full max-w-7xl grid-cols-2 md:grid-cols-4 overflow-hidden border-y border-border items-center justify-center z-20">
         {companyShowcase.companyLogos.map((logo) => (
           <Link
             href="#"

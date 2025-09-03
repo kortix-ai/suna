@@ -5,7 +5,7 @@ from fastapi import APIRouter, UploadFile, File, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
 from utils.logger import logger
-from utils.auth_utils import get_current_user_id_from_jwt
+from utils.auth_utils import verify_and_get_user_id_from_jwt
 
 router = APIRouter(tags=["transcription"])
 
@@ -15,7 +15,7 @@ class TranscriptionResponse(BaseModel):
 @router.post("/transcription", response_model=TranscriptionResponse)
 async def transcribe_audio(
     audio_file: UploadFile = File(...),
-    user_id: str = Depends(get_current_user_id_from_jwt)
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Transcribe audio file to text using OpenAI Whisper."""
     try:

@@ -98,11 +98,11 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     const isCreateFile = toolName === 'Creating File';
     const isFullFileRewrite = toolName === 'Rewriting File';
 
-    // Clean XML content and extract parameter names with values
+    // Clean function call XML content but preserve other HTML/XML
     const cleanXMLContent = (rawContent: string): { html: string; plainText: string } => {
         if (!rawContent) return { html: '', plainText: '' };
         
-        // Remove opening function_calls, invoke tags
+        // Remove only function call related XML tags: function_calls, invoke, parameter
         let cleaned = rawContent
             .replace(/<function_calls[^>]*>/gi, '')
             .replace(/<\/function_calls>/gi, '')
@@ -138,8 +138,8 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
             }
         }
         
-        // Fallback: remove all XML tags
-        const cleanText = cleaned.replace(/<[^>]*>/g, '').trim();
+        // Fallback: remove only parameter tags but preserve other HTML/XML
+        const cleanText = cleaned.replace(/<\/?parameter[^>]*>/gi, '').trim();
         return { html: cleanText, plainText: cleanText };
     };
 
