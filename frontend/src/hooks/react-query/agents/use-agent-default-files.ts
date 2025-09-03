@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { supabase } from "@/lib/supabase/client"
+import { createClient } from "@/lib/supabase/client"
 import { toast } from "sonner"
 
 export interface AgentDefaultFile {
@@ -33,6 +33,7 @@ export function useListAgentDefaultFiles(agentId: string | undefined) {
     queryFn: async () => {
       if (!agentId) throw new Error("Agent ID is required")
       
+      const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) throw new Error("Not authenticated")
 
@@ -63,6 +64,7 @@ export function useUploadAgentDefaultFile(agentId: string) {
 
   return useMutation({
     mutationFn: async (file: File) => {
+      const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) throw new Error("Not authenticated")
 
@@ -110,6 +112,7 @@ export function useDeleteAgentDefaultFile(agentId: string) {
 
   return useMutation({
     mutationFn: async (filename: string) => {
+      const supabase = createClient()
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) throw new Error("Not authenticated")
 
