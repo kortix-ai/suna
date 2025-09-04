@@ -87,7 +87,7 @@ class AgentService:
         try:
             # Build template queries
             base_query = self.db.table('agent_templates').select('*').eq('creator_id', user_id)
-            count_query = self.db.table('agent_templates').select('*', count='exact').eq('creator_id', user_id)
+            count_query = self.db.table('agent_templates').select('template_id', count='exact').eq('creator_id', user_id)
             
             # Apply search filter
             if filters.search:
@@ -144,7 +144,7 @@ class AgentService:
         return query
 
     def _build_count_query(self, user_id: str, filters: AgentFilters):
-        query = self.db.table('agents').select('*', count='exact').eq("account_id", user_id)
+        query = self.db.table('agents').select('agent_id', count='exact').eq("account_id", user_id)
         
         if filters.search:
             search_term = f"%{filters.search}%"

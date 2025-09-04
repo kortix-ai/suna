@@ -200,7 +200,7 @@ class TemplateService:
         return query
 
     def _build_marketplace_count_query(self, filters: MarketplaceFilters):
-        query = self.db.table('agent_templates').select('*', count='exact').eq('is_public', True)
+        query = self.db.table('agent_templates').select('template_id', count='exact').eq('is_public', True)
         
         if filters.search:
             search_term = f"%{filters.search}%"
@@ -247,7 +247,7 @@ class TemplateService:
         return query
 
     def _build_user_templates_count_query(self, filters: MarketplaceFilters):
-        query = self.db.table('agent_templates').select('*', count='exact')
+        query = self.db.table('agent_templates').select('template_id', count='exact')
         
         if filters.creator_id is not None:
             query = query.eq('creator_id', filters.creator_id)

@@ -130,10 +130,10 @@ async def update_agent(
                     "agent_id": agent_id,
                     "version_number": 1,
                     "version_name": "v1",
-                    "system_prompt": existing_data.get('system_prompt', ''),
-                    "configured_mcps": existing_data.get('configured_mcps', []),
-                    "custom_mcps": existing_data.get('custom_mcps', []),
-                    "agentpress_tools": existing_data.get('agentpress_tools', {}),
+                    "system_prompt": '',
+                    "configured_mcps": [],
+                    "custom_mcps": [],
+                    "agentpress_tools": {},
                     "is_active": True,
                     "created_by": user_id
                 }
@@ -163,18 +163,18 @@ async def update_agent(
                     logger.debug(f"Created initial version for agent {agent_id}")
                 else:
                     current_version_data = {
-                        'system_prompt': existing_data.get('system_prompt', ''),
-                        'configured_mcps': existing_data.get('configured_mcps', []),
-                        'custom_mcps': existing_data.get('custom_mcps', []),
-                        'agentpress_tools': existing_data.get('agentpress_tools', {})
+                        'system_prompt': '',
+                        'configured_mcps': [],
+                        'custom_mcps': [],
+                        'agentpress_tools': {}
                     }
             except Exception as e:
                 logger.warning(f"Failed to create initial version for agent {agent_id}: {e}")
                 current_version_data = {
-                    'system_prompt': existing_data.get('system_prompt', ''),
-                    'configured_mcps': existing_data.get('configured_mcps', []),
-                    'custom_mcps': existing_data.get('custom_mcps', []),
-                    'agentpress_tools': existing_data.get('agentpress_tools', {})
+                    'system_prompt': '',
+                    'configured_mcps': [],
+                    'custom_mcps': [],
+                    'agentpress_tools': {}
                 }
         
         needs_new_version = False

@@ -69,8 +69,8 @@ def _extract_suna_agent_config(agent_data: Dict[str, Any], version_data: Optiona
             config['workflows'] = []
             config['triggers'] = []
     else:
-        config['configured_mcps'] = agent_data.get('configured_mcps', [])
-        config['custom_mcps'] = agent_data.get('custom_mcps', [])
+        config['configured_mcps'] = []
+        config['custom_mcps'] = []
         config['workflows'] = []
         config['triggers'] = []
     
@@ -259,5 +259,4 @@ def _extract_agentpress_tools_for_run(agentpress_config: Dict[str, Any]) -> Dict
             }
     
     return run_tools
-
 
