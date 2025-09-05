@@ -29,6 +29,49 @@ router = APIRouter(prefix="/api/enterprise", tags=["enterprise-admin"])
 
 
 # =====================================================
+# ADMIN VERIFICATION
+# =====================================================
+
+async def verify_simple_admin(user_id: str = Depends(verify_and_get_user_id_from_jwt)):
+    """Super simple admin check - just checks if user email is in ADMIN_EMAILS env var."""
+    if not config.ENTERPRISE_MODE:
+        raise HTTPException(status_code=400, detail="Enterprise mode not enabled")
+    
+    if not config.ADMIN_EMAILS:
+        raise HTTPException(status_code=500, detail="No admin emails configured")
+    
+    try:
+        # Get user email from JWT token for simpler implementation
+        from fastapi import Request
+        
+        # Simple approach: get email from Supabase auth
+        db = DBConnection()
+        client = await db.client
+        
+        # Get user data from auth.users - use service role permissions
+        user_result = await client.auth.admin.get_user_by_id(user_id)
+        
+        if not user_result.user or not user_result.user.email:
+            raise HTTPException(status_code=403, detail="Unable to get user email")
+        
+        user_email = user_result.user.email
+        
+        admin_emails = [email.strip().lower() for email in config.ADMIN_EMAILS.split(',') if email.strip()]
+        
+        if user_email.lower() not in admin_emails:
+            raise HTTPException(status_code=403, detail=f"Access denied. Contact admin for access.")
+        
+        logger.info(f"Admin access granted to {user_email}", user_id=admin_user_id, user_email=user_email)
+        return user_id
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error verifying admin: {e}", user_id=admin_user_id, error=str(e))
+        raise HTTPException(status_code=500, detail="Error checking admin access")
+
+
+# =====================================================
 # REQUEST/RESPONSE MODELS
 # =====================================================
 
@@ -80,13 +123,23 @@ class UsageStatsResponse(BaseModel):
 
 
 # =====================================================
+# ADMIN ACCESS CHECK
+# =====================================================
+
+@router.get("/check-admin")
+async def check_admin_access(admin_user_id: str = Depends(verify_simple_admin)):
+    """Check if current user has admin access."""
+    return {"is_admin": True, "user_id": admin_user_id}
+
+
+# =====================================================
 # ENTERPRISE ACCOUNT MANAGEMENT
 # =====================================================
 
 @router.post("/accounts", response_model=Dict[str, Any])
 async def create_enterprise_account(
     request: CreateEnterpriseAccountRequest,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+    admin_user_id: str = Depends(verify_simple_admin)
 ):
     """Create a new enterprise billing account."""
     if not config.ENTERPRISE_MODE:
@@ -125,7 +178,7 @@ async def create_enterprise_account(
                     'amount': request.initial_credits,
                     'transaction_type': 'load',
                     'description': 'Initial credit load',
-                    'performed_by': user_id
+                    'performed_by': admin_user_id
                 })\
                 .execute()
         
@@ -133,7 +186,7 @@ async def create_enterprise_account(
             f"Created enterprise account: {enterprise_account['id']}",
             enterprise_id=enterprise_account['id'],
             name=request.name,
-            created_by=user_id,
+            created_by=admin_user_id,
             initial_credits=request.initial_credits
         )
         
@@ -153,7 +206,7 @@ async def create_enterprise_account(
 @router.get("/accounts", response_model=List[EnterpriseAccountResponse])
 async def list_enterprise_accounts(
     active_only: bool = Query(default=True, description="Only return active accounts"),
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+    admin_user_id: str = Depends(verify_simple_admin)
 ):
     """List all enterprise billing accounts."""
     if not config.ENTERPRISE_MODE:
@@ -197,7 +250,7 @@ async def list_enterprise_accounts(
 @router.get("/accounts/{enterprise_id}")
 async def get_enterprise_account(
     enterprise_id: str,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+    admin_user_id: str = Depends(verify_simple_admin)
 ):
     """Get detailed information about a specific enterprise account."""
     if not config.ENTERPRISE_MODE:
@@ -238,7 +291,7 @@ async def get_enterprise_account(
 @router.post("/load-credits")
 async def load_credits(
     request: LoadCreditsRequest,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+    admin_user_id: str = Depends(verify_simple_admin)
 ):
     """Manually load credits into an enterprise billing account."""
     if not config.ENTERPRISE_MODE:
@@ -249,7 +302,7 @@ async def load_credits(
             enterprise_id=request.enterprise_id,
             amount=request.amount,
             description=request.description,
-            performed_by=user_id
+            performed_by=admin_user_id
         )
         
         if success:
@@ -257,7 +310,7 @@ async def load_credits(
                 f"Loaded ${request.amount} into enterprise {request.enterprise_id}",
                 enterprise_id=request.enterprise_id,
                 amount=request.amount,
-                performed_by=user_id
+                performed_by=admin_user_id
             )
             return {
                 'success': True,
@@ -281,7 +334,7 @@ async def load_credits(
 @router.post("/add-user")
 async def add_user_to_enterprise(
     request: AddUserToEnterpriseRequest,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+    admin_user_id: str = Depends(verify_simple_admin)
 ):
     """Add a user account to an enterprise billing account."""
     if not config.ENTERPRISE_MODE:
@@ -332,7 +385,7 @@ async def add_user_to_enterprise(
             account_id=request.account_id,
             enterprise_id=request.enterprise_id,
             monthly_limit=request.monthly_limit,
-            performed_by=user_id
+            performed_by=admin_user_id
         )
         
         return {
@@ -351,7 +404,7 @@ async def add_user_to_enterprise(
 @router.put("/update-user-limit")
 async def update_user_limit(
     request: UpdateUserLimitRequest,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+    admin_user_id: str = Depends(verify_simple_admin)
 ):
     """Update the monthly spend limit for a user in enterprise billing."""
     if not config.ENTERPRISE_MODE:
@@ -361,7 +414,7 @@ async def update_user_limit(
         success, message = await enterprise_billing.update_user_monthly_limit(
             account_id=request.account_id,
             new_limit=request.monthly_limit,
-            updated_by=user_id
+            updated_by=admin_user_id
         )
         
         if success:
@@ -383,7 +436,7 @@ async def update_user_limit(
 @router.delete("/remove-user/{account_id}")
 async def remove_user_from_enterprise(
     account_id: str,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+    admin_user_id: str = Depends(verify_simple_admin)
 ):
     """Remove a user from enterprise billing (deactivate membership)."""
     if not config.ENTERPRISE_MODE:
@@ -405,7 +458,7 @@ async def remove_user_from_enterprise(
         logger.info(
             f"Removed user {account_id} from enterprise billing",
             account_id=account_id,
-            performed_by=user_id
+            performed_by=admin_user_id
         )
         
         return {
@@ -430,7 +483,7 @@ async def get_enterprise_usage(
     page: int = Query(default=0, ge=0, description="Page number for pagination"),
     items_per_page: int = Query(default=100, ge=1, le=500, description="Items per page"),
     days: int = Query(default=30, ge=1, le=365, description="Number of days to look back"),
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+    admin_user_id: str = Depends(verify_simple_admin)
 ):
     """Get comprehensive usage statistics for an enterprise billing account."""
     if not config.ENTERPRISE_MODE:
@@ -468,7 +521,7 @@ async def get_user_usage_in_enterprise(
     page: int = Query(default=0, ge=0),
     items_per_page: int = Query(default=50, ge=1, le=200),
     days: int = Query(default=30, ge=1, le=365),
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+    admin_user_id: str = Depends(verify_simple_admin)
 ):
     """Get usage statistics for a specific user within an enterprise."""
     if not config.ENTERPRISE_MODE:
@@ -538,7 +591,7 @@ async def get_user_usage_in_enterprise(
 
 @router.post("/reset-monthly-usage")
 async def reset_monthly_usage(
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+    admin_user_id: str = Depends(verify_simple_admin)
 ):
     """Reset monthly usage for all enterprise users (typically run monthly via cron)."""
     if not config.ENTERPRISE_MODE:
@@ -556,7 +609,7 @@ async def reset_monthly_usage(
         logger.info(
             f"Reset monthly usage for {reset_count} enterprise users",
             reset_count=reset_count,
-            performed_by=user_id
+            performed_by=admin_user_id
         )
         
         return {

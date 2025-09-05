@@ -21,6 +21,7 @@ import {
   KeyRound,
   Plug,
   Zap,
+  Shield,
 } from 'lucide-react';
 import { useAccounts } from '@/hooks/use-accounts';
 import NewTeamForm from '@/components/basejump/new-team-form';
@@ -55,6 +56,7 @@ import { useTheme } from 'next-themes';
 import { isLocalMode } from '@/lib/config';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { BillingModal } from '@/components/billing/billing-modal';
+import { useAdminCheck } from '@/hooks/use-admin-check';
 
 export function NavUserWithTeams({
   user,
@@ -71,6 +73,7 @@ export function NavUserWithTeams({
   const [showNewTeamDialog, setShowNewTeamDialog] = React.useState(false);
   const [showBillingModal, setShowBillingModal] = React.useState(false);
   const { theme, setTheme } = useTheme();
+  const { data: isAdmin } = useAdminCheck();
 
   // Prepare personal account and team accounts
   const personalAccount = React.useMemo(
@@ -313,6 +316,14 @@ export function NavUserWithTeams({
                     <Link href="/settings/api-keys">
                       <Key className="h-4 w-4" />
                       API Keys (Admin)
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                {isAdmin && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/admin">
+                      <Shield className="h-4 w-4" />
+                      Enterprise Admin
                     </Link>
                   </DropdownMenuItem>
                 )}
