@@ -25,7 +25,8 @@ from core.utils.logger import logger
 from langfuse.client import StatefulGenerationClient, StatefulTraceClient
 from core.services.langfuse import langfuse
 from litellm.utils import token_counter
-from core.services.billing import calculate_token_cost, handle_usage_with_credits
+from core.billing_integration import billing_integration
+from services.billing_v2 import calculate_token_cost
 import re
 from datetime import datetime, timezone, timedelta
 import aiofiles
@@ -178,20 +179,17 @@ class ThreadManager:
                         prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
                         completion_tokens = int(usage.get("completion_tokens", 0) or 0)
                         model = content.get("model") if isinstance(content, dict) else None
-                        # Compute token cost
-                        token_cost = calculate_token_cost(prompt_tokens, completion_tokens, model or "unknown")
                         # Fetch account_id for this thread, which equals user_id for personal accounts
                         thread_row = await client.table('threads').select('account_id').eq('thread_id', thread_id).limit(1).execute()
                         user_id = thread_row.data[0]['account_id'] if thread_row.data and len(thread_row.data) > 0 else None
-                        if user_id and token_cost > 0:
-                            # Deduct credits if applicable and record usage against this message
-                            await handle_usage_with_credits(
-                                client,
-                                user_id,
-                                token_cost,
-                                thread_id=thread_id,
-                                message_id=saved_message['message_id'],
-                                model=model or "unknown"
+                        if user_id and prompt_tokens > 0:
+                            # Deduct credits using the new credit system
+                            await billing_integration.deduct_usage(
+                                user_id=user_id,
+                                prompt_tokens=prompt_tokens,
+                                completion_tokens=completion_tokens,
+                                model=model or "unknown",
+                                message_id=saved_message['message_id']
                             )
                     except Exception as billing_e:
                         logger.error(f"Error handling credit usage for message {saved_message.get('message_id')}: {str(billing_e)}", exc_info=True)

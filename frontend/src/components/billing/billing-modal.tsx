@@ -25,7 +25,7 @@ import {
     SubscriptionStatus,
 } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
-import { useSubscriptionCommitment } from '@/hooks/react-query';
+import { useSubscriptionCommitment } from '@/hooks/react-query/subscriptions/use-subscriptions';
 import { useQueryClient } from '@tanstack/react-query';
 import { subscriptionKeys } from '@/hooks/react-query/subscriptions/keys';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -58,7 +58,6 @@ export function BillingModal({ open, onOpenChange, returnUrl = typeof window !==
     const [showCancelDialog, setShowCancelDialog] = useState(false);
     const [isCancelling, setIsCancelling] = useState(false);
 
-    // Get commitment info for the subscription (only if we have a valid ID)
     const {
         data: commitmentInfo,
         isLoading: commitmentLoading,
@@ -66,7 +65,6 @@ export function BillingModal({ open, onOpenChange, returnUrl = typeof window !==
         refetch: refetchCommitment
     } = useSubscriptionCommitment(subscriptionData?.subscription?.id || null);
 
-    // Simple function to fetch subscription data
     const fetchSubscriptionData = async () => {
         if (!session) return;
 

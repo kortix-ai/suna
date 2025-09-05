@@ -22,7 +22,8 @@ import uuid
 from core import api as core_api
 
 from core.sandbox import api as sandbox_api
-from core.services import billing as billing_api
+from services import billing_v2
+from admin import billing_admin, users_admin
 from core.services import transcription as transcription_api
 import sys
 from core.services import email_api
@@ -33,7 +34,6 @@ from core.services import api_keys_api
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-# Initialize managers
 db = DBConnection()
 instance_id = "single"
 
@@ -157,8 +157,10 @@ api_router = APIRouter()
 # Include all API routers without individual prefixes
 api_router.include_router(core_api.router)
 api_router.include_router(sandbox_api.router)
-api_router.include_router(billing_api.router)
+api_router.include_router(billing_v2.router)
 api_router.include_router(api_keys_api.router)
+api_router.include_router(billing_admin.router)
+api_router.include_router(users_admin.router)
 
 from core.mcp_module import api as mcp_api
 from core.credentials import api as credentials_api
@@ -219,6 +221,9 @@ async def health_check():
 
 
 app.include_router(api_router, prefix="/api")
+app.include_router(billing_v2.router)
+# billing_admin.router is now included in api_router with /api prefix
+app.include_router(transcription_api.router)
 
 
 if __name__ == "__main__":

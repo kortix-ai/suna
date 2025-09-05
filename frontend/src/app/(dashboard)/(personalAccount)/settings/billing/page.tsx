@@ -2,24 +2,21 @@
 
 import { useMemo, useState } from 'react';
 import { BillingModal } from '@/components/billing/billing-modal';
-import {
-  CreditBalanceDisplay,
-  CreditPurchaseModal
-} from '@/components/billing/credit-purchase';
+import { CreditBalanceCard } from '@/components/billing/credit-balance-card';
 import { useAccounts } from '@/hooks/use-accounts';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { useSharedSubscription } from '@/contexts/SubscriptionContext';
+import { useSharedSubscription, useSubscriptionContext } from '@/contexts/SubscriptionContext';
 import { isLocalMode } from '@/lib/config';
 import Link from 'next/link';
+import { useCreatePortalSession } from '@/hooks/react-query/use-billing-v2';
 
 const returnUrl = process.env.NEXT_PUBLIC_URL as string;
 
 export default function PersonalAccountBillingPage() {
   const { data: accounts, isLoading, error } = useAccounts();
   const [showBillingModal, setShowBillingModal] = useState(false);
-  const [showCreditPurchaseModal, setShowCreditPurchaseModal] = useState(false);
 
   const {
     data: subscriptionData,
@@ -103,16 +100,22 @@ export default function PersonalAccountBillingPage() {
           </div>
         ) : (
           <>
+            {/* Credit Balance Card */}
+            <div className="mb-6">
+              <CreditBalanceCard 
+                showPurchaseButton={subscriptionData?.credits?.can_purchase || false}
+              />
+            </div>
+
             {subscriptionData && (
               <div className="mb-6">
                 <div className="rounded-lg border bg-background p-4">
                   <div className="flex justify-between items-center gap-4">
                     <span className="text-sm font-medium text-foreground/90">
-                      Agent Usage This Month
+                      Credits Used
                     </span>
                     <span className="text-sm font-medium">
-                      ${subscriptionData.current_usage?.toFixed(2) || '0'} /{' '}
-                      ${subscriptionData.cost_limit || '0'}
+                      ${subscriptionData.credits?.lifetime_used?.toFixed(2) || '0'} lifetime
                     </span>
                     <Button variant='outline' asChild className='text-sm'>
                       <Link href="/settings/usage-logs">
@@ -121,17 +124,6 @@ export default function PersonalAccountBillingPage() {
                     </Button>
                   </div>
                 </div>
-              </div>
-            )}
-
-            {/* Credit Balance Display - Only show for users who can purchase credits */}
-            {subscriptionData?.can_purchase_credits && (
-              <div className="mb-6">
-                <CreditBalanceDisplay 
-                  balance={subscriptionData.credit_balance || 0}
-                  canPurchase={subscriptionData.can_purchase_credits}
-                  onPurchaseClick={() => setShowCreditPurchaseModal(true)}
-                />
               </div>
             )}
 
@@ -155,18 +147,6 @@ export default function PersonalAccountBillingPage() {
           </>
         )}
       </div>
-      
-      {/* Credit Purchase Modal */}
-      <CreditPurchaseModal
-        open={showCreditPurchaseModal}
-        onOpenChange={setShowCreditPurchaseModal}
-        currentBalance={subscriptionData?.credit_balance || 0}
-        canPurchase={subscriptionData?.can_purchase_credits || false}
-        onPurchaseComplete={() => {
-          // Optionally refresh subscription data here
-          window.location.reload();
-        }}
-      />
     </div>
   );
 }

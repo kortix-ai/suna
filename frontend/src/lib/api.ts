@@ -1838,7 +1838,8 @@ export const createCheckoutSession = async (
     
     const requestBody = { ...request, tolt_referral: window.tolt_referral };
     
-    const response = await fetch(`${API_URL}/billing/create-checkout-session`, {
+    // Use the new billing v2 API endpoint
+    const response = await fetch(`${API_URL}/billing/v2/create-checkout-session`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1861,25 +1862,19 @@ export const createCheckoutSession = async (
     }
 
     const data = await response.json();
-    switch (data.status) {
-      case 'upgraded':
-      case 'updated':
-      case 'downgrade_scheduled':
-      case 'scheduled':
-      case 'no_change':
-        return data;
-      case 'new':
-      case 'checkout_created':
-        if (!data.url) {
-          throw new Error('No checkout URL provided');
-        }
-        return data;
-      default:
-        console.warn(
-          'Unexpected status from createCheckoutSession:',
-          data.status,
-        );
-        return data;
+    if (data.checkout_url) {
+      return {
+        status: 'checkout_created',
+        url: data.checkout_url
+      };
+    } else if (data.success && data.subscription_id) {
+      return {
+        status: 'updated',
+        message: data.message || 'Subscription updated successfully',
+        subscription_id: data.subscription_id
+      };
+    } else {
+      return data;
     }
   } catch (error) {
     console.error('Failed to create checkout session:', error);
@@ -1902,7 +1897,7 @@ export const createPortalSession = async (
       throw new NoAccessTokenAvailableError();
     }
 
-    const response = await fetch(`${API_URL}/billing/create-portal-session`, {
+    const response = await fetch(`${API_URL}/billing/v2/create-portal-session`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1924,7 +1919,11 @@ export const createPortalSession = async (
       );
     }
 
-    return response.json();
+    const data = await response.json();
+    
+    return {
+      url: data.portal_url
+    };
   } catch (error) {
     console.error('Failed to create portal session:', error);
     handleApiError(error, { operation: 'create portal session', resource: 'billing portal' });
@@ -1935,9 +1934,6 @@ export const createPortalSession = async (
 
 export const getSubscription = async (): Promise<SubscriptionStatus> => {
   try {
-    // Log when subscription API is called for debugging
-    console.log('🔍 [BILLING] Making subscription API call:', new Date().toISOString());
-    
     const supabase = createClient();
     const {
       data: { session },
@@ -1947,7 +1943,7 @@ export const getSubscription = async (): Promise<SubscriptionStatus> => {
       throw new NoAccessTokenAvailableError();
     }
 
-    const response = await fetch(`${API_URL}/billing/subscription`, {
+    const response = await fetch(`${API_URL}/billing/v2/subscription`, {
       headers: {
         Authorization: `Bearer ${session.access_token}`,
       },
@@ -1966,7 +1962,20 @@ export const getSubscription = async (): Promise<SubscriptionStatus> => {
       );
     }
 
-    return response.json();
+    const data = await response.json();
+    
+    // Map the new billing v2 format to the old format for backward compatibility
+    return {
+      subscription: data.subscription ? {
+        ...data.subscription,
+        cancel_at_period_end: data.subscription.cancel_at ? true : false,
+      } : null,
+      current_usage: data.credits?.lifetime_used || 0,
+      cost_limit: data.tier?.credits || 0,
+      credit_balance: data.credits?.balance || 0,
+      can_purchase_credits: data.credits?.can_purchase || false,
+      ...data  // Include any other fields that might be used
+    } as SubscriptionStatus;
   } catch (error) {
     if (error instanceof NoAccessTokenAvailableError) {
       throw error;
@@ -1989,7 +1998,8 @@ export const getSubscriptionCommitment = async (subscriptionId: string): Promise
       throw new NoAccessTokenAvailableError();
     }
 
-    const response = await fetch(`${API_URL}/billing/subscription-commitment/${subscriptionId}`, {
+    // Use the new billing v2 API endpoint
+    const response = await fetch(`${API_URL}/billing/v2/subscription-commitment/${subscriptionId}`, {
       headers: {
         Authorization: `Bearer ${session.access_token}`,
       },
@@ -2031,7 +2041,7 @@ export const getAvailableModels = async (): Promise<AvailableModelsResponse> => 
       throw new NoAccessTokenAvailableError();
     }
 
-    const response = await fetch(`${API_URL}/billing/available-models`, {
+    const response = await fetch(`${API_URL}/billing/v2/available-models`, {
       headers: {
         Authorization: `Bearer ${session.access_token}`,
       },
@@ -2074,7 +2084,7 @@ export const checkBillingStatus = async (): Promise<BillingStatusResponse> => {
       throw new NoAccessTokenAvailableError();
     }
 
-    const response = await fetch(`${API_URL}/billing/check-status`, {
+    const response = await fetch(`${API_URL}/billing/v2/check-status`, {
       headers: {
         Authorization: `Bearer ${session.access_token}`,
       },
@@ -2115,12 +2125,13 @@ export const cancelSubscription = async (): Promise<CancelSubscriptionResponse> 
       throw new NoAccessTokenAvailableError();
     }
 
-    const response = await fetch(`${API_URL}/billing/cancel-subscription`, {
+    const response = await fetch(`${API_URL}/billing/v2/cancel-subscription`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session.access_token}`,
       },
+      body: JSON.stringify({}),
     });
 
     if (!response.ok) {
@@ -2155,12 +2166,13 @@ export const reactivateSubscription = async (): Promise<ReactivateSubscriptionRe
       throw new NoAccessTokenAvailableError();
     }
 
-    const response = await fetch(`${API_URL}/billing/reactivate-subscription`, {
+    const response = await fetch(`${API_URL}/billing/v2/reactivate-subscription`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session.access_token}`,
       },
+      body: JSON.stringify({}),
     });
 
     if (!response.ok) {
