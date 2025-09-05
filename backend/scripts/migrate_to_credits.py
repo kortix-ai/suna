@@ -87,13 +87,28 @@ class CreditMigration:
         
         monthly_credits = get_monthly_credits(tier_name)
         
-        total_initial_balance = old_balance + monthly_credits
+        month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        usage_result = await self.client.from_('credit_ledger')\
+            .select('amount')\
+            .eq('user_id', user_id)\
+            .eq('type', 'usage')\
+            .gte('created_at', month_start.isoformat())\
+            .execute()
+        
+        current_usage = Decimal('0')
+        for entry in usage_result.data or []:
+            amount = Decimal(str(entry['amount']))
+            if amount < 0:
+                current_usage += abs(amount)
+        
+        total_initial_balance = monthly_credits - current_usage + old_balance
         
         if self.dry_run:
             logger.info(f"[DRY RUN] Would migrate user {user_id} to tier '{tier_name}'")
             if old_balance > 0:
                 logger.info(f"  - Preserving existing balance: ${old_balance}")
-            logger.info(f"  - Granting tier credits: ${monthly_credits}")
+            logger.info(f"  - Monthly tier limit: ${monthly_credits}")
+            logger.info(f"  - Current month usage: ${current_usage}")
             logger.info(f"  - Total initial balance: ${total_initial_balance}")
             return True
         
@@ -112,7 +127,7 @@ class CreditMigration:
             description_parts = []
             if old_balance > 0:
                 description_parts.append(f"Migrated existing balance: ${old_balance}")
-            description_parts.append(f"Initial {tier_name} tier credits: ${monthly_credits}")
+            description_parts.append(f"Initial {tier_name} tier credits: ${monthly_credits} - usage ${current_usage}")
             
             ledger_entry = {
                 'user_id': user_id,
@@ -124,7 +139,8 @@ class CreditMigration:
                     'migration': True,
                     'tier': tier_name,
                     'old_balance': str(old_balance),
-                    'tier_credits': str(monthly_credits)
+                    'tier_credits': str(monthly_credits),
+                    'current_usage': str(current_usage)
                 }
             }
             
@@ -140,7 +156,7 @@ class CreditMigration:
                 }
                 await self.client.from_('credit_grants').insert(grant_entry).execute()
             
-            logger.info(f"Successfully migrated user {user_id} to tier '{tier_name}' with balance ${total_initial_balance}")
+            logger.info(f"Successfully migrated user {user_id} to tier '{tier_name}' with balance ${total_initial_balance} (${monthly_credits} limit - ${current_usage} usage)")
             return True
             
         except Exception as e:
