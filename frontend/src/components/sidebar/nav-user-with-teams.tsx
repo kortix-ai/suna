@@ -315,7 +315,7 @@ export function NavUserWithTeams({
                   <DropdownMenuItem asChild>
                     <Link href="/admin">
                       <Shield className="h-4 w-4" />
-                      Enterprise Admin
+                      Admin
                     </Link>
                   </DropdownMenuItem>
                 )}

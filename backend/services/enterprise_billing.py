@@ -1,473 +1,396 @@
 """
-Enterprise billing service for managing enterprise credit-based billing.
+Simplified Enterprise Billing Service
 
-This service provides a complete enterprise billing system that operates independently
-of the standard Stripe billing system. It supports:
-- Credit-based billing with centralized enterprise accounts
-- Per-user monthly spend limits within enterprise accounts
-- Detailed usage tracking and reporting
-- Manual credit loading and management
-
-This is designed as a separate implementation that only activates when
-ENTERPRISE_MODE is enabled in configuration.
+When ENTERPRISE_MODE is enabled:
+- ALL users share ONE credit pool
+- Per-user monthly limits are enforced
+- Usage is tracked per user for visibility
+- Credits are manually loaded by admins
 """
 
-from typing import Optional, Tuple, Dict, List, Any
+from typing import Optional, Dict, Any, Tuple, List
+from datetime import datetime, timezone, timedelta
 from decimal import Decimal
-import asyncio
-from datetime import datetime, timezone
+import structlog
 
-from services.supabase import DBConnection
-from utils.logger import logger, structlog
 from utils.config import config
-from utils.cache import Cache
+from services.supabase import DBConnection
 
+logger = structlog.get_logger(__name__)
 
-class EnterpriseBillingService:
+# Fixed enterprise billing account ID
+ENTERPRISE_BILLING_ID = '00000000-0000-0000-0000-000000000000'
+
+class SimplifiedEnterpriseBillingService:
     """
-    Comprehensive enterprise billing service.
+    Simplified enterprise billing service.
+    When ENTERPRISE_MODE is enabled, ALL users are enterprise users.
+    """
     
-    Handles all enterprise billing operations including:
-    - Credit management and usage tracking
-    - Monthly spend limits per user
-    - Billing status checks
-    - Usage analytics and reporting
-    """
+    def __init__(self):
+        self.db = DBConnection()
     
     @staticmethod
-    async def is_enterprise_account(account_id: str) -> bool:
-        """
-        Check if an account is part of enterprise billing system.
-        
-        Args:
-            account_id: The basejump account ID to check
+    async def check_enterprise_mode() -> bool:
+        """Check if enterprise mode is enabled."""
+        return config.ENTERPRISE_MODE
+    
+    async def get_enterprise_balance(self) -> Dict[str, Any]:
+        """Get the single enterprise billing account balance."""
+        if not config.ENTERPRISE_MODE:
+            return None
             
-        Returns:
-            bool: True if account is enterprise, False otherwise
+        db = DBConnection()
+        client = await db.client
+        
+        result = await client.table('enterprise_billing')\
+            .select('*')\
+            .eq('id', ENTERPRISE_BILLING_ID)\
+            .single()\
+            .execute()
+        
+        return result.data if result.data else None
+    
+    async def check_billing_status(self, account_id: str) -> Tuple[bool, str, Optional[Dict]]:
+        """
+        Check if a user can run agents based on enterprise credits and limits.
+        When ENTERPRISE_MODE is enabled, this replaces the normal billing check.
         """
         if not config.ENTERPRISE_MODE:
-            logger.debug(f"Enterprise mode disabled, account {account_id} not enterprise")
-            return False
-            
-        # Check cache first
-        cache_key = f"is_enterprise_account:{account_id}"
-        cached_result = await Cache.get(cache_key)
-        if cached_result is not None:
-            return cached_result
+            # This shouldn't be called if enterprise mode is disabled
+            return False, "Enterprise mode not enabled", None
         
         try:
             db = DBConnection()
             client = await db.client
-            result = await client.rpc('get_enterprise_billing_status', {
-                'p_account_id': account_id
-            }).execute()
             
-            is_enterprise = bool(result.data and result.data[0]['is_enterprise'])
+            # Get enterprise balance
+            enterprise = await self.get_enterprise_balance()
+            if not enterprise:
+                return False, "Enterprise billing not configured", None
             
-            # Cache result for 5 minutes
-            await Cache.set(cache_key, is_enterprise, ttl=300)
+            # Get user's limit and usage
+            user_limit_result = await client.table('enterprise_user_limits')\
+                .select('*')\
+                .eq('account_id', account_id)\
+                .eq('is_active', True)\
+                .maybe_single()\
+                .execute()
             
-            logger.debug(f"Account {account_id} enterprise status: {is_enterprise}")
-            return is_enterprise
+            if user_limit_result.data:
+                user_limit = user_limit_result.data
+                remaining = user_limit['monthly_limit'] - user_limit['current_month_usage']
+            else:
+                # Default limit if not set
+                remaining = 1000.00
             
-        except Exception as e:
-            logger.error(f"Error checking enterprise status for account {account_id}: {e}")
-            return False
-    
-    @staticmethod
-    async def check_enterprise_billing_status(account_id: str) -> Tuple[bool, str, Optional[Dict]]:
-        """
-        Check if an enterprise account can run agents based on credits and limits.
-        
-        Args:
-            account_id: The basejump account ID to check
-            
-        Returns:
-            Tuple[bool, str, Optional[Dict]]: (can_run, message, billing_info)
-        """
-        try:
-            db = DBConnection()
-            client = await db.client
-            
-            # Get comprehensive billing status
-            result = await client.rpc('get_enterprise_billing_status', {
-                'p_account_id': account_id
-            }).execute()
-            
-            if not result.data or not result.data[0]['is_enterprise']:
-                return False, "Not an enterprise account", None
-            
-            billing_data = result.data[0]
-            
-            # Check if enterprise account is active
-            if not billing_data['is_active']:
-                return False, "Enterprise account is suspended", {
-                    'enterprise_id': billing_data['enterprise_id'],
-                    'enterprise_name': billing_data['enterprise_name'],
-                    'is_active': False
+            # Check if enterprise has credits
+            if enterprise['credit_balance'] < 0.01:  # Minimum to start
+                return False, "Insufficient enterprise credits. Contact admin to load credits.", {
+                    'enterprise_balance': enterprise['credit_balance'],
+                    'user_remaining': remaining
                 }
             
-            # Check monthly limit
-            monthly_limit = float(billing_data['monthly_limit'] or 0)
-            current_usage = float(billing_data['current_usage'] or 0)
-            remaining_monthly = float(billing_data['remaining_monthly'] or 0)
-            
-            if remaining_monthly <= 0:
-                return False, f"Monthly spend limit of ${monthly_limit:.2f} reached", {
-                    'enterprise_id': billing_data['enterprise_id'],
-                    'enterprise_name': billing_data['enterprise_name'],
-                    'monthly_limit': monthly_limit,
-                    'current_usage': current_usage,
-                    'remaining_monthly': 0
+            # Check if user has remaining monthly allowance
+            if remaining <= 0:
+                return False, f"Monthly limit reached. Contact admin to increase limit.", {
+                    'enterprise_balance': enterprise['credit_balance'],
+                    'user_remaining': 0
                 }
             
-            # Check enterprise balance
-            credit_balance = float(billing_data['credit_balance'] or 0)
-            if credit_balance <= 0:
-                return False, "No enterprise credits available", {
-                    'enterprise_id': billing_data['enterprise_id'],
-                    'enterprise_name': billing_data['enterprise_name'],
-                    'balance': credit_balance,
-                    'monthly_limit': monthly_limit,
-                    'current_usage': current_usage
-                }
-            
-            # All checks passed
+            # All good - user can proceed
             return True, "OK", {
-                'enterprise_id': billing_data['enterprise_id'],
-                'enterprise_name': billing_data['enterprise_name'],
-                'balance': credit_balance,
-                'monthly_limit': monthly_limit,
-                'current_usage': current_usage,
-                'remaining_monthly': remaining_monthly,
-                'is_active': True
+                'enterprise_balance': enterprise['credit_balance'],
+                'user_remaining': remaining,
+                'plan_name': 'Enterprise',
+                'price_id': 'enterprise'
             }
             
         except Exception as e:
-            logger.error(f"Error checking enterprise billing status for account {account_id}: {e}")
-            return False, "Error checking billing status", None
+            logger.error(f"Error checking enterprise billing status: {e}")
+            return False, f"Error checking billing status: {str(e)}", None
     
-    @staticmethod
     async def use_enterprise_credits(
-        account_id: str, 
+        self,
+        account_id: str,
         amount: float,
         thread_id: str = None,
         message_id: str = None,
-        model_name: str = None,
-        tokens_used: int = None
+        model_name: str = None
     ) -> Tuple[bool, str]:
         """
-        Deduct credits from enterprise billing account.
-        
-        Args:
-            account_id: The basejump account ID
-            amount: Amount in dollars to deduct
-            thread_id: Optional thread ID for tracking
-            message_id: Optional message ID for tracking
-            model_name: Optional model name for tracking
-            tokens_used: Optional token count for tracking
-            
-        Returns:
-            Tuple[bool, str]: (success, message)
+        Use credits from the enterprise pool for a user.
+        Enforces per-user monthly limits.
         """
+        if not config.ENTERPRISE_MODE:
+            return False, "Enterprise mode not enabled"
+        
         try:
             db = DBConnection()
             client = await db.client
             
-            # Use the database function for atomic credit deduction
-            result = await client.rpc('use_enterprise_credits', {
+            # Call the database function to handle the transaction atomically
+            result = await client.rpc('use_enterprise_credits_simple', {
                 'p_account_id': account_id,
                 'p_amount': amount,
                 'p_thread_id': thread_id,
                 'p_message_id': message_id,
-                'p_model_name': model_name,
-                'p_tokens_used': tokens_used
+                'p_model_name': model_name
             }).execute()
             
-            if result.data and result.data[0]['success']:
-                new_balance = result.data[0]['new_balance']
-                logger.info(
-                    f"Used ${amount:.4f} enterprise credits for account {account_id}",
-                    account_id=account_id,
-                    amount=amount,
-                    new_balance=new_balance,
-                    thread_id=thread_id,
-                    message_id=message_id
-                )
-                
-                # Clear relevant caches
-                await Cache.delete(f"is_enterprise_account:{account_id}")
-                
-                return True, f"Used ${amount:.4f} enterprise credits (Balance: ${new_balance:.2f})"
-            else:
-                error_msg = result.data[0]['message'] if result.data else "Unknown error"
-                logger.warning(
-                    f"Failed to use enterprise credits for account {account_id}: {error_msg}",
-                    account_id=account_id,
-                    amount=amount,
-                    error=error_msg
-                )
-                return False, error_msg
-                
+            if result.data and len(result.data) > 0:
+                response = result.data[0]
+                if response['success']:
+                    logger.debug(
+                        f"Used ${amount:.4f} enterprise credits for account {account_id}",
+                        account_id=account_id,
+                        amount=amount,
+                        new_balance=response['new_balance']
+                    )
+                    return True, f"Used ${amount:.4f} from enterprise credits (Balance: ${response['new_balance']:.2f})"
+                else:
+                    return False, response['message']
+            
+            return False, "Failed to use enterprise credits"
+            
         except Exception as e:
-            logger.error(
-                f"Exception using enterprise credits for account {account_id}: {e}",
-                account_id=account_id,
-                amount=amount,
-                error=str(e),
-                exc_info=True
-            )
-            return False, f"Error using enterprise credits: {str(e)}"
+            logger.error(f"Error using enterprise credits: {e}")
+            return False, f"Error using credits: {str(e)}"
     
-    @staticmethod
-    async def load_enterprise_credits(
-        enterprise_id: str,
+    async def load_credits(
+        self,
         amount: float,
         description: str = None,
         performed_by: str = None
-    ) -> Tuple[bool, str]:
-        """
-        Load credits into an enterprise billing account.
+    ) -> Dict[str, Any]:
+        """Load credits into the enterprise account."""
+        if not config.ENTERPRISE_MODE:
+            raise ValueError("Enterprise mode not enabled")
         
-        Args:
-            enterprise_id: The enterprise billing account ID
-            amount: Amount in dollars to load
-            description: Optional description for the transaction
-            performed_by: User ID who performed the loading
-            
-        Returns:
-            Tuple[bool, str]: (success, message)
-        """
         try:
             db = DBConnection()
             client = await db.client
             
-            # Use database function for atomic credit loading
+            # Call the database function
             result = await client.rpc('load_enterprise_credits', {
-                'p_enterprise_id': enterprise_id,
                 'p_amount': amount,
                 'p_description': description,
                 'p_performed_by': performed_by
             }).execute()
             
-            if result.data and result.data[0]['success']:
-                new_balance = result.data[0]['new_balance']
+            if result.data and len(result.data) > 0:
+                response = result.data[0]
                 logger.info(
-                    f"Loaded ${amount:.2f} credits into enterprise {enterprise_id}",
-                    enterprise_id=enterprise_id,
+                    f"Loaded ${amount:.2f} enterprise credits",
                     amount=amount,
-                    new_balance=new_balance,
+                    new_balance=response['new_balance'],
                     performed_by=performed_by
                 )
-                return True, f"Loaded ${amount:.2f} credits (New balance: ${new_balance:.2f})"
-            else:
-                error_msg = result.data[0]['message'] if result.data else "Unknown error"
-                logger.error(
-                    f"Failed to load credits into enterprise {enterprise_id}: {error_msg}",
-                    enterprise_id=enterprise_id,
-                    amount=amount,
-                    error=error_msg
-                )
-                return False, error_msg
-                
-        except Exception as e:
-            logger.error(
-                f"Exception loading credits into enterprise {enterprise_id}: {e}",
-                enterprise_id=enterprise_id,
-                amount=amount,
-                error=str(e),
-                exc_info=True
-            )
-            return False, f"Error loading credits: {str(e)}"
-    
-    @staticmethod
-    async def get_enterprise_usage_stats(
-        enterprise_id: str, 
-        page: int = 0, 
-        items_per_page: int = 100,
-        start_date: datetime = None,
-        end_date: datetime = None
-    ) -> Dict[str, Any]:
-        """
-        Get comprehensive usage statistics for an enterprise billing account.
-        
-        Args:
-            enterprise_id: The enterprise billing account ID
-            page: Page number for pagination
-            items_per_page: Items per page
-            start_date: Optional start date filter
-            end_date: Optional end date filter
+                return {
+                    'success': True,
+                    'new_balance': response['new_balance'],
+                    'amount_loaded': amount
+                }
             
-        Returns:
-            Dict containing usage statistics and member details
-        """
-        try:
-            db = DBConnection()
-            client = await db.client
-            
-            # Get enterprise account info
-            enterprise_info = await client.table('enterprise_billing_accounts')\
-                .select('*')\
-                .eq('id', enterprise_id)\
-                .limit(1)\
-                .execute()
-            
-            if not enterprise_info.data:
-                return {'error': 'Enterprise account not found'}
-            
-            # Get all member accounts with their details
-            members_query = client.table('enterprise_account_members')\
-                .select('*, basejump.accounts(id, name)')\
-                .eq('enterprise_billing_id', enterprise_id)\
-                .eq('is_active', True)
-            
-            members = await members_query.execute()
-            
-            # Build usage logs query with pagination and filters
-            usage_query = client.table('enterprise_usage_logs')\
-                .select('*, basejump.accounts(id, name)')\
-                .eq('enterprise_billing_id', enterprise_id)\
-                .order('created_at', desc=True)
-            
-            # Apply date filters if provided
-            if start_date:
-                usage_query = usage_query.gte('created_at', start_date.isoformat())
-            if end_date:
-                usage_query = usage_query.lte('created_at', end_date.isoformat())
-            
-            # Apply pagination
-            offset = page * items_per_page
-            usage_query = usage_query.range(offset, offset + items_per_page - 1)
-            
-            usage_logs = await usage_query.execute()
-            
-            # Calculate summary statistics
-            total_monthly_usage = sum(
-                float(m['current_month_usage'] or 0) for m in members.data
-            )
-            total_monthly_limit = sum(
-                float(m['monthly_spend_limit'] or 0) for m in members.data
-            )
-            
-            # Get recent transaction history
-            transactions = await client.table('enterprise_credit_transactions')\
-                .select('*')\
-                .eq('enterprise_billing_id', enterprise_id)\
-                .order('created_at', desc=True)\
-                .limit(10)\
-                .execute()
-            
-            return {
-                'enterprise_info': enterprise_info.data[0],
-                'members': members.data,
-                'member_count': len(members.data),
-                'usage_logs': usage_logs.data,
-                'total_monthly_usage': total_monthly_usage,
-                'total_monthly_limit': total_monthly_limit,
-                'remaining_monthly_budget': total_monthly_limit - total_monthly_usage,
-                'recent_transactions': transactions.data,
-                'page': page,
-                'items_per_page': items_per_page,
-                'has_more': len(usage_logs.data) == items_per_page
-            }
+            return {'success': False, 'error': 'Failed to load credits'}
             
         except Exception as e:
-            logger.error(
-                f"Error getting enterprise usage stats for {enterprise_id}: {e}",
-                enterprise_id=enterprise_id,
-                error=str(e),
-                exc_info=True
-            )
-            return {'error': f'Failed to get usage stats: {str(e)}'}
+            logger.error(f"Error loading enterprise credits: {e}")
+            raise
     
-    @staticmethod
-    async def get_user_enterprise_info(account_id: str) -> Optional[Dict[str, Any]]:
-        """
-        Get enterprise information for a specific user account.
-        
-        Args:
-            account_id: The basejump account ID
-            
-        Returns:
-            Dict containing enterprise membership info or None if not enterprise
-        """
-        try:
-            db = DBConnection()
-            client = await db.client
-            
-            result = await client.rpc('get_enterprise_billing_status', {
-                'p_account_id': account_id
-            }).execute()
-            
-            if result.data and result.data[0]['is_enterprise']:
-                return result.data[0]
-            
+    async def get_user_limit(self, account_id: str) -> Dict[str, Any]:
+        """Get a user's monthly limit and current usage."""
+        if not config.ENTERPRISE_MODE:
             return None
-            
-        except Exception as e:
-            logger.error(f"Error getting user enterprise info for account {account_id}: {e}")
-            return None
-    
-    @staticmethod
-    async def update_user_monthly_limit(
-        account_id: str,
-        new_limit: float,
-        updated_by: str = None
-    ) -> Tuple[bool, str]:
-        """
-        Update the monthly spend limit for a user in enterprise billing.
         
-        Args:
-            account_id: The basejump account ID
-            new_limit: New monthly spend limit in dollars
-            updated_by: User ID who made the update
-            
-        Returns:
-            Tuple[bool, str]: (success, message)
-        """
         try:
             db = DBConnection()
             client = await db.client
             
-            # Validate limit
-            if new_limit < 0:
-                return False, "Monthly limit cannot be negative"
-            
-            # Update the limit
-            result = await client.table('enterprise_account_members')\
-                .update({
-                    'monthly_spend_limit': new_limit,
-                    'updated_at': datetime.now(timezone.utc).isoformat()
-                })\
+            result = await client.table('enterprise_user_limits')\
+                .select('*')\
                 .eq('account_id', account_id)\
-                .eq('is_active', True)\
+                .maybe_single()\
                 .execute()
             
             if result.data:
-                logger.info(
-                    f"Updated monthly limit for account {account_id} to ${new_limit:.2f}",
-                    account_id=account_id,
-                    new_limit=new_limit,
-                    updated_by=updated_by
-                )
-                
-                # Clear cache
-                await Cache.delete(f"is_enterprise_account:{account_id}")
-                
-                return True, f"Monthly limit updated to ${new_limit:.2f}"
+                return result.data
             else:
-                return False, "Account not found or not active in enterprise billing"
+                # Return default if not set
+                return {
+                    'account_id': account_id,
+                    'monthly_limit': 1000.00,
+                    'current_month_usage': 0,
+                    'is_active': True
+                }
                 
         except Exception as e:
-            logger.error(
-                f"Error updating monthly limit for account {account_id}: {e}",
-                account_id=account_id,
-                new_limit=new_limit,
-                error=str(e),
-                exc_info=True
-            )
-            return False, f"Error updating monthly limit: {str(e)}"
+            logger.error(f"Error getting user limit: {e}")
+            return None
+    
+    async def set_user_limit(
+        self,
+        account_id: str,
+        monthly_limit: float
+    ) -> Dict[str, Any]:
+        """Set a user's monthly spending limit."""
+        if not config.ENTERPRISE_MODE:
+            raise ValueError("Enterprise mode not enabled")
+        
+        try:
+            db = DBConnection()
+            client = await db.client
+            
+            # Upsert the limit
+            result = await client.table('enterprise_user_limits')\
+                .upsert({
+                    'account_id': account_id,
+                    'monthly_limit': monthly_limit,
+                    'is_active': True,
+                    'updated_at': datetime.now(timezone.utc).isoformat()
+                }, on_conflict='account_id')\
+                .execute()
+            
+            return result.data[0] if result.data else None
+            
+        except Exception as e:
+            logger.error(f"Error setting user limit: {e}")
+            raise
+    
+    async def get_all_user_usage(
+        self,
+        days: int = 30,
+        page: int = 0,
+        items_per_page: int = 100
+    ) -> Dict[str, Any]:
+        """
+        Get usage statistics for all users.
+        Returns aggregated data for the admin dashboard.
+        """
+        if not config.ENTERPRISE_MODE:
+            return None
+        
+        try:
+            db = DBConnection()
+            client = await db.client
+            
+            # Get enterprise balance
+            enterprise = await self.get_enterprise_balance()
+            
+            # Get all user limits with account info
+            limits_result = await client.table('enterprise_user_limits')\
+                .select('*, accounts!inner(id, name, personal_account)')\
+                .eq('is_active', True)\
+                .order('current_month_usage', desc=True)\
+                .range(page * items_per_page, (page + 1) * items_per_page - 1)\
+                .execute()
+            
+            # Get total count
+            count_result = await client.table('enterprise_user_limits')\
+                .select('account_id', count='exact')\
+                .eq('is_active', True)\
+                .execute()
+            
+            # Calculate aggregates
+            total_monthly_limit = sum(u['monthly_limit'] for u in limits_result.data) if limits_result.data else 0
+            total_monthly_usage = sum(u['current_month_usage'] for u in limits_result.data) if limits_result.data else 0
+            
+            return {
+                'enterprise_balance': enterprise['credit_balance'] if enterprise else 0,
+                'total_loaded': enterprise['total_loaded'] if enterprise else 0,
+                'total_used': enterprise['total_used'] if enterprise else 0,
+                'total_monthly_limit': total_monthly_limit,
+                'total_monthly_usage': total_monthly_usage,
+                'remaining_monthly_budget': total_monthly_limit - total_monthly_usage,
+                'users': limits_result.data if limits_result.data else [],
+                'total_users': count_result.count if count_result else 0,
+                'page': page,
+                'items_per_page': items_per_page
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting all user usage: {e}")
+            return None
+    
+    async def get_user_usage_details(
+        self,
+        account_id: str,
+        days: int = 30,
+        page: int = 0,
+        items_per_page: int = 100
+    ) -> Dict[str, Any]:
+        """
+        Get detailed usage for a specific user.
+        This is what the admin sees when clicking on a user.
+        """
+        if not config.ENTERPRISE_MODE:
+            return None
+        
+        try:
+            db = DBConnection()
+            client = await db.client
+            
+            # Get user's limit info
+            user_limit = await self.get_user_limit(account_id)
+            
+            # Get recent usage logs
+            since_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+            
+            usage_result = await client.table('enterprise_usage')\
+                .select('*')\
+                .eq('account_id', account_id)\
+                .gte('created_at', since_date)\
+                .order('created_at', desc=True)\
+                .range(page * items_per_page, (page + 1) * items_per_page - 1)\
+                .execute()
+            
+            # Get total count
+            count_result = await client.table('enterprise_usage')\
+                .select('id', count='exact')\
+                .eq('account_id', account_id)\
+                .gte('created_at', since_date)\
+                .execute()
+            
+            # Calculate total cost for the period
+            total_cost = sum(u['cost'] for u in usage_result.data) if usage_result.data else 0
+            
+            return {
+                'account_id': account_id,
+                'monthly_limit': user_limit['monthly_limit'] if user_limit else 1000.00,
+                'current_month_usage': user_limit['current_month_usage'] if user_limit else 0,
+                'remaining_monthly': (user_limit['monthly_limit'] - user_limit['current_month_usage']) if user_limit else 1000.00,
+                'usage_logs': usage_result.data if usage_result.data else [],
+                'total_cost_period': total_cost,
+                'total_logs': count_result.count if count_result else 0,
+                'page': page,
+                'items_per_page': items_per_page,
+                'days': days
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting user usage details: {e}")
+            return None
+    
+    async def reset_monthly_usage(self) -> bool:
+        """
+        Reset all users' monthly usage counters.
+        This should be called by a scheduled job at the start of each month.
+        """
+        if not config.ENTERPRISE_MODE:
+            return False
+        
+        try:
+            db = DBConnection()
+            client = await db.client
+            
+            await client.rpc('reset_enterprise_monthly_usage').execute()
+            
+            logger.info("Reset monthly usage for all enterprise users")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error resetting monthly usage: {e}")
+            return False
 
-
-# Export singleton instance
-enterprise_billing = EnterpriseBillingService()
+# Create singleton instance
+enterprise_billing = SimplifiedEnterpriseBillingService()

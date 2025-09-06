@@ -22,7 +22,8 @@ import uuid
 from agent import api as agent_api
 
 from sandbox import api as sandbox_api
-from services import billing as billing_api
+from services import billing as stripe_billing_api
+from services import enterprise_billing_api
 from services import transcription as transcription_api
 import sys
 from services import email_api
@@ -158,7 +159,15 @@ api_router = APIRouter()
 # Include all API routers without individual prefixes
 api_router.include_router(agent_api.router)
 api_router.include_router(sandbox_api.router)
-api_router.include_router(billing_api.router)
+
+# Use enterprise billing API when ENTERPRISE_MODE is enabled, otherwise use Stripe billing
+if config.ENTERPRISE_MODE:
+    api_router.include_router(enterprise_billing_api.router)
+    logger.info("Enterprise billing API enabled")
+else:
+    api_router.include_router(stripe_billing_api.router)
+    logger.info("Stripe billing API enabled")
+    
 api_router.include_router(api_keys_api.router)
 
 from mcp_module import api as mcp_api

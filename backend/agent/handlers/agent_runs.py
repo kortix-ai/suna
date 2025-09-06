@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 
 from utils.auth_utils import verify_and_get_user_id_from_jwt, get_user_id_from_stream_auth, verify_and_authorize_thread_access
 from utils.logger import logger, structlog
-from services.billing import check_billing_status, can_use_model
+from services.billing_wrapper import check_billing_status, can_use_model
 from utils.config import config
 from services import redis
 from sandbox.sandbox import create_sandbox, delete_sandbox

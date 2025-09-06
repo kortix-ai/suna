@@ -32,9 +32,8 @@ async def check_billing_status_unified(client, account_id: str) -> Tuple[bool, s
     """
     Unified billing status check that routes to the appropriate billing system.
     
-    This function maintains the same signature as the original check_billing_status
-    but automatically routes to either Stripe or Enterprise billing based on
-    configuration and account status.
+    When ENTERPRISE_MODE is enabled: ALL accounts use enterprise billing
+    When ENTERPRISE_MODE is disabled: All accounts use Stripe billing
     
     Args:
         client: Supabase client (maintained for API compatibility)
@@ -44,35 +43,13 @@ async def check_billing_status_unified(client, account_id: str) -> Tuple[bool, s
         Tuple[bool, str, Optional[Dict]]: (can_run, message, subscription_info)
     """
     try:
-        # If enterprise mode is disabled, always use Stripe
-        if not config.ENTERPRISE_MODE:
-            logger.debug(f"Enterprise mode disabled, using Stripe billing for account {account_id}")
-            return await stripe_check_billing_status(client, account_id)
-        
-        # Check if account is part of enterprise billing
-        is_enterprise = await enterprise_billing.is_enterprise_account(account_id)
-        
-        if is_enterprise:
-            logger.debug(f"Account {account_id} is enterprise, using enterprise billing")
-            can_run, message, billing_info = await enterprise_billing.check_enterprise_billing_status(account_id)
-            
-            # Convert enterprise billing info to compatible format
-            if billing_info:
-                subscription_info = {
-                    'type': 'enterprise',
-                    'enterprise_id': billing_info.get('enterprise_id'),
-                    'enterprise_name': billing_info.get('enterprise_name'),
-                    'balance': billing_info.get('balance'),
-                    'monthly_limit': billing_info.get('monthly_limit'),
-                    'current_usage': billing_info.get('current_usage'),
-                    'remaining_monthly': billing_info.get('remaining_monthly')
-                }
-            else:
-                subscription_info = {'type': 'enterprise', 'error': message}
-            
-            return can_run, message, subscription_info
+        # If enterprise mode is enabled, ALL accounts are enterprise accounts
+        if config.ENTERPRISE_MODE:
+            logger.debug(f"Enterprise mode enabled, using enterprise billing for account {account_id}")
+            return await enterprise_billing.check_billing_status(account_id)
         else:
-            logger.debug(f"Account {account_id} is not enterprise, using Stripe billing")
+            # Enterprise mode disabled, use Stripe
+            logger.debug(f"Enterprise mode disabled, using Stripe billing for account {account_id}")
             return await stripe_check_billing_status(client, account_id)
             
     except Exception as e:
@@ -101,8 +78,8 @@ async def handle_usage_unified(
     """
     Unified usage handling that routes to the appropriate billing system.
     
-    This function maintains the same signature as handle_usage_with_credits
-    but automatically routes to either Stripe or Enterprise billing.
+    When ENTERPRISE_MODE is enabled: ALL accounts use enterprise credits
+    When ENTERPRISE_MODE is disabled: All accounts use Stripe billing
     
     Args:
         client: Supabase client (maintained for API compatibility)
@@ -116,19 +93,10 @@ async def handle_usage_unified(
         Tuple[bool, str]: (success, message)
     """
     try:
-        # If enterprise mode is disabled, always use Stripe
-        if not config.ENTERPRISE_MODE:
-            logger.debug(f"Enterprise mode disabled, using Stripe billing for usage tracking")
-            return await stripe_handle_usage_with_credits(
-                client, account_id, token_cost, thread_id, message_id, model
-            )
-        
-        # Check if account is part of enterprise billing
-        is_enterprise = await enterprise_billing.is_enterprise_account(account_id)
-        
-        if is_enterprise:
+        # If enterprise mode is enabled, ALL accounts use enterprise credits
+        if config.ENTERPRISE_MODE:
             logger.debug(
-                f"Account {account_id} is enterprise, using enterprise billing for usage",
+                f"Enterprise mode enabled, using enterprise credits for account {account_id}",
                 account_id=account_id,
                 token_cost=token_cost,
                 thread_id=thread_id,
@@ -144,11 +112,8 @@ async def handle_usage_unified(
                 model_name=model
             )
         else:
-            logger.debug(
-                f"Account {account_id} is not enterprise, using Stripe billing for usage",
-                account_id=account_id,
-                token_cost=token_cost
-            )
+            # Enterprise mode disabled, use Stripe
+            logger.debug(f"Enterprise mode disabled, using Stripe billing for usage tracking")
             return await stripe_handle_usage_with_credits(
                 client, account_id, token_cost, thread_id, message_id, model
             )
@@ -176,8 +141,8 @@ async def can_use_model_unified(client, account_id: str, model_name: str) -> Tup
     """
     Unified model access check that routes to the appropriate billing system.
     
-    For now, this primarily uses the existing Stripe-based model access logic,
-    but enterprise accounts get full model access regardless of subscription tier.
+    When ENTERPRISE_MODE is enabled: ALL accounts get full model access
+    When ENTERPRISE_MODE is disabled: Standard Stripe-based model access logic
     
     Args:
         client: Supabase client
@@ -188,17 +153,13 @@ async def can_use_model_unified(client, account_id: str, model_name: str) -> Tup
         Tuple[bool, str, Optional[list]]: (can_use, message, allowed_models)
     """
     try:
-        # Check if enterprise mode is enabled and account is enterprise
+        # If enterprise mode is enabled, ALL accounts get full model access
         if config.ENTERPRISE_MODE:
-            is_enterprise = await enterprise_billing.is_enterprise_account(account_id)
-            
-            if is_enterprise:
-                # Enterprise accounts get access to all models
-                logger.debug(f"Enterprise account {account_id} has full model access")
-                return True, "Enterprise account - full model access", None
-        
-        # Fall back to standard model access logic for non-enterprise accounts
-        return await stripe_can_use_model(client, account_id, model_name)
+            logger.debug(f"Enterprise mode enabled - account {account_id} has full model access")
+            return True, "Enterprise account - full model access", None
+        else:
+            # Use standard Stripe model access logic
+            return await stripe_can_use_model(client, account_id, model_name)
         
     except Exception as e:
         logger.error(
@@ -220,8 +181,8 @@ async def get_billing_info_unified(client, account_id: str) -> Dict[str, Any]:
     """
     Get comprehensive billing information for an account.
     
-    This function provides a unified view of billing information whether the
-    account uses Stripe or Enterprise billing.
+    When ENTERPRISE_MODE is enabled: Returns enterprise billing info for ALL accounts
+    When ENTERPRISE_MODE is disabled: Returns Stripe billing info
     
     Args:
         client: Supabase client
@@ -233,37 +194,31 @@ async def get_billing_info_unified(client, account_id: str) -> Dict[str, Any]:
     try:
         billing_info = {
             'account_id': account_id,
-            'billing_type': 'stripe',  # Default
             'enterprise_mode_enabled': config.ENTERPRISE_MODE
         }
         
-        # Check if enterprise mode is enabled and account is enterprise
         if config.ENTERPRISE_MODE:
-            is_enterprise = await enterprise_billing.is_enterprise_account(account_id)
+            # ALL accounts use enterprise billing
+            user_limit = await enterprise_billing.get_user_limit(account_id)
+            enterprise_balance = await enterprise_billing.get_enterprise_balance()
             
-            if is_enterprise:
-                # Get enterprise billing info
-                enterprise_info = await enterprise_billing.get_user_enterprise_info(account_id)
-                if enterprise_info:
-                    billing_info.update({
-                        'billing_type': 'enterprise',
-                        'enterprise_id': enterprise_info.get('enterprise_id'),
-                        'enterprise_name': enterprise_info.get('enterprise_name'),
-                        'credit_balance': enterprise_info.get('credit_balance'),
-                        'monthly_limit': enterprise_info.get('monthly_limit'),
-                        'current_usage': enterprise_info.get('current_usage'),
-                        'remaining_monthly': enterprise_info.get('remaining_monthly'),
-                        'is_active': enterprise_info.get('is_active')
-                    })
-                return billing_info
-        
-        # For non-enterprise accounts, get Stripe billing info
-        can_run, message, subscription = await stripe_check_billing_status(client, account_id)
-        billing_info.update({
-            'can_run': can_run,
-            'message': message,
-            'subscription': subscription
-        })
+            billing_info.update({
+                'billing_type': 'enterprise',
+                'credit_balance': enterprise_balance['credit_balance'] if enterprise_balance else 0,
+                'monthly_limit': user_limit['monthly_limit'] if user_limit else 1000.00,
+                'current_usage': user_limit['current_month_usage'] if user_limit else 0,
+                'remaining_monthly': (user_limit['monthly_limit'] - user_limit['current_month_usage']) if user_limit else 1000.00,
+                'is_active': user_limit['is_active'] if user_limit else True
+            })
+        else:
+            # Use Stripe billing
+            can_run, message, subscription = await stripe_check_billing_status(client, account_id)
+            billing_info.update({
+                'billing_type': 'stripe',
+                'can_run': can_run,
+                'message': message,
+                'subscription': subscription
+            })
         
         return billing_info
         

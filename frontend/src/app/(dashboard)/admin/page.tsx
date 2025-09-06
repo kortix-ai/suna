@@ -1,312 +1,303 @@
 'use client';
 
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '@/lib/api-client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { DollarSign, Users, Activity, CreditCard, Loader2, AlertCircle, Plus, Settings } from 'lucide-react';
 import { toast } from 'sonner';
-import { Loader2, Plus, CreditCard, DollarSign, Users, Activity, AlertCircle } from 'lucide-react';
+import { apiClient } from '@/lib/api-client';
 import { useAdminCheck } from '@/hooks/use-admin-check';
 
-export default function SimpleAdminPage() {
+export default function AdminPage() {
   const queryClient = useQueryClient();
   const { data: isAdmin, isLoading: adminLoading, error: adminError } = useAdminCheck();
-
-  // Get enterprise accounts
-  const { data: enterprises, isLoading: enterprisesLoading } = useQuery({
-    queryKey: ['enterprises'],
+  
+  // Get enterprise status
+  const { data: status, isLoading: statusLoading } = useQuery({
+    queryKey: ['enterprise-status'],
     queryFn: async () => {
-      const response = await apiClient.request('/enterprise/accounts');
-      return response.data || [];
+      const response = await apiClient.request('/enterprise/status');
+      return response.data;
     },
     enabled: !!isAdmin
   });
-
+  
+  // Get all users
+  const { data: users, isLoading: usersLoading } = useQuery({
+    queryKey: ['enterprise-users'],
+    queryFn: async () => {
+      const response = await apiClient.request('/enterprise/users?items_per_page=100');
+      return response.data;
+    },
+    enabled: !!isAdmin
+  });
+  
   // Loading states
-  if (adminLoading || enterprisesLoading) {
+  if (adminLoading || statusLoading || usersLoading) {
     return (
       <div className="container mx-auto py-6">
-        <div className="flex items-center justify-center py-12">
+        <div className="flex items-center justify-center min-h-[400px]">
           <Loader2 className="h-8 w-8 animate-spin" />
         </div>
       </div>
     );
   }
-
-  // Access denied
-  if (adminError || !isAdmin) {
+  
+  // Check admin access
+  if (!isAdmin) {
     return (
       <div className="container mx-auto py-6">
-        <div className="flex items-center justify-center min-h-[400px]">
-          <Card className="max-w-md">
-            <CardContent className="pt-6 text-center">
-              <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-              <h2 className="text-xl font-semibold text-red-600 mb-2">Access Denied</h2>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex flex-col items-center text-center">
+              <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+              <h2 className="text-2xl font-bold mb-2">Access Denied</h2>
               <p className="text-muted-foreground">
-                You need admin access to view this page. Contact your system administrator.
+                You don\'t have permission to access this page.
               </p>
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }
-
+  
   return (
     <div className="container mx-auto py-6 space-y-6">
-      {/* Header */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Enterprise Admin</h1>
-          <p className="text-muted-foreground">Simple enterprise billing management</p>
+          <p className="text-muted-foreground">Manage enterprise billing and user limits</p>
         </div>
-        <CreateAccountButton />
+        <LoadCreditsButton />
       </div>
-
-      {/* Enterprise Accounts */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {enterprises?.map((enterprise: any) => (
-          <EnterpriseCard key={enterprise.id} enterprise={enterprise} />
-        ))}
-        {(!enterprises || enterprises.length === 0) && (
-          <Card className="col-span-full">
-            <CardContent className="pt-6 text-center">
-              <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">No Enterprise Accounts</h3>
-              <p className="text-muted-foreground mb-4">
-                Create your first enterprise account to get started.
-              </p>
-              <CreateAccountButton />
-            </CardContent>
-          </Card>
-        )}
+      
+      {/* Enterprise Status */}
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Credit Balance</CardTitle>
+            <DollarSign className="h-4 w-4 text-green-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">${status?.credit_balance?.toFixed(2) || '0.00'}</div>
+            <p className="text-xs text-muted-foreground">Available credits</p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Users</CardTitle>
+            <Users className="h-4 w-4 text-blue-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{status?.total_users || 0}</div>
+            <p className="text-xs text-muted-foreground">Active users</p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Monthly Usage</CardTitle>
+            <Activity className="h-4 w-4 text-orange-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">${status?.total_monthly_usage?.toFixed(2) || '0.00'}</div>
+            <p className="text-xs text-muted-foreground">This month</p>
+          </CardContent>
+        </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Loaded</CardTitle>
+            <CreditCard className="h-4 w-4 text-purple-600" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">${status?.total_loaded?.toFixed(2) || '0.00'}</div>
+            <p className="text-xs text-muted-foreground">All time</p>
+          </CardContent>
+        </Card>
       </div>
-
-      {/* Quick Help */}
+      
+      {/* Users Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Quick Help</CardTitle>
+          <CardTitle>Users</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3 text-sm">
-            <div>
-              <p className="font-medium">1. Create Enterprise Account</p>
-              <p className="text-muted-foreground">Start by creating an enterprise account for a company</p>
+          {users?.users && users.users.length > 0 ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-5 gap-4 text-sm font-medium text-muted-foreground border-b pb-2">
+                <div>Account</div>
+                <div className="text-right">Monthly Limit</div>
+                <div className="text-right">Used This Month</div>
+                <div className="text-right">Remaining</div>
+                <div className="text-right">Actions</div>
+              </div>
+              {users.users.map((user: any) => (
+                <UserRow key={user.account_id} user={user} />
+              ))}
             </div>
-            <div>
-              <p className="font-medium">2. Load Credits</p>
-              <p className="text-muted-foreground">Add credits to the enterprise account that users will draw from</p>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              No users found
             </div>
-            <div>
-              <p className="font-medium">3. Add Users</p>
-              <p className="text-muted-foreground">Use the admin API to add user accounts to the enterprise billing</p>
-            </div>
-          </div>
+          )}
         </CardContent>
       </Card>
     </div>
   );
 }
 
-function EnterpriseCard({ enterprise }: { enterprise: any }) {
-  const [usageOpen, setUsageOpen] = useState(false);
+function UserRow({ user }: { user: any }) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const remaining = user.monthly_limit - user.current_month_usage;
+  const usagePercent = (user.current_month_usage / user.monthly_limit) * 100;
   
-  const { data: usage } = useQuery({
-    queryKey: ['usage', enterprise.id],
-    queryFn: async () => {
-      const response = await apiClient.request(`/enterprise/usage/${enterprise.id}?page=0&items_per_page=5`);
-      return response.data;
-    },
-    enabled: usageOpen
-  });
-
   return (
-    <Card className="relative">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center justify-between">
-          <span className="truncate">{enterprise.name}</span>
-          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-            enterprise.is_active 
-              ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' 
-              : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200'
-          }`}>
-            {enterprise.is_active ? 'Active' : 'Inactive'}
-          </span>
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Key metrics */}
-        <div className="grid grid-cols-2 gap-3">
-          <div className="flex items-center gap-2">
-            <DollarSign className="h-4 w-4 text-green-600" />
-            <div className="text-sm">
-              <p className="font-semibold">${enterprise.credit_balance?.toFixed(2) || '0.00'}</p>
-              <p className="text-muted-foreground">Balance</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Users className="h-4 w-4 text-blue-600" />
-            <div className="text-sm">
-              <p className="font-semibold">{enterprise.member_count || 0}</p>
-              <p className="text-muted-foreground">Users</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Activity className="h-4 w-4 text-orange-600" />
-            <div className="text-sm">
-              <p className="font-semibold">${enterprise.total_used?.toFixed(2) || '0.00'}</p>
-              <p className="text-muted-foreground">Used</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <CreditCard className="h-4 w-4 text-purple-600" />
-            <div className="text-sm">
-              <p className="font-semibold">${enterprise.total_loaded?.toFixed(2) || '0.00'}</p>
-              <p className="text-muted-foreground">Loaded</p>
-            </div>
+    <>
+      <div className="grid grid-cols-5 gap-4 items-center py-2 hover:bg-muted/50 rounded-lg px-2">
+        <div className="font-medium">
+          {user.accounts?.name || 'Unnamed Account'}
+          <div className="text-xs text-muted-foreground">
+            {user.accounts?.personal_account ? 'Personal' : 'Team'}
           </div>
         </div>
-        
-        {/* Action buttons */}
-        <div className="flex gap-2">
-          <LoadCreditsButton enterprise={enterprise} />
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="flex-1"
-            onClick={() => setUsageOpen(!usageOpen)}
+        <div className="text-right">${user.monthly_limit?.toFixed(2)}</div>
+        <div className="text-right">
+          ${user.current_month_usage?.toFixed(2)}
+          <div className="mt-1 h-2 bg-secondary rounded-full overflow-hidden">
+            <div 
+              className={`h-full transition-all ${
+                usagePercent > 90 ? 'bg-red-500' : 
+                usagePercent > 75 ? 'bg-orange-500' : 
+                'bg-green-500'
+              }`}
+              style={{ width: `${Math.min(usagePercent, 100)}%` }}
+            />
+          </div>
+        </div>
+        <div className={`text-right ${remaining < 0 ? 'text-red-500' : ''}`}>
+          ${remaining.toFixed(2)}
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setDetailsOpen(true)}
           >
-            {usageOpen ? 'Hide' : 'Show'} Usage
+            View Details
           </Button>
+          <SetLimitButton user={user} />
         </div>
+      </div>
+      
+      {/* User Details Dialog */}
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{user.accounts?.name || 'User'} - Usage Details</DialogTitle>
+          </DialogHeader>
+          <UserDetails accountId={user.account_id} />
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
 
-        {/* Usage details */}
-        {usageOpen && usage && (
-          <div className="mt-4 p-3 bg-muted rounded-lg">
-            <h4 className="font-medium mb-2">Recent Usage</h4>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span>Monthly Usage:</span>
-                <span className="font-medium">${usage.total_monthly_usage?.toFixed(2) || '0.00'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Monthly Limit:</span>
-                <span className="font-medium">${usage.total_monthly_limit?.toFixed(2) || '0.00'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Remaining:</span>
-                <span className="font-medium text-green-600">
-                  ${usage.remaining_monthly_budget?.toFixed(2) || '0.00'}
-                </span>
-              </div>
-              {usage.members?.slice(0, 3).map((member: any) => (
-                <div key={member.account_id} className="flex justify-between text-xs">
-                  <span className="truncate">{member.accounts?.name || 'User'}</span>
-                  <span>${member.current_month_usage?.toFixed(2) || '0.00'}</span>
+function UserDetails({ accountId }: { accountId: string }) {
+  const { data: details, isLoading } = useQuery({
+    queryKey: ['user-details', accountId],
+    queryFn: async () => {
+      const response = await apiClient.request(`/enterprise/users/${accountId}`);
+      return response.data;
+    }
+  });
+  
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
+  }
+  
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-3 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Monthly Limit</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl font-bold">${details?.monthly_limit?.toFixed(2)}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Used This Month</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl font-bold">${details?.current_month_usage?.toFixed(2)}</div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Remaining</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="text-xl font-bold">${details?.remaining_monthly?.toFixed(2)}</div>
+          </CardContent>
+        </Card>
+      </div>
+      
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-sm">Recent Usage</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {details?.usage_logs && details.usage_logs.length > 0 ? (
+            <div className="space-y-2 max-h-[300px] overflow-y-auto">
+              {details.usage_logs.map((log: any) => (
+                <div key={log.id} className="flex justify-between text-sm py-1 border-b">
+                  <div>
+                    {log.model_name || 'Unknown Model'}
+                    {log.tokens_used && (
+                      <span className="text-muted-foreground ml-2">
+                        ({log.tokens_used} tokens)
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span>${log.cost?.toFixed(4)}</span>
+                    <span className="text-muted-foreground text-xs">
+                      {new Date(log.created_at).toLocaleString()}
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          ) : (
+            <div className="text-center py-4 text-muted-foreground">
+              No usage logs found
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 }
 
-function CreateAccountButton() {
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState('');
-  const [credits, setCredits] = useState(0);
-  const queryClient = useQueryClient();
-
-  const createMutation = useMutation({
-    mutationFn: async (data: any) => {
-      const response = await apiClient.request('/enterprise/accounts', {
-        method: 'POST',
-        body: JSON.stringify(data)
-      });
-      return response.data;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['enterprises'] });
-      toast.success('Enterprise account created!');
-      setOpen(false);
-      setName('');
-      setCredits(0);
-    },
-    onError: (error: any) => {
-      toast.error(error.message || 'Failed to create account');
-    }
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>
-          <Plus className="h-4 w-4 mr-2" />
-          New Account
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Create Enterprise Account</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <Label htmlFor="name">Company Name</Label>
-            <Input
-              id="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Acme Corp"
-              required
-            />
-          </div>
-          <div>
-            <Label htmlFor="credits">Initial Credits ($)</Label>
-            <Input
-              id="credits"
-              type="number"
-              min="0"
-              step="0.01"
-              value={credits}
-              onChange={(e) => setCredits(parseFloat(e.target.value) || 0)}
-              placeholder="1000"
-            />
-          </div>
-          <Button 
-            onClick={() => createMutation.mutate({ 
-              name, 
-              initial_credits: credits,
-              description: `Enterprise account for ${name}` 
-            })}
-            disabled={!name || createMutation.isPending}
-            className="w-full"
-          >
-            {createMutation.isPending ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Creating...
-              </>
-            ) : (
-              'Create Account'
-            )}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function LoadCreditsButton({ enterprise }: { enterprise: any }) {
+function LoadCreditsButton() {
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState(0);
+  const [description, setDescription] = useState('');
   const queryClient = useQueryClient();
-
+  
   const loadMutation = useMutation({
     mutationFn: async (data: any) => {
       const response = await apiClient.request('/enterprise/load-credits', {
@@ -316,28 +307,29 @@ function LoadCreditsButton({ enterprise }: { enterprise: any }) {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['enterprises'] });
-      queryClient.invalidateQueries({ queryKey: ['usage'] });
-      toast.success(`Loaded $${amount} to ${enterprise.name}`);
+      queryClient.invalidateQueries({ queryKey: ['enterprise-status'] });
+      queryClient.invalidateQueries({ queryKey: ['enterprise-users'] });
+      toast.success(`Loaded $${amount} credits successfully!`);
       setOpen(false);
       setAmount(0);
+      setDescription('');
     },
     onError: (error: any) => {
       toast.error(error.message || 'Failed to load credits');
     }
   });
-
+  
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="flex-1">
-          <CreditCard className="h-4 w-4 mr-1" />
+        <Button>
+          <Plus className="h-4 w-4 mr-2" />
           Load Credits
         </Button>
       </DialogTrigger>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Load Credits - {enterprise.name}</DialogTitle>
+          <DialogTitle>Load Credits</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div>
@@ -349,16 +341,21 @@ function LoadCreditsButton({ enterprise }: { enterprise: any }) {
               step="0.01"
               value={amount}
               onChange={(e) => setAmount(parseFloat(e.target.value) || 0)}
-              placeholder="500"
+              placeholder="1000.00"
               required
             />
           </div>
+          <div>
+            <Label htmlFor="description">Description (Optional)</Label>
+            <Input
+              id="description"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Manual credit load"
+            />
+          </div>
           <Button 
-            onClick={() => loadMutation.mutate({ 
-              enterprise_id: enterprise.id, 
-              amount, 
-              description: `Manual credit load by admin - $${amount}` 
-            })}
+            onClick={() => loadMutation.mutate({ amount, description })}
             disabled={amount <= 0 || loadMutation.isPending}
             className="w-full"
           >
@@ -368,7 +365,81 @@ function LoadCreditsButton({ enterprise }: { enterprise: any }) {
                 Loading...
               </>
             ) : (
-              `Load $${amount}`
+              `Load $${amount.toFixed(2)}`
+            )}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SetLimitButton({ user }: { user: any }) {
+  const [open, setOpen] = useState(false);
+  const [limit, setLimit] = useState(user.monthly_limit);
+  const queryClient = useQueryClient();
+  
+  const setLimitMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const response = await apiClient.request(`/enterprise/users/${user.account_id}/limit`, {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['enterprise-users'] });
+      toast.success('Monthly limit updated!');
+      setOpen(false);
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Failed to update limit');
+    }
+  });
+  
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Settings className="h-3 w-3" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Set Monthly Limit - {user.accounts?.name}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label htmlFor="limit">Monthly Limit ($)</Label>
+            <Input
+              id="limit"
+              type="number"
+              min="0"
+              step="0.01"
+              value={limit}
+              onChange={(e) => setLimit(parseFloat(e.target.value) || 0)}
+              placeholder="1000.00"
+              required
+            />
+            <p className="text-sm text-muted-foreground mt-1">
+              Current usage: ${user.current_month_usage?.toFixed(2)}
+            </p>
+          </div>
+          <Button 
+            onClick={() => setLimitMutation.mutate({ 
+              account_id: user.account_id, 
+              monthly_limit: limit 
+            })}
+            disabled={limit < 0 || setLimitMutation.isPending}
+            className="w-full"
+          >
+            {setLimitMutation.isPending ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                Updating...
+              </>
+            ) : (
+              'Update Limit'
             )}
           </Button>
         </div>

@@ -12,7 +12,7 @@ from services.supabase import DBConnection
 from utils.auth_utils import verify_and_get_user_id_from_jwt
 from utils.logger import logger
 from utils.config import config
-from services.billing import check_billing_status, can_use_model
+from services.billing_wrapper import check_billing_status, can_use_model
 
 from .trigger_service import get_trigger_service, TriggerType
 from .provider_service import get_provider_service
