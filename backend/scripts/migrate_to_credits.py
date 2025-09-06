@@ -7,7 +7,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from decimal import Decimal
 from datetime import datetime, timezone
 from core.services.supabase import DBConnection
-from core.billing_config import get_tier_by_price_id, get_monthly_credits
+from core.billing_config import get_tier_by_price_id, get_monthly_credits, FREE_TIER_INITIAL_CREDITS
 from core.utils.logger import logger
 import argparse
 
@@ -85,7 +85,15 @@ class CreditMigration:
         else:
             tier_name = 'free'
         
-        monthly_credits = get_monthly_credits(tier_name)
+        if tier_name == 'free':
+            monthly_credits = FREE_TIER_INITIAL_CREDITS
+        else:
+            parts = tier_name.split('_')
+            if len(parts) == 3 and parts[0] == 'tier':
+                subscription_cost = Decimal(parts[2])
+                monthly_credits = subscription_cost + FREE_TIER_INITIAL_CREDITS
+            else:
+                monthly_credits = get_monthly_credits(tier_name)
         
         month_start = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         usage_result = await self.client.from_('credit_ledger')\

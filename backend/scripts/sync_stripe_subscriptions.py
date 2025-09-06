@@ -9,6 +9,8 @@ from datetime import datetime
 from core.services.supabase import DBConnection
 from core.utils.config import config
 from core.utils.logger import logger
+from core.billing_config import get_tier_by_price_id, FREE_TIER_INITIAL_CREDITS
+from decimal import Decimal
 
 async def sync_stripe_to_db():
     db = DBConnection()
@@ -154,6 +156,40 @@ async def sync_stripe_to_db():
                 if result.data:
                     print(f"    ✓ Synced to database")
                     synced_count += 1
+                    
+                    if sub.status in ['active', 'trialing'] and price_id:
+                        tier = get_tier_by_price_id(price_id)
+                        if tier:
+                            tier_name = tier.name
+                            
+                            credit_account = await client.from_('credit_accounts')\
+                                .select('*')\
+                                .eq('user_id', account_id)\
+                                .maybe_single()\
+                                .execute()
+                            
+                            if credit_account.data:
+                                await client.from_('credit_accounts')\
+                                    .update({'tier': tier_name})\
+                                    .eq('user_id', account_id)\
+                                    .execute()
+                                print(f"    ✓ Updated credit account tier to: {tier_name}")
+                            else:
+                                parts = tier_name.split('_')
+                                if len(parts) == 3 and parts[0] == 'tier':
+                                    subscription_cost = Decimal(parts[2])
+                                    monthly_credits = subscription_cost + FREE_TIER_INITIAL_CREDITS
+                                else:
+                                    monthly_credits = Decimal('5.00')
+                                
+                                await client.from_('credit_accounts').insert({
+                                    'user_id': account_id,
+                                    'balance': str(monthly_credits),
+                                    'tier': tier_name,
+                                    'last_grant_date': datetime.now().isoformat()
+                                }).execute()
+                                print(f"    ✓ Created credit account with tier: {tier_name}, balance: ${monthly_credits}")
+                    
                 else:
                     print(f"    ✗ Failed to sync")
                     error_count += 1
@@ -182,6 +218,20 @@ async def sync_stripe_to_db():
             print(f"    Status: {sub['status']}")
             print(f"    Price ID: {sub.get('price_id', 'None')}")
             print(f"    Plan: {sub.get('plan_name', 'None')}")
+    
+    print("\n" + "="*60)
+    print("CREDIT ACCOUNTS STATE")
+    print("="*60)
+    
+    credit_result = await client.from_('credit_accounts').select('*').execute()
+    
+    if credit_result.data:
+        print(f"Found {len(credit_result.data)} credit accounts:")
+        for account in credit_result.data:
+            print(f"  User: {account['user_id'][:8]}...")
+            print(f"    Tier: {account['tier']}")
+            print(f"    Balance: ${account['balance']}")
+            print(f"    Last Grant: {account.get('last_grant_date', 'Never')}")
 
 if __name__ == "__main__":
     asyncio.run(sync_stripe_to_db()) 
