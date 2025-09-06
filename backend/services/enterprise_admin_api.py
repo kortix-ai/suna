@@ -24,7 +24,7 @@ from services.enterprise_billing import enterprise_billing
 from utils.logger import logger, structlog
 from utils.config import config
 
-# Initialize router (no prefix since main api.py already adds /api)
+# Initialize router (no /api prefix since main api.py already adds /api)
 router = APIRouter(prefix="/enterprise", tags=["enterprise-admin"])
 
 
@@ -126,15 +126,6 @@ class UsageStatsResponse(BaseModel):
 # ADMIN ACCESS CHECK
 # =====================================================
 
-@router.get("/test")
-async def test_endpoint():
-    """Simple test endpoint to verify routing works."""
-    return {
-        "message": "Enterprise API is working!", 
-        "enterprise_mode": config.ENTERPRISE_MODE,
-        "admin_emails_configured": bool(config.ADMIN_EMAILS)
-    }
-
 @router.get("/check-admin")
 async def check_admin_access(user_id: str = Depends(verify_and_get_user_id_from_jwt)):
     """Check if current user has admin access."""
@@ -147,44 +138,29 @@ async def check_admin_access(user_id: str = Depends(verify_and_get_user_id_from_
         return {"is_admin": False, "reason": "No admin emails configured"}
     
     try:
-        # Super simple approach: extract email from JWT token
-        from fastapi import Request
-        from utils.auth_utils import verify_and_get_user_claims_from_jwt
-        
-        # Get the current request to access JWT
-        import inspect
-        frame = inspect.currentframe()
-        
-        # Alternative: Use a much simpler hardcoded check for testing
-        # For now, let's just check the user ID directly against known admin user IDs
-        
-        # Get user email from Supabase using a simple query
+        # Get user email from database
         db = DBConnection()
         client = await db.client
         
-        # Simple select query from auth.users table (should work with service role)
-        user_query = client.table('auth.users').select('email').eq('id', user_id)
-        user_result = await user_query.execute()
+        # Try to get user email - use admin.get_user_by_id which works with service role
+        user_result = await client.auth.admin.get_user_by_id(user_id)
         
-        if not user_result.data or not user_result.data[0].get('email'):
-            logger.warning(f"Could not get email for user {user_id}")
+        if not user_result.user or not user_result.user.email:
             return {"is_admin": False, "reason": "Unable to get user email"}
         
-        user_email = user_result.data[0]['email']
+        user_email = user_result.user.email
         admin_emails = [email.strip().lower() for email in config.ADMIN_EMAILS.split(',') if email.strip()]
         
         is_admin = user_email.lower() in admin_emails
         
         if is_admin:
             logger.info(f"Admin access granted to {user_email}", user_id=user_id, user_email=user_email)
-        else:
-            logger.debug(f"Admin access denied for {user_email} (not in admin list)", user_id=user_id, user_email=user_email)
         
-        return {"is_admin": is_admin, "user_id": user_id, "user_email": user_email}
+        return {"is_admin": is_admin, "user_id": user_id}
         
     except Exception as e:
-        logger.error(f"Error checking admin access for user {user_id}: {e}", user_id=user_id, error=str(e), exc_info=True)
-        return {"is_admin": False, "reason": f"Error checking admin access: {str(e)}"}
+        logger.error(f"Error checking admin access for user {user_id}: {e}", user_id=user_id, error=str(e))
+        return {"is_admin": False, "reason": "Error checking admin access"}
 
 
 # =====================================================
