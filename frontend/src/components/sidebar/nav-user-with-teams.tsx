@@ -311,19 +311,19 @@ export function NavUserWithTeams({
                     </Link>
                   </DropdownMenuItem>
                 )}
-                {(
-                  <DropdownMenuItem asChild>
-                    <Link href="/settings/api-keys">
-                      <Key className="h-4 w-4" />
-                      API Keys (Admin)
-                    </Link>
-                  </DropdownMenuItem>
-                )}
                 {isAdmin && (
                   <DropdownMenuItem asChild>
                     <Link href="/admin">
                       <Shield className="h-4 w-4" />
                       Enterprise Admin
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                {(
+                  <DropdownMenuItem asChild>
+                    <Link href="/settings/api-keys">
+                      <Key className="h-4 w-4" />
+                      API Keys (Admin)
                     </Link>
                   </DropdownMenuItem>
                 )}
