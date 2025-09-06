@@ -11,7 +11,7 @@ export function useAdminCheck() {
     queryKey: ['admin-check', user?.id],
     queryFn: async () => {
       try {
-        const response = await apiClient.request('/api/enterprise/check-admin');
+        const response = await apiClient.request('/enterprise/check-admin');
         return response.data?.is_admin || false;
       } catch (error) {
         console.warn('Admin check failed:', error);

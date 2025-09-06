@@ -20,7 +20,7 @@ export default function SimpleAdminPage() {
   const { data: enterprises, isLoading: enterprisesLoading } = useQuery({
     queryKey: ['enterprises'],
     queryFn: async () => {
-      const response = await apiClient.request('/api/enterprise/accounts');
+      const response = await apiClient.request('/enterprise/accounts');
       return response.data || [];
     },
     enabled: !!isAdmin
@@ -118,7 +118,7 @@ function EnterpriseCard({ enterprise }: { enterprise: any }) {
   const { data: usage } = useQuery({
     queryKey: ['usage', enterprise.id],
     queryFn: async () => {
-      const response = await apiClient.request(`/api/enterprise/usage/${enterprise.id}?page=0&items_per_page=5`);
+      const response = await apiClient.request(`/enterprise/usage/${enterprise.id}?page=0&items_per_page=5`);
       return response.data;
     },
     enabled: usageOpen
@@ -225,7 +225,7 @@ function CreateAccountButton() {
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
-      const response = await apiClient.request('/api/enterprise/accounts', {
+      const response = await apiClient.request('/enterprise/accounts', {
         method: 'POST',
         body: JSON.stringify(data)
       });
@@ -309,7 +309,7 @@ function LoadCreditsButton({ enterprise }: { enterprise: any }) {
 
   const loadMutation = useMutation({
     mutationFn: async (data: any) => {
-      const response = await apiClient.request('/api/enterprise/load-credits', {
+      const response = await apiClient.request('/enterprise/load-credits', {
         method: 'POST',
         body: JSON.stringify(data)
       });
