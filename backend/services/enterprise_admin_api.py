@@ -126,15 +126,34 @@ class UsageStatsResponse(BaseModel):
 # ADMIN ACCESS CHECK
 # =====================================================
 
-@router.get("/check-admin")
+@router.get("/debug")
+async def debug_enterprise_api():
+    """Debug endpoint to test enterprise API is working."""
+    try:
+        return {
+            "status": "ok",
+            "enterprise_mode": config.ENTERPRISE_MODE,
+            "admin_emails_configured": bool(config.ADMIN_EMAILS),
+            "admin_email_count": len([e for e in config.ADMIN_EMAILS.split(',') if e.strip()]) if config.ADMIN_EMAILS else 0,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Debug endpoint error: {e}")
+        return {"error": str(e)}
+
+@router.get("/check-admin") 
 async def check_admin_access(user_id: str = Depends(verify_and_get_user_id_from_jwt)):
     """Check if current user has admin access."""
+    logger.info(f"Admin check requested for user: {user_id}")
+    
     # If enterprise mode is disabled, no one is admin
     if not config.ENTERPRISE_MODE:
+        logger.info("Enterprise mode not enabled")
         return {"is_admin": False, "reason": "Enterprise mode not enabled"}
     
     # If no admin emails configured, no one is admin
     if not config.ADMIN_EMAILS:
+        logger.warning("No admin emails configured")
         return {"is_admin": False, "reason": "No admin emails configured"}
     
     try:
@@ -146,6 +165,7 @@ async def check_admin_access(user_id: str = Depends(verify_and_get_user_id_from_
         user_result = await client.auth.admin.get_user_by_id(user_id)
         
         if not user_result.user or not user_result.user.email:
+            logger.warning(f"Unable to get email for user {user_id}")
             return {"is_admin": False, "reason": "Unable to get user email"}
         
         user_email = user_result.user.email
@@ -153,14 +173,14 @@ async def check_admin_access(user_id: str = Depends(verify_and_get_user_id_from_
         
         is_admin = user_email.lower() in admin_emails
         
-        if is_admin:
-            logger.info(f"Admin access granted to {user_email}", user_id=user_id, user_email=user_email)
+        logger.info(f"Admin check for {user_email}: {'GRANTED' if is_admin else 'DENIED'}", 
+                   user_id=user_id, user_email=user_email, is_admin=is_admin)
         
         return {"is_admin": is_admin, "user_id": user_id}
         
     except Exception as e:
-        logger.error(f"Error checking admin access for user {user_id}: {e}", user_id=user_id, error=str(e))
-        return {"is_admin": False, "reason": "Error checking admin access"}
+        logger.error(f"Error checking admin access for user {user_id}: {e}", user_id=user_id, error=str(e), exc_info=True)
+        return {"is_admin": False, "reason": f"Error checking admin access: {str(e)}"}
 
 
 # =====================================================
