@@ -11,6 +11,7 @@ from core.utils.config import config
 from core.utils.logger import logger
 from core.billing_config import get_tier_by_price_id, FREE_TIER_INITIAL_CREDITS
 from decimal import Decimal
+from services.billing_v2 import handle_subscription_change
 
 async def sync_stripe_to_db():
     db = DBConnection()
@@ -154,14 +155,58 @@ async def sync_stripe_to_db():
                 ).execute()
                 
                 if result.data:
-                    print(f"    ✓ Synced to database")
+                    print(f"    ✓ Synced subscription to database")
                     synced_count += 1
                     
-                    if sub.status in ['active', 'trialing'] and price_id:
-                        tier = get_tier_by_price_id(price_id)
+                    # For active/trialing subscriptions, use handle_subscription_change for comprehensive update
+                    if sub.status in ['active', 'trialing']:
+                        print(f"    Processing active subscription...")
+                        
+                        # Get current state
+                        account_before = await client.from_('credit_accounts')\
+                            .select('*')\
+                            .eq('user_id', account_id)\
+                            .maybe_single()\
+                            .execute()
+                        
+                        # Use handle_subscription_change to properly update all fields
+                        # This handles billing_cycle_anchor, stripe_subscription_id, next_credit_grant, etc.
+                        try:
+                            await handle_subscription_change(sub)
+                            print(f"    ✓ Updated billing cycle and credit fields")
+                        except Exception as e:
+                            print(f"    ⚠ handle_subscription_change failed: {e}")
+                        
+                        # Now fix the balance based on actual usage from agent_runs
+                        tier = get_tier_by_price_id(price_id) if price_id else None
                         if tier:
                             tier_name = tier.name
                             
+                            # Calculate actual monthly credits (subscription cost + free tier base)
+                            parts = tier_name.split('_')
+                            if len(parts) == 3 and parts[0] == 'tier':
+                                subscription_cost = Decimal(parts[2])
+                                monthly_credits = subscription_cost + FREE_TIER_INITIAL_CREDITS
+                            else:
+                                monthly_credits = FREE_TIER_INITIAL_CREDITS
+                            
+                            # Get current month usage from agent_runs (old billing system style)
+                            month_start = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                            runs_result = await client.from_('agent_runs')\
+                                .select('total_cost')\
+                                .eq('user_id', account_id)\
+                                .gte('created_at', month_start.isoformat())\
+                                .execute()
+                            
+                            current_usage = Decimal('0')
+                            for run in runs_result.data or []:
+                                if run.get('total_cost'):
+                                    current_usage += Decimal(str(run['total_cost']))
+                            
+                            # Calculate correct balance
+                            correct_balance = monthly_credits - current_usage
+                            
+                            # Update/create credit account with all the proper fields
                             credit_account = await client.from_('credit_accounts')\
                                 .select('*')\
                                 .eq('user_id', account_id)\
@@ -169,26 +214,44 @@ async def sync_stripe_to_db():
                                 .execute()
                             
                             if credit_account.data:
+                                # Update existing account
+                                update_data = {
+                                    'tier': tier_name,
+                                    'balance': str(correct_balance),
+                                    'stripe_subscription_id': sub.id,
+                                    'billing_cycle_anchor': datetime.fromtimestamp(sub.created).isoformat() if sub.created else None,
+                                }
+                                
+                                # Add next_credit_grant if we have current_period_end
+                                if sub.current_period_end:
+                                    update_data['next_credit_grant'] = datetime.fromtimestamp(sub.current_period_end).isoformat()
+                                
                                 await client.from_('credit_accounts')\
-                                    .update({'tier': tier_name})\
+                                    .update(update_data)\
                                     .eq('user_id', account_id)\
                                     .execute()
-                                print(f"    ✓ Updated credit account tier to: {tier_name}")
-                            else:
-                                parts = tier_name.split('_')
-                                if len(parts) == 3 and parts[0] == 'tier':
-                                    subscription_cost = Decimal(parts[2])
-                                    monthly_credits = subscription_cost + FREE_TIER_INITIAL_CREDITS
-                                else:
-                                    monthly_credits = Decimal('5.00')
                                 
+                                print(f"    ✓ Updated credit account:")
+                                print(f"      - Tier: {tier_name}")
+                                print(f"      - Balance: ${correct_balance} (${monthly_credits} - ${current_usage} usage)")
+                                print(f"      - Stripe subscription: {sub.id}")
+                                print(f"      - Next credit grant: {update_data.get('next_credit_grant', 'N/A')}")
+                            else:
+                                # Create new account with all fields
                                 await client.from_('credit_accounts').insert({
                                     'user_id': account_id,
-                                    'balance': str(monthly_credits),
+                                    'balance': str(correct_balance),
                                     'tier': tier_name,
+                                    'stripe_subscription_id': sub.id,
+                                    'billing_cycle_anchor': datetime.fromtimestamp(sub.created).isoformat() if sub.created else None,
+                                    'next_credit_grant': datetime.fromtimestamp(sub.current_period_end).isoformat() if sub.current_period_end else None,
                                     'last_grant_date': datetime.now().isoformat()
                                 }).execute()
-                                print(f"    ✓ Created credit account with tier: {tier_name}, balance: ${monthly_credits}")
+                                
+                                print(f"    ✓ Created credit account:")
+                                print(f"      - Tier: {tier_name}")
+                                print(f"      - Balance: ${correct_balance} (${monthly_credits} - ${current_usage} usage)")
+                                print(f"      - Stripe subscription: {sub.id}")
                     
                 else:
                     print(f"    ✗ Failed to sync")
@@ -228,10 +291,13 @@ async def sync_stripe_to_db():
     if credit_result.data:
         print(f"Found {len(credit_result.data)} credit accounts:")
         for account in credit_result.data:
-            print(f"  User: {account['user_id'][:8]}...")
+            print(f"\n  User: {account['user_id'][:8]}...")
             print(f"    Tier: {account['tier']}")
             print(f"    Balance: ${account['balance']}")
             print(f"    Last Grant: {account.get('last_grant_date', 'Never')}")
+            print(f"    Stripe Subscription: {account.get('stripe_subscription_id', 'None')}")
+            print(f"    Billing Cycle Anchor: {account.get('billing_cycle_anchor', 'None')}")
+            print(f"    Next Credit Grant: {account.get('next_credit_grant', 'None')}")
 
 if __name__ == "__main__":
     asyncio.run(sync_stripe_to_db()) 
