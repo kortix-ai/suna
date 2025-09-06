@@ -236,55 +236,15 @@ export function BillingModal({ open, onOpenChange, returnUrl = typeof window !==
                 </DialogHeader>
 
                 <>
-                    {/* Usage Limit Alert
-                    {showUsageLimitAlert && (
-                        <div className="mb-6">
-                            <div className="flex items-start p-3 sm:p-4 bg-destructive/5 border border-destructive/50 rounded-lg">
-                                <div className="flex items-start space-x-3">
-                                    <div className="flex-shrink-0 mt-0.5">
-                                        <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-destructive" />
-                                    </div>
-                                    <div className="text-xs sm:text-sm min-w-0">
-                                        <p className="font-medium text-destructive">Usage Limit Reached</p>
-                                        <p className="text-destructive break-words">
-                                            Your current plan has been exhausted for this billing period.
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )} */}
-
-                    {/* Usage section - show loading state or actual data */}
-                    {isLoading || authLoading ? (
-                        <div className="mb-6">
-                            <div className="rounded-lg border bg-background p-4">
-                                <div className="flex justify-between items-center">
-                                    <Skeleton className="h-4 w-40" />
-                                    <Skeleton className="h-4 w-24" />
-                                </div>
-                            </div>
-                        </div>
-                    ) : subscriptionData && (
-                        <div className="mb-6">
-                            <div className="rounded-lg border bg-background p-4">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-sm font-medium text-foreground/90">
-                                        Agent Usage This Month
-                                    </span>
-                                    <span className="text-sm font-medium">
-                                        ${subscriptionData.current_usage?.toFixed(2) || '0'} /{' '}
-                                        ${subscriptionData.cost_limit || '0'}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Show pricing section immediately - no loading state */}
-                    <PricingSection returnUrl={returnUrl} showTitleAndTabs={false} />
-
-                    {/* Subscription Management Section - only show if there's actual subscription data */}
+                    <PricingSection 
+                        returnUrl={returnUrl} 
+                        showTitleAndTabs={false}
+                        onSubscriptionUpdate={() => {
+                            setTimeout(() => {
+                                fetchSubscriptionData();
+                            }, 500);
+                        }}
+                    />
                     {error ? (
                         <div className="mt-6 pt-4 border-t border-border">
                             <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg text-center">
@@ -293,7 +253,6 @@ export function BillingModal({ open, onOpenChange, returnUrl = typeof window !==
                         </div>
                     ) : subscriptionData?.subscription && (
                         <div className="mt-6 pt-4 border-t border-border">
-                            {/* Subscription Status Info Box */}
                             <div className="bg-muted/30 border border-border rounded-lg p-3 mb-3">
                                 <div className="flex items-center justify-between">
                                     <div className="flex items-center gap-2">

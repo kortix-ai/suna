@@ -137,4 +137,15 @@ export const useDeductTokenUsage = () => {
       queryClient.invalidateQueries({ queryKey: billingKeys.status() });
     },
   });
+};
+
+export const useTriggerTestRenewal = () => {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: () => billingApiV2.triggerTestRenewal(),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: billingKeys.all });
+    },
+  });
 }; 

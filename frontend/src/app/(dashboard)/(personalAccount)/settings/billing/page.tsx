@@ -8,15 +8,17 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { useSharedSubscription, useSubscriptionContext } from '@/contexts/SubscriptionContext';
-import { isLocalMode } from '@/lib/config';
+import { isLocalMode, isStagingMode } from '@/lib/config';
 import Link from 'next/link';
-import { useCreatePortalSession } from '@/hooks/react-query/use-billing-v2';
+import { useCreatePortalSession, useTriggerTestRenewal } from '@/hooks/react-query/use-billing-v2';
+import { toast } from 'sonner';
 
 const returnUrl = process.env.NEXT_PUBLIC_URL as string;
 
 export default function PersonalAccountBillingPage() {
   const { data: accounts, isLoading, error } = useAccounts();
   const [showBillingModal, setShowBillingModal] = useState(false);
+  const triggerTestRenewal = useTriggerTestRenewal();
 
   const {
     data: subscriptionData,
@@ -145,6 +147,53 @@ export default function PersonalAccountBillingPage() {
               </Button>
             </div>
           </>
+        )}
+        {isStagingMode() && (
+            <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                <p className="text-xs text-yellow-800 dark:text-yellow-200 mb-2">
+                    🧪 <strong>Test Mode:</strong> Simulate monthly credit renewal
+                </p>
+                <Button
+                    onClick={() => {
+                        triggerTestRenewal.mutate(undefined, {
+                            onSuccess: (result) => {
+                                if (result.success) {
+                                    toast.success(
+                                        <div>
+                                            <p>Credits renewed successfully!</p>
+                                            {result.credits_granted && (
+                                                <p className="text-sm mt-1">
+                                                    +{result.credits_granted} credits added
+                                                </p>
+                                            )}
+                                            {result.new_balance !== undefined && (
+                                                <p className="text-xs mt-1 opacity-80">
+                                                    New balance: ${result.new_balance}
+                                                </p>
+                                            )}
+                                        </div>
+                                    );
+                                } else {
+                                    toast.error(result.message || 'Failed to trigger renewal');
+                                }
+                            },
+                            onError: (error) => {
+                                console.error('Test renewal error:', error);
+                                toast.error('Failed to trigger test renewal');
+                            }
+                        });
+                    }}
+                    size="sm"
+                    className="w-full text-xs bg-yellow-600 hover:bg-yellow-700"
+                    disabled={triggerTestRenewal.isPending}
+                >
+                    {triggerTestRenewal.isPending ? (
+                        '🔄 Triggering...'
+                    ) : (
+                        '🔄 Trigger Monthly Credit Renewal (Test)'
+                    )}
+                </Button>
+            </div>
         )}
       </div>
     </div>

@@ -36,7 +36,7 @@ TIERS: Dict[str, Tier] = {
             config.STRIPE_TIER_2_20_YEARLY_ID,
             config.STRIPE_TIER_2_17_YEARLY_COMMITMENT_ID
         ],
-        monthly_credits=Decimal('25.00'),
+        monthly_credits=Decimal('20.00'),
         display_name='Starter',
         can_purchase_credits=True,
         models=['gpt-4o-mini', 'gpt-4o', 'claude-3-haiku', 'claude-3-5-sonnet'],
@@ -49,7 +49,7 @@ TIERS: Dict[str, Tier] = {
             config.STRIPE_TIER_6_50_YEARLY_ID,
             config.STRIPE_TIER_6_42_YEARLY_COMMITMENT_ID
         ],
-        monthly_credits=Decimal('65.00'),
+        monthly_credits=Decimal('50.00'),
         display_name='Professional',
         can_purchase_credits=True,
         models=['gpt-4o-mini', 'gpt-4o', 'claude-3-haiku', 'claude-3-5-sonnet', 'claude-3-opus'],
@@ -61,7 +61,7 @@ TIERS: Dict[str, Tier] = {
             config.STRIPE_TIER_12_100_ID,
             config.STRIPE_TIER_12_100_YEARLY_ID
         ],
-        monthly_credits=Decimal('130.00'),
+        monthly_credits=Decimal('100.00'),
         display_name='Team',
         can_purchase_credits=True,
         models=['gpt-4o-mini', 'gpt-4o', 'claude-3-haiku', 'claude-3-5-sonnet', 'claude-3-opus'],
@@ -74,7 +74,7 @@ TIERS: Dict[str, Tier] = {
             config.STRIPE_TIER_25_200_YEARLY_ID,
             config.STRIPE_TIER_25_170_YEARLY_COMMITMENT_ID
         ],
-        monthly_credits=Decimal('260.00'),
+        monthly_credits=Decimal('200.00'),
         display_name='Business',
         can_purchase_credits=True,
         models=['gpt-4o-mini', 'gpt-4o', 'claude-3-haiku', 'claude-3-5-sonnet', 'claude-3-opus', 'o1-preview'],
@@ -86,7 +86,7 @@ TIERS: Dict[str, Tier] = {
             config.STRIPE_TIER_50_400_ID,
             config.STRIPE_TIER_50_400_YEARLY_ID
         ],
-        monthly_credits=Decimal('520.00'),
+        monthly_credits=Decimal('400.00'),
         display_name='Enterprise',
         can_purchase_credits=True,
         models=['gpt-4o-mini', 'gpt-4o', 'claude-3-haiku', 'claude-3-5-sonnet', 'claude-3-opus', 'o1-preview', 'o1'],
@@ -98,7 +98,7 @@ TIERS: Dict[str, Tier] = {
             config.STRIPE_TIER_125_800_ID,
             config.STRIPE_TIER_125_800_YEARLY_ID
         ],
-        monthly_credits=Decimal('1040.00'),
+        monthly_credits=Decimal('800.00'),
         display_name='Enterprise Plus',
         can_purchase_credits=True,
         models=['gpt-4o-mini', 'gpt-4o', 'claude-3-haiku', 'claude-3-5-sonnet', 'claude-3-opus', 'o1-preview', 'o1'],
@@ -110,7 +110,7 @@ TIERS: Dict[str, Tier] = {
             config.STRIPE_TIER_200_1000_ID,
             config.STRIPE_TIER_200_1000_YEARLY_ID
         ],
-        monthly_credits=Decimal('1300.00'),
+        monthly_credits=Decimal('1000.00'),
         display_name='Ultimate',
         can_purchase_credits=True,
         models=['gpt-4o-mini', 'gpt-4o', 'claude-3-haiku', 'claude-3-5-sonnet', 'claude-3-opus', 'o1-preview', 'o1'],

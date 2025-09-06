@@ -584,6 +584,7 @@ interface PricingSectionProps {
   insideDialog?: boolean;
   showInfo?: boolean;
   noPadding?: boolean;
+  onSubscriptionUpdate?: () => void;
 }
 
 export function PricingSection({
@@ -593,6 +594,7 @@ export function PricingSection({
   insideDialog = false,
   showInfo = true,
   noPadding = false,
+  onSubscriptionUpdate,
 }: PricingSectionProps) {
 
   const { data: subscriptionData, isLoading: isFetchingPlan, error: subscriptionQueryError, refetch: refetchSubscription } = useSubscription();
@@ -613,25 +615,21 @@ export function PricingSection({
     );
 
     if (currentTier) {
-      // Check if current subscription is yearly commitment (new yearly)
       if (currentTier.monthlyCommitmentStripePriceId === currentSubscription.price_id) {
         return 'yearly_commitment';
       } else if (currentTier.yearlyStripePriceId === currentSubscription.price_id) {
-        // Legacy yearly plans
         return 'yearly';
       } else if (currentTier.stripePriceId === currentSubscription.price_id) {
         return 'monthly';
       }
     }
 
-    // Default to yearly_commitment (new yearly) if we can't determine current plan type
     return 'yearly_commitment';
   }, [isAuthenticated, currentSubscription]);
 
   const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly' | 'yearly_commitment'>(getDefaultBillingPeriod());
   const [planLoadingStates, setPlanLoadingStates] = useState<Record<string, boolean>>({});
 
-  // Update billing period when subscription data changes
   useEffect(() => {
     setBillingPeriod(getDefaultBillingPeriod());
   }, [getDefaultBillingPeriod]);
@@ -647,6 +645,10 @@ export function PricingSection({
     setTimeout(() => {
       setPlanLoadingStates({});
     }, 1000);
+    // Call parent's update handler if provided
+    if (onSubscriptionUpdate) {
+      onSubscriptionUpdate();
+    }
   };
 
 

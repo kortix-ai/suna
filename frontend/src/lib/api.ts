@@ -1963,8 +1963,7 @@ export const getSubscription = async (): Promise<SubscriptionStatus> => {
     }
 
     const data = await response.json();
-    
-    // Map the new billing v2 format to the old format for backward compatibility
+
     return {
       subscription: data.subscription ? {
         ...data.subscription,
@@ -1974,7 +1973,7 @@ export const getSubscription = async (): Promise<SubscriptionStatus> => {
       cost_limit: data.tier?.credits || 0,
       credit_balance: data.credits?.balance || 0,
       can_purchase_credits: data.credits?.can_purchase || false,
-      ...data  // Include any other fields that might be used
+      ...data 
     } as SubscriptionStatus;
   } catch (error) {
     if (error instanceof NoAccessTokenAvailableError) {

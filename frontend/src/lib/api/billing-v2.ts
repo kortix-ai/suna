@@ -121,6 +121,13 @@ export interface ReactivateSubscriptionResponse {
   message: string;
 }
 
+export interface TestRenewalResponse {
+  success: boolean;
+  message?: string;
+  credits_granted?: number;
+  new_balance?: number;
+}
+
 export const billingApiV2 = {
   async getSubscription() {
     const response = await backendApi.get<SubscriptionInfo>('/billing/v2/subscription');
@@ -204,6 +211,12 @@ export const billingApiV2 = {
     );
     if (response.error) throw response.error;
     return response.data!;
+  },
+
+  async triggerTestRenewal() {
+    const response = await backendApi.post<TestRenewalResponse>('/billing/v2/test/trigger-renewal');
+    if (response.error) throw response.error;
+    return response.data!;
   }
 };
 
@@ -222,4 +235,5 @@ export const purchaseCredits = (request: PurchaseCreditsRequest) =>
   billingApiV2.purchaseCredits(request);
 export const getTransactions = (limit?: number, offset?: number) => 
   billingApiV2.getTransactions(limit, offset);
-export const getUsageHistory = (days?: number) => billingApiV2.getUsageHistory(days); 
+export const getUsageHistory = (days?: number) => billingApiV2.getUsageHistory(days);
+export const triggerTestRenewal = () => billingApiV2.triggerTestRenewal(); 
