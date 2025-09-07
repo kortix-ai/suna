@@ -118,7 +118,7 @@ export function PresentationViewer({
       
       // Only extract data if we have a valid parsed object
       if (output && typeof output === 'object') {
-        extractedPresentationName = output.presentation_path.startsWith('presentations/') ? output.presentation_path.substring('presentations/'.length) : output.presentation_name;
+        extractedPresentationName = output.presentation_name;
         extractedPresentationPath = output.presentation_path;
         currentSlideNumber = output.slide_number;
         presentationTitle = output.presentation_title || output.title;
