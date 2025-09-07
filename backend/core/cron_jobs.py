@@ -2,7 +2,7 @@ from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from core.services.supabase import DBConnection  
 from core.credits import credit_service
-from core.billing_config import get_monthly_credits
+from billing.config import get_monthly_credits
 from core.utils.logger import logger
 
 class CreditGrantJob:

@@ -7,7 +7,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from decimal import Decimal
 from datetime import datetime, timezone
 from core.services.supabase import DBConnection
-from core.billing_config import get_tier_by_price_id, get_monthly_credits, FREE_TIER_INITIAL_CREDITS
+from billing.config import get_tier_by_price_id, get_monthly_credits, FREE_TIER_INITIAL_CREDITS
 from core.utils.logger import logger
 import argparse
 
@@ -130,6 +130,12 @@ class CreditMigration:
             if tier_name != 'free' and monthly_credits > 0:
                 account_data['last_grant_date'] = datetime.now(timezone.utc).isoformat()
             
+            # Add stripe_subscription_id if user has an active subscription
+            if subscription and subscription.get('id'):
+                account_data['stripe_subscription_id'] = subscription['id']
+                if subscription.get('current_period_end'):
+                    account_data['next_credit_grant'] = subscription['current_period_end']
+            
             await self.client.from_('credit_accounts').insert(account_data).execute()
             
             description_parts = []
@@ -153,16 +159,6 @@ class CreditMigration:
             }
             
             await self.client.from_('credit_ledger').insert(ledger_entry).execute()
-            
-            if tier_name != 'free' and monthly_credits > 0:
-                grant_entry = {
-                    'user_id': user_id,
-                    'amount': str(monthly_credits),
-                    'tier': tier_name,
-                    'period_start': datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat(),
-                    'period_end': datetime.now(timezone.utc).replace(month=datetime.now().month % 12 + 1, day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
-                }
-                await self.client.from_('credit_grants').insert(grant_entry).execute()
             
             logger.info(f"Successfully migrated user {user_id} to tier '{tier_name}' with balance ${total_initial_balance} (${monthly_credits} limit - ${current_usage} usage)")
             return True

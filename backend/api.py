@@ -22,8 +22,9 @@ import uuid
 from core import api as core_api
 
 from core.sandbox import api as sandbox_api
-from services import billing_v2
-from admin import billing_admin, users_admin
+from billing.api import router as billing_router
+from billing.admin import router as billing_admin_router
+from admin import users_admin
 from core.services import transcription as transcription_api
 import sys
 from core.services import email_api
@@ -157,9 +158,9 @@ api_router = APIRouter()
 # Include all API routers without individual prefixes
 api_router.include_router(core_api.router)
 api_router.include_router(sandbox_api.router)
-api_router.include_router(billing_v2.router)
+api_router.include_router(billing_router)
 api_router.include_router(api_keys_api.router)
-api_router.include_router(billing_admin.router)
+api_router.include_router(billing_admin_router)
 api_router.include_router(users_admin.router)
 
 from core.mcp_module import api as mcp_api
@@ -221,8 +222,7 @@ async def health_check():
 
 
 app.include_router(api_router, prefix="/api")
-app.include_router(billing_v2.router)
-# billing_admin.router is now included in api_router with /api prefix
+app.include_router(billing_router)
 app.include_router(transcription_api.router)
 
 

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, Request
-from typing import Optional, Dict, Tuple, List
+from typing import Optional, Dict
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel
@@ -11,9 +11,14 @@ from core.utils.config import config, EnvMode
 from core.utils.logger import logger
 from core.utils.cache import Cache
 from core.ai_models import model_manager
-from core.billing_config import TOKEN_PRICE_MULTIPLIER, get_tier_by_price_id, TIERS, get_monthly_credits
+from .config import (
+    TOKEN_PRICE_MULTIPLIER, 
+    get_tier_by_price_id, 
+    TIERS, 
+    get_monthly_credits
+)
 
-router = APIRouter(prefix="/billing/v2", tags=["billing-v2"])
+router = APIRouter(prefix="/billing/v2", tags=["billing"])
 
 stripe.api_key = config.STRIPE_SECRET_KEY
 
@@ -63,20 +68,13 @@ async def get_user_subscription_tier(user_id: str) -> Dict:
     
     db = DBConnection()
     client = await db.client
-    
+
     credit_result = await client.from_('credit_accounts').select('tier').eq('user_id', user_id).execute()
     
     if credit_result.data and len(credit_result.data) > 0:
         tier_name = credit_result.data[0].get('tier', 'free')
     else:
-        result = await client.schema('basejump').from_('billing_subscriptions').select('price_id, status').eq('account_id', user_id).in_('status', ['active', 'trialing']).order('created', desc=True).limit(1).execute()
-        
-        if result.data:
-            price_id = result.data[0]['price_id']
-            tier_obj = get_tier_by_price_id(price_id)
-            tier_name = tier_obj.name if tier_obj else 'free'
-        else:
-            tier_name = 'free'
+        tier_name = 'free'
     
     tier_obj = TIERS.get(tier_name, TIERS['free'])
     tier_info = {
@@ -124,6 +122,38 @@ async def get_or_create_stripe_customer(user_id: str) -> str:
     
     logger.info(f"Created new Stripe customer {customer.id} for user {user_id}")
     return customer.id
+
+async def calculate_credit_breakdown(user_id: str, client) -> Dict:
+    current_balance = await credit_service.get_balance(user_id)
+    current_balance = float(current_balance)
+    
+    purchase_result = await client.from_('credit_ledger')\
+        .select('amount, created_at, description')\
+        .eq('user_id', user_id)\
+        .eq('type', 'purchase')\
+        .execute()
+    
+    total_purchased = sum(float(row['amount']) for row in purchase_result.data) if purchase_result.data else 0
+    
+    logger.info(f"🔍 Credit breakdown for user {user_id}:")
+    logger.info(f"  Current balance: ${current_balance}")
+    logger.info(f"  Total purchased (topups): ${total_purchased}")
+    if purchase_result.data:
+        for purchase in purchase_result.data:
+            logger.info(f"    Purchase: ${purchase['amount']} - {purchase['description']}")
+    
+    topup_credits = total_purchased
+    subscription_credits = max(0, current_balance - topup_credits)
+    
+    logger.info(f"  → Topup credits to preserve: ${topup_credits}")
+    logger.info(f"  → Current subscription credits: ${subscription_credits}")
+    
+    return {
+        'total_balance': current_balance,
+        'topup_credits': topup_credits,
+        'subscription_credits': subscription_credits,
+        'total_purchased': total_purchased
+    }
 
 @router.post("/check")
 async def check_billing_status(
@@ -176,7 +206,7 @@ async def check_status(
             "message": "Sufficient credits" if can_run else "Insufficient credits - please add more credits",
             "subscription": subscription,
             "credit_balance": float(balance),
-            "can_purchase_credits": tier['name'] == 'tier_200_1000',
+            "can_purchase_credits": tier.get('can_purchase_credits', False),
             "tier_info": tier,
             "credits_summary": {
                 "balance": float(balance),
@@ -200,7 +230,7 @@ async def get_project_limits(user_id: str = Depends(verify_and_get_user_id_from_
             projects_result = await db.client.table('projects').select('project_id').eq('account_id', user_id).execute()
             current_count = len(projects_result.data or [])
             
-            from core.billing_config import get_project_limit, get_tier_by_name
+            from .config import get_project_limit, get_tier_by_name
             project_limit = get_project_limit(tier)
             tier_info = get_tier_by_name(tier)
             
@@ -262,14 +292,14 @@ async def get_credit_balance(
     summary = await credit_service.get_account_summary(user_id)
     tier = await get_user_subscription_tier(user_id)
     
-    can_purchase = tier['name'] == 'tier_200_1000'
+    can_purchase = tier.get('can_purchase_credits', False)
     
     return {
         'balance': float(balance),
         'lifetime_granted': summary['lifetime_granted'],
         'lifetime_purchased': summary['lifetime_purchased'],
         'lifetime_used': summary['lifetime_used'],
-        'can_purchase_credits': can_purchase,
+        'can_purchase_credits': can_purchase, 
         'tier': tier['name']
     }
 
@@ -279,8 +309,8 @@ async def purchase_credits_checkout(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
     tier = await get_user_subscription_tier(user_id)
-    if tier['name'] != 'tier_200_1000':
-        raise HTTPException(status_code=403, detail="Credit purchases only available for highest tier")
+    if not tier.get('can_purchase_credits', False):
+        raise HTTPException(status_code=403, detail="Credit purchases not available for your tier")
     
     db = DBConnection()
     client = await db.client
@@ -354,6 +384,8 @@ async def stripe_webhook(request: Request):
                 )
                 
                 logger.info(f"Credit purchase completed for user {user_id}: ${credit_amount}")
+            elif session.get('subscription'):
+                logger.info(f"Checkout completed for new subscription: {session['subscription']}")
         
         elif event.type in ['customer.subscription.created', 'customer.subscription.updated']:
             subscription = event.data.object
@@ -362,8 +394,13 @@ async def stripe_webhook(request: Request):
         
         elif event.type == 'invoice.payment_succeeded':
             invoice = event.data.object
-            if invoice.get('subscription') and invoice.get('billing_reason') in ['subscription_cycle', 'subscription_update']:
+            billing_reason = invoice.get('billing_reason')
+            logger.info(f"Invoice payment succeeded - billing_reason: {billing_reason}")
+            
+            if invoice.get('subscription') and billing_reason == 'subscription_cycle':
                 await handle_subscription_renewal(invoice)
+            else:
+                logger.info(f"Skipping renewal handler for billing_reason: {billing_reason}")
         
         return {'status': 'success'}
     
@@ -396,11 +433,21 @@ async def handle_subscription_change(subscription: Dict):
     billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
     next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
     
-    account_result = await client.from_('credit_accounts').select('tier, billing_cycle_anchor').eq('user_id', user_id).execute()
+    account_result = await client.from_('credit_accounts').select('tier, billing_cycle_anchor, stripe_subscription_id').eq('user_id', user_id).execute()
+    
+    if not account_result.data or len(account_result.data) == 0:
+        logger.info(f"User {user_id} has no credit account, creating free tier account first")
+        await client.from_('credit_accounts').insert({
+            'user_id': user_id,
+            'balance': 0,
+            'tier': 'free'
+        }).execute()
+        account_result = await client.from_('credit_accounts').select('tier, billing_cycle_anchor, stripe_subscription_id').eq('user_id', user_id).execute()
     
     if account_result.data and len(account_result.data) > 0:
         current_tier_name = account_result.data[0].get('tier')
         existing_anchor = account_result.data[0].get('billing_cycle_anchor')
+        old_subscription_id = account_result.data[0].get('stripe_subscription_id')
 
         current_tier_info = TIERS.get(current_tier_name)
         current_tier = None
@@ -410,19 +457,39 @@ async def handle_subscription_change(subscription: Dict):
                 'credits': float(current_tier_info.monthly_credits)
             }
         
-        if current_tier and current_tier['name'] != new_tier['name']:
-            if new_tier['credits'] > current_tier['credits']:
-                full_amount = Decimal(new_tier['credits'])
-                await credit_service.add_credits(
-                    user_id=user_id,
-                    amount=full_amount,
-                    type='tier_upgrade',
-                    description=f"Upgrade to {new_tier['name']} - Full tier credits"
-                )
-                logger.info(f"Granted {full_amount} credits for tier upgrade: {current_tier['name']} -> {new_tier['name']}")
-            elif new_tier['credits'] < current_tier['credits']:
-                logger.info(f"Tier downgrade: {current_tier['name']} -> {new_tier['name']} - No credit adjustment")
+        should_grant_credits = False
         
+        if current_tier_name == 'free' and new_tier['name'] != 'free':
+            should_grant_credits = True
+            logger.info(f"Upgrade from free tier to {new_tier['name']} - will grant credits")
+        elif current_tier:
+            if current_tier['name'] != new_tier['name']:
+                if new_tier['credits'] > current_tier['credits']:
+                    should_grant_credits = True
+                    logger.info(f"Tier upgrade detected: {current_tier['name']} -> {new_tier['name']}")
+                else:
+                    logger.info(f"Tier change (not upgrade): {current_tier['name']} -> {new_tier['name']}")
+            elif subscription['id'] != old_subscription_id and old_subscription_id is not None:
+                should_grant_credits = True
+                logger.info(f"New subscription for tier {new_tier['name']}: {old_subscription_id} -> {subscription['id']}")
+            elif new_tier['credits'] > current_tier['credits']:
+                should_grant_credits = True
+                logger.info(f"Credit increase for tier {new_tier['name']}: {current_tier['credits']} -> {new_tier['credits']}")
+        
+        if should_grant_credits:
+            full_amount = Decimal(new_tier['credits'])
+            logger.info(f"Granting {full_amount} credits to user {user_id}")
+            await credit_service.add_credits(
+                user_id=user_id,
+                amount=full_amount,
+                type='tier_upgrade',
+                description=f"Subscription update: {new_tier['name']} - Full tier credits"
+            )
+            logger.info(f"Successfully granted {full_amount} credits")
+        else:
+            logger.info(f"No credits granted - not an upgrade scenario")
+        
+
         await client.from_('credit_accounts').update({
             'tier': new_tier['name'],
             'stripe_subscription_id': subscription['id'],
@@ -436,8 +503,7 @@ async def handle_subscription_change(subscription: Dict):
             'tier': new_tier['name'],
             'stripe_subscription_id': subscription['id'],
             'billing_cycle_anchor': billing_anchor.isoformat(),
-            'next_credit_grant': next_grant_date.isoformat(),
-            'last_grant_date': datetime.now(timezone.utc).isoformat()
+            'next_credit_grant': next_grant_date.isoformat()
         }).execute()
         
         await credit_service.add_credits(
@@ -455,6 +521,13 @@ async def handle_subscription_renewal(invoice: Dict):
         subscription_id = invoice.get('subscription')
         if not subscription_id:
             return
+
+        period_start = invoice.get('period_start')
+        period_end = invoice.get('period_end')
+        
+        if not period_start or not period_end:
+            logger.warning(f"Invoice missing period information: {invoice.get('id')}")
+            return
         
         customer_result = await client.schema('basejump').from_('billing_customers')\
             .select('account_id')\
@@ -467,7 +540,7 @@ async def handle_subscription_renewal(invoice: Dict):
         user_id = customer_result.data[0]['account_id']
         
         account_result = await client.from_('credit_accounts')\
-            .select('tier, last_grant_date, next_credit_grant')\
+            .select('tier, last_grant_date, next_credit_grant, billing_cycle_anchor')\
             .eq('user_id', user_id)\
             .execute()
         
@@ -476,30 +549,58 @@ async def handle_subscription_renewal(invoice: Dict):
         
         account = account_result.data[0]
         tier = account['tier']
+        period_start_dt = datetime.fromtimestamp(period_start, tz=timezone.utc)
         
         if account.get('last_grant_date'):
             last_grant = datetime.fromisoformat(account['last_grant_date'].replace('Z', '+00:00'))
-            if (datetime.now(timezone.utc) - last_grant).days < 25:
-                logger.info(f"Skipping credit grant for {user_id} - already granted {(datetime.now(timezone.utc) - last_grant).days} days ago")
+            
+            if period_start_dt <= last_grant:
+                logger.info(f"Skipping credit grant for {user_id} - invoice period {period_start_dt} not after last grant {last_grant}")
                 return
         
         monthly_credits = get_monthly_credits(tier)
         if monthly_credits > 0:
-            await credit_service.add_credits(
-                user_id=user_id,
-                amount=monthly_credits,
-                type='tier_grant',
-                description=f"Monthly {tier} tier credits",
-                metadata={'invoice_id': invoice['id'], 'subscription_id': subscription_id}
-            )
+            logger.info(f"💰 Processing subscription renewal for user {user_id}")
+            breakdown = await calculate_credit_breakdown(user_id, client)
+            current_balance = breakdown['total_balance']
+            topup_credits = breakdown['topup_credits']
+
+            new_balance = float(monthly_credits) + topup_credits
+            logger.info(f"  New balance will be: ${new_balance} (${monthly_credits} + ${topup_credits})")
             
-            next_grant = datetime.now(timezone.utc) + timedelta(days=30)
             await client.from_('credit_accounts').update({
-                'last_grant_date': datetime.now(timezone.utc).isoformat(),
+                'balance': str(new_balance)
+            }).eq('user_id', user_id).execute()
+            
+            await client.from_('credit_ledger').insert({
+                'user_id': user_id,
+                'amount': str(monthly_credits),
+                'balance_after': str(new_balance),
+                'type': 'tier_grant',
+                'description': f"Monthly {tier} tier credits (${monthly_credits}) + preserved topup credits (${topup_credits:.2f})",
+                'metadata': {
+                    'invoice_id': invoice['id'], 
+                    'subscription_id': subscription_id,
+                    'period_start': period_start,
+                    'period_end': period_end,
+                    'previous_balance': str(current_balance),
+                    'topup_credits_preserved': str(topup_credits),
+                    'subscription_credits_reset': str(monthly_credits),
+                    'renewal_with_topup_preservation': True
+                }
+            }).execute()
+            
+            next_grant = datetime.fromtimestamp(period_end, tz=timezone.utc)
+            
+            await client.from_('credit_accounts').update({
+                'last_grant_date': period_start_dt.isoformat(),
                 'next_credit_grant': next_grant.isoformat()
             }).eq('user_id', user_id).execute()
             
-            logger.info(f"Granted {monthly_credits} credits to user {user_id} for subscription renewal")
+            await Cache.invalidate(f"credit_balance:{user_id}")
+            await Cache.invalidate(f"credit_summary:{user_id}")
+            
+            logger.info(f"Renewed credits for user {user_id}: ${monthly_credits} subscription + ${topup_credits:.2f} topup = ${new_balance:.2f} total (was ${current_balance:.2f}) for period: {period_start_dt} to {next_grant}")
     
     except Exception as e:
         logger.error(f"Error handling subscription renewal: {e}")
@@ -512,17 +613,9 @@ async def get_subscription(
         db = DBConnection()
         client = await db.client
         
-        subscription_result = await client.schema('basejump').from_('billing_subscriptions')\
-            .select('*')\
-            .eq('account_id', user_id)\
-            .in_('status', ['active', 'trialing'])\
-            .order('created', desc=True)\
-            .limit(1)\
-            .execute()
+        credit_result = await client.from_('credit_accounts').select('*').eq('user_id', user_id).execute()
         
         subscription_data = None
-        
-        credit_result = await client.from_('credit_accounts').select('*').eq('user_id', user_id).execute()
         
         if credit_result.data:
             credit_account = credit_result.data[0]
@@ -543,13 +636,32 @@ async def get_subscription(
             
             if tier_obj and len(tier_obj.price_ids) > 0:
                 price_id = tier_obj.price_ids[0]
-                
-                if subscription_result.data:
-                    subscription = subscription_result.data[0]
-                    if subscription.get('price_id'):
-                        price_id = subscription['price_id']
             else:
                 price_id = config.STRIPE_FREE_TIER_ID
+            
+            stripe_subscription_id = credit_account.get('stripe_subscription_id')
+            if stripe_subscription_id:
+                try:
+                    stripe_subscription = await stripe.Subscription.retrieve_async(
+                        stripe_subscription_id,
+                        expand=['items.data.price']
+                    )
+                    
+                    if stripe_subscription.get('price_id'):
+                        price_id = stripe_subscription['price_id']
+                    
+                    current_period_end = stripe_subscription.get('current_period_end')
+                    cancel_at = stripe_subscription.get('cancel_at')
+                    
+                    subscription_data = {
+                        'id': stripe_subscription_id,
+                        'status': stripe_subscription.get('status', 'active'),
+                        'cancel_at_period_end': bool(stripe_subscription.get('cancel_at_period_end')),
+                        'cancel_at': cancel_at,
+                        'current_period_end': current_period_end
+                    }
+                except Exception as stripe_error:
+                    logger.warning(f"Could not retrieve Stripe subscription {stripe_subscription_id}: {stripe_error}")
         else:
             tier_name = 'free'
             tier_obj = TIERS['free']
@@ -558,48 +670,6 @@ async def get_subscription(
                 'credits': float(TIERS['free'].monthly_credits)
             }
             price_id = config.STRIPE_FREE_TIER_ID
-        
-        if subscription_result.data:
-            subscription = subscription_result.data[0]
-            
-            stripe_subscription = None
-            try:
-                stripe_subscription = await stripe.Subscription.retrieve_async(
-                    subscription['id'],
-                    expand=['items.data.price']
-                )
-            except Exception as stripe_error:
-                logger.warning(f"Could not retrieve Stripe subscription {subscription['id']}: {stripe_error}")
-            
-            current_period_end = None
-            if stripe_subscription and stripe_subscription.get('current_period_end'):
-                current_period_end = stripe_subscription['current_period_end']
-            elif subscription.get('current_period_end'):
-                try:
-                    from datetime import datetime
-                    dt = datetime.fromisoformat(subscription['current_period_end'].replace('Z', '+00:00'))
-                    current_period_end = int(dt.timestamp())
-                except:
-                    current_period_end = None
-            
-            cancel_at = None
-            if stripe_subscription and stripe_subscription.get('cancel_at'):
-                cancel_at = stripe_subscription['cancel_at']
-            elif subscription.get('cancel_at'):
-                try:
-                    from datetime import datetime
-                    dt = datetime.fromisoformat(subscription['cancel_at'].replace('Z', '+00:00'))
-                    cancel_at = int(dt.timestamp())
-                except:
-                    cancel_at = None
-            
-            subscription_data = {
-                'id': subscription['id'],
-                'status': subscription['status'],
-                'cancel_at_period_end': bool(stripe_subscription.get('cancel_at_period_end') if stripe_subscription else subscription.get('cancel_at_period_end')),
-                'cancel_at': cancel_at,
-                'current_period_end': current_period_end
-            }
         
         balance = await credit_service.get_balance(user_id)
         summary = await credit_service.get_account_summary(user_id)
@@ -620,7 +690,7 @@ async def get_subscription(
             'current_usage': float(summary['lifetime_used']),
             'cost_limit': tier_info['credits'],
             'credit_balance': float(balance),
-            'can_purchase_credits': tier_info.get('name') in ['tier_200_1000', 'tier_50_400', 'tier_125_800'],
+            'can_purchase_credits': TIERS.get(tier_info.get('name', 'free'), TIERS['free']).can_purchase_credits,
             'tier': tier_info,
             'credits': {
                 'balance': float(balance),
@@ -628,7 +698,7 @@ async def get_subscription(
                 'lifetime_granted': float(summary['lifetime_granted']),
                 'lifetime_purchased': float(summary['lifetime_purchased']),
                 'lifetime_used': float(summary['lifetime_used']),
-                'can_purchase': tier_info.get('name') in ['tier_200_1000', 'tier_50_400', 'tier_125_800']
+                'can_purchase_credits': TIERS.get(tier_info.get('name', 'free'), TIERS['free']).can_purchase_credits
             }
         }
         
@@ -671,13 +741,19 @@ async def create_checkout_session(
         db = DBConnection()
         client = await db.client
         
-        existing_sub = await client.schema('basejump').from_('billing_subscriptions').select('id').eq('account_id', user_id).in_('status', ['active', 'trialing']).execute()
+        credit_account = await client.from_('credit_accounts').select('stripe_subscription_id').eq('user_id', user_id).execute()
         
-        if existing_sub.data and len(existing_sub.data) > 0:
-            subscription = await stripe.Subscription.retrieve_async(existing_sub.data[0]['id'])
+        existing_subscription_id = None
+        if credit_account.data and len(credit_account.data) > 0:
+            existing_subscription_id = credit_account.data[0].get('stripe_subscription_id')
+        
+        if existing_subscription_id:
+            subscription = await stripe.Subscription.retrieve_async(existing_subscription_id)
+            
+            logger.info(f"Updating subscription {existing_subscription_id} to price {request.price_id}")
             
             updated_subscription = await stripe.Subscription.modify_async(
-                existing_sub.data[0]['id'],
+                existing_subscription_id,
                 items=[{
                     'id': subscription['items']['data'][0].id,
                     'price': request.price_id,
@@ -686,6 +762,7 @@ async def create_checkout_session(
                 payment_behavior='pending_if_incomplete'
             )
             
+            logger.info(f"Stripe subscription updated, calling handle_subscription_change")
             await handle_subscription_change(updated_subscription)
 
             await Cache.invalidate(f"subscription_tier:{user_id}")
@@ -757,21 +834,20 @@ async def sync_subscription(
         db = DBConnection()
         client = await db.client
         
-        sub_result = await client.schema('basejump').from_('billing_subscriptions')\
-            .select('*')\
-            .eq('account_id', user_id)\
-            .in_('status', ['active', 'trialing'])\
-            .limit(1)\
+        credit_account = await client.from_('credit_accounts')\
+            .select('stripe_subscription_id')\
+            .eq('user_id', user_id)\
+            .single()\
             .execute()
         
-        if not sub_result.data or len(sub_result.data) == 0:
+        if not credit_account.data or not credit_account.data.get('stripe_subscription_id'):
             return {
                 'success': False,
                 'message': 'No active subscription found'
             }
         
         subscription = await stripe.Subscription.retrieve_async(
-            sub_result.data[0]['id'],
+            credit_account.data['stripe_subscription_id'],
             expand=['items.data.price']
         )
         
@@ -810,13 +886,13 @@ async def cancel_subscription(
         db = DBConnection()
         client = await db.client
         
-        sub_result = await client.schema('basejump').from_('billing_subscriptions').select('id').eq('account_id', user_id).in_('status', ['active', 'trialing']).execute()
+        credit_account = await client.from_('credit_accounts').select('stripe_subscription_id').eq('user_id', user_id).single().execute()
         
-        if not sub_result.data or len(sub_result.data) == 0:
+        if not credit_account.data or not credit_account.data.get('stripe_subscription_id'):
             raise HTTPException(status_code=404, detail="No active subscription found")
         
         subscription = await stripe.Subscription.modify_async(
-            sub_result.data[0]['id'],
+            credit_account.data['stripe_subscription_id'],
             cancel_at_period_end=True,
             metadata={'cancellation_feedback': request.feedback} if request.feedback else None
         )
@@ -841,13 +917,13 @@ async def reactivate_subscription(
         db = DBConnection()
         client = await db.client
         
-        sub_result = await client.schema('basejump').from_('billing_subscriptions').select('id').eq('account_id', user_id).in_('status', ['active', 'trialing']).execute()
+        credit_account = await client.from_('credit_accounts').select('stripe_subscription_id').eq('user_id', user_id).single().execute()
         
-        if not sub_result.data or len(sub_result.data) == 0:
+        if not credit_account.data or not credit_account.data.get('stripe_subscription_id'):
             raise HTTPException(status_code=404, detail="No active subscription found")
         
         subscription = await stripe.Subscription.modify_async(
-            sub_result.data[0]['id'],
+            credit_account.data['stripe_subscription_id'],
             cancel_at_period_end=False
         )
         
@@ -872,6 +948,23 @@ async def get_user_transactions(
     return {
         'transactions': transactions,
         'count': len(transactions)
+    }
+
+@router.get("/credit-breakdown")
+async def get_credit_breakdown(
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+) -> Dict:
+    db = DBConnection()
+    client = await db.client
+    
+    breakdown = await calculate_credit_breakdown(user_id, client)
+    
+    return {
+        'total_balance': breakdown['total_balance'],
+        'subscription_credits': breakdown['subscription_credits'],
+        'topup_credits': breakdown['topup_credits'],
+        'total_purchased': breakdown['total_purchased'],
+        'message': f"Your ${breakdown['total_balance']:.2f} balance includes ${breakdown['subscription_credits']:.2f} from subscription and ${breakdown['topup_credits']:.2f} from topup purchases"
     } 
 
 @router.get("/usage-history")
@@ -1019,7 +1112,6 @@ async def test_trigger_renewal(
         db = DBConnection()
         client = await db.client
         
-        # Check credit_accounts as primary source of truth
         account_result = await client.from_('credit_accounts')\
             .select('*')\
             .eq('user_id', user_id)\
@@ -1033,7 +1125,6 @@ async def test_trigger_renewal(
         
         account = account_result.data[0]
         
-        # Only check if tier is not free (means they have a subscription)
         if account.get('tier', 'free') == 'free':
             return {
                 'success': False,

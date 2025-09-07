@@ -263,7 +263,6 @@ async def migrate_user_to_credits(
     
     try:
         result = await client.rpc('migrate_user_to_credits', {'p_user_id': user_id}).execute()
-        
         logger.info(f"Admin {admin['user_id']} migrated user {user_id} to credit system")
         
         return {

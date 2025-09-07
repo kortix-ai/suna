@@ -135,6 +135,36 @@ export class AgentCountLimitError extends Error {
   }
 }
 
+export class ProjectLimitError extends Error {
+  status: number;
+  detail: { 
+    message: string;
+    current_count: number;
+    limit: number;
+    tier_name: string;
+    error_code: string;
+  };
+
+  constructor(
+    status: number,
+    detail: { 
+      message: string;
+      current_count: number;
+      limit: number;
+      tier_name: string;
+      error_code: string;
+      [key: string]: any;
+    },
+    message?: string,
+  ) {
+    super(message || detail.message || `Project Limit Exceeded: ${status}`);
+    this.name = 'ProjectLimitError';
+    this.status = status;
+    this.detail = detail;
+    Object.setPrototypeOf(this, ProjectLimitError.prototype);
+  }
+}
+
 export class NoAccessTokenAvailableError extends Error {
   constructor(message?: string, options?: { cause?: Error }) {
     super(message || 'No access token available', options);
@@ -142,7 +172,6 @@ export class NoAccessTokenAvailableError extends Error {
   name = 'NoAccessTokenAvailableError';
 }
 
-// Type Definitions (moved from potential separate file for clarity)
 export type Project = {
   id: string;
   name: string;
@@ -789,6 +818,29 @@ export const startAgent = async (
             detail.running_count = 0;
           }
           throw new AgentRunLimitError(response.status, detail);
+      }
+
+      // Check for project limit errors (402 with PROJECT_LIMIT_EXCEEDED error_code)
+      if (response.status === 402) {
+        try {
+          const errorData = await response.json();
+          const detail = errorData?.detail || {};
+          
+          if (detail.error_code === 'PROJECT_LIMIT_EXCEEDED') {
+            throw new ProjectLimitError(response.status, {
+              message: detail.message || 'Project limit exceeded',
+              current_count: detail.current_count || 0,
+              limit: detail.limit || 0,
+              tier_name: detail.tier_name || 'free',
+              error_code: detail.error_code
+            });
+          }
+        } catch (parseError) {
+          if (parseError instanceof ProjectLimitError) {
+            throw parseError;
+          }
+          // If it's not a project limit error, continue to general error handling
+        }
       }
 
       const errorText = await response

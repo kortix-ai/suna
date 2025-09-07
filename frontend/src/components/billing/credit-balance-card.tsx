@@ -26,15 +26,18 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
+import { Alert } from '../ui/alert';
 
 interface CreditBalanceCardProps {
   showPurchaseButton?: boolean;
   compact?: boolean;
+  tierCredits?: number;
 }
 
 export function CreditBalanceCard({ 
   showPurchaseButton = true, 
-  compact = false 
+  compact = false,
+  tierCredits 
 }: CreditBalanceCardProps) {
   const { data: balance, isLoading, error } = useCreditBalance();
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
@@ -72,9 +75,13 @@ export function CreditBalanceCard({
 
   if (!balance) return null;
 
-  const usagePercentage = balance.lifetime_used > 0 
-    ? (balance.balance / (balance.balance + balance.lifetime_used)) * 100 
-    : 100;
+  // Calculate availability percentage based on tier limit
+  // For monthly reset: available percentage = (balance / tier_limit) * 100
+  // Use tierCredits if provided, otherwise assume balance is full (100%)
+  const maxCredits = tierCredits || balance.balance;
+  const availablePercentage = maxCredits > 0 
+    ? (balance.balance / maxCredits) * 100 
+    : 100; // If no max, show as full
 
   const handlePurchase = async () => {
     const amount = parseFloat(purchaseAmount);
@@ -133,32 +140,33 @@ export function CreditBalanceCard({
               <span className="text-3xl font-bold">${balance.balance.toFixed(2)}</span>
               <span className="text-sm text-muted-foreground">available</span>
             </div>
-            <Progress value={usagePercentage} className="h-2" />
           </div>
           {showPurchaseButton && balance.can_purchase_credits && (
-            <div className="pt-2 border-t">
+            <div className="pt-2">
               <Button 
                 onClick={() => setShowPurchaseModal(true)} 
                 className="w-full"
                 variant="outline"
               >
-                <ShoppingCart className="h-4 w-4 mr-2" />
+                <ShoppingCart className="h-4 w-4" />
                 Purchase Additional Credits
               </Button>
-              <p className="text-xs text-muted-foreground text-center mt-2">
-                Available for highest tier subscribers
-              </p>
             </div>
           )}
         </CardContent>
       </Card>
 
       <Dialog open={showPurchaseModal} onOpenChange={setShowPurchaseModal}>
-        <DialogContent>
+        <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Purchase Credits</DialogTitle>
             <DialogDescription>
-              Add more credits to your account. Credits never expire.
+              <Alert variant="warning" className='mt-2'>
+                <AlertCircle className="h-4 w-4" />
+                <span>
+                  Credits will expire at the end of the billing cycle.
+                </span>
+              </Alert>
             </DialogDescription>
           </DialogHeader>
           
@@ -179,34 +187,48 @@ export function CreditBalanceCard({
               </p>
             </div>
 
-            <div className="flex gap-2">
+            <div className="grid grid-cols-3 gap-2">
               <Button
                 variant="outline"
-                className="flex-1"
+                className="flex-1 h-24 text-2xl font-bold"
                 onClick={() => setPurchaseAmount('10')}
               >
                 $10
               </Button>
               <Button
                 variant="outline"
-                className="flex-1"
+                className="flex-1 h-24 text-2xl font-bold"
                 onClick={() => setPurchaseAmount('25')}
               >
                 $25
               </Button>
               <Button
                 variant="outline"
-                className="flex-1"
+                className="flex-1 h-24 text-2xl font-bold"
                 onClick={() => setPurchaseAmount('50')}
               >
                 $50
               </Button>
               <Button
                 variant="outline"
-                className="flex-1"
+                className="flex-1 h-24 text-2xl font-bold"
                 onClick={() => setPurchaseAmount('100')}
               >
                 $100
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1 h-24 text-2xl font-bold"
+                onClick={() => setPurchaseAmount('200')}
+              >
+                $200
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1 h-24 text-2xl font-bold"
+                onClick={() => setPurchaseAmount('500')}
+              >
+                $500
               </Button>
             </div>
 

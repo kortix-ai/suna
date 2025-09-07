@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import Optional, Dict, Tuple
 from core.credits import credit_service
-from services.billing_v2 import calculate_token_cost
+from billing.api import calculate_token_cost
 from core.utils.config import config, EnvMode
 from core.utils.logger import logger
 

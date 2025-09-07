@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass
 from core.utils.config import config
 
-TOKEN_PRICE_MULTIPLIER = Decimal('20')
+TOKEN_PRICE_MULTIPLIER = Decimal('1.5')
 MINIMUM_CREDIT_FOR_RUN = Decimal('0.01')
 DEFAULT_TOKEN_COST = Decimal('0.000002')
 
@@ -156,4 +156,4 @@ def is_model_allowed(tier_name: str, model: str) -> bool:
 
 def get_project_limit(tier_name: str) -> int:
     tier = TIERS.get(tier_name)
-    return tier.project_limit if tier else 3
+    return tier.project_limit if tier else 3 

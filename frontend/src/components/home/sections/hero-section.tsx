@@ -12,6 +12,7 @@ import { useAuth } from '@/components/AuthProvider';
 import {
   BillingError,
   AgentRunLimitError,
+  ProjectLimitError,
 } from '@/lib/api';
 import { useInitiateAgentMutation } from '@/hooks/react-query/dashboard/use-initiate-agent';
 import { useThreadQuery } from '@/hooks/react-query/threads/use-threads';
@@ -251,6 +252,8 @@ export function HeroSection() {
           runningThreadIds: running_thread_ids,
         });
         setShowAgentLimitDialog(true);
+      } else if (error instanceof ProjectLimitError) {
+        setShowPaymentModal(true);
       } else {
         const isConnectionError =
           error instanceof TypeError &&

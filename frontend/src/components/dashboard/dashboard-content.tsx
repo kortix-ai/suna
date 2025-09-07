@@ -11,6 +11,7 @@ import {
 import {
   BillingError,
   AgentRunLimitError,
+  ProjectLimitError,
 } from '@/lib/api';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useBillingError } from '@/hooks/useBillingError';
@@ -222,6 +223,8 @@ export function DashboardContent() {
           runningThreadIds: running_thread_ids,
         });
         setShowAgentLimitDialog(true);
+      } else if (error instanceof ProjectLimitError) {
+        setShowPaymentModal(true);
       } else {
         const errorMessage = error instanceof Error ? error.message : 'Operation failed';
         toast.error(errorMessage);

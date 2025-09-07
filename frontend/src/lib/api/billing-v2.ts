@@ -10,6 +10,9 @@ export interface CreditBalance {
 }
 
 export interface SubscriptionInfo {
+  status: string;
+  plan_name: string;
+  price_id: string;
   subscription: {
     id: string;
     status: string;
@@ -28,7 +31,7 @@ export interface SubscriptionInfo {
     lifetime_granted: number;
     lifetime_purchased: number;
     lifetime_used: number;
-    can_purchase: boolean;
+    can_purchase_credits: boolean;
   };
 }
 

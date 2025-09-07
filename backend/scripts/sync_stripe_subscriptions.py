@@ -9,9 +9,9 @@ from datetime import datetime
 from core.services.supabase import DBConnection
 from core.utils.config import config
 from core.utils.logger import logger
-from core.billing_config import get_tier_by_price_id, FREE_TIER_INITIAL_CREDITS
+from billing.config import get_tier_by_price_id, FREE_TIER_INITIAL_CREDITS
 from decimal import Decimal
-from services.billing_v2 import handle_subscription_change
+from billing.api import handle_subscription_change
 
 async def sync_stripe_to_db():
     db = DBConnection()
@@ -125,91 +125,57 @@ async def sync_stripe_to_db():
                 except Exception as e:
                     print(f"    Warning: Could not extract price details: {e}")
                 
-                subscription_data = {
-                    'id': sub.id,
-                    'account_id': account_id,
-                    'billing_customer_id': stripe_customer_id,
-                    'status': sub.status,
-                    'price_id': price_id,
-                    'plan_name': str(plan_name) if plan_name else None,
-                    'quantity': quantity,
-                    'cancel_at_period_end': sub.cancel_at_period_end,
-                    'created': datetime.fromtimestamp(sub.created).isoformat(),
-                    'current_period_start': datetime.fromtimestamp(sub.current_period_start).isoformat(),
-                    'current_period_end': datetime.fromtimestamp(sub.current_period_end).isoformat(),
-                    'provider': 'stripe'
-                }
+                print(f"    ✓ Processing subscription (using credit_accounts as primary source)")
+                synced_count += 1
                 
-                if sub.ended_at:
-                    subscription_data['ended_at'] = datetime.fromtimestamp(sub.ended_at).isoformat()
-                if sub.canceled_at:
-                    subscription_data['canceled_at'] = datetime.fromtimestamp(sub.canceled_at).isoformat()
-                if sub.trial_start:
-                    subscription_data['trial_start'] = datetime.fromtimestamp(sub.trial_start).isoformat()
-                if sub.trial_end:
-                    subscription_data['trial_end'] = datetime.fromtimestamp(sub.trial_end).isoformat()
-                
-                result = await client.schema('basejump').from_('billing_subscriptions').upsert(
-                    subscription_data,
-                    on_conflict='id'
-                ).execute()
-                
-                if result.data:
-                    print(f"    ✓ Synced subscription to database")
-                    synced_count += 1
+                if sub.status in ['active', 'trialing']:
+                    print(f"    Processing active subscription...")
                     
-                    if sub.status in ['active', 'trialing']:
-                        print(f"    Processing active subscription...")
-                        
-                        account_before = await client.from_('credit_accounts')\
-                            .select('*')\
-                            .eq('user_id', account_id)\
-                            .maybe_single()\
-                            .execute()
-                        
-                        try:
-                            await handle_subscription_change(sub)
-                            print(f"    ✓ Updated billing cycle and credit fields")
-                        except Exception as e:
-                            print(f"    ⚠ handle_subscription_change failed: {e}")
-                        
-                        account_after = await client.from_('credit_accounts')\
-                            .select('*')\
-                            .eq('user_id', account_id)\
-                            .maybe_single()\
-                            .execute()
-                        
-                        if account_after.data:
-                            tier = get_tier_by_price_id(price_id) if price_id else None
-                            if tier:
-                                tier_name = tier.name
-                                
-                                update_data = {
-                                    'tier': tier_name,
-                                    'stripe_subscription_id': sub.id,
-                                    'billing_cycle_anchor': datetime.fromtimestamp(sub.created).isoformat() if sub.created else None,
-                                }
-                                
-                                if sub.current_period_end:
-                                    update_data['next_credit_grant'] = datetime.fromtimestamp(sub.current_period_end).isoformat()
-                                
-                                await client.from_('credit_accounts')\
-                                    .update(update_data)\
-                                    .eq('user_id', account_id)\
-                                    .execute()
-                                
-                                current_balance = Decimal(str(account_after.data['balance']))
-                                print(f"    ✓ Updated credit account:")
-                                print(f"      - Tier: {tier_name}")
-                                print(f"      - Balance: ${current_balance} (managed by handle_subscription_change)")
-                                print(f"      - Stripe subscription: {sub.id}")
-                                print(f"      - Next credit grant: {update_data.get('next_credit_grant', 'N/A')}")
-                        else:
-                            print(f"    ⚠ No credit account found after handle_subscription_change - this is unexpected")
+                    account_before = await client.from_('credit_accounts')\
+                        .select('*')\
+                        .eq('user_id', account_id)\
+                        .maybe_single()\
+                        .execute()
                     
-                else:
-                    print(f"    ✗ Failed to sync")
-                    error_count += 1
+                    try:
+                        await handle_subscription_change(sub)
+                        print(f"    ✓ Updated billing cycle and credit fields")
+                    except Exception as e:
+                        print(f"    ⚠ handle_subscription_change failed: {e}")
+                    
+                    account_after = await client.from_('credit_accounts')\
+                        .select('*')\
+                        .eq('user_id', account_id)\
+                        .maybe_single()\
+                        .execute()
+                    
+                    if account_after.data:
+                        tier = get_tier_by_price_id(price_id) if price_id else None
+                        if tier:
+                            tier_name = tier.name
+                            
+                            update_data = {
+                                'tier': tier_name,
+                                'stripe_subscription_id': sub.id,
+                                'billing_cycle_anchor': datetime.fromtimestamp(sub.created).isoformat() if sub.created else None,
+                            }
+                            
+                            if sub.current_period_end:
+                                update_data['next_credit_grant'] = datetime.fromtimestamp(sub.current_period_end).isoformat()
+                            
+                            await client.from_('credit_accounts')\
+                                .update(update_data)\
+                                .eq('user_id', account_id)\
+                                .execute()
+                            
+                            current_balance = Decimal(str(account_after.data['balance']))
+                            print(f"    ✓ Updated credit account:")
+                            print(f"      - Tier: {tier_name}")
+                            print(f"      - Balance: ${current_balance} (managed by handle_subscription_change)")
+                            print(f"      - Stripe subscription: {sub.id}")
+                            print(f"      - Next credit grant: {update_data.get('next_credit_grant', 'N/A')}")
+                    else:
+                        print(f"    ⚠ No credit account found after handle_subscription_change - this is unexpected")
                     
         except Exception as e:
             print(f"  Error: {e}")
@@ -223,21 +189,7 @@ async def sync_stripe_to_db():
     print(f"Errors: {error_count}")
     
     print("\n" + "="*60)
-    print("CURRENT DATABASE STATE")
-    print("="*60)
-    
-    subs_result = await client.schema('basejump').from_('billing_subscriptions').select('*').execute()
-    
-    if subs_result.data:
-        print(f"Found {len(subs_result.data)} subscriptions in database:")
-        for sub in subs_result.data:
-            print(f"  Account: {sub['account_id'][:8]}...")
-            print(f"    Status: {sub['status']}")
-            print(f"    Price ID: {sub.get('price_id', 'None')}")
-            print(f"    Plan: {sub.get('plan_name', 'None')}")
-    
-    print("\n" + "="*60)
-    print("CREDIT ACCOUNTS STATE")
+    print("CREDIT ACCOUNTS STATE (Primary Source)")
     print("="*60)
     
     credit_result = await client.from_('credit_accounts').select('*').execute()

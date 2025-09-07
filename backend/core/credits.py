@@ -4,7 +4,7 @@ from typing import Optional, Dict, List, Any
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.utils.cache import Cache
-from core.billing_config import FREE_TIER_INITIAL_CREDITS
+from billing.config import FREE_TIER_INITIAL_CREDITS
 
 class CreditService:
     def __init__(self):
@@ -132,8 +132,8 @@ class CreditService:
     
     async def grant_tier_credits(self, user_id: str, price_id: str, tier_name: str) -> bool:
         try:
-            from services.billing_v2 import TIER_CONFIG
-            tier = TIER_CONFIG.get(price_id)
+            from billing.config import get_tier_by_price_id
+            tier = get_tier_by_price_id(price_id)
             
             if not tier:
                 logger.error(f"Unknown price_id: {price_id}")

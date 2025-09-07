@@ -26,7 +26,7 @@ from langfuse.client import StatefulGenerationClient, StatefulTraceClient
 from core.services.langfuse import langfuse
 from litellm.utils import token_counter
 from core.billing_integration import billing_integration
-from services.billing_v2 import calculate_token_cost
+from billing.api import calculate_token_cost
 import re
 from datetime import datetime, timezone, timedelta
 import aiofiles
