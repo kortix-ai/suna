@@ -62,6 +62,7 @@ class TextElement:
     text_align: str
     line_height: float
     tag: str
+    depth: int = 0
     style: Dict[str, str] = None
 
 
@@ -229,7 +230,119 @@ class PerfectHTMLToPPTXConverter:
                         return false;
                     }
                     
-                    function extractIconElements(element, depth = 0) {
+                    function getActualDepth(element) {
+                        // Create a comprehensive stacking context detection
+                        function createsStackingContext(el) {
+                            const computed = window.getComputedStyle(el);
+                            
+                            // Root element always creates stacking context
+                            if (el === document.documentElement) return true;
+                            
+                            // Positioned elements with z-index other than auto
+                            if (computed.position !== 'static' && computed.zIndex !== 'auto') return true;
+                            
+                            // Elements with opacity less than 1
+                            if (parseFloat(computed.opacity) < 1) return true;
+                            
+                            // Elements with transform other than none
+                            if (computed.transform !== 'none') return true;
+                            
+                            // Elements with filter other than none
+                            if (computed.filter !== 'none') return true;
+                            
+                            // Elements with perspective other than none
+                            if (computed.perspective !== 'none') return true;
+                            
+                            // Elements with clip-path other than none
+                            if (computed.clipPath !== 'none') return true;
+                            
+                            // Elements with mask other than none
+                            if (computed.mask !== 'none' || computed.webkitMask !== 'none') return true;
+                            
+                            // Elements with isolation: isolate
+                            if (computed.isolation === 'isolate') return true;
+                            
+                            // Elements with mix-blend-mode other than normal
+                            if (computed.mixBlendMode !== 'normal') return true;
+                            
+                            // Flex/grid items with z-index other than auto
+                            const parent = el.parentElement;
+                            if (parent) {
+                                const parentComputed = window.getComputedStyle(parent);
+                                if ((parentComputed.display === 'flex' || 
+                                     parentComputed.display === 'inline-flex' ||
+                                     parentComputed.display === 'grid' ||
+                                     parentComputed.display === 'inline-grid') && 
+                                    computed.zIndex !== 'auto') {
+                                    return true;
+                                }
+                            }
+                            
+                            return false;
+                        }
+                        
+                        function getStackingContextChain(el) {
+                            const chain = [];
+                            let current = el;
+                            
+                            while (current && current !== document.body.parentElement) {
+                                if (createsStackingContext(current)) {
+                                    const computed = window.getComputedStyle(current);
+                                    let zIndex = 0;
+                                    
+                                    // Calculate effective z-index
+                                    if (computed.position !== 'static' && computed.zIndex !== 'auto') {
+                                        zIndex = parseInt(computed.zIndex) || 0;
+                                    } else if (parseFloat(computed.opacity) < 1) {
+                                        zIndex = 0; // Opacity creates level 0 stacking context
+                                    } else if (computed.transform !== 'none' || 
+                                              computed.filter !== 'none' ||
+                                              computed.perspective !== 'none' ||
+                                              computed.clipPath !== 'none' ||
+                                              (computed.mask !== 'none' || computed.webkitMask !== 'none') ||
+                                              computed.isolation === 'isolate' ||
+                                              computed.mixBlendMode !== 'normal') {
+                                        zIndex = 0; // Most CSS properties create level 0 stacking context
+                                    }
+                                    
+                                    chain.unshift({
+                                        element: current,
+                                        zIndex: zIndex,
+                                        isRoot: current === document.documentElement
+                                    });
+                                }
+                                current = current.parentElement;
+                            }
+                            
+                            return chain;
+                        }
+                        
+                        const chain = getStackingContextChain(element);
+                        
+                        // If no stacking contexts found, element is in root stacking context
+                        if (chain.length === 0) {
+                            return 0;
+                        }
+                        
+                        // Calculate depth based on the stacking context chain
+                        // Use the z-index of the topmost stacking context that affects this element
+                        const topContext = chain[chain.length - 1];
+                        
+                        // For elements inside positioned containers, we need to consider
+                        // both the container's z-index and the element's own positioning
+                        const computed = window.getComputedStyle(element);
+                        
+                        if (computed.position !== 'static' && computed.zIndex !== 'auto') {
+                            // Element creates its own stacking context or is positioned with explicit z-index
+                            const elementZIndex = parseInt(computed.zIndex) || 0;
+                            return topContext.zIndex + elementZIndex;
+                        } else {
+                            // Element inherits from its stacking context
+                            return topContext.zIndex;
+                        }
+                    }
+                    
+                    function extractIconElements(element) {
                         if (!element || element.nodeType !== Node.ELEMENT_NODE) return [];
                         
                         const computed = window.getComputedStyle(element);
@@ -249,6 +362,8 @@ class PerfectHTMLToPPTXConverter:
                             const captureId = 'icon-capture-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
                             element.setAttribute('data-capture-id', captureId);
                             
+                            const actualDepth = getActualDepth(element);
+                            
                             results.push({
                                 type: 'icon',
                                 captureId: captureId,
@@ -259,17 +374,19 @@ class PerfectHTMLToPPTXConverter:
                                 tag: element.tagName.toLowerCase(),
                                 className: element.className,
                                 id: element.id,
-                                depth: depth,
+                                depth: actualDepth,
                                 // Add debug info
                                 debugInfo: {
-                                    textContent: element.textContent?.trim().substring(0, 50) || 'No text'
+                                    textContent: element.textContent?.trim().substring(0, 50) || 'No text',
+                                    position: computed.position,
+                                    zIndex: computed.zIndex
                                 }
                             });
                         }
                         
-                        // Process children for nested icons
+                        // Process children for nested icons (no depth increment needed)
                         Array.from(element.children).forEach(child => {
-                            results.push(...extractIconElements(child, depth + 1));
+                            results.push(...extractIconElements(child));
                         });
                         
                         return results;
@@ -510,6 +627,118 @@ class PerfectHTMLToPPTXConverter:
             # Step 3: Extract other visual elements by depth and visual properties
             visual_data = await page.evaluate(r"""
             () => {
+                function getActualDepth(element) {
+                    // Create a comprehensive stacking context detection
+                    function createsStackingContext(el) {
+                        const computed = window.getComputedStyle(el);
+                        
+                        // Root element always creates stacking context
+                        if (el === document.documentElement) return true;
+                        
+                        // Positioned elements with z-index other than auto
+                        if (computed.position !== 'static' && computed.zIndex !== 'auto') return true;
+                        
+                        // Elements with opacity less than 1
+                        if (parseFloat(computed.opacity) < 1) return true;
+                        
+                        // Elements with transform other than none
+                        if (computed.transform !== 'none') return true;
+                        
+                        // Elements with filter other than none
+                        if (computed.filter !== 'none') return true;
+                        
+                        // Elements with perspective other than none
+                        if (computed.perspective !== 'none') return true;
+                        
+                        // Elements with clip-path other than none
+                        if (computed.clipPath !== 'none') return true;
+                        
+                        // Elements with mask other than none
+                        if (computed.mask !== 'none' || computed.webkitMask !== 'none') return true;
+                        
+                        // Elements with isolation: isolate
+                        if (computed.isolation === 'isolate') return true;
+                        
+                        // Elements with mix-blend-mode other than normal
+                        if (computed.mixBlendMode !== 'normal') return true;
+                        
+                        // Flex/grid items with z-index other than auto
+                        const parent = el.parentElement;
+                        if (parent) {
+                            const parentComputed = window.getComputedStyle(parent);
+                            if ((parentComputed.display === 'flex' || 
+                                 parentComputed.display === 'inline-flex' ||
+                                 parentComputed.display === 'grid' ||
+                                 parentComputed.display === 'inline-grid') && 
+                                computed.zIndex !== 'auto') {
+                                return true;
+                            }
+                        }
+                        
+                        return false;
+                    }
+                    
+                    function getStackingContextChain(el) {
+                        const chain = [];
+                        let current = el;
+                        
+                        while (current && current !== document.body.parentElement) {
+                            if (createsStackingContext(current)) {
+                                const computed = window.getComputedStyle(current);
+                                let zIndex = 0;
+                                
+                                // Calculate effective z-index
+                                if (computed.position !== 'static' && computed.zIndex !== 'auto') {
+                                    zIndex = parseInt(computed.zIndex) || 0;
+                                } else if (parseFloat(computed.opacity) < 1) {
+                                    zIndex = 0; // Opacity creates level 0 stacking context
+                                } else if (computed.transform !== 'none' || 
+                                          computed.filter !== 'none' ||
+                                          computed.perspective !== 'none' ||
+                                          computed.clipPath !== 'none' ||
+                                          (computed.mask !== 'none' || computed.webkitMask !== 'none') ||
+                                          computed.isolation === 'isolate' ||
+                                          computed.mixBlendMode !== 'normal') {
+                                    zIndex = 0; // Most CSS properties create level 0 stacking context
+                                }
+                                
+                                chain.unshift({
+                                    element: current,
+                                    zIndex: zIndex,
+                                    isRoot: current === document.documentElement
+                                });
+                            }
+                            current = current.parentElement;
+                        }
+                        
+                        return chain;
+                    }
+                    
+                    const chain = getStackingContextChain(element);
+                    
+                    // If no stacking contexts found, element is in root stacking context
+                    if (chain.length === 0) {
+                        return 0;
+                    }
+                    
+                    // Calculate depth based on the stacking context chain
+                    // Use the z-index of the topmost stacking context that affects this element
+                    const topContext = chain[chain.length - 1];
+                    
+                    // For elements inside positioned containers, we need to consider
+                    // both the container's z-index and the element's own positioning
+                    const computed = window.getComputedStyle(element);
+                    
+                    if (computed.position !== 'static' && computed.zIndex !== 'auto') {
+                        // Element creates its own stacking context or is positioned with explicit z-index
+                        const elementZIndex = parseInt(computed.zIndex) || 0;
+                        return topContext.zIndex + elementZIndex;
+                    } else {
+                        // Element inherits from its stacking context
+                        return topContext.zIndex;
+                    }
+                }
+                
                 function hasActualVisualContent(element, computed) {
                     
                     // Always include explicit visual elements
@@ -582,7 +811,7 @@ class PerfectHTMLToPPTXConverter:
                     return false;
                 }
                                             
-                function extractVisualElements(element, depth = 0) {
+                function extractVisualElements(element) {
                     if (!element || element.nodeType !== Node.ELEMENT_NODE) return [];
                     
                     const computed = window.getComputedStyle(element);
@@ -615,6 +844,8 @@ class PerfectHTMLToPPTXConverter:
                             const captureId = 'visual-capture-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
                             element.setAttribute('data-capture-id', captureId);
                             
+                            const actualDepth = getActualDepth(element);
+                            
                             results.push({
                                 type: 'visual',
                                 captureId: captureId,
@@ -625,7 +856,7 @@ class PerfectHTMLToPPTXConverter:
                                 tag: element.tagName.toLowerCase(),
                                 className: element.className,
                                 id: element.id,
-                                depth: depth,
+                                depth: actualDepth,
                                 hasBackground: computed.backgroundImage !== 'none' || 
                                             (computed.backgroundColor !== 'rgba(0, 0, 0, 0)' && 
                                             computed.backgroundColor !== 'transparent'),
@@ -637,41 +868,46 @@ class PerfectHTMLToPPTXConverter:
                                     backgroundImage: computed.backgroundImage,
                                     borderStyle: computed.borderStyle,
                                     position: computed.position,
+                                    zIndex: computed.zIndex,
                                     textContent: element.textContent?.trim().substring(0, 50) || 'No text'
                                 }
                             });
                         }
                     }
                     
-                    // Process children for nested elements
+                    // Process children for nested elements (no depth increment needed)
                     Array.from(element.children).forEach(child => {
-                        results.push(...extractVisualElements(child, depth + 1));
+                        results.push(...extractVisualElements(child));
                     });
                     
                     return results;
                 }
                 
+                // Enhanced sorting function that considers both depth and DOM order
+                function sortElementsByStackingOrder(elements) {
+                    // First, assign DOM order to each element for tie-breaking
+                    elements.forEach((el, index) => {
+                        el.domOrder = index;
+                    });
+                    
+                    return elements.sort((a, b) => {
+                        // Primary sort: by stacking depth
+                        if (a.depth !== b.depth) {
+                            return a.depth - b.depth;
+                        }
+                        
+                        // Secondary sort: by DOM order (elements that appear later in DOM stack on top)
+                        return a.domOrder - b.domOrder;
+                    });
+                }
+                
                 // Actually execute the extraction and return results
                 const allVisualElements = extractVisualElements(document.body);
                 
-                // Sort by depth (background elements first) then by position
-                // But prioritize absolute positioned elements to be last (on top)
-                allVisualElements.sort((a, b) => {
-                    // Check if elements have absolute positioning
-                    const aIsAbsolute = a.debugInfo && a.debugInfo.position === 'absolute';
-                    const bIsAbsolute = b.debugInfo && b.debugInfo.position === 'absolute';
-                    
-                    // Absolute positioned elements should come last (on top)
-                    if (aIsAbsolute && !bIsAbsolute) return 1;
-                    if (!aIsAbsolute && bIsAbsolute) return -1;
-                    
-                    // For non-absolute elements, sort by depth first
-                    if (a.depth !== b.depth) return a.depth - b.depth;
-                    if (Math.abs(a.y - b.y) < 5) return a.x - b.x;
-                    return a.y - b.y;
-                });
+                // Use the enhanced sorting function
+                const sortedElements = sortElementsByStackingOrder(allVisualElements);
                 
-                return allVisualElements;
+                return sortedElements;
             }""")
             
             # Debug: Log what we found in Python console
@@ -1093,6 +1329,118 @@ class PerfectHTMLToPPTXConverter:
             # // Enhanced text extraction JavaScript to include in your page.evaluate()
             text_data = await page.evaluate(r"""
                 () => {
+                    function getActualDepth(element) {
+                        // Create a comprehensive stacking context detection
+                        function createsStackingContext(el) {
+                            const computed = window.getComputedStyle(el);
+                            
+                            // Root element always creates stacking context
+                            if (el === document.documentElement) return true;
+                            
+                            // Positioned elements with z-index other than auto
+                            if (computed.position !== 'static' && computed.zIndex !== 'auto') return true;
+                            
+                            // Elements with opacity less than 1
+                            if (parseFloat(computed.opacity) < 1) return true;
+                            
+                            // Elements with transform other than none
+                            if (computed.transform !== 'none') return true;
+                            
+                            // Elements with filter other than none
+                            if (computed.filter !== 'none') return true;
+                            
+                            // Elements with perspective other than none
+                            if (computed.perspective !== 'none') return true;
+                            
+                            // Elements with clip-path other than none
+                            if (computed.clipPath !== 'none') return true;
+                            
+                            // Elements with mask other than none
+                            if (computed.mask !== 'none' || computed.webkitMask !== 'none') return true;
+                            
+                            // Elements with isolation: isolate
+                            if (computed.isolation === 'isolate') return true;
+                            
+                            // Elements with mix-blend-mode other than normal
+                            if (computed.mixBlendMode !== 'normal') return true;
+                            
+                            // Flex/grid items with z-index other than auto
+                            const parent = el.parentElement;
+                            if (parent) {
+                                const parentComputed = window.getComputedStyle(parent);
+                                if ((parentComputed.display === 'flex' || 
+                                     parentComputed.display === 'inline-flex' ||
+                                     parentComputed.display === 'grid' ||
+                                     parentComputed.display === 'inline-grid') && 
+                                    computed.zIndex !== 'auto') {
+                                    return true;
+                                }
+                            }
+                            
+                            return false;
+                        }
+                        
+                        function getStackingContextChain(el) {
+                            const chain = [];
+                            let current = el;
+                            
+                            while (current && current !== document.body.parentElement) {
+                                if (createsStackingContext(current)) {
+                                    const computed = window.getComputedStyle(current);
+                                    let zIndex = 0;
+                                    
+                                    // Calculate effective z-index
+                                    if (computed.position !== 'static' && computed.zIndex !== 'auto') {
+                                        zIndex = parseInt(computed.zIndex) || 0;
+                                    } else if (parseFloat(computed.opacity) < 1) {
+                                        zIndex = 0; // Opacity creates level 0 stacking context
+                                    } else if (computed.transform !== 'none' || 
+                                              computed.filter !== 'none' ||
+                                              computed.perspective !== 'none' ||
+                                              computed.clipPath !== 'none' ||
+                                              (computed.mask !== 'none' || computed.webkitMask !== 'none') ||
+                                              computed.isolation === 'isolate' ||
+                                              computed.mixBlendMode !== 'normal') {
+                                        zIndex = 0; // Most CSS properties create level 0 stacking context
+                                    }
+                                    
+                                    chain.unshift({
+                                        element: current,
+                                        zIndex: zIndex,
+                                        isRoot: current === document.documentElement
+                                    });
+                                }
+                                current = current.parentElement;
+                            }
+                            
+                            return chain;
+                        }
+                        
+                        const chain = getStackingContextChain(element);
+                        
+                        // If no stacking contexts found, element is in root stacking context
+                        if (chain.length === 0) {
+                            return 0;
+                        }
+                        
+                        // Calculate depth based on the stacking context chain
+                        // Use the z-index of the topmost stacking context that affects this element
+                        const topContext = chain[chain.length - 1];
+                        
+                        // For elements inside positioned containers, we need to consider
+                        // both the container's z-index and the element's own positioning
+                        const computed = window.getComputedStyle(element);
+                        
+                        if (computed.position !== 'static' && computed.zIndex !== 'auto') {
+                            // Element creates its own stacking context or is positioned with explicit z-index
+                            const elementZIndex = parseInt(computed.zIndex) || 0;
+                            return topContext.zIndex + elementZIndex;
+                        } else {
+                            // Element inherits from its stacking context
+                            return topContext.zIndex;
+                        }
+                    }
+                    
                     function extractTextFromElement(element) {
                         if (!element || element.nodeType !== Node.ELEMENT_NODE) return [];
                         
@@ -1153,6 +1501,9 @@ class PerfectHTMLToPPTXConverter:
                                 textTransform: computedStyle.textTransform
                             };
                             
+                            // Calculate depth for this text element
+                            const textDepth = getActualDepth(element);
+                            
                             // Use text node position if available, otherwise fall back to container
                             if (textNodes.length > 0) {
                                 textNodes.forEach(textNode => {
@@ -1164,7 +1515,8 @@ class PerfectHTMLToPPTXConverter:
                                         height: Math.round(textNode.rect.height * 100) / 100,
                                         actualFontSizePx: actualFontSize,
                                         tag: element.tagName.toLowerCase(),
-                                        style: textStyle
+                                        style: textStyle,
+                                        depth: textDepth
                                     });
                                 });
                             } else {
@@ -1177,7 +1529,8 @@ class PerfectHTMLToPPTXConverter:
                                     height: Math.round(rect.height * 100) / 100,
                                     actualFontSizePx: actualFontSize,
                                     tag: element.tagName.toLowerCase(),
-                                    style: textStyle
+                                    style: textStyle,
+                                    depth: textDepth
                                 });
                             }
                         }
@@ -1190,18 +1543,31 @@ class PerfectHTMLToPPTXConverter:
                         return results;
                     }
                     
+                    // Enhanced sorting function that considers both depth and DOM order
+                    function sortElementsByStackingOrder(elements) {
+                        // First, assign DOM order to each element for tie-breaking
+                        elements.forEach((el, index) => {
+                            el.domOrder = index;
+                        });
+                        
+                        return elements.sort((a, b) => {
+                            // Primary sort: by stacking depth
+                            if (a.depth !== b.depth) {
+                                return a.depth - b.depth;
+                            }
+                            
+                            // Secondary sort: by DOM order (elements that appear later in DOM stack on top)
+                            return a.domOrder - b.domOrder;
+                        });
+                    }
+                    
                     // Start extraction from body
                     const allTextElements = extractTextFromElement(document.body);
                     
-                    // Sort by position (top to bottom, left to right)
-                    allTextElements.sort((a, b) => {
-                        if (Math.abs(a.y - b.y) < 5) {
-                            return a.x - b.x;
-                        }
-                        return a.y - b.y;
-                    });
+                    // Use the enhanced sorting function
+                    const sortedElements = sortElementsByStackingOrder(allTextElements);
                     
-                    return allTextElements;
+                    return sortedElements;
                 }
             """)
             
@@ -1263,6 +1629,7 @@ class PerfectHTMLToPPTXConverter:
                         text_align=style.get('textAlign', 'left'),
                         line_height=line_height,
                         tag=data['tag'],
+                        depth=data.get('depth', 0),
                         style=style
                     )
                     
@@ -1402,7 +1769,10 @@ class PerfectHTMLToPPTXConverter:
         blank_slide_layout = presentation.slide_layouts[6]  # Blank layout
         slide = presentation.slides.add_slide(blank_slide_layout)
         
-        # Step 1: Add the clean background as the base layer
+        # Combine and sort all elements (visual + text) by depth
+        all_elements = []
+        
+        # Add background first (always depth -1)
         if background_path and background_path.exists():
             background_element = {
                 'type': 'background',
@@ -1414,21 +1784,42 @@ class PerfectHTMLToPPTXConverter:
                 'image_path': background_path,
                 'depth': -1
             }
-            self.add_visual_element_to_slide(slide, background_element)
+            all_elements.append(background_element)
         
-        # Step 2: Add individual visual elements on top of background
+        # Add visual elements
         if visual_elements:
             for visual_element in visual_elements:
                 if visual_element['tag'] != 'full_background':
-                    self.add_visual_element_to_slide(slide, visual_element)
+                    visual_element['element_type'] = 'visual'
+                    all_elements.append(visual_element)
         
-        # Step 3: Create editable text boxes on top of everything
+        # Add text elements
         if text_elements:
             for text_element in text_elements:
-                try:
-                    self.create_text_box(slide, text_element)
-                except Exception:
-                    pass
+                text_dict = {
+                    'element_type': 'text',
+                    'depth': text_element.depth,
+                    'text_element': text_element
+                }
+                all_elements.append(text_dict)
+        
+        # Sort all elements by depth (background first, then by depth, then by position)
+        all_elements.sort(key=lambda elem: (
+            elem['depth'],
+            elem.get('y', 0) if elem.get('element_type') != 'text' else elem['text_element'].y,
+            elem.get('x', 0) if elem.get('element_type') != 'text' else elem['text_element'].x
+        ))
+        
+        # Add elements to slide in proper layering order
+        for element in all_elements:
+            try:
+                if element.get('element_type') == 'visual' or element.get('type') == 'background':
+                    self.add_visual_element_to_slide(slide, element)
+                elif element.get('element_type') == 'text':
+                    self.create_text_box(slide, element['text_element'])
+            except Exception as e:
+                print(f"Failed to add element: {e}")
+                pass
     
     async def convert_to_pptx_perfect(self) -> None:
         """Main perfect conversion method - optimized and reliable."""
