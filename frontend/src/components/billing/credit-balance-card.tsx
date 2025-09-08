@@ -168,38 +168,6 @@ export function CreditBalanceCard({
                 <span className="text-sm text-muted-foreground">total available</span>
               </div>
             </div>
-            {/* Credit Breakdown - only show if we have the breakdown data AND can purchase credits */}
-            {hasBreakdown && showPurchaseButton && balance.can_purchase_credits && (
-              <div className="space-y-2 mt-4">
-                {/* Expiring Credits */}
-                <div className="p-3 rounded-lg bg-muted/30 border">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Clock className="h-4 w-4 text-orange-500" />
-                      <span className="text-sm font-medium">Expiring Credits</span>
-                    </div>
-                    <span className="text-lg font-semibold">${expiringCredits.toFixed(2)}</span>
-                  </div>
-                  
-                  {balance.next_credit_grant && (
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Renews {formatNextGrant(balance.next_credit_grant)}
-                    </p>
-                  )}
-                </div>
-
-                {/* Non-Expiring Credits */}
-                <div className="p-3 rounded-lg bg-muted/30 border">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Infinity className="h-4 w-4 text-green-500" />
-                      <span className="text-sm font-medium">Non-Expiring Credits</span>
-                    </div>
-                    <span className="text-lg font-semibold">${nonExpiringCredits.toFixed(2)}</span>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
           {showPurchaseButton && balance.can_purchase_credits && (
             <div className="pt-2">

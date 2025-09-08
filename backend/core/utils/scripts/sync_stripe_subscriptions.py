@@ -2,7 +2,9 @@
 import asyncio
 import sys
 from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent.parent))
+
+backend_dir = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(backend_dir))
 
 import stripe
 from datetime import datetime
@@ -168,7 +170,6 @@ async def sync_stripe_to_db():
                                 .eq('user_id', account_id)\
                                 .execute()
                             
-                            # Get credit breakdown
                             current_balance = Decimal(str(account_after.data['balance']))
                             expiring_credits = Decimal(str(account_after.data.get('expiring_credits', 0)))
                             non_expiring_credits = Decimal(str(account_after.data.get('non_expiring_credits', 0)))
@@ -213,7 +214,6 @@ async def sync_stripe_to_db():
             print(f"      • Expiring: ${expiring}")
             print(f"      • Non-expiring: ${non_expiring}")
             
-            # Check for balance consistency
             calculated_total = expiring + non_expiring
             if abs(calculated_total - balance) > Decimal('0.01'):
                 print(f"    ⚠️  WARNING: Balance mismatch! Sum of credits (${calculated_total}) != Total (${balance})")
@@ -222,8 +222,7 @@ async def sync_stripe_to_db():
             print(f"    Stripe Subscription: {account.get('stripe_subscription_id', 'None')}")
             print(f"    Billing Cycle Anchor: {account.get('billing_cycle_anchor', 'None')}")
             print(f"    Next Credit Grant: {account.get('next_credit_grant', 'None')}")
-    
-    # Summary of credit distribution
+
     print("\n" + "="*60)
     print("CREDIT TYPE DISTRIBUTION")
     print("="*60)
