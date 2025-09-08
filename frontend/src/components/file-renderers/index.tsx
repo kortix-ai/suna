@@ -257,7 +257,7 @@ export function FileRenderer({
       ) : fileType === 'pdf' && binaryUrl ? (
         <PdfRenderer url={binaryUrl} />
       ) : fileType === 'markdown' ? (
-        <MarkdownRenderer content={content || ''} ref={markdownRef} project={project} />
+        <MarkdownRenderer content={content || ''} ref={markdownRef} project={project} basePath={filePath} />
       ) : fileType === 'csv' ? (
         <CsvRenderer content={content || ''} />
       ) : fileType === 'xlsx' ? (

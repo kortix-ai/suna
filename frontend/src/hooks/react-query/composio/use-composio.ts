@@ -12,6 +12,7 @@ import {
 } from './utils';
 import { composioKeys } from './keys';
 import { toast } from 'sonner';
+import { useState, useEffect } from 'react';
 
 export const useComposioCategories = () => {
   return useQuery({
@@ -121,4 +122,42 @@ export const useInvalidateComposioQueries = () => {
   return () => {
     queryClient.invalidateQueries({ queryKey: composioKeys.all });
   };
+}; 
+
+export const useCheckProfileNameAvailability = (
+  toolkitSlug: string,
+  profileName: string,
+  options?: {
+    enabled?: boolean;
+    debounceMs?: number;
+  }
+) => {
+  const [debouncedName, setDebouncedName] = useState(profileName);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedName(profileName);
+    }, options?.debounceMs || 500);
+
+    return () => clearTimeout(timer);
+  }, [profileName, options?.debounceMs]);
+
+  return useQuery({
+    queryKey: ['composio', 'profile-name-availability', toolkitSlug, debouncedName],
+    queryFn: async () => {
+      if (!debouncedName || debouncedName.trim().length < 1) {
+        return {
+          available: true,
+          message: '',
+          suggestions: []
+        };
+      }
+      
+      const response = await composioApi.checkProfileNameAvailability(toolkitSlug, debouncedName);
+      return response;
+    },
+    enabled: options?.enabled !== false && !!toolkitSlug && !!debouncedName && debouncedName.trim().length > 0,
+    staleTime: 30000, // Consider data stale after 30 seconds
+    gcTime: 60000, // Keep in cache for 1 minute
+  });
 }; 

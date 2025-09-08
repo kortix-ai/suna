@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from agentpress.context_manager import ContextManager
+from core.agentpress.context_manager import ContextManager
 
 def test_context_compression():
     """Test the context compression with debug output."""

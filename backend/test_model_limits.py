@@ -7,7 +7,7 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from models import model_manager
+from core.ai_models import model_manager
 
 def test_model_limits():
     """Test the model context window limits."""

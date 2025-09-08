@@ -43,6 +43,43 @@ const BlurredDialogOverlay = () => (
   <DialogOverlay className="bg-background/40 backdrop-blur-md" />
 );
 
+// Rotating text component for job types
+const RotatingText = ({ 
+  texts, 
+  className = "" 
+}: { 
+  texts: string[]; 
+  className?: string; 
+}) => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isVisible, setIsVisible] = useState(true);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIsVisible(false);
+      
+      setTimeout(() => {
+        setCurrentIndex((prev) => (prev + 1) % texts.length);
+        setIsVisible(true);
+      }, 150); // Half of the transition duration
+    }, 2000); // Change every 2 seconds
+
+    return () => clearInterval(interval);
+  }, [texts.length]);
+
+  return (
+    <span className={`inline-block transition-all duration-300 ${className}`}>
+      <span 
+        className={`inline-block transition-opacity duration-300 ${
+          isVisible ? 'opacity-100' : 'opacity-0'
+        }`}
+      >
+        {texts[currentIndex]}
+      </span>
+    </span>
+  );
+};
+
 // Constant for localStorage key to ensure consistency
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 

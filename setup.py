@@ -686,9 +686,9 @@ class SetupWizard:
         )
         print_info("Create a snapshot with these exact settings:")
         print_info(
-            f"   - Name:\t\t{Colors.GREEN}kortix/suna:0.1.3.12{Colors.ENDC}")
+            f"   - Name:\t\t{Colors.GREEN}kortix/suna:0.1.3.13{Colors.ENDC}")
         print_info(
-            f"   - Snapshot name:\t{Colors.GREEN}kortix/suna:0.1.3.12{Colors.ENDC}")
+            f"   - Snapshot name:\t{Colors.GREEN}kortix/suna:0.1.3.13{Colors.ENDC}")
         print_info(
             f"   - Entrypoint:\t{Colors.GREEN}/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf{Colors.ENDC}"
         )
@@ -1150,21 +1150,21 @@ class SetupWizard:
 
         try:
             subprocess.run(
-                ["supabase", "--version"],
+                ["npx", "supabase", "--version"],
                 check=True,
                 capture_output=True,
                 shell=IS_WINDOWS,
             )
         except (subprocess.SubprocessError, FileNotFoundError):
             print_error(
-                "Supabase CLI not found. Install it from: https://supabase.com/docs/guides/cli"
+                "Node.js/npm not found or Supabase CLI not available. Make sure Node.js is installed."
             )
             print_info(
                 "You can skip this step and set up the database manually later.")
-            skip_due_to_cli = (
-                input("Skip database setup due to missing CLI? (y/N): ").lower().strip()
+            skip_due_to_node = (
+                input("Skip database setup due to missing Node.js/npm? (y/N): ").lower().strip()
             )
-            if skip_due_to_cli == "y":
+            if skip_due_to_node == "y":
                 print_info("Skipping Supabase database setup.")
                 return
             sys.exit(1)
@@ -1180,11 +1180,11 @@ class SetupWizard:
 
         try:
             print_info("Logging into Supabase CLI...")
-            subprocess.run(["supabase", "login"], check=True, shell=IS_WINDOWS)
+            subprocess.run(["npx", "supabase", "login"], check=True, shell=IS_WINDOWS)
 
             print_info(f"Linking to Supabase project {project_ref}...")
             subprocess.run(
-                ["supabase", "link", "--project-ref", project_ref],
+                ["npx", "supabase", "link", "--project-ref", project_ref],
                 cwd="backend",
                 check=True,
                 shell=IS_WINDOWS,
@@ -1192,7 +1192,7 @@ class SetupWizard:
 
             print_info("Pushing database migrations...")
             subprocess.run(
-                ["supabase", "db", "push"], cwd="backend", check=True, shell=IS_WINDOWS
+                ["npx", "supabase", "db", "push"], cwd="backend", check=True, shell=IS_WINDOWS
             )
             print_success("Database migrations pushed successfully.")
 

@@ -37,18 +37,86 @@ interface AuthenticatedImageProps {
   alt?: string;
   className?: string;
   project?: FileRendererProject;
+  basePath?: string;
 }
 
-function AuthenticatedImage({ src, alt, className, project }: AuthenticatedImageProps) {
+// Join and normalize paths like a simplified path.resolve for URLs
+function joinAndNormalize(baseDir: string, relativePath: string): string {
+  // Ensure baseDir starts with a leading slash
+  let base = baseDir.startsWith('/') ? baseDir : `/${baseDir}`;
+
+  // If base appears to be a file path, remove the file name to get the directory
+  if (base.includes('.')) {
+    base = base.substring(0, base.lastIndexOf('/')) || '/';
+  }
+
+  // Ensure we are rooted at /workspace
+  if (!base.startsWith('/workspace')) {
+    base = `/workspace/${base.replace(/^\//, '')}`;
+  }
+
+  const stack: string[] = base.split('/').filter(Boolean);
+  const segments = relativePath.split('/');
+
+  for (const segment of segments) {
+    if (!segment || segment === '.') continue;
+    if (segment === '..') {
+      if (stack.length > 1) stack.pop(); // keep at least 'workspace'
+    } else {
+      stack.push(segment);
+    }
+  }
+
+  return `/${stack.join('/')}`;
+}
+
+function normalizeWorkspacePath(path: string): string {
+  if (!path) return '/workspace';
+  let normalized = path;
+  if (!normalized.startsWith('/workspace')) {
+    normalized = `/workspace/${normalized.replace(/^\//, '')}`;
+  }
+  return normalized;
+}
+
+function resolveImagePath(src: string, basePath?: string): string {
+  if (!src) return src;
+  const lower = src.toLowerCase();
+  // External or data/blob URLs should pass through
+  if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('data:') || lower.startsWith('blob:')) {
+    return src;
+  }
+
+  // Already absolute workspace path
+  if (src.startsWith('/workspace/')) {
+    return src;
+  }
+
+  // Root-relative to workspace or absolute without /workspace
+  if (src.startsWith('/')) {
+    return normalizeWorkspacePath(src);
+  }
+
+  // Relative path -> resolve against basePath directory
+  if (basePath) {
+    return joinAndNormalize(basePath, src);
+  }
+
+  // Fallback: treat as under workspace root
+  return normalizeWorkspacePath(src);
+}
+
+function AuthenticatedImage({ src, alt, className, project, basePath }: AuthenticatedImageProps) {
   // For sandbox files, use the existing useImageContent hook
   const sandboxId = typeof project?.sandbox === 'string' 
     ? project.sandbox 
     : project?.sandbox?.id;
 
-  const { data: imageUrl, isLoading, error } = useImageContent(sandboxId, src);
+  const resolvedSrc = resolveImagePath(src, basePath);
+  const { data: imageUrl, isLoading, error } = useImageContent(sandboxId, resolvedSrc);
 
   // If it's already a URL or data URL, use regular img
-  if (src.startsWith('http') || src.startsWith('data:')) {
+  if (src.startsWith('http') || src.startsWith('data:') || src.startsWith('blob:')) {
     return <img src={src} alt={alt || ''} className={className} />;
   }
 
@@ -81,12 +149,13 @@ interface MarkdownRendererProps {
   content: string;
   className?: string;
   project?: FileRendererProject;
+  basePath?: string; // used to resolve relative image sources inside markdown
 }
 
 export const MarkdownRenderer = forwardRef<
   HTMLDivElement,
   MarkdownRendererProps
->(({ content, className, project }, ref) => {
+>(({ content, className, project, basePath }, ref) => {
   // Process Unicode escape sequences in the content
   const processedContent = processUnicodeContent(content);
 
@@ -157,6 +226,7 @@ export const MarkdownRenderer = forwardRef<
                 alt={props.alt || ''}
                 className="max-w-full h-auto rounded-md my-2"
                 project={project}
+                basePath={basePath}
               />
             ),
             pre: ({ node, ...props }) => (

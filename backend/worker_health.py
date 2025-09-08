@@ -1,11 +1,11 @@
 import dotenv
 dotenv.load_dotenv()
 
-from utils.logger import logger
+from core.utils.logger import logger
 import run_agent_background
-from services import redis
+from core.services import redis
 import asyncio
-from utils.retry import retry
+from core.utils.retry import retry
 import uuid
 
 

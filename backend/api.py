@@ -4,31 +4,31 @@ load_dotenv()
 from fastapi import FastAPI, Request, HTTPException, Response, Depends, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from services import redis
+from core.services import redis
 import sentry
 from contextlib import asynccontextmanager
-from agentpress.thread_manager import ThreadManager
-from services.supabase import DBConnection
+from core.agentpress.thread_manager import ThreadManager
+from core.services.supabase import DBConnection
 from datetime import datetime, timezone
-from utils.config import config, EnvMode
+from core.utils.config import config, EnvMode
 import asyncio
-from utils.logger import logger, structlog
+from core.utils.logger import logger, structlog
 import time
 from collections import OrderedDict
 
 from pydantic import BaseModel
 import uuid
 
-from agent import api as agent_api
+from core import api as core_api
 
-from sandbox import api as sandbox_api
-from services import billing as billing_api
-from services import transcription as transcription_api
+from core.sandbox import api as sandbox_api
+from core.services import billing as billing_api
+from core.services import transcription as transcription_api
 import sys
-from services import email_api
-from services import memory_api
-from triggers import api as triggers_api
-from services import api_keys_api
+from core.services import email_api
+from core.services import memory_api
+from core.triggers import api as triggers_api
+from core.services import api_keys_api
 
 
 if sys.platform == "win32":
@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI):
     try:
         await db.initialize()
         
-        agent_api.initialize(
+        core_api.initialize(
             db,
             instance_id
         )
@@ -57,7 +57,7 @@ async def lifespan(app: FastAPI):
         sandbox_api.initialize(db)
         
         # Initialize Redis connection
-        from services import redis
+        from core.services import redis
         try:
             await redis.initialize_async()
             logger.debug("Redis connection initialized successfully")
@@ -66,7 +66,7 @@ async def lifespan(app: FastAPI):
             # Continue without Redis - the application will handle Redis failures gracefully
         
         # Start background tasks
-        # asyncio.create_task(agent_api.restore_running_agent_runs())
+        # asyncio.create_task(core_api.restore_running_agent_runs())
         
         triggers_api.initialize(db)
         pipedream_api.initialize(db)
@@ -78,7 +78,7 @@ async def lifespan(app: FastAPI):
         
         # Clean up agent resources
         logger.debug("Cleaning up agent resources")
-        await agent_api.cleanup()
+        await core_api.cleanup()
         
         # Clean up Redis connection
         try:
@@ -156,14 +156,14 @@ app.add_middleware(
 api_router = APIRouter()
 
 # Include all API routers without individual prefixes
-api_router.include_router(agent_api.router)
+api_router.include_router(core_api.router)
 api_router.include_router(sandbox_api.router)
 api_router.include_router(billing_api.router)
 api_router.include_router(api_keys_api.router)
 
-from mcp_module import api as mcp_api
-from credentials import api as credentials_api
-from templates import api as template_api
+from core.mcp_module import api as mcp_api
+from core.credentials import api as credentials_api
+from core.templates import api as template_api
 
 api_router.include_router(mcp_api.router)
 api_router.include_router(credentials_api.router, prefix="/secure-mcp")
@@ -173,21 +173,21 @@ api_router.include_router(transcription_api.router)
 api_router.include_router(email_api.router)
 api_router.include_router(memory_api.router)
 
-from knowledge_base import api as knowledge_base_api
+from core.knowledge_base import api as knowledge_base_api
 api_router.include_router(knowledge_base_api.router)
 
 api_router.include_router(triggers_api.router)
 
-from pipedream import api as pipedream_api
+from core.pipedream import api as pipedream_api
 api_router.include_router(pipedream_api.router)
 
-from admin import api as admin_api
+from core.admin import api as admin_api
 api_router.include_router(admin_api.router)
 
-from composio_integration import api as composio_api
+from core.composio_integration import api as composio_api
 api_router.include_router(composio_api.router)
 
-from google.google_slides_api import router as google_slides_router
+from core.google.google_slides_api import router as google_slides_router
 api_router.include_router(google_slides_router)
 
 @api_router.get("/health")

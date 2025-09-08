@@ -244,6 +244,7 @@ export function FileEditToolView({
           <MarkdownRenderer
             content={processUnicodeContent(updatedContent)}
             project={project}
+            basePath={processedFilePath || undefined}
           />
         </div>
       );

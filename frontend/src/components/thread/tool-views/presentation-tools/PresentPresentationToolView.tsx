@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Markdown } from '@/components/ui/markdown';
 import { FileAttachment } from '../../file-attachment';
+import { PresentationViewer } from './PresentationViewer';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,6 +35,9 @@ import {
 
 interface PresentPresentationToolViewProps extends ToolViewProps {
   onFileClick?: (filePath: string) => void;
+  assistantContent?: string;
+  assistantTimestamp?: string;
+  toolTimestamp?: string;
 }
 
 export function PresentPresentationToolView({
@@ -43,6 +47,9 @@ export function PresentPresentationToolView({
   isStreaming = false,
   onFileClick,
   project,
+  assistantContent,
+  assistantTimestamp,
+  toolTimestamp,
 }: PresentPresentationToolViewProps) {
   // Extract data using the standard utility function
   const { toolResult, arguments: args } = useMemo(() => 
@@ -248,6 +255,23 @@ export function PresentPresentationToolView({
                   </DropdownMenuContent>
                 </DropdownMenu>
             </div>
+
+            {/* Presentation Viewer */}
+            {toolContent && !isStreaming && (
+              <div className="mt-6">
+                <PresentationViewer
+                  assistantContent={assistantContent}
+                  toolContent={toolContent}
+                  assistantTimestamp={assistantTimestamp}
+                  toolTimestamp={toolTimestamp}
+                  isSuccess={isSuccess}
+                  isStreaming={false}
+                  name={name}
+                  project={project}
+                  showHeader={false}
+                />
+              </div>
+            )}
 
             {/* Attachments Section */}
             {attachments && attachments.length > 0 && (

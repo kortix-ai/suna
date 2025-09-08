@@ -414,8 +414,8 @@ export function ToolCallSidePanel({
 
   React.useEffect(() => {
     // This is used to sync the internal index to the current index
-    // Only sync when we're not in live mode or when we're initializing
-    if (!isInitialized || navigationMode === 'manual') {
+    // Only sync when we're not in live mode, when we're initializing, and when there are tool calls
+    if ((!isInitialized || navigationMode === 'manual') && toolCallSnapshots.length > 0) {
       setInternalIndex(Math.min(currentIndex, toolCallSnapshots.length - 1));
     }
   }, [currentIndex, toolCallSnapshots.length, isInitialized, navigationMode]);
