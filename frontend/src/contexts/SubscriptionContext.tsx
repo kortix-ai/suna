@@ -91,19 +91,16 @@ export function useSharedSubscription() {
   };
 }
 
-/**
- * Hook for backward compatibility - maps new credit-based data to old format
- * This hook works both inside and outside the provider
- */
 export function useSubscriptionData() {
   const context = useContext(SubscriptionContext);
   
-  // If context is available, use it and map to old format
+  const directSubscription = useSubscription();
+  const directCreditBalance = useCreditBalance();
+  
   if (context) {
     return {
       data: context.subscriptionData ? {
         ...context.subscriptionData,
-        // Map new credit fields to old format for compatibility
         current_usage: context.creditBalance?.lifetime_used || 0,
         cost_limit: context.subscriptionData.tier.credits,
         credit_balance: context.creditBalance?.balance || 0,
@@ -119,9 +116,9 @@ export function useSubscriptionData() {
     };
   }
   
-  // If no context, use the hook directly (for use outside provider)
-  const { data, isLoading, error, refetch } = useSubscription();
-  const { data: creditBalance } = useCreditBalance();
+  // If no context, use the hooks directly (for use outside provider)
+  const { data, isLoading, error, refetch } = directSubscription;
+  const { data: creditBalance } = directCreditBalance;
   
   return {
     data: data ? {
