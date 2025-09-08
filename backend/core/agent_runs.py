@@ -764,11 +764,17 @@ async def initiate_agent_with_files(
     # Check project creation limit
     if not project_limit_check['can_create']:
         error_detail = {
-            "message": f"Maximum of {project_limit_check['limit']} projects allowed for your current plan. You have {project_limit_check['current_count']} projects.",
+            "message": f"You've reached your project limit ({project_limit_check['current_count']}/{project_limit_check['limit']} projects). To create a new project, please delete some existing projects first. You can delete projects from your dashboard by clicking the three dots menu on any project card.",
             "current_count": project_limit_check['current_count'],
             "limit": project_limit_check['limit'],
             "tier_name": project_limit_check['tier_name'],
-            "error_code": "PROJECT_LIMIT_EXCEEDED"
+            "error_code": "PROJECT_LIMIT_EXCEEDED",
+            "user_guidance": {
+                "title": "Project Limit Reached",
+                "description": "You've reached the maximum number of projects for your plan.",
+                "action_required": "Delete existing projects to create new ones",
+                "how_to_delete": "Go to your dashboard and click the three dots menu on any project to delete it"
+            }
         }
         logger.warning(f"Project limit exceeded for account {account_id}: {project_limit_check['current_count']}/{project_limit_check['limit']} projects")
         raise HTTPException(status_code=402, detail=error_detail)
