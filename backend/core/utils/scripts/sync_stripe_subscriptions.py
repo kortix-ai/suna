@@ -196,6 +196,78 @@ async def sync_stripe_to_db():
     print(f"Errors: {error_count}")
     
     print("\n" + "="*60)
+    print("CHECKING TOPUP CREDITS")
+    print("="*60)
+    
+    purchases_result = await client.from_('credit_purchases')\
+        .select('user_id, amount_dollars, status')\
+        .eq('status', 'completed')\
+        .execute()
+    
+    if purchases_result.data:
+        user_purchases = {}
+        for purchase in purchases_result.data:
+            user_id = purchase['user_id']
+            amount = Decimal(str(purchase.get('amount_dollars', 0)))
+            if user_id not in user_purchases:
+                user_purchases[user_id] = Decimal('0')
+            user_purchases[user_id] += amount
+        
+        print(f"Found {len(user_purchases)} users with completed credit purchases")
+        
+        fixed_count = 0
+        for user_id, purchase_total in user_purchases.items():
+            account_result = await client.from_('credit_accounts')\
+                .select('balance, expiring_credits, non_expiring_credits, tier')\
+                .eq('user_id', user_id)\
+                .maybe_single()\
+                .execute()
+            
+            if account_result.data:
+                account = account_result.data
+                current_non_expiring = Decimal(str(account.get('non_expiring_credits', 0)))
+                
+                if current_non_expiring < purchase_total:
+                    missing = purchase_total - current_non_expiring
+                    print(f"\n  User {user_id[:8]}... is missing ${missing:.2f} in topup credits")
+                    print(f"    Current non-expiring: ${current_non_expiring}")
+                    print(f"    Total purchases: ${purchase_total}")
+                    
+                    from billing.credit_manager import credit_manager
+                    result = await credit_manager.add_credits(
+                        user_id=user_id,
+                        amount=missing,
+                        is_expiring=False,
+                        description=f"Sync fix: Restored missing topup credits (${missing})"
+                    )
+                    
+                    if result.get('success'):
+                        print(f"    ✅ Added ${missing} missing topup credits")
+                        fixed_count += 1
+                    else:
+                        print(f"    ❌ Failed to add missing credits")
+            else:
+                print(f"\n  User {user_id[:8]}... has purchases but no credit account - creating one")
+                from billing.credit_manager import credit_manager
+                result = await credit_manager.add_credits(
+                    user_id=user_id,
+                    amount=purchase_total,
+                    is_expiring=False,
+                    description=f"Sync fix: Added topup credits (${purchase_total})"
+                )
+                
+                if result.get('success'):
+                    print(f"    ✅ Created account with ${purchase_total} non-expiring credits")
+                    fixed_count += 1
+        
+        if fixed_count > 0:
+            print(f"\n✅ Fixed {fixed_count} users with missing topup credits")
+        else:
+            print("\n✅ All users have correct topup credits")
+    else:
+        print("No credit purchases found")
+    
+    print("\n" + "="*60)
     print("CREDIT ACCOUNTS STATE (with Credit Types)")
     print("="*60)
     
