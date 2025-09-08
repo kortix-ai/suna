@@ -379,13 +379,14 @@ class AgentExecutor:
         if not account_id:
             raise ValueError("Account ID not found in agent configuration")
         
-        from core.services.billing import can_use_model, check_billing_status
+        from core.services.billing import can_use_model
+        from billing.billing_integration import billing_integration
         
         can_use, model_message, allowed_models = await can_use_model(client, account_id, model_name)
         if not can_use:
             raise ValueError(f"Model not available: {model_message}")
         
-        can_run, message, subscription = await check_billing_status(client, account_id)
+        can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(account_id)
         if not can_run:
             raise ValueError(f"Billing check failed: {message}")
         
@@ -607,7 +608,8 @@ class WorkflowExecutor:
         return available_tools
     
     async def _validate_workflow_execution(self, account_id: str) -> None:
-        from core.services.billing import check_billing_status, can_use_model
+        from core.services.billing import can_use_model
+        from billing.billing_integration import billing_integration
         
         client = await self._db.client
         from core.ai_models import model_manager
@@ -617,7 +619,7 @@ class WorkflowExecutor:
         if not can_use:
             raise Exception(f"Model access denied: {model_message}")
             
-        can_run, billing_message, _ = await check_billing_status(client, account_id)
+        can_run, billing_message, _ = await billing_integration.check_and_reserve_credits(account_id)
         if not can_run:
             raise Exception(f"Billing check failed: {billing_message}")
     
@@ -686,13 +688,14 @@ class WorkflowExecutor:
             else:
                 raise ValueError("Cannot determine account ID for workflow execution")
         
-        from core.services.billing import can_use_model, check_billing_status
+        from core.services.billing import can_use_model
+        from billing.billing_integration import billing_integration
         
         can_use, model_message, allowed_models = await can_use_model(client, account_id, model_name)
         if not can_use:
             raise ValueError(f"Model not available for workflow: {model_message}")
         
-        can_run, message, subscription = await check_billing_status(client, account_id)
+        can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(account_id)
         if not can_run:
             raise ValueError(f"Billing check failed for workflow: {message}")
         

@@ -1,5 +1,5 @@
 import { toast } from 'sonner';
-import { BillingError, AgentRunLimitError } from './api';
+import { BillingError, AgentRunLimitError, ProjectLimitError } from './api';
 
 export interface ApiError extends Error {
   status?: number;
@@ -52,6 +52,10 @@ const extractErrorMessage = (error: any): string => {
 
   if (error instanceof AgentRunLimitError) {
     return error.detail?.message || error.message || 'Agent run limit exceeded';
+  }
+
+  if (error instanceof ProjectLimitError) {
+    return error.detail?.message || error.message || 'Project limit exceeded';
   }
 
   if (error instanceof Error) {

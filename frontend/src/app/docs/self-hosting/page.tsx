@@ -119,7 +119,6 @@ cd suna`
       <DocsBody className="mb-8">
         <h2 id="step-3-provide-credentials">Step 3: Provide Your Credentials</h2>
         <p className="mb-4">The wizard will walk you through configuring these services in 17 steps. Don't worry - it saves your progress!</p>
-        
         <h3 id="required-services" className="mb-4">Required Services</h3>
         <div className="space-y-4 mb-6">
           <div className="border rounded-lg p-4">
@@ -127,10 +126,9 @@ cd suna`
               <CheckCircle2 className="h-5 w-5 text-green-500" />
               <strong>Supabase (Database & Auth)</strong>
             </div>
-            <p className="text-sm text-muted-foreground mb-2">Free tier available. Handles user data, conversations, and agent configs.</p>
+            <p className="text-sm text-muted-foreground mb-2">Self-hosted option available. Handles user data, conversations, and agent configs.</p>
             <p className="text-sm">Get it at: <a href="https://supabase.com/dashboard/projects" className="text-blue-500 hover:underline">supabase.com</a></p>
           </div>
-
           <div className="border rounded-lg p-4">
             <div className="flex items-center gap-2 mb-2">
               <CheckCircle2 className="h-5 w-5 text-green-500" />
@@ -139,7 +137,6 @@ cd suna`
             <p className="text-sm text-muted-foreground mb-2">Provides secure environments for agents to run code safely.</p>
             <p className="text-sm">Get it at: <a href="https://app.daytona.io/" className="text-blue-500 hover:underline">daytona.io</a></p>
           </div>
-
           <div className="border rounded-lg p-4">
             <div className="flex items-center gap-2 mb-2">
               <CheckCircle2 className="h-5 w-5 text-green-500" />
@@ -272,7 +269,6 @@ docker compose down`
               </CodeBlockBody>
             </CodeBlock>
           </div>
-
           <div>
             <h4 className="font-medium mb-2">Terminal 2 - Frontend:</h4>
             <CodeBlock 

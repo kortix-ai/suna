@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Bot, Menu, Store, Plus, Zap, ChevronRight, Loader2 } from 'lucide-react';
+import { Bot, Menu, Store, Plus, Zap, ChevronRight, Loader2, Shield, DollarSign } from 'lucide-react';
 
 import { NavAgents } from '@/components/sidebar/nav-agents';
 import { NavUserWithTeams } from '@/components/sidebar/nav-user-with-teams';
@@ -80,10 +80,12 @@ export function SidebarLeft({
     name: string;
     email: string;
     avatar: string;
+    isAdmin?: boolean;
   }>({
     name: 'Loading...',
     email: 'loading@example.com',
     avatar: '',
+    isAdmin: false,
   });
 
   const pathname = usePathname();
@@ -91,7 +93,6 @@ export function SidebarLeft({
   const [showNewAgentDialog, setShowNewAgentDialog] = useState(false);
   const { isOpen: isDocumentModalOpen } = useDocumentModalStore();
 
-  // Close mobile menu on page navigation
   useEffect(() => {
     if (isMobile) {
       setOpenMobile(false);
@@ -103,8 +104,14 @@ export function SidebarLeft({
     const fetchUserData = async () => {
       const supabase = createClient();
       const { data } = await supabase.auth.getUser();
-
       if (data.user) {
+        const { data: roleData } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', data.user.id)
+          .in('role', ['admin', 'super_admin']);
+        const isAdmin = roleData && roleData.length > 0;
+        
         setUser({
           name:
             data.user.user_metadata?.name ||
@@ -112,6 +119,7 @@ export function SidebarLeft({
             'User',
           email: data.user.email || '',
           avatar: data.user.user_metadata?.avatar_url || '',
+          isAdmin: isAdmin,
         });
       }
     };
@@ -121,8 +129,6 @@ export function SidebarLeft({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      // Don't handle sidebar shortcuts when document modal is open
-      console.log('Sidebar-left handler - document modal open:', isDocumentModalOpen, 'key:', event.key);
       if (isDocumentModalOpen) return;
       
       if ((event.metaKey || event.ctrlKey) && event.key === 'b') {
@@ -261,7 +267,45 @@ export function SidebarLeft({
               </Collapsible>
             </SidebarMenu>
           )}
-
+          {user.isAdmin && (
+            <SidebarMenu className="mt-2">
+              <Collapsible
+                defaultOpen={false}
+                className="group/admin-collapsible"
+              >
+                <SidebarMenuItem>
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuButton
+                      tooltip="Admin"
+                      onClick={() => {
+                        if (state === 'collapsed') {
+                          setOpen(true);
+                        }
+                      }}
+                    >
+                      <Shield className="h-4 w-4 mr-1 text-red-500" />
+                      <span>Admin</span>
+                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/admin-collapsible:rotate-90" />
+                    </SidebarMenuButton>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenuSub>
+                      <SidebarMenuSubItem>
+                        <SidebarMenuSubButton className={cn('pl-3 touch-manipulation', {
+                          'bg-accent text-accent-foreground font-medium': pathname === '/admin/billing',
+                        })} asChild>
+                          <Link href="/admin/billing" onClick={() => isMobile && setOpenMobile(false)}>
+                            <DollarSign className="h-3 w-3 mr-1" />
+                            <span>Billing Management</span>
+                          </Link>
+                        </SidebarMenuSubButton>
+                      </SidebarMenuSubItem>
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </SidebarMenuItem>
+              </Collapsible>
+            </SidebarMenu>
+          )}
         </SidebarGroup>
         <NavAgents />
       </SidebarContent>

@@ -453,20 +453,34 @@ async def check_project_count_limit(client, account_id: str) -> Dict[str, Any]:
                 'tier_name': 'local'
             }
         
-        # Always count projects fresh from database to avoid stale cache issues
+        try:
+            result = await Cache.get(f"project_count_limit:{account_id}")
+            if result:
+                logger.debug(f"Cache hit for project count limit: {account_id}")
+                return result
+        except Exception as cache_error:
+            logger.warning(f"Cache read failed for project count limit {account_id}: {str(cache_error)}")
+
         projects_result = await client.table('projects').select('project_id').eq('account_id', account_id).execute()
         current_count = len(projects_result.data or [])
         logger.debug(f"Account {account_id} has {current_count} projects (real-time count)")
         
         try:
-            from core.services.billing import get_subscription_tier
-            tier_name = await get_subscription_tier(client, account_id)
-            logger.debug(f"Account {account_id} subscription tier: {tier_name}")
-        except Exception as billing_error:
-            logger.warning(f"Could not get subscription tier for {account_id}: {str(billing_error)}, defaulting to free")
-            tier_name = 'free'
+            credit_result = await client.table('credit_accounts').select('tier').eq('account_id', account_id).single().execute()
+            tier_name = credit_result.data.get('tier', 'free') if credit_result.data else 'free'
+            logger.debug(f"Account {account_id} credit tier: {tier_name}")
+        except Exception as credit_error:
+            try:
+                logger.debug(f"Trying user_id fallback for account {account_id}")
+                credit_result = await client.table('credit_accounts').select('tier').eq('user_id', account_id).single().execute()
+                tier_name = credit_result.data.get('tier', 'free') if credit_result.data else 'free'
+                logger.debug(f"Account {account_id} credit tier (via fallback): {tier_name}")
+            except:
+                logger.debug(f"No credit account for {account_id}, defaulting to free tier")
+                tier_name = 'free'
         
-        project_limit = config.PROJECT_LIMITS.get(tier_name, config.PROJECT_LIMITS['free'])
+        from billing.config import get_project_limit
+        project_limit = get_project_limit(tier_name)
         can_create = current_count < project_limit
         
         result = {

@@ -34,11 +34,10 @@ export const useModelSelection = () => {
     resetToDefault,
   } = useModelStore();
   
-  const subscriptionStatus: SubscriptionStatus = (subscriptionData?.status === 'active' || subscriptionData?.status === 'trialing')
+  const subscriptionStatus: SubscriptionStatus = (subscriptionData?.subscription?.status === 'active' || subscriptionData?.subscription?.status === 'trialing')
     ? 'active' 
     : 'no_subscription';
 
-  // Load custom models from localStorage for local mode
   useEffect(() => {
     if (isLocalMode() && hasHydrated && typeof window !== 'undefined') {
       try {
@@ -133,14 +132,11 @@ export const useModelSelection = () => {
         );
   }, [MODEL_OPTIONS, subscriptionStatus]);
 
-  // Validate model selection only after hydration and when subscription status changes
   useEffect(() => {
-    // Skip validation until hydrated and models are loaded
     if (!hasHydrated || isLoadingModels || typeof window === 'undefined') {
       return;
     }
     
-    // Check if the selected model is still valid
     const isValidModel = MODEL_OPTIONS.some(model => model.id === selectedModel) ||
                         (isLocalMode() && customModels.some(model => model.id === selectedModel));
     
@@ -150,7 +146,6 @@ export const useModelSelection = () => {
       return;
     }
     
-    // For non-local mode, check if user still has access to the selected model
     if (!isLocalMode()) {
       const modelOption = MODEL_OPTIONS.find(m => m.id === selectedModel);
       if (modelOption && !canAccessModel(subscriptionStatus, modelOption.requiresSubscription)) {
@@ -183,7 +178,6 @@ export const useModelSelection = () => {
     return isCustomModel ? getPrefixedModelId(modelId, true) : modelId;
   };
 
-  // Function to refresh custom models from localStorage
   const refreshCustomModels = () => {
     if (isLocalMode() && typeof window !== 'undefined') {
       try {
@@ -208,7 +202,7 @@ export const useModelSelection = () => {
   return {
     selectedModel,
     handleModelChange,
-    setSelectedModel: handleModelChange, // Alias for backward compatibility
+    setSelectedModel: handleModelChange,
     availableModels,
     allModels: MODEL_OPTIONS,
     customModels,

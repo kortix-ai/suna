@@ -7,7 +7,7 @@ import React, {
   useState,
 } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { BillingError, AgentRunLimitError } from '@/lib/api';
+import { BillingError, AgentRunLimitError, ProjectLimitError } from '@/lib/api';
 import { toast } from 'sonner';
 import { ChatInput } from '@/components/thread/chat-input/chat-input';
 import { useSidebar } from '@/components/ui/sidebar';
@@ -482,6 +482,25 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
               runningThreadIds: running_thread_ids,
             });
             setShowAgentLimitDialog(true);
+
+            setMessages((prev) =>
+              prev.filter(
+                (m) => m.message_id !== optimisticUserMessage.message_id,
+              ),
+            );
+            return;
+          }
+
+          if (error instanceof ProjectLimitError) {
+            setBillingData({
+              currentUsage: error.detail.current_count as number,
+              limit: error.detail.limit as number,
+              message:
+                error.detail.message ||
+                `You've reached your project limit (${error.detail.current_count}/${error.detail.limit}). Please upgrade to create more projects.`,
+              accountId: null,
+            });
+            setShowBillingAlert(true);
 
             setMessages((prev) =>
               prev.filter(

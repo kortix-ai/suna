@@ -568,7 +568,7 @@ async def get_usage_logs(client, user_id: str, page: int = 0, items_per_page: in
         try:
             credit_usage_result = await client.table('credit_usage') \
                 .select('message_id, amount_dollars, created_at') \
-                .eq('user_id', user_id) \
+                .eq('account_id', user_id) \
                 .gte('created_at', start_of_month.isoformat()) \
                 .execute()
             
@@ -814,28 +814,43 @@ async def get_allowed_models_for_user(client, user_id: str):
     if result:
         return result
 
-    subscription = await get_user_subscription(user_id)
-    tier_name = 'free'
+    # First check if user has an active trial
+    credit_result = await client.from_('credit_accounts').select('tier, trial_status').eq('account_id', user_id).execute()
     
-    if subscription:
-        price_id = None
-        if subscription.get('items') and subscription['items'].get('data') and len(subscription['items']['data']) > 0:
-            price_id = subscription['items']['data'][0]['price']['id']
-        else:
-            price_id = subscription.get('price_id', config.STRIPE_FREE_TIER_ID)
+    tier_name = 'none'  # Default to no access
+    
+    if credit_result.data and len(credit_result.data) > 0:
+        credit_account = credit_result.data[0]
+        trial_status = credit_account.get('trial_status')
         
-        # Get tier info for this price_id
-        tier_info = SUBSCRIPTION_TIERS.get(price_id)
-        if tier_info:
-            tier_name = tier_info['name']
+        # If user has an active trial, they get paid tier access
+        if trial_status == 'active':
+            tier_name = 'tier_2_20'  # Trial gives access to $20 tier
+        else:
+            tier_name = credit_account.get('tier', 'none')
     
-    # Return allowed models for this tier using model manager
-    if tier_name == 'free':
-        result = model_manager.get_models_for_tier('free')
-        result = [model.id for model in result]  # Convert to list of IDs
+    # If not on trial, check subscription
+    if tier_name == 'none':
+        subscription = await get_user_subscription(user_id)
+        
+        if subscription:
+            price_id = None
+            if subscription.get('items') and subscription['items'].get('data') and len(subscription['items']['data']) > 0:
+                price_id = subscription['items']['data'][0]['price']['id']
+            else:
+                price_id = subscription.get('price_id', config.STRIPE_FREE_TIER_ID)
+            
+            # Get tier info for this price_id
+            tier_info = SUBSCRIPTION_TIERS.get(price_id)
+            if tier_info:
+                tier_name = tier_info['name']
+    
+    if tier_name in ['none', 'free']:
+        result = []
     else:
         result = model_manager.get_models_for_tier('paid')  
         result = [model.id for model in result]  # Convert to list of IDs
+    
     await Cache.set(f"allowed_models_for_user:{user_id}", result, ttl=1 * 60)
     return result
 
@@ -897,16 +912,32 @@ async def check_billing_status(client, user_id: str) -> Tuple[bool, str, Optiona
             "minutes_limit": "no limit"
         }
 
+    # First check if user has an active trial
+    credit_result = await client.from_('credit_accounts').select('tier, trial_status, balance').eq('account_id', user_id).execute()
+    
+    if credit_result.data and len(credit_result.data) > 0:
+        credit_account = credit_result.data[0]
+        trial_status = credit_account.get('trial_status')
+        
+        # If user has an active trial, they can use the platform
+        if trial_status == 'active':
+            return True, "Active trial", {
+                'price_id': config.STRIPE_TIER_2_20_ID,
+                'plan_name': 'trial',
+                'tier': 'tier_2_20'
+            }
+        
+        # If user has no tier or trial, they cannot use the platform
+        tier = credit_account.get('tier', 'none')
+        if tier == 'none':
+            return False, "No active subscription or trial. Please start a trial or subscribe to use the platform.", None
+    
     # Get current subscription
     subscription = await get_user_subscription(user_id)
-    # print("Current subscription:", subscription)
     
-    # If no subscription, they can use free tier
+    # If no subscription and no trial, deny access
     if not subscription:
-        subscription = {
-            'price_id': config.STRIPE_FREE_TIER_ID,  # Free tier
-            'plan_name': 'free'
-        }
+        return False, "No active subscription or trial. Please start a trial or subscribe to use the platform.", None
     
     # Extract price ID from subscription items
     price_id = None

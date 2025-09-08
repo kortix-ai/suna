@@ -208,7 +208,7 @@ function PricingTier({
   const displayPrice = getDisplayPrice();
   const priceId = getPriceId();
 
-  // Auto-select the correct plan only on initial load - simplified since no more Custom tier
+  // Handle subscription/trial start
   const handleSubscribe = async (planStripePriceId: string) => {
     if (!isAuthenticated) {
       window.location.href = '/auth?mode=signup';
@@ -221,8 +221,6 @@ function PricingTier({
 
     try {
       onPlanSelect?.(planStripePriceId);
-
-      // Determine commitment type based on billing period
       const commitmentType = billingPeriod === 'yearly_commitment' ? 'yearly_commitment' : 
                           billingPeriod === 'yearly' ? 'yearly' : 
                           'monthly';
@@ -305,8 +303,20 @@ function PricingTier({
     (p) => p.stripePriceId === currentSubscription?.price_id || p.yearlyStripePriceId === currentSubscription?.price_id,
   );
 
-  const isCurrentActivePlan =
-    isAuthenticated && currentSubscription?.price_id === priceId;
+  // Simple check - what plan is the user on?
+  const userPlanName = currentSubscription?.plan_name || 'none';
+  
+  // Check if this tier matches the user's current plan
+  // For trial users on $20 plan, for regular users check price_id
+  const isCurrentActivePlan = isAuthenticated && (
+    // Regular subscription match
+    currentSubscription?.price_id === priceId ||
+    // Trial user on $20 plan
+    (userPlanName === 'trial' && tier.price === '$20' && billingPeriod === 'monthly') ||
+    // User on tier_1_20 (the $20 plan)
+    (userPlanName === 'tier_1_20' && tier.price === '$20' && currentSubscription?.price_id === priceId)
+  );
+
   const isScheduled = isAuthenticated && currentSubscription?.has_schedule;
   const isScheduledTargetPlan =
     isScheduled && currentSubscription?.scheduled_price_id === priceId;
@@ -319,23 +329,35 @@ function PricingTier({
   let statusBadge = null;
   let buttonClassName = '';
   
-  // Check plan change restrictions using comprehensive validation
   const planChangeValidation = (isAuthenticated && currentSubscription?.price_id) 
     ? isPlanChangeAllowed(currentSubscription.price_id, priceId)
     : { allowed: true };
 
   if (isAuthenticated) {
     if (isCurrentActivePlan) {
-      buttonText = 'Current Plan';
+      if (userPlanName === 'trial') {
+        buttonText = 'Trial Active';
+        statusBadge = (
+          <span className="bg-green-500/10 text-green-600 text-[10px] font-medium px-1.5 py-0.5 rounded-full">
+            7-Day Trial
+          </span>
+        );
+      } else {
+        buttonText = 'Current Plan';
+        statusBadge = (
+          <span className="bg-primary/10 text-primary text-[10px] font-medium px-1.5 py-0.5 rounded-full">
+            Current
+          </span>
+        );
+      }
       buttonDisabled = true;
       buttonVariant = 'secondary';
       ringClass = isCompact ? 'ring-1 ring-primary' : 'ring-2 ring-primary';
       buttonClassName = 'bg-primary/5 hover:bg-primary/10 text-primary';
-      statusBadge = (
-        <span className="bg-primary/10 text-primary text-[10px] font-medium px-1.5 py-0.5 rounded-full">
-          Current
-        </span>
-      );
+    } else if (userPlanName === 'none' && tier.price === '$20' && billingPeriod === 'monthly') {
+      buttonText = 'Start 7-Day Trial';
+      buttonVariant = 'default';
+      buttonClassName = 'bg-green-600 hover:bg-green-700 text-white';
     } else if (isScheduledTargetPlan) {
       buttonText = 'Scheduled';
       buttonDisabled = true;
@@ -584,6 +606,7 @@ interface PricingSectionProps {
   insideDialog?: boolean;
   showInfo?: boolean;
   noPadding?: boolean;
+  onSubscriptionUpdate?: () => void;
 }
 
 export function PricingSection({
@@ -593,6 +616,7 @@ export function PricingSection({
   insideDialog = false,
   showInfo = true,
   noPadding = false,
+  onSubscriptionUpdate,
 }: PricingSectionProps) {
 
   const { data: subscriptionData, isLoading: isFetchingPlan, error: subscriptionQueryError, refetch: refetchSubscription } = useSubscription();
@@ -613,25 +637,21 @@ export function PricingSection({
     );
 
     if (currentTier) {
-      // Check if current subscription is yearly commitment (new yearly)
       if (currentTier.monthlyCommitmentStripePriceId === currentSubscription.price_id) {
         return 'yearly_commitment';
       } else if (currentTier.yearlyStripePriceId === currentSubscription.price_id) {
-        // Legacy yearly plans
         return 'yearly';
       } else if (currentTier.stripePriceId === currentSubscription.price_id) {
         return 'monthly';
       }
     }
 
-    // Default to yearly_commitment (new yearly) if we can't determine current plan type
     return 'yearly_commitment';
   }, [isAuthenticated, currentSubscription]);
 
   const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly' | 'yearly_commitment'>(getDefaultBillingPeriod());
   const [planLoadingStates, setPlanLoadingStates] = useState<Record<string, boolean>>({});
 
-  // Update billing period when subscription data changes
   useEffect(() => {
     setBillingPeriod(getDefaultBillingPeriod());
   }, [getDefaultBillingPeriod]);
@@ -647,6 +667,10 @@ export function PricingSection({
     setTimeout(() => {
       setPlanLoadingStates({});
     }, 1000);
+    // Call parent's update handler if provided
+    if (onSubscriptionUpdate) {
+      onSubscriptionUpdate();
+    }
   };
 
 
@@ -688,8 +712,8 @@ export function PricingSection({
         <div className={cn(
           "grid gap-6 w-full",
           insideDialog
-            ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 2xl:grid-cols-4"
-            : "min-[650px]:grid-cols-2 lg:grid-cols-4",
+            ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 2xl:grid-cols-3"
+            : "min-[650px]:grid-cols-2 lg:grid-cols-3",
           !insideDialog && "grid-rows-1 items-stretch"
         )}>
           {siteConfig.cloudPricingItems
