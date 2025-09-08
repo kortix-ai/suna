@@ -106,11 +106,11 @@ async def create_sandbox(password: str, project_id: str = None) -> AsyncSandbox:
             "CHROME_DEBUGGING_HOST": "localhost",
             "CHROME_CDP": ""
         },
-        resources=Resources(
-            cpu=2,
-            memory=4,
-            disk=5,
-        ),
+        # resources=Resources(
+        #     cpu=2,
+        #     memory=4,
+        #     disk=5,
+        # ),
         auto_stop_interval=15,
         auto_archive_interval=30,
     )
