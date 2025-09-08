@@ -1,7 +1,7 @@
 from decimal import Decimal
 from typing import Optional, Dict, Tuple
-from core.credits import credit_service
 from billing.api import calculate_token_cost
+from billing.credit_manager import credit_manager
 from core.utils.config import config, EnvMode
 from core.utils.logger import logger
 
@@ -11,7 +11,8 @@ class BillingIntegration:
         if config.ENV_MODE == EnvMode.LOCAL:
             return True, "Local mode", None
         
-        balance = await credit_service.get_balance(user_id)
+        balance_info = await credit_manager.get_balance(user_id)
+        balance = Decimal(str(balance_info.get('total', 0)))
         
         estimated_cost = Decimal('0.10')
         
@@ -31,26 +32,35 @@ class BillingIntegration:
         if config.ENV_MODE == EnvMode.LOCAL:
             return {'success': True, 'cost': 0, 'new_balance': 999999}
         
+        logger.info(f"[BILLING] Deducting usage for model '{model}': {prompt_tokens} prompt + {completion_tokens} completion tokens")
+        
         cost = calculate_token_cost(prompt_tokens, completion_tokens, model)
         
         if cost <= 0:
             logger.warning(f"Zero cost calculated for {model} with {prompt_tokens}+{completion_tokens} tokens")
             return {'success': True, 'cost': 0}
         
-        result = await credit_service.deduct_credits(
+        logger.info(f"[BILLING] Calculated cost: ${cost:.6f} for {model}")
+        
+        result = await credit_manager.use_credits(
             user_id=user_id,
             amount=cost,
             description=f"{model}: {prompt_tokens}+{completion_tokens} tokens",
-            reference_id=message_id,
-            reference_type='message'
+            thread_id=None,
+            message_id=message_id
         )
         
-        logger.info(f"Deducted ${cost:.4f} from user {user_id}. New balance: ${result.get('new_balance', 0):.2f}")
+        if result.get('success'):
+            logger.info(f"[BILLING] Successfully deducted ${cost:.6f} from user {user_id}. New balance: ${result.get('new_total', 0):.2f} (expiring: ${result.get('from_expiring', 0):.2f}, non-expiring: ${result.get('from_non_expiring', 0):.2f})")
+        else:
+            logger.error(f"[BILLING] Failed to deduct credits for user {user_id}: {result.get('error')}")
         
         return {
-            'success': result['success'],
+            'success': result.get('success', False),
             'cost': float(cost),
-            'new_balance': float(result.get('new_balance', 0)),
+            'new_balance': result.get('new_total', 0),
+            'from_expiring': result.get('from_expiring', 0),
+            'from_non_expiring': result.get('from_non_expiring', 0),
             'transaction_id': result.get('transaction_id')
         }
 

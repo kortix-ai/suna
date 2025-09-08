@@ -380,7 +380,7 @@ class AgentExecutor:
             raise ValueError("Account ID not found in agent configuration")
         
         from core.services.billing import can_use_model
-        from core.billing_integration import billing_integration
+        from billing.billing_integration import billing_integration
         
         can_use, model_message, allowed_models = await can_use_model(client, account_id, model_name)
         if not can_use:
@@ -609,7 +609,7 @@ class WorkflowExecutor:
     
     async def _validate_workflow_execution(self, account_id: str) -> None:
         from core.services.billing import can_use_model
-        from core.billing_integration import billing_integration
+        from billing.billing_integration import billing_integration
         
         client = await self._db.client
         from core.ai_models import model_manager
@@ -689,7 +689,7 @@ class WorkflowExecutor:
                 raise ValueError("Cannot determine account ID for workflow execution")
         
         from core.services.billing import can_use_model
-        from core.billing_integration import billing_integration
+        from billing.billing_integration import billing_integration
         
         can_use, model_message, allowed_models = await can_use_model(client, account_id, model_name)
         if not can_use:

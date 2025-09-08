@@ -14,6 +14,7 @@ from .config import (
     is_model_allowed,
     get_project_limit
 )
+from .billing_integration import billing_integration
 
 __all__ = [
     'TOKEN_PRICE_MULTIPLIER',
@@ -29,5 +30,6 @@ __all__ = [
     'get_monthly_credits',
     'can_purchase_credits',
     'is_model_allowed',
-    'get_project_limit'
+    'get_project_limit',
+    'billing_integration'
 ] 

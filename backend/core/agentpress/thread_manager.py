@@ -25,7 +25,7 @@ from core.utils.logger import logger
 from langfuse.client import StatefulGenerationClient, StatefulTraceClient
 from core.services.langfuse import langfuse
 from litellm.utils import token_counter
-from core.billing_integration import billing_integration
+from billing.billing_integration import billing_integration
 from billing.api import calculate_token_cost
 import re
 from datetime import datetime, timezone, timedelta
@@ -158,41 +158,51 @@ class ThreadManager:
             'is_llm_message': is_llm_message,
             'metadata': metadata or {},
         }
-        
-        # Add agent information if provided
+
         if agent_id:
             data_to_insert['agent_id'] = agent_id
         if agent_version_id:
             data_to_insert['agent_version_id'] = agent_version_id
 
         try:
-            # Insert the message and get the inserted row data including the id
             result = await client.table('messages').insert(data_to_insert).execute()
             logger.debug(f"Successfully added message to thread {thread_id}")
 
             if result.data and len(result.data) > 0 and isinstance(result.data[0], dict) and 'message_id' in result.data[0]:
                 saved_message = result.data[0]
-                # If this is an assistant_response_end, attempt to deduct credits if over limit
                 if type == "assistant_response_end" and isinstance(content, dict):
                     try:
                         usage = content.get("usage", {}) if isinstance(content, dict) else {}
                         prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
                         completion_tokens = int(usage.get("completion_tokens", 0) or 0)
                         model = content.get("model") if isinstance(content, dict) else None
-                        # Fetch account_id for this thread, which equals user_id for personal accounts
+                        
+                        logger.debug(f"[THREAD_MANAGER] Processing assistant_response_end: model='{model}', prompt_tokens={prompt_tokens}, completion_tokens={completion_tokens}")
+                        
                         thread_row = await client.table('threads').select('account_id').eq('thread_id', thread_id).limit(1).execute()
                         user_id = thread_row.data[0]['account_id'] if thread_row.data and len(thread_row.data) > 0 else None
-                        if user_id and prompt_tokens > 0:
-                            # Deduct credits using the new credit system
-                            await billing_integration.deduct_usage(
+                        
+                        if user_id and (prompt_tokens > 0 or completion_tokens > 0):
+                            logger.info(f"[THREAD_MANAGER] Deducting token usage for user {user_id}: model='{model}', tokens={prompt_tokens}+{completion_tokens}")
+                            
+                            deduct_result = await billing_integration.deduct_usage(
                                 user_id=user_id,
                                 prompt_tokens=prompt_tokens,
                                 completion_tokens=completion_tokens,
                                 model=model or "unknown",
                                 message_id=saved_message['message_id']
                             )
+                            
+                            if deduct_result.get('success'):
+                                logger.info(f"[THREAD_MANAGER] Successfully deducted ${deduct_result.get('cost', 0):.6f} for message {saved_message['message_id']}")
+                            else:
+                                logger.error(f"[THREAD_MANAGER] Failed to deduct credits for message {saved_message['message_id']}: {deduct_result}")
+                        elif not user_id:
+                            logger.warning(f"[THREAD_MANAGER] No user_id found for thread {thread_id}, skipping credit deduction")
+                        elif prompt_tokens == 0 and completion_tokens == 0:
+                            logger.debug(f"[THREAD_MANAGER] No tokens used, skipping credit deduction")
                     except Exception as billing_e:
-                        logger.error(f"Error handling credit usage for message {saved_message.get('message_id')}: {str(billing_e)}", exc_info=True)
+                        logger.error(f"[THREAD_MANAGER] Error handling credit usage for message {saved_message.get('message_id')}: {str(billing_e)}", exc_info=True)
                 return saved_message
             else:
                 logger.error(f"Insert operation failed or did not return expected data structure for thread {thread_id}. Result data: {result.data}")

@@ -22,7 +22,7 @@ from core.prompts.prompt import get_system_prompt
 
 from core.utils.logger import logger
 
-from core.billing_integration import billing_integration
+from billing.billing_integration import billing_integration
 from core.tools.sb_vision_tool import SandboxVisionTool
 from core.tools.sb_image_edit_tool import SandboxImageEditTool
 from core.tools.sb_presentation_outline_tool import SandboxPresentationOutlineTool
