@@ -263,6 +263,9 @@ END;
 $$;
 
 -- Function to reset monthly usage (called monthly via cron)
+-- Drop existing function first to change return type
+DROP FUNCTION IF EXISTS public.reset_enterprise_monthly_usage();
+
 CREATE OR REPLACE FUNCTION public.reset_enterprise_monthly_usage()
 RETURNS INTEGER
 LANGUAGE plpgsql
@@ -340,7 +343,7 @@ GRANT SELECT, INSERT ON enterprise_credit_transactions TO authenticated, service
 GRANT SELECT, INSERT ON enterprise_usage_logs TO authenticated, service_role;
 
 GRANT EXECUTE ON FUNCTION public.use_enterprise_credits TO service_role;
-GRANT EXECUTE ON FUNCTION public.load_enterprise_credits TO service_role;
+GRANT EXECUTE ON FUNCTION public.load_enterprise_credits(UUID, DECIMAL, TEXT, UUID) TO service_role;
 GRANT EXECUTE ON FUNCTION public.reset_enterprise_monthly_usage TO service_role;
 GRANT EXECUTE ON FUNCTION public.get_enterprise_billing_status TO authenticated, service_role;
 

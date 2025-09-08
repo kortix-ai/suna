@@ -185,6 +185,9 @@ END;
 $$;
 
 -- Function to reset monthly usage
+-- Drop existing function first to change return type
+DROP FUNCTION IF EXISTS public.reset_enterprise_monthly_usage();
+
 CREATE OR REPLACE FUNCTION public.reset_enterprise_monthly_usage()
 RETURNS void
 LANGUAGE plpgsql
