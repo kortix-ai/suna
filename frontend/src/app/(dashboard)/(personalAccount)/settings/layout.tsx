@@ -38,7 +38,7 @@ export default function PersonalAccountSettingsPage({
               ))}
             </nav>
           </aside>
-          <div className="flex-1 bg-card-bg dark:bg-background-secondary p-6 rounded-2xl border border-subtle dark:border-white/10 shadow-custom">
+          <div className="flex-1 bg-card-bg dark:bg-background-secondary rounded-2xl border border-subtle dark:border-white/10 shadow-custom">
             {children}
           </div>
         </div>

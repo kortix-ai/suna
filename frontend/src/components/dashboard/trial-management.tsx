@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Sparkles, AlertTriangle, Calendar, CreditCard } from 'lucide-react';
+import { Sparkles, AlertTriangle, Calendar } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 
 export function TrialManagement() {
@@ -47,7 +47,7 @@ export function TrialManagement() {
   };
 
   const trialEndsAt = trialStatus.trial_ends_at ? new Date(trialStatus.trial_ends_at) : null;
-  
+
   return (
     <>
       <Card className="border-primary/20 bg-primary/5">

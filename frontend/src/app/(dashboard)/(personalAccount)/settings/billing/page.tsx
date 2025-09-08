@@ -102,22 +102,22 @@ export default function PersonalAccountBillingPage() {
           </div>
         ) : (
           <>
-            {/* Credit Balance Card */}
             <div className="mb-6">
               <CreditBalanceCard 
-                showPurchaseButton={subscriptionData?.credits?.can_purchase_credits || false}
+                showPurchaseButton={
+                  (subscriptionData?.credits?.can_purchase_credits || false) && 
+                  subscriptionData?.tier?.name === 'tier_25_200'
+                }
                 tierCredits={subscriptionData?.credits?.tier_credits || subscriptionData?.tier?.credits}
               />
             </div>
-
-            {/* Usage Logs Link */}
             <div className="mb-6 flex justify-end">
-                    <Button variant='outline' asChild className='text-sm'>
-                      <Link href="/settings/usage-logs">
-                  View Usage Logs
-                      </Link>
-                    </Button>
-                  </div>
+              <Button variant='outline' asChild className='text-sm'>
+                <Link href="/settings/usage-logs">
+            View Usage Logs
+                </Link>
+              </Button>
+            </div>
 
             <div className='flex justify-center items-center gap-4'>
               <Button

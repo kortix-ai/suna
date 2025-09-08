@@ -23,7 +23,7 @@ export const AgentCountLimitDialog: React.FC<AgentCountLimitDialogProps> = ({
   const returnUrl = typeof window !== 'undefined' ? window.location.href : '/';
 
   const getNextTierRecommendation = () => {
-    if (tierName === 'free') {
+    if (tierName === 'free' || tierName === 'none') {
       return {
         name: 'Plus',
         price: '$20/month',

@@ -127,7 +127,7 @@ cd suna`
               <CheckCircle2 className="h-5 w-5 text-green-500" />
               <strong>Supabase (Database & Auth)</strong>
             </div>
-            <p className="text-sm text-muted-foreground mb-2">Free tier available. Handles user data, conversations, and agent configs.</p>
+            <p className="text-sm text-muted-foreground mb-2">Self-hosted option available. Handles user data, conversations, and agent configs.</p>
             <p className="text-sm">Get it at: <a href="https://supabase.com/dashboard/projects" className="text-blue-500 hover:underline">supabase.com</a></p>
           </div>
 

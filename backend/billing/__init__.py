@@ -15,6 +15,9 @@ from .config import (
     get_project_limit
 )
 from .billing_integration import billing_integration
+from .subscription_service import subscription_service
+from .trial_service import trial_service
+from .payment_service import payment_service
 
 __all__ = [
     'TOKEN_PRICE_MULTIPLIER',
@@ -31,5 +34,8 @@ __all__ = [
     'can_purchase_credits',
     'is_model_allowed',
     'get_project_limit',
-    'billing_integration'
+    'billing_integration',
+    'subscription_service',
+    'trial_service',
+    'payment_service'
 ] 

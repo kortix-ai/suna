@@ -690,8 +690,8 @@ export function PricingSection({
         <div className={cn(
           "grid gap-6 w-full",
           insideDialog
-            ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 2xl:grid-cols-4"
-            : "min-[650px]:grid-cols-2 lg:grid-cols-4",
+            ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 2xl:grid-cols-3"
+            : "min-[650px]:grid-cols-2 lg:grid-cols-3",
           !insideDialog && "grid-rows-1 items-stretch"
         )}>
           {siteConfig.cloudPricingItems

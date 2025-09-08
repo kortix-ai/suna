@@ -2,10 +2,6 @@ from decimal import Decimal
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 from core.utils.config import config
-from enum import Enum
-import asyncio
-from core.services.supabase import DBConnection
-from core.utils.logger import logger
 
 TRIAL_ENABLED = True
 TRIAL_DURATION_DAYS = 7
@@ -29,7 +25,6 @@ class Tier:
     project_limit: int
 
 TIERS: Dict[str, Tier] = {
-    # No free tier - users must have trial or subscription
     'none': Tier(
         name='none',
         price_ids=[],
@@ -39,11 +34,10 @@ TIERS: Dict[str, Tier] = {
         models=[],
         project_limit=0
     ),
-    # Legacy free tier - not available for new users
     'free': Tier(
         name='free',
-        price_ids=[config.STRIPE_FREE_TIER_ID],
-        monthly_credits=Decimal('0.00'),  # No credits without subscription
+        price_ids=[],
+        monthly_credits=Decimal('0.00'),
         display_name='Free Tier (Discontinued)',
         can_purchase_credits=False,
         models=[],
@@ -164,14 +158,14 @@ def get_tier_by_name(tier_name: str) -> Optional[Tier]:
 
 def get_monthly_credits(tier_name: str) -> Decimal:
     tier = TIERS.get(tier_name)
-    return tier.monthly_credits if tier else TIERS['free'].monthly_credits
+    return tier.monthly_credits if tier else TIERS['none'].monthly_credits
 
 def can_purchase_credits(tier_name: str) -> bool:
     tier = TIERS.get(tier_name)
     return tier.can_purchase_credits if tier else False
 
 def is_model_allowed(tier_name: str, model: str) -> bool:
-    tier = TIERS.get(tier_name, TIERS['free'])
+    tier = TIERS.get(tier_name, TIERS['none'])
     if 'all' in tier.models:
         return True
     return model in tier.models

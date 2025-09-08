@@ -29,7 +29,7 @@ class CreditManager:
             current_expiring = Decimal(str(current.get('expiring_credits', 0)))
             current_non_expiring = Decimal(str(current.get('non_expiring_credits', 0)))
             current_balance = Decimal(str(current.get('balance', 0)))
-            tier = current.get('tier', 'free')
+            tier = current.get('tier', 'none')
             
             current_sum = current_expiring + current_non_expiring
             if abs(current_sum - current_balance) > Decimal('0.01'):
@@ -47,7 +47,7 @@ class CreditManager:
             current_expiring = Decimal('0')
             current_non_expiring = Decimal('0')
             current_balance = Decimal('0')
-            tier = 'free'
+            tier = 'none'
 
         if is_expiring:
             new_expiring = current_expiring + amount
@@ -270,14 +270,14 @@ class CreditManager:
                 'total': float(data.get('balance', 0)),
                 'expiring': float(data.get('expiring_credits', 0)),
                 'non_expiring': float(data.get('non_expiring_credits', 0)),
-                'tier': data.get('tier', 'free')
+                'tier': data.get('tier', 'none')
             }
         
         return {
             'total': 0.0,
             'expiring': 0.0,
             'non_expiring': 0.0,
-            'tier': 'free'
+            'tier': 'none'
         }
 
 

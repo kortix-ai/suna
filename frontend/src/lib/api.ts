@@ -831,7 +831,7 @@ export const startAgent = async (
               message: detail.message || 'Project limit exceeded',
               current_count: detail.current_count || 0,
               limit: detail.limit || 0,
-              tier_name: detail.tier_name || 'free',
+              tier_name: detail.tier_name || 'none',
               error_code: detail.error_code
             });
           }

@@ -13,7 +13,7 @@ from core.utils.config import config
 from core.utils.logger import logger
 from billing.config import get_tier_by_price_id, FREE_TIER_INITIAL_CREDITS
 from decimal import Decimal
-from billing.api import handle_subscription_change
+from billing.webhook_service import webhook_service
 
 async def sync_stripe_to_db():
     db = DBConnection()
@@ -140,10 +140,10 @@ async def sync_stripe_to_db():
                         .execute()
                     
                     try:
-                        await handle_subscription_change(sub)
+                        await webhook_service.handle_subscription_change(sub)
                         print(f"    ✓ Updated billing cycle and credit fields")
                     except Exception as e:
-                        print(f"    ⚠ handle_subscription_change failed: {e}")
+                        print(f"    ⚠ webhook_service.handle_subscription_change failed: {e}")
                     
                     account_after = await client.from_('credit_accounts')\
                         .select('*')\
@@ -182,7 +182,7 @@ async def sync_stripe_to_db():
                             print(f"      - Stripe subscription: {sub.id}")
                             print(f"      - Next credit grant: {update_data.get('next_credit_grant', 'N/A')}")
                     else:
-                        print(f"    ⚠ No credit account found after handle_subscription_change - this is unexpected")
+                        print(f"    ⚠ No credit account found after webhook_service.handle_subscription_change - this is unexpected")
                     
         except Exception as e:
             print(f"  Error: {e}")

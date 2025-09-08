@@ -2,24 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import { useTrialStatus, useStartTrial } from '@/hooks/react-query/billing/use-trial-status';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { useRouter } from 'next/navigation';
 import { Sparkles, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
+import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 
 export function TrialPrompt() {
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const { data: trialStatus, isLoading: isLoadingStatus } = useTrialStatus();
   const startTrialMutation = useStartTrial();
-  const router = useRouter();
 
   useEffect(() => {
     if (!isLoadingStatus && trialStatus && !trialStatus.has_trial) {
@@ -58,14 +50,14 @@ export function TrialPrompt() {
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={setIsOpen}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+    <AlertDialog open={isOpen} onOpenChange={setIsOpen}>
+      <AlertDialogContent className="sm:max-w-md">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-primary" />
             Start Your 7-Day Free Trial
-          </DialogTitle>
-          <DialogDescription className="space-y-3 pt-3">
+          </AlertDialogTitle>
+          <AlertDialogDescription className="space-y-3 pt-3">
             <p>
               Welcome to Suna! A subscription is required to use the platform. Start your 7-day trial to get:
             </p>
@@ -91,8 +83,8 @@ export function TrialPrompt() {
               <CreditCard className="h-4 w-4" />
               <span>Cancel anytime during your trial</span>
             </div>
-          </DialogDescription>
-        </DialogHeader>
+          </AlertDialogDescription>
+        </AlertDialogHeader>
         <div className="flex gap-2 mt-4">
           <Button
             onClick={handleStartTrial}
@@ -103,20 +95,13 @@ export function TrialPrompt() {
               'Starting trial...'
             ) : (
               <>
-                <Sparkles className="h-4 w-4 mr-2" />
+                <Sparkles className="h-4 w-4" />
                 Start Free Trial
               </>
             )}
           </Button>
-          <Button
-            variant="outline"
-            onClick={handleDismiss}
-            disabled={isLoading}
-          >
-            Maybe Later
-          </Button>
         </div>
-      </DialogContent>
-    </Dialog>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 } 
