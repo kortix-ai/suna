@@ -1,17 +1,15 @@
 'use client';
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Progress } from '@/components/ui/progress';
-import {
+import { 
+  ShoppingCart, 
+  Clock, 
+  Infinity,
   Coins,
-  TrendingUp,
-  TrendingDown,
-  ShoppingCart,
-  CreditCard,
-  AlertCircle,
+  AlertCircle
 } from 'lucide-react';
 import { useCreditBalance, usePurchaseCredits } from '@/hooks/react-query/use-billing-v2';
 import { useState } from 'react';
@@ -19,14 +17,14 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { toast } from 'sonner';
-import { Alert } from '../ui/alert';
 
 interface CreditBalanceCardProps {
   showPurchaseButton?: boolean;
@@ -75,6 +73,11 @@ export function CreditBalanceCard({
 
   if (!balance) return null;
 
+  // Ensure we have the credit breakdown values (backwards compatibility)
+  const expiringCredits = balance.expiring_credits ?? balance.balance;
+  const nonExpiringCredits = balance.non_expiring_credits ?? 0;
+  const hasBreakdown = balance.expiring_credits !== undefined && balance.non_expiring_credits !== undefined;
+
   // Calculate availability percentage based on tier limit
   // For monthly reset: available percentage = (balance / tier_limit) * 100
   // Use tierCredits if provided, otherwise assume balance is full (100%)
@@ -107,6 +110,17 @@ export function CreditBalanceCard({
     });
   };
 
+  // Format date for next credit grant
+  const formatNextGrant = (dateString?: string) => {
+    if (!dateString) return null;
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric', 
+      year: 'numeric' 
+    });
+  };
+
   if (compact) {
     return (
       <div className="flex items-center gap-4 p-4 rounded-lg border bg-card">
@@ -115,6 +129,18 @@ export function CreditBalanceCard({
           <div>
             <p className="text-sm text-muted-foreground">Credit Balance</p>
             <p className="text-2xl font-bold">${balance.balance.toFixed(2)}</p>
+            {hasBreakdown && showPurchaseButton && balance.can_purchase_credits && (expiringCredits > 0 || nonExpiringCredits > 0) && (
+              <div className="flex gap-3 mt-1">
+                <span className="text-xs text-muted-foreground">
+                  <Clock className="h-3 w-3 inline mr-1 text-orange-500" />
+                  ${expiringCredits.toFixed(2)}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  <Infinity className="h-3 w-3 inline mr-1 text-green-500" />
+                  ${nonExpiringCredits.toFixed(2)}
+                </span>
+              </div>
+            )}
           </div>
         </div>
         {showPurchaseButton && balance.can_purchase_credits && (
@@ -136,10 +162,44 @@ export function CreditBalanceCard({
       <Card className='border-0 shadow-none bg-transparent p-0 mt-2'>
         <CardContent className="space-y-4 p-0">
           <div>
-            <div className="flex items-baseline gap-2 mb-2">
-              <span className="text-3xl font-bold">${balance.balance.toFixed(2)}</span>
-              <span className="text-sm text-muted-foreground">available</span>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-bold">${balance.balance.toFixed(2)}</span>
+                <span className="text-sm text-muted-foreground">total available</span>
+              </div>
             </div>
+            {/* Credit Breakdown - only show if we have the breakdown data AND can purchase credits */}
+            {hasBreakdown && showPurchaseButton && balance.can_purchase_credits && (
+              <div className="space-y-2 mt-4">
+                {/* Expiring Credits */}
+                <div className="p-3 rounded-lg bg-muted/30 border">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-orange-500" />
+                      <span className="text-sm font-medium">Expiring Credits</span>
+                    </div>
+                    <span className="text-lg font-semibold">${expiringCredits.toFixed(2)}</span>
+                  </div>
+                  
+                  {balance.next_credit_grant && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Renews {formatNextGrant(balance.next_credit_grant)}
+                    </p>
+                  )}
+                </div>
+
+                {/* Non-Expiring Credits */}
+                <div className="p-3 rounded-lg bg-muted/30 border">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Infinity className="h-4 w-4 text-green-500" />
+                      <span className="text-sm font-medium">Non-Expiring Credits</span>
+                    </div>
+                    <span className="text-lg font-semibold">${nonExpiringCredits.toFixed(2)}</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           {showPurchaseButton && balance.can_purchase_credits && (
             <div className="pt-2">
@@ -155,17 +215,18 @@ export function CreditBalanceCard({
           )}
         </CardContent>
       </Card>
-
       <Dialog open={showPurchaseModal} onOpenChange={setShowPurchaseModal}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
             <DialogTitle>Purchase Credits</DialogTitle>
             <DialogDescription>
-              <Alert variant="warning" className='mt-2'>
-                <AlertCircle className="h-4 w-4" />
-                <span>
-                  Credits will expire at the end of the billing cycle.
-                </span>
+              <Alert className='mt-2 border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-900/20'>
+                <Infinity className="h-4 w-4 text-green-600" />
+                <AlertDescription>
+                  <span className="text-green-700 dark:text-green-300">
+                    Purchased credits never expire and are used only after your plan credits are exhausted.
+                  </span>
+                </AlertDescription>
               </Alert>
             </DialogDescription>
           </DialogHeader>

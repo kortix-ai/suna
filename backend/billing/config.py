@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass
 from core.utils.config import config
 
-TOKEN_PRICE_MULTIPLIER = Decimal('1.5')
+TOKEN_PRICE_MULTIPLIER = Decimal('100')
 MINIMUM_CREDIT_FOR_RUN = Decimal('0.01')
 DEFAULT_TOKEN_COST = Decimal('0.000002')
 

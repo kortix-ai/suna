@@ -14,9 +14,11 @@ from core.ai_models import model_manager
 from .config import (
     TOKEN_PRICE_MULTIPLIER, 
     get_tier_by_price_id, 
+    get_tier_by_name,
     TIERS, 
     get_monthly_credits
 )
+from .credit_manager import credit_manager
 
 router = APIRouter(prefix="/billing/v2", tags=["billing"])
 
@@ -264,43 +266,70 @@ async def deduct_token_usage(
     cost = calculate_token_cost(usage.prompt_tokens, usage.completion_tokens, usage.model)
     
     if cost <= 0:
-        return {'success': True, 'cost': 0, 'new_balance': float(await credit_service.get_balance(user_id))}
-    
-    result = await credit_service.deduct_credits(
+        balance = await credit_manager.get_balance(user_id)
+        return {'success': True, 'cost': 0, 'new_balance': balance['total']}
+
+    result = await credit_manager.use_credits(
         user_id=user_id,
         amount=cost,
         description=f"Usage: {usage.model} ({usage.prompt_tokens}+{usage.completion_tokens} tokens)",
-        reference_id=usage.message_id,
-        reference_type='message'
+        thread_id=usage.thread_id,
+        message_id=usage.message_id
     )
     
-    if not result['success']:
-        raise HTTPException(status_code=402, detail="Insufficient credits")
+    if not result.get('success'):
+        raise HTTPException(status_code=402, detail=result.get('error', 'Insufficient credits'))
     
     return {
         'success': True,
         'cost': float(cost),
-        'new_balance': float(result['new_balance']),
-        'transaction_id': result['transaction_id']
+        'new_balance': result['new_total'],
+        'from_expiring': result['from_expiring'],
+        'from_non_expiring': result['from_non_expiring']
     }
 
 @router.get("/balance")
 async def get_credit_balance(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
-    balance = await credit_service.get_balance(user_id)
-    summary = await credit_service.get_account_summary(user_id)
-    tier = await get_user_subscription_tier(user_id)
+    db = DBConnection()
+    client = await db.client
     
-    can_purchase = tier.get('can_purchase_credits', False)
+    result = await client.from_('credit_accounts').select(
+        'balance, expiring_credits, non_expiring_credits, tier, next_credit_grant'
+    ).eq('user_id', user_id).execute()
+    
+    if result.data and len(result.data) > 0:
+        account = result.data[0]
+        tier_name = account.get('tier', 'free')
+        tier_info = get_tier_by_name(tier_name)
+        
+        return {
+            'balance': float(account.get('balance', 0)),
+            'expiring_credits': float(account.get('expiring_credits', 0)),
+            'non_expiring_credits': float(account.get('non_expiring_credits', 0)),
+            'tier': tier_name,
+            'can_purchase_credits': tier_info.can_purchase_credits if tier_info else False,
+            'next_credit_grant': account.get('next_credit_grant'),
+            'breakdown': {
+                'expiring': float(account.get('expiring_credits', 0)),
+                'non_expiring': float(account.get('non_expiring_credits', 0)),
+                'total': float(account.get('balance', 0))
+            }
+        }
     
     return {
-        'balance': float(balance),
-        'lifetime_granted': summary['lifetime_granted'],
-        'lifetime_purchased': summary['lifetime_purchased'],
-        'lifetime_used': summary['lifetime_used'],
-        'can_purchase_credits': can_purchase, 
-        'tier': tier['name']
+        'balance': 0.0,
+        'expiring_credits': 0.0,
+        'non_expiring_credits': 0.0,
+        'tier': 'free',
+        'can_purchase_credits': False,
+        'next_credit_grant': None,
+        'breakdown': {
+            'expiring': 0.0,
+            'non_expiring': 0.0,
+            'total': 0.0
+        }
     }
 
 @router.post("/purchase-credits")
@@ -361,46 +390,106 @@ async def stripe_webhook(request: Request):
             payload, sig_header, config.STRIPE_WEBHOOK_SECRET
         )
         
+        logger.info(f"[WEBHOOK] Received event: type={event.type}, id={event.id}")
+        
+        # Check for duplicate event processing
+        db = DBConnection()
+        client = await db.client
+        
+        # Store processed events to prevent duplicates
+        cache_key = f"stripe_event:{event.id}"
+        if await Cache.get(cache_key):
+            logger.info(f"[WEBHOOK] Event {event.id} already processed, skipping")
+            return {'status': 'success', 'message': 'Event already processed'}
+        
+        # Mark event as processed (with 1 hour TTL)
+        await Cache.set(cache_key, True, ttl=3600)
+        
         if event.type == 'checkout.session.completed':
             session = event.data.object
+            logger.info(f"[WEBHOOK] Checkout session completed: id={session.id}")
+            logger.info(f"[WEBHOOK] Session metadata: {session.get('metadata', {})}")
             
             if session.get('metadata', {}).get('type') == 'credit_purchase':
                 user_id = session['metadata']['user_id']
                 credit_amount = Decimal(session['metadata']['credit_amount'])
                 
-                db = DBConnection()
-                client = await db.client
+                logger.info(f"[WEBHOOK] Processing credit purchase: user={user_id}, amount=${credit_amount}")
                 
+                # Log current state before purchase
+                current_state = await client.from_('credit_accounts').select(
+                    'balance, expiring_credits, non_expiring_credits'
+                ).eq('user_id', user_id).execute()
+                
+                if current_state.data:
+                    logger.info(f"[WEBHOOK] State BEFORE purchase: {current_state.data[0]}")
+                
+                # Update purchase record
                 await client.table('credit_purchases').update({
                     'status': 'completed',
                     'completed_at': datetime.now(timezone.utc).isoformat()
                 }).eq('stripe_payment_intent_id', session.payment_intent).execute()
                 
-                await credit_service.add_credits(
+                logger.info(f"[WEBHOOK] Calling credit_manager.add_credits with is_expiring=False")
+                
+                # Use the credit manager for non-expiring purchased credits
+                result = await credit_manager.add_credits(
                     user_id=user_id,
                     amount=credit_amount,
-                    type='purchase',
+                    is_expiring=False,  # Purchased credits are non-expiring
                     description=f"Purchased ${credit_amount} credits"
                 )
                 
-                logger.info(f"Credit purchase completed for user {user_id}: ${credit_amount}")
+                logger.info(f"[WEBHOOK] Credit purchase completed for user {user_id}: ${credit_amount} (non-expiring)")
+                logger.info(f"[WEBHOOK] Result from credit_manager: {result}")
+                
+                # Log final state after purchase
+                final_state = await client.from_('credit_accounts').select(
+                    'balance, expiring_credits, non_expiring_credits'
+                ).eq('user_id', user_id).execute()
+                
+                if final_state.data:
+                    logger.info(f"[WEBHOOK] State AFTER purchase: {final_state.data[0]}")
+                    
+                    # Verify the purchase was applied correctly
+                    before = current_state.data[0] if current_state.data else {'balance': 0, 'expiring_credits': 0, 'non_expiring_credits': 0}
+                    after = final_state.data[0]
+                    
+                    expected_total = float(before['balance']) + float(credit_amount)
+                    actual_total = float(after['balance'])
+                    
+                    if abs(expected_total - actual_total) > 0.01:
+                        logger.error(f"[WEBHOOK] BALANCE MISMATCH! Expected ${expected_total}, got ${actual_total}")
+                        logger.error(f"[WEBHOOK] Before: {before}")
+                        logger.error(f"[WEBHOOK] After: {after}")
+                        logger.error(f"[WEBHOOK] Credit amount: ${credit_amount}")
             elif session.get('subscription'):
-                logger.info(f"Checkout completed for new subscription: {session['subscription']}")
+                logger.info(f"[WEBHOOK] Checkout completed for new subscription: {session['subscription']}")
         
         elif event.type in ['customer.subscription.created', 'customer.subscription.updated']:
             subscription = event.data.object
+            logger.info(f"[WEBHOOK] Subscription event: type={event.type}, status={subscription.status}")
             if subscription.status in ['active', 'trialing']:
+                logger.info(f"[WEBHOOK] Processing subscription change for customer: {subscription['customer']}")
                 await handle_subscription_change(subscription)
         
         elif event.type == 'invoice.payment_succeeded':
             invoice = event.data.object
             billing_reason = invoice.get('billing_reason')
-            logger.info(f"Invoice payment succeeded - billing_reason: {billing_reason}")
+            logger.info(f"[WEBHOOK] Invoice payment succeeded - billing_reason: {billing_reason}, invoice_id: {invoice.get('id')}")
+            
+            # Check if this is a credit purchase - skip renewal logic
+            if invoice.get('lines', {}).get('data'):
+                for line in invoice['lines']['data']:
+                    if 'Credit' in line.get('description', ''):
+                        logger.info(f"[WEBHOOK] Skipping renewal - this is a credit purchase invoice")
+                        return {'status': 'success'}
             
             if invoice.get('subscription') and billing_reason == 'subscription_cycle':
+                logger.info(f"[WEBHOOK] Processing subscription renewal for subscription: {invoice['subscription']}")
                 await handle_subscription_renewal(invoice)
             else:
-                logger.info(f"Skipping renewal handler for billing_reason: {billing_reason}")
+                logger.info(f"[WEBHOOK] Skipping renewal handler for billing_reason: {billing_reason}")
         
         return {'status': 'success'}
     
@@ -479,17 +568,20 @@ async def handle_subscription_change(subscription: Dict):
         if should_grant_credits:
             full_amount = Decimal(new_tier['credits'])
             logger.info(f"Granting {full_amount} credits to user {user_id}")
-            await credit_service.add_credits(
+            
+            expires_at = billing_anchor.replace(month=billing_anchor.month + 1) if billing_anchor.month < 12 else billing_anchor.replace(year=billing_anchor.year + 1, month=1)
+            result = await credit_manager.add_credits(
                 user_id=user_id,
                 amount=full_amount,
-                type='tier_upgrade',
-                description=f"Subscription update: {new_tier['name']} - Full tier credits"
+                is_expiring=True,
+                description=f"Subscription update: {new_tier['name']} - Full tier credits",
+                expires_at=expires_at
             )
-            logger.info(f"Successfully granted {full_amount} credits")
+            
+            logger.info(f"Successfully granted {full_amount} expiring credits")
         else:
             logger.info(f"No credits granted - not an upgrade scenario")
         
-
         await client.from_('credit_accounts').update({
             'tier': new_tier['name'],
             'stripe_subscription_id': subscription['id'],
@@ -497,21 +589,22 @@ async def handle_subscription_change(subscription: Dict):
             'next_credit_grant': next_grant_date.isoformat()
         }).eq('user_id', user_id).execute()
     else:
-        await client.from_('credit_accounts').insert({
-            'user_id': user_id,
-            'balance': new_tier['credits'],
+        expires_at = billing_anchor.replace(month=billing_anchor.month + 1) if billing_anchor.month < 12 else billing_anchor.replace(year=billing_anchor.year + 1, month=1)
+        
+        await credit_manager.add_credits(
+            user_id=user_id,
+            amount=Decimal(new_tier['credits']),
+            is_expiring=True,
+            description=f"Initial grant for {new_tier['name']} subscription",
+            expires_at=expires_at
+        )
+        
+        await client.from_('credit_accounts').update({
             'tier': new_tier['name'],
             'stripe_subscription_id': subscription['id'],
             'billing_cycle_anchor': billing_anchor.isoformat(),
             'next_credit_grant': next_grant_date.isoformat()
-        }).execute()
-        
-        await credit_service.add_credits(
-            user_id=user_id,
-            amount=Decimal(new_tier['credits']),
-            type='tier_grant',
-            description=f"Initial grant for {new_tier['name']} subscription"
-        )
+        }).eq('user_id', user_id).execute()
 
 async def handle_subscription_renewal(invoice: Dict):
     try:
@@ -555,40 +648,31 @@ async def handle_subscription_renewal(invoice: Dict):
             last_grant = datetime.fromisoformat(account['last_grant_date'].replace('Z', '+00:00'))
             
             if period_start_dt <= last_grant:
-                logger.info(f"Skipping credit grant for {user_id} - invoice period {period_start_dt} not after last grant {last_grant}")
+                logger.info(f"Skipping renewal for user {user_id} - already processed")
                 return
         
         monthly_credits = get_monthly_credits(tier)
         if monthly_credits > 0:
-            logger.info(f"💰 Processing subscription renewal for user {user_id}")
-            breakdown = await calculate_credit_breakdown(user_id, client)
-            current_balance = breakdown['total_balance']
-            topup_credits = breakdown['topup_credits']
-
-            new_balance = float(monthly_credits) + topup_credits
-            logger.info(f"  New balance will be: ${new_balance} (${monthly_credits} + ${topup_credits})")
+            logger.info(f"💰 [RENEWAL] Processing subscription renewal for user {user_id}, tier={tier}, monthly_credits=${monthly_credits}")
             
-            await client.from_('credit_accounts').update({
-                'balance': str(new_balance)
-            }).eq('user_id', user_id).execute()
+            # Get current state before renewal
+            current_state = await client.from_('credit_accounts').select(
+                'balance, expiring_credits, non_expiring_credits'
+            ).eq('user_id', user_id).execute()
             
-            await client.from_('credit_ledger').insert({
-                'user_id': user_id,
-                'amount': str(monthly_credits),
-                'balance_after': str(new_balance),
-                'type': 'tier_grant',
-                'description': f"Monthly {tier} tier credits (${monthly_credits}) + preserved topup credits (${topup_credits:.2f})",
-                'metadata': {
-                    'invoice_id': invoice['id'], 
-                    'subscription_id': subscription_id,
-                    'period_start': period_start,
-                    'period_end': period_end,
-                    'previous_balance': str(current_balance),
-                    'topup_credits_preserved': str(topup_credits),
-                    'subscription_credits_reset': str(monthly_credits),
-                    'renewal_with_topup_preservation': True
-                }
-            }).execute()
+            if current_state.data:
+                logger.info(f"[RENEWAL] State BEFORE renewal: {current_state.data[0]}")
+            
+            # Use the credit manager to reset expiring credits while preserving non-expiring
+            result = await credit_manager.reset_expiring_credits(
+                user_id=user_id,
+                new_credits=monthly_credits,
+                description=f"Monthly {tier} tier credits renewal"
+            )
+            
+            if result['success']:
+                logger.info(f"[RENEWAL] Renewal complete: Expiring=${result['new_expiring']:.2f}, "
+                           f"Non-expiring=${result['non_expiring']:.2f}, Total=${result['total_balance']:.2f}")
             
             next_grant = datetime.fromtimestamp(period_end, tz=timezone.utc)
             
@@ -597,10 +681,20 @@ async def handle_subscription_renewal(invoice: Dict):
                 'next_credit_grant': next_grant.isoformat()
             }).eq('user_id', user_id).execute()
             
+            # Get final state after renewal
+            final_state = await client.from_('credit_accounts').select(
+                'balance, expiring_credits, non_expiring_credits'
+            ).eq('user_id', user_id).execute()
+            
+            if final_state.data:
+                logger.info(f"[RENEWAL] State AFTER renewal: {final_state.data[0]}")
+            
             await Cache.invalidate(f"credit_balance:{user_id}")
             await Cache.invalidate(f"credit_summary:{user_id}")
+            await Cache.invalidate(f"subscription_tier:{user_id}")
             
-            logger.info(f"Renewed credits for user {user_id}: ${monthly_credits} subscription + ${topup_credits:.2f} topup = ${new_balance:.2f} total (was ${current_balance:.2f}) for period: {period_start_dt} to {next_grant}")
+            logger.info(f"✅ [RENEWAL] Renewed credits for user {user_id}: ${monthly_credits} expiring + "
+                       f"${result['non_expiring']:.2f} non-expiring = ${result['total_balance']:.2f} total")
     
     except Exception as e:
         logger.error(f"Error handling subscription renewal: {e}")
@@ -957,15 +1051,52 @@ async def get_credit_breakdown(
     db = DBConnection()
     client = await db.client
     
-    breakdown = await calculate_credit_breakdown(user_id, client)
+    account_result = await client.from_('credit_accounts')\
+        .select('balance, expiring_credits, non_expiring_credits, tier, next_credit_grant')\
+        .eq('user_id', user_id)\
+        .execute()
+    
+    if not account_result.data:
+        return {
+            'total_balance': 0,
+            'expiring_credits': 0,
+            'non_expiring_credits': 0,
+            'tier': 'free',
+            'next_credit_grant': None,
+            'message': 'No credit account found'
+        }
+    
+    account = account_result.data[0]
+    total = float(account.get('balance', 0))
+    expiring = float(account.get('expiring_credits', 0))
+    non_expiring = float(account.get('non_expiring_credits', 0))
+    
+    purchase_result = await client.from_('credit_ledger')\
+        .select('amount, created_at, description')\
+        .eq('user_id', user_id)\
+        .eq('type', 'purchase')\
+        .order('created_at', desc=True)\
+        .limit(5)\
+        .execute()
+    
+    recent_purchases = [
+        {
+            'amount': float(p['amount']),
+            'date': p['created_at'],
+            'description': p['description']
+        }
+        for p in purchase_result.data
+    ] if purchase_result.data else []
     
     return {
-        'total_balance': breakdown['total_balance'],
-        'subscription_credits': breakdown['subscription_credits'],
-        'topup_credits': breakdown['topup_credits'],
-        'total_purchased': breakdown['total_purchased'],
-        'message': f"Your ${breakdown['total_balance']:.2f} balance includes ${breakdown['subscription_credits']:.2f} from subscription and ${breakdown['topup_credits']:.2f} from topup purchases"
-    } 
+        'total_balance': total,
+        'expiring_credits': expiring,
+        'non_expiring_credits': non_expiring,
+        'tier': account.get('tier', 'free'),
+        'next_credit_grant': account.get('next_credit_grant'),
+        'recent_purchases': recent_purchases,
+        'message': f"Your ${total:.2f} balance includes ${expiring:.2f} expiring (plan) credits and ${non_expiring:.2f} non-expiring (purchased) credits"
+    }
 
 @router.get("/usage-history")
 async def get_usage_history(
@@ -1108,44 +1239,29 @@ async def test_trigger_renewal(
     if config.ENV_MODE == EnvMode.PRODUCTION:
         raise HTTPException(status_code=403, detail="Test endpoints disabled in production")
     
+    db = DBConnection()
+    client = await db.client
+    
     try:
-        db = DBConnection()
-        client = await db.client
+        account_result = await client.from_('credit_accounts').select(
+            'tier, balance, expiring_credits, non_expiring_credits'
+        ).eq('user_id', user_id).execute()
         
-        account_result = await client.from_('credit_accounts')\
-            .select('*')\
-            .eq('user_id', user_id)\
-            .execute()
-        
-        if not account_result.data or len(account_result.data) == 0:
+        if not account_result.data:
             return {
                 'success': False,
-                'message': 'No credit account found. Please subscribe to a plan first.'
+                'message': 'No credit account found'
             }
         
         account = account_result.data[0]
-        
-        if account.get('tier', 'free') == 'free':
-            return {
-                'success': False,
-                'message': 'No active subscription found. Please subscribe to a plan first.'
-            }
-        
-        tier = account['tier']
-        
-        yesterday = datetime.now(timezone.utc) - timedelta(days=26)
-        await client.from_('credit_accounts').update({
-            'last_grant_date': yesterday.isoformat()
-        }).eq('user_id', user_id).execute()
+        tier = account.get('tier', 'free')
         
         monthly_credits = get_monthly_credits(tier)
         if monthly_credits > 0:
-            await credit_service.add_credits(
+            result = await credit_manager.reset_expiring_credits(
                 user_id=user_id,
-                amount=monthly_credits,
-                type='tier_grant',
-                description=f"TEST: Monthly {tier} tier credits",
-                metadata={'test': True, 'triggered_by': 'manual_test'}
+                new_credits=monthly_credits,
+                description=f"TEST: Monthly {tier} tier credits renewal"
             )
             
             next_grant = datetime.now(timezone.utc) + timedelta(days=30)
@@ -1154,18 +1270,23 @@ async def test_trigger_renewal(
                 'next_credit_grant': next_grant.isoformat()
             }).eq('user_id', user_id).execute()
             
+            final_result = await client.from_('credit_accounts').select(
+                'balance, expiring_credits, non_expiring_credits'
+            ).eq('user_id', user_id).execute()
+            
             await Cache.invalidate(f"credit_balance:{user_id}")
             await Cache.invalidate(f"credit_summary:{user_id}")
             await Cache.invalidate(f"subscription_tier:{user_id}")
             
-            new_balance = await credit_service.get_balance(user_id)
-            
             return {
                 'success': True,
-                'message': f'Successfully granted {monthly_credits} credits',
+                'message': f'Successfully simulated renewal for {tier} tier',
                 'tier': tier,
                 'credits_granted': float(monthly_credits),
-                'new_balance': float(new_balance),
+                'new_balance': result['total_balance'],
+                'new_expiring': result['new_expiring'],
+                'new_non_expiring': result['non_expiring'],
+                'final_state': final_result.data[0] if final_result.data else None,
                 'next_grant_date': next_grant.isoformat()
             }
         else:

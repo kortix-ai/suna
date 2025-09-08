@@ -2,11 +2,19 @@ import { backendApi } from "../api-client";
 
 export interface CreditBalance {
   balance: number;
+  expiring_credits: number;
+  non_expiring_credits: number;
   tier: string;
-  lifetime_granted: number;
-  lifetime_purchased: number;
-  lifetime_used: number;
+  next_credit_grant?: string;
   can_purchase_credits: boolean;
+  breakdown?: {
+    expiring: number;
+    non_expiring: number;
+    total: number;
+  };
+  lifetime_granted?: number;
+  lifetime_purchased?: number;
+  lifetime_used?: number;
 }
 
 export interface SubscriptionInfo {
