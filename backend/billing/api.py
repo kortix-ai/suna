@@ -391,18 +391,14 @@ async def stripe_webhook(request: Request):
         )
         
         logger.info(f"[WEBHOOK] Received event: type={event.type}, id={event.id}")
-        
-        # Check for duplicate event processing
         db = DBConnection()
         client = await db.client
         
-        # Store processed events to prevent duplicates
         cache_key = f"stripe_event:{event.id}"
         if await Cache.get(cache_key):
             logger.info(f"[WEBHOOK] Event {event.id} already processed, skipping")
             return {'status': 'success', 'message': 'Event already processed'}
         
-        # Mark event as processed (with 1 hour TTL)
         await Cache.set(cache_key, True, ttl=3600)
         
         if event.type == 'checkout.session.completed':
@@ -416,7 +412,6 @@ async def stripe_webhook(request: Request):
                 
                 logger.info(f"[WEBHOOK] Processing credit purchase: user={user_id}, amount=${credit_amount}")
                 
-                # Log current state before purchase
                 current_state = await client.from_('credit_accounts').select(
                     'balance, expiring_credits, non_expiring_credits'
                 ).eq('user_id', user_id).execute()
@@ -424,7 +419,6 @@ async def stripe_webhook(request: Request):
                 if current_state.data:
                     logger.info(f"[WEBHOOK] State BEFORE purchase: {current_state.data[0]}")
                 
-                # Update purchase record
                 await client.table('credit_purchases').update({
                     'status': 'completed',
                     'completed_at': datetime.now(timezone.utc).isoformat()
@@ -432,18 +426,16 @@ async def stripe_webhook(request: Request):
                 
                 logger.info(f"[WEBHOOK] Calling credit_manager.add_credits with is_expiring=False")
                 
-                # Use the credit manager for non-expiring purchased credits
                 result = await credit_manager.add_credits(
                     user_id=user_id,
                     amount=credit_amount,
-                    is_expiring=False,  # Purchased credits are non-expiring
+                    is_expiring=False,
                     description=f"Purchased ${credit_amount} credits"
                 )
                 
                 logger.info(f"[WEBHOOK] Credit purchase completed for user {user_id}: ${credit_amount} (non-expiring)")
                 logger.info(f"[WEBHOOK] Result from credit_manager: {result}")
                 
-                # Log final state after purchase
                 final_state = await client.from_('credit_accounts').select(
                     'balance, expiring_credits, non_expiring_credits'
                 ).eq('user_id', user_id).execute()
@@ -451,7 +443,6 @@ async def stripe_webhook(request: Request):
                 if final_state.data:
                     logger.info(f"[WEBHOOK] State AFTER purchase: {final_state.data[0]}")
                     
-                    # Verify the purchase was applied correctly
                     before = current_state.data[0] if current_state.data else {'balance': 0, 'expiring_credits': 0, 'non_expiring_credits': 0}
                     after = final_state.data[0]
                     
@@ -478,7 +469,6 @@ async def stripe_webhook(request: Request):
             billing_reason = invoice.get('billing_reason')
             logger.info(f"[WEBHOOK] Invoice payment succeeded - billing_reason: {billing_reason}, invoice_id: {invoice.get('id')}")
             
-            # Check if this is a credit purchase - skip renewal logic
             if invoice.get('lines', {}).get('data'):
                 for line in invoice['lines']['data']:
                     if 'Credit' in line.get('description', ''):

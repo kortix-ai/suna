@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 from dataclasses import dataclass
 from core.utils.config import config
 
-TOKEN_PRICE_MULTIPLIER = Decimal('100')
+TOKEN_PRICE_MULTIPLIER = Decimal('1.5')
 MINIMUM_CREDIT_FOR_RUN = Decimal('0.01')
 DEFAULT_TOKEN_COST = Decimal('0.000002')
 
@@ -26,7 +26,7 @@ TIERS: Dict[str, Tier] = {
         monthly_credits=FREE_TIER_INITIAL_CREDITS,
         display_name='Free Tier',
         can_purchase_credits=False,
-        models=['gpt-4o-mini', 'claude-3-haiku'],
+        models=['openai/gpt-5-mini', 'openrouter/moonshotai/kimi-k2'],
         project_limit=3
     ),
     'tier_2_20': Tier(
@@ -39,7 +39,7 @@ TIERS: Dict[str, Tier] = {
         monthly_credits=Decimal('20.00'),
         display_name='Starter',
         can_purchase_credits=True,
-        models=['gpt-4o-mini', 'gpt-4o', 'claude-3-haiku', 'claude-3-5-sonnet'],
+        models=['all'],
         project_limit=100
     ),
     'tier_6_50': Tier(
@@ -52,7 +52,7 @@ TIERS: Dict[str, Tier] = {
         monthly_credits=Decimal('50.00'),
         display_name='Professional',
         can_purchase_credits=True,
-        models=['gpt-4o-mini', 'gpt-4o', 'claude-3-haiku', 'claude-3-5-sonnet', 'claude-3-opus'],
+        models=['all'],
         project_limit=500
     ),
     'tier_12_100': Tier(
@@ -64,7 +64,7 @@ TIERS: Dict[str, Tier] = {
         monthly_credits=Decimal('100.00'),
         display_name='Team',
         can_purchase_credits=True,
-        models=['gpt-4o-mini', 'gpt-4o', 'claude-3-haiku', 'claude-3-5-sonnet', 'claude-3-opus'],
+        models=['all'],
         project_limit=1000
     ),
     'tier_25_200': Tier(
@@ -77,7 +77,7 @@ TIERS: Dict[str, Tier] = {
         monthly_credits=Decimal('200.00'),
         display_name='Business',
         can_purchase_credits=True,
-        models=['gpt-4o-mini', 'gpt-4o', 'claude-3-haiku', 'claude-3-5-sonnet', 'claude-3-opus', 'o1-preview'],
+        models=['all'],
         project_limit=2500
     ),
     'tier_50_400': Tier(
@@ -89,7 +89,7 @@ TIERS: Dict[str, Tier] = {
         monthly_credits=Decimal('400.00'),
         display_name='Enterprise',
         can_purchase_credits=True,
-        models=['gpt-4o-mini', 'gpt-4o', 'claude-3-haiku', 'claude-3-5-sonnet', 'claude-3-opus', 'o1-preview', 'o1'],
+        models=['all'],
         project_limit=5000
     ),
     'tier_125_800': Tier(
@@ -101,7 +101,7 @@ TIERS: Dict[str, Tier] = {
         monthly_credits=Decimal('800.00'),
         display_name='Enterprise Plus',
         can_purchase_credits=True,
-        models=['gpt-4o-mini', 'gpt-4o', 'claude-3-haiku', 'claude-3-5-sonnet', 'claude-3-opus', 'o1-preview', 'o1'],
+        models=['all'],
         project_limit=10000
     ),
     'tier_200_1000': Tier(
@@ -113,7 +113,7 @@ TIERS: Dict[str, Tier] = {
         monthly_credits=Decimal('1000.00'),
         display_name='Ultimate',
         can_purchase_credits=True,
-        models=['gpt-4o-mini', 'gpt-4o', 'claude-3-haiku', 'claude-3-5-sonnet', 'claude-3-opus', 'o1-preview', 'o1'],
+        models=['all'],
         project_limit=25000
     ),
 }
@@ -152,6 +152,8 @@ def can_purchase_credits(tier_name: str) -> bool:
 
 def is_model_allowed(tier_name: str, model: str) -> bool:
     tier = TIERS.get(tier_name, TIERS['free'])
+    if 'all' in tier.models:
+        return True
     return model in tier.models
 
 def get_project_limit(tier_name: str) -> int:
