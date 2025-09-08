@@ -62,7 +62,6 @@ class TextElement:
     text_align: str
     line_height: float
     tag: str
-    depth: int = 0
     style: Dict[str, str] = None
 
 
@@ -196,6 +195,97 @@ class PerfectHTMLToPPTXConverter:
         except Exception as e:
             raise ValueError(f"Error loading metadata: {e}")
     
+    async def capture_perfect_background(self, browser, html_path: Path, temp_dir: Path) -> Path:
+        """
+        Capture the entire slide as a perfect background image with text made transparent.
+        
+        Args:
+            browser: Playwright browser instance
+            html_path: Path to HTML file
+            temp_dir: Temporary directory for images
+            
+        Returns:
+            Path to the perfect background image
+        """
+        page = await browser.new_page()
+        
+        try:
+            # Set exact viewport dimensions
+            await page.set_viewport_size({"width": 1920, "height": 1080})
+            await page.emulate_media(media='screen')
+            
+            # Force device pixel ratio to 1 for exact measurements
+            await page.evaluate(r"""
+                () => {
+                    Object.defineProperty(window, 'devicePixelRatio', {
+                        get: () => 1
+                    });
+                }
+            """)
+            
+            # Navigate to HTML file
+            file_url = f"file://{html_path.resolve()}"
+            await page.goto(file_url, wait_until="networkidle", timeout=30000)
+            
+            # Wait for fonts and content to load
+            await page.wait_for_timeout(5000)
+            
+            # Make ALL text transparent while preserving layout and everything else
+            await page.evaluate(r"""
+                () => {
+                    // Function to make text transparent while keeping all visual elements
+                    function makeTextTransparent(element) {
+                        if (element.nodeType === Node.TEXT_NODE) {
+                            // Don't remove text nodes, just make them invisible
+                            return;
+                        } else if (element.nodeType === Node.ELEMENT_NODE) {
+                            const computed = window.getComputedStyle(element);
+                            
+                            // If this element contains text, make the text transparent
+                            // but preserve all other styling (backgrounds, borders, etc.)
+                            const hasText = element.textContent && element.textContent.trim();
+                            if (hasText) {
+                                // Store original color for later if needed
+                                const originalColor = computed.color;
+                                element.setAttribute('data-original-color', originalColor);
+                                
+                                // Make text transparent but keep everything else
+                                element.style.color = 'transparent';
+                                element.style.textShadow = 'none';
+                                element.style.webkitTextStroke = 'none';
+                            }
+                            
+                            // Process children
+                            Array.from(element.children).forEach(makeTextTransparent);
+                        }
+                    }
+                    
+                    // Apply to entire document
+                    makeTextTransparent(document.body);
+                    
+                    console.log('Made all text transparent while preserving visual elements');
+                }
+            """)
+            
+            # Wait for changes to apply
+            await page.wait_for_timeout(2000)
+            
+            # Take perfect screenshot
+            background_path = temp_dir / f"perfect_background_{html_path.stem}.png"
+            await page.screenshot(
+                path=str(background_path),
+                full_page=False,
+                clip={"x": 0, "y": 0, "width": 1920, "height": 1080}
+            )
+            
+            print(f"    ✓ Captured perfect background: {background_path.name}")
+            return background_path
+            
+        except Exception as e:
+            raise RuntimeError(f"Error capturing perfect background: {e}")
+        finally:
+            await page.close()
+    
     async def extract_visual_elements(self, page, html_path: Path, temp_dir: Path) -> List[Dict]:
         """Extract all visual elements (non-text) as individual images with positioning."""
         visual_elements = []
@@ -230,131 +320,7 @@ class PerfectHTMLToPPTXConverter:
                         return false;
                     }
                     
-                    function getActualDepth(element) {
-                        // Create a comprehensive stacking context detection
-                        function createsStackingContext(el) {
-                            const computed = window.getComputedStyle(el);
-                            
-                            // Root element always creates stacking context
-                            if (el === document.documentElement) return true;
-                            
-                            // Positioned elements with z-index other than auto
-                            if (computed.position !== 'static' && computed.zIndex !== 'auto') return true;
-                            
-                            // Elements with opacity less than 1
-                            if (parseFloat(computed.opacity) < 1) return true;
-                            
-                            // Elements with transform other than none
-                            if (computed.transform !== 'none') return true;
-                            
-                            // Elements with filter other than none
-                            if (computed.filter !== 'none') return true;
-                            
-                            // Elements with perspective other than none
-                            if (computed.perspective !== 'none') return true;
-                            
-                            // Elements with clip-path other than none
-                            if (computed.clipPath !== 'none') return true;
-                            
-                            // Elements with mask other than none
-                            if (computed.mask !== 'none' || computed.webkitMask !== 'none') return true;
-                            
-                            // Elements with isolation: isolate
-                            if (computed.isolation === 'isolate') return true;
-                            
-                            // Elements with mix-blend-mode other than normal
-                            if (computed.mixBlendMode !== 'normal') return true;
-                            
-                            // Flex/grid items with z-index other than auto
-                            const parent = el.parentElement;
-                            if (parent) {
-                                const parentComputed = window.getComputedStyle(parent);
-                                if ((parentComputed.display === 'flex' || 
-                                     parentComputed.display === 'inline-flex' ||
-                                     parentComputed.display === 'grid' ||
-                                     parentComputed.display === 'inline-grid') && 
-                                    computed.zIndex !== 'auto') {
-                                    return true;
-                                }
-                            }
-                            
-                            return false;
-                        }
-                        
-                        function getStackingContextChain(el) {
-                            const chain = [];
-                            let current = el;
-                            
-                            while (current && current !== document.body.parentElement) {
-                                if (createsStackingContext(current)) {
-                                    const computed = window.getComputedStyle(current);
-                                    let zIndex = 0;
-                                    
-                                    // Calculate effective z-index
-                                    if (computed.position !== 'static' && computed.zIndex !== 'auto') {
-                                        zIndex = parseInt(computed.zIndex) || 0;
-                                } else if (parseFloat(computed.opacity) < 1 || 
-                                          computed.transform !== 'none' || 
-                                          computed.filter !== 'none' ||
-                                          computed.perspective !== 'none' ||
-                                          computed.clipPath !== 'none' ||
-                                          (computed.mask !== 'none' || computed.webkitMask !== 'none') ||
-                                          computed.isolation === 'isolate' ||
-                                          computed.mixBlendMode !== 'normal') {
-                                    // For presentation processing: inherit parent's z-index for better layering
-                                    let parent = current.parentElement;
-                                    let parentZIndex = 0;
-                                    while (parent && parent !== document.body.parentElement) {
-                                        if (createsStackingContext(parent)) {
-                                            const parentComputed = window.getComputedStyle(parent);
-                                            if (parentComputed.position !== 'static' && parentComputed.zIndex !== 'auto') {
-                                                parentZIndex = parseInt(parentComputed.zIndex) || 0;
-                                            }
-                                            break;
-                                        }
-                                        parent = parent.parentElement;
-                                    }
-                                    zIndex = parentZIndex; // Inherit parent's z-index instead of 0
-                                }
-                                    
-                                    chain.unshift({
-                                        element: current,
-                                        zIndex: zIndex,
-                                        isRoot: current === document.documentElement
-                                    });
-                                }
-                                current = current.parentElement;
-                            }
-                            
-                            return chain;
-                        }
-                        
-                        const chain = getStackingContextChain(element);
-                        
-                        // If no stacking contexts found, element is in root stacking context
-                        if (chain.length === 0) {
-                            return 0;
-                        }
-                        
-                        // Calculate depth based on the stacking context chain
-                        // Use the z-index of the topmost stacking context that affects this element
-                        const topContext = chain[chain.length - 1];
-                        
-                        // For elements inside positioned containers, we need to consider
-                        // both the container's z-index and the element's own positioning
-                        const computed = window.getComputedStyle(element);
-                        
-                        if (computed.position !== 'static' && computed.zIndex !== 'auto') {
-                            // Element creates its own stacking context or is positioned with explicit z-index
-                            const elementZIndex = parseInt(computed.zIndex) || 0;
-                            return topContext.zIndex + elementZIndex;
-                        } else {
-                            // Element inherits from its stacking context
-                            return topContext.zIndex;
-                        }
-                    }
-                    
-                    function extractIconElements(element) {
+                    function extractIconElements(element, depth = 0) {
                         if (!element || element.nodeType !== Node.ELEMENT_NODE) return [];
                         
                         const computed = window.getComputedStyle(element);
@@ -370,15 +336,8 @@ class PerfectHTMLToPPTXConverter:
                         if (isIcon(element)) {
                             console.log('ICON ELEMENT FOUND:', element.tagName, element.textContent?.trim().substring(0, 30));
                             
-                            // Assign unique capture ID to element
-                            const captureId = 'icon-capture-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-                            element.setAttribute('data-capture-id', captureId);
-                            
-                            const actualDepth = getActualDepth(element);
-                            
                             results.push({
                                 type: 'icon',
-                                captureId: captureId,
                                 x: Math.round(rect.left * 100) / 100,
                                 y: Math.round(rect.top * 100) / 100,
                                 width: Math.round(rect.width * 100) / 100,
@@ -386,19 +345,17 @@ class PerfectHTMLToPPTXConverter:
                                 tag: element.tagName.toLowerCase(),
                                 className: element.className,
                                 id: element.id,
-                                depth: actualDepth,
+                                depth: depth,
                                 // Add debug info
                                 debugInfo: {
-                                    textContent: element.textContent?.trim().substring(0, 50) || 'No text',
-                                    position: computed.position,
-                                    zIndex: computed.zIndex
+                                    textContent: element.textContent?.trim().substring(0, 50) || 'No text'
                                 }
                             });
                         }
                         
-                        // Process children for nested icons (no depth increment needed)
+                        // Process children for nested icons
                         Array.from(element.children).forEach(child => {
-                            results.push(...extractIconElements(child));
+                            results.push(...extractIconElements(child, depth + 1));
                         });
                         
                         return results;
@@ -425,155 +382,16 @@ class PerfectHTMLToPPTXConverter:
                         height = min(data['height'], 1080 - y)
                         
                         # Skip if area is too small
-                        # if width < 5 or height < 5:
-                        #     continue
-                        
-                        # Clone icon element and capture in isolation
-                        clone_result = await page.evaluate(r"""
-                            (elementData) => {
-                                // Find the icon element by its unique capture ID
-                                const targetElement = document.querySelector(`[data-capture-id="${elementData.captureId}"]`);
-                                
-                                if (!targetElement) {
-                                    return { success: false, error: `Icon element not found with ID: ${elementData.captureId}` };
-                                }
-                                
-                                try {
-                                    // Clone the icon element deeply
-                                    const clonedElement = targetElement.cloneNode(true);
-                                    
-                                    // Copy all computed styles from original to cloned element
-                                    function copyComputedStyles(original, cloned, isRoot = true) {
-                                        const computedStyle = window.getComputedStyle(original);
-                                        
-                                        // Create a clean style string with all computed properties
-                                        let styleStr = '';
-                                        for (let prop of computedStyle) {
-                                            let value = computedStyle.getPropertyValue(prop);
-                                            styleStr += `${prop}: ${value}; `;
-                                        }
-                                        cloned.style.cssText = styleStr;
-                                        
-                                        // For child elements (not root), make the entire element transparent
-                                        if (!isRoot) {
-                                            cloned.style.opacity = '0';
-                                        }
-                                        
-                                        // Recursively copy styles for children (mark as non-root)
-                                        for (let i = 0; i < original.children.length && i < cloned.children.length; i++) {
-                                            copyComputedStyles(original.children[i], cloned.children[i], false);
-                                        }
-                                    }
-                                    
-                                    copyComputedStyles(targetElement, clonedElement);
-                                    
-                                    // Create clean container for isolation
-                                    const cleanContainer = document.createElement('div');
-                                    cleanContainer.id = 'icon-clone-capture-container-' + Date.now();
-                                    cleanContainer.style.cssText = `
-                                        position: fixed;
-                                        top: 0;
-                                        left: 0;
-                                        width: ${elementData.width}px;
-                                        height: ${elementData.height}px;
-                                        background: transparent;
-                                        z-index: 999999;
-                                        padding: 0;
-                                        margin: 0;
-                                        border: none;
-                                        overflow: hidden;
-                                    `;
-                                    
-                                    // Position cloned element at (0,0) within container
-                                    clonedElement.style.position = 'absolute';
-                                    clonedElement.style.top = '0px';
-                                    clonedElement.style.left = '0px';
-                                    clonedElement.style.margin = '0';
-                                    clonedElement.style.transform = 'none';
-                                    
-                                    // Add to DOM for capture
-                                    cleanContainer.appendChild(clonedElement);
-                                    document.body.appendChild(cleanContainer);
-                                    
-                                    return { 
-                                        success: true, 
-                                        containerId: cleanContainer.id,
-                                        containerRect: {
-                                            x: 0, 
-                                            y: 0, 
-                                            width: elementData.width, 
-                                            height: elementData.height
-                                        }
-                                    };
-                                    
-                                } catch (error) {
-                                    return { success: false, error: error.message };
-                                }
-                            }
-                        """, data)
-                        
-                        if not clone_result.get('success'):
-                            print(f"Failed to clone icon element: {clone_result.get('error')}")
+                        if width < 5 or height < 5:
                             continue
                         
-                        # Wait a moment for styles to apply
-                        await page.wait_for_timeout(100)
-                        
-                        # Hide main content and ensure transparent background for perfect isolation
-                        await page.evaluate(f"""
-                            () => {{
-                                // Store original backgrounds
-                                window.originalHtmlBg = document.documentElement.style.background || '';
-                                window.originalBodyBg = document.body.style.background || '';
-                                
-                                // Set transparent backgrounds
-                                document.documentElement.style.background = 'transparent';
-                                document.body.style.background = 'transparent';
-                                
-                                // Hide all main content
-                                document.body.style.visibility = 'hidden';
-                                
-                                // Make sure our container stays visible
-                                const container = document.getElementById('{clone_result['containerId']}');
-                                if (container) {{
-                                    container.style.visibility = 'visible';
-                                }}
-                            }}
-                        """)
-                        
-                        # Capture the isolated cloned icon element with transparency
+                        # Capture the icon
                         element_path = temp_dir / f"icon_element_{html_path.stem}_{i:03d}.png"
-                        container_rect = clone_result['containerRect']
-                        
                         await page.screenshot(
                             path=str(element_path),
                             full_page=False,
-                            omit_background=True,  # 🚀 Preserves transparency!
-                            clip={
-                                "x": container_rect['x'], 
-                                "y": container_rect['y'], 
-                                "width": container_rect['width'], 
-                                "height": container_rect['height']
-                            }
+                            clip={"x": x, "y": y, "width": width, "height": height}
                         )
-                        
-                        # Restore backgrounds, visibility and clean up
-                        await page.evaluate(f"""
-                            () => {{
-                                // Restore original backgrounds
-                                document.documentElement.style.background = window.originalHtmlBg || '';
-                                document.body.style.background = window.originalBodyBg || '';
-                                
-                                // Restore main content visibility
-                                document.body.style.visibility = 'visible';
-                                
-                                // Remove the cloned container
-                                const container = document.getElementById('{clone_result['containerId']}');
-                                if (container) {{
-                                    container.remove();
-                                }}
-                            }}
-                        """)
                         
                         icon_element = {
                             'type': 'visual',  # Treat as visual element for consistency
@@ -591,24 +409,6 @@ class PerfectHTMLToPPTXConverter:
                         
                     except Exception as e:
                         print(f"Failed to capture icon element {i}: {e}")
-                        # Ensure we restore backgrounds and visibility even if capture fails
-                        try:
-                            await page.evaluate("""
-                                () => {
-                                    // Restore original backgrounds
-                                    document.documentElement.style.background = window.originalHtmlBg || '';
-                                    document.body.style.background = window.originalBodyBg || '';
-                                    
-                                    // Always restore main content visibility
-                                    document.body.style.visibility = 'visible';
-                                    
-                                    // Clean up any leftover containers
-                                    const containers = document.querySelectorAll('[id^="icon-clone-capture-container-"]');
-                                    containers.forEach(container => container.remove());
-                                }
-                            """)
-                        except:
-                            pass
             
             # Step 2: Now make all text transparent while preserving visual styling
             await page.evaluate(r"""
@@ -638,301 +438,160 @@ class PerfectHTMLToPPTXConverter:
             
             # Step 3: Extract other visual elements by depth and visual properties
             visual_data = await page.evaluate(r"""
-            () => {
-                function getActualDepth(element) {
-                    // Create a comprehensive stacking context detection
-                    function createsStackingContext(el) {
-                        const computed = window.getComputedStyle(el);
-                        
-                        // Root element always creates stacking context
-                        if (el === document.documentElement) return true;
-                        
-                        // Positioned elements with z-index other than auto
-                        if (computed.position !== 'static' && computed.zIndex !== 'auto') return true;
-                        
-                        // Elements with opacity less than 1
-                        if (parseFloat(computed.opacity) < 1) return true;
-                        
-                        // Elements with transform other than none
-                        if (computed.transform !== 'none') return true;
-                        
-                        // Elements with filter other than none
-                        if (computed.filter !== 'none') return true;
-                        
-                        // Elements with perspective other than none
-                        if (computed.perspective !== 'none') return true;
-                        
-                        // Elements with clip-path other than none
-                        if (computed.clipPath !== 'none') return true;
-                        
-                        // Elements with mask other than none
-                        if (computed.mask !== 'none' || computed.webkitMask !== 'none') return true;
-                        
-                        // Elements with isolation: isolate
-                        if (computed.isolation === 'isolate') return true;
-                        
-                        // Elements with mix-blend-mode other than normal
-                        if (computed.mixBlendMode !== 'normal') return true;
-                        
-                        // Flex/grid items with z-index other than auto
-                        const parent = el.parentElement;
-                        if (parent) {
-                            const parentComputed = window.getComputedStyle(parent);
-                            if ((parentComputed.display === 'flex' || 
-                                 parentComputed.display === 'inline-flex' ||
-                                 parentComputed.display === 'grid' ||
-                                 parentComputed.display === 'inline-grid') && 
-                                computed.zIndex !== 'auto') {
-                                return true;
-                            }
-                        }
-                        
-                        return false;
-                    }
-                    
-                    function getStackingContextChain(el) {
-                        const chain = [];
-                        let current = el;
-                        
-                        while (current && current !== document.body.parentElement) {
-                            if (createsStackingContext(current)) {
-                                const computed = window.getComputedStyle(current);
-                                let zIndex = 0;
-                                
-                                // Calculate effective z-index
-                                if (computed.position !== 'static' && computed.zIndex !== 'auto') {
-                                    zIndex = parseInt(computed.zIndex) || 0;
-                                } else if (parseFloat(computed.opacity) < 1 || 
-                                          computed.transform !== 'none' || 
-                                          computed.filter !== 'none' ||
-                                          computed.perspective !== 'none' ||
-                                          computed.clipPath !== 'none' ||
-                                          (computed.mask !== 'none' || computed.webkitMask !== 'none') ||
-                                          computed.isolation === 'isolate' ||
-                                          computed.mixBlendMode !== 'normal') {
-                                    // For presentation processing: inherit parent's z-index for better layering
-                                    let parent = current.parentElement;
-                                    let parentZIndex = 0;
-                                    while (parent && parent !== document.body.parentElement) {
-                                        if (createsStackingContext(parent)) {
-                                            const parentComputed = window.getComputedStyle(parent);
-                                            if (parentComputed.position !== 'static' && parentComputed.zIndex !== 'auto') {
-                                                parentZIndex = parseInt(parentComputed.zIndex) || 0;
-                                            }
-                                            break;
-                                        }
-                                        parent = parent.parentElement;
-                                    }
-                                    zIndex = parentZIndex; // Inherit parent's z-index instead of 0
-                                }
-                                
-                                chain.unshift({
-                                    element: current,
-                                    zIndex: zIndex,
-                                    isRoot: current === document.documentElement
-                                });
-                            }
-                            current = current.parentElement;
-                        }
-                        
-                        return chain;
-                    }
-                    
-                    const chain = getStackingContextChain(element);
-                    
-                    // If no stacking contexts found, element is in root stacking context
-                    if (chain.length === 0) {
-                        return 0;
-                    }
-                    
-                    // Calculate depth based on the stacking context chain
-                    // Use the z-index of the topmost stacking context that affects this element
-                    const topContext = chain[chain.length - 1];
-                    
-                    // For elements inside positioned containers, we need to consider
-                    // both the container's z-index and the element's own positioning
-                    const computed = window.getComputedStyle(element);
-                    
-                    if (computed.position !== 'static' && computed.zIndex !== 'auto') {
-                        // Element creates its own stacking context or is positioned with explicit z-index
-                        const elementZIndex = parseInt(computed.zIndex) || 0;
-                        return topContext.zIndex + elementZIndex;
-                    } else {
-                        // Element inherits from its stacking context
-                        return topContext.zIndex;
-                    }
-                }
+    () => {
+        function hasActualVisualContent(element, computed) {
+            
+            // Always include explicit visual elements
+            if (['IMG', 'SVG', 'CANVAS', 'VIDEO', 'IFRAME'].includes(element.tagName)) {
+                return true;
+            }
+            
+            // 2. Check for actual background images and gradients (not just 'none')
+            if (computed.backgroundImage && computed.backgroundImage !== 'none') {
+                return true;
+            }
+            
+            // 3. Check for meaningful background colors (not just transparent)
+            const bgColor = computed.backgroundColor;
+            if (bgColor && 
+                bgColor !== 'rgba(0, 0, 0, 0)' && 
+                bgColor !== 'transparent' && 
+                bgColor !== 'inherit' &&
+                bgColor !== 'initial' &&
+                bgColor !== 'unset') {
+                return true;
+            }
+            
+            // 4. Check for borders (but ignore default/none)
+            if (computed.borderStyle && 
+                computed.borderStyle !== 'none' && 
+                computed.borderStyle !== 'initial' &&
+                computed.borderWidth && 
+                computed.borderWidth !== '0px') {
+                return true;
+            }
+            
+            // 5. Check for box shadows
+            if (computed.boxShadow && 
+                computed.boxShadow !== 'none' && 
+                computed.boxShadow !== 'initial') {
+                return true;
+            }
+            
+            // 6. Check for gradients in background (comprehensive check)
+            if (computed.background && 
+                (computed.background.includes('gradient') || 
+                 computed.background.includes('url('))) {
+                return true;
+            }
+            
+            // Also check backgroundImage for gradients (browsers often store gradients here)
+            if (computed.backgroundImage && 
+                (computed.backgroundImage.includes('gradient') ||
+                 computed.backgroundImage.includes('url('))) {
+                return true;
+            }
+            
+            return false;
+        }
+                          
+        function shouldSkipElement(element, computed) {
+            // Skip text-only elements
+            const textOnlyTags = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'P', 'A', 'SPAN', 
+                                'STRONG', 'EM', 'U', 'BUTTON', 'LABEL', 'SMALL', 'CODE'];
+            if (textOnlyTags.includes(element.tagName)) {
+                return true;
+            }
+            
+            // Skip hidden elements
+            if (computed.display === 'none' || computed.visibility === 'hidden') {
+                return true;
+            }
+            
+            return false;
+        }
+                                    
+        function extractVisualElements(element, depth = 0) {
+            if (!element || element.nodeType !== Node.ELEMENT_NODE) return [];
+            
+            const computed = window.getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+            
+            // Skip if no dimensions
+            if (rect.width === 0 || rect.height === 0) {
+                return [];
+            }
+            
+            // Skip if should be filtered out
+            if (shouldSkipElement(element, computed)) {
+                return [];
+            }
+            
+            const results = [];
+            
+            // Check if element has actual visual content
+            if (hasActualVisualContent(element, computed)) {
+                console.log('VISUAL ELEMENT FOUND:', element.tagName, element.textContent?.trim().substring(0, 30));
+                console.log('backgroundImage:', computed.backgroundImage);
+                console.log('backgroundColor:', computed.backgroundColor);
+                console.log('borderStyle:', computed.borderStyle);
                 
-                function hasActualVisualContent(element, computed) {
-                    
-                    // Always include explicit visual elements
-                    if (['IMG', 'SVG', 'CANVAS', 'VIDEO', 'IFRAME'].includes(element.tagName)) {
-                        return true;
-                    }
-                    
-                    // 2. Check for actual background images and gradients (not just 'none')
-                    if (computed.backgroundImage && computed.backgroundImage !== 'none') {
-                        return true;
-                    }
-                    
-                    // 3. Check for meaningful background colors (not just transparent)
-                    const bgColor = computed.backgroundColor;
-                    if (bgColor && 
-                        bgColor !== 'rgba(0, 0, 0, 0)' && 
-                        bgColor !== 'transparent' && 
-                        bgColor !== 'inherit' &&
-                        bgColor !== 'initial' &&
-                        bgColor !== 'unset') {
-                        return true;
-                    }
-                    
-                    // 4. Check for borders (but ignore default/none)
-                    if (computed.borderStyle && 
-                        computed.borderStyle !== 'none' && 
-                        computed.borderStyle !== 'initial' &&
-                        computed.borderWidth && 
-                        computed.borderWidth !== '0px') {
-                        return true;
-                    }
-                    
-                    // 5. Check for box shadows
-                    if (computed.boxShadow && 
-                        computed.boxShadow !== 'none' && 
-                        computed.boxShadow !== 'initial') {
-                        return true;
-                    }
-                    
-                    // 6. Check for gradients in background (comprehensive check)
-                    if (computed.background && 
-                        (computed.background.includes('gradient') || 
-                        computed.background.includes('url('))) {
-                        return true;
-                    }
-                    
-                    // Also check backgroundImage for gradients (browsers often store gradients here)
-                    if (computed.backgroundImage && 
-                        (computed.backgroundImage.includes('gradient') ||
-                        computed.backgroundImage.includes('url('))) {
-                        return true;
-                    }
-                    
-                    return false;
-                }
-                                
-                function shouldSkipElement(element, computed) {
-                    // Skip text-only elements
-                    const textOnlyTags = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'P', 'A', 'SPAN', 
-                                        'STRONG', 'EM', 'U', 'BUTTON', 'LABEL', 'SMALL', 'CODE'];
-                    if (textOnlyTags.includes(element.tagName)) {
-                        return true;
-                    }
-                    
-                    // Skip hidden elements
-                    if (computed.display === 'none' || computed.visibility === 'hidden') {
-                        return true;
-                    }
-                    
-                    return false;
-                }
-                                            
-                function extractVisualElements(element) {
-                    if (!element || element.nodeType !== Node.ELEMENT_NODE) return [];
-                    
-                    const computed = window.getComputedStyle(element);
-                    const rect = element.getBoundingClientRect();
-                    
-                    // Skip if no dimensions
-                    if (rect.width === 0 || rect.height === 0) {
-                        return [];
-                    }
-                    
-                    // Skip if should be filtered out
-                    if (shouldSkipElement(element, computed)) {
-                        return [];
-                    }
-                    
-                    const results = [];
-                    
-                    // Check if element has actual visual content
-                    if (hasActualVisualContent(element, computed)) {
-                        console.log('VISUAL ELEMENT FOUND:', element.tagName, element.textContent?.trim().substring(0, 30));
-                        console.log('backgroundImage:', computed.backgroundImage);
-                        console.log('backgroundColor:', computed.backgroundColor);
-                        console.log('borderStyle:', computed.borderStyle);
-                        
-                        // Skip very large elements that are likely backgrounds
-                        const isLikelyBackground = rect.width > 1700;
-                        
-                        if (!isLikelyBackground) {
-                            // Assign unique capture ID to element
-                            const captureId = 'visual-capture-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-                            element.setAttribute('data-capture-id', captureId);
-                            
-                            const actualDepth = getActualDepth(element);
-                            
-                            results.push({
-                                type: 'visual',
-                                captureId: captureId,
-                                x: Math.round(rect.left * 100) / 100,
-                                y: Math.round(rect.top * 100) / 100,
-                                width: Math.round(rect.width * 100) / 100,
-                                height: Math.round(rect.height * 100) / 100,
-                                tag: element.tagName.toLowerCase(),
-                                className: element.className,
-                                id: element.id,
-                                depth: actualDepth,
-                                hasBackground: computed.backgroundImage !== 'none' || 
-                                            (computed.backgroundColor !== 'rgba(0, 0, 0, 0)' && 
-                                            computed.backgroundColor !== 'transparent'),
-                                hasBorder: computed.borderStyle !== 'none',
-                                hasShadow: computed.boxShadow !== 'none',
-                                // Add debug info
-                                debugInfo: {
-                                    backgroundColor: computed.backgroundColor,
-                                    backgroundImage: computed.backgroundImage,
-                                    borderStyle: computed.borderStyle,
-                                    position: computed.position,
-                                    zIndex: computed.zIndex,
-                                    textContent: element.textContent?.trim().substring(0, 50) || 'No text'
-                                }
-                            });
-                        }
-                    }
-                    
-                    // Process children for nested elements (no depth increment needed)
-                    Array.from(element.children).forEach(child => {
-                        results.push(...extractVisualElements(child));
-                    });
-                    
-                    return results;
-                }
+                // Skip very large elements that are likely backgrounds
+                const isLikelyBackground = rect.width > 1700;
                 
-                // Enhanced sorting function that considers both depth and DOM order
-                function sortElementsByStackingOrder(elements) {
-                    // First, assign DOM order to each element for tie-breaking
-                    elements.forEach((el, index) => {
-                        el.domOrder = index;
-                    });
+                if (!isLikelyBackground) {
+                    // Assign unique capture ID to element
+                    const captureId = 'visual-capture-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                    element.setAttribute('data-capture-id', captureId);
                     
-                    return elements.sort((a, b) => {
-                        // Primary sort: by stacking depth
-                        if (a.depth !== b.depth) {
-                            return a.depth - b.depth;
+                    results.push({
+                        type: 'visual',
+                        captureId: captureId,
+                        x: Math.round(rect.left * 100) / 100,
+                        y: Math.round(rect.top * 100) / 100,
+                        width: Math.round(rect.width * 100) / 100,
+                        height: Math.round(rect.height * 100) / 100,
+                        tag: element.tagName.toLowerCase(),
+                        className: element.className,
+                        id: element.id,
+                        depth: depth,
+                        hasBackground: computed.backgroundImage !== 'none' || 
+                                      (computed.backgroundColor !== 'rgba(0, 0, 0, 0)' && 
+                                       computed.backgroundColor !== 'transparent'),
+                        hasBorder: computed.borderStyle !== 'none',
+                        hasShadow: computed.boxShadow !== 'none',
+                        // Add debug info
+                        debugInfo: {
+                            backgroundColor: computed.backgroundColor,
+                            backgroundImage: computed.backgroundImage,
+                            borderStyle: computed.borderStyle,
+                            textContent: element.textContent?.trim().substring(0, 50) || 'No text'
                         }
-                        
-                        // Secondary sort: by DOM order (elements that appear later in DOM stack on top)
-                        return a.domOrder - b.domOrder;
                     });
                 }
-                
-                // Actually execute the extraction and return results
-                const allVisualElements = extractVisualElements(document.body);
-                
-                // Use the enhanced sorting function
-                const sortedElements = sortElementsByStackingOrder(allVisualElements);
-                
-                return sortedElements;
-            }""")
+            }
+            
+            // Process children for nested elements
+            Array.from(element.children).forEach(child => {
+                results.push(...extractVisualElements(child, depth + 1));
+            });
+            
+            return results;
+        }
+        
+        // Actually execute the extraction and return results
+        const allVisualElements = extractVisualElements(document.body);
+        
+        // Sort by depth (background elements first) then by position
+        allVisualElements.sort((a, b) => {
+            if (a.depth !== b.depth) return a.depth - b.depth;
+            if (Math.abs(a.y - b.y) < 5) return a.x - b.x;
+            return a.y - b.y;
+        });
+        
+        return allVisualElements;
+    }
+""")
             
             # Debug: Log what we found in Python console
             print(f"🔍 Total visual elements found: {len(visual_data) if visual_data else 0}")
@@ -956,8 +615,8 @@ class PerfectHTMLToPPTXConverter:
                         height = min(data['height'], 1920 - y)
                         
                         # Skip if area is too small
-                        # if width < 5 or height < 5:
-                        #     continue
+                        if width < 5 or height < 5:
+                            continue
                         
                         # Clone element and capture in isolation
                         clone_result = await page.evaluate(r"""
@@ -1148,21 +807,8 @@ class PerfectHTMLToPPTXConverter:
             if icon_visual_elements:
                 print(f"Adding {len(icon_visual_elements)} icon elements to visual elements")
                 visual_elements.extend(icon_visual_elements)
-                
-                # Re-sort the combined visual elements (including icons) by depth and position
-                # Icons should be sorted by their actual depth, not always on top
-                def sort_key(element):
-                    depth = element.get('depth', 0)
-                    y = element.get('y', 0)
-                    x = element.get('x', 0)
-                    
-                    # Sort by depth first, then position
-                    return (depth, y, x)
-                
-                visual_elements.sort(key=sort_key)
-                print(f"Re-sorted {len(visual_elements)} total visual elements by depth and position")
             
-            # Final cleanup - restore backgrounds and remove capture IDs
+            # Final cleanup - remove capture IDs and ensure everything is restored
             try:
                 await page.evaluate(r"""
                     () => {
@@ -1184,7 +830,7 @@ class PerfectHTMLToPPTXConverter:
                         });
                         
                         // Clean up any leftover containers
-                        const containers = document.querySelectorAll('[id^="icon-clone-capture-container-"], [id^="clone-capture-container-"]');
+                        const containers = document.querySelectorAll('[id^="clone-capture-container-"]');
                         containers.forEach(container => container.remove());
                     }
                 """)
@@ -1212,7 +858,7 @@ class PerfectHTMLToPPTXConverter:
                         document.body.style.visibility = 'visible';
                         
                         // Clean up everything
-                        const containers = document.querySelectorAll('[id^="icon-clone-capture-container-"], [id^="clone-capture-container-"]');
+                        const containers = document.querySelectorAll('[id^="clone-capture-container-"]');
                         containers.forEach(container => container.remove());
                         
                         const elementsWithCaptureId = document.querySelectorAll('[data-capture-id]');
@@ -1353,130 +999,6 @@ class PerfectHTMLToPPTXConverter:
             # // Enhanced text extraction JavaScript to include in your page.evaluate()
             text_data = await page.evaluate(r"""
                 () => {
-                    function getActualDepth(element) {
-                        // Create a comprehensive stacking context detection
-                        function createsStackingContext(el) {
-                            const computed = window.getComputedStyle(el);
-                            
-                            // Root element always creates stacking context
-                            if (el === document.documentElement) return true;
-                            
-                            // Positioned elements with z-index other than auto
-                            if (computed.position !== 'static' && computed.zIndex !== 'auto') return true;
-                            
-                            // Elements with opacity less than 1
-                            if (parseFloat(computed.opacity) < 1) return true;
-                            
-                            // Elements with transform other than none
-                            if (computed.transform !== 'none') return true;
-                            
-                            // Elements with filter other than none
-                            if (computed.filter !== 'none') return true;
-                            
-                            // Elements with perspective other than none
-                            if (computed.perspective !== 'none') return true;
-                            
-                            // Elements with clip-path other than none
-                            if (computed.clipPath !== 'none') return true;
-                            
-                            // Elements with mask other than none
-                            if (computed.mask !== 'none' || computed.webkitMask !== 'none') return true;
-                            
-                            // Elements with isolation: isolate
-                            if (computed.isolation === 'isolate') return true;
-                            
-                            // Elements with mix-blend-mode other than normal
-                            if (computed.mixBlendMode !== 'normal') return true;
-                            
-                            // Flex/grid items with z-index other than auto
-                            const parent = el.parentElement;
-                            if (parent) {
-                                const parentComputed = window.getComputedStyle(parent);
-                                if ((parentComputed.display === 'flex' || 
-                                     parentComputed.display === 'inline-flex' ||
-                                     parentComputed.display === 'grid' ||
-                                     parentComputed.display === 'inline-grid') && 
-                                    computed.zIndex !== 'auto') {
-                                    return true;
-                                }
-                            }
-                            
-                            return false;
-                        }
-                        
-                        function getStackingContextChain(el) {
-                            const chain = [];
-                            let current = el;
-                            
-                            while (current && current !== document.body.parentElement) {
-                                if (createsStackingContext(current)) {
-                                    const computed = window.getComputedStyle(current);
-                                    let zIndex = 0;
-                                    
-                                    // Calculate effective z-index
-                                    if (computed.position !== 'static' && computed.zIndex !== 'auto') {
-                                        zIndex = parseInt(computed.zIndex) || 0;
-                                } else if (parseFloat(computed.opacity) < 1 || 
-                                          computed.transform !== 'none' || 
-                                          computed.filter !== 'none' ||
-                                          computed.perspective !== 'none' ||
-                                          computed.clipPath !== 'none' ||
-                                          (computed.mask !== 'none' || computed.webkitMask !== 'none') ||
-                                          computed.isolation === 'isolate' ||
-                                          computed.mixBlendMode !== 'normal') {
-                                    // For presentation processing: inherit parent's z-index for better layering
-                                    let parent = current.parentElement;
-                                    let parentZIndex = 0;
-                                    while (parent && parent !== document.body.parentElement) {
-                                        if (createsStackingContext(parent)) {
-                                            const parentComputed = window.getComputedStyle(parent);
-                                            if (parentComputed.position !== 'static' && parentComputed.zIndex !== 'auto') {
-                                                parentZIndex = parseInt(parentComputed.zIndex) || 0;
-                                            }
-                                            break;
-                                        }
-                                        parent = parent.parentElement;
-                                    }
-                                    zIndex = parentZIndex; // Inherit parent's z-index instead of 0
-                                }
-                                    
-                                    chain.unshift({
-                                        element: current,
-                                        zIndex: zIndex,
-                                        isRoot: current === document.documentElement
-                                    });
-                                }
-                                current = current.parentElement;
-                            }
-                            
-                            return chain;
-                        }
-                        
-                        const chain = getStackingContextChain(element);
-                        
-                        // If no stacking contexts found, element is in root stacking context
-                        if (chain.length === 0) {
-                            return 0;
-                        }
-                        
-                        // Calculate depth based on the stacking context chain
-                        // Use the z-index of the topmost stacking context that affects this element
-                        const topContext = chain[chain.length - 1];
-                        
-                        // For elements inside positioned containers, we need to consider
-                        // both the container's z-index and the element's own positioning
-                        const computed = window.getComputedStyle(element);
-                        
-                        if (computed.position !== 'static' && computed.zIndex !== 'auto') {
-                            // Element creates its own stacking context or is positioned with explicit z-index
-                            const elementZIndex = parseInt(computed.zIndex) || 0;
-                            return topContext.zIndex + elementZIndex;
-                        } else {
-                            // Element inherits from its stacking context
-                            return topContext.zIndex;
-                        }
-                    }
-                    
                     function extractTextFromElement(element) {
                         if (!element || element.nodeType !== Node.ELEMENT_NODE) return [];
                         
@@ -1537,9 +1059,6 @@ class PerfectHTMLToPPTXConverter:
                                 textTransform: computedStyle.textTransform
                             };
                             
-                            // Calculate depth for this text element
-                            const textDepth = getActualDepth(element);
-                            
                             // Use text node position if available, otherwise fall back to container
                             if (textNodes.length > 0) {
                                 textNodes.forEach(textNode => {
@@ -1551,8 +1070,7 @@ class PerfectHTMLToPPTXConverter:
                                         height: Math.round(textNode.rect.height * 100) / 100,
                                         actualFontSizePx: actualFontSize,
                                         tag: element.tagName.toLowerCase(),
-                                        style: textStyle,
-                                        depth: textDepth
+                                        style: textStyle
                                     });
                                 });
                             } else {
@@ -1565,8 +1083,7 @@ class PerfectHTMLToPPTXConverter:
                                     height: Math.round(rect.height * 100) / 100,
                                     actualFontSizePx: actualFontSize,
                                     tag: element.tagName.toLowerCase(),
-                                    style: textStyle,
-                                    depth: textDepth
+                                    style: textStyle
                                 });
                             }
                         }
@@ -1579,31 +1096,18 @@ class PerfectHTMLToPPTXConverter:
                         return results;
                     }
                     
-                    // Enhanced sorting function that considers both depth and DOM order
-                    function sortElementsByStackingOrder(elements) {
-                        // First, assign DOM order to each element for tie-breaking
-                        elements.forEach((el, index) => {
-                            el.domOrder = index;
-                        });
-                        
-                        return elements.sort((a, b) => {
-                            // Primary sort: by stacking depth
-                            if (a.depth !== b.depth) {
-                                return a.depth - b.depth;
-                            }
-                            
-                            // Secondary sort: by DOM order (elements that appear later in DOM stack on top)
-                            return a.domOrder - b.domOrder;
-                        });
-                    }
-                    
                     // Start extraction from body
                     const allTextElements = extractTextFromElement(document.body);
                     
-                    // Use the enhanced sorting function
-                    const sortedElements = sortElementsByStackingOrder(allTextElements);
+                    // Sort by position (top to bottom, left to right)
+                    allTextElements.sort((a, b) => {
+                        if (Math.abs(a.y - b.y) < 5) {
+                            return a.x - b.x;
+                        }
+                        return a.y - b.y;
+                    });
                     
-                    return sortedElements;
+                    return allTextElements;
                 }
             """)
             
@@ -1665,7 +1169,6 @@ class PerfectHTMLToPPTXConverter:
                         text_align=style.get('textAlign', 'left'),
                         line_height=line_height,
                         tag=data['tag'],
-                        depth=data.get('depth', 0),
                         style=style
                     )
                     
@@ -1805,10 +1308,7 @@ class PerfectHTMLToPPTXConverter:
         blank_slide_layout = presentation.slide_layouts[6]  # Blank layout
         slide = presentation.slides.add_slide(blank_slide_layout)
         
-        # Combine and sort all elements (visual + text) by depth
-        all_elements = []
-        
-        # Add background first (always depth -1)
+        # Step 1: Add the clean background as the base layer
         if background_path and background_path.exists():
             background_element = {
                 'type': 'background',
@@ -1820,42 +1320,65 @@ class PerfectHTMLToPPTXConverter:
                 'image_path': background_path,
                 'depth': -1
             }
-            all_elements.append(background_element)
+            self.add_visual_element_to_slide(slide, background_element)
         
-        # Add visual elements
+        # Step 2: Add individual visual elements on top of background
         if visual_elements:
             for visual_element in visual_elements:
                 if visual_element['tag'] != 'full_background':
-                    visual_element['element_type'] = 'visual'
-                    all_elements.append(visual_element)
+                    self.add_visual_element_to_slide(slide, visual_element)
         
-        # Add text elements
+        # Step 3: Create editable text boxes on top of everything
         if text_elements:
             for text_element in text_elements:
-                text_dict = {
-                    'element_type': 'text',
-                    'depth': text_element.depth,
-                    'text_element': text_element
-                }
-                all_elements.append(text_dict)
+                try:
+                    self.create_text_box(slide, text_element)
+                except Exception:
+                    pass
+    
+    async def convert_slide_perfect(self, browser, slide_info: Dict, presentation, temp_dir: Path) -> None:
+        """
+        Convert a single HTML slide using perfect 1:1 approach.
         
-        # Sort all elements by depth (background first, then by depth, then by position)
-        all_elements.sort(key=lambda elem: (
-            elem['depth'],
-            elem.get('y', 0) if elem.get('element_type') != 'text' else elem['text_element'].y,
-            elem.get('x', 0) if elem.get('element_type') != 'text' else elem['text_element'].x
-        ))
+        Args:
+            browser: Playwright browser instance
+            slide_info: Slide information dictionary
+            presentation: PowerPoint presentation object
+            temp_dir: Temporary directory for images
+        """
+        html_path = slide_info['path']
+        slide_num = slide_info['number']
         
-        # Add elements to slide in proper layering order
-        for element in all_elements:
-            try:
-                if element.get('element_type') == 'visual' or element.get('type') == 'background':
-                    self.add_visual_element_to_slide(slide, element)
-                elif element.get('element_type') == 'text':
-                    self.create_text_box(slide, element['text_element'])
-            except Exception as e:
-                print(f"Failed to add element: {e}")
-                pass
+        print(f"Converting slide {slide_num}: {slide_info['title']} (Perfect 1:1 Mode)")
+        
+        # Add blank slide
+        blank_slide_layout = presentation.slide_layouts[6]  # Blank layout
+        slide = presentation.slides.add_slide(blank_slide_layout)
+        
+        # Step 1: Capture perfect background (everything except text)
+        print("  🎨 Capturing PERFECT background with all visual elements...")
+        background_image_path = await self.capture_perfect_background(browser, html_path, temp_dir)
+        
+        # Step 2: Add perfect background to slide
+        if background_image_path and background_image_path.exists():
+            left = Inches(0)
+            top = Inches(0)
+            width = Inches(20)  # 1920px at 96 DPI
+            height = Inches(11.25)  # 1080px at 96 DPI
+            
+            picture = slide.shapes.add_picture(str(background_image_path), left, top, width, height)
+            print(f"    ✅ Perfect background added (1920x1080)")
+        
+        # Step 3: Extract and add editable text elements
+        print("  📝 Extracting editable text elements...")
+        text_elements = await self.extract_text_elements(browser, html_path)
+        
+        # Step 4: Create editable text boxes on top of perfect background
+        print("  ✍️  Adding editable text overlays...")
+        for text_element in text_elements:
+            self.create_text_box(slide, text_element)
+        
+        print(f"  🎉 Slide {slide_num}: PERFECT background + {len(text_elements)} editable text elements")
     
     async def convert_to_pptx_perfect(self) -> None:
         """Main perfect conversion method - optimized and reliable."""
@@ -1896,12 +1419,9 @@ class PerfectHTMLToPPTXConverter:
                 try:
                     # Process all slides in parallel
                     # Create semaphore to limit concurrent operations
-                    semaphore = asyncio.Semaphore(5)  # Reduced to 2 for optimal performance
-                    
+                    semaphore = asyncio.Semaphore(5)
                     context = await browser.new_context(
-                        viewport={'width': 1920, 'height': 1080},
-                        device_scale_factor=1,
-                        ignore_https_errors=True
+                        viewport={'width': 1920, 'height': 1080}
                     )
                     
                     async def process_single_slide(slide_info: Dict) -> Dict:
