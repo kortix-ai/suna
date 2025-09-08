@@ -9,7 +9,7 @@ import json
 from typing import List, Dict, Any, Optional
 from core.services.memory import memory_service
 from core.services.supabase import DBConnection
-from utils.logger import logger
+from core.utils.logger import logger
 
 
 # Constants for memory formatting

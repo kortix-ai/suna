@@ -9,7 +9,7 @@ import os
 from typing import Dict, Any, List, Optional
 from agentpress.tool import Tool, ToolResult, openapi_schema
 from agentpress.thread_manager import ThreadManager
-from utils.logger import logger
+from core.utils.logger import logger
 import json
 
 

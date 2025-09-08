@@ -15,8 +15,8 @@ Features:
 import os
 from typing import List, Dict, Any, Optional, Union
 from mem0 import MemoryClient
-from utils.config import config
-from utils.logger import logger
+from core.utils.config import config
+from core.utils.logger import logger
 
 
 class MemoryError(Exception):
