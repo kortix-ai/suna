@@ -466,12 +466,18 @@ async def check_project_count_limit(client, account_id: str) -> Dict[str, Any]:
         logger.debug(f"Account {account_id} has {current_count} projects (real-time count)")
         
         try:
-            credit_result = await client.table('credit_accounts').select('tier').eq('user_id', account_id).single().execute()
+            credit_result = await client.table('credit_accounts').select('tier').eq('account_id', account_id).single().execute()
             tier_name = credit_result.data.get('tier', 'free') if credit_result.data else 'free'
             logger.debug(f"Account {account_id} credit tier: {tier_name}")
         except Exception as credit_error:
-            logger.debug(f"No credit account for {account_id}, defaulting to free tier")
-            tier_name = 'free'
+            try:
+                logger.debug(f"Trying user_id fallback for account {account_id}")
+                credit_result = await client.table('credit_accounts').select('tier').eq('user_id', account_id).single().execute()
+                tier_name = credit_result.data.get('tier', 'free') if credit_result.data else 'free'
+                logger.debug(f"Account {account_id} credit tier (via fallback): {tier_name}")
+            except:
+                logger.debug(f"No credit account for {account_id}, defaulting to free tier")
+                tier_name = 'free'
         
         from billing.config import get_project_limit
         project_limit = get_project_limit(tier_name)

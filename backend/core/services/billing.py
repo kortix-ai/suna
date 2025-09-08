@@ -568,7 +568,7 @@ async def get_usage_logs(client, user_id: str, page: int = 0, items_per_page: in
         try:
             credit_usage_result = await client.table('credit_usage') \
                 .select('message_id, amount_dollars, created_at') \
-                .eq('user_id', user_id) \
+                .eq('account_id', user_id) \
                 .gte('created_at', start_of_month.isoformat()) \
                 .execute()
             

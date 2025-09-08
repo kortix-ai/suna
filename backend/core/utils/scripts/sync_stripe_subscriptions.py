@@ -135,7 +135,7 @@ async def sync_stripe_to_db():
                     
                     account_before = await client.from_('credit_accounts')\
                         .select('*')\
-                        .eq('user_id', account_id)\
+                        .eq('account_id', account_id)\
                         .maybe_single()\
                         .execute()
                     
@@ -147,7 +147,7 @@ async def sync_stripe_to_db():
                     
                     account_after = await client.from_('credit_accounts')\
                         .select('*')\
-                        .eq('user_id', account_id)\
+                        .eq('account_id', account_id)\
                         .maybe_single()\
                         .execute()
                     
@@ -167,7 +167,7 @@ async def sync_stripe_to_db():
                             
                             await client.from_('credit_accounts')\
                                 .update(update_data)\
-                                .eq('user_id', account_id)\
+                                .eq('account_id', account_id)\
                                 .execute()
                             
                             current_balance = Decimal(str(account_after.data['balance']))
@@ -200,26 +200,26 @@ async def sync_stripe_to_db():
     print("="*60)
     
     purchases_result = await client.from_('credit_purchases')\
-        .select('user_id, amount_dollars, status')\
+        .select('account_id, amount_dollars, status')\
         .eq('status', 'completed')\
         .execute()
     
     if purchases_result.data:
         user_purchases = {}
         for purchase in purchases_result.data:
-            user_id = purchase['user_id']
+            account_id = purchase['account_id']
             amount = Decimal(str(purchase.get('amount_dollars', 0)))
-            if user_id not in user_purchases:
-                user_purchases[user_id] = Decimal('0')
-            user_purchases[user_id] += amount
+            if account_id not in user_purchases:
+                user_purchases[account_id] = Decimal('0')
+            user_purchases[account_id] += amount
         
         print(f"Found {len(user_purchases)} users with completed credit purchases")
         
         fixed_count = 0
-        for user_id, purchase_total in user_purchases.items():
+        for account_id, purchase_total in user_purchases.items():
             account_result = await client.from_('credit_accounts')\
                 .select('balance, expiring_credits, non_expiring_credits, tier')\
-                .eq('user_id', user_id)\
+                .eq('account_id', account_id)\
                 .maybe_single()\
                 .execute()
             
@@ -229,13 +229,13 @@ async def sync_stripe_to_db():
                 
                 if current_non_expiring < purchase_total:
                     missing = purchase_total - current_non_expiring
-                    print(f"\n  User {user_id[:8]}... is missing ${missing:.2f} in topup credits")
+                    print(f"\n  User {account_id[:8]}... is missing ${missing:.2f} in topup credits")
                     print(f"    Current non-expiring: ${current_non_expiring}")
                     print(f"    Total purchases: ${purchase_total}")
                     
                     from billing.credit_manager import credit_manager
                     result = await credit_manager.add_credits(
-                        user_id=user_id,
+                        account_id=account_id,
                         amount=missing,
                         is_expiring=False,
                         description=f"Sync fix: Restored missing topup credits (${missing})"
@@ -247,10 +247,10 @@ async def sync_stripe_to_db():
                     else:
                         print(f"    ❌ Failed to add missing credits")
             else:
-                print(f"\n  User {user_id[:8]}... has purchases but no credit account - creating one")
+                print(f"\n  User {account_id[:8]}... has purchases but no credit account - creating one")
                 from billing.credit_manager import credit_manager
                 result = await credit_manager.add_credits(
-                    user_id=user_id,
+                    account_id=account_id,
                     amount=purchase_total,
                     is_expiring=False,
                     description=f"Sync fix: Added topup credits (${purchase_total})"
@@ -280,7 +280,7 @@ async def sync_stripe_to_db():
             expiring = Decimal(str(account.get('expiring_credits', 0)))
             non_expiring = Decimal(str(account.get('non_expiring_credits', 0)))
             
-            print(f"\n  User: {account['user_id'][:8]}...")
+            print(f"\n  User: {account['account_id'][:8]}...")
             print(f"    Tier: {account['tier']}")
             print(f"    Total Balance: ${balance}")
             print(f"      • Expiring: ${expiring}")

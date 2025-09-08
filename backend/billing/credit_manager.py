@@ -12,7 +12,7 @@ class CreditManager:
     
     async def add_credits(
         self,
-        user_id: str,
+        account_id: str,
         amount: Decimal,
         is_expiring: bool = True,
         description: str = "Credit added",
@@ -22,7 +22,7 @@ class CreditManager:
         
         result = await client.from_('credit_accounts').select(
             'expiring_credits, non_expiring_credits, balance, tier'
-        ).eq('user_id', user_id).execute()
+        ).eq('account_id', account_id).execute()
         
         if result.data:
             current = result.data[0]
@@ -69,10 +69,10 @@ class CreditManager:
                 'balance': float(new_total),
                 'updated_at': datetime.now(timezone.utc).isoformat()
             }
-            await client.from_('credit_accounts').update(update_data).eq('user_id', user_id).execute()
+            await client.from_('credit_accounts').update(update_data).eq('account_id', account_id).execute()
         else:
             insert_data = {
-                'user_id': user_id,
+                'account_id': account_id,
                 'expiring_credits': float(new_expiring),
                 'non_expiring_credits': float(new_non_expiring),
                 'balance': float(new_total),
@@ -81,7 +81,7 @@ class CreditManager:
             await client.from_('credit_accounts').insert(insert_data).execute()
         
         ledger_entry = {
-            'user_id': user_id,
+            'account_id': account_id,
             'amount': float(amount),
             'balance_after': float(new_total),
             'type': 'tier_grant' if is_expiring else 'purchase',
@@ -91,8 +91,8 @@ class CreditManager:
         }
         await client.from_('credit_ledger').insert(ledger_entry).execute()
         
-        await Cache.invalidate(f"credit_balance:{user_id}")
-        await Cache.invalidate(f"credit_summary:{user_id}")
+        await Cache.invalidate(f"credit_balance:{account_id}")
+        await Cache.invalidate(f"credit_summary:{account_id}")
         
         return {
             'success': True,
@@ -103,7 +103,7 @@ class CreditManager:
     
     async def use_credits(
         self,
-        user_id: str,
+        account_id: str,
         amount: Decimal,
         description: Optional[str] = None,
         thread_id: Optional[str] = None,
@@ -113,7 +113,7 @@ class CreditManager:
         
         result = await client.from_('credit_accounts').select(
             'expiring_credits, non_expiring_credits, balance'
-        ).eq('user_id', user_id).execute()
+        ).eq('account_id', account_id).execute()
         
         if not result.data:
             return {
@@ -152,10 +152,10 @@ class CreditManager:
             'non_expiring_credits': float(new_non_expiring),
             'balance': float(new_total),
             'updated_at': datetime.now(timezone.utc).isoformat()
-        }).eq('user_id', user_id).execute()
+        }).eq('account_id', account_id).execute()
         
         await client.from_('credit_ledger').insert({
-            'user_id': user_id,
+            'account_id': account_id,
             'amount': float(-amount),
             'balance_after': float(new_total),
             'type': 'usage',
@@ -169,7 +169,7 @@ class CreditManager:
             }
         }).execute()
         
-        await Cache.invalidate(f"credit_balance:{user_id}")
+        await Cache.invalidate(f"credit_balance:{account_id}")
         
         return {
             'success': True,
@@ -183,7 +183,7 @@ class CreditManager:
     
     async def reset_expiring_credits(
         self,
-        user_id: str,
+        account_id: str,
         new_credits: Decimal,
         description: str = "Monthly credit renewal"
     ) -> Dict:
@@ -191,7 +191,7 @@ class CreditManager:
 
         result = await client.from_('credit_accounts').select(
             'balance, expiring_credits, non_expiring_credits'
-        ).eq('user_id', user_id).execute()
+        ).eq('account_id', account_id).execute()
         
         if result.data:
             current = result.data[0]
@@ -214,13 +214,13 @@ class CreditManager:
             'non_expiring_credits': float(actual_non_expiring),
             'balance': float(new_total),
             'updated_at': datetime.now(timezone.utc).isoformat()
-        }).eq('user_id', user_id).execute()
+        }).eq('account_id', account_id).execute()
         
         expires_at = datetime.now(timezone.utc).replace(day=1) + timedelta(days=32)
         expires_at = expires_at.replace(day=1)
         
         await client.from_('credit_ledger').insert({
-            'user_id': user_id,
+            'account_id': account_id,
             'amount': float(new_credits),
             'balance_after': float(new_total),
             'type': 'tier_grant',
@@ -234,8 +234,8 @@ class CreditManager:
             }
         }).execute()
         
-        await Cache.invalidate(f"credit_balance:{user_id}")
-        await Cache.invalidate(f"credit_summary:{user_id}")
+        await Cache.invalidate(f"credit_balance:{account_id}")
+        await Cache.invalidate(f"credit_summary:{account_id}")
         
         return {
             'success': True,
@@ -244,12 +244,12 @@ class CreditManager:
             'total_balance': float(new_total)
         }
     
-    async def get_balance(self, user_id: str) -> Dict:
+    async def get_balance(self, account_id: str) -> Dict:
         client = await self.db.client
         
         result = await client.from_('credit_accounts').select(
             'balance, expiring_credits, non_expiring_credits, tier'
-        ).eq('user_id', user_id).execute()
+        ).eq('account_id', account_id).execute()
         
         if result.data:
             data = result.data[0]

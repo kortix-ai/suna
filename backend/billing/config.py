@@ -2,6 +2,92 @@ from decimal import Decimal
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 from core.utils.config import config
+from enum import Enum
+import asyncio
+from core.services.supabase import DBConnection
+from core.utils.logger import logger
+
+class TrialMode(Enum):
+    DISABLED = "disabled"
+    CC_REQUIRED = "cc_required"
+    CC_OPTIONAL = "cc_optional"
+
+@dataclass
+class TrialConfig:
+    mode: TrialMode
+    duration_days: int = 7
+    trial_tier: str = "tier_2_20"
+    trial_credits: Decimal = Decimal("20.00")
+    stripe_trial_period_days: int = 7
+    require_payment_method_upfront: bool = False
+    
+DEFAULT_TRIAL_CONFIG = TrialConfig(
+    mode=TrialMode.CC_REQUIRED,
+    duration_days=7,
+    trial_tier="tier_2_20",
+    trial_credits=Decimal("20.00"),
+    stripe_trial_period_days=7,
+    require_payment_method_upfront=False
+)
+
+_trial_config_cache = None
+_trial_config_cache_time = None
+
+async def get_trial_config() -> TrialConfig:
+    global _trial_config_cache, _trial_config_cache_time
+    import time
+    
+    if _trial_config_cache and _trial_config_cache_time and (time.time() - _trial_config_cache_time < 60):
+        return _trial_config_cache
+    
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        result = await client.from_('system_config').select('key, value').in_('key', [
+            'trial_mode', 'trial_duration_days', 'trial_credits'
+        ]).execute()
+        
+        if result.data:
+            settings = {row['key']: row['value'] for row in result.data}
+            
+            mode_str = settings.get('trial_mode', 'cc_required')
+            mode = TrialMode(mode_str) if mode_str in [m.value for m in TrialMode] else TrialMode.CC_REQUIRED
+            
+            _trial_config_cache = TrialConfig(
+                mode=mode,
+                duration_days=int(settings.get('trial_duration_days', 7)),
+                trial_tier="tier_2_20",
+                trial_credits=Decimal(settings.get('trial_credits', '20.00')),
+                stripe_trial_period_days=int(settings.get('trial_duration_days', 7)),
+                require_payment_method_upfront=(mode == TrialMode.CC_REQUIRED)
+            )
+            _trial_config_cache_time = time.time()
+            return _trial_config_cache
+    except Exception as e:
+        logger.warning(f"Failed to load trial config from database: {e}, using defaults")
+    
+    return DEFAULT_TRIAL_CONFIG
+
+def is_trial_enabled() -> bool:
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            return DEFAULT_TRIAL_CONFIG.mode != TrialMode.DISABLED
+        config = loop.run_until_complete(get_trial_config())
+        return config.mode != TrialMode.DISABLED
+    except:
+        return DEFAULT_TRIAL_CONFIG.mode != TrialMode.DISABLED
+
+def is_cc_required_for_trial() -> bool:
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            return DEFAULT_TRIAL_CONFIG.mode == TrialMode.CC_REQUIRED
+        config = loop.run_until_complete(get_trial_config())
+        return config.mode == TrialMode.CC_REQUIRED
+    except:
+        return DEFAULT_TRIAL_CONFIG.mode == TrialMode.CC_REQUIRED
 
 TOKEN_PRICE_MULTIPLIER = Decimal('1.5')
 MINIMUM_CREDIT_FOR_RUN = Decimal('0.01')

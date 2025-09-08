@@ -35,6 +35,7 @@ import { ReleaseBadge } from '../auth/release-badge';
 import { useDashboardTour } from '@/hooks/use-dashboard-tour';
 import { TourConfirmationDialog } from '@/components/tour/TourConfirmationDialog';
 import { Calendar, MessageSquare, Plus, Sparkles, Zap } from 'lucide-react';
+import { TrialPrompt } from './trial-prompt';
 
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 
@@ -339,6 +340,9 @@ export function DashboardContent() {
         onOpenChange={setShowPaymentModal}
         showUsageLimitAlert={true}
       />
+      
+      <TrialPrompt />
+      
       <div className="flex flex-col h-screen w-full overflow-hidden">
         <div className="flex-1 overflow-y-auto">
           <div className="min-h-full flex flex-col">

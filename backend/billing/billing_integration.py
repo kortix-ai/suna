@@ -7,11 +7,11 @@ from core.utils.logger import logger
 
 class BillingIntegration:
     @staticmethod
-    async def check_and_reserve_credits(user_id: str, estimated_tokens: int = 10000) -> Tuple[bool, str, Optional[str]]:
+    async def check_and_reserve_credits(account_id: str, estimated_tokens: int = 10000) -> Tuple[bool, str, Optional[str]]:
         if config.ENV_MODE == EnvMode.LOCAL:
             return True, "Local mode", None
         
-        balance_info = await credit_manager.get_balance(user_id)
+        balance_info = await credit_manager.get_balance(account_id)
         balance = Decimal(str(balance_info.get('total', 0)))
         
         estimated_cost = Decimal('0.10')
@@ -23,7 +23,7 @@ class BillingIntegration:
     
     @staticmethod
     async def deduct_usage(
-        user_id: str,
+        account_id: str,
         prompt_tokens: int,
         completion_tokens: int,
         model: str,
@@ -43,7 +43,7 @@ class BillingIntegration:
         logger.info(f"[BILLING] Calculated cost: ${cost:.6f} for {model}")
         
         result = await credit_manager.use_credits(
-            user_id=user_id,
+account_id=account_id,
             amount=cost,
             description=f"{model}: {prompt_tokens}+{completion_tokens} tokens",
             thread_id=None,
@@ -51,9 +51,9 @@ class BillingIntegration:
         )
         
         if result.get('success'):
-            logger.info(f"[BILLING] Successfully deducted ${cost:.6f} from user {user_id}. New balance: ${result.get('new_total', 0):.2f} (expiring: ${result.get('from_expiring', 0):.2f}, non-expiring: ${result.get('from_non_expiring', 0):.2f})")
+            logger.info(f"[BILLING] Successfully deducted ${cost:.6f} from user {account_id}. New balance: ${result.get('new_total', 0):.2f} (expiring: ${result.get('from_expiring', 0):.2f}, non-expiring: ${result.get('from_non_expiring', 0):.2f})")
         else:
-            logger.error(f"[BILLING] Failed to deduct credits for user {user_id}: {result.get('error')}")
+            logger.error(f"[BILLING] Failed to deduct credits for user {account_id}: {result.get('error')}")
         
         return {
             'success': result.get('success', False),

@@ -139,6 +139,37 @@ export interface TestRenewalResponse {
   new_balance?: number;
 }
 
+export interface TrialStatus {
+  has_trial: boolean;
+  trial_status?: 'none' | 'active' | 'expired' | 'converted';
+  trial_started_at?: string;
+  trial_ends_at?: string;
+  trial_mode?: string;
+  remaining_days?: number;
+  credits_remaining?: number;
+  tier?: string;
+}
+
+export interface TrialStartResponse {
+  success: boolean;
+  trial_started?: boolean;
+  requires_checkout?: boolean;
+  trial_ends_at?: string;
+  credits_granted?: number;
+  tier?: string;
+  message: string;
+}
+
+export interface TrialCheckoutRequest {
+  success_url: string;
+  cancel_url: string;
+}
+
+export interface TrialCheckoutResponse {
+  checkout_url: string;
+  session_id: string;
+}
+
 export const billingApiV2 = {
   async getSubscription() {
     const response = await backendApi.get<SubscriptionInfo>('/billing/v2/subscription');
@@ -228,6 +259,27 @@ export const billingApiV2 = {
     const response = await backendApi.post<TestRenewalResponse>('/billing/v2/test/trigger-renewal');
     if (response.error) throw response.error;
     return response.data!;
+  },
+
+  async getTrialStatus() {
+    const response = await backendApi.get<TrialStatus>('/billing/v2/trial/status');
+    if (response.error) throw response.error;
+    return response.data!;
+  },
+
+  async startTrial() {
+    const response = await backendApi.post<TrialStartResponse>('/billing/v2/trial/start');
+    if (response.error) throw response.error;
+    return response.data!;
+  },
+
+  async createTrialCheckout(request: TrialCheckoutRequest) {
+    const response = await backendApi.post<TrialCheckoutResponse>(
+      '/billing/v2/trial/create-checkout',
+      request
+    );
+    if (response.error) throw response.error;
+    return response.data!;
   }
 };
 
@@ -247,4 +299,8 @@ export const purchaseCredits = (request: PurchaseCreditsRequest) =>
 export const getTransactions = (limit?: number, offset?: number) => 
   billingApiV2.getTransactions(limit, offset);
 export const getUsageHistory = (days?: number) => billingApiV2.getUsageHistory(days);
-export const triggerTestRenewal = () => billingApiV2.triggerTestRenewal(); 
+export const triggerTestRenewal = () => billingApiV2.triggerTestRenewal();
+export const getTrialStatus = () => billingApiV2.getTrialStatus();
+export const startTrial = () => billingApiV2.startTrial();
+export const createTrialCheckout = (request: TrialCheckoutRequest) => 
+  billingApiV2.createTrialCheckout(request); 

@@ -5,6 +5,12 @@ from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.utils.cache import Cache
 from billing.config import FREE_TIER_INITIAL_CREDITS
+from enum import Enum
+
+class TrialMode(Enum):
+    DISABLED = "disabled"
+    CC_REQUIRED = "cc_required"
+    CC_OPTIONAL = "cc_optional"
 
 class CreditService:
     def __init__(self):
@@ -26,27 +32,67 @@ class CreditService:
             if cached:
                 return Decimal(cached)
         
-        client = await self._get_client()
-        result = await client.from_('credit_accounts').select('balance').eq('user_id', user_id).execute()
+        try:
+            client = await self._get_client()
+            result = await client.from_('credit_accounts').select('balance').eq('account_id', user_id).execute()
+        except Exception as e:
+            logger.error(f"Error fetching balance for user {user_id}: {e}")
+            raise
         
         if result.data and len(result.data) > 0:
             balance = Decimal(str(result.data[0]['balance']))
         else:
-            await client.from_('credit_accounts').insert({
-                'user_id': user_id,
-                'balance': str(FREE_TIER_INITIAL_CREDITS),
-                'tier': 'free',
-                'last_grant_date': datetime.now(timezone.utc).isoformat()
-            }).execute()
-            balance = FREE_TIER_INITIAL_CREDITS
+            trial_mode = TrialMode.DISABLED
+            logger.info(f"Creating new user {user_id} with free tier (trial migration will handle conversion)")
             
-            await client.from_('credit_ledger').insert({
-                'user_id': user_id,
-                'amount': str(FREE_TIER_INITIAL_CREDITS),
-                'type': 'tier_grant',
-                'description': 'Welcome to Suna! Free tier initial credits',
-                'balance_after': str(FREE_TIER_INITIAL_CREDITS)
-            }).execute()
+            if trial_mode == TrialMode.DISABLED:
+                account_data = {
+                    'account_id': user_id,
+                    'balance': str(FREE_TIER_INITIAL_CREDITS),
+                    'tier': 'free'
+                }
+                
+                try:
+                    logger.info(f"Creating FREE TIER account for new user {user_id}")
+                    
+                    try:
+                        test_data = {**account_data, 'last_grant_date': datetime.now(timezone.utc).isoformat()}
+                        await client.from_('credit_accounts').insert(test_data).execute()
+                        logger.info(f"Successfully created FREE TIER account for user {user_id}")
+                    except Exception as e1:
+                        logger.warning(f"Creating account without last_grant_date: {e1}")
+                        await client.from_('credit_accounts').insert(account_data).execute()
+                        logger.info(f"Successfully created minimal FREE TIER account for user {user_id}")
+                        
+                except Exception as e:
+                    logger.error(f"Failed to create FREE TIER account for user {user_id}: {e}")
+                    raise
+                
+                balance = FREE_TIER_INITIAL_CREDITS
+                
+                await client.from_('credit_ledger').insert({
+                    'account_id': user_id,
+                    'amount': str(FREE_TIER_INITIAL_CREDITS),
+                    'type': 'tier_grant',
+                    'description': 'Welcome to Suna! Free tier initial credits',
+                    'balance_after': str(FREE_TIER_INITIAL_CREDITS)
+                }).execute()
+            else:
+                account_data = {
+                    'account_id': user_id,
+                    'balance': '0',
+                    'tier': 'free'
+                }
+                try:
+                    logger.info(f"Creating TRIAL PENDING account for new user {user_id}")
+                    await client.from_('credit_accounts').insert(account_data).execute()
+                    logger.info(f"Successfully created TRIAL PENDING account for user {user_id}")
+                except Exception as e:
+                    logger.error(f"Failed to create TRIAL PENDING account for user {user_id}: {e}")
+                    raise
+                
+                balance = Decimal('0')
+                
         
         if self.cache:
             await self.cache.set(cache_key, str(balance), ttl=300)
@@ -142,7 +188,7 @@ class CreditService:
             amount = Decimal(str(tier['credits']))
             
             client = await self._get_client()
-            account_result = await client.from_('credit_accounts').select('last_grant_date').eq('user_id', user_id).execute()
+            account_result = await client.from_('credit_accounts').select('last_grant_date').eq('account_id', user_id).execute()
             
             if account_result.data and len(account_result.data) > 0:
                 last_grant = account_result.data[0].get('last_grant_date')
@@ -177,7 +223,7 @@ class CreditService:
         client = await self._get_client()
         result = await client.from_('credit_ledger')\
             .select('*')\
-            .eq('user_id', user_id)\
+            .eq('account_id', user_id)\
             .order('created_at', desc=True)\
             .limit(limit)\
             .offset(offset)\
@@ -189,7 +235,7 @@ class CreditService:
         client = await self._get_client()
         account_result = await client.from_('credit_accounts')\
             .select('*')\
-            .eq('user_id', user_id)\
+            .eq('account_id', user_id)\
             .execute()
         
         if not account_result.data or len(account_result.data) == 0:
@@ -205,7 +251,7 @@ class CreditService:
         
         ledger_result = await client.from_('credit_ledger')\
             .select('type, amount, description')\
-            .eq('user_id', user_id)\
+            .eq('account_id', user_id)\
             .execute()
         
         lifetime_granted = Decimal('0')

@@ -186,7 +186,7 @@ class ThreadManager:
                             logger.info(f"[THREAD_MANAGER] Deducting token usage for user {user_id}: model='{model}', tokens={prompt_tokens}+{completion_tokens}")
                             
                             deduct_result = await billing_integration.deduct_usage(
-                                user_id=user_id,
+                                account_id=user_id,
                                 prompt_tokens=prompt_tokens,
                                 completion_tokens=completion_tokens,
                                 model=model or "unknown",
