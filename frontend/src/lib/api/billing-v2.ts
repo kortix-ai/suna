@@ -150,14 +150,14 @@ export interface TrialStatus {
   tier?: string;
 }
 
+export interface TrialStartRequest {
+  success_url: string;
+  cancel_url: string;
+}
+
 export interface TrialStartResponse {
-  success: boolean;
-  trial_started?: boolean;
-  requires_checkout?: boolean;
-  trial_ends_at?: string;
-  credits_granted?: number;
-  tier?: string;
-  message: string;
+  checkout_url: string;
+  session_id: string;
 }
 
 export interface TrialCheckoutRequest {
@@ -267,8 +267,8 @@ export const billingApiV2 = {
     return response.data!;
   },
 
-  async startTrial() {
-    const response = await backendApi.post<TrialStartResponse>('/billing/v2/trial/start');
+  async startTrial(request: TrialStartRequest) {
+    const response = await backendApi.post<TrialStartResponse>('/billing/v2/trial/start', request);
     if (response.error) throw response.error;
     return response.data!;
   },
@@ -277,6 +277,15 @@ export const billingApiV2 = {
     const response = await backendApi.post<TrialCheckoutResponse>(
       '/billing/v2/trial/create-checkout',
       request
+    );
+    if (response.error) throw response.error;
+    return response.data!;
+  },
+
+  async cancelTrial() {
+    const response = await backendApi.post<{ success: boolean; message: string; subscription_status: string }>(
+      '/billing/v2/trial/cancel',
+      {}
     );
     if (response.error) throw response.error;
     return response.data!;
@@ -301,6 +310,7 @@ export const getTransactions = (limit?: number, offset?: number) =>
 export const getUsageHistory = (days?: number) => billingApiV2.getUsageHistory(days);
 export const triggerTestRenewal = () => billingApiV2.triggerTestRenewal();
 export const getTrialStatus = () => billingApiV2.getTrialStatus();
-export const startTrial = () => billingApiV2.startTrial();
+export const startTrial = (request: TrialStartRequest) => billingApiV2.startTrial(request);
 export const createTrialCheckout = (request: TrialCheckoutRequest) => 
-  billingApiV2.createTrialCheckout(request); 
+  billingApiV2.createTrialCheckout(request);
+export const cancelTrial = () => billingApiV2.cancelTrial(); 

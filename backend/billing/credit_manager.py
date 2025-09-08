@@ -128,6 +128,19 @@ class CreditManager:
         current_non_expiring = Decimal(str(current.get('non_expiring_credits', 0)))
         current_total = Decimal(str(current.get('balance', 0)))
         
+        credit_sum = current_expiring + current_non_expiring
+        if abs(credit_sum - current_total) > Decimal('0.01'):
+            difference = current_total - credit_sum
+            if difference > 0:
+                current_non_expiring += difference
+            else:
+                if current_expiring >= abs(difference):
+                    current_expiring -= abs(difference)
+                else:
+                    remainder = abs(difference) - current_expiring
+                    current_expiring = Decimal('0')
+                    current_non_expiring = max(Decimal('0'), current_non_expiring - remainder)
+        
         if current_total < amount:
             return {
                 'success': False,

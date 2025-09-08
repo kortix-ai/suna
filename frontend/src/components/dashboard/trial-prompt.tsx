@@ -11,8 +11,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useRouter } from 'next/navigation';
-import { Sparkles, CreditCard, Clock } from 'lucide-react';
-import { createTrialCheckout } from '@/lib/api/billing-v2';
+import { Sparkles, CreditCard } from 'lucide-react';
 import { toast } from 'sonner';
 
 export function TrialPrompt() {
@@ -23,7 +22,6 @@ export function TrialPrompt() {
   const router = useRouter();
 
   useEffect(() => {
-    // Show prompt if user has no trial and hasn't dismissed it
     if (!isLoadingStatus && trialStatus && !trialStatus.has_trial) {
       const hasSeenPrompt = localStorage.getItem('trial_prompt_seen');
       if (!hasSeenPrompt) {
@@ -35,25 +33,16 @@ export function TrialPrompt() {
   const handleStartTrial = async () => {
     setIsLoading(true);
     try {
-      const result = await startTrialMutation.mutateAsync();
-      
-      if (result.trial_started) {
-        // Trial started successfully
-        setIsOpen(false);
-        localStorage.setItem('trial_prompt_seen', 'true');
-      } else if (result.requires_checkout) {
-        // Need to add payment method
-        const checkoutData = await createTrialCheckout({
-          success_url: `${window.location.origin}/dashboard?trial=started`,
-          cancel_url: `${window.location.origin}/dashboard`,
-        });
-        
-        if (checkoutData.checkout_url) {
-          window.location.href = checkoutData.checkout_url;
-        }
+      const result = await startTrialMutation.mutateAsync({
+        success_url: `${window.location.origin}/dashboard?trial=started`,
+        cancel_url: `${window.location.origin}/dashboard`,
+      });
+      if (result.checkout_url) {
+        window.location.href = result.checkout_url;
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to start trial:', error);
+      toast.error(error?.message || 'Failed to start trial');
     } finally {
       setIsLoading(false);
     }
@@ -78,7 +67,7 @@ export function TrialPrompt() {
           </DialogTitle>
           <DialogDescription className="space-y-3 pt-3">
             <p>
-              Welcome to Suna! Get started with your free trial and unlock:
+              Welcome to Suna! A subscription is required to use the platform. Start your 7-day trial to get:
             </p>
             <ul className="space-y-2 text-sm">
               <li className="flex items-start gap-2">
@@ -99,8 +88,8 @@ export function TrialPrompt() {
               </li>
             </ul>
             <div className="flex items-center gap-2 text-sm text-muted-foreground pt-2">
-              <Clock className="h-4 w-4" />
-              <span>No credit card required</span>
+              <CreditCard className="h-4 w-4" />
+              <span>Cancel anytime during your trial</span>
             </div>
           </DialogDescription>
         </DialogHeader>

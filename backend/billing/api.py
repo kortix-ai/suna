@@ -17,8 +17,10 @@ from .config import (
     get_tier_by_name,
     TIERS, 
     get_monthly_credits,
-    get_trial_config,
-    TrialMode,
+    TRIAL_ENABLED,
+    TRIAL_DURATION_DAYS,
+    TRIAL_TIER,
+    TRIAL_CREDITS,
 )
 from .credit_manager import credit_manager
 
@@ -36,6 +38,10 @@ class CreatePortalSessionRequest(BaseModel):
 
 class PurchaseCreditsRequest(BaseModel):
     amount: Decimal
+    success_url: str
+    cancel_url: str
+
+class TrialStartRequest(BaseModel):
     success_url: str
     cancel_url: str
 
@@ -102,22 +108,23 @@ async def get_user_subscription_tier(account_id: str) -> Dict:
     await Cache.set(cache_key, tier_info, ttl=60)
     return tier_info
 
+    
 async def get_or_create_stripe_customer(account_id: str) -> str:
-    db = DBConnection()
-    client = await db.client
+    customers = stripe.Customer.search(query=f"metadata['account_id']:'{account_id}'")
     
-    customer_result = await client.schema('basejump').from_('billing_customers').select('id').eq('account_id', account_id).execute()
-    
-    if customer_result.data and len(customer_result.data) > 0:
-        return customer_result.data[0]['id']
+    if customers.data:
+        logger.info(f"Found existing Stripe customer {customers.data[0].id} for account {account_id}")
+        return customers.data[0].id
     
     email = None
     try:
+        db = DBConnection()
+        client = await db.client
         user_result = await client.auth.admin.get_user_by_id(account_id)
         if user_result and user_result.user:
             email = user_result.user.email
     except Exception as e:
-        logger.warning(f"Could not get user email from auth: {e}")
+        logger.warning(f"Could not get user email: {e}")
     
     if not email:
         email = f"{account_id}@users.kortix.ai"
@@ -127,12 +134,6 @@ async def get_or_create_stripe_customer(account_id: str) -> str:
         email=email,
         metadata={'account_id': account_id, 'account_type': 'personal'}
     )
-    
-    await client.schema('basejump').from_('billing_customers').insert({
-        'id': customer.id,
-        'account_id': account_id,
-        'email': email
-    }).execute()
     
     logger.info(f"Created new Stripe customer {customer.id} for user {account_id}")
     return customer.id
@@ -468,6 +469,44 @@ async def stripe_webhook(request: Request):
                         logger.error(f"[WEBHOOK] Credit amount: ${credit_amount}")
             elif session.get('subscription'):
                 logger.info(f"[WEBHOOK] Checkout completed for new subscription: {session['subscription']}")
+
+                if session.get('metadata', {}).get('trial_start') == 'true':
+                    subscription_id = session['subscription']
+                    subscription = stripe.Subscription.retrieve(subscription_id)
+                    
+                    if subscription.status == 'trialing':
+                        db = DBConnection()
+                        client = await db.client
+                        
+                        account_id = session['metadata']['account_id']
+                        
+                        trial_ends_at = datetime.fromtimestamp(subscription.trial_end, tz=timezone.utc)
+                        
+                        await client.from_('credit_accounts').update({
+                            'trial_status': 'active',
+                            'trial_started_at': datetime.now(timezone.utc).isoformat(),
+                            'trial_ends_at': trial_ends_at.isoformat(),
+                            'tier': 'tier_2_20',
+                            'balance': '20.00',
+                            'stripe_subscription_id': subscription_id
+                        }).eq('account_id', account_id).execute()
+                        
+                        await client.from_('trial_history').insert({
+                            'account_id': account_id,
+                            'started_at': datetime.now(timezone.utc).isoformat(),
+                            'stripe_checkout_session_id': session['id']
+                        }).execute()
+                        
+                        # Add tria  l credits to ledger
+                        await client.from_('credit_ledger').insert({
+                            'account_id': account_id,
+                            'amount': '20.00',
+                            'balance_after': '20.00',
+                            'type': 'trial_grant',
+                            'description': '7-day free trial started - tier_2_20'
+                        }).execute()
+                        
+                        logger.info(f"[WEBHOOK] Trial activated for account {account_id}")
         
         elif event.type in ['customer.subscription.created', 'customer.subscription.updated']:
             subscription = event.data.object
@@ -481,22 +520,45 @@ async def stripe_webhook(request: Request):
                     db = DBConnection()
                     client = await db.client
                     
-                    customer_result = await client.schema('basejump').from_('billing_customers').select('account_id').eq('id', subscription['customer']).execute()
-                    if customer_result.data:
-                        account_id = customer_result.data[0]['account_id']
-                        
+                    account_id = subscription.metadata.get('account_id')
+                    
+                    if account_id:
                         if subscription.status == 'active':
                             logger.info(f"[WEBHOOK] Trial converted to paid for account {account_id}")
-                            await client.rpc('handle_trial_end', {
-                                'p_account_id': account_id,
-                                'p_converted': True,
-                                'p_new_tier': get_tier_by_price_id(subscription['items']['data'][0]['price']['id']).name if get_tier_by_price_id(subscription['items']['data'][0]['price']['id']) else 'tier_2_20'
-                            }).execute()
+                            
+                            await client.from_('credit_accounts').update({
+                                'trial_status': 'converted',
+                                'tier': 'tier_2_20'
+                            }).eq('account_id', account_id).execute()
+                            
+                            await client.from_('trial_history').update({
+                                'ended_at': datetime.now(timezone.utc).isoformat(),
+                                'converted_to_paid': True
+                            }).eq('account_id', account_id).execute()
+                            
                         else:
                             logger.info(f"[WEBHOOK] Trial expired without conversion for account {account_id}, status: {subscription.status}")
-                            await client.rpc('handle_trial_end', {
-                                'p_account_id': account_id,
-                                'p_converted': False
+                            
+                            # No free tier - remove all access
+                            await client.from_('credit_accounts').update({
+                                'trial_status': 'expired',
+                                'tier': 'none',  # No tier - must subscribe
+                                'balance': '0.00',  # No credits
+                                'stripe_subscription_id': None
+                            }).eq('account_id', account_id).execute()
+                            
+                            await client.from_('trial_history').update({
+                                'ended_at': datetime.now(timezone.utc).isoformat(),
+                                'converted_to_paid': False
+                            }).eq('account_id', account_id).execute()
+                            
+                            # Log credit removal
+                            await client.from_('credit_ledger').insert({
+                                'account_id': account_id,
+                                'amount': -20.00,  # Remove all trial credits
+                                'balance_after': 0.00,  # Balance after removing trial credits
+                                'type': 'adjustment',
+                                'description': 'Trial expired - all access removed'
                             }).execute()
             
             if subscription.status in ['active', 'trialing']:
@@ -507,19 +569,40 @@ async def stripe_webhook(request: Request):
             subscription = event.data.object
             logger.info(f"[WEBHOOK] Subscription deleted/cancelled: {subscription['id']}, status was: {subscription.status}")
             
-            if subscription.status == 'trialing':
+            if subscription.status in ['trialing', 'canceled']:
                 db = DBConnection()
                 client = await db.client
+
+                account_id = subscription.get('metadata', {}).get('account_id')
+                if not account_id:
+                    customer_result = await client.schema('basejump').from_('billing_customers').select('account_id').eq('id', subscription['customer']).execute()
+                    if customer_result.data:
+                        account_id = customer_result.data[0]['account_id']
                 
-                customer_result = await client.schema('basejump').from_('billing_customers').select('account_id').eq('id', subscription['customer']).execute()
-                if customer_result.data:
-                    account_id = customer_result.data[0]['account_id']
-                    logger.info(f"[WEBHOOK] User {account_id} cancelled during trial")
+                if account_id:
+                    logger.info(f"[WEBHOOK] User {account_id} cancelled during trial - removing all access")
                     
-                    await client.rpc('handle_trial_end', {
-                        'p_account_id': account_id,
-                        'p_converted': False
+                    await client.from_('credit_accounts').update({
+                        'trial_status': 'expired',
+                        'tier': 'none',
+                        'balance': 0.00,
+                        'stripe_subscription_id': None
+                    }).eq('account_id', account_id).execute()
+                    
+                    await client.from_('trial_history').update({
+                        'ended_at': datetime.now(timezone.utc).isoformat(),
+                        'converted_to_paid': False
+                    }).eq('account_id', account_id).is_('ended_at', 'null').execute()
+                    
+                    await client.from_('credit_ledger').insert({
+                        'account_id': account_id,
+                        'amount': -20.00,
+                        'balance_after': 0.00,
+                        'type': 'adjustment',
+                        'description': 'Trial cancelled - all access removed'
                     }).execute()
+                    
+                    logger.info(f"[WEBHOOK] Successfully removed all access for account {account_id} after trial cancellation")
         
         elif event.type == 'invoice.payment_succeeded':
             invoice = event.data.object
@@ -548,12 +631,16 @@ async def handle_subscription_change(subscription: Dict):
     db = DBConnection()
     client = await db.client
     
-    customer_result = await client.schema('basejump').from_('billing_customers').select('account_id').eq('id', subscription['customer']).execute()
+    account_id = subscription.get('metadata', {}).get('account_id')
     
-    if not customer_result.data or len(customer_result.data) == 0:
-        return
-    
-    account_id = customer_result.data[0]['account_id']
+    if not account_id:
+        customer_result = await client.schema('basejump').from_('billing_customers').select('account_id').eq('id', subscription['customer']).execute()
+        
+        if not customer_result.data or len(customer_result.data) == 0:
+            logger.warning(f"Could not find account for customer {subscription['customer']}")
+            return
+        
+        account_id = customer_result.data[0]['account_id']
     price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
     
     new_tier_info = get_tier_by_price_id(price_id)
@@ -604,12 +691,11 @@ async def handle_subscription_change(subscription: Dict):
                 }).eq('account_id', account_id).execute()
                 
                 # Grant trial credits
-                trial_config = await get_trial_config()
                 await credit_manager.add_credits(
                     account_id=account_id,
-                    amount=trial_config.trial_credits,
+                    amount=TRIAL_CREDITS,
                     is_expiring=False,  # Trial credits don't expire
-                    description=f'{trial_config.duration_days}-day free trial credits'
+                    description=f'{TRIAL_DURATION_DAYS}-day free trial credits'
                 )
                 
                 # Record in trial history
@@ -619,7 +705,7 @@ async def handle_subscription_change(subscription: Dict):
                     'started_at': datetime.now(timezone.utc).isoformat(),
                     'stripe_subscription_id': subscription['id'],
                     'had_payment_method': True,
-                    'credits_granted': str(trial_config.trial_credits)
+                    'credits_granted': str(TRIAL_CREDITS)
                 }).on_conflict('account_id').do_nothing().execute()
                 
                 logger.info(f"Started trial for user {account_id} via Stripe subscription")
@@ -817,8 +903,8 @@ async def get_subscription(
         
         if credit_result.data:
             credit_account = credit_result.data[0]
-            tier_name = credit_account.get('tier', 'free')
-            tier_obj = TIERS.get(tier_name, TIERS['free'])
+            tier_name = credit_account.get('tier', 'none')
+            tier_obj = TIERS.get(tier_name, TIERS['none'])
             
             actual_credits = float(tier_obj.monthly_credits)
             if tier_name != 'free':
@@ -861,21 +947,21 @@ async def get_subscription(
                 except Exception as stripe_error:
                     logger.warning(f"Could not retrieve Stripe subscription {stripe_subscription_id}: {stripe_error}")
         else:
-            logger.warning(f"[SUBSCRIPTION] No credit account found for account {account_id}, defaulting to free tier")
-            tier_name = 'free'
-            tier_obj = TIERS['free']
+            logger.warning(f"[SUBSCRIPTION] No credit account found for account {account_id}, no access")
+            tier_name = 'none'
+            tier_obj = TIERS['none']
             tier_info = {
-                'name': 'free',
-                'credits': float(TIERS['free'].monthly_credits)
+                'name': 'none',
+                'credits': 0.0
             }
-            price_id = config.STRIPE_FREE_TIER_ID
+            price_id = None
         
         balance = await credit_service.get_balance(account_id)
         summary = await credit_service.get_account_summary(account_id)
         
         if subscription_data:
             status = 'active'
-        elif tier_name != 'free':
+        elif tier_name not in ['none', 'free']:
             status = 'cancelled'
         else:
             status = 'no_subscription'
@@ -903,15 +989,15 @@ async def get_subscription(
         
     except Exception as e:
         logger.error(f"Error getting subscription: {e}", exc_info=True)
-        free_tier = TIERS['free']
+        no_tier = TIERS['none']
         tier_info = {
-            'name': free_tier.name,
-            'credits': float(free_tier.monthly_credits)
+            'name': no_tier.name,
+            'credits': 0.0
         }
         return {
             'status': 'no_subscription',
-            'plan_name': 'free',
-            'price_id': config.STRIPE_FREE_TIER_ID,
+            'plan_name': 'none',
+            'price_id': None,
             'subscription': None,
             'subscription_id': None,
             'current_usage': 0,
@@ -1415,185 +1501,162 @@ async def get_trial_status(
         db = DBConnection()
         client = await db.client
         
-        trial_config = await get_trial_config()
-        if trial_config.mode == TrialMode.DISABLED:
+        if not TRIAL_ENABLED:
             return {
-                'trial_enabled': False,
+                'has_trial': False,
                 'message': 'Trials are not enabled'
             }
-        
+
         account_result = await client.from_('credit_accounts').select(
-            'tier, trial_status, trial_ends_at, is_grandfathered_free, stripe_subscription_id'
+            'tier, trial_status, trial_ends_at, stripe_subscription_id'
         ).eq('account_id', account_id).execute()
         
         if account_result.data and len(account_result.data) > 0:
             account = account_result.data[0]
+            trial_status = account.get('trial_status', 'none')
             
-            if account.get('is_grandfathered_free'):
+            if trial_status and trial_status != 'none':
                 return {
-                    'trial_enabled': True,
-                    'eligible': False,
-                    'reason': 'grandfathered_user',
-                    'message': 'You have permanent access to your current plan'
-                }
-            
-            trial_status = account.get('trial_status')
-            if trial_status:
-                return {
-                    'trial_enabled': True,
-                    'eligible': False,
-                    'reason': 'trial_used',
-                    'status': trial_status,
+                    'has_trial': True,
+                    'trial_status': trial_status,
                     'trial_ends_at': account.get('trial_ends_at'),
-                    'message': f'Trial status: {trial_status}'
+                    'tier': account.get('tier')
                 }
-            
-            if account.get('tier') not in ['free', 'trial_pending']:
-                return {
-                    'trial_enabled': True,
-                    'eligible': False,
-                    'reason': 'has_subscription',
-                    'message': 'You already have an active subscription'
-                }
-        
-        history_result = await client.from_('trial_history').select('*').eq('account_id', account_id).execute()
-        
-        if history_result.data and len(history_result.data) > 0:
-            return {
-                'trial_enabled': True,
-                'eligible': False,
-                'reason': 'trial_used',
-                'history': history_result.data[0],
-                'message': 'You have already used your free trial'
-            }
-        
         return {
-            'trial_enabled': True,
-            'eligible': True,
-            'trial_mode': trial_config.mode.value,
-            'requires_payment_method': trial_config.require_payment_method_upfront,
-            'trial_days': trial_config.duration_days,
-            'trial_credits': float(trial_config.trial_credits),
-            'message': 'You are eligible for a free trial'
+            'has_trial': False,
+            'trial_status': 'none'
         }
         
     except Exception as e:
         logger.error(f"Error checking trial status: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/trial/start")
-async def start_trial(
+@router.post("/trial/cancel")
+async def cancel_trial(
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
-    """
-    Start a free trial for a user. This is called after signup.
-    Works for all trial modes: CC_REQUIRED, CC_OPTIONAL, or returns error if DISABLED.
-    """
     try:
         db = DBConnection()
         client = await db.client
         
-        trial_config = await get_trial_config()
+        account_result = await client.from_('credit_accounts')\
+            .select('trial_status, stripe_subscription_id')\
+            .eq('account_id', account_id)\
+            .single()\
+            .execute()
         
-        if trial_config.mode == TrialMode.DISABLED:
-            raise HTTPException(status_code=400, detail="Trials are not enabled")
+        if not account_result.data:
+            raise HTTPException(status_code=404, detail="No credit account found")
         
-        # Check if user already has a credit account with a trial
-        account_result = await client.from_('credit_accounts').select('*').eq('account_id', account_id).execute()
+        trial_status = account_result.data.get('trial_status')
+        stripe_subscription_id = account_result.data.get('stripe_subscription_id')
         
-        if account_result.data:
-            account = account_result.data[0]
-            # Check if already has or had a trial
-            if account.get('trial_status') and account.get('trial_status') != 'none':
-                raise HTTPException(
-                    status_code=400, 
-                    detail=f"You already have a trial with status: {account.get('trial_status')}"
-                )
+        if trial_status != 'active':
+            raise HTTPException(
+                status_code=400, 
+                detail=f"No active trial to cancel. Current status: {trial_status}"
+            )
         
-        # For CC_REQUIRED mode, check if they have a payment method
-        if trial_config.mode == TrialMode.CC_REQUIRED:
-            # Check for Stripe customer with payment method
-            stripe_customer_result = await client.from_('stripe_customers')\
-                .select('stripe_customer_id')\
-                .eq('account_id', account_id)\
-                .execute()
+        if not stripe_subscription_id:
+            raise HTTPException(
+                status_code=400,
+                detail="No Stripe subscription found for this trial"
+            )
+        
+        try:
+            cancelled_subscription = stripe.Subscription.cancel(stripe_subscription_id)
+            logger.info(f"[TRIAL CANCEL] Cancelled Stripe subscription {stripe_subscription_id} for account {account_id}")
             
-            if not stripe_customer_result.data:
-                # No payment method, redirect to checkout
-                return {
-                    'success': False,
-                    'requires_checkout': True,
-                    'message': 'Please add a payment method to start your free trial'
-                }
+            await client.from_('credit_accounts').update({
+                'trial_status': 'expired',
+                'tier': 'none',
+                'balance': 0.00,
+                'stripe_subscription_id': None
+            }).eq('account_id', account_id).execute()
             
-            # Check if customer has payment method
-            stripe_customer = stripe.Customer.retrieve(stripe_customer_result.data[0]['stripe_customer_id'])
-            if not stripe_customer.default_source and not stripe_customer.invoice_settings.default_payment_method:
-                return {
-                    'success': False,
-                    'requires_checkout': True,
-                    'message': 'Please add a payment method to start your free trial'
+            await client.from_('trial_history').update({
+                'ended_at': datetime.now(timezone.utc).isoformat(),
+                'converted_to_paid': False
+            }).eq('account_id', account_id).is_('ended_at', 'null').execute()
+            
+            await client.from_('credit_ledger').insert({
+                'account_id': account_id,
+                'amount': -20.00,
+                'balance_after': 0.00,
+                'type': 'adjustment',
+                'description': 'Trial cancelled by user'
+            }).execute()
+            
+            return {
+                'success': True,
+                'message': 'Trial cancelled successfully',
+                'subscription_status': cancelled_subscription.status
+            }
+            
+        except stripe.error.StripeError as e:
+            logger.error(f"[TRIAL CANCEL] Stripe error cancelling subscription: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to cancel subscription: {str(e)}")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error cancelling trial for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/trial/start")
+async def start_trial(
+    request: TrialStartRequest,
+    account_id: str = Depends(verify_and_get_user_id_from_jwt)
+) -> Dict:
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        account_result = await client.from_('credit_accounts')\
+            .select('trial_status')\
+            .eq('account_id', account_id)\
+            .single()\
+            .execute()
+        
+        if account_result.data and account_result.data.get('trial_status') != 'none':
+            raise HTTPException(
+                status_code=400, 
+                detail=f"You already have/had a trial: {account_result.data.get('trial_status')}"
+            )
+            
+        customer_id = await get_or_create_stripe_customer(account_id)
+
+        checkout_session = stripe.checkout.Session.create(
+            customer=customer_id,
+            mode='subscription',
+            line_items=[{
+                'price': config.STRIPE_TIER_2_20_ID,
+                'quantity': 1,
+            }],
+            subscription_data={
+                'trial_period_days': 7,
+                'metadata': {
+                    'account_id': account_id,
+                    'is_trial': 'true'
                 }
-        
-        # Start the trial
-        trial_started_at = datetime.now(timezone.utc)
-        trial_ends_at = trial_started_at + timedelta(days=trial_config.duration_days)
-        
-        # Create or update credit account with trial
-        trial_account_data = {
-            'trial_status': 'active',
-            'trial_started_at': trial_started_at.isoformat(),
-            'trial_ends_at': trial_ends_at.isoformat(),
-            'tier': trial_config.trial_tier,
-            'balance': str(trial_config.trial_credits),
-            'is_grandfathered_free': False
-        }
-        
-        if account_result.data:
-            # Update existing account
-            await client.from_('credit_accounts').update(trial_account_data)\
-                .eq('account_id', account_id).execute()
-        else:
-            # Create new account
-            trial_account_data['account_id'] = account_id
-            trial_account_data['last_grant_date'] = trial_started_at.isoformat()
-            await client.from_('credit_accounts').insert(trial_account_data).execute()
-        
-        # Record in trial history
-        await client.from_('trial_history').insert({
-            'account_id': account_id,
-            'trial_mode': trial_config.mode.value,
-            'started_at': trial_started_at.isoformat(),
-            'credits_granted': str(trial_config.trial_credits),
-            'had_payment_method': trial_config.mode == TrialMode.CC_REQUIRED
-        }).execute()
-        
-        # Add credit ledger entry
-        await client.from_('credit_ledger').insert({
-            'account_id': account_id,
-            'amount': str(trial_config.trial_credits),
-            'balance_after': str(trial_config.trial_credits),
-            'type': 'trial_grant',
-            'description': f'{trial_config.duration_days}-day free trial credits - {trial_config.trial_tier} tier'
-        }).execute()
-        
-        # Clear caches
-        await Cache.invalidate(f"credit_balance:{account_id}")
-        await Cache.invalidate(f"subscription_tier:{account_id}")
+            },
+            success_url=request.success_url,
+            cancel_url=request.cancel_url,
+            metadata={
+                'account_id': account_id,
+                'trial_start': 'true'
+            }
+        )
         
         return {
-            'success': True,
-            'trial_started': True,
-            'trial_ends_at': trial_ends_at.isoformat(),
-            'credits_granted': float(trial_config.trial_credits),
-            'tier': trial_config.trial_tier,
-            'message': f'Your {trial_config.duration_days}-day free trial has started!'
+            'checkout_url': checkout_session.url,
+            'session_id': checkout_session.id
         }
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error starting trial for account {account_id}: {e}", exc_info=True)
+        logger.error(f"Error creating trial checkout for account {account_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/trial/create-checkout")
@@ -1602,21 +1665,24 @@ async def create_trial_checkout(
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
     try:
-        trial_config = await get_trial_config()
-        
-        if trial_config.mode != TrialMode.CC_REQUIRED:
-            raise HTTPException(status_code=400, detail="Payment method not required for current trial mode")
+        if not TRIAL_ENABLED:
+            raise HTTPException(status_code=400, detail="Trials are not enabled")
         
         db = DBConnection()
         client = await db.client
-        eligible_result = await client.rpc('is_eligible_for_trial', {'p_account_id': account_id}).execute()
         
-        if not eligible_result.data:
-            raise HTTPException(status_code=400, detail="You are not eligible for a free trial")
+        account_result = await client.from_('credit_accounts')\
+            .select('trial_status')\
+            .eq('account_id', account_id)\
+            .single()\
+            .execute()
+        
+        if account_result.data and account_result.data.get('trial_status') != 'none':
+            raise HTTPException(status_code=400, detail="You already have/had a trial")
         
         customer_id = await get_or_create_stripe_customer(account_id)
         
-        trial_tier = get_tier_by_name(trial_config.trial_tier)
+        trial_tier = get_tier_by_name(TRIAL_TIER)
         if not trial_tier:
             raise HTTPException(status_code=500, detail="Invalid trial tier configuration")
         
@@ -1630,7 +1696,7 @@ async def create_trial_checkout(
             success_url=request.success_url,
             cancel_url=request.cancel_url,
             subscription_data={
-                'trial_period_days': trial_config.stripe_trial_period_days,
+                'trial_period_days': TRIAL_DURATION_DAYS,
                 'metadata': {
                     'account_id': account_id,
                     'trial_mode': 'cc_required'

@@ -7,8 +7,8 @@ export function useTrialStatus() {
   return useQuery({
     queryKey: ['trial-status'],
     queryFn: getTrialStatus,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes
+    staleTime: 5 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   });
 }
 
@@ -18,18 +18,12 @@ export function useStartTrial() {
   return useMutation({
     mutationFn: startTrial,
     onSuccess: (data) => {
-      if (data.trial_started) {
-        toast.success(data.message || 'Your free trial has started!');
-        // Invalidate related queries
-        queryClient.invalidateQueries({ queryKey: ['trial-status'] });
-        queryClient.invalidateQueries({ queryKey: ['billing-status'] });
-        queryClient.invalidateQueries({ queryKey: ['credit-balance'] });
-      } else if (data.requires_checkout) {
-        // This will be handled by the component
-      }
+      queryClient.invalidateQueries({ queryKey: ['trial-status'] });
+      queryClient.invalidateQueries({ queryKey: ['billing-status'] });
+      queryClient.invalidateQueries({ queryKey: ['credit-balance'] });
     },
     onError: (error: any) => {
-      if (error?.message?.includes('already have a trial')) {
+      if (error?.message?.includes('already have')) {
         toast.error('You have already used your free trial');
       } else {
         toast.error('Failed to start trial. Please try again.');

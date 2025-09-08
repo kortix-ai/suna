@@ -12,6 +12,7 @@ import { isLocalMode, isStagingMode } from '@/lib/config';
 import Link from 'next/link';
 import { useCreatePortalSession, useTriggerTestRenewal } from '@/hooks/react-query/use-billing-v2';
 import { toast } from 'sonner';
+import { TrialManagement } from '@/components/dashboard/trial-management';
 
 const returnUrl = process.env.NEXT_PUBLIC_URL as string;
 
@@ -75,6 +76,7 @@ export default function PersonalAccountBillingPage() {
         onOpenChange={setShowBillingModal}
         returnUrl={`${returnUrl}/settings/billing`}
       />
+      <TrialManagement />
       <div className="rounded-xl border shadow-sm bg-card p-6">
         <h2 className="text-xl font-semibold mb-4">Billing Status</h2>
 

@@ -5,12 +5,6 @@ from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.utils.cache import Cache
 from billing.config import FREE_TIER_INITIAL_CREDITS
-from enum import Enum
-
-class TrialMode(Enum):
-    DISABLED = "disabled"
-    CC_REQUIRED = "cc_required"
-    CC_OPTIONAL = "cc_optional"
 
 class CreditService:
     def __init__(self):
