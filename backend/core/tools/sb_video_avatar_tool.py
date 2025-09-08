@@ -4,9 +4,9 @@ import asyncio
 import os
 from typing import Optional, Dict, Any, List
 from datetime import datetime
-from agentpress.tool import Tool, ToolResult, openapi_schema, usage_example
-from sandbox.tool_base import SandboxToolsBase
-from agentpress.thread_manager import ThreadManager
+from core.agentpress.tool import Tool, ToolResult, openapi_schema, usage_example
+from core.sandbox.tool_base import SandboxToolsBase
+from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
 from core.utils.config import config
 

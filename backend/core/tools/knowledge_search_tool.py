@@ -7,8 +7,8 @@ using LlamaCloud's managed indices with dynamic function generation.
 
 import os
 from typing import Dict, Any, List, Optional
-from agentpress.tool import Tool, ToolResult, openapi_schema
-from agentpress.thread_manager import ThreadManager
+from core.agentpress.tool import Tool, ToolResult, openapi_schema
+from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
 import json
 

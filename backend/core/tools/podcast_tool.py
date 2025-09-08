@@ -3,9 +3,9 @@ import json
 import asyncio
 from typing import Optional, Dict, Any, List
 from datetime import datetime
-from agentpress.tool import Tool, ToolResult, openapi_schema, usage_example
-from sandbox.tool_base import SandboxToolsBase
-from agentpress.thread_manager import ThreadManager
+from core.agentpress.tool import Tool, ToolResult, openapi_schema, usage_example
+from core.sandbox.tool_base import SandboxToolsBase
+from core.agentpress.thread_manager import ThreadManager
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.utils.config import config
@@ -1193,7 +1193,7 @@ class SandboxPodcastTool(SandboxToolsBase):
 
 if __name__ == "__main__":
     import asyncio
-    from agentpress.thread_manager import ThreadManager
+    from core.agentpress.thread_manager import ThreadManager
     
     async def test_podcast_tool():
         """Test the podcast tool functionality."""
