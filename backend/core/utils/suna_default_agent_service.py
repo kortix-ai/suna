@@ -16,11 +16,21 @@ class SunaDefaultAgentService:
         logger.info("🔄 SunaDefaultAgentService initialized (compatibility layer for Omni)")
     
     async def get_suna_default_config(self) -> Dict[str, Any]:
-<<<<<<< HEAD:backend/utils/suna_default_agent_service.py
         """Get the current default configuration (rebranded as Omni)"""
         config = await self._omni_service.get_omni_default_config()
         # For compatibility, also return it under the old Suna name for scripts that expect it
         return config
+    
+    def get_suna_config_direct(self) -> Dict[str, Any]:
+        """Direct access to Suna config for compatibility (falls back to Omni)"""
+        try:
+            from core.suna_config import SUNA_CONFIG
+            return SUNA_CONFIG.copy()
+        except ImportError:
+            # Fallback to Omni config if SUNA_CONFIG doesn't exist
+            logger.warning("SUNA_CONFIG not found, falling back to Omni config")
+            import asyncio
+            return asyncio.create_task(self.get_suna_default_config())
     
     async def sync_all_suna_agents(self) -> Dict[str, Any]:
         """Sync all default agents (now Omni agents)"""
@@ -31,11 +41,6 @@ class SunaDefaultAgentService:
         """Update all default agents (now Omni agents)"""
         logger.info("🔄 Updating all agents (Suna→Omni compatibility layer)")
         return await self._omni_service.update_all_omni_agents(target_version)
-=======
-        """Get the current Suna configuration."""
-        from core.suna_config import SUNA_CONFIG
-        return SUNA_CONFIG.copy()
->>>>>>> suna/PRODUCTION:backend/core/utils/suna_default_agent_service.py
     
     async def install_for_all_users(self) -> Dict[str, Any]:
         """Install default agent for all users who don't have it"""
@@ -57,103 +62,35 @@ class SunaDefaultAgentService:
 
     # Alias for compatibility with scripts that expect the old name
     async def get_suna_agent_stats(self) -> Dict[str, Any]:
-<<<<<<< HEAD:backend/utils/suna_default_agent_service.py
-        """Get statistics about default agents (compatibility alias)"""
-        return await self.get_stats()
-=======
-        """Get statistics about Suna agents."""
-        try:
-            client = await self._db.client
-            
-            # Get total count
-            total_result = await client.table('agents').select('agent_id', count='exact').eq('metadata->>is_suna_default', 'true').execute()
-            total_count = total_result.count or 0
-            
-            # Get creation dates for last 30 days
-            from datetime import timedelta
-            thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-            recent_result = await client.table('agents').select('created_at').eq('metadata->>is_suna_default', 'true').gte('created_at', thirty_days_ago).execute()
-            recent_count = len(recent_result.data) if recent_result.data else 0
-            
-            return {
-                "total_agents": total_count,
-                "recent_installs": recent_count,
-                "note": "Suna agents always use current central configuration"
-            }
-            
-        except Exception as e:
-            logger.error(f"Failed to get agent stats: {e}")
-            return {"error": str(e)}
-    
+        """Get statistics about default agents with enhanced details (compatibility alias)"""
+        # Use the detailed stats method that matches PRODUCTION functionality
+        return await self._omni_service.get_detailed_stats()
+
+    # New methods from PRODUCTION that need Omni implementation
     async def _create_suna_agent_for_user(self, account_id: str) -> str:
-        """Create a Suna agent for a user."""
-        from core.suna_config import SUNA_CONFIG
-        
-        client = await self._db.client
-        
-        # Create agent record
-        agent_data = {
-            "account_id": account_id,
-            "name": SUNA_CONFIG["name"],
-            "description": SUNA_CONFIG["description"],
-            "is_default": True,
-            "icon_name": "sun",
-            "icon_color": "#F59E0B",
-            "icon_background": "#FFF3CD",
-            "metadata": {
-                "is_suna_default": True,
-                "centrally_managed": True,
-                "installation_date": datetime.now(timezone.utc).isoformat()
-            },
-            "version_count": 1
-        }
-        
-        result = await client.table('agents').insert(agent_data).execute()
-        
-        if not result.data:
+        """Create a Suna agent for a user (now creates Omni agent)."""
+        logger.info(f"🔄 Creating agent for user {account_id} (Suna→Omni compatibility layer)")
+        result = await self._omni_service.install_omni_agent_for_user(account_id, replace_existing=False)
+        if result is None:
             raise Exception("Failed to create agent record")
-        
-        agent_id = result.data[0]['agent_id']
-        
-        # Create initial version
-        await self._create_initial_version(agent_id, account_id)
-        
-        return agent_id
+        return result
     
     async def _create_initial_version(self, agent_id: str, account_id: str) -> None:
-        """Create initial version for Suna agent."""
-        try:
-            from core.versioning.version_service import get_version_service
-            from core.suna_config import SUNA_CONFIG
-            
-            version_service = await get_version_service()
-            await version_service.create_version(
-                agent_id=agent_id,
-                user_id=account_id,
-                system_prompt=SUNA_CONFIG["system_prompt"],
-                configured_mcps=SUNA_CONFIG["configured_mcps"],
-                custom_mcps=SUNA_CONFIG["custom_mcps"],
-                agentpress_tools=SUNA_CONFIG["agentpress_tools"],
-                model=SUNA_CONFIG["model"],
-                version_name="v1",
-                change_description="Initial Suna agent installation"
-            )
-            
-            logger.debug(f"Created initial version for Suna agent {agent_id}")
-            
-        except Exception as e:
-            logger.error(f"Failed to create initial version for Suna agent {agent_id}: {e}")
-            raise
+        """Create initial version for agent (handled by Omni service)."""
+        # This is handled automatically by the Omni service in install_omni_agent_for_user
+        logger.debug(f"Initial version creation delegated to Omni service for agent {agent_id}")
     
     async def _delete_agent(self, agent_id: str) -> bool:
         """Delete an agent and clean up related data."""
         try:
-            client = await self._db.client
+            # Initialize DB connection for cleanup operations
+            db = DBConnection()
+            client = await db.client
             
             # Clean up triggers first
             try:
                 from core.triggers.trigger_service import get_trigger_service
-                trigger_service = get_trigger_service(self._db)
+                trigger_service = get_trigger_service(db)
                 
                 triggers_result = await client.table('agent_triggers').select('trigger_id').eq('agent_id', agent_id).execute()
                 
@@ -173,5 +110,9 @@ class SunaDefaultAgentService:
         except Exception as e:
             logger.error(f"Failed to delete agent {agent_id}: {e}")
             raise
->>>>>>> suna/PRODUCTION:backend/core/utils/suna_default_agent_service.py
+
+    async def replace_existing_suna_agent(self, account_id: str) -> Optional[str]:
+        """Replace existing agent for a user with fresh installation (now Omni)."""
+        logger.info(f"🔄 Replacing agent for user {account_id} (Suna→Omni compatibility layer)")
+        return await self._omni_service.replace_existing_agent(account_id)
 

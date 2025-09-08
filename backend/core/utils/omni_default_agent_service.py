@@ -327,3 +327,90 @@ class OmniDefaultAgentService:
                 "monthly_breakdown": [],
                 "error": str(e)
             }
+
+    async def _delete_agent(self, agent_id: str) -> bool:
+        """Delete an agent and clean up related data."""
+        try:
+            client = await self._db.client
+            
+            # Clean up triggers first
+            try:
+                from core.triggers.trigger_service import get_trigger_service
+                trigger_service = get_trigger_service(self._db)
+                
+                triggers_result = await client.table('agent_triggers').select('trigger_id').eq('agent_id', agent_id).execute()
+                
+                if triggers_result.data:
+                    for trigger_record in triggers_result.data:
+                        try:
+                            await trigger_service.delete_trigger(trigger_record['trigger_id'])
+                        except Exception as e:
+                            logger.warning(f"Failed to clean up trigger: {str(e)}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up triggers for agent {agent_id}: {str(e)}")
+            
+            # Delete agent
+            result = await client.table('agents').delete().eq('agent_id', agent_id).execute()
+            return bool(result.data)
+            
+        except Exception as e:
+            logger.error(f"Failed to delete agent {agent_id}: {e}")
+            raise
+
+    async def get_detailed_stats(self) -> Dict[str, Any]:
+        """Get detailed statistics about Omni agents with time-based breakdown."""
+        try:
+            client = await self._db.client
+            
+            # Get total count
+            total_result = await client.table('agents').select('agent_id', count='exact').eq('metadata->>is_omni_default', True).execute()
+            total_count = total_result.count or 0
+            
+            # Get creation dates for last 30 days
+            from datetime import timedelta
+            thirty_days_ago = (datetime.now() - timedelta(days=30)).isoformat()
+            recent_result = await client.table('agents').select('created_at').eq('metadata->>is_omni_default', True).gte('created_at', thirty_days_ago).execute()
+            recent_count = len(recent_result.data) if recent_result.data else 0
+            
+            return {
+                "total_agents": total_count,
+                "recent_installs": recent_count,
+                "active_agents": total_count,  # All Omni agents are considered active
+                "inactive_agents": 0,
+                "note": "Omni agents always use current central configuration"
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get detailed agent stats: {e}")
+            return {"error": str(e)}
+
+    async def _create_initial_version_enhanced(self, agent_id: str, account_id: str) -> None:
+        """Create initial version for Omni agent with versioning service integration."""
+        try:
+            from core.versioning.version_service import get_version_service
+            config = await self.get_omni_default_config()
+            
+            version_service = await get_version_service()
+            await version_service.create_version(
+                agent_id=agent_id,
+                user_id=account_id,
+                system_prompt=config.get("system_prompt", ""),
+                configured_mcps=config.get("tools", {}).get("mcp", []),
+                custom_mcps=config.get("tools", {}).get("custom_mcp", []),
+                agentpress_tools=config.get("tools", {}).get("agentpress", {}),
+                model=config.get("model", "claude-3-5-sonnet-20241022"),
+                version_name="v1",
+                change_description="Initial Omni agent installation"
+            )
+            
+            logger.debug(f"Created initial version for Omni agent {agent_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to create initial version for Omni agent {agent_id}: {e}")
+            # Don't raise here - agent creation should still succeed even if versioning fails
+            logger.warning("Continuing with agent creation despite versioning error")
+
+    async def replace_existing_agent(self, account_id: str) -> Optional[str]:
+        """Replace existing Omni agent for a user with fresh installation."""
+        logger.info(f"Replacing existing Omni agent for user: {account_id}")
+        return await self.install_omni_agent_for_user(account_id, replace_existing=True)
