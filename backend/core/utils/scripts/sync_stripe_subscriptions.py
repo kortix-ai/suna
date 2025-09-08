@@ -2,7 +2,7 @@
 import asyncio
 import sys
 from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent))
+sys.path.append(str(Path(__file__).parent.parent.parent))
 
 import stripe
 from datetime import datetime
@@ -168,10 +168,16 @@ async def sync_stripe_to_db():
                                 .eq('user_id', account_id)\
                                 .execute()
                             
+                            # Get credit breakdown
                             current_balance = Decimal(str(account_after.data['balance']))
+                            expiring_credits = Decimal(str(account_after.data.get('expiring_credits', 0)))
+                            non_expiring_credits = Decimal(str(account_after.data.get('non_expiring_credits', 0)))
+                            
                             print(f"    ✓ Updated credit account:")
                             print(f"      - Tier: {tier_name}")
-                            print(f"      - Balance: ${current_balance} (managed by handle_subscription_change)")
+                            print(f"      - Balance: ${current_balance}")
+                            print(f"        • Expiring: ${expiring_credits}")
+                            print(f"        • Non-expiring: ${non_expiring_credits}")
                             print(f"      - Stripe subscription: {sub.id}")
                             print(f"      - Next credit grant: {update_data.get('next_credit_grant', 'N/A')}")
                     else:
@@ -189,7 +195,7 @@ async def sync_stripe_to_db():
     print(f"Errors: {error_count}")
     
     print("\n" + "="*60)
-    print("CREDIT ACCOUNTS STATE (Primary Source)")
+    print("CREDIT ACCOUNTS STATE (with Credit Types)")
     print("="*60)
     
     credit_result = await client.from_('credit_accounts').select('*').execute()
@@ -197,13 +203,45 @@ async def sync_stripe_to_db():
     if credit_result.data:
         print(f"Found {len(credit_result.data)} credit accounts:")
         for account in credit_result.data:
+            balance = Decimal(str(account['balance']))
+            expiring = Decimal(str(account.get('expiring_credits', 0)))
+            non_expiring = Decimal(str(account.get('non_expiring_credits', 0)))
+            
             print(f"\n  User: {account['user_id'][:8]}...")
             print(f"    Tier: {account['tier']}")
-            print(f"    Balance: ${account['balance']}")
+            print(f"    Total Balance: ${balance}")
+            print(f"      • Expiring: ${expiring}")
+            print(f"      • Non-expiring: ${non_expiring}")
+            
+            # Check for balance consistency
+            calculated_total = expiring + non_expiring
+            if abs(calculated_total - balance) > Decimal('0.01'):
+                print(f"    ⚠️  WARNING: Balance mismatch! Sum of credits (${calculated_total}) != Total (${balance})")
+            
             print(f"    Last Grant: {account.get('last_grant_date', 'Never')}")
             print(f"    Stripe Subscription: {account.get('stripe_subscription_id', 'None')}")
             print(f"    Billing Cycle Anchor: {account.get('billing_cycle_anchor', 'None')}")
             print(f"    Next Credit Grant: {account.get('next_credit_grant', 'None')}")
+    
+    # Summary of credit distribution
+    print("\n" + "="*60)
+    print("CREDIT TYPE DISTRIBUTION")
+    print("="*60)
+    
+    if credit_result.data:
+        total_expiring = sum(Decimal(str(a.get('expiring_credits', 0))) for a in credit_result.data)
+        total_non_expiring = sum(Decimal(str(a.get('non_expiring_credits', 0))) for a in credit_result.data)
+        total_balance = sum(Decimal(str(a['balance'])) for a in credit_result.data)
+        
+        users_with_expiring = sum(1 for a in credit_result.data if Decimal(str(a.get('expiring_credits', 0))) > 0)
+        users_with_non_expiring = sum(1 for a in credit_result.data if Decimal(str(a.get('non_expiring_credits', 0))) > 0)
+        
+        print(f"Total Credits: ${total_balance}")
+        print(f"  • Expiring: ${total_expiring} ({users_with_expiring} users)")
+        print(f"  • Non-expiring: ${total_non_expiring} ({users_with_non_expiring} users)")
+        
+        if abs((total_expiring + total_non_expiring) - total_balance) > Decimal('0.01'):
+            print(f"\n⚠️  WARNING: Total mismatch! Sum of all credits (${total_expiring + total_non_expiring}) != Total balance (${total_balance})")
 
 if __name__ == "__main__":
     asyncio.run(sync_stripe_to_db()) 
