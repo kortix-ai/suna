@@ -82,7 +82,7 @@ class TrialService:
             logger.info(f"[TRIAL CANCEL] Cancelled Stripe subscription {stripe_subscription_id} for account {account_id}")
             
             await client.from_('credit_accounts').update({
-                'trial_status': 'expired',
+                'trial_status': 'cancelled',
                 'tier': 'none',
                 'balance': 0.00,
                 'stripe_subscription_id': None
@@ -145,6 +145,7 @@ class TrialService:
         from .subscription_service import subscription_service
         customer_id = await subscription_service.get_or_create_stripe_customer(account_id)
         
+        logger.info(f"[TRIAL] Creating checkout session for account {account_id}")
         session = await stripe.checkout.Session.create_async(
             customer=customer_id,
             payment_method_types=['card'],
@@ -165,6 +166,10 @@ class TrialService:
             mode='subscription',
             success_url=success_url,
             cancel_url=cancel_url,
+            metadata={
+                'account_id': account_id,
+                'trial_start': 'true'
+            },
             subscription_data={
                 'trial_period_days': TRIAL_DURATION_DAYS,
                 'metadata': {

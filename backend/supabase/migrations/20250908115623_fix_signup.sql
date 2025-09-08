@@ -21,7 +21,6 @@ BEGIN
         ON CONFLICT (account_id) DO NOTHING;
         RAISE LOG 'Created account for new user % with no credits (must start trial)', NEW.id;
     END IF;
-    
     RETURN NEW;
 EXCEPTION WHEN OTHERS THEN
     RAISE WARNING 'Error in initialize_free_tier_credits for user %: %', NEW.id, SQLERRM;

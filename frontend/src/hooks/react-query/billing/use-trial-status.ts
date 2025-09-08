@@ -14,7 +14,6 @@ export function useTrialStatus() {
 
 export function useStartTrial() {
   const queryClient = useQueryClient();
-  
   return useMutation({
     mutationFn: startTrial,
     onSuccess: (data) => {

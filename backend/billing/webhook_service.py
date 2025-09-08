@@ -107,24 +107,111 @@ class WebhookService:
                 logger.error(f"[WEBHOOK] Credit amount: ${credit_amount}")
     
     async def _handle_subscription_checkout(self, session, client):
-        if session.get('metadata', {}).get('trial_start') == 'true':
-            logger.info(f"[WEBHOOK] Trial checkout detected - will be handled by subscription change event")
+        logger.info(f"[WEBHOOK] Checkout completed for new subscription: {session['subscription']}")
+        logger.info(f"[WEBHOOK] Session metadata: {session.get('metadata', {})}")
 
+        if session.get('metadata', {}).get('trial_start') == 'true':
+            account_id = session['metadata'].get('account_id')
+            logger.info(f"[WEBHOOK] Trial checkout detected for account {account_id}")
+
+            if session.get('subscription'):
+                subscription_id = session['subscription']
+                subscription = stripe.Subscription.retrieve(subscription_id, expand=['default_payment_method'])
+                
+                if subscription.status == 'trialing':
+                    logger.info(f"[WEBHOOK] Trial subscription created for account {account_id}")
+
+                    price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
+                    tier_info = get_tier_by_price_id(price_id)
+                    tier_name = tier_info.name if tier_info else 'tier_2_20'
+
+                    trial_ends_at = datetime.fromtimestamp(subscription.trial_end, tz=timezone.utc) if subscription.get('trial_end') else None
+                    
+                    await client.from_('credit_accounts').update({
+                        'trial_status': 'active',
+                        'trial_started_at': datetime.now(timezone.utc).isoformat(),
+                        'trial_ends_at': trial_ends_at.isoformat() if trial_ends_at else None,
+                        'stripe_subscription_id': subscription['id'],
+                        'tier': tier_name
+                    }).eq('account_id', account_id).execute()
+                    
+                    logger.info(f"[WEBHOOK] Activated trial for account {account_id}, tier: {tier_name}")
+                    
+                    await credit_manager.add_credits(
+                        account_id=account_id,
+                        amount=TRIAL_CREDITS,
+                        is_expiring=False,
+                        description=f'{TRIAL_DURATION_DAYS}-day free trial credits'
+                    )
+
+                    await client.from_('trial_history').upsert({
+                        'account_id': account_id,
+                        'started_at': datetime.now(timezone.utc).isoformat(),
+                        'stripe_checkout_session_id': session.get('id')
+                    }, on_conflict='account_id').execute()
+                    
+                    logger.info(f"[WEBHOOK] Trial fully activated for account {account_id}")
+                else:
+                    logger.info(f"[WEBHOOK] Subscription status: {subscription.status}, not trialing")
+    
     async def _handle_subscription_created_or_updated(self, event, client):
         subscription = event.data.object
         logger.info(f"[WEBHOOK] Subscription event: type={event.type}, status={subscription.status}")
+        logger.info(f"[WEBHOOK] Subscription metadata: {subscription.get('metadata', {})}")
         
         if event.type == 'customer.subscription.updated':
             await self._handle_subscription_updated(event, subscription, client)
         
         if subscription.status in ['active', 'trialing']:
             logger.info(f"[WEBHOOK] Processing subscription change for customer: {subscription['customer']}")
+            
+            if subscription.status == 'trialing' and not subscription.get('metadata', {}).get('account_id'):
+                customer_result = await client.schema('basejump').from_('billing_customers')\
+                    .select('account_id')\
+                    .eq('id', subscription['customer'])\
+                    .execute()
+                
+                if customer_result.data and customer_result.data[0].get('account_id'):
+                    account_id = customer_result.data[0]['account_id']
+                    logger.info(f"[WEBHOOK] Found account_id {account_id} for customer {subscription['customer']}")
+                    try:
+                        await stripe.Subscription.modify_async(
+                            subscription['id'],
+                            metadata={'account_id': account_id, 'trial_start': 'true'}
+                        )
+                        subscription['metadata'] = {'account_id': account_id, 'trial_start': 'true'}
+                        logger.info(f"[WEBHOOK] Updated subscription metadata with account_id")
+                    except Exception as e:
+                        logger.error(f"[WEBHOOK] Failed to update subscription metadata: {e}")
+            
             from .subscription_service import subscription_service
             await subscription_service.handle_subscription_change(subscription)
     
     async def _handle_subscription_updated(self, event, subscription, client):
         previous_attributes = event.data.get('previous_attributes', {})
         prev_status = previous_attributes.get('status')
+        prev_default_payment = previous_attributes.get('default_payment_method')
+        
+        if subscription.status == 'trialing' and subscription.get('default_payment_method') and not prev_default_payment:
+            account_id = subscription.metadata.get('account_id')
+            if account_id:
+                logger.info(f"[WEBHOOK] Payment method added to trial for account {account_id}")
+                
+                price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
+                tier_info = get_tier_by_price_id(price_id)
+                tier_name = tier_info.name if tier_info else 'tier_2_20'
+                
+                await client.from_('credit_accounts').update({
+                    'trial_status': 'converted',
+                    'tier': tier_name
+                }).eq('account_id', account_id).execute()
+                
+                await client.from_('trial_history').update({
+                    'converted_to_paid': True,
+                    'ended_at': datetime.now(timezone.utc).isoformat()
+                }).eq('account_id', account_id).is_('ended_at', 'null').execute()
+                
+                logger.info(f"[WEBHOOK] Marked trial as converted (payment added) for account {account_id}, tier: {tier_name}")
         
         if prev_status == 'trialing' and subscription.status != 'trialing':
             account_id = subscription.metadata.get('account_id')
@@ -133,15 +220,35 @@ class WebhookService:
                 if subscription.status == 'active':
                     logger.info(f"[WEBHOOK] Trial converted to paid for account {account_id}")
                     
+                    price_id = subscription['items']['data'][0]['price']['id']
+                    tier_info = get_tier_by_price_id(price_id)
+                    tier_name = tier_info.name if tier_info else 'tier_2_20'
+                    
                     await client.from_('credit_accounts').update({
                         'trial_status': 'converted',
-                        'tier': 'tier_2_20'
+                        'tier': tier_name
                     }).eq('account_id', account_id).execute()
                     
                     await client.from_('trial_history').update({
                         'ended_at': datetime.now(timezone.utc).isoformat(),
                         'converted_to_paid': True
+                    }).eq('account_id', account_id).is_('ended_at', 'null').execute()
+                    
+                    logger.info(f"[WEBHOOK] Trial conversion completed for account {account_id} to tier {tier_name}")
+                    
+                elif subscription.status == 'canceled':
+                    logger.info(f"[WEBHOOK] Trial cancelled for account {account_id}")
+                    
+                    await client.from_('credit_accounts').update({
+                        'trial_status': 'cancelled',
+                        'tier': 'none',
+                        'stripe_subscription_id': None
                     }).eq('account_id', account_id).execute()
+                    
+                    await client.from_('trial_history').update({
+                        'ended_at': datetime.now(timezone.utc).isoformat(),
+                        'converted_to_paid': False
+                    }).eq('account_id', account_id).is_('ended_at', 'null').execute()
                     
                 else:
                     logger.info(f"[WEBHOOK] Trial expired without conversion for account {account_id}, status: {subscription.status}")
@@ -156,7 +263,7 @@ class WebhookService:
                     await client.from_('trial_history').update({
                         'ended_at': datetime.now(timezone.utc).isoformat(),
                         'converted_to_paid': False
-                    }).eq('account_id', account_id).execute()
+                    }).eq('account_id', account_id).is_('ended_at', 'null').execute()
                     
                     await client.from_('credit_ledger').insert({
                         'account_id': account_id,
@@ -303,9 +410,13 @@ class WebhookService:
             return
         
         existing_account = await client.from_('credit_accounts').select('trial_status').eq('account_id', account_id).execute()
-        if existing_account.data and existing_account.data[0].get('trial_status') == 'active':
-            logger.info(f"[WEBHOOK] Trial already active for account {account_id}, skipping duplicate processing")
-            return
+        if existing_account.data:
+            current_status = existing_account.data[0].get('trial_status')
+            if current_status == 'active':
+                logger.info(f"[WEBHOOK] Trial already active for account {account_id}, skipping duplicate processing")
+                return
+            elif current_status == 'none':
+                logger.info(f"[WEBHOOK] Activating trial for account {account_id}")
             
         trial_ends_at = datetime.fromtimestamp(subscription.trial_end, tz=timezone.utc)
         
@@ -324,14 +435,10 @@ class WebhookService:
             description=f'{TRIAL_DURATION_DAYS}-day free trial credits'
         )
         
-        await client.from_('trial_history').insert({
+        await client.from_('trial_history').upsert({
             'account_id': account_id,
-            'trial_mode': 'cc_required',
-            'started_at': datetime.now(timezone.utc).isoformat(),
-            'stripe_subscription_id': subscription['id'],
-            'had_payment_method': True,
-            'credits_granted': str(TRIAL_CREDITS)
-        }).on_conflict('account_id').do_nothing().execute()
+            'started_at': datetime.now(timezone.utc).isoformat()
+        }, on_conflict='account_id').execute()
         
         logger.info(f"[WEBHOOK] Started trial for user {account_id} via Stripe subscription - granted ${TRIAL_CREDITS} credits")
     

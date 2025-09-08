@@ -396,9 +396,13 @@ class SubscriptionService:
             return
         
         existing_account = await client.from_('credit_accounts').select('trial_status').eq('account_id', account_id).execute()
-        if existing_account.data and existing_account.data[0].get('trial_status') == 'active':
-            logger.info(f"[WEBHOOK] Trial already active for account {account_id}, skipping duplicate processing")
-            return
+        if existing_account.data:
+            current_status = existing_account.data[0].get('trial_status')
+            if current_status == 'active':
+                logger.info(f"[WEBHOOK] Trial already active for account {account_id}, skipping duplicate processing")
+                return
+            elif current_status == 'none':
+                logger.info(f"[WEBHOOK] Activating trial for account {account_id}")
             
         trial_ends_at = datetime.fromtimestamp(subscription.trial_end, tz=timezone.utc)
         
@@ -417,14 +421,10 @@ class SubscriptionService:
             description=f'{TRIAL_DURATION_DAYS}-day free trial credits'
         )
         
-        await client.from_('trial_history').insert({
+        await client.from_('trial_history').upsert({
             'account_id': account_id,
-            'trial_mode': 'cc_required',
-            'started_at': datetime.now(timezone.utc).isoformat(),
-            'stripe_subscription_id': subscription['id'],
-            'had_payment_method': True,
-            'credits_granted': str(TRIAL_CREDITS)
-        }).on_conflict('account_id').do_nothing().execute()
+            'started_at': datetime.now(timezone.utc).isoformat()
+        }, on_conflict='account_id').execute()
         
         logger.info(f"[WEBHOOK] Started trial for user {account_id} via Stripe subscription - granted ${TRIAL_CREDITS} credits")
 
