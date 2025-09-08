@@ -13,26 +13,11 @@ import { PlatformOverviewSection } from '@/components/home/sections/platform-ove
 import { UserTestimonialSection } from '@/components/home/sections/user-testimonial-section';
 import { UseCasesSection } from '@/components/home/sections/use-cases-section';
 import { ModalProviders } from '@/providers/modal-providers';
-<<<<<<< HEAD
-=======
-import { HeroVideoSection } from '@/components/home/sections/hero-video-section';
-import { BackgroundAALChecker } from '@/components/auth/background-aal-checker';
-import { BentoSection } from '@/components/home/sections/bento-section';
-import { CompanyShowcase } from '@/components/home/sections/company-showcase';
-import { FeatureSection } from '@/components/home/sections/feature-section';
-import { QuoteSection } from '@/components/home/sections/quote-section';
-import { TestimonialSection } from '@/components/home/sections/testimonial-section';
-import { FAQSection } from '@/components/home/sections/faq-section';
-import { AgentShowcaseSection } from '@/components/home/sections/agent-showcase-section';
-import { DeliverablesSection } from '@/components/home/sections/deliverables-section';
-import { CapabilitiesSection } from '@/components/home/sections/capabilities-section';
->>>>>>> suna/PRODUCTION
 
 export default function Home() {
   return (
     <>
       <ModalProviders />
-<<<<<<< HEAD
       <main className="flex flex-col items-center justify-center min-h-screen w-full">
         <div className="w-full">
           <HeroSection />
@@ -49,26 +34,6 @@ export default function Home() {
           <FooterSection />
         </div>
       </main>
-=======
-      <BackgroundAALChecker>
-        <main className="flex flex-col items-center justify-center min-h-screen w-full">
-          <div className="w-full divide-y divide-border">
-            <HeroSection />
-            <CapabilitiesSection />
-            {/* <DeliverablesSection />             */}
-            <BentoSection />
-            
-            {/* <AgentShowcaseSection /> */}
-            <OpenSourceSection />
-            <PricingSection />
-            {/* <TestimonialSection /> */}
-            {/* <FAQSection /> */}
-            <CTASection />
-            <FooterSection />
-          </div>
-        </main>
-      </BackgroundAALChecker>
->>>>>>> suna/PRODUCTION
     </>
   );
 }
