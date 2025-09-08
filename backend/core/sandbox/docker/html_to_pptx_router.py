@@ -283,17 +283,29 @@ class OptimizedHTMLToPPTXConverter:
                                     // Calculate effective z-index
                                     if (computed.position !== 'static' && computed.zIndex !== 'auto') {
                                         zIndex = parseInt(computed.zIndex) || 0;
-                                    } else if (parseFloat(computed.opacity) < 1) {
-                                        zIndex = 0; // Opacity creates level 0 stacking context
-                                    } else if (computed.transform !== 'none' || 
-                                              computed.filter !== 'none' ||
-                                              computed.perspective !== 'none' ||
-                                              computed.clipPath !== 'none' ||
-                                              (computed.mask !== 'none' || computed.webkitMask !== 'none') ||
-                                              computed.isolation === 'isolate' ||
-                                              computed.mixBlendMode !== 'normal') {
-                                        zIndex = 0; // Most CSS properties create level 0 stacking context
+                                } else if (parseFloat(computed.opacity) < 1 || 
+                                          computed.transform !== 'none' || 
+                                          computed.filter !== 'none' ||
+                                          computed.perspective !== 'none' ||
+                                          computed.clipPath !== 'none' ||
+                                          (computed.mask !== 'none' || computed.webkitMask !== 'none') ||
+                                          computed.isolation === 'isolate' ||
+                                          computed.mixBlendMode !== 'normal') {
+                                    // For presentation processing: inherit parent's z-index for better layering
+                                    let parent = current.parentElement;
+                                    let parentZIndex = 0;
+                                    while (parent && parent !== document.body.parentElement) {
+                                        if (createsStackingContext(parent)) {
+                                            const parentComputed = window.getComputedStyle(parent);
+                                            if (parentComputed.position !== 'static' && parentComputed.zIndex !== 'auto') {
+                                                parentZIndex = parseInt(parentComputed.zIndex) || 0;
+                                            }
+                                            break;
+                                        }
+                                        parent = parent.parentElement;
                                     }
+                                    zIndex = parentZIndex; // Inherit parent's z-index instead of 0
+                                }
                                     
                                     chain.unshift({
                                         element: current,
@@ -680,16 +692,28 @@ class OptimizedHTMLToPPTXConverter:
                                 // Calculate effective z-index
                                 if (computed.position !== 'static' && computed.zIndex !== 'auto') {
                                     zIndex = parseInt(computed.zIndex) || 0;
-                                } else if (parseFloat(computed.opacity) < 1) {
-                                    zIndex = 0; // Opacity creates level 0 stacking context
-                                } else if (computed.transform !== 'none' || 
+                                } else if (parseFloat(computed.opacity) < 1 || 
+                                          computed.transform !== 'none' || 
                                           computed.filter !== 'none' ||
                                           computed.perspective !== 'none' ||
                                           computed.clipPath !== 'none' ||
                                           (computed.mask !== 'none' || computed.webkitMask !== 'none') ||
                                           computed.isolation === 'isolate' ||
                                           computed.mixBlendMode !== 'normal') {
-                                    zIndex = 0; // Most CSS properties create level 0 stacking context
+                                    // For presentation processing: inherit parent's z-index for better layering
+                                    let parent = current.parentElement;
+                                    let parentZIndex = 0;
+                                    while (parent && parent !== document.body.parentElement) {
+                                        if (createsStackingContext(parent)) {
+                                            const parentComputed = window.getComputedStyle(parent);
+                                            if (parentComputed.position !== 'static' && parentComputed.zIndex !== 'auto') {
+                                                parentZIndex = parseInt(parentComputed.zIndex) || 0;
+                                            }
+                                            break;
+                                        }
+                                        parent = parent.parentElement;
+                                    }
+                                    zIndex = parentZIndex; // Inherit parent's z-index instead of 0
                                 }
                                 
                                 chain.unshift({
@@ -1382,17 +1406,29 @@ class OptimizedHTMLToPPTXConverter:
                                     // Calculate effective z-index
                                     if (computed.position !== 'static' && computed.zIndex !== 'auto') {
                                         zIndex = parseInt(computed.zIndex) || 0;
-                                    } else if (parseFloat(computed.opacity) < 1) {
-                                        zIndex = 0; // Opacity creates level 0 stacking context
-                                    } else if (computed.transform !== 'none' || 
-                                              computed.filter !== 'none' ||
-                                              computed.perspective !== 'none' ||
-                                              computed.clipPath !== 'none' ||
-                                              (computed.mask !== 'none' || computed.webkitMask !== 'none') ||
-                                              computed.isolation === 'isolate' ||
-                                              computed.mixBlendMode !== 'normal') {
-                                        zIndex = 0; // Most CSS properties create level 0 stacking context
+                                } else if (parseFloat(computed.opacity) < 1 || 
+                                          computed.transform !== 'none' || 
+                                          computed.filter !== 'none' ||
+                                          computed.perspective !== 'none' ||
+                                          computed.clipPath !== 'none' ||
+                                          (computed.mask !== 'none' || computed.webkitMask !== 'none') ||
+                                          computed.isolation === 'isolate' ||
+                                          computed.mixBlendMode !== 'normal') {
+                                    // For presentation processing: inherit parent's z-index for better layering
+                                    let parent = current.parentElement;
+                                    let parentZIndex = 0;
+                                    while (parent && parent !== document.body.parentElement) {
+                                        if (createsStackingContext(parent)) {
+                                            const parentComputed = window.getComputedStyle(parent);
+                                            if (parentComputed.position !== 'static' && parentComputed.zIndex !== 'auto') {
+                                                parentZIndex = parseInt(parentComputed.zIndex) || 0;
+                                            }
+                                            break;
+                                        }
+                                        parent = parent.parentElement;
                                     }
+                                    zIndex = parentZIndex; // Inherit parent's z-index instead of 0
+                                }
                                     
                                     chain.unshift({
                                         element: current,
