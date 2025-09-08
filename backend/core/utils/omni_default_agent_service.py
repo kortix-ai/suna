@@ -1,7 +1,7 @@
 from typing import Dict, Any, Optional, List
 from utils.logger import logger
-from services.supabase import DBConnection
-from agent.omni_config import OMNI_CONFIG
+from core.services.supabase import DBConnection
+from core.omni_config import OMNI_CONFIG
 import uuid
 from datetime import datetime
 

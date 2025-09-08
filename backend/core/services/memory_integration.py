@@ -7,8 +7,8 @@ at the end of AI interactions, following the mem0ai pattern.
 
 import json
 from typing import List, Dict, Any, Optional
-from services.memory import memory_service
-from services.supabase import DBConnection
+from core.services.memory import memory_service
+from core.services.supabase import DBConnection
 from utils.logger import logger
 
 

@@ -1279,8 +1279,8 @@ class ResponseProcessor:
             # Check tool credit cost if thread_id is provided
             if thread_id:
                 try:
-                    from services.billing import can_user_afford_tool, charge_tool_usage
-                    from services.supabase import DBConnection
+                    from core.services.billing import can_user_afford_tool, charge_tool_usage
+                    from core.services.supabase import DBConnection
                     
                     db = DBConnection()
                     client = await db.client

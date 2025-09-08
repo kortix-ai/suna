@@ -6,7 +6,7 @@ from datetime import datetime
 from agentpress.tool import Tool, ToolResult, openapi_schema, usage_example
 from sandbox.tool_base import SandboxToolsBase
 from agentpress.thread_manager import ThreadManager
-from services.supabase import DBConnection
+from core.services.supabase import DBConnection
 from utils.logger import logger
 from utils.config import config
 

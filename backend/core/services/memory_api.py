@@ -9,7 +9,7 @@ from typing import List, Dict, Any, Optional
 from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel, Field
 from utils.auth_utils import verify_and_get_user_id_from_jwt
-from services.memory import memory_service
+from core.services.memory import memory_service
 from utils.logger import logger
 
 router = APIRouter(prefix="/memory", tags=["memory"])
