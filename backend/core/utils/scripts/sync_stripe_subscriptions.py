@@ -7,7 +7,7 @@ backend_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(backend_dir))
 
 import stripe
-from datetime import datetime
+from datetime import datetime, timezone
 from core.services.supabase import DBConnection
 from core.utils.config import config
 from core.utils.logger import logger
@@ -194,6 +194,57 @@ async def sync_stripe_to_db():
     print(f"Synced: {synced_count}")
     print(f"Skipped: {skipped_count}")
     print(f"Errors: {error_count}")
+    
+    print("\n" + "="*60)
+    print("CONVERTING FREE TIER USERS TO PRE-TRIAL STATE")
+    print("="*60)
+    
+    free_users_result = await client.from_('credit_accounts')\
+        .select('account_id, balance, tier')\
+        .eq('tier', 'free')\
+        .is_('stripe_subscription_id', 'null')\
+        .execute()
+    
+    if free_users_result.data:
+        print(f"Found {len(free_users_result.data)} free tier users to convert")
+        
+        converted_count = 0
+        for user in free_users_result.data:
+            account_id = user['account_id']
+            old_balance = Decimal(str(user['balance']))
+            
+            print(f"\n  Converting user {account_id[:8]}...")
+            print(f"    Old tier: free")
+            print(f"    Old balance: ${old_balance}")
+            
+            update_result = await client.from_('credit_accounts').update({
+                'tier': 'none',
+                'balance': 0,
+                'expiring_credits': 0,
+                'non_expiring_credits': 0,
+                'trial_status': None,
+                'updated_at': datetime.now(timezone.utc).isoformat()
+            }).eq('account_id', account_id).execute()
+            
+            if update_result.data:
+                await client.from_('credit_ledger').insert({
+                    'account_id': account_id,
+                    'amount': float(-old_balance),
+                    'balance_after': 0,
+                    'type': 'debit',
+                    'description': 'Free tier discontinued - please start a trial to continue'
+                }).execute()
+                
+                print(f"    ✓ Converted to 'none' tier with 0 credits")
+                print(f"    → User must now provide credit card to start 7-day trial")
+                converted_count += 1
+            else:
+                print(f"    ✗ Failed to convert user")
+        
+        print(f"\n✅ Converted {converted_count} free tier users to pre-trial state")
+        print(f"   These users will need to provide credit card info to start their trial")
+    else:
+        print("No free tier users found to convert")
     
     print("\n" + "="*60)
     print("CHECKING TOPUP CREDITS")

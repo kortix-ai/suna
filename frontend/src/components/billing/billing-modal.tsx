@@ -292,9 +292,7 @@ export function BillingModal({ open, onOpenChange, returnUrl = typeof window !==
                                 )}
                             </div>
 
-                            {/* Action Buttons underneath */}
                             <div className="flex gap-2 justify-center">
-                                {/* Cancel/Reactivate Button */}
                                 {!(subscriptionData.subscription.cancel_at_period_end || subscriptionData.subscription.cancel_at) ? (
                                     <Dialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
                                         <DialogTrigger asChild>

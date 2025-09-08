@@ -76,19 +76,16 @@ async def lifespan(app: FastAPI):
         
         yield
         
-        # Clean up agent resources
         logger.debug("Cleaning up agent resources")
         await core_api.cleanup()
         
-        # Clean up Redis connection
         try:
             logger.debug("Closing Redis connection")
             await redis.close()
             logger.debug("Redis connection closed successfully")
         except Exception as e:
             logger.error(f"Error closing Redis connection: {e}")
-        
-        # Clean up database connection
+
         logger.debug("Disconnecting from database")
         await db.disconnect()
     except Exception as e:

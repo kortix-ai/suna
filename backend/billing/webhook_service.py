@@ -140,8 +140,9 @@ class WebhookService:
                     await credit_manager.add_credits(
                         account_id=account_id,
                         amount=TRIAL_CREDITS,
-                        is_expiring=False,
-                        description=f'{TRIAL_DURATION_DAYS}-day free trial credits'
+                        is_expiring=True,
+                        description=f'{TRIAL_DURATION_DAYS}-day free trial credits',
+                        expires_at=trial_ends_at
                     )
 
                     await client.from_('trial_history').upsert({
@@ -374,12 +375,53 @@ class WebhookService:
                 await self._handle_trial_subscription(subscription, account_id, new_tier, client)
                 return
             elif subscription.status == 'active' and trial_status == 'active':
-                await client.rpc('handle_trial_end', {
-                    'p_account_id': account_id,
-                    'p_converted': True,
-                    'p_new_tier': new_tier['name']
+                # User upgraded during trial - convert trial to paid
+                logger.info(f"[TRIAL CONVERSION] User {account_id} upgrading from trial to {new_tier['name']}")
+                
+                # Get current trial balance to log the change
+                current_balance_result = await client.from_('credit_accounts')\
+                    .select('balance, expiring_credits, non_expiring_credits')\
+                    .eq('account_id', account_id)\
+                    .execute()
+                
+                old_balance = 0
+                old_non_expiring = 0
+                if current_balance_result.data:
+                    old_balance = float(current_balance_result.data[0].get('balance', 0))
+                    old_non_expiring = float(current_balance_result.data[0].get('non_expiring_credits', 0))
+                    
+                new_credits = Decimal(str(new_tier['credits']))
+                new_total = float(new_credits) + old_non_expiring
+                
+                await client.from_('credit_accounts').update({
+                    'trial_status': 'converted',
+                    'converted_to_paid_at': datetime.now(timezone.utc).isoformat(),
+                    'tier': new_tier['name'],
+                    'balance': new_total,
+                    'expiring_credits': float(new_credits),
+                    'non_expiring_credits': old_non_expiring,
+                    'stripe_subscription_id': subscription['id'],
+                    'billing_cycle_anchor': billing_anchor.isoformat(),
+                    'next_credit_grant': next_grant_date.isoformat()
+                }).eq('account_id', account_id).execute()
+                
+                await client.from_('trial_history').update({
+                    'ended_at': datetime.now(timezone.utc).isoformat(),
+                    'converted_to_paid': True,
+                    'conversion_tier': new_tier['name']
+                }).eq('account_id', account_id).is_('ended_at', 'null').execute()
+                
+                credit_change = new_total - old_balance
+                await client.from_('credit_ledger').insert({
+                    'account_id': account_id,
+                    'amount': credit_change,
+                    'balance_after': new_total,
+                    'type': 'grant',
+                    'description': f"Trial converted to {new_tier['name']} - trial credits replaced with ${new_credits} tier credits"
                 }).execute()
-                logger.info(f"Converted trial to paid subscription for user {account_id}")
+                
+                logger.info(f"[TRIAL CONVERSION] Completed: ${old_balance} → ${new_total} (${new_credits} tier + ${old_non_expiring} purchased)")
+                return
 
             current_tier_info = TIERS.get(current_tier_name)
             current_tier = None
@@ -431,8 +473,9 @@ class WebhookService:
         await credit_manager.add_credits(
             account_id=account_id,
             amount=TRIAL_CREDITS,
-            is_expiring=False,
-            description=f'{TRIAL_DURATION_DAYS}-day free trial credits'
+            is_expiring=True,
+            description=f'{TRIAL_DURATION_DAYS}-day free trial credits',
+            expires_at=trial_ends_at
         )
         
         await client.from_('trial_history').upsert({

@@ -111,14 +111,6 @@ export default function PersonalAccountBillingPage() {
                 tierCredits={subscriptionData?.credits?.tier_credits || subscriptionData?.tier?.credits}
               />
             </div>
-            <div className="mb-6 flex justify-end">
-              <Button variant='outline' asChild className='text-sm'>
-                <Link href="/settings/usage-logs">
-            View Usage Logs
-                </Link>
-              </Button>
-            </div>
-
             <div className='flex justify-center items-center gap-4'>
               <Button
                 variant="outline"

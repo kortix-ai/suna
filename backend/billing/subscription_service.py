@@ -417,8 +417,9 @@ class SubscriptionService:
         await credit_manager.add_credits(
             account_id=account_id,
             amount=TRIAL_CREDITS,
-            is_expiring=False,
-            description=f'{TRIAL_DURATION_DAYS}-day free trial credits'
+            is_expiring=True,
+            description=f'{TRIAL_DURATION_DAYS}-day free trial credits',
+            expires_at=trial_ends_at
         )
         
         await client.from_('trial_history').upsert({
