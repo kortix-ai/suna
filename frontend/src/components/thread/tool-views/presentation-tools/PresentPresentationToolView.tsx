@@ -125,7 +125,7 @@ export function PresentPresentationToolView({
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-lg bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 border border-emerald-500/20">
+            <div className="relative p-2 rounded-xl bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 border border-emerald-500/20">
               <CheckCircle2 className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />
             </div>
             <div>
@@ -166,7 +166,7 @@ export function PresentPresentationToolView({
         <ScrollArea className="h-full w-full">
           <div className="p-4 space-y-6">
           {isSuccess && !isStreaming && (
-            <div className="rounded-lg border bg-green-50 p-4 dark:bg-green-950/20 space-y-3">
+            <div className="rounded-xl border bg-green-50 p-4 dark:bg-green-950/20 space-y-3">
               <div className="flex items-center gap-2">
                 <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
                 <h3 className="font-medium text-green-900 dark:text-green-100">
