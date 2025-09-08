@@ -106,7 +106,7 @@ async def get_user_subscription_tier(account_id: str) -> Dict:
     await Cache.set(cache_key, tier_info, ttl=60)
     return tier_info
 
-    
+
 async def calculate_credit_breakdown(account_id: str, client) -> Dict:
     current_balance = await credit_service.get_balance(account_id)
     current_balance = float(current_balance)
@@ -408,7 +408,7 @@ async def create_checkout_session(
         result = await subscription_service.create_checkout_session(
             account_id=account_id,
             price_id=request.price_id,
-            success_url=request.success_url,
+                success_url=request.success_url,
             cancel_url=request.cancel_url
         )
         return result
@@ -441,7 +441,6 @@ async def sync_subscription(
         if result['success']:
             balance = await credit_service.get_balance(account_id)
             summary = await credit_service.get_account_summary(account_id)
-            
             result['credits'] = {
                 'balance': float(balance),
                 'lifetime_granted': float(summary['lifetime_granted']),
@@ -720,7 +719,7 @@ async def start_trial(
 ) -> Dict:
     try:
         result = await trial_service.start_trial(
-            account_id=account_id,
+                account_id=account_id,
             success_url=request.success_url,
             cancel_url=request.cancel_url
         )
