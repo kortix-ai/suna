@@ -480,7 +480,7 @@ class AgentRunner:
         # Enrich agent config with LlamaCloud knowledge bases if agent exists
         if self.config.agent_config and self.config.agent_config.get('agent_id'):
             try:
-                from agent.config_helper import enrich_agent_config_with_llamacloud_kb
+                from core.config_helper import enrich_agent_config_with_llamacloud_kb
                 self.config.agent_config = await enrich_agent_config_with_llamacloud_kb(self.config.agent_config)
             except Exception as e:
                 logger.error(f"Failed to enrich agent config with LlamaCloud knowledge bases: {e}")
@@ -576,7 +576,7 @@ class AgentRunner:
         """Register LlamaCloud knowledge search tool if agent has LlamaCloud knowledge bases configured"""
         if self.config.agent_config and self.config.agent_config.get('llamacloud_knowledge_bases'):
             try:
-                from agent.tools.knowledge_search_tool import KnowledgeSearchTool
+                from core.tools.knowledge_search_tool import KnowledgeSearchTool
                 logger.info(f"Registering LlamaCloud knowledge search tool with {len(self.config.agent_config['llamacloud_knowledge_bases'])} knowledge bases")
                 self.thread_manager.add_tool(
                     KnowledgeSearchTool, 

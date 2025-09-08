@@ -1,6 +1,6 @@
 from typing import Dict
 
-from agent.tools.data_providers.RapidDataProviderBase import RapidDataProviderBase, EndpointSchema
+from core.tools.data_providers.RapidDataProviderBase import RapidDataProviderBase, EndpointSchema
 
 
 class ApolloProvider(RapidDataProviderBase):

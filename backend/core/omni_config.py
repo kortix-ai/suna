@@ -1,4 +1,4 @@
-from agent.prompts.prompt import SYSTEM_PROMPT
+from core.prompts.prompt import SYSTEM_PROMPT
 
 # Omni default configuration - updated branding from Suna
 OMNI_CONFIG = {

@@ -134,7 +134,7 @@ def _extract_suna_agent_config(agent_data: Dict[str, Any], version_data: Optiona
 
 def _extract_omni_agent_config(agent_data: Dict[str, Any], version_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Extract config for Omni agents - always use central config with user customizations."""
-    from agent.omni_config import OMNI_CONFIG
+    from core.omni_config import OMNI_CONFIG
     
     agent_id = agent_data.get('agent_id', 'Unknown')
     logger.debug(f"Using Omni central config for agent {agent_id}")
@@ -426,12 +426,12 @@ def can_edit_field(config: Dict[str, Any], field_name: str) -> bool:
 
 
 def get_default_system_prompt_for_suna_agent() -> str:
-    from agent.suna_config import SUNA_CONFIG
+    from core.suna_config import SUNA_CONFIG
     return SUNA_CONFIG['system_prompt']
 
 
 def get_default_system_prompt_for_omni_agent() -> str:
-    from agent.omni_config import OMNI_CONFIG
+    from core.omni_config import OMNI_CONFIG
     return OMNI_CONFIG['system_prompt']
 
 
