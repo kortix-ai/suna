@@ -277,9 +277,9 @@ class SimplifiedEnterpriseBillingService:
             # Get enterprise balance
             enterprise = await self.get_enterprise_balance()
             
-            # Get all user limits with account info (simplified - avoid join issues)
+            # Get all user limits with account info using correct PostgREST syntax
             limits_result = await client.table('enterprise_user_limits')\
-                .select('*')\
+                .select('*, account_id(id, name, personal_account)')\
                 .eq('is_active', True)\
                 .order('current_month_usage', desc=True)\
                 .range(page * items_per_page, (page + 1) * items_per_page - 1)\
