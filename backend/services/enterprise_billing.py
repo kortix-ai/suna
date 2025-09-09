@@ -81,8 +81,9 @@ class SimplifiedEnterpriseBillingService:
                 user_limit = user_limit_result.data
                 remaining = user_limit['monthly_limit'] - user_limit['current_month_usage']
             else:
-                # Default limit if not set
-                remaining = 1000.00
+                # Get default limit from global settings
+                default_limit = await self.get_default_monthly_limit()
+                remaining = default_limit
             
             # Check if enterprise has credits
             if enterprise['credit_balance'] < 0.01:  # Minimum to start
@@ -208,6 +209,94 @@ class SimplifiedEnterpriseBillingService:
             logger.error(f"Error loading enterprise credits: {e}")
             raise
     
+    async def get_global_setting(self, setting_key: str) -> Optional[Dict[str, Any]]:
+        """Get a global enterprise setting."""
+        if not config.ENTERPRISE_MODE:
+            return None
+            
+        try:
+            db = DBConnection()
+            client = await db.client
+            
+            result = await client.table('enterprise_global_settings')\
+                .select('*')\
+                .eq('setting_key', setting_key)\
+                .maybe_single()\
+                .execute()
+            
+            if result and hasattr(result, 'data') and result.data:
+                return result.data
+            return None
+                
+        except Exception as e:
+            logger.error(f"Error getting global setting {setting_key}: {e}")
+            return None
+    
+    async def set_global_setting(
+        self,
+        setting_key: str,
+        setting_value: Dict[str, Any],
+        description: str = None,
+        updated_by: str = None
+    ) -> Dict[str, Any]:
+        """Set or update a global enterprise setting."""
+        if not config.ENTERPRISE_MODE:
+            raise ValueError("Enterprise mode not enabled")
+            
+        try:
+            db = DBConnection()
+            client = await db.client
+            
+            # Check if setting exists
+            existing = await self.get_global_setting(setting_key)
+            
+            if existing:
+                # Update existing setting
+                result = await client.table('enterprise_global_settings')\
+                    .update({
+                        'setting_value': setting_value,
+                        'description': description,
+                        'updated_by': updated_by
+                    })\
+                    .eq('setting_key', setting_key)\
+                    .execute()
+            else:
+                # Create new setting
+                result = await client.table('enterprise_global_settings')\
+                    .insert({
+                        'setting_key': setting_key,
+                        'setting_value': setting_value,
+                        'description': description,
+                        'created_by': updated_by,
+                        'updated_by': updated_by
+                    })\
+                    .execute()
+            
+            if result.data and len(result.data) > 0:
+                return result.data[0]
+            else:
+                raise Exception("No data returned from setting update")
+                
+        except Exception as e:
+            logger.error(f"Error setting global setting {setting_key}: {e}")
+            raise
+    
+    async def get_default_monthly_limit(self) -> float:
+        """Get the default monthly limit from global settings."""
+        try:
+            setting = await self.get_global_setting('default_monthly_limit')
+            if setting and 'setting_value' in setting:
+                value = setting['setting_value'].get('value')
+                if value and isinstance(value, (int, float)) and value > 0:
+                    return float(value)
+            
+            # Fallback to hardcoded default
+            return 1000.00
+                
+        except Exception as e:
+            logger.error(f"Error getting default monthly limit: {e}")
+            return 1000.00
+    
     async def get_user_limit(self, account_id: str) -> Dict[str, Any]:
         """Get a user's monthly limit and current usage."""
         if not config.ENTERPRISE_MODE:
@@ -217,6 +306,9 @@ class SimplifiedEnterpriseBillingService:
             db = DBConnection()
             client = await db.client
             
+            # Get default limit from global settings
+            default_limit = await self.get_default_monthly_limit()
+            
             result = await client.table('enterprise_user_limits')\
                 .select('*')\
                 .eq('account_id', account_id)\
@@ -224,14 +316,18 @@ class SimplifiedEnterpriseBillingService:
                 .execute()
             
             if result and hasattr(result, 'data') and result.data:
-                return result.data
+                user_data = result.data
+                # Add flag to indicate if this user has custom limit vs default
+                user_data['using_default_limit'] = False
+                return user_data
             else:
                 # Return default if not set
                 return {
                     'account_id': account_id,
-                    'monthly_limit': 1000.00,
+                    'monthly_limit': default_limit,
                     'current_month_usage': 0,
-                    'is_active': True
+                    'is_active': True,
+                    'using_default_limit': True
                 }
                 
         except Exception as e:
@@ -438,9 +534,9 @@ class SimplifiedEnterpriseBillingService:
             
             return {
                 'account_id': account_id,
-                'monthly_limit': user_limit['monthly_limit'] if user_limit else 1000.00,
+                'monthly_limit': user_limit['monthly_limit'] if user_limit else await self.get_default_monthly_limit(),
                 'current_month_usage': user_limit['current_month_usage'] if user_limit else 0,
-                'remaining_monthly': (user_limit['monthly_limit'] - user_limit['current_month_usage']) if user_limit else 1000.00,
+                'remaining_monthly': (user_limit['monthly_limit'] - user_limit['current_month_usage']) if user_limit else await self.get_default_monthly_limit(),
                 'usage_logs': usage_data,
                 'total_cost_period': total_cost,
                 'total_logs': count_result.count if count_result else len(usage_data),

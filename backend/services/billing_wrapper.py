@@ -207,9 +207,9 @@ async def get_billing_info_unified(client, account_id: str) -> Dict[str, Any]:
             billing_info.update({
                 'billing_type': 'enterprise',
                 'credit_balance': enterprise_balance['credit_balance'] if enterprise_balance else 0,
-                'monthly_limit': user_limit['monthly_limit'] if user_limit else 1000.00,
+                'monthly_limit': user_limit['monthly_limit'] if user_limit else await enterprise_billing.get_default_monthly_limit(),
                 'current_usage': user_limit['current_month_usage'] if user_limit else 0,
-                'remaining_monthly': (user_limit['monthly_limit'] - user_limit['current_month_usage']) if user_limit else 1000.00,
+                'remaining_monthly': (user_limit['monthly_limit'] - user_limit['current_month_usage']) if user_limit else await enterprise_billing.get_default_monthly_limit(),
                 'is_active': user_limit['is_active'] if user_limit else True
             })
         else:

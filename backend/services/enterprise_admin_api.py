@@ -32,6 +32,14 @@ class SetUserLimitRequest(BaseModel):
     account_id: str
     monthly_limit: float
 
+class SetGlobalDefaultRequest(BaseModel):
+    monthly_limit: float
+
+class GlobalSettingRequest(BaseModel):
+    setting_key: str
+    setting_value: Dict[str, Any]
+    description: Optional[str] = None
+
 async def verify_simple_admin(user_id: str = Depends(verify_and_get_user_id_from_jwt)):
     """Simple admin check - checks if user email is in ADMIN_EMAILS env var."""
     if not config.ENTERPRISE_MODE:
@@ -240,6 +248,151 @@ async def reset_monthly_usage(admin_user_id: str = Depends(verify_simple_admin))
             
     except Exception as e:
         logger.error(f"Error resetting monthly usage: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# =====================================================
+# GLOBAL DEFAULTS MANAGEMENT
+# =====================================================
+
+@router.get("/global-defaults")
+async def get_global_defaults(admin_user_id: str = Depends(verify_simple_admin)):
+    """Get current global default settings."""
+    try:
+        default_limit = await enterprise_billing.get_default_monthly_limit()
+        
+        # Get the full setting to see description and metadata
+        default_setting = await enterprise_billing.get_global_setting('default_monthly_limit')
+        
+        return {
+            "default_monthly_limit": default_limit,
+            "setting_details": {
+                "description": default_setting.get('description') if default_setting else 'Default monthly spending limit for new enterprise users',
+                "created_at": default_setting.get('created_at') if default_setting else None,
+                "updated_at": default_setting.get('updated_at') if default_setting else None,
+                "updated_by": default_setting.get('updated_by') if default_setting else None
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting global defaults: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/global-defaults")
+async def set_global_default(
+    request: SetGlobalDefaultRequest,
+    admin_user_id: str = Depends(verify_simple_admin)
+):
+    """Set the global default monthly limit for new users."""
+    try:
+        if request.monthly_limit <= 0:
+            raise HTTPException(status_code=400, detail="Monthly limit must be greater than 0")
+            
+        await enterprise_billing.set_global_setting(
+            'default_monthly_limit',
+            {'value': request.monthly_limit},
+            'Default monthly spending limit for new enterprise users (in USD)',
+            admin_user_id
+        )
+        
+        return {
+            "success": True,
+            "default_monthly_limit": request.monthly_limit,
+            "message": f"Global default monthly limit set to ${request.monthly_limit:.2f}"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error setting global default: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/users-with-custom-limits")
+async def get_users_with_custom_limits(
+    admin_user_id: str = Depends(verify_simple_admin),
+    page: int = Query(default=0, ge=0),
+    items_per_page: int = Query(default=50, ge=1, le=200)
+):
+    """Get all users who have custom limits different from the global default."""
+    try:
+        default_limit = await enterprise_billing.get_default_monthly_limit()
+        
+        db = DBConnection()
+        client = await db.client
+        
+        # Get users with explicit limits that differ from default
+        result = await client.table('enterprise_user_limits')\
+            .select('*')\
+            .neq('monthly_limit', default_limit)\
+            .eq('is_active', True)\
+            .order('updated_at', desc=True)\
+            .range(page * items_per_page, (page + 1) * items_per_page - 1)\
+            .execute()
+        
+        users_with_custom_limits = []
+        if result.data:
+            for user in result.data:
+                # Get user email for display
+                try:
+                    user_info = await client.auth.admin.get_user_by_id(user['account_id'])
+                    email = user_info.user.email if user_info and user_info.user else 'Unknown'
+                except Exception:
+                    email = 'Unknown'
+                
+                users_with_custom_limits.append({
+                    'account_id': user['account_id'],
+                    'email': email,
+                    'monthly_limit': user['monthly_limit'],
+                    'current_month_usage': user['current_month_usage'],
+                    'difference_from_default': user['monthly_limit'] - default_limit,
+                    'updated_at': user['updated_at']
+                })
+        
+        # Count total users with custom limits
+        count_result = await client.table('enterprise_user_limits')\
+            .select('*', count='exact')\
+            .neq('monthly_limit', default_limit)\
+            .eq('is_active', True)\
+            .execute()
+        
+        total_custom_users = count_result.count if hasattr(count_result, 'count') else 0
+        
+        return {
+            "users_with_custom_limits": users_with_custom_limits,
+            "total_custom_users": total_custom_users,
+            "default_monthly_limit": default_limit,
+            "page": page,
+            "items_per_page": items_per_page
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting users with custom limits: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/users/{account_id}/reset-to-default")
+async def reset_user_to_default(
+    account_id: str,
+    admin_user_id: str = Depends(verify_simple_admin)
+):
+    """Reset a user's limit to the global default (removes their custom limit)."""
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        # Remove the custom limit, which will cause the system to use the default
+        result = await client.table('enterprise_user_limits')\
+            .delete()\
+            .eq('account_id', account_id)\
+            .execute()
+        
+        default_limit = await enterprise_billing.get_default_monthly_limit()
+        
+        return {
+            "success": True,
+            "account_id": account_id,
+            "message": f"User reset to global default limit of ${default_limit:.2f}",
+            "default_limit": default_limit
+        }
+        
+    except Exception as e:
+        logger.error(f"Error resetting user to default: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/debug")

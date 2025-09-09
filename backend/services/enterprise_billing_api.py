@@ -46,7 +46,7 @@ async def get_subscription(
             "cancel_at_period_end": False,
             "trial_end": None,
             "minutes_limit": 999999,  # Unlimited for enterprise
-            "cost_limit": user_limit['monthly_limit'] if user_limit else 1000.00,
+            "cost_limit": user_limit['monthly_limit'] if user_limit else await enterprise_billing.get_default_monthly_limit(),
             "current_usage": user_limit['current_month_usage'] if user_limit else 0,
             "has_schedule": False,
             "subscription_id": "enterprise",
@@ -61,8 +61,8 @@ async def get_subscription(
             "can_purchase_credits": False,  # Enterprise users don't purchase credits
             "enterprise_info": {
                 "is_enterprise": True,
-                "monthly_limit": user_limit['monthly_limit'] if user_limit else 1000.00,
-                "remaining_monthly": (user_limit['monthly_limit'] - user_limit['current_month_usage']) if user_limit else 1000.00,
+                "monthly_limit": user_limit['monthly_limit'] if user_limit else await enterprise_billing.get_default_monthly_limit(),
+                "remaining_monthly": (user_limit['monthly_limit'] - user_limit['current_month_usage']) if user_limit else await enterprise_billing.get_default_monthly_limit(),
                 "enterprise_balance": enterprise_balance['credit_balance'] if enterprise_balance else 0
             }
         }
@@ -97,9 +97,9 @@ async def check_status(
             "credit_balance": enterprise_balance['credit_balance'] if enterprise_balance else 0,
             "can_purchase_credits": False,  # Enterprise users don't purchase credits
             "enterprise_info": {
-                "monthly_limit": user_limit['monthly_limit'] if user_limit else 1000.00,
+                "monthly_limit": user_limit['monthly_limit'] if user_limit else await enterprise_billing.get_default_monthly_limit(),
                 "current_usage": user_limit['current_month_usage'] if user_limit else 0,
-                "remaining": (user_limit['monthly_limit'] - user_limit['current_month_usage']) if user_limit else 1000.00
+                "remaining": (user_limit['monthly_limit'] - user_limit['current_month_usage']) if user_limit else await enterprise_billing.get_default_monthly_limit()
             }
         }
         
@@ -166,9 +166,9 @@ async def get_usage_logs(
             "total_cost": usage_details.get('total_cost_period', 0),
             "tool_usage_daily": usage_details.get('tool_usage_daily', {}),
             "enterprise_info": {
-                "monthly_limit": usage_details.get('monthly_limit', 1000.00),
+                "monthly_limit": usage_details.get('monthly_limit', await enterprise_billing.get_default_monthly_limit()),
                 "current_usage": usage_details.get('current_month_usage', 0),
-                "remaining": usage_details.get('remaining_monthly', 1000.00)
+                "remaining": usage_details.get('remaining_monthly', await enterprise_billing.get_default_monthly_limit())
             }
         }
         
