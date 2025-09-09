@@ -539,12 +539,13 @@ class SimplifiedEnterpriseBillingService:
             # Query enterprise usage directly for real-time updates (like Stripe system)
             since_date = datetime.now() - timedelta(days=days)
             
-            # Get raw enterprise usage data with pagination
+            # Get raw enterprise usage data with pagination (temporarily remove date filter for debugging)
             usage_query = client.from_('enterprise_usage').select(
                 'id, account_id, thread_id, message_id, cost, model_name, tokens_used, created_at'
             )
             usage_query = usage_query.eq('account_id', account_id)
-            usage_query = usage_query.gte('created_at', since_date.isoformat())
+            # TEMPORARILY COMMENT OUT DATE FILTER FOR DEBUGGING
+            # usage_query = usage_query.gte('created_at', since_date.isoformat())
             usage_query = usage_query.order('created_at', desc=True)
             usage_query = usage_query.limit(items_per_page)
             usage_query = usage_query.offset(page * items_per_page)
@@ -645,6 +646,9 @@ class SimplifiedEnterpriseBillingService:
                 # Add this usage record
                 cost = float(row['cost'] or 0)
                 tokens = int(row['tokens_used'] or 0)
+                
+                # Debug: Log each record processing
+                logger.debug(f"Processing usage record: cost={cost}, tokens={tokens}, created_at={row['created_at']}")
                 
                 thread_groups[thread_key]['thread_cost'] += cost
                 thread_groups[thread_key]['thread_tokens'] += tokens
