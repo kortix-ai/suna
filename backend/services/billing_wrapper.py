@@ -21,7 +21,9 @@ from utils.config import config
 from services.billing import (
     check_billing_status as stripe_check_billing_status,
     handle_usage_with_credits as stripe_handle_usage_with_credits,
-    can_use_model as stripe_can_use_model
+    can_use_model as stripe_can_use_model,
+    can_user_afford_tool as stripe_can_user_afford_tool,
+    charge_tool_usage as stripe_charge_tool_usage
 )
 
 # Import enterprise billing service
@@ -236,7 +238,126 @@ async def get_billing_info_unified(client, account_id: str) -> Dict[str, Any]:
         }
 
 
+async def can_user_afford_tool_unified(client, account_id: str, tool_name: str) -> Dict[str, Any]:
+    """
+    Unified tool affordability check that routes to the appropriate billing system.
+    
+    When ENTERPRISE_MODE is enabled: ALL accounts can use all tools if they have enterprise credits and monthly allowance
+    When ENTERPRISE_MODE is disabled: Use standard tool credit checking logic
+    
+    Args:
+        client: Supabase client
+        account_id: The basejump account ID
+        tool_name: The tool name to check affordability for
+        
+    Returns:
+        Dict containing affordability info: {'can_use': bool, 'required_cost': float, 'current_balance': float}
+    """
+    try:
+        # If enterprise mode is enabled, check enterprise billing instead of individual tool credits
+        if config.ENTERPRISE_MODE:
+            logger.debug(f"Enterprise mode enabled - checking enterprise billing for tool {tool_name} usage by account {account_id}")
+            
+            # Check if user can run agents (which includes tool usage)
+            can_run, message, billing_info = await check_billing_status_unified(client, account_id)
+            
+            if can_run:
+                # In enterprise mode, tools don't have individual costs - they're covered by enterprise credits
+                return {
+                    'can_use': True,
+                    'required_cost': 0.0,  # No individual tool cost in enterprise mode
+                    'current_balance': billing_info.get('enterprise_balance', 0) if billing_info else 0
+                }
+            else:
+                # User cannot run agents, so cannot use tools
+                return {
+                    'can_use': False,
+                    'required_cost': 0.0,
+                    'current_balance': billing_info.get('enterprise_balance', 0) if billing_info else 0
+                }
+        else:
+            # Enterprise mode disabled, use standard tool credit checking
+            logger.debug(f"Enterprise mode disabled, using standard tool credit checking for {tool_name}")
+            return await stripe_can_user_afford_tool(client, account_id, tool_name)
+        
+    except Exception as e:
+        logger.error(
+            f"Error in unified tool affordability check for account {account_id} and tool {tool_name}: {e}",
+            account_id=account_id,
+            tool_name=tool_name,
+            error=str(e),
+            exc_info=True
+        )
+        # Fall back to standard logic on error
+        try:
+            return await stripe_can_user_afford_tool(client, account_id, tool_name)
+        except Exception as fallback_error:
+            logger.error(f"Fallback tool affordability check also failed: {fallback_error}")
+            # Default to allowing tool use if both checks fail
+            return {'can_use': True, 'required_cost': 0.0, 'current_balance': 0.0}
+
+
+async def charge_tool_usage_unified(
+    client,
+    account_id: str,
+    tool_name: str,
+    thread_id: str = None,
+    message_id: str = None
+) -> Dict[str, Any]:
+    """
+    Unified tool usage charging that routes to the appropriate billing system.
+    
+    When ENTERPRISE_MODE is enabled: Tool usage is covered by enterprise credits (no individual charging)
+    When ENTERPRISE_MODE is disabled: Use standard tool credit charging logic
+    
+    Args:
+        client: Supabase client
+        account_id: The basejump account ID
+        tool_name: The tool name to charge for
+        thread_id: Optional thread ID for tracking
+        message_id: Optional message ID for tracking
+        
+    Returns:
+        Dict containing charge result: {'success': bool, 'cost_charged': float, 'new_balance': float}
+    """
+    try:
+        # If enterprise mode is enabled, tool usage is covered by enterprise billing
+        if config.ENTERPRISE_MODE:
+            logger.debug(f"Enterprise mode enabled - tool {tool_name} usage covered by enterprise credits for account {account_id}")
+            
+            # In enterprise mode, individual tool usage doesn't need separate charging
+            # Tools are covered by the overall enterprise credit system
+            # Return success with no cost charged since it's handled at the enterprise level
+            return {
+                'success': True,
+                'cost_charged': 0.0,  # No individual charge in enterprise mode
+                'new_balance': 0.0    # Balance is managed at enterprise level
+            }
+        else:
+            # Enterprise mode disabled, use standard tool charging
+            logger.debug(f"Enterprise mode disabled, charging for tool {tool_name} usage")
+            return await stripe_charge_tool_usage(client, account_id, tool_name, thread_id, message_id)
+        
+    except Exception as e:
+        logger.error(
+            f"Error in unified tool usage charging for account {account_id} and tool {tool_name}: {e}",
+            account_id=account_id,
+            tool_name=tool_name,
+            error=str(e),
+            exc_info=True
+        )
+        # Fall back to standard logic on error
+        try:
+            return await stripe_charge_tool_usage(client, account_id, tool_name, thread_id, message_id)
+        except Exception as fallback_error:
+            logger.error(f"Fallback tool charging also failed: {fallback_error}")
+            # Default to success if both fail
+            return {'success': True, 'cost_charged': 0.0, 'new_balance': 0.0}
+
+
 # Maintain backward compatibility by exposing unified functions with original names
 check_billing_status = check_billing_status_unified
 handle_usage_with_credits = handle_usage_unified
 can_use_model = can_use_model_unified
+can_user_afford_tool = can_user_afford_tool_unified
+charge_tool_usage = charge_tool_usage_unified

@@ -68,7 +68,7 @@ function SearchResultsRenderer({ data, metadata }: { data: any; metadata?: any }
         </div>
         {meta?.costDollars?.total && (
           <div className="text-xs text-zinc-500 dark:text-zinc-400">
-            Cost: ${meta.costDollars.total}
+            Cost: {(meta.costDollars.total * 1000).toFixed(0)} credits
           </div>
         )}
       </div>

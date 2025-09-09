@@ -81,6 +81,13 @@ export default function UsageLogs({ accountId }: Props) {
 
   const formatCost = (cost: number | string) => {
     if (typeof cost === 'string' || cost === 0) {
+      return typeof cost === 'string' ? cost : '0 credits';
+    }
+    return `${(cost * 1000).toFixed(0)} credits`;
+  };
+
+  const formatTotalCost = (cost: number | string) => {
+    if (typeof cost === 'string' || cost === 0) {
       return typeof cost === 'string' ? cost : '$0.0000';
     }
     return `$${cost.toFixed(4)}`;
@@ -261,7 +268,7 @@ export default function UsageLogs({ accountId }: Props) {
                         </div>
                         <div className="text-right">
                           <div className="font-mono font-semibold">
-                            {formatCost(day.totalCost)}
+                            {formatTotalCost(day.totalCost)}
                           </div>
                           <div className="text-sm text-muted-foreground font-mono">
                             {day.totalTokens.toLocaleString()} tokens
@@ -279,7 +286,7 @@ export default function UsageLogs({ accountId }: Props) {
                               <TableHead className="text-xs text-right">Prompt</TableHead>
                               <TableHead className="text-xs text-right">Completion</TableHead>
                               <TableHead className="text-xs text-right">Total</TableHead>
-                              <TableHead className="text-xs text-right">Cost</TableHead>
+                              <TableHead className="text-xs text-right">Credits</TableHead>
                               <TableHead className="text-xs text-right">Payment</TableHead>
                               <TableHead className="w-[100px] text-xs text-center">Thread</TableHead>
                             </TableRow>
