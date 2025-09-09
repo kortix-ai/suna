@@ -148,6 +148,8 @@ class SimplifiedEnterpriseBillingService:
                         amount=amount,
                         new_balance=response['new_balance']
                     )
+                    # Debug: Log usage recording for real-time tracking
+                    logger.info(f"USAGE RECORDED: Account {account_id} used ${amount:.4f} for thread {thread_id}, message {message_id}, model {model_name}")
                     # Invalidate caches to ensure frontend sees updates immediately  
                     try:
                         from utils.cache import Cache
@@ -547,6 +549,18 @@ class SimplifiedEnterpriseBillingService:
             usage_query = usage_query.limit(items_per_page)
             usage_query = usage_query.offset(page * items_per_page)
             usage_result = await usage_query.execute()
+            
+            # Debug: Log what we found
+            logger.info(f"Querying enterprise usage for account {account_id} since {since_date.isoformat()}")
+            logger.info(f"Found {len(usage_result.data) if usage_result.data else 0} usage records for account {account_id}")
+            if usage_result.data:
+                logger.info(f"Latest record: {usage_result.data[0]}")
+            
+            # Also check total count without date filter for debugging
+            debug_count_query = client.from_('enterprise_usage').select('id', count='exact')
+            debug_count_query = debug_count_query.eq('account_id', account_id)
+            debug_count_result = await debug_count_query.execute()
+            logger.info(f"Total usage records for account {account_id}: {debug_count_result.count if debug_count_result else 0}")
             
             if not usage_result or not usage_result.data:
                 return {
