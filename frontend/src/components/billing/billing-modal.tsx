@@ -283,8 +283,23 @@ export function BillingModal({ open, onOpenChange, returnUrl = typeof window !==
                         </div>
                     )}
 
-                    {/* Show pricing section immediately - no loading state */}
-                    <PricingSection returnUrl={returnUrl} showTitleAndTabs={false} />
+                    {/* Show pricing section only if not in enterprise mode */}
+                    {!subscriptionData?.enterprise_info?.is_enterprise && (
+                        <PricingSection returnUrl={returnUrl} showTitleAndTabs={false} />
+                    )}
+                    
+                    {/* Enterprise mode message */}
+                    {subscriptionData?.enterprise_info?.is_enterprise && (
+                        <div className="mb-6 p-4 bg-muted/30 border border-border rounded-lg text-center">
+                            <div className="flex items-center justify-center gap-2 mb-2">
+                                <Shield className="h-5 w-5 text-blue-600" />
+                                <span className="font-medium">Enterprise Account</span>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                                Your account is managed under enterprise billing. Contact your administrator for plan changes.
+                            </p>
+                        </div>
+                    )}
 
                     {/* Subscription Management Section - only show if there's actual subscription data */}
                     {error ? (
