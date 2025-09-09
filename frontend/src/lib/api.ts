@@ -1668,6 +1668,18 @@ export interface UsageLogEntry {
   was_over_limit?: boolean;
 }
 
+// Tool usage interface for daily aggregation
+export interface ToolUsage {
+  calls: number;
+  cost: number;
+}
+
+export interface DailyToolUsage {
+  total_calls: number;
+  total_cost: number;
+  tools: Record<string, ToolUsage>;
+}
+
 // Usage logs response interface
 export interface UsageLogsResponse {
   logs: UsageLogEntry[];
@@ -1675,6 +1687,7 @@ export interface UsageLogsResponse {
   message?: string;
   subscription_limit?: number;
   cumulative_cost?: number;
+  tool_usage_daily?: Record<string, DailyToolUsage>;
 }
 
 export interface BillingStatusResponse {

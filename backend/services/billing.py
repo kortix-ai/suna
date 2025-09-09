@@ -567,7 +567,7 @@ async def get_usage_logs(client, user_id: str, page: int = 0, items_per_page: in
         logger.debug(f"[USAGE_LOGS] user_id={user_id} - Fetching credit usage records")
         try:
             credit_usage_result = await client.table('credit_usage') \
-                .select('message_id, amount_dollars, created_at') \
+                .select('message_id, amount_dollars, created_at, description') \
                 .eq('user_id', user_id) \
                 .gte('created_at', start_of_month.isoformat()) \
                 .execute()
@@ -576,6 +576,20 @@ async def get_usage_logs(client, user_id: str, page: int = 0, items_per_page: in
         except Exception as credit_error:
             logger.error(f"[USAGE_LOGS] user_id={user_id} - Error fetching credit usage: {str(credit_error)}")
             credit_usage_result = None
+
+        # Get tool usage analytics for this month
+        logger.debug(f"[USAGE_LOGS] user_id={user_id} - Fetching tool usage analytics")
+        try:
+            tool_usage_result = await client.table('tool_usage_analytics') \
+                .select('tool_name, cost, created_at, usage_date') \
+                .eq('user_id', user_id) \
+                .gte('created_at', start_of_month.isoformat()) \
+                .execute()
+            
+            logger.debug(f"[USAGE_LOGS] user_id={user_id} - Found {len(tool_usage_result.data) if tool_usage_result.data else 0} tool usage records")
+        except Exception as tool_error:
+            logger.error(f"[USAGE_LOGS] user_id={user_id} - Error fetching tool usage: {str(tool_error)}")
+            tool_usage_result = None
         
         # Create a map of message_id to credit usage
         credit_usage_map = {}
@@ -696,12 +710,53 @@ async def get_usage_logs(client, user_id: str, page: int = 0, items_per_page: in
         
         # Check if there are more results
         has_more = len(processed_logs) == items_per_page
+
+        # Aggregate tool usage by day
+        tool_usage_daily = {}
+        if tool_usage_result and tool_usage_result.data:
+            for tool_usage in tool_usage_result.data:
+                try:
+                    usage_date = tool_usage.get('usage_date')
+                    if usage_date:
+                        # Convert to date string for consistency
+                        if isinstance(usage_date, str):
+                            # Extract just the date part if it's a datetime string
+                            usage_date = usage_date.split('T')[0]
+                        else:
+                            usage_date = str(usage_date).split('T')[0]
+                        
+                        if usage_date not in tool_usage_daily:
+                            tool_usage_daily[usage_date] = {
+                                'total_calls': 0,
+                                'total_cost': 0.0,
+                                'tools': {}
+                            }
+                        
+                        tool_name = tool_usage.get('tool_name', 'unknown')
+                        cost = float(tool_usage.get('cost', 0))
+                        
+                        tool_usage_daily[usage_date]['total_calls'] += 1
+                        tool_usage_daily[usage_date]['total_cost'] += cost
+                        
+                        if tool_name not in tool_usage_daily[usage_date]['tools']:
+                            tool_usage_daily[usage_date]['tools'][tool_name] = {
+                                'calls': 0,
+                                'cost': 0.0
+                            }
+                        
+                        tool_usage_daily[usage_date]['tools'][tool_name]['calls'] += 1
+                        tool_usage_daily[usage_date]['tools'][tool_name]['cost'] += cost
+                        
+                except Exception as agg_error:
+                    logger.warning(f"[USAGE_LOGS] user_id={user_id} - Error aggregating tool usage: {str(agg_error)}")
+                    continue
         
         result = {
             "logs": processed_logs,
             "has_more": bool(has_more),
             "subscription_limit": float(subscription_limit),
-            "cumulative_cost": float(cumulative_cost)
+            "cumulative_cost": float(cumulative_cost),
+            "tool_usage_daily": tool_usage_daily
         }
         
         # Validate final JSON serialization

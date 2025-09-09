@@ -29,7 +29,7 @@ import { ExternalLink, Loader2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { OpenInNewWindowIcon } from '@radix-ui/react-icons';
 import { useUsageLogs } from '@/hooks/react-query/subscriptions/use-billing';
-import { UsageLogEntry } from '@/lib/api';
+import { UsageLogEntry, DailyToolUsage } from '@/lib/api';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
 
@@ -40,6 +40,7 @@ interface DailyUsage {
   totalCost: number;
   requestCount: number;
   models: string[];
+  toolUsage?: DailyToolUsage;
 }
 
 interface Props {
@@ -114,7 +115,7 @@ export default function UsageLogs({ accountId }: Props) {
   };
 
   // Group usage logs by date
-  const groupLogsByDate = (logs: UsageLogEntry[]): DailyUsage[] => {
+  const groupLogsByDate = (logs: UsageLogEntry[], toolUsageDaily?: Record<string, DailyToolUsage>): DailyUsage[] => {
     const grouped = logs.reduce(
       (acc, log) => {
         const date = new Date(log.created_at).toDateString();
@@ -144,6 +145,16 @@ export default function UsageLogs({ accountId }: Props) {
       },
       {} as Record<string, DailyUsage>,
     );
+
+    // Add tool usage data to each day
+    if (toolUsageDaily) {
+      Object.keys(grouped).forEach(dateKey => {
+        const isoDateKey = new Date(dateKey).toISOString().split('T')[0];
+        if (toolUsageDaily[isoDateKey]) {
+          grouped[dateKey].toolUsage = toolUsageDaily[isoDateKey];
+        }
+      });
+    }
 
     return Object.values(grouped).sort(
       (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime(),
@@ -205,7 +216,7 @@ export default function UsageLogs({ accountId }: Props) {
     );
   }
 
-  const dailyUsage = groupLogsByDate(allLogs);
+  const dailyUsage = groupLogsByDate(allLogs, currentPageData?.tool_usage_daily);
   const totalUsage = allLogs.reduce(
     (sum, log) =>
       sum + (typeof log.estimated_cost === 'number' ? log.estimated_cost : 0),
@@ -264,11 +275,19 @@ export default function UsageLogs({ accountId }: Props) {
                             {day.requestCount} request
                             {day.requestCount !== 1 ? 's' : ''} •{' '}
                             {day.models.join(', ')}
+                            {day.toolUsage && day.toolUsage.total_calls > 0 && (
+                              <> • {day.toolUsage.total_calls} tool call{day.toolUsage.total_calls !== 1 ? 's' : ''}</>
+                            )}
                           </div>
                         </div>
                         <div className="text-right">
                           <div className="font-mono font-semibold">
                             {formatTotalCost(day.totalCost)}
+                            {day.toolUsage && day.toolUsage.total_cost > 0 && (
+                              <span className="text-sm text-blue-600 ml-2">
+                                +{formatTotalCost(day.toolUsage.total_cost)} tools
+                              </span>
+                            )}
                           </div>
                           <div className="text-sm text-muted-foreground font-mono">
                             {day.totalTokens.toLocaleString()} tokens
@@ -350,6 +369,41 @@ export default function UsageLogs({ accountId }: Props) {
                           </TableBody>
                         </Table>
                       </div>
+                      
+                      {/* Tool Usage Section */}
+                      {day.toolUsage && day.toolUsage.total_calls > 0 && (
+                        <div className="mt-4 p-4 bg-blue-50/50 dark:bg-blue-950/20 rounded-lg border border-blue-200/60 dark:border-blue-800/30">
+                          <div className="flex items-center justify-between mb-3">
+                            <h4 className="font-medium text-blue-900 dark:text-blue-100 flex items-center gap-2">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              </svg>
+                              Tool Usage
+                            </h4>
+                            <div className="text-sm font-mono text-blue-800 dark:text-blue-200">
+                              {day.toolUsage.total_calls} calls • {formatTotalCost(day.toolUsage.total_cost)}
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                            {Object.entries(day.toolUsage.tools).map(([toolName, usage]) => (
+                              <div key={toolName} className="bg-white/60 dark:bg-gray-800/40 rounded-md p-3 border border-blue-100/80 dark:border-blue-800/20">
+                                <div className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate" title={toolName}>
+                                  {toolName}
+                                </div>
+                                <div className="flex justify-between items-center mt-1">
+                                  <span className="text-xs text-blue-600 dark:text-blue-400">
+                                    {usage.calls} call{usage.calls !== 1 ? 's' : ''}
+                                  </span>
+                                  <span className="text-xs font-mono text-gray-600 dark:text-gray-400">
+                                    {formatTotalCost(usage.cost)}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </AccordionContent>
                   </AccordionItem>
                 ))}
