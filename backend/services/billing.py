@@ -591,21 +591,20 @@ async def get_usage_logs(client, user_id: str, page: int = 0, items_per_page: in
                         # Extract tool name from description
                         tool_name = description.replace('Tool: ', '')
                         
-                        # Find the corresponding thread to get project_id
-                        thread_project_map = {}
-                        for thread in all_threads:
-                            thread_project_map[thread['thread_id']] = thread.get('project_id', 'unknown')
+                        # For tool usage, we'll get project_id from thread query later
+                        # Since all_threads only contains thread_id and agent_runs, we'll need to query for project_id separately
+                        thread_id = usage.get('thread_id', '')
                         
                         tool_usage_entries.append({
                             'message_id': usage.get('message_id', ''),
-                            'thread_id': usage.get('thread_id', ''),
-                            'project_id': thread_project_map.get(usage.get('thread_id', ''), 'unknown'),
+                            'thread_id': thread_id,
+                            'project_id': 'unknown',  # Will be populated later when we query thread details
                             'created_at': usage['created_at'],
                             'tool_name': tool_name,
                             'estimated_cost': float(usage['amount_dollars']),
                             'total_tokens': 0,  # Tools don't use tokens
                             'content': {
-                                'model': 'tool',  # Distinguish from LLM models
+                                'model': f'tool:{tool_name}',  # Include tool name in model field
                                 'usage': {
                                     'prompt_tokens': 0,
                                     'completion_tokens': 0
