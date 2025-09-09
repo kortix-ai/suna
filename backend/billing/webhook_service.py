@@ -110,6 +110,66 @@ class WebhookService:
         logger.info(f"[WEBHOOK] Checkout completed for new subscription: {session['subscription']}")
         logger.info(f"[WEBHOOK] Session metadata: {session.get('metadata', {})}")
 
+        if session.get('metadata', {}).get('converting_from_trial') == 'true':
+            account_id = session['metadata'].get('account_id')
+            logger.info(f"[WEBHOOK] Trial conversion detected for account {account_id}")
+            
+            if session.get('subscription'):
+                subscription_id = session['subscription']
+                subscription = stripe.Subscription.retrieve(subscription_id, expand=['default_payment_method'])
+
+                price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
+                tier_info = get_tier_by_price_id(price_id)
+                
+                if not tier_info:
+                    logger.error(f"[WEBHOOK] No tier found for price_id {price_id}")
+                    return
+                
+                tier_name = tier_info.name
+                tier_credits = float(tier_info.monthly_credits)
+                
+                # Get current credit balance (preserve non-expiring credits from trial if any)
+                current_balance_result = await client.from_('credit_accounts')\
+                    .select('balance, non_expiring_credits')\
+                    .eq('account_id', account_id)\
+                    .execute()
+                
+                old_non_expiring = 0
+                if current_balance_result.data:
+                    old_non_expiring = float(current_balance_result.data[0].get('non_expiring_credits', 0))
+                
+                billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
+                next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
+                expires_at = next_grant_date
+                
+                # Update credit account to reflect conversion
+                await client.from_('credit_accounts').update({
+                    'trial_status': 'converted',
+                    'converted_to_paid_at': datetime.now(timezone.utc).isoformat(),
+                    'tier': tier_name,
+                    'stripe_subscription_id': subscription['id'],
+                    'billing_cycle_anchor': billing_anchor.isoformat(),
+                    'next_credit_grant': next_grant_date.isoformat()
+                }).eq('account_id', account_id).execute()
+                
+                # Grant the new tier's credits
+                await credit_manager.add_credits(
+                    account_id=account_id,
+                    amount=Decimal(str(tier_credits)),
+                    is_expiring=True,
+                    description=f"Converted from trial to {tier_info.display_name} plan",
+                    expires_at=expires_at
+                )
+                
+                # Update trial history
+                await client.from_('trial_history').update({
+                    'ended_at': datetime.now(timezone.utc).isoformat(),
+                    'converted_to_paid': True
+                }).eq('account_id', account_id).is_('ended_at', 'null').execute()
+                
+                logger.info(f"[WEBHOOK] Successfully converted trial to paid for account {account_id}, tier: {tier_name}, credits: {tier_credits}")
+                return
+
         if session.get('metadata', {}).get('trial_start') == 'true':
             account_id = session['metadata'].get('account_id')
             logger.info(f"[WEBHOOK] Trial checkout detected for account {account_id}")
@@ -375,10 +435,8 @@ class WebhookService:
                 await self._handle_trial_subscription(subscription, account_id, new_tier, client)
                 return
             elif subscription.status == 'active' and trial_status == 'active':
-                # User upgraded during trial - convert trial to paid
                 logger.info(f"[TRIAL CONVERSION] User {account_id} upgrading from trial to {new_tier['name']}")
                 
-                # Get current trial balance to log the change
                 current_balance_result = await client.from_('credit_accounts')\
                     .select('balance, expiring_credits, non_expiring_credits')\
                     .eq('account_id', account_id)\

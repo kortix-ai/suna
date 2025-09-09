@@ -52,18 +52,12 @@ export default function AdminBillingPage() {
       <div className="max-w-5xl mx-auto p-6 space-y-8">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
-              Admin Control Center
+            <h1 className="text-2xl font-semibold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text">
+              Billing Management - Admin
             </h1>
             <p className="text-md text-muted-foreground mt-2">
-              Comprehensive user management and billing oversight
+              Manage billing and user accounts
             </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Badge variant="outline" className="px-4 py-2 text-sm font-medium">
-              <Shield className="w-4 h-4 mr-2" />
-              Admin Access
-            </Badge>
           </div>
         </div>
         <div className="border-0 bg-transparent shadow-none">

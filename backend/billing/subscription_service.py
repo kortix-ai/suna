@@ -78,6 +78,8 @@ class SubscriptionService:
         if credit_result.data:
             credit_account = credit_result.data[0]
             tier_name = credit_account.get('tier', 'none')
+            trial_status = credit_account.get('trial_status')
+            trial_ends_at = credit_account.get('trial_ends_at')
             tier_obj = TIERS.get(tier_name, TIERS['none'])
             
             actual_credits = float(tier_obj.monthly_credits)
@@ -89,7 +91,8 @@ class SubscriptionService:
             
             tier_info = {
                 'name': tier_obj.name,
-                'credits': actual_credits
+                'credits': actual_credits,
+                'display_name': tier_obj.display_name
             }
             
             if tier_obj and len(tier_obj.price_ids) > 0:
@@ -112,32 +115,69 @@ class SubscriptionService:
                           stripe_subscription['items']['data'][0].get('price')):
                         price_id = stripe_subscription['items']['data'][0]['price']['id']
                     
-                    subscription_data = {
-                        'id': stripe_subscription['id'],
-                        'status': stripe_subscription['status'],
-                        'current_period_end': stripe_subscription['current_period_end'],
-                        'cancel_at_period_end': stripe_subscription['cancel_at_period_end'],
-                        'trial_end': stripe_subscription.get('trial_end'),
-                        'price_id': price_id,
-                        'created': stripe_subscription['created'],
-                        'metadata': stripe_subscription.get('metadata', {})
-                    }
+                    # Handle trial subscriptions specially
+                    if stripe_subscription['status'] == 'trialing' and trial_status == 'active':
+                        subscription_data = {
+                            'id': stripe_subscription['id'],
+                            'status': 'trialing',
+                            'is_trial': True,
+                            'current_period_end': stripe_subscription['current_period_end'],
+                            'cancel_at_period_end': stripe_subscription['cancel_at_period_end'],
+                            'trial_end': stripe_subscription.get('trial_end'),
+                            'price_id': price_id,
+                            'created': stripe_subscription['created'],
+                            'metadata': stripe_subscription.get('metadata', {}),
+                            'trial_ends_at': trial_ends_at,
+                            'trial_tier': tier_name  # Include the tier that's active during trial
+                        }
+                    else:
+                        subscription_data = {
+                            'id': stripe_subscription['id'],
+                            'status': stripe_subscription['status'],
+                            'is_trial': False,
+                            'current_period_end': stripe_subscription['current_period_end'],
+                            'cancel_at_period_end': stripe_subscription['cancel_at_period_end'],
+                            'trial_end': stripe_subscription.get('trial_end'),
+                            'price_id': price_id,
+                            'created': stripe_subscription['created'],
+                            'metadata': stripe_subscription.get('metadata', {})
+                        }
                     
                 except Exception as e:
                     logger.error(f"Error retrieving Stripe subscription {stripe_subscription_id}: {e}")
+            
+            # If user is in active trial but subscription data wasn't retrieved above
+            elif trial_status == 'active':
+                subscription_data = {
+                    'id': None,
+                    'status': 'trialing',
+                    'is_trial': True,
+                    'current_period_end': None,
+                    'cancel_at_period_end': False,
+                    'trial_end': trial_ends_at,
+                    'price_id': price_id,
+                    'created': None,
+                    'metadata': {},
+                    'trial_ends_at': trial_ends_at,
+                    'trial_tier': tier_name
+                }
             
             return {
                 'tier': tier_info,
                 'price_id': price_id,
                 'subscription': subscription_data,
-                'credit_account': credit_account
+                'credit_account': credit_account,
+                'trial_status': trial_status,
+                'trial_ends_at': trial_ends_at
             }
         
         return {
-            'tier': {'name': 'None', 'credits': 0},
+            'tier': {'name': 'none', 'credits': 0, 'display_name': 'No Plan'},
             'price_id': None,
             'subscription': None,
-            'credit_account': None
+            'credit_account': None,
+            'trial_status': None,
+            'trial_ends_at': None
         }
 
     async def create_checkout_session(self, account_id: str, price_id: str, success_url: str, cancel_url: str) -> Dict:
@@ -145,14 +185,65 @@ class SubscriptionService:
         
         db = DBConnection()
         client = await db.client
-        
-        credit_account = await client.from_('credit_accounts').select('stripe_subscription_id').eq('account_id', account_id).execute()
+
+        credit_account = await client.from_('credit_accounts')\
+            .select('stripe_subscription_id, trial_status, tier')\
+            .eq('account_id', account_id)\
+            .execute()
         
         existing_subscription_id = None
+        trial_status = None
+        current_tier = None
+        
         if credit_account.data and len(credit_account.data) > 0:
             existing_subscription_id = credit_account.data[0].get('stripe_subscription_id')
+            trial_status = credit_account.data[0].get('trial_status')
+            current_tier = credit_account.data[0].get('tier')
         
-        if existing_subscription_id:
+        if trial_status == 'active' and existing_subscription_id:
+            logger.info(f"[TRIAL CONVERSION] User {account_id} upgrading from trial to paid plan")
+            
+            new_tier_info = get_tier_by_price_id(price_id)
+            tier_display_name = new_tier_info.display_name if new_tier_info else 'paid plan'
+
+            try:
+                cancelled_trial = await stripe.Subscription.cancel_async(existing_subscription_id)
+                logger.info(f"[TRIAL CONVERSION] Cancelled trial subscription {existing_subscription_id}")
+            except stripe.error.InvalidRequestError as e:
+                logger.warning(f"[TRIAL CONVERSION] Could not cancel trial subscription: {e}")
+            except stripe.error.StripeError as e:
+                logger.error(f"[TRIAL CONVERSION] Failed to cancel trial subscription: {e}")
+
+            session = await stripe.checkout.Session.create_async(
+                customer=customer_id,
+                payment_method_types=['card'],
+                line_items=[{'price': price_id, 'quantity': 1}],
+                mode='subscription',
+                success_url=success_url,
+                cancel_url=cancel_url,
+                subscription_data={
+                    'metadata': {
+                        'account_id': account_id,
+                        'account_type': 'personal',
+                        'converting_from_trial': 'true',
+                        'previous_tier': current_tier or 'trial'
+                    }
+                }
+            )
+            
+            logger.info(f"[TRIAL CONVERSION] Created new checkout session for user {account_id}")
+            return {
+                'checkout_url': session.url, 
+                'converting_from_trial': True,
+                'message': f'Converting from trial to {tier_display_name}. Your trial will end and the new plan will begin immediately upon payment.',
+                'tier_info': {
+                    'name': new_tier_info.name if new_tier_info else price_id,
+                    'display_name': tier_display_name,
+                    'monthly_credits': float(new_tier_info.monthly_credits) if new_tier_info else 0
+                }
+            }
+
+        elif existing_subscription_id and trial_status != 'active':
             subscription = await stripe.Subscription.retrieve_async(existing_subscription_id)
             
             logger.info(f"Updating subscription {existing_subscription_id} to price {price_id}")

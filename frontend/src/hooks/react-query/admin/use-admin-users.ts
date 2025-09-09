@@ -11,18 +11,23 @@ export interface UserSummary {
   total_used: number;
   subscription_status?: string;
   last_activity?: string;
+  trial_status?: string;
+}
+
+interface PaginationMeta {
+  current_page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
+  has_next: boolean;
+  has_previous: boolean;
+  next_cursor?: string | null;
+  previous_cursor?: string | null;
 }
 
 interface UserListResponse {
-  users: UserSummary[];
-  pagination: {
-    current_page: number;
-    page_size: number;
-    total_items: number;
-    total_pages: number;
-    has_next: boolean;
-    has_previous: boolean;
-  };
+  data: UserSummary[];
+  pagination: PaginationMeta;
 }
 
 interface UserListParams {
@@ -112,10 +117,50 @@ export function useAdminUserDetails(userId: string | null) {
   });
 }
 
+interface SearchResponse {
+  data: Array<{
+    id: string;
+    email: string;
+    created_at: string;
+    tier: string;
+    credit_balance: number;
+    trial_status?: string;
+  }>;
+  pagination: PaginationMeta;
+}
+
 export function useAdminUserSearch() {
   return useMutation({
-    mutationFn: async (email: string) => {
+    mutationFn: async (email: string): Promise<SearchResponse> => {
       const response = await backendApi.get(`/admin/users/search/email?email=${encodeURIComponent(email)}`);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+  });
+}
+
+interface AdvancedSearchParams {
+  email_contains?: string;
+  tier_in?: string[];
+  subscription_status_in?: string[];
+  trial_status_in?: string[];
+  balance_min?: number;
+  balance_max?: number;
+  created_after?: string;
+  created_before?: string;
+  has_activity_since?: string;
+  sort_by?: string;
+  sort_order?: 'asc' | 'desc';
+  page?: number;
+  page_size?: number;
+}
+
+export function useAdminAdvancedSearch() {
+  return useMutation({
+    mutationFn: async (params: AdvancedSearchParams): Promise<UserListResponse> => {
+      const response = await backendApi.post('/admin/users/search/advanced', params);
       if (response.error) {
         throw new Error(response.error.message);
       }

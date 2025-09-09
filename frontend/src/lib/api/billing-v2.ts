@@ -141,13 +141,20 @@ export interface TestRenewalResponse {
 
 export interface TrialStatus {
   has_trial: boolean;
-  trial_status?: 'none' | 'active' | 'expired' | 'converted';
+  trial_status?: 'none' | 'active' | 'expired' | 'converted' | 'cancelled' | 'used';
   trial_started_at?: string;
   trial_ends_at?: string;
   trial_mode?: string;
   remaining_days?: number;
   credits_remaining?: number;
   tier?: string;
+  can_start_trial?: boolean;
+  message?: string;
+  trial_history?: {
+    started_at?: string;
+    ended_at?: string;
+    converted_to_paid?: boolean;
+  };
 }
 
 export interface TrialStartRequest {
