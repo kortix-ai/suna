@@ -340,11 +340,15 @@ async def set_global_default(
     request: SetGlobalDefaultRequest,
     admin_user_id: str = Depends(verify_simple_admin)
 ):
-    """Set the global default monthly limit for new users."""
+    """Set the global default monthly limit for new users and update existing users using the default."""
     try:
         if request.monthly_limit <= 0:
             raise HTTPException(status_code=400, detail="Monthly limit must be greater than 0")
-            
+        
+        # Get the current default limit before changing it
+        old_default = await enterprise_billing.get_default_monthly_limit()
+        
+        # Update the global setting
         await enterprise_billing.set_global_setting(
             'default_monthly_limit',
             {'value': request.monthly_limit},
@@ -352,10 +356,21 @@ async def set_global_default(
             admin_user_id
         )
         
+        # Update existing users who are currently using the old default
+        updated_count = await enterprise_billing.update_users_with_default_limit(
+            old_default=old_default,
+            new_default=request.monthly_limit
+        )
+        
+        message = f"Global default monthly limit set to ${request.monthly_limit:.2f}"
+        if updated_count > 0:
+            message += f" and updated {updated_count} existing users"
+        
         return {
             "success": True,
             "default_monthly_limit": request.monthly_limit,
-            "message": f"Global default monthly limit set to ${request.monthly_limit:.2f}"
+            "updated_users_count": updated_count,
+            "message": message
         }
         
     except Exception as e:

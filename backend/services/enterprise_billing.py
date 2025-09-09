@@ -281,6 +281,34 @@ class SimplifiedEnterpriseBillingService:
             logger.error(f"Error setting global setting {setting_key}: {e}")
             raise
     
+    async def update_users_with_default_limit(self, old_default: float, new_default: float) -> int:
+        """Update existing users who are using the old default limit to the new default limit."""
+        if not config.ENTERPRISE_MODE:
+            return 0
+            
+        try:
+            db = DBConnection()
+            client = await db.client
+            
+            # Update users whose monthly_limit exactly matches the old default
+            # This means they're using the default and haven't been manually customized
+            result = await client.table('enterprise_user_limits')\
+                .update({'monthly_limit': new_default})\
+                .eq('monthly_limit', old_default)\
+                .eq('is_active', True)\
+                .execute()
+            
+            # Return count of updated users
+            updated_count = len(result.data) if result.data else 0
+            
+            logger.info(f"Updated {updated_count} users from ${old_default} to ${new_default} default limit")
+            
+            return updated_count
+            
+        except Exception as e:
+            logger.error(f"Error updating users with default limit: {e}")
+            return 0
+    
     async def get_default_monthly_limit(self) -> float:
         """Get the default monthly limit from global settings."""
         try:
