@@ -1,11 +1,11 @@
--- Fix Enterprise Hierarchical Usage Function
--- Removes reference to non-existent threads.title column
+-- Fix Enterprise Hierarchical Usage Function - Correct Column Names
+-- This replaces the broken function with proper schema-aligned version
 BEGIN;
 
--- Drop the existing function first
+-- Drop any existing broken function
 DROP FUNCTION IF EXISTS public.get_enterprise_hierarchical_usage(UUID, INTEGER, INTEGER, INTEGER);
 
--- Recreate the function with the correct schema
+-- Create the function with correct column references
 CREATE OR REPLACE FUNCTION public.get_enterprise_hierarchical_usage(
     p_account_id UUID,
     p_days INTEGER DEFAULT 30,
@@ -41,13 +41,9 @@ BEGIN
             eu.cost,
             eu.model_name,
             eu.tokens_used,
-            eu.tool_name,
-            eu.tool_cost,
-            eu.usage_type,
             eu.created_at,
             t.project_id,
-            NULL as thread_title, -- threads table doesn't have title column
-            p.title as project_title
+            p.name as project_title  -- projects.name not projects.title
         FROM enterprise_usage eu
         LEFT JOIN threads t ON eu.thread_id = t.thread_id
         LEFT JOIN projects p ON t.project_id = p.project_id
@@ -68,7 +64,7 @@ BEGIN
             mc.thread_id,
             mc.project_id,
             COALESCE(mc.project_title, 'Untitled Project') as project_title,
-            COALESCE(mc.thread_title, 'Untitled Chat') as thread_title,
+            'Untitled Chat' as thread_title,  -- threads don't have title column
             SUM(mc.cost) as thread_cost,
             SUM(COALESCE(mc.tokens_used, 0)) as thread_tokens,
             JSONB_AGG(
@@ -79,15 +75,15 @@ BEGIN
                     'cost', mc.cost,
                     'model_name', mc.model_name,
                     'tokens_used', mc.tokens_used,
-                    'tool_name', mc.tool_name,
-                    'tool_cost', mc.tool_cost,
-                    'usage_type', mc.usage_type,
+                    'tool_name', NULL,  -- Not in current schema
+                    'tool_cost', 0,     -- Not in current schema
+                    'usage_type', 'token',  -- Default value
                     'content', mc.content
                 ) ORDER BY mc.created_at DESC
             ) as usage_details
         FROM messages_content mc
         WHERE mc.thread_id IS NOT NULL
-        GROUP BY DATE(mc.created_at), mc.thread_id, mc.project_id, mc.project_title, mc.thread_title
+        GROUP BY DATE(mc.created_at), mc.thread_id, mc.project_id, mc.project_title
     )
     SELECT 
         ta.usage_date,
