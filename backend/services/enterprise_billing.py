@@ -77,7 +77,7 @@ class SimplifiedEnterpriseBillingService:
                 .maybe_single()\
                 .execute()
             
-            if user_limit_result.data:
+            if user_limit_result and hasattr(user_limit_result, 'data') and user_limit_result.data:
                 user_limit = user_limit_result.data
                 remaining = user_limit['monthly_limit'] - user_limit['current_month_usage']
             else:
