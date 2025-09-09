@@ -4,7 +4,7 @@ from typing import Optional, Dict, List, Any
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.utils.cache import Cache
-from billing.config import FREE_TIER_INITIAL_CREDITS
+from billing.config import FREE_TIER_INITIAL_CREDITS, TRIAL_ENABLED
 
 class CreditService:
     def __init__(self):
@@ -36,10 +36,10 @@ class CreditService:
         if result.data and len(result.data) > 0:
             balance = Decimal(str(result.data[0]['balance']))
         else:
-            trial_mode = TrialMode.DISABLED
+            trial_mode = TRIAL_ENABLED
             logger.info(f"Creating new user {user_id} with free tier (trial migration will handle conversion)")
             
-            if trial_mode == TrialMode.DISABLED:
+            if trial_mode == TRIAL_ENABLED:
                 account_data = {
                     'account_id': user_id,
                     'balance': str(FREE_TIER_INITIAL_CREDITS),

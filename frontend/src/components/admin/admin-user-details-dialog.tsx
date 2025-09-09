@@ -23,6 +23,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import {
   User,
@@ -34,6 +35,8 @@ import {
   AlertCircle,
   CheckCircle,
   RefreshCw,
+  Clock,
+  Infinity,
 } from 'lucide-react';
 import { useAdminUserDetails } from '@/hooks/react-query/admin/use-admin-users';
 import {
@@ -60,6 +63,8 @@ export function AdminUserDetailsDialog({
   const [adjustReason, setAdjustReason] = useState('');
   const [refundAmount, setRefundAmount] = useState('');
   const [refundReason, setRefundReason] = useState('');
+  const [adjustIsExpiring, setAdjustIsExpiring] = useState(true);
+  const [refundIsExpiring, setRefundIsExpiring] = useState(false);
 
   const { data: userDetails, isLoading } = useAdminUserDetails(user?.id || null);
   const { data: billingSummary, refetch: refetchBilling } = useUserBillingSummary(user?.id || null);
@@ -88,10 +93,11 @@ export function AdminUserDetailsDialog({
 
     try {
       const result = await adjustCreditsMutation.mutateAsync({
-        user_id: user.id,
+        account_id: user.id,
         amount: parseFloat(adjustAmount),
         reason: adjustReason,
         notify_user: true,
+        is_expiring: adjustIsExpiring,
       });
 
       toast.success(
@@ -102,6 +108,7 @@ export function AdminUserDetailsDialog({
       onRefresh?.();
       setAdjustAmount('');
       setAdjustReason('');
+      setAdjustIsExpiring(true);
     } catch (error: any) {
       toast.error(error.message || 'Failed to adjust credits');
     }
@@ -115,10 +122,11 @@ export function AdminUserDetailsDialog({
 
     try {
       const result = await processRefundMutation.mutateAsync({
-        user_id: user.id,
+        account_id: user.id,
         amount: parseFloat(refundAmount),
         reason: refundReason,
         stripe_refund: false,
+        is_expiring: refundIsExpiring,
       });
 
       toast.success(
@@ -130,6 +138,7 @@ export function AdminUserDetailsDialog({
 
       setRefundAmount('');
       setRefundReason('');
+      setRefundIsExpiring(false);
     } catch (error: any) {
       toast.error(error.message || 'Failed to process refund');
     }
@@ -390,6 +399,30 @@ export function AdminUserDetailsDialog({
                         rows={3}
                       />
                     </div>
+                    <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/50">
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="adjust-expiring" className="cursor-pointer flex items-center gap-2">
+                          {adjustIsExpiring ? (
+                            <Clock className="h-4 w-4 text-orange-500" />
+                          ) : (
+                            <Infinity className="h-4 w-4 text-blue-500" />
+                          )}
+                          <span className="font-medium">
+                            {adjustIsExpiring ? 'Expiring Credits' : 'Non-Expiring Credits'}
+                          </span>
+                        </Label>
+                      </div>
+                      <Switch
+                        id="adjust-expiring"
+                        checked={!adjustIsExpiring}
+                        onCheckedChange={(checked) => setAdjustIsExpiring(!checked)}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground -mt-2">
+                      {adjustIsExpiring 
+                        ? 'Credits will expire at the end of the billing cycle (30 days)'
+                        : 'Credits will never expire and remain until used'}
+                    </p>
 
                     <Button
                       onClick={handleAdjustCredits}
@@ -398,7 +431,7 @@ export function AdminUserDetailsDialog({
                     >
                       {adjustCreditsMutation.isPending ? (
                         <>
-                          <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                          <RefreshCw className="w-4 h-4 animate-spin" />
                           Processing...
                         </>
                       ) : (
@@ -407,7 +440,6 @@ export function AdminUserDetailsDialog({
                     </Button>
                   </CardContent>
                 </Card>
-
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -424,7 +456,6 @@ export function AdminUserDetailsDialog({
                         </p>
                       </div>
                     </div>
-
                     <div>
                       <Label htmlFor="refund-amount">Refund Amount (USD)</Label>
                       <Input
@@ -436,7 +467,6 @@ export function AdminUserDetailsDialog({
                         onChange={(e) => setRefundAmount(e.target.value)}
                       />
                     </div>
-
                     <div>
                       <Label htmlFor="refund-reason">Refund Reason</Label>
                       <Textarea
@@ -447,7 +477,30 @@ export function AdminUserDetailsDialog({
                         rows={3}
                       />
                     </div>
-
+                    <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/50">
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="refund-expiring" className="cursor-pointer flex items-center gap-2">
+                          {refundIsExpiring ? (
+                            <Clock className="h-4 w-4 text-orange-500" />
+                          ) : (
+                            <Infinity className="h-4 w-4 text-blue-500" />
+                          )}
+                          <span className="font-medium">
+                            {refundIsExpiring ? 'Expiring Credits' : 'Non-Expiring Credits'}
+                          </span>
+                        </Label>
+                      </div>
+                      <Switch
+                        id="refund-expiring"
+                        checked={!refundIsExpiring}
+                        onCheckedChange={(checked) => setRefundIsExpiring(!checked)}
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground -mt-2">
+                      {refundIsExpiring 
+                        ? 'Credits will expire at the end of the billing cycle'
+                        : 'Refunds typically use non-expiring credits (recommended)'}
+                    </p>
                     <Button
                       onClick={handleProcessRefund}
                       disabled={processRefundMutation.isPending}

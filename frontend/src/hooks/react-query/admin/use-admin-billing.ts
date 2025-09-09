@@ -2,29 +2,32 @@ import { backendApi } from '@/lib/api-client';
 import { useMutation, useQuery } from '@tanstack/react-query';
 
 interface CreditAdjustmentRequest {
-  user_id: string;
+  account_id: string;
   amount: number;
   reason: string;
+  is_expiring: boolean;
   notify_user: boolean;
 }
 
 interface RefundRequest {
-  user_id: string;
+  account_id: string;
   amount: number;
   reason: string;
+  is_expiring: boolean;
   stripe_refund: boolean;
   payment_intent_id?: string;
 }
 
 interface UserSearchRequest {
   email?: string;
-  user_id?: string;
+  account_id?: string;
 }
 
 interface GrantCreditsRequest {
-  user_ids: string[];
+  account_ids: string[];
   amount: number;
   reason: string;
+  is_expiring: boolean;
   notify_users: boolean;
 }
 

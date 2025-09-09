@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Query
 from typing import Optional, Dict
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
@@ -33,7 +33,7 @@ class CreateCheckoutSessionRequest(BaseModel):
 
 class CreatePortalSessionRequest(BaseModel):
     return_url: str
-
+ 
 class PurchaseCreditsRequest(BaseModel):
     amount: Decimal
     success_url: str
@@ -87,20 +87,27 @@ async def get_user_subscription_tier(account_id: str) -> Dict:
     db = DBConnection()
     client = await db.client
 
-    credit_result = await client.from_('credit_accounts').select('tier').eq('account_id', account_id).execute()
+    credit_result = await client.from_('credit_accounts')\
+        .select('tier, trial_status')\
+        .eq('account_id', account_id)\
+        .execute()
+    
+    tier_name = 'none'
+    trial_status = None
     
     if credit_result.data and len(credit_result.data) > 0:
         tier_name = credit_result.data[0].get('tier', 'none')
-    else:
-        tier_name = 'none'
+        trial_status = credit_result.data[0].get('trial_status')
     
     tier_obj = TIERS.get(tier_name, TIERS['none'])
     tier_info = {
         'name': tier_obj.name,
+        'display_name': tier_obj.display_name,
         'credits': float(tier_obj.monthly_credits),
         'can_purchase_credits': tier_obj.can_purchase_credits,
         'models': tier_obj.models,
-        'project_limit': tier_obj.project_limit
+        'project_limit': tier_obj.project_limit,
+        'is_trial': trial_status == 'active'
     }
     
     await Cache.set(cache_key, tier_info, ttl=60)
@@ -174,12 +181,36 @@ async def check_status(
         summary = await credit_service.get_account_summary(account_id)
         tier = await get_user_subscription_tier(account_id)
         
+        # Check trial status
+        db = DBConnection()
+        client = await db.client
+        credit_account = await client.from_('credit_accounts')\
+            .select('trial_status, trial_ends_at')\
+            .eq('account_id', account_id)\
+            .execute()
+        
+        trial_status = None
+        trial_ends_at = None
+        is_trial = False
+        
+        if credit_account.data:
+            trial_status = credit_account.data[0].get('trial_status')
+            trial_ends_at = credit_account.data[0].get('trial_ends_at')
+            is_trial = trial_status == 'active'
+        
         can_run = balance >= Decimal('0.01')
+        
+        if is_trial and tier['name'] == 'tier_2_20':
+            display_name = f"{tier.get('display_name', 'Starter')} (Trial)"
+        else:
+            display_name = tier.get('display_name', tier['name'])
         
         subscription = {
             "price_id": "credit_based",
             "plan_name": tier['name'],
-            "tier": tier['name']
+            "display_name": display_name,
+            "tier": tier['name'],
+            "is_trial": is_trial
         }
         
         return {
@@ -189,6 +220,9 @@ async def check_status(
             "credit_balance": float(balance),
             "can_purchase_credits": tier.get('can_purchase_credits', False),
             "tier_info": tier,
+            "is_trial": is_trial,
+            "trial_status": trial_status,
+            "trial_ends_at": trial_ends_at,
             "credits_summary": {
                 "balance": float(balance),
                 "lifetime_granted": summary['lifetime_granted'],
@@ -275,19 +309,27 @@ async def get_credit_balance(
     client = await db.client
     
     result = await client.from_('credit_accounts').select(
-        'balance, expiring_credits, non_expiring_credits, tier, next_credit_grant'
+        'balance, expiring_credits, non_expiring_credits, tier, next_credit_grant, trial_status, trial_ends_at'
     ).eq('account_id', account_id).execute()
     
     if result.data and len(result.data) > 0:
         account = result.data[0]
         tier_name = account.get('tier', 'none')
+        trial_status = account.get('trial_status')
+        trial_ends_at = account.get('trial_ends_at')
         tier_info = get_tier_by_name(tier_name)
+        
+        is_trial = trial_status == 'active'
         
         return {
             'balance': float(account.get('balance', 0)),
             'expiring_credits': float(account.get('expiring_credits', 0)),
             'non_expiring_credits': float(account.get('non_expiring_credits', 0)),
             'tier': tier_name,
+            'tier_display_name': tier_info.display_name if tier_info else 'No Plan',
+            'is_trial': is_trial,
+            'trial_status': trial_status,
+            'trial_ends_at': trial_ends_at,
             'can_purchase_credits': tier_info.can_purchase_credits if tier_info else False,
             'next_credit_grant': account.get('next_credit_grant'),
             'breakdown': {
@@ -302,6 +344,10 @@ async def get_credit_balance(
         'expiring_credits': 0.0,
         'non_expiring_credits': 0.0,
         'tier': 'none',
+        'tier_display_name': 'No Plan',
+        'is_trial': False,
+        'trial_status': None,
+        'trial_ends_at': None,
         'can_purchase_credits': False,
         'next_credit_grant': None,
         'breakdown': {
@@ -342,17 +388,30 @@ async def get_subscription(
         
         tier_info = subscription_info['tier']
         subscription_data = subscription_info['subscription']
-        
+        trial_status = subscription_info.get('trial_status')
+        trial_ends_at = subscription_info.get('trial_ends_at')
+
         if subscription_data:
-            status = 'active'
+            if subscription_data.get('status') == 'trialing' or trial_status == 'active':
+                status = 'trialing'
+            else:
+                status = 'active'
         elif tier_info['name'] not in ['none', 'free']:
             status = 'cancelled'
         else:
             status = 'no_subscription'
         
+        if trial_status == 'active' and tier_info['name'] == 'tier_2_20':
+            display_plan_name = f"{tier_info.get('display_name', 'Starter')} (Trial)"
+            is_trial = True
+        else:
+            display_plan_name = tier_info.get('display_name', tier_info['name'])
+            is_trial = False
+        
         return {
             'status': status,
             'plan_name': tier_info['name'],
+            'display_plan_name': display_plan_name,
             'price_id': subscription_info['price_id'],
             'subscription': subscription_data,
             'subscription_id': subscription_data['id'] if subscription_data else None,
@@ -361,6 +420,9 @@ async def get_subscription(
             'credit_balance': float(balance),
             'can_purchase_credits': TIERS.get(tier_info['name'], TIERS['none']).can_purchase_credits,
             'tier': tier_info,
+            'is_trial': is_trial,
+            'trial_status': trial_status,
+            'trial_ends_at': trial_ends_at,
             'credits': {
                 'balance': float(balance),
                 'tier_credits': tier_info['credits'],
@@ -376,11 +438,13 @@ async def get_subscription(
         no_tier = TIERS['none']
         tier_info = {
             'name': no_tier.name,
-            'credits': 0.0
+            'credits': 0.0,
+            'display_name': no_tier.display_name
         }
         return {
             'status': 'no_subscription',
             'plan_name': 'none',
+            'display_plan_name': 'No Plan',
             'price_id': None,
             'subscription': None,
             'subscription_id': None,
@@ -389,6 +453,9 @@ async def get_subscription(
             'credit_balance': 0,
             'can_purchase_credits': False,
             'tier': tier_info,
+            'is_trial': False,
+            'trial_status': None,
+            'trial_ends_at': None,
             'credits': {
                 'balance': 0,
                 'tier_credits': tier_info['credits'],
@@ -488,16 +555,122 @@ async def reactivate_subscription(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/transactions")
-async def get_user_transactions(
-    limit: int = 50,
-    offset: int = 0,
-    account_id: str = Depends(verify_and_get_user_id_from_jwt)
+async def get_my_transactions(
+    account_id: str = Depends(verify_and_get_user_id_from_jwt),
+    limit: int = Query(50, ge=1, le=100, description="Number of transactions to fetch"),
+    offset: int = Query(0, ge=0, description="Offset for pagination"),
+    type_filter: Optional[str] = Query(None, description="Filter by transaction type")
 ) -> Dict:
-    transactions = await credit_service.get_ledger(account_id, limit, offset)
-    return {
-        'transactions': transactions,
-        'count': len(transactions)
-    }
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        query = client.from_('credit_ledger').select('*').eq('account_id', account_id).order('created_at', desc=True)
+        
+        if type_filter:
+            query = query.eq('type', type_filter)
+
+        count_query = client.from_('credit_ledger').select('*', count='exact').eq('account_id', account_id)
+        if type_filter:
+            count_query = count_query.eq('type', type_filter)
+        count_result = await count_query.execute()
+        total_count = count_result.count or 0
+        
+        if offset:
+            query = query.range(offset, offset + limit - 1)
+        else:
+            query = query.limit(limit)
+        
+        result = await query.execute()
+        
+        balance_info = await credit_manager.get_balance(account_id)
+        
+        transactions = []
+        for tx in result.data or []:
+            transactions.append({
+                'id': tx.get('id'),
+                'created_at': tx.get('created_at'),
+                'amount': float(tx.get('amount', 0)),
+                'balance_after': float(tx.get('balance_after', 0)),
+                'type': tx.get('type'),
+                'description': tx.get('description'),
+                'is_expiring': tx.get('is_expiring', False),
+                'expires_at': tx.get('expires_at'),
+                'metadata': tx.get('metadata', {})
+            })
+        
+        return {
+            'transactions': transactions,
+            'pagination': {
+                'total': total_count,
+                'limit': limit,
+                'offset': offset,
+                'has_more': offset + limit < total_count
+            },
+            'current_balance': balance_info
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get transactions for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve transactions")
+
+@router.get("/transactions/summary")
+async def get_transactions_summary(
+    account_id: str = Depends(verify_and_get_user_id_from_jwt),
+    days: int = Query(30, ge=1, le=365, description="Number of days to look back")
+) -> Dict:
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        since_date = (datetime.utcnow() - timedelta(days=days)).isoformat()
+        
+        result = await client.from_('credit_ledger').select('*').eq('account_id', account_id).gte('created_at', since_date).execute()
+        
+        total_added = Decimal('0')
+        total_used = Decimal('0')
+        total_refunded = Decimal('0')
+        total_expired = Decimal('0')
+        
+        transaction_counts = {}
+        
+        for tx in result.data or []:
+            amount = Decimal(str(tx.get('amount', 0)))
+            tx_type = tx.get('type', 'unknown')
+            
+            transaction_counts[tx_type] = transaction_counts.get(tx_type, 0) + 1
+            
+            if amount > 0:
+                if tx_type == 'refund':
+                    total_refunded += amount
+                else:
+                    total_added += amount
+            else:
+                if tx_type == 'expired':
+                    total_expired += abs(amount)
+                else:
+                    total_used += abs(amount)
+        
+        balance_info = await credit_manager.get_balance(account_id)
+        
+        return {
+            'period_days': days,
+            'since_date': since_date,
+            'current_balance': balance_info,
+            'summary': {
+                'total_added': float(total_added),
+                'total_used': float(total_used),
+                'total_refunded': float(total_refunded),
+                'total_expired': float(total_expired),
+                'net_change': float(total_added - total_used - total_expired)
+            },
+            'transaction_counts': transaction_counts,
+            'total_transactions': len(result.data or [])
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get transaction summary for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve transaction summary")
 
 @router.get("/credit-breakdown")
 async def get_credit_breakdown(
@@ -717,35 +890,68 @@ async def start_trial(
     request: TrialStartRequest,
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
+    """
+    Start a trial for the authenticated user.
+    Security: Each account can only have ONE trial ever.
+    """
+    # Log the attempt for security monitoring
+    logger.info(f"[TRIAL API] Trial start request from account {account_id}, IP: {request.success_url}")
+    
     try:
+        # The trial_service.start_trial method has comprehensive security checks:
+        # 1. Checks trial_history table (permanent record)
+        # 2. Checks credit_accounts trial_status
+        # 3. Checks for existing Stripe subscriptions
+        # 4. Checks credit_ledger for trial-related entries
         result = await trial_service.start_trial(
-                account_id=account_id,
+            account_id=account_id,
             success_url=request.success_url,
             cancel_url=request.cancel_url
         )
+        
+        logger.info(f"[TRIAL API SUCCESS] Trial checkout created for account {account_id}")
         return result
         
-    except HTTPException:
+    except HTTPException as e:
+        # Log security violations with high priority
+        if e.status_code == 403:
+            logger.warning(f"[TRIAL API SECURITY] Forbidden trial attempt for account {account_id}: {e.detail}")
+        else:
+            logger.info(f"[TRIAL API] Trial start failed for account {account_id}: {e.detail}")
         raise
     except Exception as e:
-        logger.error(f"Error creating trial checkout for account {account_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"[TRIAL API ERROR] Unexpected error creating trial for account {account_id}: {e}", exc_info=True)
+        # Don't expose internal errors to the client
+        raise HTTPException(status_code=500, detail="An error occurred while processing your request")
 
 @router.post("/trial/create-checkout")
 async def create_trial_checkout(
     request: CreateCheckoutSessionRequest,
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
+    """
+    Alternative endpoint for trial checkout creation.
+    Security: Delegates to start_trial which has all security checks.
+    """
+    logger.info(f"[TRIAL API] Trial checkout request from account {account_id}")
+    
     try:
+        # This delegates to start_trial which has all the security checks
         result = await trial_service.create_trial_checkout(
             account_id=account_id,
             success_url=request.success_url,
             cancel_url=request.cancel_url
         )
+        
+        logger.info(f"[TRIAL API SUCCESS] Trial checkout created via create-checkout for account {account_id}")
         return result
         
-    except HTTPException:
+    except HTTPException as e:
+        if e.status_code == 403:
+            logger.warning(f"[TRIAL API SECURITY] Forbidden trial checkout attempt for account {account_id}: {e.detail}")
+        else:
+            logger.info(f"[TRIAL API] Trial checkout failed for account {account_id}: {e.detail}")
         raise
     except Exception as e:
-        logger.error(f"Error creating trial checkout: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e)) 
+        logger.error(f"[TRIAL API ERROR] Unexpected error in trial checkout for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="An error occurred while processing your request") 

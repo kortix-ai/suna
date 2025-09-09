@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Bot, Menu, Store, Plus, Zap, ChevronRight, Loader2, Shield, DollarSign } from 'lucide-react';
+import { Bot, Menu, Plus, Zap, ChevronRight } from 'lucide-react';
 
 import { NavAgents } from '@/components/sidebar/nav-agents';
 import { NavUserWithTeams } from '@/components/sidebar/nav-user-with-teams';
@@ -43,7 +43,7 @@ import { cn } from '@/lib/utils';
 import { usePathname, useSearchParams } from 'next/navigation';
 import posthog from 'posthog-js';
 import { useDocumentModalStore } from '@/lib/stores/use-document-modal-store';
-// Floating mobile menu button component
+
 function FloatingMobileMenuButton() {
   const { setOpenMobile, openMobile } = useSidebar();
   const isMobile = useIsMobile();
@@ -259,45 +259,6 @@ export function SidebarLeft({
                           className="cursor-pointer pl-3 touch-manipulation"
                         >
                           <span>New Agent</span>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                    </SidebarMenuSub>
-                  </CollapsibleContent>
-                </SidebarMenuItem>
-              </Collapsible>
-            </SidebarMenu>
-          )}
-          {user.isAdmin && (
-            <SidebarMenu className="mt-2">
-              <Collapsible
-                defaultOpen={false}
-                className="group/admin-collapsible"
-              >
-                <SidebarMenuItem>
-                  <CollapsibleTrigger asChild>
-                    <SidebarMenuButton
-                      tooltip="Admin"
-                      onClick={() => {
-                        if (state === 'collapsed') {
-                          setOpen(true);
-                        }
-                      }}
-                    >
-                      <Shield className="h-4 w-4 mr-1 text-red-500" />
-                      <span>Admin</span>
-                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/admin-collapsible:rotate-90" />
-                    </SidebarMenuButton>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <SidebarMenuSub>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton className={cn('pl-3 touch-manipulation', {
-                          'bg-accent text-accent-foreground font-medium': pathname === '/admin/billing',
-                        })} asChild>
-                          <Link href="/admin/billing" onClick={() => isMobile && setOpenMobile(false)}>
-                            <DollarSign className="h-3 w-3 mr-1" />
-                            <span>Billing Management</span>
-                          </Link>
                         </SidebarMenuSubButton>
                       </SidebarMenuSubItem>
                     </SidebarMenuSub>

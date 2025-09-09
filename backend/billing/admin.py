@@ -1,10 +1,10 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Optional, List
 from decimal import Decimal
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel, Field
 from core.auth import require_admin, require_super_admin
-from core.credits import credit_service
+from billing.credit_manager import credit_manager
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 import stripe
@@ -16,12 +16,14 @@ class CreditAdjustmentRequest(BaseModel):
     account_id: str
     amount: Decimal = Field(..., description="Amount to add (positive) or remove (negative)")
     reason: str
+    is_expiring: bool = Field(True, description="Whether credits expire at end of billing cycle")
     notify_user: bool = True
 
 class RefundRequest(BaseModel):
     account_id: str
     amount: Decimal
     reason: str
+    is_expiring: bool = Field(False, description="Refunds typically give non-expiring credits")
     stripe_refund: bool = False
     payment_intent_id: Optional[str] = None
 
@@ -33,6 +35,7 @@ class GrantCreditsRequest(BaseModel):
     account_ids: List[str]
     amount: Decimal
     reason: str
+    is_expiring: bool = Field(True, description="Whether credits expire at end of billing cycle")
     notify_users: bool = True
 
 @router.post("/credits/adjust")
@@ -45,72 +48,75 @@ async def adjust_user_credits(
     
     try:
         if request.amount > 0:
-            new_balance = await credit_service.add_credits(
+            result = await credit_manager.add_credits(
                 account_id=request.account_id,
                 amount=request.amount,
-                type='admin_grant',
+                is_expiring=request.is_expiring,
                 description=f"Admin adjustment: {request.reason}",
-                metadata={'created_by': admin['account_id']}
+                expires_at=datetime.now(timezone.utc) + timedelta(days=30) if request.is_expiring else None
             )
+            new_balance = result['total_balance']
         else:
-            result = await credit_service.deduct_credits(
+            result = await credit_manager.use_credits(
                 account_id=request.account_id,
                 amount=abs(request.amount),
-                description=f"Admin deduction: {request.reason}",
-                reference_type='admin_adjustment'
+                description=f"Admin deduction: {request.reason}"
             )
             if not result['success']:
-                raise HTTPException(status_code=400, detail="Insufficient balance for deduction")
-            new_balance = result['new_balance']
+                raise HTTPException(status_code=400, detail=result.get('error', 'Insufficient balance'))
+            new_balance = result['new_total']
         
         db = DBConnection()
         client = await db.client
-        await client.table('admin_actions_log').insert({
-            'admin_account_id': admin['account_id'],
-            'action_type': 'credit_adjustment',
+        await client.table('admin_audit_log').insert({
+            'admin_account_id': admin['user_id'],
+            'action': 'credit_adjustment',
             'target_account_id': request.account_id,
             'details': {
                 'amount': float(request.amount),
                 'reason': request.reason,
+                'is_expiring': request.is_expiring,
                 'new_balance': float(new_balance)
             }
         }).execute()
         
-        logger.info(f"[ADMIN] Admin {admin['account_id']} adjusted credits for {request.account_id} by {request.amount}")
+        logger.info(f"[ADMIN] Admin {admin['user_id']} adjusted credits for {request.account_id} by {request.amount} (expiring: {request.is_expiring})")
         
         return {
             'success': True,
             'new_balance': float(new_balance),
-            'adjustment': float(request.amount),
-            'reason': request.reason
+            'adjustment_amount': float(request.amount),
+            'is_expiring': request.is_expiring
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Credit adjustment failed: {e}")
+        logger.error(f"Failed to adjust credits: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/credits/grant-bulk")
-async def grant_bulk_credits(
+@router.post("/credits/grant")
+async def grant_credits_to_users(
     request: GrantCreditsRequest,
     admin: dict = Depends(require_admin)
 ):
-    if request.amount > 100:
+    if request.amount > 100 and admin.get('role') != 'super_admin':
         admin = await require_super_admin(admin)
     
     results = []
     for account_id in request.account_ids:
         try:
-            new_balance = await credit_service.add_credits(
+            result = await credit_manager.add_credits(
                 account_id=account_id,
                 amount=request.amount,
-                type='admin_grant',
-                description=request.reason,
-                metadata={'created_by': admin['account_id']}
+                is_expiring=request.is_expiring,
+                description=f"Admin grant: {request.reason}",
+                expires_at=datetime.now(timezone.utc) + timedelta(days=30) if request.is_expiring else None
             )
             results.append({
                 'account_id': account_id,
                 'success': True,
-                'new_balance': float(new_balance)
+                'new_balance': result['total_balance']
             })
         except Exception as e:
             results.append({
@@ -120,13 +126,15 @@ async def grant_bulk_credits(
             })
     
     successful = sum(1 for r in results if r['success'])
-    logger.info(f"[ADMIN] Admin {admin['account_id']} granted {request.amount} credits to {successful}/{len(request.account_ids)} users")
+    logger.info(f"[ADMIN] Admin {admin['user_id']} granted {request.amount} credits (expiring: {request.is_expiring}) to {successful}/{len(request.account_ids)} users")
     
     return {
-        'total_users': len(request.account_ids),
-        'successful': successful,
-        'failed': len(request.account_ids) - successful,
-        'results': results
+        'results': results,
+        'summary': {
+            'total_users': len(request.account_ids),
+            'successful': successful,
+            'failed': len(request.account_ids) - successful
+        }
     }
 
 @router.post("/refund")
@@ -134,12 +142,12 @@ async def process_refund(
     request: RefundRequest,
     admin: dict = Depends(require_super_admin)
 ):
-    new_balance = await credit_service.add_credits(
+    result = await credit_manager.add_credits(
         account_id=request.account_id,
         amount=request.amount,
-        type='refund',
+        is_expiring=request.is_expiring,
         description=f"Refund: {request.reason}",
-        metadata={'created_by': admin['account_id']}
+        type='admin_grant'
     )
     
     refund_id = None
@@ -150,19 +158,20 @@ async def process_refund(
                 payment_intent=request.payment_intent_id,
                 amount=int(request.amount * 100),
                 reason='requested_by_customer',
-                metadata={'admin_account_id': admin['account_id'], 'reason': request.reason}
+                metadata={'admin_account_id': admin['user_id'], 'reason': request.reason}
             )
             refund_id = refund.id
         except Exception as e:
             logger.error(f"Stripe refund failed: {e}")
     
-    logger.info(f"[ADMIN] Admin {admin['account_id']} processed refund of {request.amount} for user {request.account_id}")
+    logger.info(f"[ADMIN] Admin {admin['user_id']} processed refund of {request.amount} for user {request.account_id} (expiring: {request.is_expiring})")
     
     return {
         'success': True,
-        'new_balance': float(new_balance),
+        'new_balance': float(result['total_balance']),
         'refund_amount': float(request.amount),
-        'stripe_refund_id': refund_id
+        'stripe_refund_id': refund_id,
+        'is_expiring': request.is_expiring
     }
 
 @router.get("/user/{account_id}/summary")
@@ -170,11 +179,11 @@ async def get_user_billing_summary(
     account_id: str,
     admin: dict = Depends(require_admin)
 ):
-    summary = await credit_service.get_account_summary(account_id)
-    recent_transactions = await credit_service.get_ledger(account_id, limit=20)
-    
+    balance_info = await credit_manager.get_balance(account_id)
     db = DBConnection()
     client = await db.client
+    
+    transactions_result = await client.from_('credit_ledger').select('*').eq('account_id', account_id).order('created_at', desc=True).limit(20).execute()
     
     subscription_result = await client.schema('basejump').from_('billing_subscriptions').select('*').eq('account_id', account_id).order('created', desc=True).limit(1).execute()
     
@@ -182,9 +191,9 @@ async def get_user_billing_summary(
     
     return {
         'account_id': account_id,
-        'credit_account': summary,
+        'credit_account': balance_info,
         'subscription': subscription,
-        'recent_transactions': recent_transactions
+        'recent_transactions': transactions_result.data or []
     }
 
 @router.get("/user/{account_id}/transactions")
@@ -195,17 +204,25 @@ async def get_user_transactions(
     type_filter: Optional[str] = None,
     admin: dict = Depends(require_admin)
 ):
-    transactions = await credit_service.get_ledger(
-        account_id=account_id,
-        limit=limit,
-        offset=offset,
-        type_filter=type_filter
-    )
+    db = DBConnection()
+    client = await db.client
+    
+    query = client.from_('credit_ledger').select('*').eq('account_id', account_id).order('created_at', desc=True)
+    
+    if type_filter:
+        query = query.eq('type', type_filter)
+    
+    if offset:
+        query = query.range(offset, offset + limit - 1)
+    else:
+        query = query.limit(limit)
+    
+    transactions_result = await query.execute()
     
     return {
         'account_id': account_id,
-        'transactions': transactions,
-        'count': len(transactions)
+        'transactions': transactions_result.data or [],
+        'count': len(transactions_result.data or [])
     }
 
 @router.post("/user/search")
@@ -246,11 +263,11 @@ async def search_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     
-    summary = await credit_service.get_account_summary(user['id'])
+    balance_info = await credit_manager.get_balance(user['id'])
     
     return {
         'user': user,
-        'credit_account': summary
+        'credit_account': balance_info
     }
 
 @router.post("/migrate-user/{account_id}")
@@ -263,7 +280,7 @@ async def migrate_user_to_credits(
     
     try:
         result = await client.rpc('migrate_user_to_credits', {'p_account_id': account_id}).execute()
-        logger.info(f"[ADMIN] Admin {admin['account_id']} migrated user {account_id} to credit system")
+        logger.info(f"[ADMIN] Admin {admin['user_id']} migrated user {account_id} to credit system")
         
         return {
             'success': True,

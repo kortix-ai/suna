@@ -7,12 +7,15 @@ import { useAccounts } from '@/hooks/use-accounts';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useSharedSubscription, useSubscriptionContext } from '@/contexts/SubscriptionContext';
 import { isLocalMode, isStagingMode } from '@/lib/config';
 import Link from 'next/link';
 import { useCreatePortalSession, useTriggerTestRenewal } from '@/hooks/react-query/use-billing-v2';
 import { toast } from 'sonner';
 import { TrialManagement } from '@/components/dashboard/trial-management';
+import { useTransactions } from '@/hooks/react-query/billing/use-transactions';
+import { Clock, Infinity, TrendingUp, TrendingDown, RefreshCw, DollarSign } from 'lucide-react';
 
 const returnUrl = process.env.NEXT_PUBLIC_URL as string;
 
@@ -20,6 +23,9 @@ export default function PersonalAccountBillingPage() {
   const { data: accounts, isLoading, error } = useAccounts();
   const [showBillingModal, setShowBillingModal] = useState(false);
   const triggerTestRenewal = useTriggerTestRenewal();
+  
+  // Fetch transaction data to get credit breakdown
+  const { data: transactionData } = useTransactions(1, 0); // Only need current balance
 
   const {
     data: subscriptionData,
@@ -110,6 +116,33 @@ export default function PersonalAccountBillingPage() {
                 }
                 tierCredits={subscriptionData?.credits?.tier_credits || subscriptionData?.tier?.credits}
               />
+              {transactionData?.current_balance && (
+                <div className="grid gap-4 grid-cols-1">
+                  <div className="flex items-center justify-between p-3 rounded-lg border bg-orange-50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-orange-600" />
+                      <div>
+                        <p className="text-sm font-medium">Expiring Credits</p>
+                        <p className="text-xs text-muted-foreground">Resets monthly with subscription</p>
+                      </div>
+                    </div>
+                    <span className="text-lg font-bold text-orange-600">
+                      ${transactionData.current_balance.expiring.toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between p-3 rounded-lg border bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+                    <div className="flex items-center gap-2">
+                      <Infinity className="h-4 w-4 text-blue-600" />
+                      <div>
+                        <p className="text-sm font-medium">Non-Expiring Credits</p>
+                      </div>
+                    </div>
+                    <span className="text-lg font-bold text-blue-600">
+                      ${transactionData.current_balance.non_expiring.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
             <div className='flex justify-center items-center gap-4'>
               <Button

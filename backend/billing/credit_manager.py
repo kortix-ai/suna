@@ -16,7 +16,8 @@ class CreditManager:
         amount: Decimal,
         is_expiring: bool = True,
         description: str = "Credit added",
-        expires_at: Optional[datetime] = None
+        expires_at: Optional[datetime] = None,
+        type: Optional[str] = None
     ) -> Dict:
         client = await self.db.client
         
@@ -84,7 +85,7 @@ class CreditManager:
             'account_id': account_id,
             'amount': float(amount),
             'balance_after': float(new_total),
-            'type': 'tier_grant' if is_expiring else 'purchase',
+            'type': type or ('tier_grant' if (is_expiring and type != 'admin_grant') else 'purchase'),
             'description': description,
             'is_expiring': is_expiring,
             'expires_at': expires_at.isoformat() if expires_at else None

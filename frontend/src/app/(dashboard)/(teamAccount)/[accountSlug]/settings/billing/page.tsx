@@ -141,8 +141,8 @@ export default function TeamBillingPage({
                       {subscriptionData.credits?.tier_credits || '0'}
                     </span>
                     <Button variant='outline' asChild className='text-sm'>
-                      <Link href="/settings/usage-logs">
-                        Usage logs
+                      <Link href="/settings/transactions">
+                        Transactions
                       </Link>
                     </Button>
                   </div>

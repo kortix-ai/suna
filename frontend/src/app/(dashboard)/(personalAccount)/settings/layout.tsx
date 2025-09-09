@@ -12,11 +12,8 @@ export default function PersonalAccountSettingsPage({
 }) {
   const pathname = usePathname();
   const items = [
-    // { name: "Profile", href: "/settings" },
-    // { name: "Teams", href: "/settings/teams" },
     { name: 'Billing', href: '/settings/billing' },
-    { name: 'Usage Logs', href: '/settings/usage-logs' },
-    ...(isLocalMode() ? [{ name: 'Local .Env Manager', href: '/settings/env-manager' }] : []),
+    { name: 'Transactions', href: '/settings/transactions' },
   ];
   return (
     <>

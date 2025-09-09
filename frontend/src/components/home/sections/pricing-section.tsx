@@ -354,10 +354,6 @@ function PricingTier({
       buttonVariant = 'secondary';
       ringClass = isCompact ? 'ring-1 ring-primary' : 'ring-2 ring-primary';
       buttonClassName = 'bg-primary/5 hover:bg-primary/10 text-primary';
-    } else if (userPlanName === 'none' && tier.price === '$20' && billingPeriod === 'monthly') {
-      buttonText = 'Start 7-Day Trial';
-      buttonVariant = 'default';
-      buttonClassName = 'bg-green-600 hover:bg-green-700 text-white';
     } else if (isScheduledTargetPlan) {
       buttonText = 'Scheduled';
       buttonDisabled = true;

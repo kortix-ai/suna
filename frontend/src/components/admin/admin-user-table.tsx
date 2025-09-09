@@ -69,29 +69,16 @@ export function AdminUserTable({ onUserSelect }: AdminUserTableProps) {
     });
   };
 
-  const getTierBadgeVariant = (tier: string) => {
-    switch (tier.toLowerCase()) {
-      case 'pro':
-        return 'default';
-      case 'premium':
-        return 'secondary';
-      case 'free':
-        return 'outline';
+  const tierName = (tier: string) => {
+    switch (tier) {
+      case 'tier_2_20':
+        return '20 Dollar';
+      case 'tier_6_50':
+        return '50 Dollar';
+      case 'tier_25_200':
+        return '200 Dollar';
       default:
-        return 'outline';
-    }
-  };
-
-  const getSubscriptionBadgeVariant = (status?: string) => {
-    switch (status) {
-      case 'active':
-        return 'default';
-      case 'cancelled':
-        return 'destructive';
-      case 'past_due':
-        return 'destructive';
-      default:
-        return 'secondary';
+        return 'Unknown';
     }
   };
 
@@ -112,65 +99,37 @@ export function AdminUserTable({ onUserSelect }: AdminUserTableProps) {
       id: 'tier',
       header: 'Tier',
       cell: (user) => (
-        <Badge variant={getTierBadgeVariant(user.tier)} className="capitalize">
-          {user.tier}
+        <Badge variant="outline" className="capitalize">
+          {tierName(user.tier)}
         </Badge>
       ),
-      width: 'w-24',
+      width: 'w-42',
     },
     {
       id: 'balance',
       header: 'Credit Balance',
       cell: (user) => (
-        <div className="text-right">
+        <div className="text-start">
           <div className="font-medium text-green-600">
             {formatCurrency(user.credit_balance)}
           </div>
         </div>
       ),
-      width: 'w-32',
-    },
-    {
-      id: 'spending',
-      header: 'Lifetime Stats',
-      cell: (user) => (
-        <div className="flex flex-col gap-1 text-xs">
-          <div className="text-muted-foreground">
-            Purchased: <span className="text-foreground font-medium">{formatCurrency(user.total_purchased)}</span>
-          </div>
-          <div className="text-muted-foreground">
-            Used: <span className="text-foreground font-medium">{formatCurrency(user.total_used)}</span>
-          </div>
-        </div>
-      ),
-      width: 'w-36',
-    },
-    {
-      id: 'subscription',
-      header: 'Subscription',
-      cell: (user) => (
-        <Badge 
-          variant={getSubscriptionBadgeVariant(user.subscription_status)}
-          className="capitalize"
-        >
-          {user.subscription_status || 'None'}
-        </Badge>
-      ),
-      width: 'w-28',
+      width: 'w-42',
     },
     {
       id: 'actions',
       header: 'Actions',
       cell: (user) => (
         <Button 
-          variant="ghost" 
+          variant="outline" 
           size="sm"
           onClick={(e) => {
             e.stopPropagation();
             onUserSelect?.(user);
           }}
         >
-          View Details
+          Details
         </Button>
       ),
       width: 'w-32',
@@ -215,7 +174,7 @@ export function AdminUserTable({ onUserSelect }: AdminUserTableProps) {
           ) : (
             <DataTable
               columns={columns}
-              data={userListResponse?.users || []}
+              data={userListResponse?.data || []}
               onRowClick={onUserSelect}
               emptyMessage="No users found matching your criteria"
               getItemId={(user) => user.id}
