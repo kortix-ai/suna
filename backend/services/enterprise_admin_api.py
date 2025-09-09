@@ -364,7 +364,7 @@ async def set_global_default(
         
         message = f"Global default monthly limit set to ${request.monthly_limit:.2f}"
         if updated_count > 0:
-            message += f" and updated {updated_count} existing users"
+            message += f" and updated ALL {updated_count} users to this new limit"
         
         return {
             "success": True,

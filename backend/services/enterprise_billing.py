@@ -282,7 +282,7 @@ class SimplifiedEnterpriseBillingService:
             raise
     
     async def update_users_with_default_limit(self, old_default: float, new_default: float) -> int:
-        """Update existing users who are using the old default limit to the new default limit."""
+        """Update ALL active users to the new global default limit."""
         if not config.ENTERPRISE_MODE:
             return 0
             
@@ -290,18 +290,26 @@ class SimplifiedEnterpriseBillingService:
             db = DBConnection()
             client = await db.client
             
-            # Update users whose monthly_limit exactly matches the old default
-            # This means they're using the default and haven't been manually customized
+            # Get all active users before the update
+            all_users_result = await client.table('enterprise_user_limits')\
+                .select('account_id, monthly_limit')\
+                .eq('is_active', True)\
+                .execute()
+            
+            users_before = all_users_result.data if all_users_result.data else []
+            logger.info(f"Found {len(users_before)} active users to update to new default: ${new_default}")
+            
+            # Update ALL active users to the new global default
+            # This ensures consistency and avoids the complexity of tracking "default vs custom" limits
             result = await client.table('enterprise_user_limits')\
                 .update({'monthly_limit': new_default})\
-                .eq('monthly_limit', old_default)\
                 .eq('is_active', True)\
                 .execute()
             
             # Return count of updated users
             updated_count = len(result.data) if result.data else 0
             
-            logger.info(f"Updated {updated_count} users from ${old_default} to ${new_default} default limit")
+            logger.info(f"Successfully updated {updated_count} users to new global default: ${new_default}")
             
             return updated_count
             
