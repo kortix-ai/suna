@@ -534,18 +534,15 @@ class SimplifiedEnterpriseBillingService:
             # Get user's limit info
             user_limit = await self.get_user_limit(account_id)
             
-            # Call the hierarchical usage function
-            hierarchical_result = await client.rpc(
-                'get_enterprise_hierarchical_usage',
-                {
-                    'p_account_id': account_id,
-                    'p_days': days,
-                    'p_page': page,
-                    'p_items_per_page': items_per_page
-                }
-            ).execute()
+            # Query enterprise usage directly for real-time updates (like Stripe system)
+            since_date = datetime.now() - timedelta(days=days)
             
-            if not hierarchical_result or not hierarchical_result.data:
+            # Get raw enterprise usage data with pagination
+            usage_result = await client.from('enterprise_usage').select(
+                'id, account_id, thread_id, message_id, cost, model_name, tokens_used, created_at'
+            ).eq('account_id', account_id).gte('created_at', since_date.isoformat()).order('created_at', desc=True).limit(items_per_page).offset(page * items_per_page).execute()
+            
+            if not usage_result or not usage_result.data:
                 return {
                     'account_id': account_id,
                     'monthly_limit': user_limit['monthly_limit'] if user_limit else await self.get_default_monthly_limit(),
@@ -558,55 +555,114 @@ class SimplifiedEnterpriseBillingService:
                     'days': days
                 }
             
-            # Group data by date for the frontend
+            # Get thread and project info for mapping (like Stripe system)
+            thread_ids = list(set([row['thread_id'] for row in usage_result.data if row['thread_id']]))
+            thread_info = {}
+            
+            if thread_ids:
+                # Get thread info
+                threads_result = await client.from('threads').select(
+                    'thread_id, project_id'
+                ).in_('thread_id', thread_ids).execute()
+                
+                # Get project info
+                project_ids = list(set([thread['project_id'] for thread in threads_result.data if thread['project_id']]))
+                project_info = {}
+                if project_ids:
+                    projects_result = await client.from('projects').select(
+                        'project_id, name'
+                    ).in_('project_id', project_ids).execute()
+                    
+                    for project in projects_result.data:
+                        project_info[project['project_id']] = project['name']
+                
+                # Map threads to projects
+                for thread in threads_result.data:
+                    thread_info[thread['thread_id']] = {
+                        'project_id': thread['project_id'],
+                        'project_name': project_info.get(thread['project_id'], 'Untitled Project')
+                    }
+            
+            # Get message content for token breakdown (like Stripe system)
+            message_ids = list(set([row['message_id'] for row in usage_result.data if row['message_id']]))
+            message_content = {}
+            
+            if message_ids:
+                messages_result = await client.from('messages').select(
+                    'message_id, content'
+                ).in_('message_id', message_ids).execute()
+                
+                for message in messages_result.data:
+                    message_content[message['message_id']] = message.get('content', {})
+            
+            # Process data and group by date/thread (real-time, no caching)
             hierarchical_data = {}
             total_cost = 0
+            thread_groups = {}
             
-            for row in hierarchical_result.data:
-                usage_date = row['usage_date']
-                thread_id = row['thread_id']
-                project_title = row['project_title']
-                thread_title = row['thread_title']
-                thread_cost = float(row['thread_cost'] or 0)
-                thread_tokens = int(row['thread_tokens'] or 0)
-                usage_details = row['usage_details']
+            # Process raw usage data (like Stripe system - real-time, no caching)
+            for row in usage_result.data:
+                usage_date = row['created_at'][:10]  # Extract date from timestamp
+                thread_id = row['thread_id'] 
+                thread_data = thread_info.get(thread_id, {'project_id': None, 'project_name': 'Untitled Project'})
                 
-                total_cost += thread_cost
+                # Get thread grouping key
+                thread_key = f"{usage_date}_{thread_id}"
                 
-                # Process usage details to include token breakdowns from message content
-                processed_details = []
-                for detail in usage_details:
-                    # Extract token breakdown from message content
-                    content = detail.get('content', {})
-                    usage_info = content.get('usage', {}) if content else {}
-                    
-                    prompt_tokens = usage_info.get('prompt_tokens', 0)
-                    completion_tokens = usage_info.get('completion_tokens', 0)
-                    
-                    # If we don't have breakdown, estimate based on total
-                    total_tokens_from_content = prompt_tokens + completion_tokens
-                    detail_tokens = detail.get('tokens_used') or 0
-                    
-                    if total_tokens_from_content == 0 and detail_tokens > 0:
-                        # Estimate breakdown (40% prompt, 60% completion)
-                        prompt_tokens = int(detail_tokens * 0.4)
-                        completion_tokens = int(detail_tokens * 0.6)
-                    
-                    processed_detail = {
-                        'id': detail['id'],
-                        'message_id': detail['message_id'],
-                        'created_at': detail['created_at'],
-                        'cost': detail['cost'],
-                        'model_name': detail['model_name'],
-                        'prompt_tokens': prompt_tokens,
-                        'completion_tokens': completion_tokens,
-                        'tool_tokens': 0,  # Tool tokens not tracked separately yet
-                        'total_tokens': detail.get('tokens_used') or (prompt_tokens + completion_tokens),
-                        'usage_type': detail.get('usage_type', 'token'),
-                        'tool_name': detail.get('tool_name'),
-                        'tool_cost': detail.get('tool_cost', 0)
+                # Initialize thread group if not exists
+                if thread_key not in thread_groups:
+                    thread_groups[thread_key] = {
+                        'usage_date': usage_date,
+                        'thread_id': thread_id,
+                        'project_id': thread_data['project_id'],
+                        'project_title': thread_data['project_name'],
+                        'thread_title': 'Untitled Chat',  # threads don't have titles
+                        'thread_cost': 0,
+                        'thread_tokens': 0,
+                        'usage_details': []
                     }
-                    processed_details.append(processed_detail)
+                
+                # Add this usage record
+                cost = float(row['cost'] or 0)
+                tokens = int(row['tokens_used'] or 0)
+                
+                thread_groups[thread_key]['thread_cost'] += cost
+                thread_groups[thread_key]['thread_tokens'] += tokens
+                total_cost += cost
+                
+                # Get message content for token breakdown
+                content = message_content.get(row['message_id'], {})
+                usage_info = content.get('usage', {}) if content else {}
+                
+                prompt_tokens = usage_info.get('prompt_tokens', 0) or 0
+                completion_tokens = usage_info.get('completion_tokens', 0) or 0
+                
+                # If we don't have breakdown, estimate based on total
+                if prompt_tokens == 0 and completion_tokens == 0 and tokens > 0:
+                    prompt_tokens = int(tokens * 0.4)
+                    completion_tokens = int(tokens * 0.6)
+                
+                # Create usage detail record
+                usage_detail = {
+                    'id': row['id'],
+                    'message_id': row['message_id'],
+                    'created_at': row['created_at'],
+                    'cost': cost,
+                    'model_name': row['model_name'],
+                    'prompt_tokens': prompt_tokens,
+                    'completion_tokens': completion_tokens,
+                    'tool_tokens': 0,  # Not tracked separately
+                    'total_tokens': tokens,
+                    'usage_type': 'token',
+                    'tool_name': None,
+                    'tool_cost': 0
+                }
+                thread_groups[thread_key]['usage_details'].append(usage_detail)
+            
+            # Convert thread groups to hierarchical structure by date
+            for thread_key, thread_data in thread_groups.items():
+                usage_date = thread_data['usage_date']
+                thread_id = thread_data['thread_id']
                 
                 # Group by date
                 if usage_date not in hierarchical_data:
@@ -617,22 +673,13 @@ class SimplifiedEnterpriseBillingService:
                         'projects': {}
                     }
                 
-                # Group by project/thread
-                thread_key = f"{thread_id}"
-                if thread_key not in hierarchical_data[usage_date]['projects']:
-                    hierarchical_data[usage_date]['projects'][thread_key] = {
-                        'thread_id': thread_id,
-                        'project_id': row['project_id'],
-                        'project_title': project_title,
-                        'thread_title': thread_title,
-                        'thread_cost': thread_cost,
-                        'thread_tokens': thread_tokens,
-                        'usage_details': processed_details
-                    }
+                # Add thread to date
+                if thread_id not in hierarchical_data[usage_date]['projects']:
+                    hierarchical_data[usage_date]['projects'][thread_id] = thread_data
                 
                 # Update daily totals
-                hierarchical_data[usage_date]['total_tokens'] += thread_tokens
-                hierarchical_data[usage_date]['total_cost'] += thread_cost
+                hierarchical_data[usage_date]['total_tokens'] += thread_data['thread_tokens']
+                hierarchical_data[usage_date]['total_cost'] += thread_data['thread_cost']
             
             return {
                 'account_id': account_id,
