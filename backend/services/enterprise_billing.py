@@ -450,6 +450,148 @@ class SimplifiedEnterpriseBillingService:
         except Exception as e:
             logger.error(f"Error resetting monthly usage: {e}")
             return False
+    
+    async def can_user_afford_tool(
+        self,
+        account_id: str,
+        tool_name: str
+    ) -> Dict[str, Any]:
+        """
+        Check if a user can afford a specific tool in enterprise mode.
+        """
+        if not config.ENTERPRISE_MODE:
+            return {'can_use': False, 'required_cost': 0.0, 'current_balance': 0.0, 'user_remaining': 0.0}
+        
+        try:
+            db = DBConnection()
+            client = await db.client
+            
+            result = await client.rpc('enterprise_can_use_tool', {
+                'p_account_id': account_id,
+                'p_tool_name': tool_name
+            }).execute()
+            
+            if result and hasattr(result, 'data') and result.data and len(result.data) > 0:
+                data = result.data[0]
+                return {
+                    'can_use': data['can_use'],
+                    'required_cost': float(data['required_cost']),
+                    'current_balance': float(data['current_balance']),
+                    'user_remaining': float(data['user_remaining'])
+                }
+            
+            return {'can_use': False, 'required_cost': 0.0, 'current_balance': 0.0, 'user_remaining': 0.0}
+            
+        except Exception as e:
+            logger.error(f"Error checking tool affordability for {tool_name}: {e}")
+            return {'can_use': False, 'required_cost': 0.0, 'current_balance': 0.0, 'user_remaining': 0.0}
+    
+    async def charge_tool_usage(
+        self,
+        account_id: str,
+        tool_name: str,
+        thread_id: str = None,
+        message_id: str = None
+    ) -> Dict[str, Any]:
+        """
+        Charge for tool usage in enterprise mode.
+        """
+        if not config.ENTERPRISE_MODE:
+            return {'success': False, 'cost_charged': 0.0, 'new_balance': 0.0, 'user_remaining': 0.0}
+        
+        try:
+            db = DBConnection()
+            client = await db.client
+            
+            result = await client.rpc('enterprise_use_tool_credits', {
+                'p_account_id': account_id,
+                'p_tool_name': tool_name,
+                'p_thread_id': thread_id,
+                'p_message_id': message_id
+            }).execute()
+            
+            if result and hasattr(result, 'data') and result.data and len(result.data) > 0:
+                data = result.data[0]
+                
+                if data['success']:
+                    logger.debug(
+                        f"Charged ${data['cost_charged']:.4f} for tool {tool_name} usage by account {account_id}",
+                        account_id=account_id,
+                        tool_name=tool_name,
+                        cost_charged=data['cost_charged'],
+                        new_balance=data['new_balance']
+                    )
+                
+                return {
+                    'success': data['success'],
+                    'cost_charged': float(data['cost_charged']),
+                    'new_balance': float(data['new_balance']),
+                    'user_remaining': float(data['user_remaining'])
+                }
+            
+            return {'success': False, 'cost_charged': 0.0, 'new_balance': 0.0, 'user_remaining': 0.0}
+            
+        except Exception as e:
+            logger.error(f"Error charging tool usage for {tool_name}: {e}")
+            return {'success': False, 'cost_charged': 0.0, 'new_balance': 0.0, 'user_remaining': 0.0}
+    
+    async def get_tool_usage_analytics(
+        self,
+        account_id: str = None,
+        days: int = 30,
+        page: int = 0,
+        items_per_page: int = 100
+    ) -> Dict[str, Any]:
+        """
+        Get tool usage analytics for enterprise accounts.
+        """
+        if not config.ENTERPRISE_MODE:
+            return None
+        
+        try:
+            db = DBConnection()
+            client = await db.client
+            
+            # Calculate date range
+            since_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+            
+            query = client.from_('enterprise_tool_usage_analytics').select('*')
+            
+            if account_id:
+                query = query.eq('account_id', account_id)
+            
+            # Get paginated results
+            result = await query.gte('created_at', since_date)\
+                .order('created_at', desc=True)\
+                .range(page * items_per_page, (page + 1) * items_per_page - 1)\
+                .execute()
+            
+            # Get total count
+            count_query = client.from_('enterprise_tool_usage_analytics').select('account_id', count='exact')
+            
+            if account_id:
+                count_query = count_query.eq('account_id', account_id)
+            
+            count_result = await count_query.gte('created_at', since_date).execute()
+            
+            usage_data = result.data if (result and hasattr(result, 'data') and result.data) else []
+            total_count = count_result.count if (count_result and hasattr(count_result, 'count')) else 0
+            
+            # Calculate total cost
+            total_cost = sum(float(item.get('tool_cost', 0)) for item in usage_data)
+            
+            return {
+                'tool_usage': usage_data,
+                'total_logs': total_count,
+                'page': page,
+                'items_per_page': items_per_page,
+                'total_cost_period': total_cost,
+                'period_days': days
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting tool usage analytics: {e}")
+            return None
 
 # Create singleton instance
 enterprise_billing = SimplifiedEnterpriseBillingService()

@@ -1,3 +1,4 @@
+
 """
 Enterprise Billing API - User-facing endpoints
 
@@ -161,6 +162,64 @@ async def get_usage_logs(
         
     except Exception as e:
         logger.error(f"Error getting usage logs: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/tool-usage-analytics")
+async def get_tool_usage_analytics(
+    current_user_id: str = Depends(verify_and_get_user_id_from_jwt),
+    days: int = Query(default=30, ge=1, le=365),
+    page: int = Query(default=0, ge=0),
+    items_per_page: int = Query(default=100, ge=1, le=1000)
+):
+    """Get tool usage analytics for the current user."""
+    if not config.ENTERPRISE_MODE:
+        raise HTTPException(status_code=400, detail="Enterprise mode not enabled")
+    
+    try:
+        # Get user's tool usage analytics
+        analytics = await enterprise_billing.get_tool_usage_analytics(
+            account_id=current_user_id,
+            days=days,
+            page=page,
+            items_per_page=items_per_page
+        )
+        
+        if not analytics:
+            return {
+                "tool_usage": [],
+                "total_logs": 0,
+                "page": page,
+                "items_per_page": items_per_page,
+                "total_cost_period": 0,
+                "period_days": days
+            }
+        
+        # Format for frontend compatibility
+        formatted_usage = []
+        for usage in analytics.get('tool_usage', []):
+            formatted_usage.append({
+                "account_id": usage.get('account_id'),
+                "thread_id": usage.get('thread_id'),
+                "message_id": usage.get('message_id'),
+                "tool_name": usage.get('tool_name'),
+                "tool_cost": usage.get('tool_cost'),
+                "created_at": usage.get('created_at'),
+                "usage_date": usage.get('usage_date'),
+                "usage_hour": usage.get('usage_hour'),
+                "usage_month": usage.get('usage_month')
+            })
+        
+        return {
+            "tool_usage": formatted_usage,
+            "total_logs": analytics.get('total_logs', 0),
+            "page": page,
+            "items_per_page": items_per_page,
+            "total_cost_period": analytics.get('total_cost_period', 0),
+            "period_days": days
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting tool usage analytics: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/available-models")

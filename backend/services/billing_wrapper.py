@@ -242,7 +242,7 @@ async def can_user_afford_tool_unified(client, account_id: str, tool_name: str) 
     """
     Unified tool affordability check that routes to the appropriate billing system.
     
-    When ENTERPRISE_MODE is enabled: ALL accounts can use all tools if they have enterprise credits and monthly allowance
+    When ENTERPRISE_MODE is enabled: Check individual tool costs against enterprise credits and user limits
     When ENTERPRISE_MODE is disabled: Use standard tool credit checking logic
     
     Args:
@@ -251,30 +251,31 @@ async def can_user_afford_tool_unified(client, account_id: str, tool_name: str) 
         tool_name: The tool name to check affordability for
         
     Returns:
-        Dict containing affordability info: {'can_use': bool, 'required_cost': float, 'current_balance': float}
+        Dict containing affordability info: {'can_use': bool, 'required_cost': float, 'current_balance': float, 'user_remaining': float}
     """
     try:
-        # If enterprise mode is enabled, check enterprise billing instead of individual tool credits
+        # If enterprise mode is enabled, use enterprise tool affordability check
         if config.ENTERPRISE_MODE:
-            logger.debug(f"Enterprise mode enabled - checking enterprise billing for tool {tool_name} usage by account {account_id}")
+            logger.debug(f"Enterprise mode enabled - checking enterprise tool affordability for {tool_name} by account {account_id}")
             
-            # Check if user can run agents (which includes tool usage)
-            can_run, message, billing_info = await check_billing_status_unified(client, account_id)
+            # Use the new enterprise tool affordability function
+            result = await client.rpc('enterprise_can_use_tool', {
+                'p_account_id': account_id,
+                'p_tool_name': tool_name
+            }).execute()
             
-            if can_run:
-                # In enterprise mode, tools don't have individual costs - they're covered by enterprise credits
+            if result.data and len(result.data) > 0:
+                data = result.data[0]
                 return {
-                    'can_use': True,
-                    'required_cost': 0.0,  # No individual tool cost in enterprise mode
-                    'current_balance': billing_info.get('enterprise_balance', 0) if billing_info else 0
+                    'can_use': data['can_use'],
+                    'required_cost': float(data['required_cost']),
+                    'current_balance': float(data['current_balance']),
+                    'user_remaining': float(data['user_remaining'])
                 }
             else:
-                # User cannot run agents, so cannot use tools
-                return {
-                    'can_use': False,
-                    'required_cost': 0.0,
-                    'current_balance': billing_info.get('enterprise_balance', 0) if billing_info else 0
-                }
+                # Fallback if no data returned
+                logger.warning(f"No data returned from enterprise_can_use_tool for {tool_name}")
+                return {'can_use': False, 'required_cost': 0.0, 'current_balance': 0.0, 'user_remaining': 0.0}
         else:
             # Enterprise mode disabled, use standard tool credit checking
             logger.debug(f"Enterprise mode disabled, using standard tool credit checking for {tool_name}")
@@ -307,7 +308,7 @@ async def charge_tool_usage_unified(
     """
     Unified tool usage charging that routes to the appropriate billing system.
     
-    When ENTERPRISE_MODE is enabled: Tool usage is covered by enterprise credits (no individual charging)
+    When ENTERPRISE_MODE is enabled: Charge individual tool costs from enterprise credits
     When ENTERPRISE_MODE is disabled: Use standard tool credit charging logic
     
     Args:
@@ -318,21 +319,32 @@ async def charge_tool_usage_unified(
         message_id: Optional message ID for tracking
         
     Returns:
-        Dict containing charge result: {'success': bool, 'cost_charged': float, 'new_balance': float}
+        Dict containing charge result: {'success': bool, 'cost_charged': float, 'new_balance': float, 'user_remaining': float}
     """
     try:
-        # If enterprise mode is enabled, tool usage is covered by enterprise billing
+        # If enterprise mode is enabled, use enterprise tool charging
         if config.ENTERPRISE_MODE:
-            logger.debug(f"Enterprise mode enabled - tool {tool_name} usage covered by enterprise credits for account {account_id}")
+            logger.debug(f"Enterprise mode enabled - charging tool {tool_name} from enterprise credits for account {account_id}")
             
-            # In enterprise mode, individual tool usage doesn't need separate charging
-            # Tools are covered by the overall enterprise credit system
-            # Return success with no cost charged since it's handled at the enterprise level
-            return {
-                'success': True,
-                'cost_charged': 0.0,  # No individual charge in enterprise mode
-                'new_balance': 0.0    # Balance is managed at enterprise level
-            }
+            # Use the new enterprise tool charging function
+            result = await client.rpc('enterprise_use_tool_credits', {
+                'p_account_id': account_id,
+                'p_tool_name': tool_name,
+                'p_thread_id': thread_id,
+                'p_message_id': message_id
+            }).execute()
+            
+            if result.data and len(result.data) > 0:
+                data = result.data[0]
+                return {
+                    'success': data['success'],
+                    'cost_charged': float(data['cost_charged']),
+                    'new_balance': float(data['new_balance']),
+                    'user_remaining': float(data['user_remaining'])
+                }
+            else:
+                logger.error(f"No data returned from enterprise_use_tool_credits for {tool_name}")
+                return {'success': False, 'cost_charged': 0.0, 'new_balance': 0.0, 'user_remaining': 0.0}
         else:
             # Enterprise mode disabled, use standard tool charging
             logger.debug(f"Enterprise mode disabled, charging for tool {tool_name} usage")

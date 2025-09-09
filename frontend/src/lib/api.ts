@@ -1593,6 +1593,13 @@ export interface SubscriptionStatus {
   // Credit information
   credit_balance?: number;
   can_purchase_credits?: boolean;
+  // Enterprise information
+  enterprise_info?: {
+    is_enterprise: boolean;
+    monthly_limit: number;
+    remaining_monthly: number;
+    enterprise_balance: number;
+  };
 }
 
 export interface CommitmentInfo {
