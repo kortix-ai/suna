@@ -147,6 +147,16 @@ class SimplifiedEnterpriseBillingService:
                         amount=amount,
                         new_balance=response['new_balance']
                     )
+                    # Invalidate caches to ensure frontend sees updates immediately  
+                    try:
+                        from utils.cache import Cache
+                        await Cache.invalidate(f"monthly_usage:{account_id}")
+                        await Cache.invalidate(f"user_subscription:{account_id}")
+                        await Cache.invalidate(f"allowed_models_for_user:{account_id}")
+                        logger.debug(f"Invalidated billing caches for account {account_id} after enterprise usage")
+                    except Exception as cache_error:
+                        logger.warning(f"Failed to invalidate enterprise billing caches: {cache_error}")
+                    
                     return True, f"Used ${amount:.4f} from enterprise credits (Balance: ${response['new_balance']:.2f})"
                 else:
                     return False, response['message']
@@ -391,27 +401,37 @@ class SimplifiedEnterpriseBillingService:
             # Get user's limit info
             user_limit = await self.get_user_limit(account_id)
             
-            # Get recent usage logs
+            # Get recent usage logs - only token usage for main logs
             since_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
             
+            # Query only token usage for main usage logs (tools are handled separately)
             usage_result = await client.table('enterprise_usage')\
                 .select('*')\
                 .eq('account_id', account_id)\
+                .in_('usage_type', ['token', None])\
                 .gte('created_at', since_date)\
                 .order('created_at', desc=True)\
                 .range(page * items_per_page, (page + 1) * items_per_page - 1)\
                 .execute()
             
-            # Get total count
+            # Get total count of token usage only
             count_result = await client.table('enterprise_usage')\
                 .select('id', count='exact')\
+                .eq('account_id', account_id)\
+                .in_('usage_type', ['token', None])\
+                .gte('created_at', since_date)\
+                .execute()
+            
+            # Calculate total cost for the period (all usage types)
+            all_usage_result = await client.table('enterprise_usage')\
+                .select('cost')\
                 .eq('account_id', account_id)\
                 .gte('created_at', since_date)\
                 .execute()
             
-            # Calculate total cost for the period
             usage_data = usage_result.data if (usage_result and hasattr(usage_result, 'data') and usage_result.data) else []
-            total_cost = sum(u['cost'] for u in usage_data)
+            all_usage_data = all_usage_result.data if (all_usage_result and hasattr(all_usage_result, 'data') and all_usage_result.data) else []
+            total_cost = sum(u['cost'] for u in all_usage_data)
             
             # Get tool usage data aggregated by day for the same period
             tool_usage_daily = await self._get_tool_usage_by_date(account_id, days)
@@ -423,7 +443,7 @@ class SimplifiedEnterpriseBillingService:
                 'remaining_monthly': (user_limit['monthly_limit'] - user_limit['current_month_usage']) if user_limit else 1000.00,
                 'usage_logs': usage_data,
                 'total_cost_period': total_cost,
-                'total_logs': count_result.count if count_result else 0,
+                'total_logs': count_result.count if count_result else len(usage_data),
                 'page': page,
                 'items_per_page': items_per_page,
                 'days': days,
@@ -608,6 +628,16 @@ class SimplifiedEnterpriseBillingService:
                         cost_charged=data['cost_charged'],
                         new_balance=data['new_balance']
                     )
+                    
+                    # Invalidate caches after successful tool billing
+                    try:
+                        from utils.cache import Cache
+                        await Cache.invalidate(f"monthly_usage:{account_id}")
+                        await Cache.invalidate(f"user_subscription:{account_id}")
+                        await Cache.invalidate(f"allowed_models_for_user:{account_id}")
+                        logger.debug(f"Invalidated billing caches for account {account_id} after tool billing")
+                    except Exception as cache_error:
+                        logger.warning(f"Failed to invalidate caches after tool billing: {cache_error}")
                 
                 return {
                     'success': data['success'],

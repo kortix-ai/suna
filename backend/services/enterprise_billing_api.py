@@ -134,18 +134,29 @@ async def get_usage_logs(
                 "items_per_page": items_per_page
             }
         
-        # Format logs for frontend compatibility
+        # Format logs for frontend compatibility - only include token usage logs (not tool logs)
         formatted_logs = []
         for log in usage_details.get('usage_logs', []):
-            formatted_logs.append({
-                "id": log.get('id'),
-                "created_at": log.get('created_at'),
-                "model_name": log.get('model_name', 'Unknown'),
-                "tokens_used": log.get('tokens_used', 0),
-                "cost": log.get('cost', 0),
-                "thread_id": log.get('thread_id'),
-                "message_id": log.get('message_id')
-            })
+            # Only include token usage in main logs (tools are shown separately via tool_usage_daily)
+            if log.get('usage_type') == 'token' or log.get('usage_type') is None:
+                formatted_logs.append({
+                    "message_id": log.get('message_id', log.get('id', 'unknown')),
+                    "thread_id": log.get('thread_id', 'unknown'),
+                    "created_at": log.get('created_at'),
+                    "content": {
+                        "usage": {
+                            "prompt_tokens": log.get('tokens_used', 0) if log.get('tokens_used') else 0,
+                            "completion_tokens": 0,  # We don't separate prompt/completion in enterprise
+                        },
+                        "model": log.get('model_name', 'Unknown') if log.get('model_name') else 'Unknown'
+                    },
+                    "total_tokens": log.get('tokens_used', 0),
+                    "estimated_cost": log.get('cost', 0),
+                    "project_id": 'unknown',  # Enterprise logs don't have project info
+                    "credit_used": log.get('cost', 0),
+                    "payment_method": 'credits',
+                    "was_over_limit": False
+                })
         
         return {
             "usage_logs": formatted_logs,

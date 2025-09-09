@@ -209,11 +209,11 @@ BEGIN
         updated_at = NOW()
     WHERE account_id = p_account_id;
     
-    -- Log tool usage
+    -- Log tool usage (no model_name for tools, set cost and tool_cost to same value)
     INSERT INTO enterprise_usage (
-        account_id, thread_id, message_id, cost, tool_name, tool_cost, usage_type
+        account_id, thread_id, message_id, cost, tool_name, tool_cost, usage_type, model_name
     ) VALUES (
-        p_account_id, p_thread_id, p_message_id, tool_cost, p_tool_name, tool_cost, 'tool'
+        p_account_id, p_thread_id, p_message_id, tool_cost, p_tool_name, tool_cost, 'tool', NULL
     );
     
     user_remaining := user_remaining - tool_cost;
@@ -320,11 +320,13 @@ BEGIN
         updated_at = NOW()
     WHERE account_id = p_account_id;
     
-    -- Log usage with type differentiation
+    -- Log usage with type differentiation (don't store "unknown" model names)
     INSERT INTO enterprise_usage (
         account_id, thread_id, message_id, cost, model_name, tokens_used, usage_type
     ) VALUES (
-        p_account_id, p_thread_id, p_message_id, p_amount, p_model_name, p_tokens_used, p_usage_type
+        p_account_id, p_thread_id, p_message_id, p_amount, 
+        CASE WHEN p_model_name = 'unknown' THEN NULL ELSE p_model_name END, 
+        p_tokens_used, p_usage_type
     );
     
     RETURN QUERY SELECT TRUE, (v_current_balance - p_amount), 'Success'::TEXT;
