@@ -27,6 +27,12 @@ class WebhookService:
             payload = await request.body()
             sig_header = request.headers.get('stripe-signature')
             
+
+            logger.info(f"[WEBHOOK] Received webhook request, signature present: {bool(sig_header)}")
+            if not config.STRIPE_WEBHOOK_SECRET:
+                logger.error("[WEBHOOK] STRIPE_WEBHOOK_SECRET is not configured!")
+                raise HTTPException(status_code=500, detail="Webhook secret not configured")
+            
             event = stripe.Webhook.construct_event(
                 payload, sig_header, config.STRIPE_WEBHOOK_SECRET
             )
@@ -253,6 +259,12 @@ class WebhookService:
         prev_status = previous_attributes.get('status')
         prev_default_payment = previous_attributes.get('default_payment_method')
         
+        logger.info(f"[WEBHOOK] Subscription updated: id={subscription['id']}, "
+                   f"status={subscription.status}, prev_status={prev_status}, "
+                   f"has_payment={bool(subscription.get('default_payment_method'))}")
+        logger.info(f"[WEBHOOK] Previous attributes: {previous_attributes}")
+        logger.info(f"[WEBHOOK] Account ID from metadata: {subscription.metadata.get('account_id')}")
+        
         if subscription.status == 'trialing' and subscription.get('default_payment_method') and not prev_default_payment:
             account_id = subscription.metadata.get('account_id')
             if account_id:
@@ -274,8 +286,24 @@ class WebhookService:
                 
                 logger.info(f"[WEBHOOK] Marked trial as converted (payment added) for account {account_id}, tier: {tier_name}")
         
+        # Handle trial end (transition from trialing to any other status)
         if prev_status == 'trialing' and subscription.status != 'trialing':
             account_id = subscription.metadata.get('account_id')
+            
+            # Fallback: try to get account_id from customer if not in metadata
+            if not account_id:
+                logger.warning(f"[WEBHOOK] No account_id in subscription metadata, trying customer lookup")
+                customer_result = await client.schema('basejump').from_('billing_customers')\
+                    .select('account_id')\
+                    .eq('id', subscription['customer'])\
+                    .execute()
+                    
+                if customer_result.data and customer_result.data[0].get('account_id'):
+                    account_id = customer_result.data[0]['account_id']
+                    logger.info(f"[WEBHOOK] Found account_id {account_id} from customer {subscription['customer']}")
+                else:
+                    logger.error(f"[WEBHOOK] Could not find account for customer {subscription['customer']}")
+                    return
             
             if account_id:
                 if subscription.status == 'active':
