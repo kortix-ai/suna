@@ -66,7 +66,7 @@ BEGIN
             COALESCE(mc.project_title, 'Untitled Project') as project_title,
             'Untitled Chat' as thread_title,  -- threads don't have title column
             SUM(mc.cost) as thread_cost,
-            SUM(COALESCE(mc.tokens_used, 0)) as thread_tokens,
+            SUM(COALESCE(mc.tokens_used, 0))::INTEGER as thread_tokens,
             JSONB_AGG(
                 JSONB_BUILD_OBJECT(
                     'id', mc.id,

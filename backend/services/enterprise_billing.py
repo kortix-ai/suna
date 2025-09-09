@@ -585,7 +585,7 @@ class SimplifiedEnterpriseBillingService:
                     
                     # If we don't have breakdown, estimate based on total
                     total_tokens_from_content = prompt_tokens + completion_tokens
-                    detail_tokens = detail.get('tokens_used', 0)
+                    detail_tokens = detail.get('tokens_used') or 0
                     
                     if total_tokens_from_content == 0 and detail_tokens > 0:
                         # Estimate breakdown (40% prompt, 60% completion)
@@ -601,7 +601,7 @@ class SimplifiedEnterpriseBillingService:
                         'prompt_tokens': prompt_tokens,
                         'completion_tokens': completion_tokens,
                         'tool_tokens': 0,  # Tool tokens not tracked separately yet
-                        'total_tokens': detail['tokens_used'] or (prompt_tokens + completion_tokens),
+                        'total_tokens': detail.get('tokens_used') or (prompt_tokens + completion_tokens),
                         'usage_type': detail.get('usage_type', 'token'),
                         'tool_name': detail.get('tool_name'),
                         'tool_cost': detail.get('tool_cost', 0)
