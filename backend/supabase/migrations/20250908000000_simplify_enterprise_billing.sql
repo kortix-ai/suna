@@ -210,6 +210,12 @@ ALTER TABLE enterprise_credit_loads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE enterprise_usage ENABLE ROW LEVEL SECURITY;
 
 -- Admins can see everything
+-- Drop existing policies first to avoid conflicts
+DROP POLICY IF EXISTS "Admins can view enterprise billing" ON enterprise_billing;
+DROP POLICY IF EXISTS "Admins can view user limits" ON enterprise_user_limits;
+DROP POLICY IF EXISTS "Admins can view credit loads" ON enterprise_credit_loads;
+DROP POLICY IF EXISTS "Users can view own usage" ON enterprise_usage;
+
 CREATE POLICY "Admins can view enterprise billing" ON enterprise_billing
     FOR SELECT TO authenticated USING (TRUE);
 
@@ -237,6 +243,10 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Drop existing triggers first to avoid conflicts
+DROP TRIGGER IF EXISTS update_enterprise_billing_updated_at ON enterprise_billing;
+DROP TRIGGER IF EXISTS update_enterprise_user_limits_updated_at ON enterprise_user_limits;
 
 CREATE TRIGGER update_enterprise_billing_updated_at
     BEFORE UPDATE ON enterprise_billing
