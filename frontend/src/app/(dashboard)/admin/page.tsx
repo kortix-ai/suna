@@ -505,10 +505,10 @@ function GlobalDefaultsCard({ globalDefaults }: { globalDefaults: any }) {
   
   const updateMutation = useMutation({
     mutationFn: async (data: any) => {
-      const response = await apiClient.request('/enterprise/global-defaults', {
-        method: 'POST',
-        body: JSON.stringify(data)
-      });
+      const response = await apiClient.post('/enterprise/global-defaults', data);
+      if (!response.success) {
+        throw new Error(response.error?.message || 'Failed to update global default');
+      }
       return response.data;
     },
     onSuccess: () => {

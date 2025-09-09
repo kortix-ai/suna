@@ -58,13 +58,17 @@ export function BillingModal({ open, onOpenChange, returnUrl = typeof window !==
     const [showCancelDialog, setShowCancelDialog] = useState(false);
     const [isCancelling, setIsCancelling] = useState(false);
 
-    // Get commitment info for the subscription (only if we have a valid ID)
+    // Get commitment info for the subscription (only if we have a valid ID and not enterprise)
     const {
         data: commitmentInfo,
         isLoading: commitmentLoading,
         error: commitmentError,
         refetch: refetchCommitment
-    } = useSubscriptionCommitment(subscriptionData?.subscription?.id || null);
+    } = useSubscriptionCommitment(
+        subscriptionData?.subscription?.id && !subscriptionData?.enterprise_info?.is_enterprise 
+            ? subscriptionData.subscription.id 
+            : null
+    );
 
     // Simple function to fetch subscription data
     const fetchSubscriptionData = async () => {
@@ -283,8 +287,8 @@ export function BillingModal({ open, onOpenChange, returnUrl = typeof window !==
                         </div>
                     )}
 
-                    {/* Show pricing section only if not in enterprise mode */}
-                    {!subscriptionData?.enterprise_info?.is_enterprise && (
+                    {/* Show pricing section only if not in enterprise mode and data is loaded */}
+                    {!isLoading && subscriptionData && !subscriptionData?.enterprise_info?.is_enterprise && (
                         <PricingSection returnUrl={returnUrl} showTitleAndTabs={false} />
                     )}
                     
@@ -308,7 +312,7 @@ export function BillingModal({ open, onOpenChange, returnUrl = typeof window !==
                                 <p className="text-sm text-destructive">Error loading billing status: {error}</p>
                             </div>
                         </div>
-                    ) : subscriptionData?.subscription && (
+                    ) : subscriptionData?.subscription && !subscriptionData?.enterprise_info?.is_enterprise && (
                         <div className="mt-6 pt-4 border-t border-border">
                             {/* Subscription Status Info Box */}
                             <div className="bg-muted/30 border border-border rounded-lg p-3 mb-3">
