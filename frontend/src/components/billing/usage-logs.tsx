@@ -198,7 +198,7 @@ export default function UsageLogs({ accountId }: Props) {
                                     {((project.thread_cost || 0) * 1000).toFixed(0)} credits
                                   </div>
                                   <div className="text-xs text-muted-foreground">
-                                    {project.thread_tokens?.toLocaleString() || 0} tokens
+                                    ${(project.thread_cost || 0).toFixed(3)} cost
                                   </div>
                                 </div>
                                 {project.thread_id && (
@@ -227,7 +227,7 @@ export default function UsageLogs({ accountId }: Props) {
                                     <TableHead className="text-right">Prompt</TableHead>
                                     <TableHead className="text-right">Completion</TableHead>
                                     <TableHead className="text-right">Tool</TableHead>
-                                    <TableHead className="text-right">Total</TableHead>
+                                    <TableHead className="text-right">Total Cost</TableHead>
                                     <TableHead className="text-right">Credits</TableHead>
                                   </TableRow>
                                 </TableHeader>
@@ -252,7 +252,7 @@ export default function UsageLogs({ accountId }: Props) {
                                         {(detail.tool_tokens || 0).toLocaleString()}
                                       </TableCell>
                                       <TableCell className="text-right font-mono text-xs">
-                                        {(detail.total_tokens || 0).toLocaleString()}
+                                        ${(detail.total_cost || detail.cost || 0).toFixed(4)}
                                       </TableCell>
                                       <TableCell className="text-right font-mono text-xs">
                                         {((detail.cost || 0) * 1000).toFixed(0)} credits

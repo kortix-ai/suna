@@ -541,7 +541,7 @@ class SimplifiedEnterpriseBillingService:
             
             # Get raw enterprise usage data with pagination (temporarily remove date filter for debugging)
             usage_query = client.from_('enterprise_usage').select(
-                'id, account_id, thread_id, message_id, cost, model_name, tokens_used, created_at'
+                'id, account_id, thread_id, message_id, cost, model_name, tokens_used, created_at, tool_name, tool_cost, usage_type'
             )
             usage_query = usage_query.eq('account_id', account_id)
             # TEMPORARILY COMMENT OUT DATE FILTER FOR DEBUGGING
@@ -639,48 +639,79 @@ class SimplifiedEnterpriseBillingService:
                         'project_title': thread_data['project_name'],
                         'thread_title': 'Untitled Chat',  # threads don't have titles
                         'thread_cost': 0,
-                        'thread_tokens': 0,
                         'usage_details': []
                     }
                 
                 # Add this usage record
                 cost = float(row['cost'] or 0)
-                tokens = int(row['tokens_used'] or 0)
+                usage_type = row.get('usage_type', 'token')
                 
                 # Debug: Log each record processing
-                logger.debug(f"Processing usage record: cost={cost}, tokens={tokens}, created_at={row['created_at']}")
+                logger.debug(f"Processing usage record: cost={cost}, usage_type={usage_type}, created_at={row['created_at']}")
                 
                 thread_groups[thread_key]['thread_cost'] += cost
-                thread_groups[thread_key]['thread_tokens'] += tokens
                 total_cost += cost
                 
-                # Get message content for token breakdown
-                content = message_content.get(row['message_id'], {})
-                usage_info = content.get('usage', {}) if content else {}
-                
-                prompt_tokens = usage_info.get('prompt_tokens', 0) or 0
-                completion_tokens = usage_info.get('completion_tokens', 0) or 0
-                
-                # If we don't have breakdown, estimate based on total
-                if prompt_tokens == 0 and completion_tokens == 0 and tokens > 0:
-                    prompt_tokens = int(tokens * 0.4)
-                    completion_tokens = int(tokens * 0.6)
-                
-                # Create usage detail record
-                usage_detail = {
-                    'id': row['id'],
-                    'message_id': row['message_id'],
-                    'created_at': row['created_at'],
-                    'cost': cost,
-                    'model_name': row['model_name'],
-                    'prompt_tokens': prompt_tokens,
-                    'completion_tokens': completion_tokens,
-                    'tool_tokens': 0,  # Not tracked separately
-                    'total_tokens': tokens,
-                    'usage_type': 'token',
-                    'tool_name': None,
-                    'tool_cost': 0
-                }
+                # Handle different usage types
+                if usage_type == 'tool':
+                    # Tool usage - calculate tool_tokens from tool_cost
+                    tool_cost = float(row.get('tool_cost', 0) or 0)
+                    # Assume tools cost about $0.01 per "token" (adjust as needed)
+                    tool_tokens = int(tool_cost * 100) if tool_cost > 0 else 0
+                    
+                    usage_detail = {
+                        'id': row['id'],
+                        'message_id': row['message_id'],
+                        'created_at': row['created_at'],
+                        'cost': cost,
+                        'model_name': row['model_name'],
+                        'prompt_tokens': 0,
+                        'completion_tokens': 0,
+                        'tool_tokens': tool_tokens,
+                        'total_cost': cost,
+                        'usage_type': usage_type,
+                        'tool_name': row.get('tool_name'),
+                        'tool_cost': tool_cost
+                    }
+                else:
+                    # Token usage - get prompt/completion tokens from message content
+                    content = message_content.get(row['message_id'], {})
+                    usage_info = content.get('usage', {}) if content else {}
+                    
+                    prompt_tokens = usage_info.get('prompt_tokens', 0) or 0
+                    completion_tokens = usage_info.get('completion_tokens', 0) or 0
+                    
+                    # Debug: Log token breakdown and cost calculation verification
+                    if prompt_tokens > 0 or completion_tokens > 0:
+                        # Verify cost calculation for known models
+                        expected_cost = 0
+                        if row['model_name'] == 'claude-sonnet-4-20250514':
+                            # Sonnet 4 pricing: $4.50 per 1M input, $22.50 per 1M output
+                            expected_cost = (prompt_tokens * 4.50 / 1000000) + (completion_tokens * 22.50 / 1000000)
+                        
+                        cost_diff = abs(cost - expected_cost) if expected_cost > 0 else 0
+                        cost_match = cost_diff < 0.001  # Within 0.1 cent tolerance
+                        
+                        logger.debug(f"Token breakdown for {row['model_name']}: prompt={prompt_tokens}, completion={completion_tokens}")
+                        logger.debug(f"Cost verification: actual=${cost:.6f}, expected=${expected_cost:.6f}, match={cost_match}")
+                        
+                        if not cost_match and expected_cost > 0:
+                            logger.warning(f"Cost mismatch detected! Actual: ${cost:.6f}, Expected: ${expected_cost:.6f}, Diff: ${cost_diff:.6f}")
+                    
+                    usage_detail = {
+                        'id': row['id'],
+                        'message_id': row['message_id'],
+                        'created_at': row['created_at'],
+                        'cost': cost,
+                        'model_name': row['model_name'],
+                        'prompt_tokens': prompt_tokens,
+                        'completion_tokens': completion_tokens,
+                        'tool_tokens': 0,
+                        'total_cost': cost,
+                        'usage_type': usage_type,
+                        'tool_name': row.get('tool_name'),
+                        'tool_cost': float(row.get('tool_cost', 0) or 0)
+                    }
                 thread_groups[thread_key]['usage_details'].append(usage_detail)
             
             # Convert thread groups to hierarchical structure by date
@@ -692,7 +723,6 @@ class SimplifiedEnterpriseBillingService:
                 if usage_date not in hierarchical_data:
                     hierarchical_data[usage_date] = {
                         'date': usage_date,
-                        'total_tokens': 0,
                         'total_cost': 0,
                         'projects': {}
                     }
@@ -702,7 +732,6 @@ class SimplifiedEnterpriseBillingService:
                     hierarchical_data[usage_date]['projects'][thread_id] = thread_data
                 
                 # Update daily totals
-                hierarchical_data[usage_date]['total_tokens'] += thread_data['thread_tokens']
                 hierarchical_data[usage_date]['total_cost'] += thread_data['thread_cost']
             
             return {
