@@ -279,7 +279,7 @@ class SimplifiedEnterpriseBillingService:
             
             # Get all user limits with account info
             limits_result = await client.table('enterprise_user_limits')\
-                .select('*, accounts!inner(id, name, personal_account)')\
+                .select('*, basejump.accounts!inner(id, name, personal_account)')\
                 .eq('is_active', True)\
                 .order('current_month_usage', desc=True)\
                 .range(page * items_per_page, (page + 1) * items_per_page - 1)\
