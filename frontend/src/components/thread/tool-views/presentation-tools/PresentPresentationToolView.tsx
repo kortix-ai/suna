@@ -11,7 +11,6 @@ import {
   Loader2,
   PresentationIcon,
   ExternalLink,
-  CheckCircle2,
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
 import {
@@ -61,14 +60,12 @@ export function PresentPresentationToolView({
   const {
     presentationName,
     presentationPath,
-    presentationTitle,
     slideCount,
     summary,
     attachments,
     presentationUrl
   } = {
     presentationName: args.presentation_name || args.presentationName || undefined,
-    presentationTitle: args.presentation_title || args.presentationTitle || undefined,
     presentationPath: args.presentation_path || args.presentationPath || undefined,
     slideCount: args.slide_count || args.slideCount ? parseInt(args.slide_count || args.slideCount, 10) : undefined,
     summary: args.text || args.summary || undefined,
@@ -126,7 +123,7 @@ export function PresentPresentationToolView({
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="relative p-2 rounded-xl bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 border border-emerald-500/20">
-              <CheckCircle2 className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />
+              <PresentationIcon className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />
             </div>
             <div>
               <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
@@ -164,39 +161,33 @@ export function PresentPresentationToolView({
 
       <CardContent className="p-0 flex-1 overflow-hidden relative">
         <ScrollArea className="h-full w-full">
-          <div className="p-4 space-y-6">
-          {isSuccess && !isStreaming && (
-            <div className="rounded-xl border bg-green-50 p-4 dark:bg-green-950/20 space-y-3">
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
-                <h3 className="font-medium text-green-900 dark:text-green-100">
-                  Presentation created successfully
-                </h3>
-              </div>
-              {(presentationName || slideCount) && (
-                <div className="bg-white/50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                  <div className="flex items-center space-x-2 mb-3">
-                    <FileText className="h-5 w-5 text-gray-600 dark:text-gray-400" />
-                    <h3 className="font-semibold text-gray-800 dark:text-gray-200">Presentation Details</h3>
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    {presentationTitle && (
-                      <div className="flex items-center space-x-2">
-                        <span className="font-medium text-gray-700 dark:text-gray-300">Name:</span>
-                        <span className="text-gray-900 dark:text-gray-100">{presentationTitle}</span>
-                      </div>
-                    )}
-                    {slideCount && (
-                      <div className="flex items-center space-x-2">
-                        <span className="font-medium text-gray-700 dark:text-gray-300">Slides:</span>
-                        <span className="text-gray-900 dark:text-gray-100">{slideCount} slide{slideCount !== 1 ? 's' : ''}</span>
-                      </div>
-                    )}
-                  </div>
+          <div className="p-4 space-y-4">
+            {/* Presentation Info */}
+            {(presentationName || slideCount) && (
+              <div className="bg-white/50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                <div className="flex items-center space-x-2 mb-3">
+                  <FileText className="h-5 w-5 text-gray-600 dark:text-gray-400" />
+                  <h3 className="font-semibold text-gray-800 dark:text-gray-200">Presentation Details</h3>
                 </div>
-              )}
+                <div className="space-y-2 text-sm">
+                  {presentationName && (
+                    <div className="flex items-center space-x-2">
+                      <span className="font-medium text-gray-700 dark:text-gray-300">Name:</span>
+                      <span className="text-gray-900 dark:text-gray-100">{presentationName}</span>
+                    </div>
+                  )}
+                  {slideCount && (
+                    <div className="flex items-center space-x-2">
+                      <span className="font-medium text-gray-700 dark:text-gray-300">Slides:</span>
+                      <span className="text-gray-900 dark:text-gray-100">{slideCount} slide{slideCount !== 1 ? 's' : ''}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Action Buttons */}
-            <div className="flex flex-wrap justify-end gap-3">
+            <div className="flex flex-wrap gap-3">
               {presentationUrl && (
                 <Button 
                   variant="default" 
@@ -208,54 +199,51 @@ export function PresentPresentationToolView({
                   View Presentation
                 </Button>
               )}
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-950"
-                disabled={isDownloading}
-                onClick={() => handleDownload(DownloadFormat.PDF)}
-                title="Download as PDF"
-              >
-                {isDownloading ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <FileText className="h-4 w-4 mr-2" />
-                )}
-                PDF
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-950"
-                disabled={isDownloading}
-                onClick={() => handleDownload(DownloadFormat.PPTX)}
-                title="Download as PPTX"
-              >
-                {isDownloading ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Presentation className="h-4 w-4 mr-2" />
-                )}
-                PPTX
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-950"
-                disabled={isDownloading}
-                onClick={() => handleDownload(DownloadFormat.GOOGLE_SLIDES)}
-                title="Download as Google Slides"
-              >
-                {isDownloading ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <ExternalLink className="h-4 w-4 mr-2" />
-                )}
-                Google Slides
-              </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      className="border-gray-300 text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-950"
+                      disabled={isDownloading}
+                      title="Download presentation as PDF or PPTX"
+                    >
+                      {isDownloading ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4 mr-2" />
+                      )}
+                      Download
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-32">
+                    <DropdownMenuItem 
+                      onClick={() => handleDownload(DownloadFormat.PDF)}
+                      className="cursor-pointer"
+                      disabled={isDownloading}
+                    >
+                      <FileText className="h-4 w-4 mr-2" />
+                      PDF
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      onClick={() => handleDownload(DownloadFormat.PPTX)}
+                      className="cursor-pointer"
+                      disabled={isDownloading}
+                    >
+                      <Presentation className="h-4 w-4 mr-2" />
+                      PPTX
+                    </DropdownMenuItem>
+                    <DropdownMenuItem 
+                      onClick={() => handleDownload(DownloadFormat.GOOGLE_SLIDES)}
+                      className="cursor-pointer"
+                      disabled={isDownloading}
+                    >
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Google Slides
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
             </div>
-            </div>
-          )}
 
             {/* Presentation Viewer */}
             {toolContent && !isStreaming && (
