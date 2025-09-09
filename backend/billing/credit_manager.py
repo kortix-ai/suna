@@ -20,6 +20,25 @@ class CreditManager:
         type: Optional[str] = None
     ) -> Dict:
         client = await self.db.client
+        amount = Decimal(str(amount))
+        
+        recent_window = datetime.now(timezone.utc) - timedelta(seconds=20)
+        recent_entries = await client.from_('credit_ledger').select(
+            'id, created_at, amount, description'
+        ).eq('account_id', account_id).eq('amount', float(amount)).eq(
+            'description', description
+        ).gte('created_at', recent_window.isoformat()).execute()
+        
+        if recent_entries.data:
+            logger.warning(f"[IDEMPOTENCY] Potential duplicate credit add detected for {account_id}: "
+                         f"amount={amount}, description='{description}', "
+                         f"found {len(recent_entries.data)} similar entries in last 20 seconds")
+            return {
+                'success': True,
+                'message': 'Credit already added (duplicate prevented)',
+                'amount': float(amount),
+                'duplicate_prevented': True
+            }
         
         result = await client.from_('credit_accounts').select(
             'expiring_credits, non_expiring_credits, balance, tier'

@@ -634,14 +634,17 @@ class WebhookService:
             client = await db.client
             
             subscription_id = invoice.get('subscription')
-            if not subscription_id:
+            invoice_id = invoice.get('id')
+            
+            if not subscription_id or not invoice_id:
+                logger.warning(f"Invoice missing subscription or ID: {invoice}")
                 return
 
             period_start = invoice.get('period_start')
             period_end = invoice.get('period_end')
             
             if not period_start or not period_end:
-                logger.warning(f"Invoice missing period information: {invoice.get('id')}")
+                logger.warning(f"Invoice missing period information: {invoice_id}")
                 return
             
             customer_result = await client.schema('basejump').from_('billing_customers')\
@@ -655,7 +658,7 @@ class WebhookService:
             account_id = customer_result.data[0]['account_id']
             
             account_result = await client.from_('credit_accounts')\
-                .select('tier, last_grant_date, next_credit_grant, billing_cycle_anchor')\
+                .select('tier, last_grant_date, next_credit_grant, billing_cycle_anchor, last_processed_invoice_id')\
                 .eq('account_id', account_id)\
                 .execute()
             
@@ -666,11 +669,21 @@ class WebhookService:
             tier = account['tier']
             period_start_dt = datetime.fromtimestamp(period_start, tz=timezone.utc)
             
+            # Primary idempotency check: Have we already processed this invoice?
+            if account.get('last_processed_invoice_id') == invoice_id:
+                logger.info(f"[IDEMPOTENCY] Invoice {invoice_id} already processed for account {account_id}")
+                return
+            
+            # Secondary idempotency check: Skip if we already processed this renewal period
             if account.get('last_grant_date'):
                 last_grant = datetime.fromisoformat(account['last_grant_date'].replace('Z', '+00:00'))
                 
-                if period_start_dt <= last_grant:
-                    logger.info(f"Skipping renewal for user {account_id} - already processed")
+                # Check if this renewal was already processed (within 24 hours window)
+                time_diff = abs((period_start_dt - last_grant).total_seconds())
+                if time_diff < 86400:  # 24 hours in seconds
+                    logger.info(f"[IDEMPOTENCY] Skipping renewal for user {account_id} - "
+                              f"already processed at {account['last_grant_date']} "
+                              f"(current period_start: {period_start_dt.isoformat()}, diff: {time_diff}s)")
                     return
             
             monthly_credits = get_monthly_credits(tier)
@@ -698,7 +711,8 @@ class WebhookService:
                 
                 await client.from_('credit_accounts').update({
                     'last_grant_date': period_start_dt.isoformat(),
-                    'next_credit_grant': next_grant.isoformat()
+                    'next_credit_grant': next_grant.isoformat(),
+                    'last_processed_invoice_id': invoice_id
                 }).eq('account_id', account_id).execute()
                 
                 final_state = await client.from_('credit_accounts').select(
