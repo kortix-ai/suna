@@ -303,18 +303,15 @@ function PricingTier({
     (p) => p.stripePriceId === currentSubscription?.price_id || p.yearlyStripePriceId === currentSubscription?.price_id,
   );
 
-  // Simple check - what plan is the user on?
   const userPlanName = currentSubscription?.plan_name || 'none';
-  
-  // Check if this tier matches the user's current plan
-  // For trial users on $20 plan, for regular users check price_id
   const isCurrentActivePlan = isAuthenticated && (
-    // Regular subscription match
     currentSubscription?.price_id === priceId ||
-    // Trial user on $20 plan
     (userPlanName === 'trial' && tier.price === '$20' && billingPeriod === 'monthly') ||
-    // User on tier_1_20 (the $20 plan)
-    (userPlanName === 'tier_1_20' && tier.price === '$20' && currentSubscription?.price_id === priceId)
+    (userPlanName === 'tier_2_20' && tier.price === '$20' && billingPeriod === 'monthly') ||
+    (currentSubscription?.subscription && 
+     userPlanName === 'tier_2_20' && 
+     tier.price === '$20' && 
+     currentSubscription?.subscription?.status === 'active')
   );
 
   const isScheduled = isAuthenticated && currentSubscription?.has_schedule;

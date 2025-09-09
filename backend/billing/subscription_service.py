@@ -109,14 +109,11 @@ class SubscriptionService:
                         expand=['items.data.price']
                     )
                     
-                    if stripe_subscription.get('price_id'):
-                        price_id = stripe_subscription['price_id']
-                    elif (stripe_subscription.get('items') and 
+                    if (stripe_subscription.get('items') and 
                           len(stripe_subscription['items']['data']) > 0 and
                           stripe_subscription['items']['data'][0].get('price')):
                         price_id = stripe_subscription['items']['data'][0]['price']['id']
                     
-                    # Handle trial subscriptions specially
                     if stripe_subscription['status'] == 'trialing' and trial_status == 'active':
                         subscription_data = {
                             'id': stripe_subscription['id'],

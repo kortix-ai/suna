@@ -27,24 +27,6 @@ class TrialService:
                 'message': 'Trials are not enabled'
             }
 
-        trial_history_result = await client.from_('trial_history')\
-            .select('id, started_at, ended_at, converted_to_paid')\
-            .eq('account_id', account_id)\
-            .execute()
-        
-        if trial_history_result.data and len(trial_history_result.data) > 0:
-            history = trial_history_result.data[0]
-            return {
-                'has_trial': False,
-                'trial_status': 'used',
-                'message': 'You have already used your free trial',
-                'trial_history': {
-                    'started_at': history.get('started_at'),
-                    'ended_at': history.get('ended_at'),
-                    'converted_to_paid': history.get('converted_to_paid', False)
-                }
-            }
-
         account_result = await client.from_('credit_accounts').select(
             'tier, trial_status, trial_ends_at, stripe_subscription_id'
         ).eq('account_id', account_id).execute()
@@ -53,14 +35,34 @@ class TrialService:
             account = account_result.data[0]
             trial_status = account.get('trial_status', 'none')
             
-            if trial_status and trial_status != 'none':
+            if trial_status == 'active':
                 return {
                     'has_trial': True,
                     'trial_status': trial_status,
                     'trial_ends_at': account.get('trial_ends_at'),
                     'tier': account.get('tier')
                 }
+            
+            if trial_status in ['expired', 'converted', 'cancelled']:
+                trial_history_result = await client.from_('trial_history')\
+                    .select('id, started_at, ended_at, converted_to_paid')\
+                    .eq('account_id', account_id)\
+                    .execute()
+                
+                if trial_history_result.data and len(trial_history_result.data) > 0:
+                    history = trial_history_result.data[0]
+                    return {
+                        'has_trial': False,
+                        'trial_status': 'used',
+                        'message': 'You have already used your free trial',
+                        'trial_history': {
+                            'started_at': history.get('started_at'),
+                            'ended_at': history.get('ended_at'),
+                            'converted_to_paid': history.get('converted_to_paid', False)
+                        }
+                    }
 
+        # No trial history - user can start a trial
         return {
             'has_trial': False,
             'trial_status': 'none',

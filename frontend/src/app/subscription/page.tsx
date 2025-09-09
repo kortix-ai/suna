@@ -6,11 +6,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { PricingSection } from '@/components/home/sections/pricing-section';
-import { AlertTriangle, Clock, CreditCard } from 'lucide-react';
+import { AlertTriangle, Clock, CreditCard, LogOut } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, backendApi } from '@/lib/api-client';
 import { Skeleton } from '@/components/ui/skeleton';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { createClient } from '@/lib/supabase/client';
+import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 
 export default function SubscriptionRequiredPage() {
   const [isCheckingStatus, setIsCheckingStatus] = useState(true);
@@ -23,12 +25,18 @@ export default function SubscriptionRequiredPage() {
 
   const checkBillingStatus = async () => {
     try {
-      const response = await apiClient.get('/billing/check-status');
+      const response = await backendApi.get('/billing/v2/subscription');
       setBillingStatus(response.data);
-      if (response.data.is_trial || 
-          (response.data.subscription?.tier && 
-           response.data.subscription.tier !== 'none' && 
-           response.data.subscription.tier !== 'free')) {
+      const hasActiveSubscription = response.data.subscription && 
+                                   response.data.subscription.status === 'active' &&
+                                   !response.data.subscription.cancel_at_period_end;
+      
+      const hasActiveTrial = response.data.trial_status === 'active';
+      const hasActiveTier = response.data.tier && 
+                           response.data.tier.name !== 'none' && 
+                           response.data.tier.name !== 'free';
+      
+      if ((hasActiveSubscription && hasActiveTier) || (hasActiveTrial && hasActiveTier)) {
         router.push('/dashboard');
       }
     } catch (error) {
@@ -42,6 +50,13 @@ export default function SubscriptionRequiredPage() {
     setTimeout(() => {
       checkBillingStatus();
     }, 1000);
+  };
+
+  const handleLogout = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    clearUserLocalStorage();
+    router.push('/auth');
   };
 
   if (isCheckingStatus) {
@@ -65,15 +80,30 @@ export default function SubscriptionRequiredPage() {
   }
 
   const isTrialExpired = billingStatus?.trial_status === 'expired' || 
-                         billingStatus?.trial_status === 'cancelled';
+                         billingStatus?.trial_status === 'cancelled' ||
+                         billingStatus?.trial_status === 'used';
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 py-12 px-4">
       <div className="max-w-6xl mx-auto space-y-8">
         <div className="text-center space-y-4">
-          <div className="text-2xl font-bold flex items-center justify-center gap-2">
-            <KortixLogo/>
-            <span>{isTrialExpired ? 'Your Trial Has Ended' : 'Subscription Required'}</span>
+          <div className="flex items-center justify-between">
+            <div className="flex-1" />
+            <div className="text-2xl font-bold flex items-center justify-center gap-2">
+              <KortixLogo/>
+              <span>{isTrialExpired ? 'Your Trial Has Ended' : 'Subscription Required'}</span>
+            </div>
+            <div className="flex-1 flex justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLogout}
+                className="gap-2"
+              >
+                <LogOut className="h-4 w-4" />
+                Log Out
+              </Button>
+            </div>
           </div>
           <p className="text-md text-muted-foreground max-w-2xl mx-auto">
             {isTrialExpired 
@@ -90,8 +120,8 @@ export default function SubscriptionRequiredPage() {
         <div className="text-center text-sm text-muted-foreground -mt-10">
           <p>
             Questions? Contact us at{' '}
-            <a href="mailto:support@suna.ai" className="underline hover:text-primary">
-              support@suna.ai
+            <a href="mailto:support@kortix.ai" className="underline hover:text-primary">
+              support@kortix.ai
             </a>
           </p>
         </div>
