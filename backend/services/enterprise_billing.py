@@ -291,7 +291,8 @@ class SimplifiedEnterpriseBillingService:
             # Enrich user data with account names
             for user in users_data:
                 try:
-                    account_result = await client.from_('basejump.accounts')\
+                    account_result = await client.schema("basejump")\
+                        .table("accounts")\
                         .select('id, name, personal_account')\
                         .eq('id', user['account_id'])\
                         .maybe_single()\
@@ -321,8 +322,8 @@ class SimplifiedEnterpriseBillingService:
                 .execute()
             
             # Calculate aggregates
-            total_monthly_limit = sum(u['monthly_limit'] for u in limits_result.data) if limits_result.data else 0
-            total_monthly_usage = sum(u['current_month_usage'] for u in limits_result.data) if limits_result.data else 0
+            total_monthly_limit = sum(u['monthly_limit'] for u in users_data)
+            total_monthly_usage = sum(u['current_month_usage'] for u in users_data)
             
             return {
                 'enterprise_balance': enterprise['credit_balance'] if enterprise else 0,
@@ -331,7 +332,7 @@ class SimplifiedEnterpriseBillingService:
                 'total_monthly_limit': total_monthly_limit,
                 'total_monthly_usage': total_monthly_usage,
                 'remaining_monthly_budget': total_monthly_limit - total_monthly_usage,
-                'users': limits_result.data if limits_result.data else [],
+                'users': users_data,  # Return enriched user data with account names
                 'total_users': count_result.count if count_result else 0,
                 'page': page,
                 'items_per_page': items_per_page
