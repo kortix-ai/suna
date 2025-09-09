@@ -41,11 +41,11 @@ class GlobalSettingRequest(BaseModel):
     description: Optional[str] = None
 
 async def verify_simple_admin(user_id: str = Depends(verify_and_get_user_id_from_jwt)):
-    """Simple admin check - checks if user email is in ADMIN_EMAILS env var."""
+    """Simple admin check - checks if user email is in ADMIN_EMAILS or OMNI_ADMIN env vars."""
     if not config.ENTERPRISE_MODE:
         raise HTTPException(status_code=400, detail="Enterprise mode not enabled")
     
-    if not config.ADMIN_EMAILS:
+    if not config.ADMIN_EMAILS and not config.OMNI_ADMIN:
         raise HTTPException(status_code=500, detail="No admin emails configured")
     
     try:
@@ -58,10 +58,20 @@ async def verify_simple_admin(user_id: str = Depends(verify_and_get_user_id_from
         if not user_result.user or not user_result.user.email:
             raise HTTPException(status_code=403, detail="User not found")
         
-        user_email = user_result.user.email
-        admin_emails = [email.strip().lower() for email in config.ADMIN_EMAILS.split(',') if email.strip()]
+        user_email = user_result.user.email.lower()
         
-        if user_email.lower() not in admin_emails:
+        # Check OMNI_ADMIN emails first
+        omni_admin_emails = []
+        if config.OMNI_ADMIN:
+            omni_admin_emails = [email.strip().lower() for email in config.OMNI_ADMIN.split(',') if email.strip()]
+        
+        # Check regular ADMIN_EMAILS
+        admin_emails = []
+        if config.ADMIN_EMAILS:
+            admin_emails = [email.strip().lower() for email in config.ADMIN_EMAILS.split(',') if email.strip()]
+        
+        # Allow access if user is in either admin list
+        if user_email not in omni_admin_emails and user_email not in admin_emails:
             raise HTTPException(status_code=403, detail=f"Access denied. Contact admin for access.")
         
         return user_id
@@ -72,6 +82,39 @@ async def verify_simple_admin(user_id: str = Depends(verify_and_get_user_id_from
         logger.error(f"Error verifying admin: {e}")
         raise HTTPException(status_code=500, detail="Error checking admin access")
 
+
+async def verify_omni_admin(user_id: str = Depends(verify_and_get_user_id_from_jwt)):
+    """OMNI admin check - checks if user email is specifically in OMNI_ADMIN env var (super admin with credit loading access)."""
+    if not config.ENTERPRISE_MODE:
+        raise HTTPException(status_code=400, detail="Enterprise mode not enabled")
+    
+    if not config.OMNI_ADMIN:
+        raise HTTPException(status_code=500, detail="No OMNI admin emails configured")
+    
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        # Get user info using admin API
+        user_result = await client.auth.admin.get_user_by_id(user_id)
+        
+        if not user_result.user or not user_result.user.email:
+            raise HTTPException(status_code=403, detail="User not found")
+        
+        user_email = user_result.user.email.lower()
+        omni_admin_emails = [email.strip().lower() for email in config.OMNI_ADMIN.split(',') if email.strip()]
+        
+        if user_email not in omni_admin_emails:
+            raise HTTPException(status_code=403, detail=f"Super admin access required. Contact OMNI admin for access.")
+        
+        return user_id
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error verifying OMNI admin: {e}")
+        raise HTTPException(status_code=500, detail="Error checking OMNI admin access")
+
 @router.get("/check-admin")
 async def check_admin_access(user_id: str = Depends(verify_and_get_user_id_from_jwt)):
     """Check if current user has admin access."""
@@ -79,11 +122,11 @@ async def check_admin_access(user_id: str = Depends(verify_and_get_user_id_from_
     
     if not config.ENTERPRISE_MODE:
         logger.info("Enterprise mode not enabled")
-        return {"is_admin": False, "reason": "Enterprise mode not enabled"}
+        return {"is_admin": False, "is_omni_admin": False, "reason": "Enterprise mode not enabled"}
     
-    if not config.ADMIN_EMAILS:
+    if not config.ADMIN_EMAILS and not config.OMNI_ADMIN:
         logger.warning("No admin emails configured")
-        return {"is_admin": False, "reason": "No admin emails configured"}
+        return {"is_admin": False, "is_omni_admin": False, "reason": "No admin emails configured"}
     
     try:
         db = DBConnection()
@@ -93,20 +136,35 @@ async def check_admin_access(user_id: str = Depends(verify_and_get_user_id_from_
         
         if not user_result.user or not user_result.user.email:
             logger.warning(f"Unable to get email for user {user_id}")
-            return {"is_admin": False, "reason": "Unable to get user email"}
+            return {"is_admin": False, "is_omni_admin": False, "reason": "Unable to get user email"}
         
-        user_email = user_result.user.email
-        admin_emails = [email.strip().lower() for email in config.ADMIN_EMAILS.split(',') if email.strip()]
+        user_email = user_result.user.email.lower()
         
-        is_admin = user_email.lower() in admin_emails
+        # Check OMNI_ADMIN emails
+        omni_admin_emails = []
+        if config.OMNI_ADMIN:
+            omni_admin_emails = [email.strip().lower() for email in config.OMNI_ADMIN.split(',') if email.strip()]
         
-        logger.info(f"Admin check for {user_email}: {'GRANTED' if is_admin else 'DENIED'}")
+        # Check regular ADMIN_EMAILS
+        admin_emails = []
+        if config.ADMIN_EMAILS:
+            admin_emails = [email.strip().lower() for email in config.ADMIN_EMAILS.split(',') if email.strip()]
         
-        return {"is_admin": is_admin, "user_id": user_id}
+        is_omni_admin = user_email in omni_admin_emails
+        is_regular_admin = user_email in admin_emails
+        is_admin = is_omni_admin or is_regular_admin
+        
+        logger.info(f"Admin check for {user_email}: {'OMNI_ADMIN' if is_omni_admin else 'REGULAR_ADMIN' if is_regular_admin else 'DENIED'}")
+        
+        return {
+            "is_admin": is_admin, 
+            "is_omni_admin": is_omni_admin,
+            "user_id": user_id
+        }
         
     except Exception as e:
         logger.error(f"Error checking admin access: {e}")
-        return {"is_admin": False, "reason": f"Error: {str(e)}"}
+        return {"is_admin": False, "is_omni_admin": False, "reason": f"Error: {str(e)}"}
 
 @router.get("/status")
 async def get_enterprise_status(admin_user_id: str = Depends(verify_simple_admin)):
@@ -138,7 +196,7 @@ async def get_enterprise_status(admin_user_id: str = Depends(verify_simple_admin
 @router.post("/load-credits")
 async def load_credits(
     request: LoadCreditsRequest,
-    admin_user_id: str = Depends(verify_simple_admin)
+    admin_user_id: str = Depends(verify_omni_admin)
 ):
     """Load credits into the enterprise account."""
     try:

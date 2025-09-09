@@ -12,10 +12,16 @@ export function useAdminCheck() {
     queryFn: async () => {
       try {
         const response = await apiClient.request('/enterprise/check-admin');
-        return response.data?.is_admin || false;
+        return {
+          isAdmin: response.data?.is_admin || false,
+          isOmniAdmin: response.data?.is_omni_admin || false
+        };
       } catch (error) {
         console.warn('Admin check failed:', error);
-        return false;
+        return {
+          isAdmin: false,
+          isOmniAdmin: false
+        };
       }
     },
     enabled: !!user,

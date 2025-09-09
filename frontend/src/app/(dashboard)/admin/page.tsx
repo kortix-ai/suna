@@ -23,7 +23,7 @@ import { useAdminCheck } from '@/hooks/use-admin-check';
 
 export default function AdminPage() {
   const queryClient = useQueryClient();
-  const { data: isAdmin, isLoading: adminLoading, error: adminError } = useAdminCheck();
+  const { data: adminCheck, isLoading: adminLoading, error: adminError } = useAdminCheck();
   
   // Get enterprise status
   const { data: status, isLoading: statusLoading } = useQuery({
@@ -32,7 +32,7 @@ export default function AdminPage() {
       const response = await apiClient.request('/enterprise/status');
       return response.data;
     },
-    enabled: !!isAdmin
+    enabled: !!adminCheck?.isAdmin
   });
   
   // Get all users
@@ -42,7 +42,7 @@ export default function AdminPage() {
       const response = await apiClient.request('/enterprise/users?items_per_page=100');
       return response.data;
     },
-    enabled: !!isAdmin
+    enabled: !!adminCheck?.isAdmin
   });
   
   // Loading states
@@ -57,7 +57,7 @@ export default function AdminPage() {
   }
   
   // Check admin access
-  if (!isAdmin) {
+  if (!adminCheck?.isAdmin) {
     return (
       <div className="container mx-auto py-6">
         <Card>
@@ -82,7 +82,7 @@ export default function AdminPage() {
           <h1 className="text-3xl font-bold">Enterprise Admin</h1>
           <p className="text-muted-foreground">Manage enterprise billing and user limits</p>
         </div>
-        <LoadCreditsButton />
+        {adminCheck?.isOmniAdmin && <LoadCreditsButton />}
       </div>
       
       {/* Enterprise Status */}

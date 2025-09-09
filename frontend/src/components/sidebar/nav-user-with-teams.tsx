@@ -73,7 +73,7 @@ export function NavUserWithTeams({
   const [showNewTeamDialog, setShowNewTeamDialog] = React.useState(false);
   const [showBillingModal, setShowBillingModal] = React.useState(false);
   const { theme, setTheme } = useTheme();
-  const { data: isAdmin } = useAdminCheck();
+  const { data: adminCheck } = useAdminCheck();
 
   // Prepare personal account and team accounts
   const personalAccount = React.useMemo(
@@ -311,7 +311,7 @@ export function NavUserWithTeams({
                     </Link>
                   </DropdownMenuItem>
                 )}
-                {isAdmin && (
+                {adminCheck?.isAdmin && (
                   <DropdownMenuItem asChild>
                     <Link href="/admin">
                       <Shield className="h-4 w-4" />
