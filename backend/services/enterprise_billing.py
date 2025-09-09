@@ -512,7 +512,8 @@ class SimplifiedEnterpriseBillingService:
             logger.error(f"Error getting all user usage: {e}")
             return None
     
-    async def get_user_usage_details(
+
+    async def get_user_hierarchical_usage(
         self,
         account_id: str,
         days: int = 30,
@@ -520,8 +521,8 @@ class SimplifiedEnterpriseBillingService:
         items_per_page: int = 100
     ) -> Dict[str, Any]:
         """
-        Get detailed usage for a specific user.
-        This is what the admin sees when clicking on a user.
+        Get hierarchical usage data for enterprise users.
+        Returns data grouped by Date → Project/Thread → Individual Usage entries.
         """
         if not config.ENTERPRISE_MODE:
             return None
@@ -533,57 +534,120 @@ class SimplifiedEnterpriseBillingService:
             # Get user's limit info
             user_limit = await self.get_user_limit(account_id)
             
-            # Get recent usage logs - only token usage for main logs
-            since_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+            # Call the hierarchical usage function
+            hierarchical_result = await client.rpc(
+                'get_enterprise_hierarchical_usage',
+                {
+                    'p_account_id': account_id,
+                    'p_days': days,
+                    'p_page': page,
+                    'p_items_per_page': items_per_page
+                }
+            ).execute()
             
-            # Query only token usage for main usage logs (tools are handled separately)
-            usage_result = await client.table('enterprise_usage')\
-                .select('*')\
-                .eq('account_id', account_id)\
-                .in_('usage_type', ['token', None])\
-                .gte('created_at', since_date)\
-                .order('created_at', desc=True)\
-                .range(page * items_per_page, (page + 1) * items_per_page - 1)\
-                .execute()
+            if not hierarchical_result or not hierarchical_result.data:
+                return {
+                    'account_id': account_id,
+                    'monthly_limit': user_limit['monthly_limit'] if user_limit else await self.get_default_monthly_limit(),
+                    'current_month_usage': user_limit['current_month_usage'] if user_limit else 0,
+                    'remaining_monthly': (user_limit['monthly_limit'] - user_limit['current_month_usage']) if user_limit else await self.get_default_monthly_limit(),
+                    'hierarchical_usage': {},
+                    'total_cost_period': 0,
+                    'page': page,
+                    'items_per_page': items_per_page,
+                    'days': days
+                }
             
-            # Get total count of token usage only
-            count_result = await client.table('enterprise_usage')\
-                .select('id', count='exact')\
-                .eq('account_id', account_id)\
-                .in_('usage_type', ['token', None])\
-                .gte('created_at', since_date)\
-                .execute()
+            # Group data by date for the frontend
+            hierarchical_data = {}
+            total_cost = 0
             
-            # Calculate total cost for the period (all usage types)
-            all_usage_result = await client.table('enterprise_usage')\
-                .select('cost')\
-                .eq('account_id', account_id)\
-                .gte('created_at', since_date)\
-                .execute()
-            
-            usage_data = usage_result.data if (usage_result and hasattr(usage_result, 'data') and usage_result.data) else []
-            all_usage_data = all_usage_result.data if (all_usage_result and hasattr(all_usage_result, 'data') and all_usage_result.data) else []
-            total_cost = sum(u['cost'] for u in all_usage_data)
-            
-            # Get tool usage data aggregated by day for the same period
-            tool_usage_daily = await self._get_tool_usage_by_date(account_id, days)
+            for row in hierarchical_result.data:
+                usage_date = row['usage_date']
+                thread_id = row['thread_id']
+                project_title = row['project_title']
+                thread_title = row['thread_title']
+                thread_cost = float(row['thread_cost'] or 0)
+                thread_tokens = int(row['thread_tokens'] or 0)
+                usage_details = row['usage_details']
+                
+                total_cost += thread_cost
+                
+                # Process usage details to include token breakdowns from message content
+                processed_details = []
+                for detail in usage_details:
+                    # Extract token breakdown from message content
+                    content = detail.get('content', {})
+                    usage_info = content.get('usage', {}) if content else {}
+                    
+                    prompt_tokens = usage_info.get('prompt_tokens', 0)
+                    completion_tokens = usage_info.get('completion_tokens', 0)
+                    
+                    # If we don't have breakdown, estimate based on total
+                    total_tokens_from_content = prompt_tokens + completion_tokens
+                    detail_tokens = detail.get('tokens_used', 0)
+                    
+                    if total_tokens_from_content == 0 and detail_tokens > 0:
+                        # Estimate breakdown (40% prompt, 60% completion)
+                        prompt_tokens = int(detail_tokens * 0.4)
+                        completion_tokens = int(detail_tokens * 0.6)
+                    
+                    processed_detail = {
+                        'id': detail['id'],
+                        'message_id': detail['message_id'],
+                        'created_at': detail['created_at'],
+                        'cost': detail['cost'],
+                        'model_name': detail['model_name'],
+                        'prompt_tokens': prompt_tokens,
+                        'completion_tokens': completion_tokens,
+                        'tool_tokens': 0,  # Tool tokens not tracked separately yet
+                        'total_tokens': detail['tokens_used'] or (prompt_tokens + completion_tokens),
+                        'usage_type': detail.get('usage_type', 'token'),
+                        'tool_name': detail.get('tool_name'),
+                        'tool_cost': detail.get('tool_cost', 0)
+                    }
+                    processed_details.append(processed_detail)
+                
+                # Group by date
+                if usage_date not in hierarchical_data:
+                    hierarchical_data[usage_date] = {
+                        'date': usage_date,
+                        'total_tokens': 0,
+                        'total_cost': 0,
+                        'projects': {}
+                    }
+                
+                # Group by project/thread
+                thread_key = f"{thread_id}"
+                if thread_key not in hierarchical_data[usage_date]['projects']:
+                    hierarchical_data[usage_date]['projects'][thread_key] = {
+                        'thread_id': thread_id,
+                        'project_id': row['project_id'],
+                        'project_title': project_title,
+                        'thread_title': thread_title,
+                        'thread_cost': thread_cost,
+                        'thread_tokens': thread_tokens,
+                        'usage_details': processed_details
+                    }
+                
+                # Update daily totals
+                hierarchical_data[usage_date]['total_tokens'] += thread_tokens
+                hierarchical_data[usage_date]['total_cost'] += thread_cost
             
             return {
                 'account_id': account_id,
                 'monthly_limit': user_limit['monthly_limit'] if user_limit else await self.get_default_monthly_limit(),
                 'current_month_usage': user_limit['current_month_usage'] if user_limit else 0,
                 'remaining_monthly': (user_limit['monthly_limit'] - user_limit['current_month_usage']) if user_limit else await self.get_default_monthly_limit(),
-                'usage_logs': usage_data,
+                'hierarchical_usage': hierarchical_data,
                 'total_cost_period': total_cost,
-                'total_logs': count_result.count if count_result else len(usage_data),
                 'page': page,
                 'items_per_page': items_per_page,
-                'days': days,
-                'tool_usage_daily': tool_usage_daily
+                'days': days
             }
             
         except Exception as e:
-            logger.error(f"Error getting user usage details: {e}")
+            logger.error(f"Error getting hierarchical usage data: {e}")
             return None
     
     async def reset_monthly_usage(self) -> bool:

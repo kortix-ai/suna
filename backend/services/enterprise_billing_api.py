@@ -111,69 +111,53 @@ async def check_status(
 async def get_usage_logs(
     current_user_id: str = Depends(verify_and_get_user_id_from_jwt),
     page: int = Query(default=0, ge=0),
-    items_per_page: int = Query(default=100, ge=1, le=1000)
+    items_per_page: int = Query(default=100, ge=1, le=1000),
+    days: int = Query(default=30, ge=1, le=365)
 ):
-    """Get usage logs for the current user."""
+    """Get hierarchical usage logs for enterprise users (Date → Project/Thread → Usage Details)."""
     if not config.ENTERPRISE_MODE:
         raise HTTPException(status_code=400, detail="Enterprise mode not enabled")
     
     try:
-        # Get user's detailed usage
-        usage_details = await enterprise_billing.get_user_usage_details(
+        # Get hierarchical usage data (this replaces the old flat usage logs)
+        hierarchical_data = await enterprise_billing.get_user_hierarchical_usage(
             account_id=current_user_id,
-            days=30,
+            days=days,
             page=page,
             items_per_page=items_per_page
         )
         
-        if not usage_details:
+        if not hierarchical_data:
             return {
-                "usage_logs": [],
-                "total": 0,
+                "hierarchical_usage": {},
+                "enterprise_info": {
+                    "monthly_limit": await enterprise_billing.get_default_monthly_limit(),
+                    "current_usage": 0,
+                    "remaining": await enterprise_billing.get_default_monthly_limit()
+                },
+                "total_cost_period": 0,
                 "page": page,
-                "items_per_page": items_per_page
+                "items_per_page": items_per_page,
+                "days": days,
+                "is_hierarchical": True
             }
-        
-        # Format logs for frontend compatibility - only include token usage logs (not tool logs)
-        formatted_logs = []
-        for log in usage_details.get('usage_logs', []):
-            # Only include token usage in main logs (tools are shown separately via tool_usage_daily)
-            if log.get('usage_type') == 'token' or log.get('usage_type') is None:
-                formatted_logs.append({
-                    "message_id": log.get('message_id', log.get('id', 'unknown')),
-                    "thread_id": log.get('thread_id', 'unknown'),
-                    "created_at": log.get('created_at'),
-                    "content": {
-                        "usage": {
-                            "prompt_tokens": log.get('tokens_used', 0) if log.get('tokens_used') else 0,
-                            "completion_tokens": 0,  # We don't separate prompt/completion in enterprise
-                        },
-                        "model": log.get('model_name', 'Unknown') if log.get('model_name') else 'Unknown'
-                    },
-                    "total_tokens": log.get('tokens_used', 0),
-                    "estimated_cost": log.get('cost', 0),
-                    "project_id": 'unknown',  # Enterprise logs don't have project info
-                    "credit_used": log.get('cost', 0),
-                    "payment_method": 'credits',
-                    "was_over_limit": False
-                })
         
         return {
-            "usage_logs": formatted_logs,
-            "total": usage_details.get('total_logs', 0),
+            "hierarchical_usage": hierarchical_data.get('hierarchical_usage', {}),
+            "enterprise_info": {
+                "monthly_limit": hierarchical_data.get('monthly_limit', await enterprise_billing.get_default_monthly_limit()),
+                "current_usage": hierarchical_data.get('current_month_usage', 0),
+                "remaining": hierarchical_data.get('remaining_monthly', await enterprise_billing.get_default_monthly_limit())
+            },
+            "total_cost_period": hierarchical_data.get('total_cost_period', 0),
             "page": page,
             "items_per_page": items_per_page,
-            "total_cost": usage_details.get('total_cost_period', 0),
-            "tool_usage_daily": usage_details.get('tool_usage_daily', {}),
-            "enterprise_info": {
-                "monthly_limit": usage_details.get('monthly_limit', await enterprise_billing.get_default_monthly_limit()),
-                "current_usage": usage_details.get('current_month_usage', 0),
-                "remaining": usage_details.get('remaining_monthly', await enterprise_billing.get_default_monthly_limit())
-            }
+            "days": days,
+            "is_hierarchical": True
         }
         
     except Exception as e:
-        logger.error(f"Error getting usage logs: {str(e)}")
+        logger.error(f"Error getting hierarchical usage logs: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/tool-usage-analytics")

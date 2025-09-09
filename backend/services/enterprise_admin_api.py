@@ -249,7 +249,7 @@ async def get_user_details(
 ):
     """Get detailed usage for a specific user."""
     try:
-        result = await enterprise_billing.get_user_usage_details(
+        result = await enterprise_billing.get_user_hierarchical_usage(
             account_id=account_id,
             days=days,
             page=page,

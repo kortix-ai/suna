@@ -1695,6 +1695,15 @@ export interface UsageLogsResponse {
   subscription_limit?: number;
   cumulative_cost?: number;
   tool_usage_daily?: Record<string, DailyToolUsage>;
+  // Hierarchical enterprise usage fields
+  hierarchical_usage?: Record<string, any>;
+  enterprise_info?: {
+    monthly_limit: number;
+    current_usage: number;
+    remaining: number;
+  };
+  total_cost_period?: number;
+  is_hierarchical?: boolean;
 }
 
 export interface BillingStatusResponse {

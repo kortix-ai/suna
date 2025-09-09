@@ -428,50 +428,8 @@ export const billingApi = {
   },
 
   async getUsageLogs(page: number = 0, itemsPerPage: number = 1000): Promise<UsageLogsResponse | null> {
-    // Try enterprise billing first - if enterprise mode is enabled, this will work
-    try {
-      const enterpriseResult = await backendApi.get(
-        `/enterprise-billing/usage-logs?page=${page}&items_per_page=${itemsPerPage}`,
-        {
-          errorContext: { operation: 'load enterprise usage logs', resource: 'usage history' },
-          showErrors: false // Don't show errors for this attempt
-        }
-      );
-
-      // If enterprise endpoint succeeds, transform the response
-      if (enterpriseResult.success && enterpriseResult.data) {
-        const transformedLogs = (enterpriseResult.data.usage_logs || []).map((log: any) => ({
-          message_id: log.message_id || log.id || 'unknown',
-          thread_id: log.thread_id || 'unknown',
-          created_at: log.created_at,
-          content: {
-            usage: {
-              prompt_tokens: Math.floor((log.tokens_used || 0) * 0.4), // Estimate 40% prompt tokens
-              completion_tokens: Math.floor((log.tokens_used || 0) * 0.6), // Estimate 60% completion tokens
-            },
-            model: log.model_name || 'Unknown'
-          },
-          total_tokens: log.tokens_used || 0,
-          estimated_cost: log.cost || 0,
-          project_id: 'unknown', // Enterprise logs don't have project info
-          credit_used: log.cost || 0,
-          payment_method: 'credits' as const,
-          was_over_limit: false
-        }));
-
-        return {
-          logs: transformedLogs,
-          has_more: (enterpriseResult.data.page + 1) * enterpriseResult.data.items_per_page < enterpriseResult.data.total,
-          cumulative_cost: enterpriseResult.data.total_cost || 0,
-          tool_usage_daily: enterpriseResult.data.tool_usage_daily || {}
-        };
-      }
-    } catch (error) {
-      // Enterprise endpoint failed, try regular billing
-      console.debug('Enterprise billing endpoint not available, falling back to regular billing');
-    }
-
-    // Fall back to regular billing endpoint
+    // The backend automatically routes /billing/usage-logs to the correct implementation
+    // Enterprise mode returns hierarchical data, regular mode returns flat data
     const result = await backendApi.get(
       `/billing/usage-logs?page=${page}&items_per_page=${itemsPerPage}`,
       {
@@ -479,6 +437,45 @@ export const billingApi = {
       }
     );
 
+    // Check if this is enterprise hierarchical response
+    if (result.success && result.data?.is_hierarchical) {
+      // Return hierarchical enterprise data as-is
+      return result.data;
+    }
+
+    // Check if this is enterprise flat response (legacy, should not happen now)
+    if (result.success && result.data?.usage_logs) {
+      // Transform enterprise response to match expected format
+      const transformedLogs = (result.data.usage_logs || []).map((log: any) => ({
+        message_id: log.message_id || log.id || 'unknown',
+        thread_id: log.thread_id || 'unknown',
+        created_at: log.created_at,
+        content: {
+          usage: {
+            prompt_tokens: Math.floor((log.tokens_used || 0) * 0.4), // Estimate 40% prompt tokens
+            completion_tokens: Math.floor((log.tokens_used || 0) * 0.6), // Estimate 60% completion tokens
+          },
+          model: log.model_name || 'Unknown'
+        },
+        total_tokens: log.tokens_used || 0,
+        estimated_cost: log.cost || 0,
+        project_id: 'unknown', // Enterprise logs don't have project info
+        credit_used: log.cost || 0,
+        payment_method: 'credits' as const,
+        was_over_limit: false
+      }));
+
+      return {
+        logs: transformedLogs,
+        has_more: (result.data.page + 1) * result.data.items_per_page < result.data.total,
+        cumulative_cost: result.data.total_cost || 0,
+        tool_usage_daily: result.data.tool_usage_daily || {},
+        enterprise_info: result.data.enterprise_info,
+        is_hierarchical: false
+      };
+    }
+
+    // Regular billing response (Stripe) - return as-is
     return result.data || null;
   },
 };

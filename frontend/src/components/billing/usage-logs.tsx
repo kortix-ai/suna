@@ -57,9 +57,13 @@ export default function UsageLogs({ accountId }: Props) {
   // Use React Query hook for the current page
   const { data: currentPageData, isLoading, error, refetch } = useUsageLogs(page, ITEMS_PER_PAGE);
 
-  // Update accumulated logs when new data arrives
+  // Check if we have hierarchical data
+  const isHierarchical = currentPageData?.is_hierarchical || false;
+  const hierarchicalData = currentPageData?.hierarchical_usage || {};
+
+  // Update accumulated logs when new data arrives (for non-hierarchical mode)
   useEffect(() => {
-    if (currentPageData) {
+    if (currentPageData && !isHierarchical) {
       if (page === 0) {
         // First page - replace all logs
         setAllLogs(currentPageData.logs || []);
@@ -69,7 +73,7 @@ export default function UsageLogs({ accountId }: Props) {
       }
       setHasMore(currentPageData.has_more || false);
     }
-  }, [currentPageData, page]);
+  }, [currentPageData, page, isHierarchical]);
 
   const loadMore = () => {
     const nextPage = page + 1;
@@ -112,6 +116,164 @@ export default function UsageLogs({ accountId }: Props) {
     // Navigate to the thread using the correct project_id
     const threadUrl = `/projects/${projectId}/thread/${threadId}`;
     window.open(threadUrl, '_blank');
+  };
+
+  // Render hierarchical usage for enterprise mode
+  const renderHierarchicalUsage = () => {
+    const dates = Object.keys(hierarchicalData).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+    
+    if (dates.length === 0) {
+      return (
+        <div className="p-8 text-center text-muted-foreground">
+          No usage data found for the selected period.
+        </div>
+      );
+    }
+
+    const formatDateLabel = (dateString: string) => {
+      return new Date(dateString).toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+    };
+
+    const formatTime = (dateString: string) => {
+      return new Date(dateString).toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
+    };
+
+    return (
+      <div className="space-y-4">
+        <Accordion type="multiple" defaultValue={[dates[0]]}>
+          {dates.map((date) => {
+            const dayData = hierarchicalData[date];
+            const projects = Object.values(dayData.projects || {}) as any[];
+            
+            return (
+              <AccordionItem key={date} value={date} className="border rounded-lg">
+                <AccordionTrigger className="px-4 py-3 hover:no-underline">
+                  <div className="flex justify-between items-center w-full pr-4">
+                    <div className="flex flex-col items-start">
+                      <span className="text-lg font-semibold">
+                        {formatDateLabel(date)}
+                      </span>
+                      <span className="text-sm text-muted-foreground">
+                        {projects.length} chat{projects.length !== 1 ? 's' : ''} • {((dayData.total_cost || 0) * 1000).toFixed(0)} credits
+                      </span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-lg font-semibold">
+                        {((dayData.total_cost || 0) * 1000).toFixed(0)} credits
+                      </span>
+                    </div>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="px-4 pb-4">
+                  <div className="space-y-3">
+                    <Accordion type="multiple">
+                      {projects.map((project) => (
+                        <AccordionItem 
+                          key={`${project.thread_id}`} 
+                          value={`${project.thread_id}`}
+                          className="border rounded-md"
+                        >
+                          <AccordionTrigger className="px-3 py-2 hover:no-underline">
+                            <div className="flex justify-between items-center w-full pr-4">
+                              <div className="flex flex-col items-start">
+                                <span className="font-medium text-left">
+                                  {project.thread_title || 'Untitled Chat'}
+                                </span>
+                                <span className="text-xs text-muted-foreground text-left">
+                                  {project.project_title || 'Untitled Project'} • {project.usage_details?.length || 0} request{(project.usage_details?.length || 0) !== 1 ? 's' : ''}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <div className="text-right">
+                                  <div className="text-sm font-medium">
+                                    {((project.thread_cost || 0) * 1000).toFixed(0)} credits
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {project.thread_tokens?.toLocaleString() || 0} tokens
+                                  </div>
+                                </div>
+                                {project.thread_id && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleThreadClick(project.thread_id, project.project_id || 'default');
+                                    }}
+                                    className="h-8 w-8 p-0"
+                                  >
+                                    <ExternalLink className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          </AccordionTrigger>
+                          <AccordionContent className="px-3 pb-3">
+                            <div className="mt-2">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead className="w-[100px]">Time</TableHead>
+                                    <TableHead>Model</TableHead>
+                                    <TableHead className="text-right">Prompt</TableHead>
+                                    <TableHead className="text-right">Completion</TableHead>
+                                    <TableHead className="text-right">Tool</TableHead>
+                                    <TableHead className="text-right">Total</TableHead>
+                                    <TableHead className="text-right">Credits</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {(project.usage_details || []).map((detail: any, index: number) => (
+                                    <TableRow key={detail.id || index}>
+                                      <TableCell className="font-mono text-xs">
+                                        {formatTime(detail.created_at)}
+                                      </TableCell>
+                                      <TableCell>
+                                        <Badge variant="secondary" className="text-xs">
+                                          {(detail.model_name || 'Unknown').replace(/^(openrouter\/|anthropic\/|openai\/)/, '')}
+                                        </Badge>
+                                      </TableCell>
+                                      <TableCell className="text-right font-mono text-xs">
+                                        {(detail.prompt_tokens || 0).toLocaleString()}
+                                      </TableCell>
+                                      <TableCell className="text-right font-mono text-xs">
+                                        {(detail.completion_tokens || 0).toLocaleString()}
+                                      </TableCell>
+                                      <TableCell className="text-right font-mono text-xs">
+                                        {(detail.tool_tokens || 0).toLocaleString()}
+                                      </TableCell>
+                                      <TableCell className="text-right font-mono text-xs">
+                                        {(detail.total_tokens || 0).toLocaleString()}
+                                      </TableCell>
+                                      <TableCell className="text-right font-mono text-xs">
+                                        {((detail.cost || 0) * 1000).toFixed(0)} credits
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          </AccordionContent>
+                        </AccordionItem>
+                      ))}
+                    </Accordion>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            );
+          })}
+        </Accordion>
+      </div>
+    );
   };
 
   // Group usage logs by date
@@ -216,6 +378,33 @@ export default function UsageLogs({ accountId }: Props) {
     );
   }
 
+  // For hierarchical display, render directly
+  if (isHierarchical) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Daily Usage Logs</CardTitle>
+            <CardDescription>
+              <div className='flex justify-between items-center'>
+                Your usage organized by day and chat, showing credits and token breakdowns for each request.{" "}
+                <Button variant='outline' asChild className='text-sm ml-4'>
+                  <Link href="/model-pricing">
+                    View Model Pricing <OpenInNewWindowIcon className='w-4 h-4' />
+                  </Link>
+                </Button>
+              </div>
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {renderHierarchicalUsage()}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Regular (non-hierarchical) display
   const dailyUsage = groupLogsByDate(allLogs, currentPageData?.tool_usage_daily);
   const totalUsage = allLogs.reduce(
     (sum, log) =>
