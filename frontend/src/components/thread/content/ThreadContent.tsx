@@ -932,8 +932,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                               'connecting') &&
                                                                           !detectedTag;
 
-                                                                        // Show minimal processing indicator when agent is active but no streaming text
-                                                                        if (!streamingTextContent && (streamHookStatus === 'streaming' || streamHookStatus === 'connecting')) {
+                                                                        // Show minimal processing indicator when agent is active but no streaming text after preprocessing
+                                                                        if (!textToRender && (streamHookStatus === 'streaming' || streamHookStatus === 'connecting')) {
                                                                             return (
                                                                                 <div className="flex items-center gap-1 py-1 ">
                                                                                     <div className="h-1 w-1 rounded-full bg-primary/40 animate-pulse duration-1000" />
