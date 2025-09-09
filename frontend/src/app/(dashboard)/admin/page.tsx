@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -45,8 +45,18 @@ export default function AdminPage() {
     enabled: !!adminCheck?.isAdmin
   });
   
+  // Get global defaults
+  const { data: globalDefaults, isLoading: globalDefaultsLoading } = useQuery({
+    queryKey: ['global-defaults'],
+    queryFn: async () => {
+      const response = await apiClient.request('/enterprise/global-defaults');
+      return response.data;
+    },
+    enabled: !!adminCheck?.isAdmin
+  });
+  
   // Loading states
-  if (adminLoading || statusLoading || usersLoading) {
+  if (adminLoading || statusLoading || usersLoading || globalDefaultsLoading) {
     return (
       <div className="container mx-auto py-6">
         <div className="flex items-center justify-center min-h-[400px]">
@@ -84,6 +94,9 @@ export default function AdminPage() {
         </div>
         {adminCheck?.isOmniAdmin && <LoadCreditsButton />}
       </div>
+      
+      {/* Global Defaults */}
+      <GlobalDefaultsCard globalDefaults={globalDefaults} />
       
       {/* Enterprise Status */}
       <div className="grid gap-4 md:grid-cols-4">
@@ -482,5 +495,123 @@ function SetLimitButton({ user }: { user: any }) {
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function GlobalDefaultsCard({ globalDefaults }: { globalDefaults: any }) {
+  const [editOpen, setEditOpen] = useState(false);
+  const [newLimit, setNewLimit] = useState(globalDefaults?.default_monthly_limit || 1000);
+  const queryClient = useQueryClient();
+  
+  const updateMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const response = await apiClient.request('/enterprise/global-defaults', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['global-defaults'] });
+      queryClient.invalidateQueries({ queryKey: ['enterprise-status'] });
+      queryClient.invalidateQueries({ queryKey: ['enterprise-users'] });
+      toast.success(`Global default limit updated to $${newLimit}`);
+      setEditOpen(false);
+    },
+    onError: (error: any) => {
+      toast.error(error.message || 'Failed to update global default');
+    }
+  });
+
+  // Update local state when data changes
+  React.useEffect(() => {
+    if (globalDefaults?.default_monthly_limit) {
+      setNewLimit(globalDefaults.default_monthly_limit);
+    }
+  }, [globalDefaults]);
+
+  return (
+    <Card className="mb-6">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-lg">Global Default Settings</CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Default monthly limit applied to all new users
+            </p>
+          </div>
+          <Dialog open={editOpen} onOpenChange={setEditOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" size="sm">
+                <Settings className="h-4 w-4 mr-2" />
+                Edit Default
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Set Global Default Monthly Limit</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="globalLimit">Default Monthly Limit ($)</Label>
+                  <Input
+                    id="globalLimit"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={newLimit}
+                    onChange={(e) => setNewLimit(parseFloat(e.target.value) || 0)}
+                    placeholder="1000.00"
+                    required
+                  />
+                  <p className="text-sm text-muted-foreground mt-1">
+                    This limit will be applied to all new users by default
+                  </p>
+                </div>
+                <Button 
+                  onClick={() => updateMutation.mutate({ monthly_limit: newLimit })}
+                  disabled={newLimit <= 0 || updateMutation.isPending}
+                  className="w-full"
+                >
+                  {updateMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      Updating...
+                    </>
+                  ) : (
+                    `Set Default to $${newLimit.toFixed(2)}`
+                  )}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-4 md:grid-cols-3">
+          <div>
+            <div className="text-2xl font-bold">
+              ${globalDefaults?.default_monthly_limit?.toFixed(2) || '1000.00'}
+            </div>
+            <p className="text-xs text-muted-foreground">Current Default Limit</p>
+          </div>
+          <div>
+            <div className="text-sm">
+              {globalDefaults?.setting_details?.updated_at 
+                ? new Date(globalDefaults.setting_details.updated_at).toLocaleDateString()
+                : 'Not set'
+              }
+            </div>
+            <p className="text-xs text-muted-foreground">Last Updated</p>
+          </div>
+          <div>
+            <div className="text-sm">
+              {globalDefaults?.setting_details?.description || 'Default monthly spending limit for new enterprise users'}
+            </div>
+            <p className="text-xs text-muted-foreground">Description</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
