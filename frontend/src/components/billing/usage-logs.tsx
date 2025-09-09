@@ -312,13 +312,13 @@ export default function UsageLogs({ accountId }: Props) {
                                   )}
                                 </TableCell>
                                 <TableCell className="text-right font-mono text-xs">
-                                  {log.content.usage.prompt_tokens.toLocaleString()}
+                                  {log.tool_name ? '—' : log.content.usage.prompt_tokens.toLocaleString()}
                                 </TableCell>
                                 <TableCell className="text-right font-mono text-xs">
-                                  {log.content.usage.completion_tokens.toLocaleString()}
+                                  {log.tool_name ? '—' : log.content.usage.completion_tokens.toLocaleString()}
                                 </TableCell>
                                 <TableCell className="text-right font-mono text-xs">
-                                  {log.total_tokens.toLocaleString()}
+                                  {log.tool_name ? '—' : log.total_tokens.toLocaleString()}
                                 </TableCell>
                                 <TableCell className="text-right font-mono text-xs">
                                   {formatCost(log.estimated_cost)}
