@@ -52,7 +52,6 @@ export function renderAttachments(attachments: string[], fileViewerHandler?: (fi
 
 // Render Markdown content while preserving XML tags that should be displayed as tool calls
 function preprocessTextOnlyTools(content: string): string {
-    console.log('BEFORE preprocessing:', content); // See the original content
     
     // Handle new function calls format for text-only tools - extract text parameter content
     // Complete XML format
@@ -69,8 +68,6 @@ function preprocessTextOnlyTools(content: string): string {
     content = content.replace(/<ask[^>]*>([\s\S]*?)<\/ask>/gi, '$1');
     content = content.replace(/<complete[^>]*>([\s\S]*?)<\/complete>/gi, '$1');  
     content = content.replace(/<present_presentation[^>]*>([\s\S]*?)<\/present_presentation>/gi, '$1');
-    
-    console.log('AFTER preprocessing:', content); // See if it changed
     return content;
 }
 
