@@ -77,6 +77,10 @@ export async function middleware(request: NextRequest) {
         .single();
 
       if (!accounts) {
+        // Don't redirect if already on activate-trial page
+        if (pathname === '/activate-trial') {
+          return supabaseResponse;
+        }
         const url = request.nextUrl.clone();
         url.pathname = '/activate-trial';
         return NextResponse.redirect(url);
@@ -99,10 +103,18 @@ export async function middleware(request: NextRequest) {
 
       if (!creditAccount) {
         if (hasUsedTrial) {
+          // Don't redirect if already on subscription page
+          if (pathname === '/subscription') {
+            return supabaseResponse;
+          }
           const url = request.nextUrl.clone();
           url.pathname = '/subscription';
           return NextResponse.redirect(url);
         } else {
+          // Don't redirect if already on activate-trial page
+          if (pathname === '/activate-trial') {
+            return supabaseResponse;
+          }
           const url = request.nextUrl.clone();
           url.pathname = '/activate-trial';
           return NextResponse.redirect(url);
@@ -119,15 +131,27 @@ export async function middleware(request: NextRequest) {
 
       if (!hasTier && !hasActiveTrial && !trialConverted) {
         if (hasUsedTrial || trialExpired || creditAccount.trial_status === 'cancelled') {
+          // Don't redirect if already on subscription page
+          if (pathname === '/subscription') {
+            return supabaseResponse;
+          }
           const url = request.nextUrl.clone();
           url.pathname = '/subscription';
           return NextResponse.redirect(url);
         } else {
+          // Don't redirect if already on activate-trial page
+          if (pathname === '/activate-trial') {
+            return supabaseResponse;
+          }
           const url = request.nextUrl.clone();
           url.pathname = '/activate-trial';
           return NextResponse.redirect(url);
         }
       } else if ((trialExpired || trialConverted) && !hasTier) {
+        // Don't redirect if already on subscription page
+        if (pathname === '/subscription') {
+          return supabaseResponse;
+        }
         const url = request.nextUrl.clone();
         url.pathname = '/subscription';
         return NextResponse.redirect(url);

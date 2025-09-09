@@ -1,17 +1,20 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Sparkles, CreditCard, Zap, Shield, ArrowRight, CheckCircle, Loader2 } from 'lucide-react';
+import { Sparkles, CreditCard, Zap, Shield, ArrowRight, CheckCircle, Loader2, Clock, XCircle, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
-import { Skeleton } from '@/components/ui/skeleton';
-import { useSubscription } from '@/hooks/react-query/use-billing-v2';
+import { useState, useEffect } from 'react';
 import { useTrialStatus, useStartTrial } from '@/hooks/react-query/billing/use-trial-status';
+import { useSubscription } from '@/hooks/react-query/use-billing-v2';
+import { Skeleton } from '@/components/ui/skeleton';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import Link from 'next/link';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { createClient } from '@/lib/supabase/client';
+import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 
 export default function ActivateTrialPage() {
   const router = useRouter();
@@ -54,6 +57,13 @@ export default function ActivateTrialPage() {
     }
   };
 
+  const handleLogout = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    clearUserLocalStorage();
+    router.push('/auth');
+  };
+
   const isLoading = isLoadingSubscription || isLoadingTrial;
 
   if (isLoading) {
@@ -75,6 +85,17 @@ export default function ActivateTrialPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="absolute top-4 right-4">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleLogout}
+          className="gap-2"
+        >
+          <LogOut className="h-4 w-4" />
+          Log Out
+        </Button>
+      </div>
       <Card className="w-full max-w-2xl border-2 shadow-none bg-transparent border-none">
         <CardHeader className="text-center space-y-4">
           <div>
