@@ -138,7 +138,7 @@ class SimplifiedEnterpriseBillingService:
                 'p_model_name': model_name
             }).execute()
             
-            if result.data and len(result.data) > 0:
+            if result and hasattr(result, 'data') and result.data and len(result.data) > 0:
                 response = result.data[0]
                 if response['success']:
                     logger.debug(
@@ -178,7 +178,7 @@ class SimplifiedEnterpriseBillingService:
                 'p_performed_by': performed_by
             }).execute()
             
-            if result.data and len(result.data) > 0:
+            if result and hasattr(result, 'data') and result.data and len(result.data) > 0:
                 response = result.data[0]
                 logger.info(
                     f"Loaded ${amount:.2f} enterprise credits",
@@ -213,7 +213,7 @@ class SimplifiedEnterpriseBillingService:
                 .maybe_single()\
                 .execute()
             
-            if result.data:
+            if result and hasattr(result, 'data') and result.data:
                 return result.data
             else:
                 # Return default if not set
@@ -251,7 +251,7 @@ class SimplifiedEnterpriseBillingService:
                 }, on_conflict='account_id')\
                 .execute()
             
-            return result.data[0] if result.data else None
+            return result.data[0] if (result and hasattr(result, 'data') and result.data) else None
             
         except Exception as e:
             logger.error(f"Error setting user limit: {e}")
@@ -277,9 +277,9 @@ class SimplifiedEnterpriseBillingService:
             # Get enterprise balance
             enterprise = await self.get_enterprise_balance()
             
-            # Get all user limits with account info
+            # Get all user limits with account info (simplified - avoid join issues)
             limits_result = await client.table('enterprise_user_limits')\
-                .select('*, basejump.accounts!inner(id, name, personal_account)')\
+                .select('*')\
                 .eq('is_active', True)\
                 .order('current_month_usage', desc=True)\
                 .range(page * items_per_page, (page + 1) * items_per_page - 1)\
@@ -352,14 +352,15 @@ class SimplifiedEnterpriseBillingService:
                 .execute()
             
             # Calculate total cost for the period
-            total_cost = sum(u['cost'] for u in usage_result.data) if usage_result.data else 0
+            usage_data = usage_result.data if (usage_result and hasattr(usage_result, 'data') and usage_result.data) else []
+            total_cost = sum(u['cost'] for u in usage_data)
             
             return {
                 'account_id': account_id,
                 'monthly_limit': user_limit['monthly_limit'] if user_limit else 1000.00,
                 'current_month_usage': user_limit['current_month_usage'] if user_limit else 0,
                 'remaining_monthly': (user_limit['monthly_limit'] - user_limit['current_month_usage']) if user_limit else 1000.00,
-                'usage_logs': usage_result.data if usage_result.data else [],
+                'usage_logs': usage_data,
                 'total_cost_period': total_cost,
                 'total_logs': count_result.count if count_result else 0,
                 'page': page,
