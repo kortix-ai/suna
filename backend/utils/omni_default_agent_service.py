@@ -233,6 +233,27 @@ class OmniDefaultAgentService:
             # Create initial agent version (updated for new schema)
             version_id = str(uuid.uuid4())
             
+            # Restructure config to match database constraint requirements
+            structured_config = {
+                "name": config.get("name", "Omni"),
+                "description": config.get("description", ""),
+                "system_prompt": config.get("system_prompt", ""),
+                "model": config.get("model", "openrouter/anthropic/sonnet-4"),
+                "tools": {
+                    "agentpress": config.get("agentpress_tools", {}),
+                    "mcp": config.get("configured_mcps", []),
+                    "custom_mcp": config.get("custom_mcps", [])
+                },
+                "metadata": {
+                    "avatar": config.get("avatar", "🌟"),
+                    "avatar_color": config.get("avatar_color", "#8B5CF6"),
+                    "is_omni_default": True,
+                    "centrally_managed": True,
+                    "installation_date": datetime.now().isoformat(),
+                    "management_version": "1.0.0"
+                }
+            }
+            
             logger.debug(f"Creating agent version")
             try:
                 client = await self._db.client
@@ -241,7 +262,7 @@ class OmniDefaultAgentService:
                     'agent_id': agent_id,
                     'version_number': 1,
                     'version_name': "v1",
-                    'config': config,
+                    'config': structured_config,
                     'is_active': True,
                     'created_by': account_id
                 }).execute()
