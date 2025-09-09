@@ -371,14 +371,70 @@ export const agentApi = {
 
 export const billingApi = {
   async getSubscription(): Promise<SubscriptionStatus | null> {
-    const result = await backendApi.get(
-      '/billing/subscription',
-      {
-        errorContext: { operation: 'load subscription', resource: 'billing information' },
-      }
-    );
+    try {
+      // First try to get billing status to check if we're in enterprise mode
+      const statusResult = await backendApi.get(
+        '/billing/check-status',
+        {
+          errorContext: { operation: 'check billing status', resource: 'billing status' },
+        }
+      );
 
-    return result.data || null;
+      const isEnterpriseMode = statusResult.data?.subscription?.enterprise_mode_enabled || 
+                              statusResult.data?.subscription?.billing_type === 'enterprise';
+
+      if (isEnterpriseMode && statusResult.data?.enterprise_info) {
+        // Transform enterprise status response to subscription format
+        return {
+          status: 'active',
+          plan_name: 'Enterprise',
+          price_id: 'enterprise',
+          current_period_end: null,
+          cancel_at_period_end: false,
+          trial_end: null,
+          minutes_limit: 999999,
+          cost_limit: statusResult.data.enterprise_info.monthly_limit,
+          current_usage: statusResult.data.enterprise_info.current_usage,
+          has_schedule: false,
+          subscription_id: 'enterprise',
+          subscription: {
+            id: 'enterprise',
+            status: 'active',
+            cancel_at_period_end: false,
+            cancel_at: undefined,
+            current_period_end: 0 // Enterprise doesn't have period ends, use 0
+          },
+          credit_balance: statusResult.data.credit_balance || 0,
+          can_purchase_credits: false,
+          enterprise_info: {
+            is_enterprise: true,
+            monthly_limit: statusResult.data.enterprise_info.monthly_limit,
+            remaining_monthly: statusResult.data.enterprise_info.remaining,
+            enterprise_balance: statusResult.data.credit_balance || 0
+          }
+        };
+      } else {
+        // Use regular subscription endpoint for non-enterprise mode
+        const result = await backendApi.get(
+          '/billing/subscription',
+          {
+            errorContext: { operation: 'load subscription', resource: 'billing information' },
+          }
+        );
+
+        return result.data || null;
+      }
+    } catch (error) {
+      // Fallback to regular subscription endpoint if enterprise check fails
+      const result = await backendApi.get(
+        '/billing/subscription',
+        {
+          errorContext: { operation: 'load subscription', resource: 'billing information' },
+        }
+      );
+
+      return result.data || null;
+    }
   },
 
   async checkStatus(): Promise<BillingStatusResponse | null> {
