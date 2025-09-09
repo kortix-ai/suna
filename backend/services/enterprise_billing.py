@@ -413,6 +413,9 @@ class SimplifiedEnterpriseBillingService:
             usage_data = usage_result.data if (usage_result and hasattr(usage_result, 'data') and usage_result.data) else []
             total_cost = sum(u['cost'] for u in usage_data)
             
+            # Get tool usage data aggregated by day for the same period
+            tool_usage_daily = await self._get_tool_usage_by_date(account_id, days)
+            
             return {
                 'account_id': account_id,
                 'monthly_limit': user_limit['monthly_limit'] if user_limit else 1000.00,
@@ -423,7 +426,8 @@ class SimplifiedEnterpriseBillingService:
                 'total_logs': count_result.count if count_result else 0,
                 'page': page,
                 'items_per_page': items_per_page,
-                'days': days
+                'days': days,
+                'tool_usage_daily': tool_usage_daily
             }
             
         except Exception as e:
@@ -450,6 +454,89 @@ class SimplifiedEnterpriseBillingService:
         except Exception as e:
             logger.error(f"Error resetting monthly usage: {e}")
             return False
+    
+    async def _get_tool_usage_by_date(
+        self,
+        account_id: str,
+        days: int = 30
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Get tool usage aggregated by day in the same format as Stripe billing.
+        Returns data in format: {date: {total_calls, total_cost, tools: {tool_name: {calls, cost}}}}
+        """
+        if not config.ENTERPRISE_MODE:
+            return {}
+        
+        try:
+            db = DBConnection()
+            client = await db.client
+            
+            # Calculate date range
+            since_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+            
+            # Get tool usage data from enterprise_tool_usage_analytics view
+            tool_result = await client.from_('enterprise_tool_usage_analytics').select('*')\
+                .eq('account_id', account_id)\
+                .gte('created_at', since_date)\
+                .order('created_at', desc=True)\
+                .execute()
+            
+            tool_usage_daily = {}
+            
+            if tool_result and hasattr(tool_result, 'data') and tool_result.data:
+                for tool_usage in tool_result.data:
+                    try:
+                        # Extract date from created_at or usage_date
+                        usage_date = tool_usage.get('usage_date')
+                        if not usage_date:
+                            created_at = tool_usage.get('created_at')
+                            if created_at:
+                                # Extract date part from datetime string
+                                usage_date = created_at.split('T')[0]
+                        
+                        if not usage_date:
+                            continue
+                        
+                        # Convert to date string for consistency
+                        if isinstance(usage_date, str) and 'T' in usage_date:
+                            usage_date = usage_date.split('T')[0]
+                        else:
+                            usage_date = str(usage_date).split('T')[0]
+                        
+                        # Initialize date entry if not exists
+                        if usage_date not in tool_usage_daily:
+                            tool_usage_daily[usage_date] = {
+                                'total_calls': 0,
+                                'total_cost': 0.0,
+                                'tools': {}
+                            }
+                        
+                        tool_name = tool_usage.get('tool_name', 'unknown')
+                        cost = float(tool_usage.get('tool_cost', 0))
+                        
+                        # Update daily totals
+                        tool_usage_daily[usage_date]['total_calls'] += 1
+                        tool_usage_daily[usage_date]['total_cost'] += cost
+                        
+                        # Update per-tool totals
+                        if tool_name not in tool_usage_daily[usage_date]['tools']:
+                            tool_usage_daily[usage_date]['tools'][tool_name] = {
+                                'calls': 0,
+                                'cost': 0.0
+                            }
+                        
+                        tool_usage_daily[usage_date]['tools'][tool_name]['calls'] += 1
+                        tool_usage_daily[usage_date]['tools'][tool_name]['cost'] += cost
+                        
+                    except Exception as parse_error:
+                        logger.warning(f"Error parsing tool usage entry: {parse_error}")
+                        continue
+            
+            return tool_usage_daily
+            
+        except Exception as e:
+            logger.error(f"Error getting tool usage by date for account {account_id}: {e}")
+            return {}
     
     async def can_user_afford_tool(
         self,

@@ -472,7 +472,8 @@ export const billingApi = {
         return {
           logs: transformedLogs,
           has_more: (result.data.page + 1) * result.data.items_per_page < result.data.total,
-          cumulative_cost: result.data.total_cost || 0
+          cumulative_cost: result.data.total_cost || 0,
+          tool_usage_daily: result.data.tool_usage_daily || {}
         };
       }
     } else {

@@ -153,6 +153,7 @@ async def get_usage_logs(
             "page": page,
             "items_per_page": items_per_page,
             "total_cost": usage_details.get('total_cost_period', 0),
+            "tool_usage_daily": usage_details.get('tool_usage_daily', {}),
             "enterprise_info": {
                 "monthly_limit": usage_details.get('monthly_limit', 1000.00),
                 "current_usage": usage_details.get('current_month_usage', 0),
