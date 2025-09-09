@@ -428,29 +428,19 @@ export const billingApi = {
   },
 
   async getUsageLogs(page: number = 0, itemsPerPage: number = 1000): Promise<UsageLogsResponse | null> {
-    // First check if we're in enterprise mode by getting billing status
-    const billingStatusResult = await backendApi.get(
-      '/billing/check-status',
-      {
-        errorContext: { operation: 'check billing status', resource: 'billing status' },
-      }
-    );
-
-    const isEnterpriseMode = billingStatusResult.data?.subscription?.enterprise_mode_enabled || 
-                            billingStatusResult.data?.subscription?.billing_type === 'enterprise';
-    
-    if (isEnterpriseMode) {
-      // Use enterprise billing endpoint
-      const result = await backendApi.get(
+    // Try enterprise billing first - if enterprise mode is enabled, this will work
+    try {
+      const enterpriseResult = await backendApi.get(
         `/enterprise-billing/usage-logs?page=${page}&items_per_page=${itemsPerPage}`,
         {
           errorContext: { operation: 'load enterprise usage logs', resource: 'usage history' },
+          showErrors: false // Don't show errors for this attempt
         }
       );
 
-      // Transform enterprise response to match expected format
-      if (result.data) {
-        const transformedLogs = (result.data.usage_logs || []).map((log: any) => ({
+      // If enterprise endpoint succeeds, transform the response
+      if (enterpriseResult.success && enterpriseResult.data) {
+        const transformedLogs = (enterpriseResult.data.usage_logs || []).map((log: any) => ({
           message_id: log.message_id || log.id || 'unknown',
           thread_id: log.thread_id || 'unknown',
           created_at: log.created_at,
@@ -471,24 +461,25 @@ export const billingApi = {
 
         return {
           logs: transformedLogs,
-          has_more: (result.data.page + 1) * result.data.items_per_page < result.data.total,
-          cumulative_cost: result.data.total_cost || 0,
-          tool_usage_daily: result.data.tool_usage_daily || {}
+          has_more: (enterpriseResult.data.page + 1) * enterpriseResult.data.items_per_page < enterpriseResult.data.total,
+          cumulative_cost: enterpriseResult.data.total_cost || 0,
+          tool_usage_daily: enterpriseResult.data.tool_usage_daily || {}
         };
       }
-    } else {
-      // Use regular billing endpoint
-      const result = await backendApi.get(
-        `/billing/usage-logs?page=${page}&items_per_page=${itemsPerPage}`,
-        {
-          errorContext: { operation: 'load usage logs', resource: 'usage history' },
-        }
-      );
-
-      return result.data || null;
+    } catch (error) {
+      // Enterprise endpoint failed, try regular billing
+      console.debug('Enterprise billing endpoint not available, falling back to regular billing');
     }
 
-    return null;
+    // Fall back to regular billing endpoint
+    const result = await backendApi.get(
+      `/billing/usage-logs?page=${page}&items_per_page=${itemsPerPage}`,
+      {
+        errorContext: { operation: 'load usage logs', resource: 'usage history' },
+      }
+    );
+
+    return result.data || null;
   },
 };
 
