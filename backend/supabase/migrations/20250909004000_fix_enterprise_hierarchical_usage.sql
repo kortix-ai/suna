@@ -1,8 +1,11 @@
--- Enterprise Hierarchical Usage Data
--- Adds support for hierarchical usage display (Date → Project → Usage Details)
+-- Fix Enterprise Hierarchical Usage Function
+-- Removes reference to non-existent threads.title column
 BEGIN;
 
--- Function to get hierarchical usage data for enterprise users
+-- Drop the existing function first
+DROP FUNCTION IF EXISTS public.get_enterprise_hierarchical_usage(UUID, INTEGER, INTEGER, INTEGER);
+
+-- Recreate the function with the correct schema
 CREATE OR REPLACE FUNCTION public.get_enterprise_hierarchical_usage(
     p_account_id UUID,
     p_days INTEGER DEFAULT 30,
@@ -43,7 +46,7 @@ BEGIN
             eu.usage_type,
             eu.created_at,
             t.project_id,
-            t.title as thread_title,
+            NULL as thread_title, -- threads table doesn't have title column
             p.title as project_title
         FROM enterprise_usage eu
         LEFT JOIN threads t ON eu.thread_id = t.thread_id
