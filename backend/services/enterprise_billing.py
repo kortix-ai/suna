@@ -288,18 +288,46 @@ class SimplifiedEnterpriseBillingService:
             # Get account info for each user (separate query to avoid cross-schema join issues)
             users_data = limits_result.data if (limits_result and hasattr(limits_result, 'data') and limits_result.data) else []
             
-            # Enrich user data with account names
+            # Enrich user data with account names and user emails
             for user in users_data:
                 try:
+                    # Get account info with user email from auth.users
                     account_result = await client.schema("basejump")\
                         .table("accounts")\
-                        .select('id, name, personal_account')\
+                        .select('id, name, personal_account, primary_owner_user_id')\
                         .eq('id', user['account_id'])\
                         .maybe_single()\
                         .execute()
                     
                     if account_result and hasattr(account_result, 'data') and account_result.data:
-                        user['account_info'] = account_result.data
+                        account_data = account_result.data
+                        
+                        # If account name is empty and it's a personal account, get email from auth.users
+                        display_name = account_data.get('name')
+                        if (not display_name or display_name.strip() == '') and account_data.get('personal_account'):
+                            try:
+                                user_result = await client.schema("auth")\
+                                    .table("users")\
+                                    .select('email')\
+                                    .eq('id', account_data['primary_owner_user_id'])\
+                                    .maybe_single()\
+                                    .execute()
+                                
+                                if user_result and hasattr(user_result, 'data') and user_result.data:
+                                    user_email = user_result.data.get('email', '')
+                                    if user_email:
+                                        display_name = user_email.split('@')[0]  # Use email prefix as name
+                            except Exception as e:
+                                logger.warning(f"Could not fetch user email for {account_data['primary_owner_user_id']}: {e}")
+                        
+                        # Use display_name if we have it, otherwise fallback to account ID
+                        final_name = display_name if display_name and display_name.strip() else f"Account {user['account_id'][:8]}..."
+                        
+                        user['account_info'] = {
+                            'id': account_data['id'],
+                            'name': final_name,
+                            'personal_account': account_data.get('personal_account', True)
+                        }
                     else:
                         # Fallback if account not found
                         user['account_info'] = {

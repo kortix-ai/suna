@@ -567,7 +567,7 @@ async def get_usage_logs(client, user_id: str, page: int = 0, items_per_page: in
         logger.debug(f"[USAGE_LOGS] user_id={user_id} - Fetching credit usage records")
         try:
             credit_usage_result = await client.table('credit_usage') \
-                .select('message_id, amount_dollars, created_at') \
+                .select('message_id, amount_dollars, created_at, description, thread_id') \
                 .eq('user_id', user_id) \
                 .gte('created_at', start_of_month.isoformat()) \
                 .execute()
@@ -577,19 +577,55 @@ async def get_usage_logs(client, user_id: str, page: int = 0, items_per_page: in
             logger.error(f"[USAGE_LOGS] user_id={user_id} - Error fetching credit usage: {str(credit_error)}")
             credit_usage_result = None
         
-        # Create a map of message_id to credit usage
+        # Create a map of message_id to credit usage and separate tool usage entries
         credit_usage_map = {}
+        tool_usage_entries = []
+        
         if credit_usage_result and credit_usage_result.data:
             for usage in credit_usage_result.data:
-                if usage.get('message_id'):
-                    try:
-                        credit_usage_map[usage['message_id']] = {
-                            'amount': float(usage['amount_dollars']),
-                            'created_at': usage['created_at']
-                        }
-                    except Exception as parse_error:
-                        logger.warning(f"[USAGE_LOGS] user_id={user_id} - Error parsing credit usage record: {str(parse_error)}")
-                        continue
+                try:
+                    description = usage.get('description', '')
+                    
+                    # Check if this is tool usage
+                    if description.startswith('Tool: '):
+                        # Extract tool name from description
+                        tool_name = description.replace('Tool: ', '')
+                        
+                        # Find the corresponding thread to get project_id
+                        thread_project_map = {}
+                        for thread in all_threads:
+                            thread_project_map[thread['thread_id']] = thread.get('project_id', 'unknown')
+                        
+                        tool_usage_entries.append({
+                            'message_id': usage.get('message_id', ''),
+                            'thread_id': usage.get('thread_id', ''),
+                            'project_id': thread_project_map.get(usage.get('thread_id', ''), 'unknown'),
+                            'created_at': usage['created_at'],
+                            'tool_name': tool_name,
+                            'estimated_cost': float(usage['amount_dollars']),
+                            'total_tokens': 0,  # Tools don't use tokens
+                            'content': {
+                                'model': 'tool',  # Distinguish from LLM models
+                                'usage': {
+                                    'prompt_tokens': 0,
+                                    'completion_tokens': 0
+                                }
+                            },
+                            'payment_method': 'credits',
+                            'credit_used': float(usage['amount_dollars']),
+                            'was_over_limit': True  # Tool usage always uses credits
+                        })
+                    else:
+                        # Regular LLM credit usage
+                        if usage.get('message_id'):
+                            credit_usage_map[usage['message_id']] = {
+                                'amount': float(usage['amount_dollars']),
+                                'created_at': usage['created_at']
+                            }
+                            
+                except Exception as parse_error:
+                    logger.warning(f"[USAGE_LOGS] user_id={user_id} - Error parsing credit usage record: {str(parse_error)}")
+                    continue
     
         # Track cumulative usage to determine when credits started being used
         cumulative_cost = 0.0
@@ -692,13 +728,27 @@ async def get_usage_logs(client, user_id: str, page: int = 0, items_per_page: in
                 logger.error(f"[USAGE_LOGS] user_id={user_id} - Error processing usage log entry for message {message.get('message_id', 'unknown')}: {str(e)}")
                 continue
         
-        logger.debug(f"[USAGE_LOGS] user_id={user_id} - Successfully processed {len(processed_logs)} messages")
+        logger.debug(f"[USAGE_LOGS] user_id={user_id} - Successfully processed {len(processed_logs)} LLM usage messages")
         
-        # Check if there are more results
-        has_more = len(processed_logs) == items_per_page
+        # Add tool usage entries to the logs
+        processed_logs.extend(tool_usage_entries)
+        logger.debug(f"[USAGE_LOGS] user_id={user_id} - Added {len(tool_usage_entries)} tool usage entries")
+        
+        # Sort all logs by created_at descending
+        processed_logs.sort(key=lambda x: x['created_at'], reverse=True)
+        
+        # Apply pagination to the combined logs
+        start_idx = page * items_per_page
+        end_idx = start_idx + items_per_page
+        paginated_logs = processed_logs[start_idx:end_idx]
+        
+        # Check if there are more logs to fetch
+        has_more = len(processed_logs) > end_idx
+        
+        logger.debug(f"[USAGE_LOGS] user_id={user_id} - Returning {len(paginated_logs)} total entries (LLM + Tools) for page {page}")
         
         result = {
-            "logs": processed_logs,
+            "logs": paginated_logs,
             "has_more": bool(has_more),
             "subscription_limit": float(subscription_limit),
             "cumulative_cost": float(cumulative_cost)

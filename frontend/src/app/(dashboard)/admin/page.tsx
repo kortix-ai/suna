@@ -171,9 +171,9 @@ function UserRow({ user }: { user: any }) {
     <>
       <div className="grid grid-cols-5 gap-4 items-center py-2 hover:bg-muted/50 rounded-lg px-2">
         <div className="font-medium">
-          {user.accounts?.name || 'Unnamed Account'}
+          {user.account_info?.name || 'Unnamed Account'}
           <div className="text-xs text-muted-foreground">
-            {user.accounts?.personal_account ? 'Personal' : 'Team'}
+            {user.account_info?.personal_account ? 'Personal' : 'Team'}
           </div>
         </div>
         <div className="text-right">${user.monthly_limit?.toFixed(2)}</div>
@@ -209,7 +209,7 @@ function UserRow({ user }: { user: any }) {
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{user.accounts?.name || 'User'} - Usage Details</DialogTitle>
+            <DialogTitle>{user.account_info?.name || 'User'} - Usage Details</DialogTitle>
           </DialogHeader>
           <UserDetails accountId={user.account_id} />
         </DialogContent>
