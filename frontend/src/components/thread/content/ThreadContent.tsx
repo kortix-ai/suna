@@ -51,6 +51,29 @@ export function renderAttachments(attachments: string[], fileViewerHandler?: (fi
 }
 
 // Render Markdown content while preserving XML tags that should be displayed as tool calls
+function preprocessTextOnlyTools(content: string): string {
+    console.log('BEFORE preprocessing:', content); // See the original content
+    
+    // Handle new function calls format for text-only tools - extract text parameter content
+    // Complete XML format
+    content = content.replace(/<function_calls>\s*<invoke name="ask">\s*<parameter name="text">([\s\S]*?)<\/parameter>[\s\S]*?<\/invoke>\s*<\/function_calls>/gi, '$1');
+    content = content.replace(/<function_calls>\s*<invoke name="complete">\s*<parameter name="text">([\s\S]*?)<\/parameter>[\s\S]*?<\/invoke>\s*<\/function_calls>/gi, '$1');
+    content = content.replace(/<function_calls>\s*<invoke name="present_presentation">[\s\S]*?<parameter name="text">([\s\S]*?)<\/parameter>[\s\S]*?<\/invoke>\s*<\/function_calls>/gi, '$1');
+    
+    // Handle streaming/partial XML for message tools - extract text parameter content even if incomplete
+    content = content.replace(/<function_calls>\s*<invoke name="ask">\s*<parameter name="text">([\s\S]*?)$/gi, '$1');
+    content = content.replace(/<function_calls>\s*<invoke name="complete">\s*<parameter name="text">([\s\S]*?)$/gi, '$1');
+    content = content.replace(/<function_calls>\s*<invoke name="present_presentation">[\s\S]*?<parameter name="text">([\s\S]*?)$/gi, '$1');
+    
+    // Also handle old format for backward compatibility
+    content = content.replace(/<ask[^>]*>([\s\S]*?)<\/ask>/gi, '$1');
+    content = content.replace(/<complete[^>]*>([\s\S]*?)<\/complete>/gi, '$1');  
+    content = content.replace(/<present_presentation[^>]*>([\s\S]*?)<\/present_presentation>/gi, '$1');
+    
+    console.log('AFTER preprocessing:', content); // See if it changed
+    return content;
+}
+
 export function renderMarkdownContent(
     content: string,
     handleToolClick: (assistantMessageId: string | null, toolName: string) => void,
@@ -60,6 +83,9 @@ export function renderMarkdownContent(
     project?: Project,
     debugMode?: boolean
 ) {
+    // Preprocess content to convert text-only tools to natural text
+    content = preprocessTextOnlyTools(content);
+    
     // If in debug mode, just display raw content in a pre tag
     if (debugMode) {
         return (
@@ -877,11 +903,14 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                             );
                                                                         }
 
+                                                                        // Preprocess content first to remove text-only tool tags
+                                                                        const textToRender = preprocessTextOnlyTools(streamingTextContent || '');
+                                                                        
                                                                         let detectedTag: string | null = null;
                                                                         let tagStartIndex = -1;
-                                                                        if (streamingTextContent) {
+                                                                        if (textToRender) {
                                                                             // First check for new format
-                                                                            const functionCallsIndex = streamingTextContent.indexOf('<function_calls>');
+                                                                            const functionCallsIndex = textToRender.indexOf('<function_calls>');
                                                                             if (functionCallsIndex !== -1) {
                                                                                 detectedTag = 'function_calls';
                                                                                 tagStartIndex = functionCallsIndex;
@@ -889,7 +918,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                 // Fall back to old format detection
                                                                                 for (const tag of HIDE_STREAMING_XML_TAGS) {
                                                                                     const openingTagPattern = `<${tag}`;
-                                                                                    const index = streamingTextContent.indexOf(openingTagPattern);
+                                                                                    const index = textToRender.indexOf(openingTagPattern);
                                                                                     if (index !== -1) {
                                                                                         detectedTag = tag;
                                                                                         tagStartIndex = index;
@@ -898,8 +927,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                 }
                                                                             }
                                                                         }
-
-                                                                        const textToRender = streamingTextContent || '';
                                                                         const textBeforeTag = detectedTag ? textToRender.substring(0, tagStartIndex) : textToRender;
                                                                         const showCursor =
                                                                           (streamHookStatus ===
@@ -945,11 +972,14 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                             {readOnly && groupIndex === finalGroupedMessages.length - 1 && isStreamingText && (
                                                                 <div className="mt-4">
                                                                     {(() => {
+                                                                        // Preprocess content first to remove text-only tool tags
+                                                                        const textToRender = preprocessTextOnlyTools(streamingText || '');
+                                                                        
                                                                         let detectedTag: string | null = null;
                                                                         let tagStartIndex = -1;
-                                                                        if (streamingText) {
+                                                                        if (textToRender) {
                                                                             // First check for new format
-                                                                            const functionCallsIndex = streamingText.indexOf('<function_calls>');
+                                                                            const functionCallsIndex = textToRender.indexOf('<function_calls>');
                                                                             if (functionCallsIndex !== -1) {
                                                                                 detectedTag = 'function_calls';
                                                                                 tagStartIndex = functionCallsIndex;
@@ -957,7 +987,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                 // Fall back to old format detection
                                                                                 for (const tag of HIDE_STREAMING_XML_TAGS) {
                                                                                     const openingTagPattern = `<${tag}`;
-                                                                                    const index = streamingText.indexOf(openingTagPattern);
+                                                                                    const index = textToRender.indexOf(openingTagPattern);
                                                                                     if (index !== -1) {
                                                                                         detectedTag = tag;
                                                                                         tagStartIndex = index;
@@ -966,8 +996,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                 }
                                                                             }
                                                                         }
-
-                                                                        const textToRender = streamingText || '';
                                                                         const textBeforeTag = detectedTag ? textToRender.substring(0, tagStartIndex) : textToRender;
                                                                         const showCursor = isStreamingText && !detectedTag;
 
