@@ -315,7 +315,8 @@ class WebhookService:
                     
                     await client.from_('credit_accounts').update({
                         'trial_status': 'converted',
-                        'tier': tier_name
+                        'tier': tier_name,
+                        'stripe_subscription_id': subscription['id']
                     }).eq('account_id', account_id).execute()
                     
                     await client.from_('trial_history').update({
@@ -323,7 +324,7 @@ class WebhookService:
                         'converted_to_paid': True
                     }).eq('account_id', account_id).is_('ended_at', 'null').execute()
                     
-                    logger.info(f"[WEBHOOK] Trial conversion completed for account {account_id} to tier {tier_name}")
+                    logger.info(f"[WEBHOOK] Trial conversion completed for account {account_id} to tier {tier_name}, subscription: {subscription['id']}")
                     
                 elif subscription.status == 'canceled':
                     logger.info(f"[WEBHOOK] Trial cancelled for account {account_id}")
@@ -658,7 +659,7 @@ class WebhookService:
             account_id = customer_result.data[0]['account_id']
             
             account_result = await client.from_('credit_accounts')\
-                .select('tier, last_grant_date, next_credit_grant, billing_cycle_anchor, last_processed_invoice_id')\
+                .select('tier, last_grant_date, next_credit_grant, billing_cycle_anchor, last_processed_invoice_id, trial_status')\
                 .eq('account_id', account_id)\
                 .execute()
             
@@ -667,24 +668,24 @@ class WebhookService:
             
             account = account_result.data[0]
             tier = account['tier']
+            trial_status = account.get('trial_status')
             period_start_dt = datetime.fromtimestamp(period_start, tz=timezone.utc)
             
-            # Primary idempotency check: Have we already processed this invoice?
             if account.get('last_processed_invoice_id') == invoice_id:
                 logger.info(f"[IDEMPOTENCY] Invoice {invoice_id} already processed for account {account_id}")
                 return
-            
-            # Secondary idempotency check: Skip if we already processed this renewal period
-            if account.get('last_grant_date'):
-                last_grant = datetime.fromisoformat(account['last_grant_date'].replace('Z', '+00:00'))
                 
-                # Check if this renewal was already processed (within 24 hours window)
+            if account.get('last_grant_date') and trial_status != 'converted':
+                last_grant = datetime.fromisoformat(account['last_grant_date'].replace('Z', '+00:00'))
+
                 time_diff = abs((period_start_dt - last_grant).total_seconds())
-                if time_diff < 86400:  # 24 hours in seconds
+                if time_diff < 300:
                     logger.info(f"[IDEMPOTENCY] Skipping renewal for user {account_id} - "
                               f"already processed at {account['last_grant_date']} "
                               f"(current period_start: {period_start_dt.isoformat()}, diff: {time_diff}s)")
                     return
+            elif trial_status == 'converted':
+                logger.info(f"[WEBHOOK] Processing first payment after trial conversion for account {account_id}")
             
             monthly_credits = get_monthly_credits(tier)
             if monthly_credits > 0:
@@ -709,11 +710,17 @@ class WebhookService:
                 
                 next_grant = datetime.fromtimestamp(period_end, tz=timezone.utc)
                 
-                await client.from_('credit_accounts').update({
+                update_data = {
                     'last_grant_date': period_start_dt.isoformat(),
                     'next_credit_grant': next_grant.isoformat(),
                     'last_processed_invoice_id': invoice_id
-                }).eq('account_id', account_id).execute()
+                }
+
+                if trial_status == 'converted':
+                    update_data['trial_status'] = 'none'
+                    logger.info(f"[WEBHOOK] Clearing converted status for account {account_id}")
+                
+                await client.from_('credit_accounts').update(update_data).eq('account_id', account_id).execute()
                 
                 final_state = await client.from_('credit_accounts').select(
                     'balance, expiring_credits, non_expiring_credits'
