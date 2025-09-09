@@ -538,9 +538,15 @@ class SimplifiedEnterpriseBillingService:
             since_date = datetime.now() - timedelta(days=days)
             
             # Get raw enterprise usage data with pagination
-            usage_result = await client.from('enterprise_usage').select(
+            usage_query = client.from('enterprise_usage').select(
                 'id, account_id, thread_id, message_id, cost, model_name, tokens_used, created_at'
-            ).eq('account_id', account_id).gte('created_at', since_date.isoformat()).order('created_at', desc=True).limit(items_per_page).offset(page * items_per_page).execute()
+            )
+            usage_query = usage_query.eq('account_id', account_id)
+            usage_query = usage_query.gte('created_at', since_date.isoformat())
+            usage_query = usage_query.order('created_at', desc=True)
+            usage_query = usage_query.limit(items_per_page)
+            usage_query = usage_query.offset(page * items_per_page)
+            usage_result = await usage_query.execute()
             
             if not usage_result or not usage_result.data:
                 return {
@@ -561,17 +567,17 @@ class SimplifiedEnterpriseBillingService:
             
             if thread_ids:
                 # Get thread info
-                threads_result = await client.from('threads').select(
-                    'thread_id, project_id'
-                ).in_('thread_id', thread_ids).execute()
+                threads_query = client.from('threads').select('thread_id, project_id')
+                threads_query = threads_query.in_('thread_id', thread_ids)
+                threads_result = await threads_query.execute()
                 
                 # Get project info
                 project_ids = list(set([thread['project_id'] for thread in threads_result.data if thread['project_id']]))
                 project_info = {}
                 if project_ids:
-                    projects_result = await client.from('projects').select(
-                        'project_id, name'
-                    ).in_('project_id', project_ids).execute()
+                    projects_query = client.from('projects').select('project_id, name')
+                    projects_query = projects_query.in_('project_id', project_ids)
+                    projects_result = await projects_query.execute()
                     
                     for project in projects_result.data:
                         project_info[project['project_id']] = project['name']
@@ -588,9 +594,9 @@ class SimplifiedEnterpriseBillingService:
             message_content = {}
             
             if message_ids:
-                messages_result = await client.from('messages').select(
-                    'message_id, content'
-                ).in_('message_id', message_ids).execute()
+                messages_query = client.from('messages').select('message_id, content')
+                messages_query = messages_query.in_('message_id', message_ids)
+                messages_result = await messages_query.execute()
                 
                 for message in messages_result.data:
                     message_content[message['message_id']] = message.get('content', {})
