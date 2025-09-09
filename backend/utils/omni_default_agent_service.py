@@ -185,15 +185,15 @@ class OmniDefaultAgentService:
                 await client.table('agents').delete().eq('account_id', account_id).eq('metadata->>is_omni_default', True).execute()
                 logger.info(f"Deleted existing Omni agent for replacement")
             else:
-                logger.debug(f"Checking if user already has an Omni agent")
-                # Check if user already has an Omni agent (direct query to avoid broken function)
+                logger.debug(f"Checking if user already has a default agent")
+                # Check if user already has a default agent (this is what the constraint is on)
                 client = await self._db.client
-                existing = await client.table('agents').select('agent_id').eq('account_id', account_id).eq('metadata->>is_omni_default', True).limit(1).execute()
+                existing = await client.table('agents').select('agent_id').eq('account_id', account_id).eq('is_default', True).limit(1).execute()
                 existing = existing.data
                 if existing:
-                    logger.info(f"User {account_id} already has an Omni agent: {existing[0]['agent_id']}")
+                    logger.info(f"User {account_id} already has a default agent: {existing[0]['agent_id']}")
                     return str(existing[0]['agent_id'])
-                logger.debug(f"User does not have an existing Omni agent, proceeding with installation")
+                logger.debug(f"User does not have an existing default agent, proceeding with installation")
             
             # Get the Omni configuration
             logger.debug(f"Getting Omni default config")
@@ -241,10 +241,6 @@ class OmniDefaultAgentService:
                     'agent_id': agent_id,
                     'version_number': 1,
                     'version_name': "v1",
-                    'system_prompt': config.get("system_prompt", ""),
-                    'configured_mcps': config.get("tools", {}).get("mcp", []),
-                    'custom_mcps': config.get("tools", {}).get("custom_mcp", []),
-                    'agentpress_tools': config.get("tools", {}).get("agentpress", {}),
                     'config': config,
                     'is_active': True,
                     'created_by': account_id
