@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useSubscription } from '@/hooks/react-query/use-billing-v2';
 import { useTrialStatus, useStartTrial } from '@/hooks/react-query/billing/use-trial-status';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import Link from 'next/link';
 
 export default function ActivateTrialPage() {
   const router = useRouter();
@@ -146,13 +147,13 @@ export default function ActivateTrialPage() {
           </div>
           <div className="text-center text-sm text-muted-foreground">
             By starting your trial, you agree to our{' '}
-            <a href="/legal?tab=terms" className="underline hover:text-primary">
+            <Link href="/legal?tab=terms" className="underline hover:text-primary">
               Terms of Service
-            </a>{' '}
+            </Link>{' '}
             and{' '}
-            <a href="/legal?tab=privacy" className="underline hover:text-primary">
+            <Link href="/legal?tab=privacy" className="underline hover:text-primary">
               Privacy Policy
-            </a>
+            </Link>
           </div>
         </CardContent>
       </Card>
