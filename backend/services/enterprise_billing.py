@@ -538,7 +538,7 @@ class SimplifiedEnterpriseBillingService:
             since_date = datetime.now() - timedelta(days=days)
             
             # Get raw enterprise usage data with pagination
-            usage_query = client.from('enterprise_usage').select(
+            usage_query = client.from_('enterprise_usage').select(
                 'id, account_id, thread_id, message_id, cost, model_name, tokens_used, created_at'
             )
             usage_query = usage_query.eq('account_id', account_id)
@@ -567,7 +567,7 @@ class SimplifiedEnterpriseBillingService:
             
             if thread_ids:
                 # Get thread info
-                threads_query = client.from('threads').select('thread_id, project_id')
+                threads_query = client.from_('threads').select('thread_id, project_id')
                 threads_query = threads_query.in_('thread_id', thread_ids)
                 threads_result = await threads_query.execute()
                 
@@ -575,7 +575,7 @@ class SimplifiedEnterpriseBillingService:
                 project_ids = list(set([thread['project_id'] for thread in threads_result.data if thread['project_id']]))
                 project_info = {}
                 if project_ids:
-                    projects_query = client.from('projects').select('project_id, name')
+                    projects_query = client.from_('projects').select('project_id, name')
                     projects_query = projects_query.in_('project_id', project_ids)
                     projects_result = await projects_query.execute()
                     
@@ -594,7 +594,7 @@ class SimplifiedEnterpriseBillingService:
             message_content = {}
             
             if message_ids:
-                messages_query = client.from('messages').select('message_id, content')
+                messages_query = client.from_('messages').select('message_id, content')
                 messages_query = messages_query.in_('message_id', message_ids)
                 messages_result = await messages_query.execute()
                 
