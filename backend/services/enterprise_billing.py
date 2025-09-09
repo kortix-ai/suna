@@ -277,13 +277,42 @@ class SimplifiedEnterpriseBillingService:
             # Get enterprise balance
             enterprise = await self.get_enterprise_balance()
             
-            # Get all user limits with account info using correct PostgREST syntax
+            # Get user limits first
             limits_result = await client.table('enterprise_user_limits')\
-                .select('*, account_id(id, name, personal_account)')\
+                .select('*')\
                 .eq('is_active', True)\
                 .order('current_month_usage', desc=True)\
                 .range(page * items_per_page, (page + 1) * items_per_page - 1)\
                 .execute()
+                
+            # Get account info for each user (separate query to avoid cross-schema join issues)
+            users_data = limits_result.data if (limits_result and hasattr(limits_result, 'data') and limits_result.data) else []
+            
+            # Enrich user data with account names
+            for user in users_data:
+                try:
+                    account_result = await client.from_('basejump.accounts')\
+                        .select('id, name, personal_account')\
+                        .eq('id', user['account_id'])\
+                        .maybe_single()\
+                        .execute()
+                    
+                    if account_result and hasattr(account_result, 'data') and account_result.data:
+                        user['account_info'] = account_result.data
+                    else:
+                        # Fallback if account not found
+                        user['account_info'] = {
+                            'id': user['account_id'],
+                            'name': f"Account {user['account_id'][:8]}...",
+                            'personal_account': True
+                        }
+                except Exception as e:
+                    logger.warning(f"Could not fetch account info for {user['account_id']}: {e}")
+                    user['account_info'] = {
+                        'id': user['account_id'],
+                        'name': f"Account {user['account_id'][:8]}...",
+                        'personal_account': True
+                    }
             
             # Get total count
             count_result = await client.table('enterprise_user_limits')\
