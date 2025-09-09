@@ -7,9 +7,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { DollarSign, Users, Activity, CreditCard, Loader2, AlertCircle, Plus, Settings } from 'lucide-react';
+import { DollarSign, Users, Activity, CreditCard, Loader2, AlertCircle, Plus, Settings, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/lib/api-client';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
 import { useAdminCheck } from '@/hooks/use-admin-check';
 
 export default function AdminPage() {
@@ -257,32 +266,60 @@ function UserDetails({ accountId }: { accountId: string }) {
       
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Recent Usage</CardTitle>
+          <CardTitle>Recent Usage</CardTitle>
         </CardHeader>
         <CardContent>
           {details?.usage_logs && details.usage_logs.length > 0 ? (
-            <div className="space-y-2 max-h-[300px] overflow-y-auto">
-              {details.usage_logs.map((log: any) => (
-                <div key={log.id} className="flex justify-between text-sm py-1 border-b">
-                  <div>
-                    {log.model_name || 'Unknown Model'}
-                    {log.tokens_used && (
-                      <span className="text-muted-foreground ml-2">
-                        ({log.tokens_used} tokens)
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span>${log.cost?.toFixed(4)}</span>
-                    <span className="text-muted-foreground text-xs">
-                      {new Date(log.created_at).toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              ))}
+            <div className="max-h-[400px] overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs">Time</TableHead>
+                    <TableHead className="text-xs">Model</TableHead>
+                    <TableHead className="text-right text-xs">Tokens</TableHead>
+                    <TableHead className="text-right text-xs">Credits</TableHead>
+                    <TableHead className="text-xs">Thread</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {details.usage_logs.map((log: any) => (
+                    <TableRow
+                      key={log.id}
+                      className="hover:bg-muted/50 group"
+                    >
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {new Date(log.created_at).toLocaleTimeString()}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        <Badge variant="secondary" className="font-mono text-xs">
+                          {(log.model_name || 'Unknown').replace('openrouter/', '').replace('anthropic/', '').replace('openai/', '')}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs">
+                        {(log.tokens_used || 0).toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-xs">
+                        {((log.cost || 0) * 1000).toFixed(0)} credits
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {log.thread_id && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={() => window.open(`/projects/${log.project_id || 'default'}/thread/${log.thread_id}`, '_blank')}
+                          >
+                            <ExternalLink className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           ) : (
-            <div className="text-center py-4 text-muted-foreground">
+            <div className="text-center py-8 text-muted-foreground">
               No usage logs found
             </div>
           )}
