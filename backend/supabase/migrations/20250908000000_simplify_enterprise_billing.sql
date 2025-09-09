@@ -110,7 +110,7 @@ BEGIN
         VALUES (p_account_id)
         ON CONFLICT (account_id) DO UPDATE SET is_active = TRUE;
         
-        v_monthly_limit := 1000.00;
+        v_monthly_limit := 100.00;
         v_current_usage := 0;
     END IF;
     

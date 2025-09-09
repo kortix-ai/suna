@@ -291,11 +291,11 @@ class SimplifiedEnterpriseBillingService:
                     return float(value)
             
             # Fallback to hardcoded default
-            return 1000.00
+            return 100.00
                 
         except Exception as e:
             logger.error(f"Error getting default monthly limit: {e}")
-            return 1000.00
+            return 100.00
     
     async def get_user_limit(self, account_id: str) -> Dict[str, Any]:
         """Get a user's monthly limit and current usage."""
