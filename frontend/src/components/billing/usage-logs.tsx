@@ -282,7 +282,7 @@ export default function UsageLogs({ accountId }: Props) {
                           <TableHeader>
                             <TableRow className="hover:bg-transparent">
                               <TableHead className="w-[180px] text-xs">Time</TableHead>
-                              <TableHead className="text-xs">Type</TableHead>
+                              <TableHead className="text-xs">Model</TableHead>
                               <TableHead className="text-xs text-right">Prompt</TableHead>
                               <TableHead className="text-xs text-right">Completion</TableHead>
                               <TableHead className="text-xs text-right">Total</TableHead>
@@ -301,24 +301,18 @@ export default function UsageLogs({ accountId }: Props) {
                                   {new Date(log.created_at).toLocaleTimeString()}
                                 </TableCell>
                                 <TableCell className="text-xs">
-                                  {log.tool_name ? (
-                                    <Badge variant="outline" className="font-mono text-xs bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
-                                      🛠️ {log.tool_name}
-                                    </Badge>
-                                  ) : (
-                                    <Badge variant="secondary" className="font-mono text-xs">
-                                      {log.content.model.replace('openrouter/', '').replace('anthropic/', '').replace('tool:', '')}
-                                    </Badge>
-                                  )}
+                                  <Badge variant="secondary" className="font-mono text-xs">
+                                    {log.content.model.replace('openrouter/', '').replace('anthropic/', '')}
+                                  </Badge>
                                 </TableCell>
                                 <TableCell className="text-right font-mono text-xs">
-                                  {log.tool_name ? '—' : log.content.usage.prompt_tokens.toLocaleString()}
+                                  {log.content.usage.prompt_tokens.toLocaleString()}
                                 </TableCell>
                                 <TableCell className="text-right font-mono text-xs">
-                                  {log.tool_name ? '—' : log.content.usage.completion_tokens.toLocaleString()}
+                                  {log.content.usage.completion_tokens.toLocaleString()}
                                 </TableCell>
                                 <TableCell className="text-right font-mono text-xs">
-                                  {log.tool_name ? '—' : log.total_tokens.toLocaleString()}
+                                  {log.total_tokens.toLocaleString()}
                                 </TableCell>
                                 <TableCell className="text-right font-mono text-xs">
                                   {formatCost(log.estimated_cost)}

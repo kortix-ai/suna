@@ -1666,8 +1666,6 @@ export interface UsageLogEntry {
   credit_used?: number;
   payment_method?: 'credits' | 'subscription';
   was_over_limit?: boolean;
-  // Tool usage fields
-  tool_name?: string; // Present for tool usage entries
 }
 
 // Usage logs response interface
