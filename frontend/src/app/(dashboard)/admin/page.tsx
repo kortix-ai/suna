@@ -59,7 +59,7 @@ export default function AdminPage() {
   // Loading states
   if (adminLoading || statusLoading || usersLoading || globalDefaultsLoading) {
     return (
-      <div className="container mx-auto py-6">
+      <div className="container mx-auto max-w-7xl px-4 py-8">
         <div className="flex items-center justify-center min-h-[400px]">
           <Loader2 className="h-8 w-8 animate-spin" />
         </div>
@@ -70,7 +70,7 @@ export default function AdminPage() {
   // Check admin access
   if (!adminCheck?.isAdmin) {
     return (
-      <div className="container mx-auto py-6">
+      <div className="container mx-auto max-w-7xl px-4 py-8">
         <Card>
           <CardContent className="pt-6">
             <div className="flex flex-col items-center text-center">
@@ -87,7 +87,7 @@ export default function AdminPage() {
   }
   
   return (
-    <div className="container mx-auto py-6 space-y-6">
+    <div className="container mx-auto max-w-7xl px-4 py-8 space-y-6">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Enterprise Admin</h1>
@@ -395,7 +395,7 @@ function SetLimitButton({ user }: { user: any }) {
           <Settings className="h-3 w-3" />
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Set Monthly Limit - {user.accounts?.name}</DialogTitle>
         </DialogHeader>
@@ -488,7 +488,7 @@ function GlobalDefaultsCard({ globalDefaults }: { globalDefaults: any }) {
                 Edit Default
               </Button>
             </DialogTrigger>
-            <DialogContent>
+            <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle>Set Global Default Monthly Limit</DialogTitle>
               </DialogHeader>
