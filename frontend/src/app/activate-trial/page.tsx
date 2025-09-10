@@ -15,12 +15,15 @@ import Link from 'next/link';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
+import { useMaintenanceNoticeQuery } from '@/hooks/react-query/edge-flags';
+import { MaintenanceAlert } from '@/components/maintenance-alert';
 
 export default function ActivateTrialPage() {
   const router = useRouter();
   const { data: subscription, isLoading: isLoadingSubscription } = useSubscription();
   const { data: trialStatus, isLoading: isLoadingTrial } = useTrialStatus();
   const startTrialMutation = useStartTrial();
+  const { data: maintenanceNotice, isLoading: maintenanceLoading } = useMaintenanceNoticeQuery();
 
   useEffect(() => {
     if (!isLoadingSubscription && !isLoadingTrial && subscription && trialStatus) {
@@ -64,27 +67,22 @@ export default function ActivateTrialPage() {
     router.push('/auth');
   };
 
-  const isLoading = isLoadingSubscription || isLoadingTrial;
+  const isLoading = isLoadingSubscription || isLoadingTrial || maintenanceLoading;
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center p-4">
-        <Card className="w-full max-w-2xl">
-          <CardHeader>
-            <Skeleton className="h-8 w-48 mb-2" />
-            <Skeleton className="h-4 w-64" />
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Skeleton className="h-32 w-full" />
-            <Skeleton className="h-12 w-full" />
-          </CardContent>
-        </Card>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-muted/20">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
 
+  if (maintenanceNotice?.enabled) {
+    return <MaintenanceAlert open={true} onOpenChange={() => {}} closeable={false} />;
+  }
+
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center p-4">
       <div className="absolute top-4 right-4">
         <Button
           variant="outline"

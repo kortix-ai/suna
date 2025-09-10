@@ -13,11 +13,14 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
+import { useMaintenanceNoticeQuery } from '@/hooks/react-query/edge-flags';
+import { MaintenanceAlert } from '@/components/maintenance-alert';
 
 export default function SubscriptionRequiredPage() {
   const [isCheckingStatus, setIsCheckingStatus] = useState(true);
   const [billingStatus, setBillingStatus] = useState<any>(null);
   const router = useRouter();
+  const { data: maintenanceNotice, isLoading: maintenanceLoading } = useMaintenanceNoticeQuery();
 
   useEffect(() => {
     checkBillingStatus();
@@ -59,7 +62,9 @@ export default function SubscriptionRequiredPage() {
     router.push('/auth');
   };
 
-  if (isCheckingStatus) {
+  const isLoading = isCheckingStatus || maintenanceLoading;
+
+  if (isLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center p-4">
         <Card className="w-full max-w-6xl">
@@ -77,6 +82,10 @@ export default function SubscriptionRequiredPage() {
         </Card>
       </div>
     );
+  }
+
+  if (maintenanceNotice?.enabled) {
+    return <MaintenanceAlert open={true} onOpenChange={() => {}} closeable={false} />;
   }
 
   const isTrialExpired = billingStatus?.trial_status === 'expired' || 
