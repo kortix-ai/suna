@@ -468,6 +468,57 @@ async def reset_user_to_default(
         logger.error(f"Error resetting user to default: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/users/{account_id}")
+async def get_user_usage_logs(
+    account_id: str,
+    admin_user_id: str = Depends(verify_simple_admin),
+    page: int = Query(default=0, ge=0),
+    items_per_page: int = Query(default=100, ge=1, le=1000),
+    days: int = Query(default=30, ge=1, le=365)
+):
+    """Get hierarchical usage logs for a specific user (Admin only)."""
+    try:
+        # Get hierarchical usage data for the specified user
+        hierarchical_data = await enterprise_billing.get_user_hierarchical_usage(
+            account_id=account_id,
+            days=days,
+            page=page,
+            items_per_page=items_per_page
+        )
+        
+        if not hierarchical_data:
+            return {
+                "hierarchical_usage": {},
+                "enterprise_info": {
+                    "monthly_limit": await enterprise_billing.get_default_monthly_limit(),
+                    "current_usage": 0,
+                    "remaining": await enterprise_billing.get_default_monthly_limit()
+                },
+                "total_cost_period": 0,
+                "page": page,
+                "items_per_page": items_per_page,
+                "days": days,
+                "is_hierarchical": True
+            }
+        
+        return {
+            "hierarchical_usage": hierarchical_data.get('hierarchical_usage', {}),
+            "enterprise_info": {
+                "monthly_limit": hierarchical_data.get('monthly_limit', await enterprise_billing.get_default_monthly_limit()),
+                "current_usage": hierarchical_data.get('current_month_usage', 0),
+                "remaining": hierarchical_data.get('remaining_monthly', await enterprise_billing.get_default_monthly_limit())
+            },
+            "total_cost_period": hierarchical_data.get('total_cost_period', 0),
+            "page": page,
+            "items_per_page": items_per_page,
+            "days": days,
+            "is_hierarchical": True
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting user usage logs for {account_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/debug")
 async def debug_enterprise_api():
     """Debug endpoint to test enterprise API is working."""

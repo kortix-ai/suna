@@ -215,7 +215,7 @@ export default function UsageLogs({ accountId, isAdminView = false }: Props) {
                                     ${(project.thread_cost || 0).toFixed(3)} cost
                                   </div>
                                 </div>
-                                {project.thread_id && (
+                                {project.thread_id && !isAdminView && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -561,14 +561,16 @@ export default function UsageLogs({ accountId, isAdminView = false }: Props) {
                                   )}
                                 </TableCell>
                                 <TableCell className="text-center">
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleThreadClick(log.thread_id, log.project_id)}
-                                    className="h-6 px-2 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
-                                  >
-                                    <ExternalLink className="h-3 w-3" />
-                                  </Button>
+                                  {!isAdminView && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleThreadClick(log.thread_id, log.project_id)}
+                                      className="h-6 px-2 text-xs opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                      <ExternalLink className="h-3 w-3" />
+                                    </Button>
+                                  )}
                                 </TableCell>
                               </TableRow>
                             ))}
