@@ -1898,7 +1898,7 @@ export const createCheckoutSession = async (
     const requestBody = { ...request, tolt_referral: window.tolt_referral };
     
     // Use the new billing v2 API endpoint
-    const response = await fetch(`${API_URL}/billing/v2/create-checkout-session`, {
+    const response = await fetch(`${API_URL}/billing/create-checkout-session`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -1956,7 +1956,7 @@ export const createPortalSession = async (
       throw new NoAccessTokenAvailableError();
     }
 
-    const response = await fetch(`${API_URL}/billing/v2/create-portal-session`, {
+    const response = await fetch(`${API_URL}/billing/create-portal-session`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2002,7 +2002,7 @@ export const getSubscription = async (): Promise<SubscriptionStatus> => {
       throw new NoAccessTokenAvailableError();
     }
 
-    const response = await fetch(`${API_URL}/billing/v2/subscription`, {
+    const response = await fetch(`${API_URL}/billing/subscription`, {
       headers: {
         Authorization: `Bearer ${session.access_token}`,
       },
@@ -2057,7 +2057,7 @@ export const getSubscriptionCommitment = async (subscriptionId: string): Promise
     }
 
     // Use the new billing v2 API endpoint
-    const response = await fetch(`${API_URL}/billing/v2/subscription-commitment/${subscriptionId}`, {
+    const response = await fetch(`${API_URL}/billing/subscription-commitment/${subscriptionId}`, {
       headers: {
         Authorization: `Bearer ${session.access_token}`,
       },
@@ -2099,7 +2099,7 @@ export const getAvailableModels = async (): Promise<AvailableModelsResponse> => 
       throw new NoAccessTokenAvailableError();
     }
 
-    const response = await fetch(`${API_URL}/billing/v2/available-models`, {
+    const response = await fetch(`${API_URL}/billing/available-models`, {
       headers: {
         Authorization: `Bearer ${session.access_token}`,
       },
@@ -2142,7 +2142,7 @@ export const checkBillingStatus = async (): Promise<BillingStatusResponse> => {
       throw new NoAccessTokenAvailableError();
     }
 
-    const response = await fetch(`${API_URL}/billing/v2/check-status`, {
+    const response = await fetch(`${API_URL}/billing/check-status`, {
       headers: {
         Authorization: `Bearer ${session.access_token}`,
       },
@@ -2183,7 +2183,7 @@ export const cancelSubscription = async (): Promise<CancelSubscriptionResponse> 
       throw new NoAccessTokenAvailableError();
     }
 
-    const response = await fetch(`${API_URL}/billing/v2/cancel-subscription`, {
+    const response = await fetch(`${API_URL}/billing/cancel-subscription`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2224,7 +2224,7 @@ export const reactivateSubscription = async (): Promise<ReactivateSubscriptionRe
       throw new NoAccessTokenAvailableError();
     }
 
-    const response = await fetch(`${API_URL}/billing/v2/reactivate-subscription`, {
+    const response = await fetch(`${API_URL}/billing/reactivate-subscription`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

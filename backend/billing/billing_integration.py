@@ -4,6 +4,7 @@ from billing.api import calculate_token_cost
 from billing.credit_manager import credit_manager
 from core.utils.config import config, EnvMode
 from core.utils.logger import logger
+from core.services.supabase import DBConnection
 
 class BillingIntegration:
     @staticmethod
