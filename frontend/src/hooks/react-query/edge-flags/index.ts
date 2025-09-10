@@ -3,7 +3,7 @@
 import { createQueryHook, createQueryKeys } from '@/hooks/use-query';
 import { IMaintenanceNotice } from '@/lib/edge-flags';
 
-const maintenanceNoticeKeysBase = ['maintenance-notice'] as const;
+const maintenanceNoticeKeysBase = ['maintenanceNotice'] as const;
 
 export const maintenanceNoticeKeys = createQueryKeys({
   all: maintenanceNoticeKeysBase,
@@ -13,7 +13,8 @@ export const useMaintenanceNoticeQuery = createQueryHook(
   maintenanceNoticeKeys.all,
   async (): Promise<IMaintenanceNotice> => {
     const response = await fetch('/api/edge-flags');
-    return response.json();
+    const data = await response.json();
+    return data;
   },
   {
     staleTime: 30 * 1000,
