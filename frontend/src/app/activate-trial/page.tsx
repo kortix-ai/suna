@@ -109,7 +109,7 @@ export default function ActivateTrialPage() {
           <div>
             <CardTitle className="text-2xl font-bold flex items-center justify-center gap-2">
               <KortixLogo/>
-              <span>Welcome to Suna</span>
+              <span>Welcome to Omni</span>
             </CardTitle>
             <CardDescription className="mt-2">
               Start your journey with a 7-day free trial
