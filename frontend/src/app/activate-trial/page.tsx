@@ -67,11 +67,11 @@ export default function ActivateTrialPage() {
     router.push('/auth');
   };
 
-  const isLoading = isLoadingSubscription || isLoadingTrial || maintenanceLoading;
+  const isMaintenanceLoading = maintenanceLoading;
 
-  if (isLoading) {
+  if (isMaintenanceLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-muted/20">
+      <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center p-4">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
@@ -79,6 +79,16 @@ export default function ActivateTrialPage() {
 
   if (maintenanceNotice?.enabled) {
     return <MaintenanceAlert open={true} onOpenChange={() => {}} closeable={false} />;
+  }
+
+  const isLoading = isLoadingSubscription || isLoadingTrial;
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-muted/20">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
   }
 
   return (

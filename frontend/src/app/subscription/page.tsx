@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { PricingSection } from '@/components/home/sections/pricing-section';
-import { AlertTriangle, Clock, CreditCard, LogOut } from 'lucide-react';
+import { AlertTriangle, Clock, CreditCard, Loader2, LogOut } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { apiClient, backendApi } from '@/lib/api-client';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -62,7 +62,22 @@ export default function SubscriptionRequiredPage() {
     router.push('/auth');
   };
 
-  const isLoading = isCheckingStatus || maintenanceLoading;
+  const isMaintenanceLoading = maintenanceLoading;
+
+  if (isMaintenanceLoading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center p-4">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (maintenanceNotice?.enabled) {
+    return <MaintenanceAlert open={true} onOpenChange={() => {}} closeable={false} />;
+  }
+
+
+  const isLoading = isCheckingStatus;
 
   if (isLoading) {
     return (
@@ -82,10 +97,6 @@ export default function SubscriptionRequiredPage() {
         </Card>
       </div>
     );
-  }
-
-  if (maintenanceNotice?.enabled) {
-    return <MaintenanceAlert open={true} onOpenChange={() => {}} closeable={false} />;
   }
 
   const isTrialExpired = billingStatus?.trial_status === 'expired' || 
