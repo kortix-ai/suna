@@ -186,10 +186,10 @@ export default function UsageLogs({ accountId }: Props) {
                             <div className="flex justify-between items-center w-full pr-4">
                               <div className="flex flex-col items-start">
                                 <span className="font-medium text-left">
-                                  {project.thread_title || 'Untitled Chat'}
+                                  {project.project_title || 'Untitled Chat'}
                                 </span>
                                 <span className="text-xs text-muted-foreground text-left">
-                                  {project.project_title || 'Untitled Project'} • {project.usage_details?.length || 0} request{(project.usage_details?.length || 0) !== 1 ? 's' : ''}
+                                  {project.usage_details?.length || 0} request{(project.usage_details?.length || 0) !== 1 ? 's' : ''}
                                 </span>
                               </div>
                               <div className="flex items-center gap-3">
@@ -223,7 +223,7 @@ export default function UsageLogs({ accountId }: Props) {
                                 <TableHeader>
                                   <TableRow>
                                     <TableHead className="w-[100px]">Time</TableHead>
-                                    <TableHead>Model</TableHead>
+                                    <TableHead>Type</TableHead>
                                     <TableHead className="text-right">Prompt</TableHead>
                                     <TableHead className="text-right">Completion</TableHead>
                                     <TableHead className="text-right">Tool</TableHead>
@@ -238,8 +238,11 @@ export default function UsageLogs({ accountId }: Props) {
                                         {formatTime(detail.created_at)}
                                       </TableCell>
                                       <TableCell>
-                                        <Badge variant="secondary" className="text-xs">
-                                          {(detail.model_name || 'Unknown').replace(/^(openrouter\/|anthropic\/|openai\/)/, '')}
+                                        <Badge 
+                                          variant={detail.usage_type === 'tool' || !detail.model_name || detail.model_name === 'Unknown' ? 'destructive' : 'default'} 
+                                          className="text-xs"
+                                        >
+                                          {detail.usage_type === 'tool' || !detail.model_name || detail.model_name === 'Unknown' ? 'Tool' : 'Prompt'}
                                         </Badge>
                                       </TableCell>
                                       <TableCell className="text-right font-mono text-xs">

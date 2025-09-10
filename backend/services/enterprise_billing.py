@@ -640,7 +640,6 @@ class SimplifiedEnterpriseBillingService:
                         'thread_id': thread_id,
                         'project_id': thread_data['project_id'],
                         'project_title': thread_data['project_name'],
-                        'thread_title': 'Untitled Chat',  # threads don't have titles
                         'thread_cost': 0,
                         'usage_details': []
                     }
