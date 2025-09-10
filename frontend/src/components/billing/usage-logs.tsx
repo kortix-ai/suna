@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { createClient } from '@/lib/supabase/client';
 import {
   Card,
   CardContent,
@@ -52,8 +53,22 @@ export default function UsageLogs({ accountId, isAdminView = false }: Props) {
   const [page, setPage] = useState(0);
   const [allLogs, setAllLogs] = useState<UsageLogEntry[]>([]);
   const [hasMore, setHasMore] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   
   const ITEMS_PER_PAGE = 1000;
+
+  // Get current user ID to check if viewing own logs
+  useEffect(() => {
+    const getCurrentUser = async () => {
+      const supabase = createClient();
+      const { data: userData } = await supabase.auth.getUser();
+      setCurrentUserId(userData?.user?.id || null);
+    };
+    getCurrentUser();
+  }, []);
+
+  // Check if user is viewing their own logs
+  const isViewingOwnLogs = currentUserId === accountId;
 
   // Call both hooks but enable only the appropriate one
   const adminUsageQuery = useAdminUserUsageLogs(
@@ -215,7 +230,7 @@ export default function UsageLogs({ accountId, isAdminView = false }: Props) {
                                     ${(project.thread_cost || 0).toFixed(3)} cost
                                   </div>
                                 </div>
-                                {project.thread_id && !isAdminView && (
+                                {project.thread_id && (!isAdminView || isViewingOwnLogs) && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -561,7 +576,7 @@ export default function UsageLogs({ accountId, isAdminView = false }: Props) {
                                   )}
                                 </TableCell>
                                 <TableCell className="text-center">
-                                  {!isAdminView && (
+                                  {(!isAdminView || isViewingOwnLogs) && (
                                     <Button
                                       variant="ghost"
                                       size="sm"
