@@ -712,6 +712,7 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
             cursor: pointer;
             transition: all 0.15s ease;
             border-radius: 6px;
+            width: 5rem;
         }
         
         .nav-btn:hover:not(:disabled) {
@@ -741,6 +742,7 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
             cursor: pointer;
             transition: all 0.15s ease;
             border-radius: 6px;
+            width: 7rem;
         }
         
         .header-btn:hover:not(:disabled) {
