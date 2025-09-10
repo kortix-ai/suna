@@ -18,6 +18,8 @@ import {
   ProjectLimitError,
 } from '@/lib/api';
 import { useInitiateAgentMutation } from '@/hooks/react-query/dashboard/use-initiate-agent';
+import { BillingModal } from '@/components/billing/billing-modal';
+import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog';
 import { useThreadQuery } from '@/hooks/react-query/threads/use-threads';
 import { generateThreadName } from '@/lib/actions/threads';
 import GoogleSignIn from '@/components/GoogleSignIn';
@@ -108,6 +110,11 @@ export function HeroSection() {
   // Auth dialog state
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  
+  // Payment and limit dialog state
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showAgentLimitDialog, setShowAgentLimitDialog] = useState(false);
+  const [agentLimitData, setAgentLimitData] = useState<{runningCount: number; runningThreadIds: string[]} | null>(null);
 
   // FlipWords arrays for value proposition
   const moreWords = ["research", "analysis", "automation", "productivity", "insights", "results", "growth", "efficiency"];
@@ -1299,6 +1306,24 @@ export function HeroSection() {
         onDismiss={clearBillingError}
         isOpen={!!billingError}
       />
+
+      {/* Billing Modal */}
+      <BillingModal 
+        open={showPaymentModal} 
+        onOpenChange={setShowPaymentModal}
+        showUsageLimitAlert={true}
+      />
+
+      {/* Agent Limit Dialog */}
+      {agentLimitData && (
+        <AgentRunLimitDialog
+          open={showAgentLimitDialog}
+          onOpenChange={setShowAgentLimitDialog}
+          runningCount={agentLimitData.runningCount}
+          runningThreadIds={agentLimitData.runningThreadIds}
+          projectId={undefined}
+        />
+      )}
     </section>
   );
 }
