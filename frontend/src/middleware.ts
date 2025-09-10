@@ -66,6 +66,10 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
+    const isLocalMode = process.env.NEXT_PUBLIC_ENV_MODE === 'local'
+    if (isLocalMode) {
+      return supabaseResponse;
+    }
 
     if (!BILLING_ROUTES.includes(pathname) && pathname !== '/') {
       const { data: accounts } = await supabase
@@ -77,7 +81,6 @@ export async function middleware(request: NextRequest) {
         .single();
 
       if (!accounts) {
-        // Don't redirect if already on activate-trial page
         if (pathname === '/activate-trial') {
           return supabaseResponse;
         }

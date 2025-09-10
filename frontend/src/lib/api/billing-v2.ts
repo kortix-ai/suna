@@ -179,32 +179,32 @@ export interface TrialCheckoutResponse {
 
 export const billingApiV2 = {
   async getSubscription() {
-    const response = await backendApi.get<SubscriptionInfo>('/billing/v2/subscription');
+    const response = await backendApi.get<SubscriptionInfo>('/billing/subscription');
     if (response.error) throw response.error;
     return response.data!;
   },
 
   async checkBillingStatus() {
-    const response = await backendApi.post<BillingStatus>('/billing/v2/check');
+    const response = await backendApi.post<BillingStatus>('/billing/check');
     if (response.error) throw response.error;
     return response.data!;
   },
 
   async getCreditBalance() {
-    const response = await backendApi.get<CreditBalance>('/billing/v2/balance');
+    const response = await backendApi.get<CreditBalance>('/billing/balance');
     if (response.error) throw response.error;
     return response.data!;
   },
 
   async deductTokenUsage(usage: TokenUsage) {
-    const response = await backendApi.post<DeductResult>('/billing/v2/deduct', usage);
+    const response = await backendApi.post<DeductResult>('/billing/deduct', usage);
     if (response.error) throw response.error;
     return response.data!;
   },
 
   async createCheckoutSession(request: CreateCheckoutSessionRequest) {
     const response = await backendApi.post<CreateCheckoutSessionResponse>(
-      '/billing/v2/create-checkout-session',
+      '/billing/create-checkout-session',
       request
     );
     if (response.error) throw response.error;
@@ -213,7 +213,7 @@ export const billingApiV2 = {
 
   async createPortalSession(request: CreatePortalSessionRequest) {
     const response = await backendApi.post<CreatePortalSessionResponse>(
-      '/billing/v2/create-portal-session',
+      '/billing/create-portal-session',
       request
     );
     if (response.error) throw response.error;
@@ -222,7 +222,7 @@ export const billingApiV2 = {
 
   async cancelSubscription(request?: CancelSubscriptionRequest) {
     const response = await backendApi.post<CancelSubscriptionResponse>(
-      '/billing/v2/cancel-subscription',
+      '/billing/cancel-subscription',
       request || {}
     );
     if (response.error) throw response.error;
@@ -231,7 +231,7 @@ export const billingApiV2 = {
 
   async reactivateSubscription() {
     const response = await backendApi.post<ReactivateSubscriptionResponse>(
-      '/billing/v2/reactivate-subscription'
+      '/billing/reactivate-subscription'
     );
     if (response.error) throw response.error;
     return response.data!;
@@ -239,7 +239,7 @@ export const billingApiV2 = {
 
   async purchaseCredits(request: PurchaseCreditsRequest) {
     const response = await backendApi.post<PurchaseCreditsResponse>(
-      '/billing/v2/purchase-credits',
+      '/billing/purchase-credits',
       request
     );
     if (response.error) throw response.error;
@@ -248,7 +248,7 @@ export const billingApiV2 = {
 
   async getTransactions(limit = 50, offset = 0) {
     const response = await backendApi.get<{ transactions: Transaction[]; count: number }>(
-      `/billing/v2/transactions?limit=${limit}&offset=${offset}`
+      `/billing/transactions?limit=${limit}&offset=${offset}`
     );
     if (response.error) throw response.error;
     return response.data!;
@@ -256,33 +256,33 @@ export const billingApiV2 = {
 
   async getUsageHistory(days = 30) {
     const response = await backendApi.get<UsageHistory>(
-      `/billing/v2/usage-history?days=${days}`
+      `/billing/usage-history?days=${days}`
     );
     if (response.error) throw response.error;
     return response.data!;
   },
 
   async triggerTestRenewal() {
-    const response = await backendApi.post<TestRenewalResponse>('/billing/v2/test/trigger-renewal');
+    const response = await backendApi.post<TestRenewalResponse>('/billing/test/trigger-renewal');
     if (response.error) throw response.error;
     return response.data!;
   },
 
   async getTrialStatus() {
-    const response = await backendApi.get<TrialStatus>('/billing/v2/trial/status');
+    const response = await backendApi.get<TrialStatus>('/billing/trial/status');
     if (response.error) throw response.error;
     return response.data!;
   },
 
   async startTrial(request: TrialStartRequest) {
-    const response = await backendApi.post<TrialStartResponse>('/billing/v2/trial/start', request);
+    const response = await backendApi.post<TrialStartResponse>('/billing/trial/start', request);
     if (response.error) throw response.error;
     return response.data!;
   },
 
   async createTrialCheckout(request: TrialCheckoutRequest) {
     const response = await backendApi.post<TrialCheckoutResponse>(
-      '/billing/v2/trial/create-checkout',
+      '/billing/trial/create-checkout',
       request
     );
     if (response.error) throw response.error;
@@ -291,7 +291,7 @@ export const billingApiV2 = {
 
   async cancelTrial() {
     const response = await backendApi.post<{ success: boolean; message: string; subscription_status: string }>(
-      '/billing/v2/trial/cancel',
+      '/billing/trial/cancel',
       {}
     );
     if (response.error) throw response.error;

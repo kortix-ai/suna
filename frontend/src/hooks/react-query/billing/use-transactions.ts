@@ -66,7 +66,7 @@ export function useTransactions(
         params.append('type_filter', typeFilter);
       }
       
-      const response = await backendApi.get(`/billing/v2/transactions?${params.toString()}`);
+      const response = await backendApi.get(`/billing/transactions?${params.toString()}`);
       if (response.error) {
         throw new Error(response.error.message);
       }
@@ -80,7 +80,7 @@ export function useTransactionsSummary(days: number = 30) {
   return useQuery<TransactionsSummary>({
     queryKey: ['billing', 'transactions', 'summary', days],
     queryFn: async () => {
-      const response = await backendApi.get(`/billing/v2/transactions/summary?days=${days}`);
+      const response = await backendApi.get(`/billing/transactions/summary?days=${days}`);
       if (response.error) {
         throw new Error(response.error.message);
       }
