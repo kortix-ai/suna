@@ -806,7 +806,6 @@ export function PricingSection({
               />
             ))}
         </div>
-      )}
 
       {deploymentType === 'cloud' && (
         <div className={cn(
