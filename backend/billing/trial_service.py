@@ -198,25 +198,42 @@ class TrialService:
                     logger.error(f"[TRIAL SECURITY] Error checking existing subscription: {e}")
         
         ledger_check = await client.from_('credit_ledger')\
-            .select('id')\
+            .select('id, description')\
             .eq('account_id', account_id)\
-            .like('description', '%trial%')\
-            .limit(1)\
+            .or_(
+                'description.ilike.%trial credits%,'
+                'description.ilike.%free trial%,'
+                'description.ilike.%day trial%,'
+                'type.eq.trial_grant'
+            )\
             .execute()
         
         if ledger_check.data:
-            logger.warning(f"[TRIAL SECURITY] Trial attempt rejected - account {account_id} has trial-related ledger entries")
-            await client.from_('trial_history').upsert({
-                'account_id': account_id,
-                'started_at': datetime.now(timezone.utc).isoformat(),
-                'ended_at': datetime.now(timezone.utc).isoformat(),
-                'note': 'Created from credit_ledger detection during blocked trial attempt'
-            }, on_conflict='account_id').execute()
+            has_actual_trial = False
+            for entry in ledger_check.data:
+                desc = entry.get('description', '').lower()
+                if 'trial credits' in desc or 'free trial' in desc or 'day trial' in desc:
+                    has_actual_trial = True
+                    break
+                elif 'start a trial' in desc or 'please start a trial' in desc:
+                    continue
+                else:
+                    has_actual_trial = True
+                    break
             
-            raise HTTPException(
-                status_code=403,
-                detail="Trial history detected. Each account is limited to one free trial."
-            )
+            if has_actual_trial:
+                logger.warning(f"[TRIAL SECURITY] Trial attempt rejected - account {account_id} has trial-related ledger entries")
+                await client.from_('trial_history').upsert({
+                    'account_id': account_id,
+                    'started_at': datetime.now(timezone.utc).isoformat(),
+                    'ended_at': datetime.now(timezone.utc).isoformat(),
+                    'note': 'Created from credit_ledger detection during blocked trial attempt'
+                }, on_conflict='account_id').execute()
+                
+                raise HTTPException(
+                    status_code=403,
+                    detail="Trial history detected. Each account is limited to one free trial."
+                )
         
         try:
             from .subscription_service import subscription_service

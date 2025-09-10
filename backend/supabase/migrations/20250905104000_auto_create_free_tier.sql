@@ -1,5 +1,7 @@
 BEGIN;
 
+SET LOCAL lock_timeout = '30s';
+
 CREATE OR REPLACE FUNCTION initialize_free_tier_credits()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -8,6 +10,7 @@ AS $$
 DECLARE
     v_initial_credits DECIMAL := 5.0;
     v_transaction_id UUID;
+    v_rowcount INT;
 BEGIN
     IF NEW.personal_account = TRUE THEN
         INSERT INTO public.credit_accounts (
@@ -22,8 +25,9 @@ BEGIN
             NOW()
         )
         ON CONFLICT (user_id) DO NOTHING;
-        
-        IF FOUND THEN
+
+        GET DIAGNOSTICS v_rowcount = ROW_COUNT;
+        IF v_rowcount > 0 THEN
             INSERT INTO public.credit_ledger (
                 user_id,
                 amount,
@@ -103,4 +107,4 @@ BEGIN
 END;
 $$;
 
-COMMIT; 
+COMMIT;

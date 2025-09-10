@@ -28,6 +28,10 @@ class FastSyncService:
             'converted_to_trial': 0,
             'errors': 0,
             'skipped': 0,
+            'no_subscription': 0,
+            'wrong_status': 0,
+            'no_price_id': 0,
+            'unmatched_tier': 0,
             'start_time': time.time()
         }
     
@@ -94,9 +98,16 @@ class FastSyncService:
             )
             
             if not subscriptions.data:
+                self.stats['no_subscription'] += 1
+                logger.debug(f"Customer {stripe_customer_id}: no subscription found")
                 return
             
             sub = subscriptions.data[0]
+            
+            if sub.status not in ['active', 'trialing']:
+                self.stats['wrong_status'] += 1
+                logger.debug(f"Customer {stripe_customer_id}: subscription status is {sub.status}, skipping")
+                return
             
             if sub.status in ['active', 'trialing']:
                 price_id = None
@@ -117,9 +128,18 @@ class FastSyncService:
                         elif isinstance(item.price, str):
                             price_id = item.price
                 
+                if not price_id:
+                    self.stats['no_price_id'] += 1
+                    logger.debug(f"Customer {stripe_customer_id}: no price_id found in subscription")
+                    return
+                
                 tier = get_tier_by_price_id(price_id) if price_id else None
                 if not tier:
+                    self.stats['unmatched_tier'] += 1
+                    logger.debug(f"Customer {stripe_customer_id}: price_id {price_id} doesn't match any configured tier")
                     return
+                
+                logger.info(f"Syncing customer {stripe_customer_id} with tier {tier.name}")
                 
                 update_data = {
                     'tier': tier.name,
@@ -183,17 +203,21 @@ class FastSyncService:
             
             if account_ids:
                 try:
-                    await self.client.from_('credit_accounts')\
-                        .update({
-                            'tier': 'none',
-                            'balance': 0,
-                            'expiring_credits': 0,
-                            'non_expiring_credits': 0,
-                            'trial_status': None,
-                            'updated_at': datetime.now(timezone.utc).isoformat()
-                        })\
-                        .in_('account_id', account_ids)\
-                        .execute()
+                    update_chunk_size = 50
+                    for i in range(0, len(account_ids), update_chunk_size):
+                        chunk_ids = account_ids[i:i+update_chunk_size]
+                        
+                        await self.client.from_('credit_accounts')\
+                            .update({
+                                'tier': 'none',
+                                'balance': 0,
+                                'expiring_credits': 0,
+                                'non_expiring_credits': 0,
+                                'trial_status': None,
+                                'updated_at': datetime.now(timezone.utc).isoformat()
+                            })\
+                            .in_('account_id', chunk_ids)\
+                            .execute()
                     
                     if ledger_entries:
                         for i in range(0, len(ledger_entries), 100):
@@ -293,6 +317,11 @@ class FastSyncService:
         print(f"Subscriptions synced: {self.stats['synced']}")
         print(f"Users converted to trial-ready: {self.stats['converted_to_trial']}")
         print(f"Errors: {self.stats['errors']}")
+        print("\n📊 Subscription Sync Details:")
+        print(f"  No subscription found: {self.stats['no_subscription']}")
+        print(f"  Wrong status (not active/trialing): {self.stats['wrong_status']}")
+        print(f"  No price ID in subscription: {self.stats['no_price_id']}")
+        print(f"  Price ID doesn't match tiers: {self.stats['unmatched_tier']}")
         print("="*60)
 
 async def main():
