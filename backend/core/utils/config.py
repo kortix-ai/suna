@@ -41,6 +41,7 @@ class Configuration:
     # Environment mode
     ENV_MODE: EnvMode = EnvMode.LOCAL
     
+    
     # Subscription tier IDs - Production
     STRIPE_FREE_TIER_ID_PROD: str = 'price_1RILb4G6l1KZGqIrK4QLrx9i'
     STRIPE_TIER_2_20_ID_PROD: str = 'price_1RILb4G6l1KZGqIrhomjgDnO'
