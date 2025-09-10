@@ -5,7 +5,7 @@ import type { PricingTier } from '@/lib/home';
 import { siteConfig } from '@/lib/home';
 import { cn } from '@/lib/utils';
 import { motion } from 'motion/react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { CheckIcon } from 'lucide-react';
 import Link from 'next/link';
 import {
@@ -75,6 +75,7 @@ interface PricingTierProps {
   isAuthenticated?: boolean;
   returnUrl: string;
   insideDialog?: boolean;
+  billingPeriod: 'monthly' | 'yearly' | 'yearly_commitment';
 }
 
 // Components
@@ -172,6 +173,7 @@ function PricingTier({
   isAuthenticated = false,
   returnUrl,
   insideDialog = false,
+  billingPeriod,
 }: PricingTierProps) {
   const [localSelectedPlan, setLocalSelectedPlan] = useState(
     selectedPlan || DEFAULT_SELECTED_PLAN,
@@ -215,8 +217,40 @@ function PricingTier({
     return tier.stripePriceId;
   };
 
+  // Get display price based on billing period
+  const getDisplayPrice = () => {
+    if (billingPeriod === 'yearly' && tier.yearlyPrice) {
+      return tier.yearlyPrice;
+    }
+    return tier.price;
+  };
+
   const displayPrice = getDisplayPrice();
   const priceId = getPriceId();
+  const tierPriceId = priceId;
+  const finalPriceId = priceId;
+
+  // Check if plan change is allowed
+  const isPlanChangeAllowed = (currentPriceId: string, newPriceId: string) => {
+    return { allowed: currentPriceId !== newPriceId };
+  };
+
+  // Get selected plan price for custom tiers
+  const getSelectedPlanPrice = (tier: PricingTier) => {
+    if (tier.name === 'Custom' && tier.upgradePlans) {
+      const selectedPlan = tier.upgradePlans.find(plan => plan.hours === localSelectedPlan);
+      return selectedPlan?.price || tier.price;
+    }
+    return tier.price;
+  };
+
+  // Get displayed hours for tier
+  const getDisplayedHours = (tier: PricingTier) => {
+    if (tier.name === 'Custom') {
+      return localSelectedPlan;
+    }
+    return tier.hours || '0';
+  };
 
   // Handle subscription/trial start
   const handleSubscribe = async (planStripePriceId: string) => {
@@ -629,6 +663,12 @@ export function PricingSection({
     } finally {
       setIsFetchingPlan(false);
     }
+  };
+
+  const getDefaultBillingPeriod = useCallback(() => {
+    if (!isAuthenticated || !currentSubscription) {
+      return 'yearly_commitment';
+    }
 
     const currentTier = siteConfig.cloudPricingItems.find(
       (p) => p.stripePriceId === currentSubscription.price_id || 
@@ -710,23 +750,35 @@ export function PricingSection({
       className={cn("flex flex-col items-center justify-center gap-10 w-full relative", { "pb-20": !insideDialog })}
     >
       {showTitleAndTabs && (
-        <>
-          <SectionHeader>
-            <h2 className="text-3xl md:text-4xl font-medium tracking-tighter text-center text-balance">
-              Choose the right plan for your needs
-            </h2>
-            <p className="text-muted-foreground text-center text-balance font-medium">
-              Start with our free plan or upgrade to a premium plan for more
-              usage hours
-            </p>
-          </SectionHeader>
-        )}
+        <SectionHeader>
+          <h2 className="text-3xl md:text-4xl font-medium tracking-tighter text-center text-balance">
+            Choose the right plan for your needs
+          </h2>
+          <p className="text-muted-foreground text-center text-balance font-medium">
+            Start with our free plan or upgrade to a premium plan for more
+            usage hours
+          </p>
+        </SectionHeader>
+      )}
 
-        <div className="flex justify-center mb-8">
-          <BillingPeriodToggle
-            billingPeriod={billingPeriod}
-            setBillingPeriod={setBillingPeriod}
-          />
+      <div className="flex justify-center mb-8">
+          <div className="relative flex w-fit items-center rounded-full border p-0.5 backdrop-blur-sm h-9 flex-row bg-muted">
+            {['monthly', 'yearly_commitment'].map((period) => (
+              <button
+                key={period}
+                onClick={() => setBillingPeriod(period as any)}
+                className={cn(
+                  'relative z-[1] px-6 h-8 flex items-center justify-center cursor-pointer rounded-full text-sm transition-colors',
+                  {
+                    'bg-background text-foreground shadow-sm': billingPeriod === period,
+                    'text-muted-foreground hover:text-foreground': billingPeriod !== period
+                  }
+                )}
+              >
+                {period === 'monthly' ? 'Monthly' : 'Yearly (Save 17%)'}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className={cn(
@@ -752,9 +804,8 @@ export function PricingSection({
                 insideDialog={insideDialog}
                 billingPeriod={billingPeriod}
               />
-            </div>
-          </div>
-        </>
+            ))}
+        </div>
       )}
 
       {deploymentType === 'cloud' && (
