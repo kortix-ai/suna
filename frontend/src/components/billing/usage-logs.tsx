@@ -28,7 +28,7 @@ import { Button } from '@/components/ui/button';
 import { ExternalLink, Loader2, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { OpenInNewWindowIcon } from '@radix-ui/react-icons';
-import { useUsageLogs } from '@/hooks/react-query/subscriptions/use-billing';
+import { useUsageLogs, useAdminUserUsageLogs } from '@/hooks/react-query/subscriptions/use-billing';
 import { UsageLogEntry, DailyToolUsage } from '@/lib/api';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 
@@ -45,17 +45,20 @@ interface DailyUsage {
 
 interface Props {
   accountId: string;
+  isAdminView?: boolean;
 }
 
-export default function UsageLogs({ accountId }: Props) {
+export default function UsageLogs({ accountId, isAdminView = false }: Props) {
   const [page, setPage] = useState(0);
   const [allLogs, setAllLogs] = useState<UsageLogEntry[]>([]);
   const [hasMore, setHasMore] = useState(true);
   
   const ITEMS_PER_PAGE = 1000;
 
-  // Use React Query hook for the current page
-  const { data: currentPageData, isLoading, error, refetch } = useUsageLogs(page, ITEMS_PER_PAGE);
+  // Use appropriate hook based on context
+  const { data: currentPageData, isLoading, error, refetch } = isAdminView 
+    ? useAdminUserUsageLogs(accountId, page, ITEMS_PER_PAGE, 30)
+    : useUsageLogs(page, ITEMS_PER_PAGE);
 
   // Check if we have hierarchical data
   const isHierarchical = currentPageData?.is_hierarchical || false;

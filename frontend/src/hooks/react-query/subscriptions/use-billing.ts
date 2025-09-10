@@ -55,4 +55,26 @@ export const useUsageLogs = (page: number = 0, itemsPerPage: number = 1000) =>
       refetchOnMount: true,
       refetchOnWindowFocus: false,
     }
+  )();
+
+export const useAdminUserUsageLogs = (accountId: string, page: number = 0, itemsPerPage: number = 1000, days: number = 30) => 
+  createQueryHook(
+    ['admin-user-usage', accountId, page, itemsPerPage, days],
+    async () => {
+      const response = await fetch(`/api/enterprise/admin/users/${accountId}?page=${page}&items_per_page=${itemsPerPage}&days=${days}`, {
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch user usage: ${response.statusText}`);
+      }
+      
+      return response.json();
+    },
+    {
+      staleTime: 30 * 1000, // 30 seconds
+      refetchOnMount: true,
+      refetchOnWindowFocus: false,
+      enabled: !!accountId, // Only run if accountId is provided
+    }
   )(); 
