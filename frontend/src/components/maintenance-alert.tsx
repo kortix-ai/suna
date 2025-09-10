@@ -37,11 +37,6 @@ export function MaintenanceAlert({
           animate={{ opacity: 1, scale: 1 }}
           transition={{ type: 'spring', damping: 30, stiffness: 300 }}
         >
-          {/* Background pattern */}
-          <div className="absolute inset-0 bg-accent/20 opacity-20">
-            <div className="absolute inset-0 bg-grid-white/10 [mask-image:radial-gradient(white,transparent_85%)]" />
-          </div>
-
           {closeable && (
             <Button
               variant="ghost"
@@ -53,7 +48,6 @@ export function MaintenanceAlert({
               <span className="sr-only">Close</span>
             </Button>
           )}
-
           <AlertDialogHeader className="gap-6 px-8 pt-10 pb-6 relative z-10">
             <motion.div
               className="flex items-center justify-center"
@@ -61,8 +55,8 @@ export function MaintenanceAlert({
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.1 }}
             >
-              <div className="flex size-16 items-center justify-center rounded-full bg-gradient-to-t from-primary/20 to-secondary/10 backdrop-blur-md">
-                <div className="flex size-12 items-center justify-center rounded-full bg-gradient-to-t from-primary to-primary/80 shadow-md">
+              <div className="flex size-16 items-center justify-center rounded-full bg-gradient-to-t from-amber-500/20 to-amber-600/10 backdrop-blur-md">
+                <div className="flex size-12 items-center justify-center rounded-full bg-gradient-to-t from-amber-500 to-amber-600 shadow-md">
                   <Clock className="h-6 w-6 text-white" />
                 </div>
               </div>
@@ -74,7 +68,7 @@ export function MaintenanceAlert({
               transition={{ delay: 0.2 }}
             >
               <AlertDialogTitle className="text-2xl font-bold text-center text-primary bg-clip-text">
-                High Demand Notice
+                Maintenance Notice
               </AlertDialogTitle>
             </motion.div>
 
@@ -84,28 +78,11 @@ export function MaintenanceAlert({
               transition={{ delay: 0.3 }}
             >
               <AlertDialogDescription className="text-base text-center leading-relaxed">
-                Due to exceptionally high demand, our service is currently
-                experiencing slower response times. We recommend returning
-                tomorrow when our systems will be operating at normal capacity.
-                <span className="mt-4 block font-medium text-primary">
-                  Thank you for your understanding. We will notify you via email
-                  once the service is fully operational again.
-                </span>
+                We are currently performing maintenance on our system. Please
+                check back later.
               </AlertDialogDescription>
             </motion.div>
           </AlertDialogHeader>
-
-          <AlertDialogFooter className="p-8 pt-4 border-t border-border/40 bg-background/40 backdrop-blur-sm">
-            <Link
-              href="https://github.com/kortix-ai/suna"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mx-auto w-full flex items-center justify-center gap-3 bg-gradient-to-tr from-primary to-primary/80 hover:opacity-90 text-white font-medium rounded-full px-8 py-3 transition-all hover:shadow-md"
-            >
-              <Github className="h-5 w-5 transition-transform group-hover:scale-110" />
-              <span>Explore Self-Hosted Version</span>
-            </Link>
-          </AlertDialogFooter>
         </motion.div>
       </AlertDialogContent>
     </AlertDialog>
