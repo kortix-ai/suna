@@ -278,14 +278,7 @@ function UserDetails({ accountId }: { accountId: string }) {
         </Card>
       </div>
       
-      <Card>
-        <CardHeader>
-          <CardTitle>Daily Usage Logs</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <UsageLogs accountId={accountId} isAdminView={true} />
-        </CardContent>
-      </Card>
+      <UsageLogs accountId={accountId} isAdminView={true} />
     </div>
   );
 }
