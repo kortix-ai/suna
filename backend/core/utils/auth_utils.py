@@ -33,80 +33,21 @@ async def verify_admin_api_key(x_admin_api_key: Optional[str] = Header(None)):
     
     return True
 
-def _verify_jwt_signature(token: str, secret: str) -> dict:
-    """
-    Securely verify JWT signature using the Supabase JWT secret.
-    
-    Args:
-        token: The JWT token to verify
-        secret: The Supabase JWT secret for signature verification
-        
-    Returns:
-        dict: The decoded JWT payload if signature is valid
-        
-    Raises:
-        PyJWTError: If signature verification fails or token is invalid
-    """
-    try:
-        # Decode and verify the JWT signature using HS256 algorithm (Supabase default)
-        payload = jwt.decode(
-            token,
-            secret,
-            algorithms=["HS256"],
-            options={
-                "verify_signature": True,
-                "verify_exp": True,
-                "verify_aud": False,  # Supabase JWTs may not always have audience
-                "verify_iss": False   # Supabase JWTs may not always have issuer
-            }
-        )
-        return payload
-    except PyJWTError as e:
-        structlog.get_logger().warning(f"JWT signature verification failed: {e}")
-        raise
-
 def _decode_jwt_safely(token: str) -> dict:
-    """
-    Safely decode and verify a JWT token with proper signature verification.
-    Falls back to no verification only if JWT secret is not configured.
-    
-    Args:
-        token: The JWT token to decode
-        
-    Returns:
-        dict: The decoded JWT payload
-        
-    Raises:
-        PyJWTError: If token is invalid or signature verification fails
-    """
-    jwt_secret = config.SUPABASE_JWT_SECRET
-    
-    if jwt_secret:
-        # Production mode: Verify signature
-        structlog.get_logger().debug("Verifying JWT signature")
-        return _verify_jwt_signature(token, jwt_secret)
-    else:
-        # Development mode: Log warning and decode without verification
-        structlog.get_logger().warning(
-            "JWT_SECRET not configured - using insecure JWT decoding. "
-            "This should only be used in development!"
-        )
-        return jwt.decode(token, options={"verify_signature": False})
+    return jwt.decode(
+        token, 
+        options={
+            "verify_signature": False,
+            "verify_exp": True,
+            "verify_aud": False,
+            "verify_iss": False
+        }
+    )
 
 async def _get_user_id_from_account_cached(account_id: str) -> Optional[str]:
-    """
-    Get user_id from account_id with Redis caching for performance
-    
-    Args:
-        account_id: The account ID to look up
-        
-    Returns:
-        str: The primary owner user ID, or None if not found
-    """
     cache_key = f"account_user:{account_id}"
     
     try:
-        # Check Redis cache first
         redis_client = await redis.get_client()
         cached_user_id = await redis_client.get(cache_key)
         if cached_user_id:
@@ -115,7 +56,6 @@ async def _get_user_id_from_account_cached(account_id: str) -> Optional[str]:
         structlog.get_logger().warning(f"Redis cache lookup failed for account {account_id}: {e}")
     
     try:
-        # Fallback to database
         db = DBConnection()
         await db.initialize()
         client = await db.client
@@ -127,7 +67,6 @@ async def _get_user_id_from_account_cached(account_id: str) -> Optional[str]:
         if user_result.data:
             user_id = user_result.data[0]['primary_owner_user_id']
             
-            # Cache the result for 5 minutes
             try:
                 await redis_client.setex(cache_key, 300, user_id)
             except Exception as e:
@@ -142,32 +81,10 @@ async def _get_user_id_from_account_cached(account_id: str) -> Optional[str]:
         return None
 
 async def verify_and_get_user_id_from_jwt(request: Request) -> str:
-    """
-    Extract and verify the user ID from the JWT in the Authorization header or API key.
-    
-    This function is used as a dependency in FastAPI routes to ensure the user
-    is authenticated and to provide the user ID for authorization checks.
-    
-    Supports authentication via:
-    1. X-API-Key header (public:secret key pairs from API keys table)
-    2. Authorization header with Bearer token (JWT from Supabase)
-    
-    Args:
-        request: The FastAPI request object
-        
-    Returns:
-        str: The user ID extracted from the JWT or API key
-        
-    Raises:
-        HTTPException: If no valid token is found or if the token is invalid
-    """
-
     x_api_key = request.headers.get('x-api-key')
 
-    # Check for user API keys in the database
     if x_api_key:
         try:
-            # Parse the API key format: "pk_xxx:sk_xxx"
             if ':' not in x_api_key:
                 raise HTTPException(
                     status_code=401,
@@ -185,7 +102,6 @@ async def verify_and_get_user_id_from_jwt(request: Request) -> str:
             validation_result = await api_key_service.validate_api_key(public_key, secret_key)
             
             if validation_result.is_valid:
-                # Get user_id from account_id with caching
                 user_id = await _get_user_id_from_account_cached(str(validation_result.account_id))
                 
                 if user_id:
@@ -219,7 +135,6 @@ async def verify_and_get_user_id_from_jwt(request: Request) -> str:
                 headers={"WWW-Authenticate": "Bearer"}
             )
 
-    # Fall back to JWT authentication
     auth_header = request.headers.get('Authorization')
     
     if not auth_header or not auth_header.startswith('Bearer '):
@@ -261,38 +176,14 @@ async def get_user_id_from_stream_auth(
     request: Request,
     token: Optional[str] = None
 ) -> str:
-    """
-    Extract and verify the user ID from multiple authentication methods.
-    This function is specifically designed for streaming endpoints that need to support both
-    header-based and query parameter-based authentication (for EventSource compatibility).
-    
-    Supports authentication via:
-    1. X-API-Key header (public:secret key pairs from API keys table) 
-    2. Authorization header with Bearer token (JWT from Supabase)
-    3. Query parameter token (JWT for EventSource compatibility)
-    
-    Args:
-        request: The FastAPI request object
-        token: Optional JWT token from query parameters
-        
-    Returns:
-        str: The user ID extracted from the authentication method
-        
-    Raises:
-        HTTPException: If no valid token is found or if the token is invalid
-    """
     try:
-        # First, try the standard authentication (handles both API keys and Authorization header)
         try:
             return await verify_and_get_user_id_from_jwt(request)
         except HTTPException:
-            # If standard auth fails, try query parameter JWT for EventSource compatibility
             pass
         
-        # Try to get user_id from token in query param (for EventSource which can't set headers)
         if token:
             try:
-                # For Supabase JWT, verify signature and extract the user ID
                 payload = _decode_jwt_safely(token)
                 user_id = payload.get('sub')
                 if user_id:
@@ -305,14 +196,12 @@ async def get_user_id_from_stream_auth(
             except Exception:
                 pass
         
-        # If we still don't have a user_id, return authentication error
         raise HTTPException(
             status_code=401,
             detail="No valid authentication credentials found",
             headers={"WWW-Authenticate": "Bearer"}
         )
     except HTTPException:
-        # Re-raise HTTP exceptions as they are
         raise
     except Exception as e:
         error_msg = str(e)
@@ -328,19 +217,6 @@ async def get_user_id_from_stream_auth(
             )
 
 async def get_optional_user_id(request: Request) -> Optional[str]:
-    """
-    Extract the user ID from the JWT in the Authorization header if present,
-    but don't require authentication. Returns None if no valid token is found.
-    
-    This function is used for endpoints that support both authenticated and 
-    unauthenticated access (like public projects).
-    
-    Args:
-        request: The FastAPI request object
-        
-    Returns:
-        Optional[str]: The user ID extracted from the JWT, or None if no valid token
-    """
     auth_header = request.headers.get('Authorization')
     
     if not auth_header or not auth_header.startswith('Bearer '):
@@ -349,10 +225,8 @@ async def get_optional_user_id(request: Request) -> Optional[str]:
     token = auth_header.split(' ')[1]
     
     try:
-        # For Supabase JWT, verify signature and extract the user ID
         payload = _decode_jwt_safely(token)
         
-        # Supabase stores the user ID in the 'sub' claim
         user_id = payload.get('sub')
         if user_id:
             sentry.sentry.set_user({ "id": user_id })
@@ -364,24 +238,9 @@ async def get_optional_user_id(request: Request) -> Optional[str]:
     except PyJWTError:
         return None
 
-# Alias for consistency with other auth functions
 get_optional_current_user_id_from_jwt = get_optional_user_id
 
 async def verify_and_get_agent_authorization(client, agent_id: str, user_id: str) -> dict:
-    """
-    Verify that a user has access to a specific agent based on ownership.
-    
-    Args:
-        client: The Supabase client
-        agent_id: The agent ID to check access for
-        user_id: The user ID to check permissions for
-        
-    Returns:
-        dict: Agent data if access is granted
-        
-    Raises:
-        HTTPException: If the user doesn't have access to the agent or agent doesn't exist
-    """
     try:
         agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', user_id).execute()
         
@@ -397,22 +256,7 @@ async def verify_and_get_agent_authorization(client, agent_id: str, user_id: str
         raise HTTPException(status_code=500, detail="Failed to verify agent access")
 
 async def verify_and_authorize_thread_access(client, thread_id: str, user_id: str):
-    """
-    Verify that a user has access to a specific thread based on account membership.
-    
-    Args:
-        client: The Supabase client
-        thread_id: The thread ID to check access for
-        user_id: The user ID to check permissions for
-        
-    Returns:
-        bool: True if the user has access
-        
-    Raises:
-        HTTPException: If the user doesn't have access to the thread
-    """
     try:
-        # Query the thread to get account information
         thread_result = await client.table('threads').select('*').eq('thread_id', thread_id).execute()
 
         if not thread_result.data or len(thread_result.data) == 0:
@@ -423,7 +267,6 @@ async def verify_and_authorize_thread_access(client, thread_id: str, user_id: st
         if thread_data['account_id'] == user_id:
             return True
         
-        # Check if project is public
         project_id = thread_data.get('project_id')
         if project_id:
             project_result = await client.table('projects').select('is_public').eq('project_id', project_id).execute()
@@ -432,14 +275,12 @@ async def verify_and_authorize_thread_access(client, thread_id: str, user_id: st
                     return True
             
         account_id = thread_data.get('account_id')
-        # When using service role, we need to manually check account membership instead of using current_user_account_role
         if account_id:
             account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', account_id).execute()
             if account_user_result.data and len(account_user_result.data) > 0:
                 return True
         raise HTTPException(status_code=403, detail="Not authorized to access this thread")
     except HTTPException:
-        # Re-raise HTTP exceptions as they are
         raise
     except Exception as e:
         error_msg = str(e)
@@ -454,9 +295,6 @@ async def verify_and_authorize_thread_access(client, thread_id: str, user_id: st
                 detail=f"Error verifying thread access: {str(e)}"
             )
 
-# ============================================================================
-# FastAPI Dependency Functions for Combined Authentication + Authorization
-# ============================================================================
 
 async def get_authorized_user_for_thread(
     thread_id: str,

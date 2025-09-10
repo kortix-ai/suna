@@ -135,6 +135,36 @@ export class AgentCountLimitError extends Error {
   }
 }
 
+export class ProjectLimitError extends Error {
+  status: number;
+  detail: { 
+    message: string;
+    current_count: number;
+    limit: number;
+    tier_name: string;
+    error_code: string;
+  };
+
+  constructor(
+    status: number,
+    detail: { 
+      message: string;
+      current_count: number;
+      limit: number;
+      tier_name: string;
+      error_code: string;
+      [key: string]: any;
+    },
+    message?: string,
+  ) {
+    super(message || detail.message || `Project Limit Exceeded: ${status}`);
+    this.name = 'ProjectLimitError';
+    this.status = status;
+    this.detail = detail;
+    Object.setPrototypeOf(this, ProjectLimitError.prototype);
+  }
+}
+
 export class NoAccessTokenAvailableError extends Error {
   constructor(message?: string, options?: { cause?: Error }) {
     super(message || 'No access token available', options);
@@ -142,7 +172,6 @@ export class NoAccessTokenAvailableError extends Error {
   name = 'NoAccessTokenAvailableError';
 }
 
-// Type Definitions (moved from potential separate file for clarity)
 export type Project = {
   id: string;
   name: string;
@@ -789,6 +818,29 @@ export const startAgent = async (
             detail.running_count = 0;
           }
           throw new AgentRunLimitError(response.status, detail);
+      }
+
+      // Check for project limit errors (402 with PROJECT_LIMIT_EXCEEDED error_code)
+      if (response.status === 402) {
+        try {
+          const errorData = await response.json();
+          const detail = errorData?.detail || {};
+          
+          if (detail.error_code === 'PROJECT_LIMIT_EXCEEDED') {
+            throw new ProjectLimitError(response.status, {
+              message: detail.message || 'Project limit exceeded',
+              current_count: detail.current_count || 0,
+              limit: detail.limit || 0,
+              tier_name: detail.tier_name || 'none',
+              error_code: detail.error_code
+            });
+          }
+        } catch (parseError) {
+          if (parseError instanceof ProjectLimitError) {
+            throw parseError;
+          }
+          // If it's not a project limit error, continue to general error handling
+        }
       }
 
       const errorText = await response
@@ -1648,6 +1700,13 @@ export interface SubscriptionStatus {
   // Credit information
   credit_balance?: number;
   can_purchase_credits?: boolean;
+  tier?: {
+    name: string;
+    credits: number;
+    can_purchase_credits: boolean;
+    models?: string[];
+    project_limit?: number;
+  };
 }
 
 export interface CommitmentInfo {
@@ -1838,6 +1897,7 @@ export const createCheckoutSession = async (
     
     const requestBody = { ...request, tolt_referral: window.tolt_referral };
     
+    // Use the new billing v2 API endpoint
     const response = await fetch(`${API_URL}/billing/create-checkout-session`, {
       method: 'POST',
       headers: {
@@ -1861,25 +1921,19 @@ export const createCheckoutSession = async (
     }
 
     const data = await response.json();
-    switch (data.status) {
-      case 'upgraded':
-      case 'updated':
-      case 'downgrade_scheduled':
-      case 'scheduled':
-      case 'no_change':
-        return data;
-      case 'new':
-      case 'checkout_created':
-        if (!data.url) {
-          throw new Error('No checkout URL provided');
-        }
-        return data;
-      default:
-        console.warn(
-          'Unexpected status from createCheckoutSession:',
-          data.status,
-        );
-        return data;
+    if (data.checkout_url) {
+      return {
+        status: 'checkout_created',
+        url: data.checkout_url
+      };
+    } else if (data.success && data.subscription_id) {
+      return {
+        status: 'updated',
+        message: data.message || 'Subscription updated successfully',
+        subscription_id: data.subscription_id
+      };
+    } else {
+      return data;
     }
   } catch (error) {
     console.error('Failed to create checkout session:', error);
@@ -1924,7 +1978,11 @@ export const createPortalSession = async (
       );
     }
 
-    return response.json();
+    const data = await response.json();
+    
+    return {
+      url: data.portal_url
+    };
   } catch (error) {
     console.error('Failed to create portal session:', error);
     handleApiError(error, { operation: 'create portal session', resource: 'billing portal' });
@@ -1935,9 +1993,6 @@ export const createPortalSession = async (
 
 export const getSubscription = async (): Promise<SubscriptionStatus> => {
   try {
-    // Log when subscription API is called for debugging
-    console.log('🔍 [BILLING] Making subscription API call:', new Date().toISOString());
-    
     const supabase = createClient();
     const {
       data: { session },
@@ -1966,7 +2021,19 @@ export const getSubscription = async (): Promise<SubscriptionStatus> => {
       );
     }
 
-    return response.json();
+    const data = await response.json();
+
+    return {
+      subscription: data.subscription ? {
+        ...data.subscription,
+        cancel_at_period_end: data.subscription.cancel_at ? true : false,
+      } : null,
+      current_usage: data.credits?.lifetime_used || 0,
+      cost_limit: data.tier?.credits || 0,
+      credit_balance: data.credits?.balance || 0,
+      can_purchase_credits: data.credits?.can_purchase || false,
+      ...data 
+    } as SubscriptionStatus;
   } catch (error) {
     if (error instanceof NoAccessTokenAvailableError) {
       throw error;
@@ -1989,6 +2056,7 @@ export const getSubscriptionCommitment = async (subscriptionId: string): Promise
       throw new NoAccessTokenAvailableError();
     }
 
+    // Use the new billing v2 API endpoint
     const response = await fetch(`${API_URL}/billing/subscription-commitment/${subscriptionId}`, {
       headers: {
         Authorization: `Bearer ${session.access_token}`,
@@ -2121,6 +2189,7 @@ export const cancelSubscription = async (): Promise<CancelSubscriptionResponse> 
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session.access_token}`,
       },
+      body: JSON.stringify({}),
     });
 
     if (!response.ok) {
@@ -2161,6 +2230,7 @@ export const reactivateSubscription = async (): Promise<ReactivateSubscriptionRe
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session.access_token}`,
       },
+      body: JSON.stringify({}),
     });
 
     if (!response.ok) {

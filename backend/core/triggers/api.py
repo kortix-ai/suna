@@ -12,7 +12,8 @@ from core.services.supabase import DBConnection
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
 from core.utils.config import config
-from core.services.billing import check_billing_status, can_use_model
+from core.services.billing import can_use_model
+from billing.billing_integration import billing_integration
 
 from .trigger_service import get_trigger_service, TriggerType
 from .provider_service import get_provider_service
@@ -858,9 +859,9 @@ async def execute_agent_workflow(
     if not can_use:
         raise HTTPException(status_code=403, detail={"message": model_message, "allowed_models": allowed_models})
 
-    can_run, message, subscription = await check_billing_status(client, account_id)
+    can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(account_id)
     if not can_run:
-        raise HTTPException(status_code=402, detail={"message": message, "subscription": subscription})
+        raise HTTPException(status_code=402, detail={"message": message, "error": "insufficient_credits"})
     
     from .trigger_service import TriggerResult, TriggerEvent, TriggerType
     

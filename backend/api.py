@@ -22,7 +22,9 @@ import uuid
 from core import api as core_api
 
 from core.sandbox import api as sandbox_api
-from core.services import billing as billing_api
+from billing.api import router as billing_router
+from billing.admin import router as billing_admin_router
+from admin import users_admin
 from core.services import transcription as transcription_api
 import sys
 from core.services import email_api
@@ -34,7 +36,6 @@ from core.services import api_keys_api
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-# Initialize managers
 db = DBConnection()
 instance_id = "single"
 
@@ -76,19 +77,16 @@ async def lifespan(app: FastAPI):
         
         yield
         
-        # Clean up agent resources
         logger.debug("Cleaning up agent resources")
         await core_api.cleanup()
         
-        # Clean up Redis connection
         try:
             logger.debug("Closing Redis connection")
             await redis.close()
             logger.debug("Redis connection closed successfully")
         except Exception as e:
             logger.error(f"Error closing Redis connection: {e}")
-        
-        # Clean up database connection
+
         logger.debug("Disconnecting from database")
         await db.disconnect()
     except Exception as e:
@@ -158,8 +156,10 @@ api_router = APIRouter()
 # Include all API routers without individual prefixes
 api_router.include_router(core_api.router)
 api_router.include_router(sandbox_api.router)
-api_router.include_router(billing_api.router)
+api_router.include_router(billing_router)
 api_router.include_router(api_keys_api.router)
+api_router.include_router(billing_admin_router)
+api_router.include_router(users_admin.router)
 
 from core.mcp_module import api as mcp_api
 from core.credentials import api as credentials_api
@@ -221,6 +221,8 @@ async def health_check():
 
 
 app.include_router(api_router, prefix="/api")
+app.include_router(billing_router)
+app.include_router(transcription_api.router)
 
 
 if __name__ == "__main__":

@@ -4,13 +4,14 @@ import traceback
 import uuid
 import os
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import Optional, List, Tuple, Dict
 from fastapi import APIRouter, HTTPException, Depends, Request, Body, File, UploadFile, Form
 from fastapi.responses import StreamingResponse
 
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_user_id_from_stream_auth, verify_and_authorize_thread_access
 from core.utils.logger import logger, structlog
-from core.services.billing import check_billing_status, can_use_model
+from core.services.billing import can_use_model
+from billing.billing_integration import billing_integration
 from core.utils.config import config
 from core.services import redis
 from core.sandbox.sandbox import create_sandbox, delete_sandbox
@@ -27,6 +28,22 @@ from .config_helper import extract_agent_config
 from .core_utils import check_agent_run_limit, check_project_count_limit
 
 router = APIRouter()
+
+async def check_billing_status(client, user_id: str) -> Tuple[bool, str, Optional[Dict]]:
+    """
+    Compatibility wrapper for the new credit-based billing system.
+    Converts new credit system response to match old billing status format.
+    """
+    can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(user_id)
+    
+    # Create a subscription-like object for backward compatibility
+    subscription_info = {
+        "price_id": "credit_based",
+        "plan_name": "Credit System",
+        "minutes_limit": "credit based"
+    }
+    
+    return can_run, message, subscription_info
 
 @router.post("/thread/{thread_id}/agent/start")
 async def start_agent(
@@ -761,7 +778,6 @@ async def initiate_agent_with_files(
         logger.warning(f"Agent run limit exceeded for account {account_id}: {limit_check['running_count']} running agents")
         raise HTTPException(status_code=429, detail=error_detail)
 
-    # Check project creation limit
     if not project_limit_check['can_create']:
         error_detail = {
             "message": f"You've reached your project limit ({project_limit_check['current_count']}/{project_limit_check['limit']} projects). To create a new project, please delete some existing projects first. You can delete projects from your dashboard by clicking the three dots menu on any project card.",

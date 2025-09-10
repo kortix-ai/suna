@@ -117,25 +117,6 @@ export const siteConfig = {
   },
   cloudPricingItems: [
     {
-      name: 'Free',
-      price: '$0',
-      description: 'Perfect for getting started',
-      buttonText: 'Start Free',
-      buttonColor: 'bg-secondary text-white',
-      isPopular: false,
-      /** @deprecated */
-      hours: '60 min',
-      features: [
-        '$5 AI token credits/m',
-        '2 custom agents',
-        'Public projects',
-        'Basic abilities',
-        // 'Community support',
-      ],
-      stripePriceId: config.SUBSCRIPTION_TIERS.FREE.priceId,
-      upgradePlans: [],
-    },
-    {
       name: 'Plus',
       price: '$20',
       yearlyPrice: '$204',

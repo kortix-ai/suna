@@ -22,7 +22,7 @@ from core.prompts.prompt import get_system_prompt
 
 from core.utils.logger import logger
 
-from core.services.billing import check_billing_status
+from billing.billing_integration import billing_integration
 from core.tools.sb_vision_tool import SandboxVisionTool
 from core.tools.sb_image_edit_tool import SandboxImageEditTool
 from core.tools.sb_video_avatar_tool import SandboxVideoAvatarTool
@@ -635,9 +635,9 @@ class AgentRunner:
         while continue_execution and iteration_count < self.config.max_iterations:
             iteration_count += 1
 
-            can_run, message, subscription = await check_billing_status(self.client, self.account_id)
+            can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(self.account_id)
             if not can_run:
-                error_msg = f"Billing limit reached: {message}"
+                error_msg = f"Insufficient credits: {message}"
                 yield {
                     "type": "status",
                     "status": "stopped",

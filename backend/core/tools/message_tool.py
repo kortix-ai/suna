@@ -211,7 +211,11 @@ If you encounter any issues or need to take additional steps, please let me know
                 "properties": {
                     "presentation_name": {
                         "type": "string",
-                        "description": "The name of the presentation that was created. This will be displayed prominently to the user."
+                        "description": "The identifier/folder name of the presentation (e.g., 'test_presentation'). This should match the presentation_name used in create_slide."
+                    },
+                    "presentation_title": {
+                        "type": "string",
+                        "description": "The human-readable title of the presentation (e.g., 'Test Presentation'). This will be displayed prominently to the user."
                     },
                     "presentation_path": {
                         "type": "string",
@@ -237,14 +241,15 @@ If you encounter any issues or need to take additional steps, please let me know
                         "description": "(Optional) A direct URL to view the presentation if available. This could be a hosted version or a specific viewing link."
                     }
                 },
-                "required": ["presentation_name", "presentation_path", "slide_count", "text", "attachments"]
+                "required": ["presentation_name", "presentation_title", "presentation_path", "slide_count", "text", "attachments"]
             }
         }
     })
     @usage_example('''
         <function_calls>
         <invoke name="present_presentation">
-        <parameter name="presentation_name">Quarterly Sales Report 2024</parameter>
+        <parameter name="presentation_name">quarterly-sales-report-2024</parameter>
+        <parameter name="presentation_title">Quarterly Sales Report 2024</parameter>
         <parameter name="presentation_path">presentations/quarterly-sales-report-2024/</parameter>
         <parameter name="slide_count">8</parameter>
         <parameter name="text">I've created a comprehensive quarterly sales report presentation with 8 slides covering:
@@ -265,6 +270,7 @@ The presentation is ready for your review. You can view each slide individually 
     async def present_presentation(
         self, 
         presentation_name: str,
+        presentation_title: str,
         presentation_path: str,
         slide_count: int,
         text: str,
@@ -274,7 +280,8 @@ The presentation is ready for your review. You can view each slide individually 
         """Present the final presentation to the user.
 
         Args:
-            presentation_name: The name of the presentation
+            presentation_name: The identifier/folder name of the presentation
+            presentation_title: The human-readable title of the presentation
             presentation_path: The file path where the presentation is located
             slide_count: The total number of slides in the presentation
             text: A summary or description of the presentation
@@ -292,6 +299,7 @@ The presentation is ready for your review. You can view each slide individually 
             # Create a structured response with all presentation data
             result_data = {
                 "presentation_name": presentation_name,
+                "presentation_title": presentation_title,
                 "presentation_path": presentation_path,
                 "slide_count": slide_count,
                 "text": text,

@@ -204,6 +204,21 @@ function PricingTier({
     }
   };
 
+  // Get the price ID to use based on billing period
+  const getPriceId = () => {
+    if (billingPeriod === 'yearly_commitment' && tier.monthlyCommitmentStripePriceId) {
+      return tier.monthlyCommitmentStripePriceId;
+    } else if (billingPeriod === 'yearly' && tier.yearlyStripePriceId) {
+      // Legacy yearly plans (hidden from UI but still accessible)
+      return tier.yearlyStripePriceId;
+    }
+    return tier.stripePriceId;
+  };
+
+  const displayPrice = getDisplayPrice();
+  const priceId = getPriceId();
+
+  // Handle subscription/trial start
   const handleSubscribe = async (planStripePriceId: string) => {
     if (!isAuthenticated) {
       window.location.href = '/auth';
@@ -215,18 +230,10 @@ function PricingTier({
     }
 
     try {
-      // For custom tier, get the selected plan's stripePriceId
-      let finalPriceId = planStripePriceId;
-      if (tier.name === 'Custom' && tier.upgradePlans) {
-        const selectedPlan = tier.upgradePlans.find(
-          (plan) => plan.hours === localSelectedPlan,
-        );
-        if (selectedPlan?.stripePriceId) {
-          finalPriceId = selectedPlan.stripePriceId;
-        }
-      }
-
-      onPlanSelect?.(finalPriceId);
+      onPlanSelect?.(planStripePriceId);
+      const commitmentType = billingPeriod === 'yearly_commitment' ? 'yearly_commitment' : 
+                          billingPeriod === 'yearly' ? 'yearly' : 
+                          'monthly';
 
       const response: CreateCheckoutSessionResponse =
         await createCheckoutSession({
@@ -310,50 +317,17 @@ function PricingTier({
     return tier.price;
   };
 
-  const getDisplayedHours = (
-    tier: PricingTier,
-  ) => {
-    if (tier.name === 'Custom' && localSelectedPlan) {
-      return localSelectedPlan;
-    }
-    return tier.hours;
-  };
+  const userPlanName = currentSubscription?.plan_name || 'none';
+  const isCurrentActivePlan = isAuthenticated && (
+    currentSubscription?.price_id === priceId ||
+    (userPlanName === 'trial' && tier.price === '$20' && billingPeriod === 'monthly') ||
+    (userPlanName === 'tier_2_20' && tier.price === '$20' && billingPeriod === 'monthly') ||
+    (currentSubscription?.subscription && 
+     userPlanName === 'tier_2_20' && 
+     tier.price === '$20' && 
+     currentSubscription?.subscription?.status === 'active')
+  );
 
-  const getSelectedPlanPriceId = (
-    tier: PricingTier,
-  ): string => {
-    if (tier.name === 'Custom' && tier.upgradePlans) {
-      const selectedPlan = tier.upgradePlans.find(
-        (plan) => plan.hours === localSelectedPlan,
-      );
-      return selectedPlan?.stripePriceId || tier.stripePriceId;
-    }
-    return tier.stripePriceId;
-  };
-
-  const getSelectedPlanPrice = (
-    tier: PricingTier,
-  ): string => {
-    if (tier.name === 'Custom' && tier.upgradePlans) {
-      const selectedPlan = tier.upgradePlans.find(
-        (plan) => plan.hours === localSelectedPlan,
-      );
-      return selectedPlan?.price || tier.price;
-    }
-    return tier.price;
-  };
-
-  const tierPriceId = getSelectedPlanPriceId(tier);
-  const isCurrentActivePlan =
-    isAuthenticated &&
-    // For custom tier, check if the selected plan matches the current subscription
-    (tier.name === 'Custom'
-      ? tier.upgradePlans?.some(
-          (plan) =>
-            plan.hours === localSelectedPlan &&
-            plan.stripePriceId === currentSubscription?.price_id,
-        )
-      : currentSubscription?.price_id === tierPriceId);
   const isScheduled = isAuthenticated && currentSubscription?.has_schedule;
   const isScheduledTargetPlan =
     isScheduled &&
@@ -373,19 +347,32 @@ function PricingTier({
   let ringClass = '';
   let statusBadge = null;
   let buttonClassName = '';
+  
+  const planChangeValidation = (isAuthenticated && currentSubscription?.price_id) 
+    ? isPlanChangeAllowed(currentSubscription.price_id, priceId)
+    : { allowed: true };
 
   if (isAuthenticated) {
     if (isCurrentActivePlan) {
-      buttonText = 'Current Plan';
+      if (userPlanName === 'trial') {
+        buttonText = 'Trial Active';
+        statusBadge = (
+          <span className="bg-green-500/10 text-green-600 text-[10px] font-medium px-1.5 py-0.5 rounded-full">
+            7-Day Trial
+          </span>
+        );
+      } else {
+        buttonText = 'Current Plan';
+        statusBadge = (
+          <span className="bg-primary/10 text-primary text-[10px] font-medium px-1.5 py-0.5 rounded-full">
+            Current
+          </span>
+        );
+      }
       buttonDisabled = true;
       buttonVariant = 'secondary';
       ringClass = isCompact ? 'ring-1 ring-primary' : 'ring-2 ring-primary';
       buttonClassName = 'bg-primary/5 hover:bg-primary/10 text-primary';
-      statusBadge = (
-        <span className="bg-primary/10 text-primary text-[10px] font-medium px-1.5 py-0.5 rounded-full">
-          Current
-        </span>
-      );
     } else if (isScheduledTargetPlan) {
       buttonText = 'Scheduled';
       buttonDisabled = true;
@@ -605,13 +592,19 @@ interface PricingSectionProps {
   showTitleAndTabs?: boolean;
   hideFree?: boolean;
   insideDialog?: boolean;
+  showInfo?: boolean;
+  noPadding?: boolean;
+  onSubscriptionUpdate?: () => void;
 }
 
 export function PricingSection({
   returnUrl = typeof window !== 'undefined' ? window.location.href : '/',
   showTitleAndTabs = true,
   hideFree = false,
-  insideDialog = false
+  insideDialog = false,
+  showInfo = true,
+  noPadding = false,
+  onSubscriptionUpdate,
 }: PricingSectionProps) {
   const [deploymentType, setDeploymentType] = useState<'cloud' | 'self-hosted'>(
     'cloud',
@@ -636,7 +629,32 @@ export function PricingSection({
     } finally {
       setIsFetchingPlan(false);
     }
-  };
+
+    const currentTier = siteConfig.cloudPricingItems.find(
+      (p) => p.stripePriceId === currentSubscription.price_id || 
+             p.yearlyStripePriceId === currentSubscription.price_id ||
+             p.monthlyCommitmentStripePriceId === currentSubscription.price_id,
+    );
+
+    if (currentTier) {
+      if (currentTier.monthlyCommitmentStripePriceId === currentSubscription.price_id) {
+        return 'yearly_commitment';
+      } else if (currentTier.yearlyStripePriceId === currentSubscription.price_id) {
+        return 'yearly';
+      } else if (currentTier.stripePriceId === currentSubscription.price_id) {
+        return 'monthly';
+      }
+    }
+
+    return 'yearly_commitment';
+  }, [isAuthenticated, currentSubscription]);
+
+  const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly' | 'yearly_commitment'>(getDefaultBillingPeriod());
+  const [planLoadingStates, setPlanLoadingStates] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    setBillingPeriod(getDefaultBillingPeriod());
+  }, [getDefaultBillingPeriod]);
 
   const handlePlanSelect = (planId: string) => {
     setIsLoading((prev) => ({ ...prev, [planId]: true }));
@@ -647,6 +665,10 @@ export function PricingSection({
     setTimeout(() => {
       setIsLoading({});
     }, 1000);
+    // Call parent's update handler if provided
+    if (onSubscriptionUpdate) {
+      onSubscriptionUpdate();
+    }
   };
 
   useEffect(() => {
@@ -698,12 +720,37 @@ export function PricingSection({
               usage hours
             </p>
           </SectionHeader>
-          <div className="relative w-full h-full">
-            <div className="absolute -top-14 left-1/2 -translate-x-1/2">
-              <PricingTabs
-                activeTab={deploymentType}
-                setActiveTab={handleTabChange}
-                className="mx-auto"
+        )}
+
+        <div className="flex justify-center mb-8">
+          <BillingPeriodToggle
+            billingPeriod={billingPeriod}
+            setBillingPeriod={setBillingPeriod}
+          />
+        </div>
+
+        <div className={cn(
+          "grid gap-6 w-full",
+          insideDialog
+            ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 2xl:grid-cols-3"
+            : "min-[650px]:grid-cols-2 lg:grid-cols-3",
+          !insideDialog && "grid-rows-1 items-stretch"
+        )}>
+          {siteConfig.cloudPricingItems
+            .filter((tier) => !tier.hidden && (!hideFree || tier.price !== '$0'))
+            .map((tier) => (
+              <PricingTier
+                key={tier.name}
+                tier={tier}
+                currentSubscription={currentSubscription}
+                isLoading={planLoadingStates}
+                isFetchingPlan={isFetchingPlan}
+                onPlanSelect={handlePlanSelect}
+                onSubscriptionUpdate={handleSubscriptionUpdate}
+                isAuthenticated={isAuthenticated}
+                returnUrl={returnUrl}
+                insideDialog={insideDialog}
+                billingPeriod={billingPeriod}
               />
             </div>
           </div>

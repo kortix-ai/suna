@@ -540,8 +540,13 @@ class PerfectHTMLToPPTXConverter:
                 const isLikelyBackground = rect.width > 1700;
                 
                 if (!isLikelyBackground) {
+                    // Assign unique capture ID to element
+                    const captureId = 'visual-capture-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+                    element.setAttribute('data-capture-id', captureId);
+                    
                     results.push({
                         type: 'visual',
+                        captureId: captureId,
                         x: Math.round(rect.left * 100) / 100,
                         y: Math.round(rect.top * 100) / 100,
                         width: Math.round(rect.width * 100) / 100,
@@ -613,66 +618,152 @@ class PerfectHTMLToPPTXConverter:
                         if width < 5 or height < 5:
                             continue
                         
-                        # Temporarily hide child elements to prevent interference
-                        await page.evaluate(r"""
+                        # Clone element and capture in isolation
+                        clone_result = await page.evaluate(r"""
                             (elementData) => {
-                                // Find the element to capture
-                                const elements = document.querySelectorAll('*');
-                                for (let el of elements) {
-                                    const rect = el.getBoundingClientRect();
-                                    if (Math.abs(rect.left - elementData.x) < 2 && 
-                                        Math.abs(rect.top - elementData.y) < 2 &&
-                                        Math.abs(rect.width - elementData.width) < 2 &&
-                                        Math.abs(rect.height - elementData.height) < 2) {
+                                // Find the element by its unique capture ID
+                                const targetElement = document.querySelector(`[data-capture-id="${elementData.captureId}"]`);
+                                
+                                if (!targetElement) {
+                                    return { success: false, error: `Visual element not found with ID: ${elementData.captureId}` };
+                                }
+                                
+                                try {
+                                    // Clone the element deeply
+                                    const clonedElement = targetElement.cloneNode(true);
+                                    
+                                    // Copy all computed styles from original to cloned element and its descendants
+                                    function copyComputedStyles(original, cloned, isRoot = true) {
+                                        const computedStyle = window.getComputedStyle(original);
                                         
-                                        // Store original visibility of children
-                                        const children = el.querySelectorAll('*');
-                                        children.forEach(child => {
-                                            child.setAttribute('data-original-visibility', child.style.visibility);
-                                            child.style.visibility = 'hidden';
-                                        });
+                                        // Create a clean style string with all computed properties
+                                        let styleStr = '';
+                                        for (let prop of computedStyle) {
+                                            let value = computedStyle.getPropertyValue(prop);
+                                            styleStr += `${prop}: ${value}; `;
+                                        }
+                                        cloned.style.cssText = styleStr;
                                         
-                                        // Mark this element for restoration
-                                        el.setAttribute('data-capture-in-progress', 'true');
-                                        break;
+                                        // For child elements (not root), make the entire element transparent
+                                        if (!isRoot) {
+                                            cloned.style.opacity = '0';
+                                        }
+                                        
+                                        // Recursively copy styles for children (mark as non-root)
+                                        for (let i = 0; i < original.children.length && i < cloned.children.length; i++) {
+                                            copyComputedStyles(original.children[i], cloned.children[i], false);
+                                        }
                                     }
+                                    
+                                    copyComputedStyles(targetElement, clonedElement);
+                                    
+                                    // Create clean container for isolation
+                                    const cleanContainer = document.createElement('div');
+                                    cleanContainer.id = 'clone-capture-container-' + Date.now();
+                                    cleanContainer.style.cssText = `
+                                        position: fixed;
+                                        top: 0;
+                                        left: 0;
+                                        width: ${elementData.width}px;
+                                        height: ${elementData.height}px;
+                                        background: transparent;
+                                        z-index: 999999;
+                                        padding: 0;
+                                        margin: 0;
+                                        border: none;
+                                        overflow: hidden;
+                                    `;
+                                    
+                                    // Position cloned element at (0,0) within container
+                                    clonedElement.style.position = 'absolute';
+                                    clonedElement.style.top = '0px';
+                                    clonedElement.style.left = '0px';
+                                    clonedElement.style.margin = '0';
+                                    clonedElement.style.transform = 'none';
+                                    
+                                    // Add to DOM for capture
+                                    cleanContainer.appendChild(clonedElement);
+                                    document.body.appendChild(cleanContainer);
+                                    
+                                    return { 
+                                        success: true, 
+                                        containerId: cleanContainer.id,
+                                        containerRect: {
+                                            x: 0, 
+                                            y: 0, 
+                                            width: elementData.width, 
+                                            height: elementData.height
+                                        }
+                                    };
+                                    
+                                } catch (error) {
+                                    return { success: false, error: error.message };
                                 }
                             }
                         """, data)
                         
-                        # Capture the element
+                        if not clone_result.get('success'):
+                            print(f"Failed to clone element: {clone_result.get('error')}")
+                            continue
+                        
+                        # Wait a moment for styles to apply
+                        await page.wait_for_timeout(100)
+                        
+                        # Hide main content and ensure transparent background for perfect isolation
+                        await page.evaluate(f"""
+                            () => {{
+                                // Store original backgrounds
+                                window.originalHtmlBg = document.documentElement.style.background || '';
+                                window.originalBodyBg = document.body.style.background || '';
+                                
+                                // Set transparent backgrounds
+                                document.documentElement.style.background = 'transparent';
+                                document.body.style.background = 'transparent';
+                                
+                                // Hide all main content
+                                document.body.style.visibility = 'hidden';
+                                
+                                // Make sure our container stays visible
+                                const container = document.getElementById('{clone_result['containerId']}');
+                                if (container) {{
+                                    container.style.visibility = 'visible';
+                                }}
+                            }}
+                        """)
+                        
+                        # Capture the isolated cloned element with transparency
                         element_path = temp_dir / f"visual_element_{html_path.stem}_{i:03d}.png"
+                        container_rect = clone_result['containerRect']
+                        
                         await page.screenshot(
                             path=str(element_path),
                             full_page=False,
-                            clip={"x": x, "y": y, "width": width, "height": height}
+                            omit_background=True,  # 🚀 Preserves transparency!
+                            clip={
+                                "x": container_rect['x'], 
+                                "y": container_rect['y'], 
+                                "width": container_rect['width'], 
+                                "height": container_rect['height']
+                            }
                         )
                         
-                        # Restore child elements visibility
-                        await page.evaluate(r"""
-                            (elementData) => {
-                                const elements = document.querySelectorAll('*');
-                                for (let el of elements) {
-                                    if (el.getAttribute('data-capture-in-progress')) {
-                                        // Restore children visibility
-                                        const children = el.querySelectorAll('*');
-                                        children.forEach(child => {
-                                            const originalVisibility = child.getAttribute('data-original-visibility');
-                                            if (originalVisibility) {
-                                                child.style.visibility = originalVisibility;
-                                                child.removeAttribute('data-original-visibility');
-                                            } else {
-                                                child.style.visibility = 'visible';
-                                            }
-                                        });
-                                        
-                                        // Clean up
-                                        el.removeAttribute('data-capture-in-progress');
-                                        break;
-                                    }
-                                }
-                            }
-                        """, data)
+                        # Restore backgrounds, visibility and clean up
+                        await page.evaluate(f"""
+                            () => {{
+                                // Restore original backgrounds
+                                document.documentElement.style.background = window.originalHtmlBg || '';
+                                document.body.style.background = window.originalBodyBg || '';
+                                
+                                // Restore main content visibility
+                                document.body.style.visibility = 'visible';
+                                
+                                // Remove the cloned container
+                                const container = document.getElementById('{clone_result['containerId']}');
+                                if (container) {{
+                                    container.remove();
+                                }}
+                            }}
+                        """)
                         
                         visual_element = {
                             'type': 'visual',
@@ -692,29 +783,22 @@ class PerfectHTMLToPPTXConverter:
                         
                     except Exception as e:
                         print(f"Failed to capture visual element {i}: {e}")
-                        # Ensure we restore visibility even if capture fails
+                        # Ensure we restore backgrounds and visibility even if capture fails
                         try:
-                            await page.evaluate(r"""
-                                (elementData) => {
-                                    const elements = document.querySelectorAll('*');
-                                    for (let el of elements) {
-                                        if (el.getAttribute('data-capture-in-progress')) {
-                                            const children = el.querySelectorAll('*');
-                                            children.forEach(child => {
-                                                const originalVisibility = child.getAttribute('data-original-visibility');
-                                                if (originalVisibility) {
-                                                    child.style.visibility = originalVisibility;
-                                                    child.removeAttribute('data-original-visibility');
-                                                } else {
-                                                    child.style.visibility = 'visible';
-                                                }
-                                            });
-                                            el.removeAttribute('data-capture-in-progress');
-                                            break;
-                                        }
-                                    }
+                            await page.evaluate("""
+                                () => {
+                                    // Restore original backgrounds
+                                    document.documentElement.style.background = window.originalHtmlBg || '';
+                                    document.body.style.background = window.originalBodyBg || '';
+                                    
+                                    // Always restore main content visibility
+                                    document.body.style.visibility = 'visible';
+                                    
+                                    // Clean up any leftover containers
+                                    const containers = document.querySelectorAll('[id^="clone-capture-container-"]');
+                                    containers.forEach(container => container.remove());
                                 }
-                            """, data)
+                            """)
                         except:
                             pass
                         continue
@@ -724,10 +808,65 @@ class PerfectHTMLToPPTXConverter:
                 print(f"Adding {len(icon_visual_elements)} icon elements to visual elements")
                 visual_elements.extend(icon_visual_elements)
             
+            # Final cleanup - remove capture IDs and ensure everything is restored
+            try:
+                await page.evaluate(r"""
+                    () => {
+                        // Restore original backgrounds (final safety check)
+                        if (window.originalHtmlBg !== undefined) {
+                            document.documentElement.style.background = window.originalHtmlBg || '';
+                        }
+                        if (window.originalBodyBg !== undefined) {
+                            document.body.style.background = window.originalBodyBg || '';
+                        }
+                        
+                        // Ensure visibility is restored
+                        document.body.style.visibility = 'visible';
+                        
+                        // Clean up capture IDs
+                        const elementsWithCaptureId = document.querySelectorAll('[data-capture-id]');
+                        elementsWithCaptureId.forEach(el => {
+                            el.removeAttribute('data-capture-id');
+                        });
+                        
+                        // Clean up any leftover containers
+                        const containers = document.querySelectorAll('[id^="clone-capture-container-"]');
+                        containers.forEach(container => container.remove());
+                    }
+                """)
+                print(f"🧹 Final cleanup completed: backgrounds restored, capture IDs removed")
+            except Exception as e:
+                print(f"Warning: Failed to perform final cleanup: {e}")
+            
             return visual_elements
             
         except Exception as e:
             print(f"Visual element extraction failed: {e}")
+            # Emergency cleanup in case of failure
+            try:
+                await page.evaluate(r"""
+                    () => {
+                        // Restore original backgrounds
+                        if (window.originalHtmlBg !== undefined) {
+                            document.documentElement.style.background = window.originalHtmlBg || '';
+                        }
+                        if (window.originalBodyBg !== undefined) {
+                            document.body.style.background = window.originalBodyBg || '';
+                        }
+                        
+                        // Ensure visibility is restored
+                        document.body.style.visibility = 'visible';
+                        
+                        // Clean up everything
+                        const containers = document.querySelectorAll('[id^="clone-capture-container-"]');
+                        containers.forEach(container => container.remove());
+                        
+                        const elementsWithCaptureId = document.querySelectorAll('[data-capture-id]');
+                        elementsWithCaptureId.forEach(el => el.removeAttribute('data-capture-id'));
+                    }
+                """)
+            except:
+                pass
             return []
 
     async def capture_clean_background(self, page, html_path: Path, temp_dir: Path, visual_elements: List[Dict]) -> Path:
@@ -1280,7 +1419,10 @@ class PerfectHTMLToPPTXConverter:
                 try:
                     # Process all slides in parallel
                     # Create semaphore to limit concurrent operations
-                    semaphore = asyncio.Semaphore(2)  # Reduced to 2 for optimal performance
+                    semaphore = asyncio.Semaphore(5)
+                    context = await browser.new_context(
+                        viewport={'width': 1920, 'height': 1080}
+                    )
                     
                     async def process_single_slide(slide_info: Dict) -> Dict:
                         """Process a single slide with controlled concurrency."""
@@ -1289,7 +1431,7 @@ class PerfectHTMLToPPTXConverter:
                             
                             try:
                                 # Create a new page for this slide
-                                page = await browser.new_page()
+                                page = await context.new_page()
                                 
                                 # Set exact viewport dimensions
                                 await page.set_viewport_size({"width": 1920, "height": 1080})

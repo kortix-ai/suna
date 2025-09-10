@@ -115,6 +115,29 @@ export const TriggerConfigDialog: React.FC<TriggerConfigDialogProps> = ({
     }
   };
 
+  if (provider.provider_id === 'schedule') {
+    return (
+      <SimplifiedScheduleConfig
+        provider={provider}
+        config={config as ScheduleTriggerConfig}
+        onChange={setConfig}
+        errors={errors}
+        agentId={agentId}
+        name={name}
+        description={description}
+        onNameChange={setName}
+        onDescriptionChange={setDescription}
+        isActive={isActive}
+        onActiveChange={setIsActive}
+        selectedAgent={selectedAgent}
+        onAgentSelect={onAgentSelect}
+        open={open}
+        onOpenChange={onOpenChange || onCancel}
+        onSave={onSave}
+      />
+    );
+  }
+
   const renderProviderSpecificConfig = () => {
     switch (provider.provider_id) {
       case 'schedule':
@@ -133,8 +156,9 @@ export const TriggerConfigDialog: React.FC<TriggerConfigDialogProps> = ({
             onActiveChange={setIsActive}
             selectedAgent={selectedAgent}
             onAgentSelect={onAgentSelect}
-            open={false}
-            onOpenChange={() => {}}
+            open={open}
+            onOpenChange={onOpenChange || onCancel}
+            onSave={onSave}
           />
         );
       case 'composio':
@@ -154,7 +178,6 @@ export const TriggerConfigDialog: React.FC<TriggerConfigDialogProps> = ({
           />
         );
       default:
-        // Check if it's an event-based trigger (webhook type)
         if (provider.trigger_type === 'webhook') {
           return (
             <EventTriggerConfigForm

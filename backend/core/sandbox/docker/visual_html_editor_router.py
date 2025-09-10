@@ -344,11 +344,58 @@ async def get_html_editor(file_path: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+def rewrite_static_paths(soup: BeautifulSoup, file_path: str) -> None:
+    """Rewrite relative image paths to absolute paths using existing StaticFiles mount"""
+    
+    def is_relative_path(url: str) -> bool:
+        if not url or url.strip() == "":
+            return False
+        # Skip absolute URLs, data URIs, and anchor links
+        if url.startswith(('http://', 'https://', 'data:', 'mailto:', 'tel:', '#', '//', '/')):
+            return False
+        return True
+    
+    def resolve_relative_path(relative_path: str) -> str:
+        # Get directory of HTML file and resolve relative path
+        html_dir = os.path.dirname(file_path)
+        resolved_path = os.path.normpath(os.path.join(html_dir, relative_path))
+        
+        # Ensure forward slashes and leading slash for URL
+        resolved_path = resolved_path.replace('\\', '/')
+        if not resolved_path.startswith('/'):
+            resolved_path = '/' + resolved_path
+        return resolved_path
+    
+    # Fix image src attributes
+    for img in soup.find_all('img', src=True):
+        src = img['src']
+        if is_relative_path(src):
+            img['src'] = resolve_relative_path(src)
+            print(f"🖼️ Rewrote image: {src} -> {img['src']}")
+    
+    # Fix background images in style attributes
+    import re
+    for element in soup.find_all(style=True):
+        style = element['style']
+        def replace_url(match):
+            url = match.group(1).strip('\'"')
+            if is_relative_path(url):
+                new_url = resolve_relative_path(url)
+                print(f"🎭 Rewrote background: {url} -> {new_url}")
+                return f"url('{new_url}')"
+            return match.group(0)
+        
+        element['style'] = re.sub(r'url\(\s*([^)]+)\s*\)', replace_url, style)
+
+
 def inject_editor_functionality(html_content: str, file_path: str) -> str:
     """Inject visual editor functionality into existing HTML"""
     
     # Parse the HTML
     soup = BeautifulSoup(html_content, 'html.parser')
+    
+    # Rewrite relative paths for static assets (images, css, js) to use our static endpoint
+    rewrite_static_paths(soup, file_path)
     
     # Apply the same transformation as the API endpoint
     editable_counter = 0
