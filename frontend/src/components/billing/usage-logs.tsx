@@ -56,8 +56,15 @@ export default function UsageLogs({ accountId, isAdminView = false }: Props) {
   const ITEMS_PER_PAGE = 1000;
 
   // Call both hooks but enable only the appropriate one
-  const adminUsageQuery = useAdminUserUsageLogs(accountId, page, ITEMS_PER_PAGE, 30);
-  const regularUsageQuery = useUsageLogs(page, ITEMS_PER_PAGE);
+  const adminUsageQuery = useAdminUserUsageLogs(
+    accountId || '',
+    page, 
+    ITEMS_PER_PAGE, 
+    30
+  );
+  const regularUsageQuery = useUsageLogs(page, ITEMS_PER_PAGE, {
+    enabled: !isAdminView
+  });
 
   // Use appropriate query result based on context
   const { data: currentPageData, isLoading, error, refetch } = isAdminView 

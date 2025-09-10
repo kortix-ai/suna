@@ -46,7 +46,7 @@ export const useCreateCheckoutSession = createMutationHook(
   }
 );
 
-export const useUsageLogs = (page: number = 0, itemsPerPage: number = 1000) => 
+export const useUsageLogs = (page: number = 0, itemsPerPage: number = 1000, customOptions?: any) => 
   createQueryHook(
     usageKeys.logs(page, itemsPerPage),
     () => billingApi.getUsageLogs(page, itemsPerPage),
@@ -55,7 +55,7 @@ export const useUsageLogs = (page: number = 0, itemsPerPage: number = 1000) =>
       refetchOnMount: true,
       refetchOnWindowFocus: false,
     }
-  )();
+  )(customOptions);
 
 export const useAdminUserUsageLogs = (accountId: string, page: number = 0, itemsPerPage: number = 1000, days: number = 30) => 
   createQueryHook(
