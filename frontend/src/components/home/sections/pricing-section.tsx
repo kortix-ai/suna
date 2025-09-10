@@ -828,6 +828,7 @@ export function PricingSection({
               isAuthenticated={isAuthenticated}
               returnUrl={returnUrl}
               insideDialog={insideDialog}
+              billingPeriod={billingPeriod}
             />
           ))}
         </div>
