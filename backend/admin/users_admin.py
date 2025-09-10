@@ -74,6 +74,7 @@ async def advanced_user_search(
             '''
             id,
             created_at,
+            primary_owner_user_id,
             billing_customers(email),
             billing_subscriptions(status)
             '''
@@ -168,10 +169,21 @@ async def advanced_user_search(
                 subscription_status = item['billing_subscriptions'][0].get('status')
             
             credit_account = credit_accounts.get(item['id'], {})
+
+            email = 'N/A'
+            if item.get('billing_customers') and item['billing_customers'][0].get('email'):
+                email = item['billing_customers'][0]['email']
+            elif item.get('primary_owner_user_id'):
+                try:
+                    user_email_result = await client.rpc('get_user_email', {'user_id': item['primary_owner_user_id']}).execute()
+                    if user_email_result.data:
+                        email = user_email_result.data
+                except Exception as e:
+                    logger.warning(f"Failed to get email for account {item['id']}: {e}")
             
             users.append(UserSummary(
                 id=item['id'],
-                email=item['billing_customers'][0]['email'] if item.get('billing_customers') else 'N/A',
+                email=email,
                 created_at=datetime.fromisoformat(item['created_at'].replace('Z', '+00:00')),
                 tier=credit_account.get('tier', 'free'),
                 credit_balance=float(credit_account.get('balance', 0)),
@@ -227,6 +239,7 @@ async def list_users(
                 '''
                 id,
                 created_at,
+                primary_owner_user_id,
                 billing_customers(email),
                 billing_subscriptions(status)
                 '''
@@ -238,6 +251,7 @@ async def list_users(
                 '''
                 id,
                 created_at,
+                primary_owner_user_id,
                 billing_customers(email),
                 billing_subscriptions(status)
                 '''
@@ -305,9 +319,22 @@ async def list_users(
             
             credit_account = credit_accounts.get(item['id'], {})
             
+            # Get email from billing_customers or fetch from auth.users for OAuth users
+            email = 'N/A'
+            if item.get('billing_customers') and item['billing_customers'][0].get('email'):
+                email = item['billing_customers'][0]['email']
+            elif item.get('primary_owner_user_id'):
+                # Try to get email for OAuth users
+                try:
+                    user_email_result = await client.rpc('get_user_email', {'user_id': item['primary_owner_user_id']}).execute()
+                    if user_email_result.data:
+                        email = user_email_result.data
+                except Exception as e:
+                    logger.warning(f"Failed to get email for account {item['id']}: {e}")
+            
             users.append(UserSummary(
                 id=item['id'],
-                email=item['billing_customers'][0]['email'] if item.get('billing_customers') else 'N/A',
+                email=email,
                 created_at=datetime.fromisoformat(item['created_at'].replace('Z', '+00:00')),
                 tier=credit_account.get('tier', 'free'),
                 credit_balance=float(credit_account.get('balance', 0)),
@@ -340,6 +367,7 @@ async def get_user_details(
             '''
             id,
             created_at,
+            primary_owner_user_id,
             billing_customers(email),
             billing_subscriptions(status, created, current_period_end)
             '''
@@ -349,6 +377,18 @@ async def get_user_details(
             raise HTTPException(status_code=404, detail="User not found")
         
         account = account_result.data[0]
+        
+        # Get email if not present (OAuth users)
+        if not account.get('billing_customers') or not account['billing_customers'][0].get('email'):
+            if account.get('primary_owner_user_id'):
+                try:
+                    user_email_result = await client.rpc('get_user_email', {'user_id': account['primary_owner_user_id']}).execute()
+                    if user_email_result.data:
+                        if not account.get('billing_customers'):
+                            account['billing_customers'] = [{}]
+                        account['billing_customers'][0]['email'] = user_email_result.data
+                except Exception as e:
+                    logger.warning(f"Failed to get email for account {user_id}: {e}")
         
         credit_result = await client.from_('credit_accounts').select(
             'balance, tier, lifetime_granted, lifetime_purchased, lifetime_used, last_grant_date'
