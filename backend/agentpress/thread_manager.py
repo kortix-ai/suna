@@ -193,7 +193,9 @@ class ThreadManager:
                                 token_cost,
                                 thread_id=thread_id,
                                 message_id=saved_message['message_id'],
-                                model=model or "unknown"
+                                model=model or "unknown",
+                                prompt_tokens=prompt_tokens,
+                                completion_tokens=completion_tokens
                             )
                     except Exception as billing_e:
                         logger.error(f"Error handling credit usage for message {saved_message.get('message_id')}: {str(billing_e)}", exc_info=True)

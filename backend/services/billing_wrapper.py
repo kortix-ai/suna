@@ -75,7 +75,9 @@ async def handle_usage_unified(
     token_cost: float,
     thread_id: str = None,
     message_id: str = None,
-    model: str = None
+    model: str = None,
+    prompt_tokens: int = None,
+    completion_tokens: int = None
 ) -> Tuple[bool, str]:
     """
     Unified usage handling that routes to the appropriate billing system.
@@ -90,6 +92,8 @@ async def handle_usage_unified(
         thread_id: Optional thread ID for tracking
         message_id: Optional message ID for tracking
         model: Optional model name for tracking
+        prompt_tokens: Optional prompt tokens count for detailed tracking
+        completion_tokens: Optional completion tokens count for detailed tracking
         
     Returns:
         Tuple[bool, str]: (success, message)
@@ -106,12 +110,16 @@ async def handle_usage_unified(
                 model=model
             )
             
+            # Calculate total tokens for enterprise billing
+            total_tokens = (prompt_tokens or 0) + (completion_tokens or 0)
+            
             return await enterprise_billing.use_enterprise_credits(
                 account_id=account_id,
                 amount=token_cost,
                 thread_id=thread_id,
                 message_id=message_id,
-                model_name=model
+                model_name=model,
+                tokens_used=total_tokens if total_tokens > 0 else None
             )
         else:
             # Enterprise mode disabled, use Stripe

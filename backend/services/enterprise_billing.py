@@ -117,7 +117,8 @@ class SimplifiedEnterpriseBillingService:
         amount: float,
         thread_id: str = None,
         message_id: str = None,
-        model_name: str = None
+        model_name: str = None,
+        tokens_used: int = None
     ) -> Tuple[bool, str]:
         """
         Use credits from the enterprise pool for a user.
@@ -136,7 +137,9 @@ class SimplifiedEnterpriseBillingService:
                 'p_amount': amount,
                 'p_thread_id': thread_id,
                 'p_message_id': message_id,
-                'p_model_name': model_name
+                'p_model_name': model_name,
+                'p_tokens_used': tokens_used,
+                'p_usage_type': 'token'
             }).execute()
             
             if result and hasattr(result, 'data') and result.data and len(result.data) > 0:
