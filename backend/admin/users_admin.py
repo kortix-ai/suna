@@ -48,24 +48,39 @@ async def advanced_user_search(
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     admin: dict = Depends(require_admin)
 ) -> PaginatedResponse[UserSummary]:
-    """Advanced search with multiple filters"""
     try:
         db = DBConnection()
         client = await db.client
         
         pagination_params = PaginationParams(page=page, page_size=page_size)
         
+        account_ids_to_filter = None
+        
+        if request.email_contains:
+            email_result = await client.schema('basejump').from_('billing_customers').select(
+                'account_id'
+            ).ilike('email', f'%{request.email_contains}%').limit(1000).execute()
+            
+            account_ids_to_filter = [item['account_id'] for item in email_result.data or []]
+            
+            if not account_ids_to_filter:
+                return await PaginationService.paginate_with_total_count(
+                    items=[],
+                    total_count=0,
+                    params=pagination_params
+                )
+        
         base_query = client.schema('basejump').from_('accounts').select(
             '''
             id,
             created_at,
-            billing_customers!inner(email),
+            billing_customers(email),
             billing_subscriptions(status)
             '''
         )
         
-        if request.email_contains:
-            base_query = base_query.filter('billing_customers.email', 'ilike', f'%{request.email_contains}%')
+        if account_ids_to_filter:
+            base_query = base_query.in_('id', account_ids_to_filter)
         
         if request.created_after:
             base_query = base_query.gte('created_at', request.created_after.isoformat())
@@ -194,17 +209,42 @@ async def list_users(
         
         pagination_params = PaginationParams(page=page, page_size=page_size)
         
-        base_query = client.schema('basejump').from_('accounts').select(
-            '''
-            id,
-            created_at,
-            billing_customers!inner(email),
-            billing_subscriptions(status)
-            '''
-        )
-        
         if search_email:
-            base_query = base_query.filter('billing_customers.email', 'ilike', f'%{search_email}%')
+            email_result = await client.schema('basejump').from_('billing_customers').select(
+                'account_id'
+            ).ilike('email', f'%{search_email}%').limit(1000).execute()
+            
+            matching_account_ids = [item['account_id'] for item in email_result.data or []]
+            
+            if not matching_account_ids:
+                return await PaginationService.paginate_with_total_count(
+                    items=[],
+                    total_count=0,
+                    params=pagination_params
+                )
+            
+            base_query = client.schema('basejump').from_('accounts').select(
+                '''
+                id,
+                created_at,
+                billing_customers(email),
+                billing_subscriptions(status)
+                '''
+            ).in_('id', matching_account_ids)
+            
+            total_count = len(matching_account_ids)
+        else:
+            base_query = client.schema('basejump').from_('accounts').select(
+                '''
+                id,
+                created_at,
+                billing_customers(email),
+                billing_subscriptions(status)
+                '''
+            )
+            
+            count_result = await client.schema('basejump').from_('accounts').select('*', count='exact').execute()
+            total_count = count_result.count or 0
         
         sort_column = sort_by
         if sort_by == "email":
@@ -213,17 +253,6 @@ async def list_users(
         if sort_by not in ["balance", "tier"]:
             ascending = sort_order.lower() == "asc"
             base_query = base_query.order(sort_column, desc=not ascending)
-        
-        if search_email:
-            count_query = client.schema('basejump').from_('accounts').select(
-                'id, billing_customers!inner(email)', 
-                count='exact'
-            ).filter('billing_customers.email', 'ilike', f'%{search_email}%')
-        else:
-            count_query = client.schema('basejump').from_('accounts').select('*', count='exact')
-        
-        count_result = await count_query.execute()
-        total_count = count_result.count or 0
         
         offset = (pagination_params.page - 1) * pagination_params.page_size
         data_result = await base_query.range(offset, offset + pagination_params.page_size - 1).execute()
@@ -365,37 +394,49 @@ async def search_users_by_email(
         
         pagination_params = PaginationParams(page=page, page_size=page_size)
         
-        count_result = await client.schema('basejump').from_('billing_customers').select(
-            '*', count='exact'
-        ).ilike('email', f'%{email}%').execute()
-        total_count = count_result.count or 0
+        email_query = client.schema('basejump').from_('billing_customers').select(
+            'account_id, email'
+        ).ilike('email', f'%{email}%').limit(500)
+        
+        email_result = await email_query.execute()
+        matching_customers = email_result.data or []
+        total_count = len(matching_customers)
         
         offset = (pagination_params.page - 1) * pagination_params.page_size
-        result = await client.schema('basejump').from_('billing_customers').select(
-            '''
-            account_id,
-            email,
-            accounts!inner(created_at)
-            '''
-        ).ilike('email', f'%{email}%').range(offset, offset + pagination_params.page_size - 1).execute()
+        paginated_customers = matching_customers[offset:offset + pagination_params.page_size]
         
-        user_ids = [item['account_id'] for item in result.data]
+        if not paginated_customers:
+            return await PaginationService.paginate_with_total_count(
+                items=[],
+                total_count=total_count,
+                params=pagination_params
+            )
+        
+        account_ids = [item['account_id'] for item in paginated_customers]
+        email_map = {item['account_id']: item['email'] for item in paginated_customers}
+        
+        accounts_result = await client.schema('basejump').from_('accounts').select(
+            'id, created_at'
+        ).in_('id', account_ids).execute()
+        
+        accounts_map = {item['id']: item['created_at'] for item in accounts_result.data or []}
+        
         credit_accounts = {}
-        if user_ids:
+        if account_ids:
             credit_result = await client.from_('credit_accounts').select(
                 'account_id, balance, tier, trial_status'
-            ).in_('account_id', user_ids).execute()
+            ).in_('account_id', account_ids).execute()
             
             for credit in credit_result.data or []:
                 credit_accounts[credit['account_id']] = credit
         
         users = []
-        for item in result.data:
-            credit_account = credit_accounts.get(item['account_id'], {})
+        for account_id in account_ids:
+            credit_account = credit_accounts.get(account_id, {})
             users.append({
-                "id": item['account_id'],
-                "email": item['email'],
-                "created_at": item['accounts']['created_at'],
+                "id": account_id,
+                "email": email_map[account_id],
+                "created_at": accounts_map.get(account_id, ''),
                 "tier": credit_account.get('tier', 'free'),
                 "credit_balance": float(credit_account.get('balance', 0)),
                 "trial_status": credit_account.get('trial_status')
