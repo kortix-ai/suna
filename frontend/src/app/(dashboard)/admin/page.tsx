@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { useAdminCheck } from '@/hooks/use-admin-check';
+import UsageLogs from '@/components/billing/usage-logs';
 
 export default function AdminPage() {
   const queryClient = useQueryClient();
@@ -279,63 +280,10 @@ function UserDetails({ accountId }: { accountId: string }) {
       
       <Card>
         <CardHeader>
-          <CardTitle>Recent Usage</CardTitle>
+          <CardTitle>Daily Usage Logs</CardTitle>
         </CardHeader>
         <CardContent>
-          {details?.usage_logs && details.usage_logs.length > 0 ? (
-            <div className="max-h-[400px] overflow-y-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="text-xs">Time</TableHead>
-                    <TableHead className="text-xs">Model</TableHead>
-                    <TableHead className="text-right text-xs">Tokens</TableHead>
-                    <TableHead className="text-right text-xs">Credits</TableHead>
-                    <TableHead className="text-xs">Thread</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {details.usage_logs.map((log: any) => (
-                    <TableRow
-                      key={log.id}
-                      className="hover:bg-muted/50 group"
-                    >
-                      <TableCell className="font-mono text-xs text-muted-foreground">
-                        {new Date(log.created_at).toLocaleTimeString()}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <Badge variant="secondary" className="font-mono text-xs">
-                          {(log.model_name || 'Unknown').replace('openrouter/', '').replace('anthropic/', '').replace('openai/', '')}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs">
-                        {(log.tokens_used || 0).toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-right font-mono text-xs">
-                        {((log.cost || 0) * 1000).toFixed(0)} credits
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        {log.thread_id && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 px-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={() => window.open(`/projects/${log.project_id || 'default'}/thread/${log.thread_id}`, '_blank')}
-                          >
-                            <ExternalLink className="h-3 w-3" />
-                          </Button>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              No usage logs found
-            </div>
-          )}
+          <UsageLogs accountId={accountId} />
         </CardContent>
       </Card>
     </div>
