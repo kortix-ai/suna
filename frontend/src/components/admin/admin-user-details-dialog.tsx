@@ -359,87 +359,8 @@ export function AdminUserDetailsDialog({
                 </CardContent>
               </Card>
             </TabsContent>
-
             <TabsContent value="actions" className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <DollarSign className="h-4 w-4" />
-                      Adjust Credits
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="p-3 border border-amber-200 bg-amber-50 rounded-lg">
-                      <div className="flex items-start gap-2">
-                        <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5" />
-                        <p className="text-sm text-amber-700">
-                          Use positive amounts to add credits, negative to deduct.
-                        </p>
-                      </div>
-                    </div>
-                    <div>
-                      <Label htmlFor="adjust-amount">Amount (USD)</Label>
-                      <Input
-                        id="adjust-amount"
-                        type="number"
-                        step="0.01"
-                        placeholder="10.00"
-                        value={adjustAmount}
-                        onChange={(e) => setAdjustAmount(e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label htmlFor="adjust-reason">Reason</Label>
-                      <Textarea
-                        id="adjust-reason"
-                        placeholder="Customer support ticket #123 - Billing dispute resolution"
-                        value={adjustReason}
-                        onChange={(e) => setAdjustReason(e.target.value)}
-                        rows={3}
-                      />
-                    </div>
-                    <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/50">
-                      <div className="flex items-center gap-2">
-                        <Label htmlFor="adjust-expiring" className="cursor-pointer flex items-center gap-2">
-                          {adjustIsExpiring ? (
-                            <Clock className="h-4 w-4 text-orange-500" />
-                          ) : (
-                            <Infinity className="h-4 w-4 text-blue-500" />
-                          )}
-                          <span className="font-medium">
-                            {adjustIsExpiring ? 'Expiring Credits' : 'Non-Expiring Credits'}
-                          </span>
-                        </Label>
-                      </div>
-                      <Switch
-                        id="adjust-expiring"
-                        checked={!adjustIsExpiring}
-                        onCheckedChange={(checked) => setAdjustIsExpiring(!checked)}
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground -mt-2">
-                      {adjustIsExpiring 
-                        ? 'Credits will expire at the end of the billing cycle (30 days)'
-                        : 'Credits will never expire and remain until used'}
-                    </p>
-
-                    <Button
-                      onClick={handleAdjustCredits}
-                      disabled={adjustCreditsMutation.isPending}
-                      className="w-full"
-                    >
-                      {adjustCreditsMutation.isPending ? (
-                        <>
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                          Processing...
-                        </>
-                      ) : (
-                        'Apply Adjustment'
-                      )}
-                    </Button>
-                  </CardContent>
-                </Card>
+              <div className="grid grid-cols-1 gap-4">
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
@@ -448,7 +369,7 @@ export function AdminUserDetailsDialog({
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="p-3 border border-red-200 bg-red-50 rounded-lg">
+                    <div className="p-3 border border-red-200 dark:border-red-950 bg-red-50 dark:bg-red-950/20 rounded-lg">
                       <div className="flex items-start gap-2">
                         <AlertCircle className="h-4 w-4 text-red-600 mt-0.5" />
                         <p className="text-sm text-red-700">
@@ -468,7 +389,7 @@ export function AdminUserDetailsDialog({
                       />
                     </div>
                     <div>
-                      <Label htmlFor="refund-reason">Refund Reason</Label>
+                      <Label htmlFor="refund-reason mb-2">Refund Reason</Label>
                       <Textarea
                         id="refund-reason"
                         placeholder="Service outage compensation"

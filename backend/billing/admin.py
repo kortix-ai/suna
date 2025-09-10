@@ -55,7 +55,19 @@ async def adjust_user_credits(
                 description=f"Admin adjustment: {request.reason}",
                 expires_at=datetime.now(timezone.utc) + timedelta(days=30) if request.is_expiring else None
             )
-            new_balance = result['total_balance']
+            if result.get('duplicate_prevented'):
+                logger.info(f"[ADMIN] Duplicate credit adjustment prevented for {request.account_id}")
+                balance_info = await credit_manager.get_balance(request.account_id)
+                return {
+                    'success': True,
+                    'message': 'Credit adjustment already processed (duplicate prevented)',
+                    'new_balance': float(balance_info.get('total', 0)),
+                    'adjustment_amount': float(request.amount),
+                    'is_expiring': request.is_expiring,
+                    'duplicate_prevented': True
+                }
+            else:
+                new_balance = result.get('total_balance', 0)
         else:
             result = await credit_manager.use_credits(
                 account_id=request.account_id,
@@ -113,10 +125,15 @@ async def grant_credits_to_users(
                 description=f"Admin grant: {request.reason}",
                 expires_at=datetime.now(timezone.utc) + timedelta(days=30) if request.is_expiring else None
             )
+            if result.get('duplicate_prevented'):
+                balance_info = await credit_manager.get_balance(account_id)
+                new_balance = balance_info.get('total', 0)
+            else:
+                new_balance = result.get('total_balance', 0)
             results.append({
                 'account_id': account_id,
                 'success': True,
-                'new_balance': result['total_balance']
+                'new_balance': new_balance
             })
         except Exception as e:
             results.append({
@@ -150,6 +167,12 @@ async def process_refund(
         type='admin_grant'
     )
     
+    if result.get('duplicate_prevented'):
+        balance_info = await credit_manager.get_balance(request.account_id)
+        new_balance = balance_info.get('total_balance', 0)
+    else:
+        new_balance = result.get('total_balance', 0)
+    
     refund_id = None
     if request.stripe_refund and request.payment_intent_id:
         try:
@@ -168,7 +191,7 @@ async def process_refund(
     
     return {
         'success': True,
-        'new_balance': float(result['total_balance']),
+        'new_balance': float(new_balance),
         'refund_amount': float(request.amount),
         'stripe_refund_id': refund_id,
         'is_expiring': request.is_expiring

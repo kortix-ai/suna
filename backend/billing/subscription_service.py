@@ -42,9 +42,29 @@ class SubscriptionService:
         
         account = account_result.data[0]
         user_id = account['primary_owner_user_id']
+
+        email = None
         
-        user_result = await client.auth.admin.get_user_by_id(user_id)
-        email = user_result.user.email if user_result and user_result.user else None
+        try:
+            user_result = await client.auth.admin.get_user_by_id(user_id)
+            email = user_result.user.email if user_result and user_result.user else None
+        except Exception as e:
+            logger.warning(f"Failed to get user via auth.admin API for user {user_id}: {e}")
+        
+        if not email:
+            try:
+                user_email_result = await client.rpc('get_user_email', {'user_id': user_id}).execute()
+                if user_email_result.data:
+                    email = user_email_result.data
+            except Exception as e:
+                logger.warning(f"Failed to get email via RPC for user {user_id}: {e}")
+        
+        if not email:
+            logger.error(f"Could not find email for user {user_id} / account {account_id}")
+            raise HTTPException(
+                status_code=400, 
+                detail="Unable to retrieve user email. Please ensure your account has a valid email address."
+            )
         
         customer = await stripe.Customer.create_async(
             email=email,
@@ -57,7 +77,7 @@ class SubscriptionService:
             'email': email
         }).execute()
         
-        logger.info(f"Created Stripe customer {customer.id} for account {account_id}")
+        logger.info(f"Created Stripe customer {customer.id} for account {account_id} with email {email}")
         return customer.id
 
     async def get_subscription(self, account_id: str) -> Dict:
