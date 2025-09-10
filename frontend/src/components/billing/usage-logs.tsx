@@ -55,10 +55,14 @@ export default function UsageLogs({ accountId, isAdminView = false }: Props) {
   
   const ITEMS_PER_PAGE = 1000;
 
-  // Use appropriate hook based on context
+  // Call both hooks but enable only the appropriate one
+  const adminUsageQuery = useAdminUserUsageLogs(accountId, page, ITEMS_PER_PAGE, 30);
+  const regularUsageQuery = useUsageLogs(page, ITEMS_PER_PAGE);
+
+  // Use appropriate query result based on context
   const { data: currentPageData, isLoading, error, refetch } = isAdminView 
-    ? useAdminUserUsageLogs(accountId, page, ITEMS_PER_PAGE, 30)
-    : useUsageLogs(page, ITEMS_PER_PAGE);
+    ? adminUsageQuery
+    : regularUsageQuery;
 
   // Check if we have hierarchical data
   const isHierarchical = currentPageData?.is_hierarchical || false;
