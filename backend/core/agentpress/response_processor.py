@@ -1279,7 +1279,7 @@ class ResponseProcessor:
             # Check tool credit cost if thread_id is provided
             if thread_id:
                 try:
-                    from core.services.billing import can_user_afford_tool, charge_tool_usage
+                    from core.services.billing_wrapper import can_user_afford_tool_unified, charge_tool_usage_unified
                     from core.services.supabase import DBConnection
                     
                     db = DBConnection()
@@ -1291,7 +1291,7 @@ class ResponseProcessor:
                         user_id = thread_result.data[0]['account_id']
                         
                         # Check if user can afford this tool
-                        affordability = await can_user_afford_tool(client, user_id, function_name)
+                        affordability = await can_user_afford_tool_unified(client, user_id, function_name)
                         
                         if not affordability['can_use']:
                             logger.warning(f"User {user_id} cannot afford tool {function_name}. Required: ${affordability['required_cost']:.4f}, Available: ${affordability['current_balance']:.4f}")
@@ -1328,7 +1328,7 @@ class ResponseProcessor:
             if result.success and thread_id and 'user_id' in locals():
                 try:
                     if affordability['required_cost'] > 0:
-                        charge_result = await charge_tool_usage(
+                        charge_result = await charge_tool_usage_unified(
                             client,
                             user_id,
                             function_name,
