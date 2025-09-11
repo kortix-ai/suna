@@ -54,8 +54,12 @@ export function useTransactions(
   offset: number = 0,
   typeFilter?: string
 ) {
+  // In enterprise mode, transactions are not available
+  const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
+  
   return useQuery<TransactionsResponse>({
     queryKey: ['billing', 'transactions', limit, offset, typeFilter],
+    enabled: !isEnterpriseMode, // Disable the query in enterprise mode
     queryFn: async () => {
       const params = new URLSearchParams({
         limit: limit.toString(),
@@ -77,8 +81,12 @@ export function useTransactions(
 }
 
 export function useTransactionsSummary(days: number = 30) {
+  // In enterprise mode, transaction summaries are not available
+  const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
+  
   return useQuery<TransactionsSummary>({
     queryKey: ['billing', 'transactions', 'summary', days],
+    enabled: !isEnterpriseMode, // Disable the query in enterprise mode
     queryFn: async () => {
       const response = await backendApi.get(`/billing/transactions/summary?days=${days}`);
       if (response.error) {
