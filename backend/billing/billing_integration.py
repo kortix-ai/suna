@@ -43,19 +43,60 @@ class BillingIntegration:
         
         logger.info(f"[BILLING] Calculated cost: ${cost:.6f} for {model}")
         
-        result = await credit_manager.use_credits(
-account_id=account_id,
-            amount=cost,
-            description=f"{model}: {prompt_tokens}+{completion_tokens} tokens",
-            thread_id=None,
-            message_id=message_id
-        )
-        
-        if result.get('success'):
-            logger.info(f"[BILLING] Successfully deducted ${cost:.6f} from user {account_id}. New balance: ${result.get('new_total', 0):.2f} (expiring: ${result.get('from_expiring', 0):.2f}, non-expiring: ${result.get('from_non_expiring', 0):.2f})")
+        # Check if we're in enterprise mode to route appropriately
+        if config.ENTERPRISE_MODE:
+            # Enterprise mode: use unified billing wrapper
+            from core.services.billing_wrapper import handle_usage_unified
+            
+            db = DBConnection()
+            client = await db.client
+            
+            success, message = await handle_usage_unified(
+                client=client,
+                account_id=account_id,
+                token_cost=cost,
+                thread_id=None,
+                message_id=message_id,
+                model=model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens
+            )
+            
+            if success:
+                logger.info(f"[BILLING] Successfully deducted ${cost:.6f} from user {account_id}: {message}")
+                # Enterprise mode doesn't track individual balance details, use defaults for backward compatibility
+                result = {
+                    'success': True,
+                    'new_total': 0,
+                    'from_expiring': 0,
+                    'from_non_expiring': 0,
+                    'transaction_id': f"enterprise_{account_id}_{message_id}"
+                }
+            else:
+                logger.error(f"[BILLING] Failed to deduct credits for user {account_id}: {message}")
+                result = {
+                    'success': False,
+                    'new_total': 0,
+                    'from_expiring': 0,
+                    'from_non_expiring': 0,
+                    'error': message
+                }
         else:
-            logger.error(f"[BILLING] Failed to deduct credits for user {account_id}: {result.get('error')}")
+            # Non-enterprise mode: keep original credit manager logic unchanged
+            result = await credit_manager.use_credits(
+                account_id=account_id,
+                amount=cost,
+                description=f"{model}: {prompt_tokens}+{completion_tokens} tokens",
+                thread_id=None,
+                message_id=message_id
+            )
+            
+            if result.get('success'):
+                logger.info(f"[BILLING] Successfully deducted ${cost:.6f} from user {account_id}. New balance: ${result.get('new_total', 0):.2f} (expiring: ${result.get('from_expiring', 0):.2f}, non-expiring: ${result.get('from_non_expiring', 0):.2f})")
+            else:
+                logger.error(f"[BILLING] Failed to deduct credits for user {account_id}: {result.get('error')}")
         
+        # Return in original format for backward compatibility
         return {
             'success': result.get('success', False),
             'cost': float(cost),
