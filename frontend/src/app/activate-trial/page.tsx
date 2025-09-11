@@ -33,20 +33,32 @@ export default function ActivateTrialPage() {
       return;
     }
 
-    if (!isLoadingSubscription && !isLoadingTrial && subscription && trialStatus) {
-      const hasActiveTrial = trialStatus.has_trial && trialStatus.trial_status === 'active';
-      const hasUsedTrial = trialStatus.trial_status === 'used' || 
-                           trialStatus.trial_status === 'expired' || 
-                           trialStatus.trial_status === 'cancelled' ||
-                           trialStatus.trial_status === 'converted';
-      const hasActiveSubscription = subscription.tier && 
-                                   subscription.tier.name !== 'none' && 
-                                   subscription.tier.name !== 'free';
-      
-      if (hasActiveTrial || hasActiveSubscription) {
-        router.push('/dashboard');
-      } else if (hasUsedTrial) {
-        router.push('/subscription');
+    if (!isLoadingSubscription && !isLoadingTrial && subscription) {
+      // In enterprise mode, trialStatus will be undefined, so only check subscription
+      if (trialStatus) {
+        const hasActiveTrial = trialStatus.has_trial && trialStatus.trial_status === 'active';
+        const hasUsedTrial = trialStatus.trial_status === 'used' || 
+                             trialStatus.trial_status === 'expired' || 
+                             trialStatus.trial_status === 'cancelled' ||
+                             trialStatus.trial_status === 'converted';
+        const hasActiveSubscription = subscription.tier && 
+                                     subscription.tier.name !== 'none' && 
+                                     subscription.tier.name !== 'free';
+        
+        if (hasActiveTrial || hasActiveSubscription) {
+          router.push('/dashboard');
+        } else if (hasUsedTrial) {
+          router.push('/subscription');
+        }
+      } else {
+        // No trial status (enterprise mode), only check subscription
+        const hasActiveSubscription = subscription.tier && 
+                                     subscription.tier.name !== 'none' && 
+                                     subscription.tier.name !== 'free';
+        
+        if (hasActiveSubscription) {
+          router.push('/dashboard');
+        }
       }
     }
   }, [subscription, trialStatus, isLoadingSubscription, isLoadingTrial, router]);
