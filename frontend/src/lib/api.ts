@@ -1700,12 +1700,20 @@ export interface SubscriptionStatus {
   // Credit information
   credit_balance?: number;
   can_purchase_credits?: boolean;
+  // Tier information for normal version
   tier?: {
     name: string;
     credits: number;
     can_purchase_credits: boolean;
     models?: string[];
     project_limit?: number;
+  };
+  // Enterprise information for enterprise version
+  enterprise_info?: {
+    is_enterprise: boolean;
+    monthly_limit: number;
+    remaining_monthly: number;
+    enterprise_balance: number;
   };
 }
 
@@ -1782,6 +1790,18 @@ export interface UsageLogEntry {
   was_over_limit?: boolean;
 }
 
+// Tool usage interface for daily aggregation
+export interface ToolUsage {
+  calls: number;
+  cost: number;
+}
+
+export interface DailyToolUsage {
+  total_calls: number;
+  total_cost: number;
+  tools: Record<string, ToolUsage>;
+}
+
 // Usage logs response interface
 export interface UsageLogsResponse {
   logs: UsageLogEntry[];
@@ -1789,6 +1809,16 @@ export interface UsageLogsResponse {
   message?: string;
   subscription_limit?: number;
   cumulative_cost?: number;
+  tool_usage_daily?: Record<string, DailyToolUsage>;
+  // Hierarchical enterprise usage fields
+  hierarchical_usage?: Record<string, any>;
+  enterprise_info?: {
+    monthly_limit: number;
+    current_usage: number;
+    remaining: number;
+  };
+  total_cost_period?: number;
+  is_hierarchical?: boolean;
 }
 
 export interface BillingStatusResponse {

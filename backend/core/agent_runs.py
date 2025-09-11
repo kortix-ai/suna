@@ -8,6 +8,7 @@ from typing import Optional, List, Tuple, Dict
 from fastapi import APIRouter, HTTPException, Depends, Request, Body, File, UploadFile, Form
 from fastapi.responses import StreamingResponse
 
+<<<<<<< HEAD:backend/core/agent_runs.py
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_user_id_from_stream_auth, verify_and_authorize_thread_access
 from core.utils.logger import logger, structlog
 from core.services.billing import can_use_model
@@ -15,6 +16,14 @@ from billing.billing_integration import billing_integration
 from core.utils.config import config
 from core.services import redis
 from core.sandbox.sandbox import create_sandbox, delete_sandbox
+=======
+from utils.auth_utils import verify_and_get_user_id_from_jwt, get_user_id_from_stream_auth, verify_and_authorize_thread_access
+from utils.logger import logger, structlog
+from services.billing_wrapper import check_billing_status, can_use_model
+from utils.config import config
+from services import redis
+from sandbox.sandbox import create_sandbox, delete_sandbox
+>>>>>>> sundar-dev:backend/agent/handlers/agent_runs.py
 from run_agent_background import run_agent_background
 from core.ai_models import model_manager
 
@@ -24,8 +33,14 @@ from .core_utils import (
     stop_agent_run_with_helpers as stop_agent_run, get_agent_run_with_access_check, 
     _get_version_service, generate_and_update_project_name
 )
+<<<<<<< HEAD:backend/core/agent_runs.py
 from .config_helper import extract_agent_config
 from .core_utils import check_agent_run_limit, check_project_count_limit
+=======
+from ..config_helper import extract_agent_config
+from ..utils import check_agent_run_limit, check_project_count_limit
+from utils.agent_default_files import AgentDefaultFilesManager
+>>>>>>> sundar-dev:backend/agent/handlers/agent_runs.py
 
 router = APIRouter()
 
@@ -814,8 +829,18 @@ async def initiate_agent_with_files(
         vnc_url = None
         website_url = None
         token = None
+        
+        # Check if agent has default files that need to be downloaded
+        has_default_files = False
+        if agent_config:
+            files_manager = AgentDefaultFilesManager()
+            default_files = await files_manager.list_files(agent_config['agent_id'])
+            has_default_files = len(default_files) > 0
+            if has_default_files:
+                logger.debug(f"Agent has {len(default_files)} default files to download")
 
-        if files:
+        # Create sandbox if we have files to upload or default files to download
+        if files or has_default_files:
             # 3. Create Sandbox (lazy): only create now if files were uploaded and need the
             try:
                 sandbox_pass = str(uuid.uuid4())
@@ -938,6 +963,22 @@ async def initiate_agent_with_files(
             if failed_uploads:
                 message_content += "\n\nThe following files failed to upload:\n"
                 for failed_file in failed_uploads: message_content += f"- {failed_file}\n"
+        
+        # 4.5. Download Agent Default Files (if any)
+        if has_default_files and sandbox:
+            try:
+                downloaded_files = await files_manager.download_files_to_sandbox(agent_config['agent_id'], sandbox)
+                if downloaded_files:
+                    logger.info(f"Downloaded {len(downloaded_files)} default files to sandbox")
+                    # Optionally add to message content to inform user
+                    if not message_content.endswith('\n'):
+                        message_content += "\n"
+                    message_content += "\n[Agent Default Files Available]:\n"
+                    for file_path in downloaded_files:
+                        message_content += f"- {file_path}\n"
+            except Exception as e:
+                logger.error(f"Failed to download agent default files: {e}")
+                # Continue without default files rather than failing the entire initiation
 
         # 5. Add initial user message to thread
         message_id = str(uuid.uuid4())

@@ -65,6 +65,7 @@ import { useTheme } from 'next-themes';
 import { isLocalMode } from '@/lib/config';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { BillingModal } from '@/components/billing/billing-modal';
+import { useAdminCheck } from '@/hooks/use-admin-check';
 
 export function NavUserWithTeams({
   user,
@@ -82,6 +83,7 @@ export function NavUserWithTeams({
   const [showNewTeamDialog, setShowNewTeamDialog] = React.useState(false);
   const [showBillingModal, setShowBillingModal] = React.useState(false);
   const { theme, setTheme } = useTheme();
+  const { data: adminCheck } = useAdminCheck();
 
   // Prepare personal account and team accounts
   const personalAccount = React.useMemo(
@@ -335,6 +337,14 @@ export function NavUserWithTeams({
                     <Link href="/settings/credentials">
                       <Plug className="h-4 w-4" />
                       Integrations
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                {adminCheck?.isAdmin && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/admin">
+                      <Shield className="h-4 w-4" />
+                      Admin
                     </Link>
                   </DropdownMenuItem>
                 )}

@@ -70,6 +70,16 @@ export async function middleware(request: NextRequest) {
     if (isLocalMode) {
       return supabaseResponse;
     }
+  // // Define protected routes
+  // const protectedRoutes = ['/dashboard', '/agents', '/projects', '/settings', '/invitation', '/admin']
+  // const authRoutes = ['/auth', '/login', '/signup']
+  
+  // const isProtectedRoute = protectedRoutes.some(route => 
+  //   request.nextUrl.pathname.startsWith(route)
+  // )
+  // const isAuthRoute = authRoutes.some(route => 
+  //   request.nextUrl.pathname.startsWith(route)
+  // )
 
     if (!BILLING_ROUTES.includes(pathname) && pathname !== '/') {
       const { data: accounts } = await supabase

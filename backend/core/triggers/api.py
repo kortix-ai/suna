@@ -14,6 +14,8 @@ from core.utils.logger import logger
 from core.utils.config import config
 from core.services.billing import can_use_model
 from billing.billing_integration import billing_integration
+from services.billing_wrapper import check_billing_status, can_use_model
+
 
 from .trigger_service import get_trigger_service, TriggerType
 from .provider_service import get_provider_service

@@ -9,6 +9,7 @@ from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from .template_service import AgentTemplate, MCPRequirementValue, ConfigType, ProfileId, QualifiedName
 from core.triggers.api import sync_triggers_to_version_config
+from utils.agent_default_files import AgentDefaultFilesManager
 
 @dataclass(frozen=True)
 class AgentInstance:
@@ -119,6 +120,20 @@ class InstallationService:
         
         await self._restore_workflows(agent_id, template.config) 
         await self._restore_triggers(agent_id, request.account_id, template.config, request.profile_mappings)
+        
+        # Copy default files if template has sharing preference for files
+        if template.sharing_preferences and template.sharing_preferences.get('default_files'):
+            try:
+                files_manager = AgentDefaultFilesManager()
+                await files_manager.copy_files_for_agent_copy(
+                    source_agent_id=template.metadata.get('source_agent_id', template.template_id),
+                    dest_account_id=request.account_id,
+                    dest_agent_id=agent_id
+                )
+                logger.debug(f"Copied default files for agent {agent_id}")
+            except Exception as e:
+                logger.error(f"Failed to copy default files: {e}")
+                # Continue without files rather than failing the installation
         
         await self._increment_download_count(template.template_id)
         
