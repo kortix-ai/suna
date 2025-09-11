@@ -70,6 +70,12 @@ export async function middleware(request: NextRequest) {
     if (isLocalMode) {
       return supabaseResponse;
     }
+
+    // Check if enterprise mode is enabled - if so, skip billing checks entirely
+    const isEnterpriseMode = process.env.ENTERPRISE_MODE === 'true';
+    if (isEnterpriseMode) {
+      return supabaseResponse;
+    }
   // // Define protected routes
   // const protectedRoutes = ['/dashboard', '/agents', '/projects', '/settings', '/invitation', '/admin']
   // const authRoutes = ['/auth', '/login', '/signup']

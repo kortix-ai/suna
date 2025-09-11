@@ -27,6 +27,12 @@ export default function ActivateTrialPage() {
 
   useEffect(() => {
     if (!isLoadingSubscription && !isLoadingTrial && subscription && trialStatus) {
+      // Check if user is enterprise - if so, redirect to dashboard immediately
+      if (subscription.enterprise_info?.is_enterprise) {
+        router.push('/dashboard');
+        return;
+      }
+
       const hasActiveTrial = trialStatus.has_trial && trialStatus.trial_status === 'active';
       const hasUsedTrial = trialStatus.trial_status === 'used' || 
                            trialStatus.trial_status === 'expired' || 
@@ -79,6 +85,18 @@ export default function ActivateTrialPage() {
 
   if (maintenanceNotice?.enabled) {
     return <MaintenanceAlert open={true} onOpenChange={() => {}} closeable={false} />;
+  }
+
+  // Show loading state for enterprise users while redirecting
+  if (subscription?.enterprise_info?.is_enterprise) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center p-4">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Redirecting to dashboard...</p>
+        </div>
+      </div>
+    );
   }
 
   const isLoading = isLoadingSubscription || isLoadingTrial;
