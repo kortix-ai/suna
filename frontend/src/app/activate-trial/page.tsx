@@ -10,7 +10,7 @@ import { useState, useEffect } from 'react';
 import { useTrialStatus, useStartTrial } from '@/hooks/react-query/billing/use-trial-status';
 import { useSubscription } from '@/hooks/react-query/use-billing-v2';
 import { Skeleton } from '@/components/ui/skeleton';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { OmniLogo } from '@/components/sidebar/omni-logo';
 import Link from 'next/link';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { createClient } from '@/lib/supabase/client';
@@ -108,7 +108,7 @@ export default function ActivateTrialPage() {
         <CardHeader className="text-center space-y-4">
           <div>
             <CardTitle className="text-2xl font-bold flex items-center justify-center gap-2">
-              <KortixLogo/>
+              <OmniLogo size={32}/>
               <span>Welcome to Omni</span>
             </CardTitle>
             <CardDescription className="mt-2">

@@ -10,7 +10,7 @@ import { AlertTriangle, Clock, CreditCard, Loader2, LogOut } from 'lucide-react'
 import { useRouter } from 'next/navigation';
 import { apiClient, backendApi } from '@/lib/api-client';
 import { Skeleton } from '@/components/ui/skeleton';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { OmniLogo } from '@/components/sidebar/omni-logo';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { useMaintenanceNoticeQuery } from '@/hooks/react-query/edge-flags';
@@ -110,7 +110,7 @@ export default function SubscriptionRequiredPage() {
           <div className="flex items-center justify-between">
             <div className="flex-1" />
             <div className="text-2xl font-bold flex items-center justify-center gap-2">
-              <KortixLogo/>
+              <OmniLogo size={32}/>
               <span>{isTrialExpired ? 'Your Trial Has Ended' : 'Subscription Required'}</span>
             </div>
             <div className="flex-1 flex justify-end">
@@ -126,9 +126,9 @@ export default function SubscriptionRequiredPage() {
             </div>
           </div>
           <p className="text-md text-muted-foreground max-w-2xl mx-auto">
-            {isTrialExpired 
-              ? 'Your 7-day free trial has ended. Choose a plan to continue using Suna AI.'
-              : 'A subscription is required to use Suna. Choose the plan that works best for you.'}
+            {isTrialExpired
+              ? 'Your 7-day free trial has ended. Choose a plan to continue using Omni AI.'
+              : 'A subscription is required to use Omni. Choose the plan that works best for you.'}
           </p>
         </div>
         <PricingSection 

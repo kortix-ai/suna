@@ -41,11 +41,14 @@ import { isLocalMode, config } from '@/lib/config';
 import { toast } from 'sonner';
 import { useModal } from '@/hooks/use-modal-store';
 import { createClient } from '@/lib/supabase/client';
+import { CheckIcon } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 // Custom dialog overlay with blur effect
 const BlurredDialogOverlay = () => (
   <DialogOverlay className="bg-background/40 backdrop-blur-md" />
 );
+
 
 // Rotating text component for job types
 const RotatingText = ({ 
@@ -1177,6 +1180,7 @@ export function HeroSection() {
             </div>
           </motion.div>
         </motion.div>
+
 
         {/* Video section positioned below the main content with better mobile spacing */}
         <motion.div 

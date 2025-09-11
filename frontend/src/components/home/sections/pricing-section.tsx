@@ -631,6 +631,148 @@ interface PricingSectionProps {
   onSubscriptionUpdate?: () => void;
 }
 
+interface PricingTierButtonProps {
+  tier: PricingTier;
+  currentSubscription: SubscriptionStatus | null;
+  isLoading: Record<string, boolean>;
+  isFetchingPlan: boolean;
+  onPlanSelect?: (planId: string) => void;
+  onSubscriptionUpdate?: () => void;
+  isAuthenticated?: boolean;
+  returnUrl: string;
+  billingPeriod: 'monthly' | 'yearly' | 'yearly_commitment';
+}
+
+function PricingTierButton({
+  tier,
+  currentSubscription,
+  isLoading,
+  isFetchingPlan,
+  onPlanSelect,
+  onSubscriptionUpdate,
+  isAuthenticated = false,
+  returnUrl,
+  billingPeriod,
+}: PricingTierButtonProps) {
+  // Get the price ID to use based on billing period
+  const getPriceId = () => {
+    if (billingPeriod === 'yearly_commitment' && tier.monthlyCommitmentStripePriceId) {
+      return tier.monthlyCommitmentStripePriceId;
+    } else if (billingPeriod === 'yearly' && tier.yearlyStripePriceId) {
+      return tier.yearlyStripePriceId;
+    }
+    return tier.stripePriceId;
+  };
+
+  const priceId = getPriceId();
+  const isPlanLoading = isLoading[priceId];
+
+  // Handle subscription/trial start - simplified version of the original logic
+  const handleSubscribe = async (planStripePriceId: string) => {
+    if (!isAuthenticated) {
+      window.location.href = '/auth';
+      return;
+    }
+
+    if (isLoading[planStripePriceId]) {
+      return;
+    }
+
+    try {
+      onPlanSelect?.(planStripePriceId);
+      const response: CreateCheckoutSessionResponse = await createCheckoutSession({
+        price_id: priceId,
+        success_url: returnUrl,
+        cancel_url: returnUrl,
+      });
+
+      switch (response.status) {
+        case 'new':
+        case 'checkout_created':
+          if (response.url) {
+            window.location.href = response.url;
+          } else {
+            toast.error('Failed to initiate subscription. Please try again.');
+          }
+          break;
+        case 'upgraded':
+        case 'updated':
+          const upgradeMessage = response.details?.is_upgrade
+            ? `Subscription upgraded from $${response.details.current_price} to $${response.details.new_price}`
+            : 'Subscription updated successfully';
+          toast.success(upgradeMessage);
+          if (onSubscriptionUpdate) onSubscriptionUpdate();
+          break;
+        case 'downgrade_scheduled':
+        case 'scheduled':
+          toast.success('Subscription change scheduled');
+          if (onSubscriptionUpdate) onSubscriptionUpdate();
+          break;
+        case 'no_change':
+          toast.info(response.message || 'You are already on this plan.');
+          break;
+        default:
+          toast.error('An unexpected error occurred. Please try again.');
+      }
+    } catch (error: any) {
+      console.error('Error processing subscription:', error);
+      const errorMessage = error?.response?.data?.detail || error?.message || 'Failed to process subscription. Please try again.';
+      toast.error(errorMessage);
+    }
+  };
+
+  const userPlanName = currentSubscription?.plan_name || 'none';
+  const isCurrentActivePlan = isAuthenticated && (
+    currentSubscription?.price_id === priceId ||
+    (userPlanName === 'trial' && tier.price === '$20' && billingPeriod === 'monthly') ||
+    (userPlanName === 'tier_2_20' && tier.price === '$20' && billingPeriod === 'monthly')
+  );
+
+  let buttonText = isAuthenticated ? 'Select Plan' : 'Try Free';
+  let buttonDisabled = isPlanLoading;
+  let buttonClassName = '';
+
+  if (isAuthenticated && isCurrentActivePlan) {
+    buttonText = userPlanName === 'trial' ? 'Trial Active' : 'Current Plan';
+    buttonDisabled = true;
+    buttonClassName = 'bg-primary/10 hover:bg-primary/20 text-primary cursor-not-allowed';
+  } else {
+    buttonClassName = tier.isPopular
+      ? 'bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg hover:shadow-primary/25'
+      : 'bg-secondary hover:bg-secondary/90 text-secondary-foreground';
+  }
+
+  if (isPlanLoading) {
+    buttonText = 'Loading...';
+    buttonClassName = 'opacity-70 cursor-not-allowed';
+  }
+
+  return (
+    <Button
+      onClick={() => handleSubscribe(priceId)}
+      disabled={buttonDisabled}
+      className={cn('w-full transition-all duration-200', buttonClassName)}
+      size="lg"
+    >
+      {buttonText}
+    </Button>
+  );
+}
+
+// Helper function to get yearly commitment pricing
+const getYearlyCommitmentPrice = (tierName: string): string => {
+  switch (tierName) {
+    case 'Plus':
+      return '$17';
+    case 'Pro':
+      return '$42.50';
+    case 'Ultra':
+      return '$170';
+    default:
+      return '$0';
+  }
+};
+
 export function PricingSection({
   returnUrl = typeof window !== 'undefined' ? window.location.href : '/',
   showTitleAndTabs = true,
@@ -781,58 +923,80 @@ export function PricingSection({
           </div>
         </div>
 
-        <div className={cn(
-          "grid gap-6 w-full",
-          insideDialog
-            ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 2xl:grid-cols-3"
-            : "min-[650px]:grid-cols-2 lg:grid-cols-3",
-          !insideDialog && "grid-rows-1 items-stretch"
-        )}>
-          {siteConfig.cloudPricingItems
-            .filter((tier) => !tier.hidden && (!hideFree || tier.price !== '$0'))
-            .map((tier) => (
-              <PricingTier
-                key={tier.name}
-                tier={tier}
-                currentSubscription={currentSubscription}
-                isLoading={planLoadingStates}
-                isFetchingPlan={isFetchingPlan}
-                onPlanSelect={handlePlanSelect}
-                onSubscriptionUpdate={handleSubscriptionUpdate}
-                isAuthenticated={isAuthenticated}
-                returnUrl={returnUrl}
-                insideDialog={insideDialog}
-                billingPeriod={billingPeriod}
-              />
-            ))}
+        {/* Suna.so-style Pricing Cards */}
+        <div className="w-full px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+            {siteConfig.cloudPricingItems
+              .filter((tier) => (!hideFree || tier.price !== '$0'))
+              .map((tier, index) => (
+                <motion.div
+                  key={tier.name}
+                  className={cn(
+                    "relative rounded-2xl p-6 backdrop-blur-sm border transition-all duration-300 hover:scale-[1.02]",
+                    tier.isPopular
+                      ? "border-primary/50 bg-primary/5 shadow-lg shadow-primary/10"
+                      : "border-border/50 bg-background/30 hover:border-border/70"
+                  )}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 * index }}
+                >
+                  {/* Popular Badge */}
+                  {tier.isPopular && (
+                    <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
+                      <span className="bg-primary text-primary-foreground px-3 py-1 rounded-full text-xs font-medium shadow-lg">
+                        Popular
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Plan Header */}
+                  <div className="text-center mb-6">
+                    <h3 className="text-xl font-semibold mb-2">{tier.name}</h3>
+                    <div className="flex items-baseline justify-center">
+                      <span className="text-3xl font-bold">
+                        {billingPeriod === 'yearly_commitment' && tier.monthlyCommitmentStripePriceId 
+                          ? getYearlyCommitmentPrice(tier.name)
+                          : tier.price}
+                      </span>
+                      <span className="text-muted-foreground ml-1">/month</span>
+                    </div>
+                    {billingPeriod === 'yearly_commitment' && (
+                      <div className="text-sm text-muted-foreground mt-1">
+                        <span className="line-through">{tier.price}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Features List */}
+                  <ul className="space-y-3 mb-6">
+                    {tier.features.map((feature, featureIndex) => (
+                      <li key={featureIndex} className="flex items-start">
+                        <CheckIcon className="h-4 w-4 text-primary mt-0.5 mr-3 flex-shrink-0" />
+                        <span className="text-sm text-muted-foreground">{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  {/* CTA Button with existing functionality */}
+                  <div className="mt-auto">
+                    <PricingTierButton
+                      tier={tier}
+                      currentSubscription={currentSubscription}
+                      isLoading={isLoading}
+                      isFetchingPlan={isFetchingPlan}
+                      onPlanSelect={handlePlanSelect}
+                      onSubscriptionUpdate={handleSubscriptionUpdate}
+                      isAuthenticated={isAuthenticated}
+                      returnUrl={returnUrl}
+                      billingPeriod={billingPeriod}
+                    />
+                  </div>
+                </motion.div>
+              ))}
+          </div>
         </div>
 
-      {deploymentType === 'cloud' && (
-        <div className={cn(
-          "grid gap-4 w-full max-w-6xl mx-auto",
-          {
-            "px-6": !insideDialog
-          },
-          (!hideFree || siteConfig.cloudPricingItems.filter((tier) => !hideFree || tier.price !== '$0').length > 2)
-            ? "min-[650px]:grid-cols-2 min-[900px]:grid-cols-3" : "min-[650px]:grid-cols-2"
-        )}>
-          {siteConfig.cloudPricingItems.filter((tier) => !hideFree || tier.price !== '$0').map((tier) => (
-            <PricingTier
-              key={tier.name}
-              tier={tier}
-              currentSubscription={currentSubscription}
-              isLoading={isLoading}
-              isFetchingPlan={isFetchingPlan}
-              onPlanSelect={handlePlanSelect}
-              onSubscriptionUpdate={handleSubscriptionUpdate}
-              isAuthenticated={isAuthenticated}
-              returnUrl={returnUrl}
-              insideDialog={insideDialog}
-              billingPeriod={billingPeriod}
-            />
-          ))}
-        </div>
-      )}
     </section>
   );
 }
