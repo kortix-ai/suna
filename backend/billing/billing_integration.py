@@ -28,7 +28,8 @@ class BillingIntegration:
         prompt_tokens: int,
         completion_tokens: int,
         model: str,
-        message_id: Optional[str] = None
+        message_id: Optional[str] = None,
+        thread_id: Optional[str] = None
     ) -> Dict:
         if config.ENV_MODE == EnvMode.LOCAL:
             return {'success': True, 'cost': 0, 'new_balance': 999999}
@@ -55,7 +56,7 @@ class BillingIntegration:
                 client=client,
                 account_id=account_id,
                 token_cost=cost,
-                thread_id=None,
+                thread_id=thread_id,
                 message_id=message_id,
                 model=model,
                 prompt_tokens=prompt_tokens,
