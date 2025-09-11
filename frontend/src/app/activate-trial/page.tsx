@@ -26,13 +26,14 @@ export default function ActivateTrialPage() {
   const { data: maintenanceNotice, isLoading: maintenanceLoading } = useMaintenanceNoticeQuery();
 
   useEffect(() => {
-    if (!isLoadingSubscription && !isLoadingTrial && subscription && trialStatus) {
-      // Check if user is enterprise - if so, redirect to dashboard immediately
-      if (subscription.enterprise_info?.is_enterprise) {
-        router.push('/dashboard');
-        return;
-      }
+    // Check if enterprise mode is enabled - if so, redirect to dashboard immediately
+    const isEnterpriseMode = process.env.ENTERPRISE_MODE === 'true';
+    if (isEnterpriseMode) {
+      router.push('/dashboard');
+      return;
+    }
 
+    if (!isLoadingSubscription && !isLoadingTrial && subscription && trialStatus) {
       const hasActiveTrial = trialStatus.has_trial && trialStatus.trial_status === 'active';
       const hasUsedTrial = trialStatus.trial_status === 'used' || 
                            trialStatus.trial_status === 'expired' || 
@@ -88,7 +89,8 @@ export default function ActivateTrialPage() {
   }
 
   // Show loading state for enterprise users while redirecting
-  if (subscription?.enterprise_info?.is_enterprise) {
+  const isEnterpriseMode = process.env.ENTERPRISE_MODE === 'true';
+  if (isEnterpriseMode) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center p-4">
         <div className="text-center">
