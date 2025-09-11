@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 
 export function useTrialStatus() {
   // In enterprise mode, trial status is not applicable
-  const isEnterpriseMode = process.env.ENTERPRISE_MODE === 'true';
+  const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
   
   return useQuery({
     queryKey: ['trial-status'],

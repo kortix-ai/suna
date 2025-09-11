@@ -72,7 +72,7 @@ export async function middleware(request: NextRequest) {
     }
 
     // Check if enterprise mode is enabled - if so, skip billing checks entirely
-    const isEnterpriseMode = process.env.ENTERPRISE_MODE === 'true';
+    const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
     if (isEnterpriseMode) {
       return supabaseResponse;
     }

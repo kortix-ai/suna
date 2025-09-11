@@ -27,7 +27,7 @@ export default function ActivateTrialPage() {
 
   useEffect(() => {
     // Check if enterprise mode is enabled - if so, redirect to dashboard immediately
-    const isEnterpriseMode = process.env.ENTERPRISE_MODE === 'true';
+    const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
     if (isEnterpriseMode) {
       router.push('/dashboard');
       return;
@@ -101,7 +101,7 @@ export default function ActivateTrialPage() {
   }
 
   // Show loading state for enterprise users while redirecting
-  const isEnterpriseMode = process.env.ENTERPRISE_MODE === 'true';
+  const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
   if (isEnterpriseMode) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center p-4">
