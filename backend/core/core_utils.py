@@ -453,6 +453,22 @@ async def check_project_count_limit(client, account_id: str) -> Dict[str, Any]:
                 'tier_name': 'local'
             }
         
+        # In enterprise mode, give users 100 projects
+        if config.ENTERPRISE_MODE:
+            projects_result = await client.table('projects').select('project_id').eq('account_id', account_id).execute()
+            current_count = len(projects_result.data or [])
+            project_limit = 100  # Fixed limit for enterprise users
+            can_create = current_count < project_limit
+            
+            logger.debug(f"Enterprise mode: Account {account_id} has {current_count}/{project_limit} projects - can_create: {can_create}")
+            
+            return {
+                'can_create': can_create,
+                'current_count': current_count,
+                'limit': project_limit,
+                'tier_name': 'enterprise'
+            }
+        
         try:
             result = await Cache.get(f"project_count_limit:{account_id}")
             if result:
