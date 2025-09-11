@@ -337,6 +337,14 @@ export function NavUserWithTeams({
                     </DropdownMenuItem>
                   </>
                 )}
+                {isEnterpriseMode && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/settings/transactions">
+                      <FileText className="h-4 w-4" />
+                      Transactions
+                    </Link>
+                  </DropdownMenuItem>
+                )}
                 {(
                   <DropdownMenuItem asChild>
                     <Link href="/settings/credentials">
