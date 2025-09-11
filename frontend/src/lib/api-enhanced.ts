@@ -383,7 +383,7 @@ export const billingApi = {
 
   async checkStatus(): Promise<BillingStatusResponse | null> {
     const result = await backendApi.get(
-      '/billing/status',
+      '/billing/check-status',
       {
         errorContext: { operation: 'check billing status', resource: 'account status' },
       }

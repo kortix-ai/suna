@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { backendApi } from '@/lib/api-client';
+import { billingApi } from '@/lib/api-enhanced';
 
 export interface CreditTransaction {
   id: string;
@@ -54,12 +55,12 @@ export function useTransactions(
   offset: number = 0,
   typeFilter?: string
 ) {
-  // In enterprise mode, transactions are not available
+  // In enterprise mode, use enterprise usage logs instead of transactions
   const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
   
   return useQuery<TransactionsResponse>({
     queryKey: ['billing', 'transactions', limit, offset, typeFilter],
-    enabled: !isEnterpriseMode, // Disable the query in enterprise mode
+    enabled: !isEnterpriseMode, // Only for non-enterprise mode
     queryFn: async () => {
       const params = new URLSearchParams({
         limit: limit.toString(),
@@ -81,12 +82,12 @@ export function useTransactions(
 }
 
 export function useTransactionsSummary(days: number = 30) {
-  // In enterprise mode, transaction summaries are not available
+  // In enterprise mode, use enterprise usage summary instead
   const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
   
   return useQuery<TransactionsSummary>({
     queryKey: ['billing', 'transactions', 'summary', days],
-    enabled: !isEnterpriseMode, // Disable the query in enterprise mode
+    enabled: !isEnterpriseMode, // Only for non-enterprise mode
     queryFn: async () => {
       const response = await backendApi.get(`/billing/transactions/summary?days=${days}`);
       if (response.error) {
@@ -94,6 +95,33 @@ export function useTransactionsSummary(days: number = 30) {
       }
       return response.data;
     },
+    staleTime: 60000, // 1 minute
+  });
+}
+
+// Hook for usage logs that works in both enterprise and non-enterprise modes
+export function useUsageLogs(page = 0, itemsPerPage = 100) {
+  return useQuery({
+    queryKey: ['billing', 'usage-logs', page, itemsPerPage],
+    queryFn: () => billingApi.getUsageLogs(page, itemsPerPage),
+    staleTime: 30000, // 30 seconds
+  });
+}
+
+// Hook for billing status that works in both modes  
+export function useBillingStatus() {
+  return useQuery({
+    queryKey: ['billing', 'status'],
+    queryFn: () => billingApi.checkStatus(),
+    staleTime: 30000, // 30 seconds
+  });
+}
+
+// Hook for subscription info that works in both modes
+export function useSubscriptionInfo() {
+  return useQuery({
+    queryKey: ['billing', 'subscription'],
+    queryFn: () => billingApi.getSubscription(),
     staleTime: 60000, // 1 minute
   });
 } 

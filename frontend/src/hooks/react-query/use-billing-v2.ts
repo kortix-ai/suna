@@ -52,14 +52,14 @@ export const useBillingStatus = () => {
 };
 
 export const useTransactions = (limit = 50, offset = 0) => {
-  // In enterprise mode, transactions are handled differently  
+  // In enterprise mode, use enterprise-specific hooks
   const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
   
   return useQuery({
     queryKey: billingKeys.transactions(limit, offset),
     queryFn: () => billingApiV2.getTransactions(limit, offset),
     staleTime: 1000 * 60 * 5,
-    enabled: !isEnterpriseMode, // Disable the query in enterprise mode
+    enabled: !isEnterpriseMode, // Only for non-enterprise mode
   });
 };
 

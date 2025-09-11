@@ -40,7 +40,7 @@ import {
   RefreshCw,
   Info,
 } from 'lucide-react';
-import { useTransactions, useTransactionsSummary } from '@/hooks/react-query/billing/use-transactions';
+import { useTransactions, useTransactionsSummary, useUsageLogs, useBillingStatus, useSubscriptionInfo } from '@/hooks/react-query/billing/use-transactions';
 import { cn } from '@/lib/utils';
 
 interface Props {
@@ -51,8 +51,16 @@ export default function CreditTransactions({ accountId }: Props) {
   const [offset, setOffset] = useState(0);
   const [typeFilter, setTypeFilter] = useState<string | undefined>(undefined);
   const limit = 50;
-
-  const { data, isLoading, error, refetch } = useTransactions(limit, offset, typeFilter);
+  
+  const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
+  
+  // Use appropriate hooks based on mode
+  const transactionsQuery = useTransactions(limit, offset, typeFilter);
+  const usageLogsQuery = useUsageLogs(Math.floor(offset / limit), limit);
+  const billingStatusQuery = useBillingStatus();
+  
+  // Select the right data source based on enterprise mode
+  const { data, isLoading, error, refetch } = isEnterpriseMode ? usageLogsQuery : transactionsQuery;
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString('en-US', {
@@ -157,13 +165,108 @@ export default function CreditTransactions({ accountId }: Props) {
     );
   }
 
+  // Enterprise vs non-enterprise data handling
   const currentBalance = data?.current_balance;
   const transactions = data?.transactions || [];
+  const enterpriseUsage = isEnterpriseMode ? data : null; // In enterprise mode, data is the usage logs response
+  const billingStatus = billingStatusQuery.data;
+  
+  // Render enterprise usage in hierarchical format
+  const renderEnterpriseUsage = () => {
+    if (!enterpriseUsage?.hierarchical_usage) {
+      return (
+        <div className="text-center py-8">
+          <p className="text-muted-foreground">No usage data found.</p>
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        {Object.entries(enterpriseUsage.hierarchical_usage).map(([date, dateData]: [string, any]) => (
+          <Card key={date} className="border-l-4 border-l-blue-500">
+            <CardHeader className="pb-3">
+              <div className="flex justify-between items-center">
+                <CardTitle className="text-lg">{new Date(date).toLocaleDateString()}</CardTitle>
+                <Badge variant="outline">
+                  ${dateData.total_cost?.toFixed(4) || '0.0000'}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {Object.entries(dateData.projects || {}).map(([projectId, projectData]: [string, any]) => (
+                <div key={projectId} className="mb-4 p-3 bg-muted/50 rounded-lg">
+                  <div className="flex justify-between items-center mb-2">
+                    <h4 className="font-medium">Project: {projectData.project_name || projectId}</h4>
+                    <span className="text-sm font-mono">${projectData.total_cost?.toFixed(4) || '0.0000'}</span>
+                  </div>
+                  
+                  {Object.entries(projectData.threads || {}).map(([threadId, threadData]: [string, any]) => (
+                    <div key={threadId} className="ml-4 mb-3 p-2 bg-background rounded border">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-sm text-muted-foreground">Thread: {threadId.slice(0, 8)}...</span>
+                        <span className="text-sm font-mono">${threadData.total_cost?.toFixed(4) || '0.0000'}</span>
+                      </div>
+                      
+                      {threadData.usage_details?.map((usage: any, index: number) => (
+                        <div key={index} className="ml-4 text-xs text-muted-foreground flex justify-between">
+                          <span>{usage.model_name} ({usage.tokens_used} tokens)</span>
+                          <span>${usage.cost?.toFixed(4) || '0.0000'}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6">
-      {/* Balance Summary Card */}
-      {currentBalance && (
+      {/* Enterprise Balance Summary Card */}
+      {isEnterpriseMode && billingStatus?.enterprise_info && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Enterprise Usage Summary</CardTitle>
+            <CardDescription>Your monthly usage limits and current spending</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <div className="text-2xl font-bold">
+                  ${billingStatus.enterprise_info.current_usage?.toFixed(4) || '0.0000'}
+                </div>
+                <p className="text-xs text-muted-foreground">Current Month Usage</p>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <DollarSign className="h-4 w-4 text-green-500" />
+                  <span className="text-lg font-semibold">
+                    ${billingStatus.enterprise_info.remaining?.toFixed(4) || '0.0000'}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">Remaining This Month</p>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-blue-500" />
+                  <span className="text-lg font-semibold">
+                    ${billingStatus.enterprise_info.monthly_limit?.toFixed(4) || '0.0000'}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">Monthly Limit</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Non-Enterprise Balance Summary Card */}
+      {!isEnterpriseMode && currentBalance && (
         <Card>
           <CardHeader>
             <CardTitle>Current Balance</CardTitle>
@@ -201,19 +304,27 @@ export default function CreditTransactions({ accountId }: Props) {
       )}
       <Card className='p-0 px-0 bg-transparent shadow-none border-none'>
         <CardHeader className='px-0'>
-          <CardTitle>Transaction History</CardTitle>
+          <CardTitle>{isEnterpriseMode ? 'Usage History' : 'Transaction History'}</CardTitle>
           <CardDescription>
-            All credit additions and deductions
+            {isEnterpriseMode 
+              ? 'Your usage organized by date, project, and conversation' 
+              : 'All credit additions and deductions'
+            }
           </CardDescription>
         </CardHeader>
         <CardContent className='px-0'>
-          {transactions.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">
-                {typeFilter ? `No ${typeFilter} transactions found.` : 'No transactions found.'}
-              </p>
-            </div>
+          {isEnterpriseMode ? (
+            // Enterprise mode: Show hierarchical usage data
+            renderEnterpriseUsage()
           ) : (
+            // Non-enterprise mode: Show traditional transaction table
+            transactions.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground">
+                  {typeFilter ? `No ${typeFilter} transactions found.` : 'No transactions found.'}
+                </p>
+              </div>
+            ) : (
             <>
               <div className="rounded-md border">
                 <Table>
@@ -301,6 +412,7 @@ export default function CreditTransactions({ accountId }: Props) {
                 </div>
               )}
             </>
+            )
           )}
         </CardContent>
       </Card>
