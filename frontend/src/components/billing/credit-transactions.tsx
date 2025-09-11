@@ -177,7 +177,8 @@ export default function CreditTransactions({ accountId }: Props) {
   
   // Render enterprise usage in hierarchical format
   const renderEnterpriseUsage = () => {
-    if (!enterpriseUsage?.hierarchical_usage) {
+    const hierarchicalData = (enterpriseUsage as any)?.hierarchical_usage;
+    if (!hierarchicalData) {
       return (
         <div className="text-center py-8">
           <p className="text-muted-foreground">No usage data found.</p>
@@ -187,7 +188,7 @@ export default function CreditTransactions({ accountId }: Props) {
 
     return (
       <div className="space-y-4">
-        {Object.entries(enterpriseUsage.hierarchical_usage).map(([date, dateData]: [string, any]) => (
+        {Object.entries(hierarchicalData).map(([date, dateData]: [string, any]) => (
           <Card key={date} className="border-l-4 border-l-blue-500">
             <CardHeader className="pb-3">
               <div className="flex justify-between items-center">
