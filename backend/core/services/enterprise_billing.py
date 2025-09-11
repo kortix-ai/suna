@@ -659,8 +659,7 @@ class SimplifiedEnterpriseBillingService:
                 if usage_type == 'tool':
                     # Tool usage - calculate tool_tokens from tool_cost
                     tool_cost = float(row.get('tool_cost', 0) or 0)
-                    # Assume tools cost about $0.01 per "token" (adjust as needed)
-                    tool_tokens = int(tool_cost * 100) if tool_cost > 0 else 0
+                    tool_tokens =  0
                     
                     usage_detail = {
                         'id': row['id'],

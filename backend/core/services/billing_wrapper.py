@@ -297,13 +297,16 @@ async def can_user_afford_tool_unified(client, account_id: str, tool_name: str) 
             error=str(e),
             exc_info=True
         )
-        # Fall back to standard logic on error
-        try:
-            return await stripe_can_user_afford_tool(client, account_id, tool_name)
-        except Exception as fallback_error:
-            logger.error(f"Fallback tool affordability check also failed: {fallback_error}")
-            # Default to allowing tool use if both checks fail
-            return {'can_use': True, 'required_cost': 0.0, 'current_balance': 0.0}
+        # Only fallback to non-enterprise if we're NOT in enterprise mode
+        if not config.ENTERPRISE_MODE:
+            try:
+                return await stripe_can_user_afford_tool(client, account_id, tool_name)
+            except Exception as fallback_error:
+                logger.error(f"Fallback tool affordability check also failed: {fallback_error}")
+        
+        # If we're in enterprise mode or fallback failed, default to allowing tool use
+        logger.warning(f"Tool affordability check failed for {tool_name} in enterprise mode, defaulting to allow")
+        return {'can_use': True, 'required_cost': 0.0, 'current_balance': 0.0, 'user_remaining': 0.0}
 
 
 async def charge_tool_usage_unified(
@@ -366,13 +369,16 @@ async def charge_tool_usage_unified(
             error=str(e),
             exc_info=True
         )
-        # Fall back to standard logic on error
-        try:
-            return await stripe_charge_tool_usage(client, account_id, tool_name, thread_id, message_id)
-        except Exception as fallback_error:
-            logger.error(f"Fallback tool charging also failed: {fallback_error}")
-            # Default to success if both fail
-            return {'success': True, 'cost_charged': 0.0, 'new_balance': 0.0}
+        # Only fallback to non-enterprise if we're NOT in enterprise mode
+        if not config.ENTERPRISE_MODE:
+            try:
+                return await stripe_charge_tool_usage(client, account_id, tool_name, thread_id, message_id)
+            except Exception as fallback_error:
+                logger.error(f"Fallback tool charging also failed: {fallback_error}")
+        
+        # If we're in enterprise mode or fallback failed, default to success
+        logger.warning(f"Tool charging failed for {tool_name} in enterprise mode, defaulting to success (no charge)")
+        return {'success': True, 'cost_charged': 0.0, 'new_balance': 0.0, 'user_remaining': 0.0}
 
 
 # Maintain backward compatibility by exposing unified functions with original names
