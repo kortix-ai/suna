@@ -264,26 +264,35 @@ async def can_user_afford_tool_unified(client, account_id: str, tool_name: str) 
     try:
         # If enterprise mode is enabled, use enterprise tool affordability check
         if config.ENTERPRISE_MODE:
-            logger.debug(f"Enterprise mode enabled - checking enterprise tool affordability for {tool_name} by account {account_id}")
+            logger.info(f"[TOOL_BILLING] Enterprise mode - checking tool affordability: {tool_name} for account {account_id}")
             
-            # Use the new enterprise tool affordability function
-            result = await client.rpc('enterprise_can_use_tool', {
-                'p_account_id': account_id,
-                'p_tool_name': tool_name
-            }).execute()
-            
-            if result.data and len(result.data) > 0:
-                data = result.data[0]
-                return {
-                    'can_use': data['can_use'],
-                    'required_cost': float(data['required_cost']),
-                    'current_balance': float(data['current_balance']),
-                    'user_remaining': float(data['user_remaining'])
-                }
-            else:
-                # Fallback if no data returned
-                logger.warning(f"No data returned from enterprise_can_use_tool for {tool_name}")
-                return {'can_use': False, 'required_cost': 0.0, 'current_balance': 0.0, 'user_remaining': 0.0}
+            try:
+                # Use the enterprise tool affordability function
+                logger.debug(f"[TOOL_BILLING] Calling enterprise_can_use_tool RPC with account_id={account_id}, tool_name={tool_name}")
+                result = await client.rpc('enterprise_can_use_tool', {
+                    'p_account_id': account_id,
+                    'p_tool_name': tool_name
+                }).execute()
+                
+                logger.debug(f"[TOOL_BILLING] Enterprise RPC result: {result}")
+                
+                if result.data and len(result.data) > 0:
+                    data = result.data[0]
+                    logger.info(f"[TOOL_BILLING] Enterprise tool check successful: can_use={data['can_use']}, cost=${data['required_cost']:.4f}")
+                    return {
+                        'can_use': data['can_use'],
+                        'required_cost': float(data['required_cost']),
+                        'current_balance': float(data['current_balance']),
+                        'user_remaining': float(data['user_remaining'])
+                    }
+                else:
+                    # No data returned from RPC
+                    logger.error(f"[TOOL_BILLING] No data returned from enterprise_can_use_tool for {tool_name}. Result: {result}")
+                    return {'can_use': False, 'required_cost': 0.0, 'current_balance': 0.0, 'user_remaining': 0.0}
+            except Exception as enterprise_error:
+                logger.error(f"[TOOL_BILLING] Enterprise RPC failed for {tool_name}: {enterprise_error}")
+                # This will trigger the fallback logic below
+                raise enterprise_error
         else:
             # Enterprise mode disabled, use standard tool credit checking
             logger.debug(f"Enterprise mode disabled, using standard tool credit checking for {tool_name}")
@@ -335,27 +344,36 @@ async def charge_tool_usage_unified(
     try:
         # If enterprise mode is enabled, use enterprise tool charging
         if config.ENTERPRISE_MODE:
-            logger.debug(f"Enterprise mode enabled - charging tool {tool_name} from enterprise credits for account {account_id}")
+            logger.info(f"[TOOL_BILLING] Enterprise mode - charging tool: {tool_name} for account {account_id}")
             
-            # Use the new enterprise tool charging function
-            result = await client.rpc('enterprise_use_tool_credits', {
-                'p_account_id': account_id,
-                'p_tool_name': tool_name,
-                'p_thread_id': thread_id,
-                'p_message_id': message_id
-            }).execute()
-            
-            if result.data and len(result.data) > 0:
-                data = result.data[0]
-                return {
-                    'success': data['success'],
-                    'cost_charged': float(data['cost_charged']),
-                    'new_balance': float(data['new_balance']),
-                    'user_remaining': float(data['user_remaining'])
-                }
-            else:
-                logger.error(f"No data returned from enterprise_use_tool_credits for {tool_name}")
-                return {'success': False, 'cost_charged': 0.0, 'new_balance': 0.0, 'user_remaining': 0.0}
+            try:
+                # Use the enterprise tool charging function
+                logger.debug(f"[TOOL_BILLING] Calling enterprise_use_tool_credits RPC with params: account_id={account_id}, tool_name={tool_name}, thread_id={thread_id}, message_id={message_id}")
+                result = await client.rpc('enterprise_use_tool_credits', {
+                    'p_account_id': account_id,
+                    'p_tool_name': tool_name,
+                    'p_thread_id': thread_id,
+                    'p_message_id': message_id
+                }).execute()
+                
+                logger.debug(f"[TOOL_BILLING] Enterprise charging RPC result: {result}")
+                
+                if result.data and len(result.data) > 0:
+                    data = result.data[0]
+                    logger.info(f"[TOOL_BILLING] Enterprise tool charging successful: success={data['success']}, charged=${data['cost_charged']:.4f}")
+                    return {
+                        'success': data['success'],
+                        'cost_charged': float(data['cost_charged']),
+                        'new_balance': float(data['new_balance']),
+                        'user_remaining': float(data['user_remaining'])
+                    }
+                else:
+                    logger.error(f"[TOOL_BILLING] No data returned from enterprise_use_tool_credits for {tool_name}. Result: {result}")
+                    return {'success': False, 'cost_charged': 0.0, 'new_balance': 0.0, 'user_remaining': 0.0}
+            except Exception as enterprise_error:
+                logger.error(f"[TOOL_BILLING] Enterprise charging RPC failed for {tool_name}: {enterprise_error}")
+                # This will trigger the fallback logic below
+                raise enterprise_error
         else:
             # Enterprise mode disabled, use standard tool charging
             logger.debug(f"Enterprise mode disabled, charging for tool {tool_name} usage")
