@@ -24,21 +24,18 @@ from core.prompts.prompt import get_system_prompt
 
 from core.utils.logger import logger
 
-<<<<<<< HEAD:backend/core/run.py
 from billing.billing_integration import billing_integration
 from core.tools.sb_vision_tool import SandboxVisionTool
 from core.tools.sb_image_edit_tool import SandboxImageEditTool
 from core.tools.sb_video_avatar_tool import SandboxVideoAvatarTool
 from core.tools.sb_presentation_outline_tool import SandboxPresentationOutlineTool
 from core.tools.sb_presentation_tool import SandboxPresentationTool
-=======
-from services.billing_wrapper import check_billing_status
-from agent.tools.sb_vision_tool import SandboxVisionTool
-from agent.tools.sb_image_edit_tool import SandboxImageEditTool
-from agent.tools.sb_video_avatar_tool import SandboxVideoAvatarTool
-from agent.tools.sb_presentation_outline_tool import SandboxPresentationOutlineTool
-from agent.tools.sb_presentation_tool import SandboxPresentationTool
->>>>>>> sundar-dev:backend/agent/run.py
+from core.services.billing_wrapper import check_billing_status
+from core.tools.sb_vision_tool import SandboxVisionTool
+from core.tools.sb_image_edit_tool import SandboxImageEditTool
+from core.tools.sb_video_avatar_tool import SandboxVideoAvatarTool
+from core.tools.sb_presentation_outline_tool import SandboxPresentationOutlineTool
+from core.tools.sb_presentation_tool import SandboxPresentationTool
 
 from core.services.langfuse import langfuse
 from langfuse.client import StatefulTraceClient
