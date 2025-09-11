@@ -1829,6 +1829,14 @@ export interface BillingStatusResponse {
     plan_name: string;
     minutes_limit?: number;
   };
+  // Enterprise-specific fields (only present when ENTERPRISE_MODE=true)
+  credit_balance?: number;
+  can_purchase_credits?: boolean;
+  enterprise_info?: {
+    monthly_limit: number;
+    current_usage: number;
+    remaining: number;
+  };
 }
 
 export interface Model {
