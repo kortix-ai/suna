@@ -14,10 +14,10 @@ from datetime import datetime, timezone
 from pydantic import BaseModel
 import structlog
 
-from utils.config import config
-from utils.auth_utils import verify_and_get_user_id_from_jwt
-from services.enterprise_billing import enterprise_billing
-from services.supabase import DBConnection
+from core.utils.config import config
+from core.utils.auth_utils import verify_and_get_user_id_from_jwt
+from core.services.enterprise_billing import enterprise_billing
+from core.services.supabase import DBConnection
 
 logger = structlog.get_logger(__name__)
 

@@ -9,7 +9,7 @@ from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from .template_service import AgentTemplate, MCPRequirementValue, ConfigType, ProfileId, QualifiedName
 from core.triggers.api import sync_triggers_to_version_config
-from utils.agent_default_files import AgentDefaultFilesManager
+from core.utils.agent_default_files import AgentDefaultFilesManager
 
 @dataclass(frozen=True)
 class AgentInstance:

@@ -13,8 +13,8 @@ from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 import structlog
 
-from utils.config import config
-from services.supabase import DBConnection
+from core.utils.config import config
+from core.services.supabase import DBConnection
 
 logger = structlog.get_logger(__name__)
 
@@ -155,7 +155,7 @@ class SimplifiedEnterpriseBillingService:
                     logger.info(f"USAGE RECORDED: Account {account_id} used ${amount:.4f} for thread {thread_id}, message {message_id}, model {model_name}")
                     # Invalidate caches to ensure frontend sees updates immediately  
                     try:
-                        from utils.cache import Cache
+                        from core.utils.cache import Cache
                         await Cache.invalidate(f"monthly_usage:{account_id}")
                         await Cache.invalidate(f"user_subscription:{account_id}")
                         await Cache.invalidate(f"allowed_models_for_user:{account_id}")
@@ -929,7 +929,7 @@ class SimplifiedEnterpriseBillingService:
                     
                     # Invalidate caches after successful tool billing
                     try:
-                        from utils.cache import Cache
+                        from core.utils.cache import Cache
                         await Cache.invalidate(f"monthly_usage:{account_id}")
                         await Cache.invalidate(f"user_subscription:{account_id}")
                         await Cache.invalidate(f"allowed_models_for_user:{account_id}")

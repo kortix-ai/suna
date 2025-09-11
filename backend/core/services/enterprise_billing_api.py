@@ -11,11 +11,11 @@ from typing import Optional, Dict, Any
 from datetime import datetime, timezone
 import structlog
 
-from utils.config import config
-from utils.auth_utils import verify_and_get_user_id_from_jwt
-from services.enterprise_billing import enterprise_billing
-from services.billing_wrapper import check_billing_status_unified
-from services.supabase import DBConnection
+from core.utils.config import config
+from core.utils.auth_utils import verify_and_get_user_id_from_jwt
+from core.services.enterprise_billing import enterprise_billing
+from core.services.billing_wrapper import check_billing_status_unified
+from core.services.supabase import DBConnection
 
 logger = structlog.get_logger(__name__)
 

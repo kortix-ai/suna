@@ -6,8 +6,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 from fastapi import UploadFile
-from utils.logger import logger
-from services.supabase import DBConnection
+from core.utils.logger import logger
+from core.services.supabase import DBConnection
 
 
 class AgentDefaultFilesManager:

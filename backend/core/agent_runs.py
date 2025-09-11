@@ -8,22 +8,13 @@ from typing import Optional, List, Tuple, Dict
 from fastapi import APIRouter, HTTPException, Depends, Request, Body, File, UploadFile, Form
 from fastapi.responses import StreamingResponse
 
-<<<<<<< HEAD:backend/core/agent_runs.py
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_user_id_from_stream_auth, verify_and_authorize_thread_access
 from core.utils.logger import logger, structlog
-from core.services.billing import can_use_model
+from core.services.billing_wrapper import check_billing_status, can_use_model
 from billing.billing_integration import billing_integration
 from core.utils.config import config
 from core.services import redis
 from core.sandbox.sandbox import create_sandbox, delete_sandbox
-=======
-from utils.auth_utils import verify_and_get_user_id_from_jwt, get_user_id_from_stream_auth, verify_and_authorize_thread_access
-from utils.logger import logger, structlog
-from services.billing_wrapper import check_billing_status, can_use_model
-from utils.config import config
-from services import redis
-from sandbox.sandbox import create_sandbox, delete_sandbox
->>>>>>> sundar-dev:backend/agent/handlers/agent_runs.py
 from run_agent_background import run_agent_background
 from core.ai_models import model_manager
 
@@ -33,14 +24,9 @@ from .core_utils import (
     stop_agent_run_with_helpers as stop_agent_run, get_agent_run_with_access_check, 
     _get_version_service, generate_and_update_project_name
 )
-<<<<<<< HEAD:backend/core/agent_runs.py
 from .config_helper import extract_agent_config
 from .core_utils import check_agent_run_limit, check_project_count_limit
-=======
-from ..config_helper import extract_agent_config
-from ..utils import check_agent_run_limit, check_project_count_limit
-from utils.agent_default_files import AgentDefaultFilesManager
->>>>>>> sundar-dev:backend/agent/handlers/agent_runs.py
+from core.utils.agent_default_files import AgentDefaultFilesManager
 
 router = APIRouter()
 

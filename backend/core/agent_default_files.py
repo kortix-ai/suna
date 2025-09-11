@@ -2,10 +2,10 @@ from typing import List
 from fastapi import APIRouter, HTTPException, Depends, File, UploadFile, Query
 from fastapi.responses import JSONResponse
 
-from utils.auth_utils import verify_and_get_user_id_from_jwt
-from utils.logger import logger
-from utils.agent_default_files import AgentDefaultFilesManager
-from services.supabase import DBConnection
+from core.utils.auth_utils import verify_and_get_user_id_from_jwt
+from core.utils.logger import logger
+from core.utils.agent_default_files import AgentDefaultFilesManager
+from core.services.supabase import DBConnection
 
 router = APIRouter()
 
