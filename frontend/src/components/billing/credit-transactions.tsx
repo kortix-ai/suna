@@ -170,8 +170,8 @@ export default function CreditTransactions({ accountId }: Props) {
   }
 
   // Enterprise vs non-enterprise data handling
-  const currentBalance = data?.current_balance;
-  const transactions = data?.transactions || [];
+  const currentBalance = isEnterpriseMode ? null : (data as any)?.current_balance;
+  const transactions = isEnterpriseMode ? [] : (data as any)?.transactions || [];
   const enterpriseUsage = isEnterpriseMode ? data : null; // In enterprise mode, data is the usage logs response
   const billingStatus = billingStatusQuery.data;
   
