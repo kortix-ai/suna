@@ -72,7 +72,7 @@ export const useModelSelection = () => {
         },
         { 
           id: 'claude-sonnet-4', 
-          label: 'Claude Sonnet 4', 
+          label: 'Omni 4', 
           requiresSubscription: true, 
           priority: 100,
           recommended: true
