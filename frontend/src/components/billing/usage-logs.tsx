@@ -122,14 +122,14 @@ export default function UsageLogs({ accountId, isAdminView = false }: Props) {
 
   const formatTotalCost = (cost: number | string) => {
     if (typeof cost === 'string' || cost === 0) {
-      return typeof cost === 'string' ? cost : '$0.0000';
+      return typeof cost === 'string' ? cost : '$0.00';
     }
-    return `$${cost.toFixed(4)}`;
+    return `$${cost.toFixed(2)}`;
   };
 
   const formatCreditAmount = (amount: number) => {
     if (amount === 0) return null;
-    return `$${amount.toFixed(4)}`;
+    return `$${amount.toFixed(2)}`;
   };
 
   const formatDateOnly = (dateString: string) => {
@@ -227,7 +227,7 @@ export default function UsageLogs({ accountId, isAdminView = false }: Props) {
                                     {((project.thread_cost || 0) * 1000).toFixed(0)} credits
                                   </div>
                                   <div className="text-xs text-muted-foreground">
-                                    ${(project.thread_cost || 0).toFixed(3)} cost
+                                    ${(project.thread_cost || 0).toFixed(2)} cost
                                   </div>
                                 </div>
                                 {project.thread_id && (!isAdminView || isViewingOwnLogs) && (
@@ -284,7 +284,7 @@ export default function UsageLogs({ accountId, isAdminView = false }: Props) {
                                         {(detail.tool_tokens || 0).toLocaleString()}
                                       </TableCell>
                                       <TableCell className="text-right font-mono text-xs">
-                                        ${(detail.total_cost || detail.cost || 0).toFixed(4)}
+                                        ${(detail.total_cost || detail.cost || 0).toFixed(2)}
                                       </TableCell>
                                       <TableCell className="text-right font-mono text-xs">
                                         {((detail.cost || 0) * 1000).toFixed(0)} credits

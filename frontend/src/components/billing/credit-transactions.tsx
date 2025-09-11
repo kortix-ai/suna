@@ -89,12 +89,12 @@ export default function CreditTransactions({ accountId }: Props) {
 
   const formatAmount = (amount: number) => {
     const absAmount = Math.abs(amount);
-    const formatted = `$${absAmount.toFixed(4)}`;
+    const formatted = `$${absAmount.toFixed(2)}`;
     return amount >= 0 ? `+${formatted}` : `-${formatted}`;
   };
 
   const formatBalance = (balance: number) => {
-    return `$${balance.toFixed(4)}`;
+    return `$${balance.toFixed(2)}`;
   };
 
   const getTransactionIcon = (type: string, amount: number) => {
@@ -200,7 +200,7 @@ export default function CreditTransactions({ accountId }: Props) {
             <div className="grid gap-4 md:grid-cols-3">
               <div>
                 <div className="text-2xl font-bold">
-                  ${billingStatus.enterprise_info.current_usage?.toFixed(4) || '0.0000'}
+                  ${billingStatus.enterprise_info.current_usage?.toFixed(2) || '0.00'}
                 </div>
                 <p className="text-xs text-muted-foreground">Current Month Usage</p>
               </div>
@@ -208,7 +208,7 @@ export default function CreditTransactions({ accountId }: Props) {
                 <div className="flex items-center gap-2">
                   <DollarSign className="h-4 w-4 text-green-500" />
                   <span className="text-lg font-semibold">
-                    ${billingStatus.enterprise_info.remaining?.toFixed(4) || '0.0000'}
+                    ${billingStatus.enterprise_info.remaining?.toFixed(2) || '0.00'}
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground">Remaining This Month</p>
@@ -217,7 +217,7 @@ export default function CreditTransactions({ accountId }: Props) {
                 <div className="flex items-center gap-2">
                   <TrendingUp className="h-4 w-4 text-blue-500" />
                   <span className="text-lg font-semibold">
-                    ${billingStatus.enterprise_info.monthly_limit?.toFixed(4) || '0.0000'}
+                    ${billingStatus.enterprise_info.monthly_limit?.toFixed(2) || '0.00'}
                   </span>
                 </div>
                 <p className="text-xs text-muted-foreground">Monthly Limit</p>

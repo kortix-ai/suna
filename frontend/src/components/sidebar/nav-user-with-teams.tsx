@@ -84,6 +84,7 @@ export function NavUserWithTeams({
   const [showBillingModal, setShowBillingModal] = React.useState(false);
   const { theme, setTheme } = useTheme();
   const { data: adminCheck } = useAdminCheck();
+  const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
 
   // Prepare personal account and team accounts
   const personalAccount = React.useMemo(
@@ -322,16 +323,20 @@ export function NavUserWithTeams({
                   </DropdownMenuSub>
                 )}
                 
-                <DropdownMenuItem onClick={() => setShowBillingModal(true)}>
-                  <Zap className="h-4 w-4" />
-                  Upgrade
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/settings/billing">
-                    <CreditCard className="h-4 w-4" />
-                    Billing
-                  </Link>
-                </DropdownMenuItem>
+                {!isEnterpriseMode && (
+                  <>
+                    <DropdownMenuItem onClick={() => setShowBillingModal(true)}>
+                      <Zap className="h-4 w-4" />
+                      Upgrade
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link href="/settings/billing">
+                        <CreditCard className="h-4 w-4" />
+                        Billing
+                      </Link>
+                    </DropdownMenuItem>
+                  </>
+                )}
                 {(
                   <DropdownMenuItem asChild>
                     <Link href="/settings/credentials">
