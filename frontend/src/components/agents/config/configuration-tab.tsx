@@ -431,7 +431,7 @@ export function ConfigurationTab({
                   </div>
                 </div>
               </div>
-            </div>
+            </div> */}
           </div>
         </div>
       </div>
