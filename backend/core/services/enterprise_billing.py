@@ -132,9 +132,10 @@ class SimplifiedEnterpriseBillingService:
             client = await db.client
             
             # Call the database function to handle the transaction atomically
+            # Convert Decimal to float for JSON serialization
             result = await client.rpc('use_enterprise_credits_simple', {
                 'p_account_id': account_id,
-                'p_amount': amount,
+                'p_amount': float(amount),
                 'p_thread_id': thread_id,
                 'p_message_id': message_id,
                 'p_model_name': model_name,
