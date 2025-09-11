@@ -116,7 +116,9 @@ export default function CreditTransactions({ accountId }: Props) {
   };
 
   const handleNextPage = () => {
-    if (data?.pagination.has_more) {
+    // Handle different pagination structures for enterprise vs non-enterprise
+    const hasMore = isEnterpriseMode ? data?.has_more : data?.pagination?.has_more;
+    if (hasMore) {
       setOffset(offset + limit);
     }
   };
@@ -386,10 +388,14 @@ export default function CreditTransactions({ accountId }: Props) {
               </div>
 
               {/* Pagination */}
-              {data?.pagination && (
+              {(data?.pagination || isEnterpriseMode) && (
                 <div className="flex items-center justify-between mt-4">
                   <p className="text-sm text-muted-foreground">
-                    Showing {offset + 1}-{Math.min(offset + limit, data.pagination.total)} of {data.pagination.total} transactions
+                    {isEnterpriseMode ? (
+                      `Showing usage data`
+                    ) : (
+                      `Showing ${offset + 1}-${Math.min(offset + limit, data.pagination?.total || 0)} of ${data.pagination?.total || 0} transactions`
+                    )}
                   </p>
                   <div className="flex items-center gap-2">
                     <Button
@@ -404,7 +410,7 @@ export default function CreditTransactions({ accountId }: Props) {
                       variant="outline"
                       size="sm"
                       onClick={handleNextPage}
-                      disabled={!data.pagination.has_more}
+                      disabled={isEnterpriseMode ? !data?.has_more : !data?.pagination?.has_more}
                     >
                       Next
                     </Button>
