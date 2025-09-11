@@ -5,6 +5,7 @@ import {
   HydrationBoundary,
   QueryClient,
   QueryClientProvider,
+  type DehydratedState,
 } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { handleApiError } from '@/lib/error-handler';
@@ -16,7 +17,7 @@ export function ReactQueryProvider({
   dehydratedState,
 }: {
   children: React.ReactNode;
-  dehydratedState?: unknown;
+  dehydratedState?: DehydratedState;
 }) {
   const [queryClient] = useState(
     () =>
