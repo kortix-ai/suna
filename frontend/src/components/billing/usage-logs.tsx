@@ -271,7 +271,9 @@ export default function UsageLogs({ accountId, isAdminView = false }: Props) {
                                           variant={detail.usage_type === 'tool' || !detail.model_name || detail.model_name === 'Unknown' ? 'destructive' : 'default'} 
                                           className="text-xs"
                                         >
-                                          {detail.usage_type === 'tool' || !detail.model_name || detail.model_name === 'Unknown' ? 'Tool' : 'Prompt'}
+                                          {detail.usage_type === 'tool' 
+                                            ? (detail.tool_name ? `Tool - ${detail.tool_name}` : 'Tool')
+                                            : 'Prompt'}
                                         </Badge>
                                       </TableCell>
                                       <TableCell className="text-right font-mono text-xs">
