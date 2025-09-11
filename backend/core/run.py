@@ -677,7 +677,7 @@ class AgentRunner:
                     temporary_message=temporary_message,
                     processor_config=ProcessorConfig(
                         xml_tool_calling=True,
-                        native_tool_calling=False,
+                        native_tool_calling=True,
                         execute_tools=True,
                         execute_on_stream=True,
                         tool_execution_strategy="sequential",
