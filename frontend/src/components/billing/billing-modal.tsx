@@ -58,12 +58,17 @@ export function BillingModal({ open, onOpenChange, returnUrl = typeof window !==
     const [showCancelDialog, setShowCancelDialog] = useState(false);
     const [isCancelling, setIsCancelling] = useState(false);
 
+    // Get commitment info for the subscription (only if we have a valid ID and not enterprise)
     const {
         data: commitmentInfo,
         isLoading: commitmentLoading,
         error: commitmentError,
         refetch: refetchCommitment
-    } = useSubscriptionCommitment(subscriptionData?.subscription?.id || null);
+    } = useSubscriptionCommitment(
+        subscriptionData?.subscription?.id && !subscriptionData?.enterprise_info?.is_enterprise 
+            ? subscriptionData.subscription.id 
+            : null
+    );
 
     const fetchSubscriptionData = async () => {
         if (!session) return;
@@ -236,22 +241,85 @@ export function BillingModal({ open, onOpenChange, returnUrl = typeof window !==
                 </DialogHeader>
 
                 <>
-                    <PricingSection 
-                        returnUrl={returnUrl} 
-                        showTitleAndTabs={false}
-                        onSubscriptionUpdate={() => {
-                            setTimeout(() => {
-                                fetchSubscriptionData();
-                            }, 500);
-                        }}
-                    />
+                    {/* Usage Limit Alert */}
+                    {showUsageLimitAlert && (
+                        <div className="mb-6">
+                            <div className="flex items-start p-3 sm:p-4 bg-destructive/5 border border-destructive/50 rounded-lg">
+                                <div className="flex items-start space-x-3">
+                                    <div className="flex-shrink-0 mt-0.5">
+                                        <Zap className="w-4 h-4 sm:w-5 sm:h-5 text-destructive" />
+                                    </div>
+                                    <div className="text-xs sm:text-sm min-w-0">
+                                        <p className="font-medium text-destructive">Usage Limit Reached</p>
+                                        <p className="text-destructive break-words">
+                                            Your current plan has been exhausted for this billing period.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Usage section - show loading state or actual data */}
+                    {isLoading || authLoading ? (
+                        <div className="mb-6">
+                            <div className="rounded-lg border bg-background p-4">
+                                <div className="flex justify-between items-center">
+                                    <Skeleton className="h-4 w-40" />
+                                    <Skeleton className="h-4 w-24" />
+                                </div>
+                            </div>
+                        </div>
+                    ) : subscriptionData && (
+                        <div className="mb-6">
+                            <div className="rounded-lg border bg-background p-4">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-sm font-medium text-foreground/90">
+                                        Agent Usage This Month
+                                    </span>
+                                    <span className="text-sm font-medium">
+                                        ${subscriptionData.current_usage?.toFixed(2) || '0'} /{' '}
+                                        ${subscriptionData.cost_limit || '0'}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Show pricing section only if not in enterprise mode and data is loaded */}
+                    {!isLoading && subscriptionData && !subscriptionData?.enterprise_info?.is_enterprise && (
+                        <PricingSection 
+                            returnUrl={returnUrl} 
+                            showTitleAndTabs={false}
+                            onSubscriptionUpdate={() => {
+                                setTimeout(() => {
+                                    fetchSubscriptionData();
+                                }, 500);
+                            }}
+                        />
+                    )}
+                    
+                    {/* Enterprise mode message */}
+                    {subscriptionData?.enterprise_info?.is_enterprise && (
+                        <div className="mb-6 p-4 bg-muted/30 border border-border rounded-lg text-center">
+                            <div className="flex items-center justify-center gap-2 mb-2">
+                                <Shield className="h-5 w-5 text-blue-600" />
+                                <span className="font-medium">Enterprise Account</span>
+                            </div>
+                            <p className="text-sm text-muted-foreground">
+                                Your account is managed under enterprise billing. Contact your administrator for plan changes.
+                            </p>
+                        </div>
+                    )}
+
+                    {/* Subscription Management Section - only show if there's actual subscription data */}
                     {error ? (
                         <div className="mt-6 pt-4 border-t border-border">
                             <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-lg text-center">
                                 <p className="text-sm text-destructive">Error loading billing status: {error}</p>
                             </div>
                         </div>
-                    ) : subscriptionData?.subscription && (
+                    ) : subscriptionData?.subscription && !subscriptionData?.enterprise_info?.is_enterprise && (
                         <div className="mt-6 pt-4 border-t border-border">
                             <div className="bg-muted/30 border border-border rounded-lg p-3 mb-3">
                                 <div className="flex items-center justify-between">

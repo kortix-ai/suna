@@ -71,6 +71,22 @@ export async function middleware(request: NextRequest) {
       return supabaseResponse;
     }
 
+    // Check if enterprise mode is enabled - if so, skip billing checks entirely
+    const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
+    if (isEnterpriseMode) {
+      return supabaseResponse;
+    }
+  // // Define protected routes
+  // const protectedRoutes = ['/dashboard', '/agents', '/projects', '/settings', '/invitation', '/admin']
+  // const authRoutes = ['/auth', '/login', '/signup']
+  
+  // const isProtectedRoute = protectedRoutes.some(route => 
+  //   request.nextUrl.pathname.startsWith(route)
+  // )
+  // const isAuthRoute = authRoutes.some(route => 
+  //   request.nextUrl.pathname.startsWith(route)
+  // )
+
     if (!BILLING_ROUTES.includes(pathname) && pathname !== '/') {
       const { data: accounts } = await supabase
         .schema('basejump')

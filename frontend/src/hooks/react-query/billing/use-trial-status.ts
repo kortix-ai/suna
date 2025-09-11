@@ -4,11 +4,15 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 export function useTrialStatus() {
+  // In enterprise mode, trial status is not applicable
+  const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
+  
   return useQuery({
     queryKey: ['trial-status'],
     queryFn: getTrialStatus,
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
+    enabled: !isEnterpriseMode, // Disable the query in enterprise mode
   });
 }
 

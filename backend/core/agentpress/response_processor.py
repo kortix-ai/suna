@@ -949,6 +949,7 @@ class ResponseProcessor:
                          content = response_message.content
                          if config.xml_tool_calling:
                              parsed_xml_data = self._parse_xml_tool_calls(content)
+                             logger.info(f"[TOOL_DETECTION] Found {len(parsed_xml_data)} XML tool calls in content")
                              if config.max_xml_tool_calls > 0 and len(parsed_xml_data) > config.max_xml_tool_calls:
                                  # Truncate content and tool data if limit exceeded
                                  # ... (Truncation logic similar to streaming) ...
@@ -963,6 +964,7 @@ class ResponseProcessor:
                              all_tool_data.extend(parsed_xml_data)
 
                      if config.native_tool_calling and hasattr(response_message, 'tool_calls') and response_message.tool_calls:
+                          logger.info(f"[TOOL_DETECTION] Found {len(response_message.tool_calls)} native tool calls in LLM response")
                           for tool_call in response_message.tool_calls:
                              if hasattr(tool_call, 'function'):
                                  exec_tool_call = {
@@ -970,6 +972,7 @@ class ResponseProcessor:
                                      "arguments": safe_json_parse(tool_call.function.arguments) if isinstance(tool_call.function.arguments, str) else tool_call.function.arguments,
                                      "id": tool_call.id if hasattr(tool_call, 'id') else str(uuid.uuid4())
                                  }
+                                 logger.info(f"[TOOL_DETECTION] Adding native tool call: {exec_tool_call['function_name']}")
                                  all_tool_data.append({"tool_call": exec_tool_call, "parsing_details": None})
                                  native_tool_calls_for_message.append({
                                      "id": exec_tool_call["id"], "type": "function",
@@ -1000,8 +1003,11 @@ class ResponseProcessor:
 
        # --- Execute Tools and Yield Results ---
             tool_calls_to_execute = [item['tool_call'] for item in all_tool_data]
+            logger.info(f"[TOOL_DETECTION] Found {len(all_tool_data)} tool calls in all_tool_data: {[item['tool_call'].get('function_name', 'unknown') for item in all_tool_data]}")
+            logger.info(f"[TOOL_DETECTION] config.execute_tools={config.execute_tools}, tool_calls_to_execute count={len(tool_calls_to_execute)}")
+            
             if config.execute_tools and tool_calls_to_execute:
-                logger.debug(f"Executing {len(tool_calls_to_execute)} tools with strategy: {config.tool_execution_strategy}")
+                logger.info(f"[TOOL_EXECUTION] Executing {len(tool_calls_to_execute)} tools with strategy: {config.tool_execution_strategy}")
                 self.trace.event(name="executing_tools_with_strategy", level="DEFAULT", status_message=(f"Executing {len(tool_calls_to_execute)} tools with strategy: {config.tool_execution_strategy}"))
                 tool_results = await self._execute_tools(tool_calls_to_execute, config.tool_execution_strategy, thread_id)
 
@@ -1273,13 +1279,13 @@ class ResponseProcessor:
             function_name = tool_call["function_name"]
             arguments = tool_call["arguments"]
 
-            logger.debug(f"Executing tool: {function_name} with arguments: {arguments}")
+            logger.info(f"[TOOL_EXECUTION] Executing tool: {function_name} with arguments: {arguments}")
             self.trace.event(name="executing_tool", level="DEFAULT", status_message=(f"Executing tool: {function_name} with arguments: {arguments}"))
             
             # Check tool credit cost if thread_id is provided
             if thread_id:
                 try:
-                    from core.services.billing import can_user_afford_tool, charge_tool_usage
+                    from core.services.billing_wrapper import can_user_afford_tool_unified, charge_tool_usage_unified
                     from core.services.supabase import DBConnection
                     
                     db = DBConnection()
@@ -1291,7 +1297,7 @@ class ResponseProcessor:
                         user_id = thread_result.data[0]['account_id']
                         
                         # Check if user can afford this tool
-                        affordability = await can_user_afford_tool(client, user_id, function_name)
+                        affordability = await can_user_afford_tool_unified(client, user_id, function_name)
                         
                         if not affordability['can_use']:
                             logger.warning(f"User {user_id} cannot afford tool {function_name}. Required: ${affordability['required_cost']:.4f}, Available: ${affordability['current_balance']:.4f}")
@@ -1328,7 +1334,7 @@ class ResponseProcessor:
             if result.success and thread_id and 'user_id' in locals():
                 try:
                     if affordability['required_cost'] > 0:
-                        charge_result = await charge_tool_usage(
+                        charge_result = await charge_tool_usage_unified(
                             client,
                             user_id,
                             function_name,

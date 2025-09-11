@@ -24,6 +24,8 @@ from core import api as core_api
 from core.sandbox import api as sandbox_api
 from billing.api import router as billing_router
 from billing.admin import router as billing_admin_router
+from core.services import enterprise_billing_api
+
 from admin import users_admin
 from core.services import transcription as transcription_api
 import sys
@@ -156,7 +158,15 @@ api_router = APIRouter()
 # Include all API routers without individual prefixes
 api_router.include_router(core_api.router)
 api_router.include_router(sandbox_api.router)
-api_router.include_router(billing_router)
+
+# Use enterprise billing API when ENTERPRISE_MODE is enabled, otherwise use Stripe billing
+if config.ENTERPRISE_MODE:
+    api_router.include_router(enterprise_billing_api.router)
+    logger.info("Enterprise billing API enabled")
+else:
+    api_router.include_router(billing_router)
+    logger.info("Stripe billing API enabled")
+    
 api_router.include_router(api_keys_api.router)
 api_router.include_router(billing_admin_router)
 api_router.include_router(users_admin.router)
@@ -183,6 +193,10 @@ api_router.include_router(pipedream_api.router)
 
 from core.admin import api as admin_api
 api_router.include_router(admin_api.router)
+
+# Enterprise admin API - always load but endpoints check ENTERPRISE_MODE internally
+from core.services import enterprise_admin_api
+api_router.include_router(enterprise_admin_api.router)
 
 from core.composio_integration import api as composio_api
 api_router.include_router(composio_api.router)

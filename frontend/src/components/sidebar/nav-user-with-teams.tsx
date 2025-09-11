@@ -65,6 +65,7 @@ import { useTheme } from 'next-themes';
 import { isLocalMode } from '@/lib/config';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { BillingModal } from '@/components/billing/billing-modal';
+import { useAdminCheck } from '@/hooks/use-admin-check';
 
 export function NavUserWithTeams({
   user,
@@ -82,6 +83,8 @@ export function NavUserWithTeams({
   const [showNewTeamDialog, setShowNewTeamDialog] = React.useState(false);
   const [showBillingModal, setShowBillingModal] = React.useState(false);
   const { theme, setTheme } = useTheme();
+  const { data: adminCheck } = useAdminCheck();
+  const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
 
   // Prepare personal account and team accounts
   const personalAccount = React.useMemo(
@@ -320,21 +323,41 @@ export function NavUserWithTeams({
                   </DropdownMenuSub>
                 )}
                 
-                <DropdownMenuItem onClick={() => setShowBillingModal(true)}>
-                  <Zap className="h-4 w-4" />
-                  Upgrade
-                </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/settings/billing">
-                    <CreditCard className="h-4 w-4" />
-                    Billing
-                  </Link>
-                </DropdownMenuItem>
+                {!isEnterpriseMode && (
+                  <>
+                    <DropdownMenuItem onClick={() => setShowBillingModal(true)}>
+                      <Zap className="h-4 w-4" />
+                      Upgrade
+                    </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link href="/settings/billing">
+                        <CreditCard className="h-4 w-4" />
+                        Billing
+                      </Link>
+                    </DropdownMenuItem>
+                  </>
+                )}
+                {isEnterpriseMode && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/settings/transactions">
+                      <FileText className="h-4 w-4" />
+                      Transactions
+                    </Link>
+                  </DropdownMenuItem>
+                )}
                 {(
                   <DropdownMenuItem asChild>
                     <Link href="/settings/credentials">
                       <Plug className="h-4 w-4" />
                       Integrations
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                {adminCheck?.isAdmin && (
+                  <DropdownMenuItem asChild>
+                    <Link href="/admin">
+                      <Shield className="h-4 w-4" />
+                      Admin
                     </Link>
                   </DropdownMenuItem>
                 )}

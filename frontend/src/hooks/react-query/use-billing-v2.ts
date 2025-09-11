@@ -28,34 +28,50 @@ export const useSubscription = () => {
 };
 
 export const useCreditBalance = () => {
+  // In enterprise mode, credit balance is managed differently
+  const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
+  
   return useQuery({
     queryKey: billingKeys.balance(),
     queryFn: () => billingApiV2.getCreditBalance(),
     staleTime: 1000 * 30,
+    enabled: !isEnterpriseMode, // Disable the query in enterprise mode
   });
 };
 
 export const useBillingStatus = () => {
+  // In enterprise mode, billing status is handled differently
+  const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
+  
   return useQuery({
     queryKey: billingKeys.status(),
     queryFn: () => billingApiV2.checkBillingStatus(),
     staleTime: 1000 * 30,
+    enabled: !isEnterpriseMode, // Disable the query in enterprise mode
   });
 };
 
 export const useTransactions = (limit = 50, offset = 0) => {
+  // In enterprise mode, use enterprise-specific hooks
+  const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
+  
   return useQuery({
     queryKey: billingKeys.transactions(limit, offset),
     queryFn: () => billingApiV2.getTransactions(limit, offset),
     staleTime: 1000 * 60 * 5,
+    enabled: !isEnterpriseMode, // Only for non-enterprise mode
   });
 };
 
 export const useUsageHistory = (days = 30) => {
+  // In enterprise mode, usage history is handled differently
+  const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
+  
   return useQuery({
     queryKey: billingKeys.usageHistory(days),
     queryFn: () => billingApiV2.getUsageHistory(days),
     staleTime: 1000 * 60 * 10,
+    enabled: !isEnterpriseMode, // Disable the query in enterprise mode
   });
 };
 

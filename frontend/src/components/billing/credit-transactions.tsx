@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { createClient } from '@/lib/supabase/client';
 import {
   Card,
   CardContent,
@@ -40,8 +41,9 @@ import {
   RefreshCw,
   Info,
 } from 'lucide-react';
-import { useTransactions, useTransactionsSummary } from '@/hooks/react-query/billing/use-transactions';
+import { useTransactions, useTransactionsSummary, useUsageLogs, useBillingStatus, useSubscriptionInfo } from '@/hooks/react-query/billing/use-transactions';
 import { cn } from '@/lib/utils';
+import UsageLogs from '@/components/billing/usage-logs';
 
 interface Props {
   accountId?: string;
@@ -51,8 +53,29 @@ export default function CreditTransactions({ accountId }: Props) {
   const [offset, setOffset] = useState(0);
   const [typeFilter, setTypeFilter] = useState<string | undefined>(undefined);
   const limit = 50;
+  
+  const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
+  
+  // State for current user ID (needed for UsageLogs component)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  const { data, isLoading, error, refetch } = useTransactions(limit, offset, typeFilter);
+  // Get current user ID
+  useEffect(() => {
+    const getCurrentUser = async () => {
+      const supabase = createClient();
+      const { data: userData } = await supabase.auth.getUser();
+      setCurrentUserId(userData?.user?.id || null);
+    };
+    getCurrentUser();
+  }, []);
+  
+  // Use appropriate hooks based on mode
+  const transactionsQuery = useTransactions(limit, offset, typeFilter);
+  const usageLogsQuery = useUsageLogs(Math.floor(offset / limit), limit);
+  const billingStatusQuery = useBillingStatus();
+  
+  // Select the right data source based on enterprise mode
+  const { data, isLoading, error, refetch } = isEnterpriseMode ? usageLogsQuery : transactionsQuery;
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString('en-US', {
@@ -66,12 +89,12 @@ export default function CreditTransactions({ accountId }: Props) {
 
   const formatAmount = (amount: number) => {
     const absAmount = Math.abs(amount);
-    const formatted = `$${absAmount.toFixed(4)}`;
+    const formatted = `$${absAmount.toFixed(2)}`;
     return amount >= 0 ? `+${formatted}` : `-${formatted}`;
   };
 
   const formatBalance = (balance: number) => {
-    return `$${balance.toFixed(4)}`;
+    return `$${balance.toFixed(2)}`;
   };
 
   const getTransactionIcon = (type: string, amount: number) => {
@@ -108,7 +131,8 @@ export default function CreditTransactions({ accountId }: Props) {
   };
 
   const handleNextPage = () => {
-    if (data?.pagination.has_more) {
+    const hasMore = (data as any)?.pagination?.has_more;
+    if (hasMore) {
       setOffset(offset + limit);
     }
   };
@@ -157,13 +181,54 @@ export default function CreditTransactions({ accountId }: Props) {
     );
   }
 
-  const currentBalance = data?.current_balance;
-  const transactions = data?.transactions || [];
+  // Enterprise vs non-enterprise data handling
+  const currentBalance = isEnterpriseMode ? null : (data as any)?.current_balance;
+  const transactions = isEnterpriseMode ? [] : (data as any)?.transactions || [];
+  const billingStatus = billingStatusQuery.data;
+  
 
   return (
     <div className="space-y-6">
-      {/* Balance Summary Card */}
-      {currentBalance && (
+      {/* Enterprise Balance Summary Card */}
+      {isEnterpriseMode && billingStatus?.enterprise_info && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Enterprise Usage Summary</CardTitle>
+            <CardDescription>Your monthly usage limits and current spending</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <div className="text-2xl font-bold">
+                  ${billingStatus.enterprise_info.current_usage?.toFixed(2) || '0.00'}
+                </div>
+                <p className="text-xs text-muted-foreground">Current Month Usage</p>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <DollarSign className="h-4 w-4 text-green-500" />
+                  <span className="text-lg font-semibold">
+                    ${billingStatus.enterprise_info.remaining?.toFixed(2) || '0.00'}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">Remaining This Month</p>
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-blue-500" />
+                  <span className="text-lg font-semibold">
+                    ${billingStatus.enterprise_info.monthly_limit?.toFixed(2) || '0.00'}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground">Monthly Limit</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Non-Enterprise Balance Summary Card */}
+      {!isEnterpriseMode && currentBalance && (
         <Card>
           <CardHeader>
             <CardTitle>Current Balance</CardTitle>
@@ -199,21 +264,26 @@ export default function CreditTransactions({ accountId }: Props) {
           </CardContent>
         </Card>
       )}
-      <Card className='p-0 px-0 bg-transparent shadow-none border-none'>
-        <CardHeader className='px-0'>
-          <CardTitle>Transaction History</CardTitle>
-          <CardDescription>
-            All credit additions and deductions
-          </CardDescription>
-        </CardHeader>
-        <CardContent className='px-0'>
-          {transactions.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-muted-foreground">
-                {typeFilter ? `No ${typeFilter} transactions found.` : 'No transactions found.'}
-              </p>
-            </div>
-          ) : (
+      {isEnterpriseMode ? (
+        // Enterprise mode: Use the existing UsageLogs component
+        currentUserId && <UsageLogs accountId={currentUserId} />
+      ) : (
+        // Non-enterprise mode: Show traditional transaction table
+        <Card className='p-0 px-0 bg-transparent shadow-none border-none'>
+          <CardHeader className='px-0'>
+            <CardTitle>Transaction History</CardTitle>
+            <CardDescription>All credit additions and deductions</CardDescription>
+          </CardHeader>
+          <CardContent className='px-0'>
+            {
+            // Non-enterprise mode: Show traditional transaction table
+            transactions.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-muted-foreground">
+                  {typeFilter ? `No ${typeFilter} transactions found.` : 'No transactions found.'}
+                </p>
+              </div>
+            ) : (
             <>
               <div className="rounded-md border">
                 <Table>
@@ -275,10 +345,10 @@ export default function CreditTransactions({ accountId }: Props) {
               </div>
 
               {/* Pagination */}
-              {data?.pagination && (
+              {(data as any)?.pagination && (
                 <div className="flex items-center justify-between mt-4">
                   <p className="text-sm text-muted-foreground">
-                    Showing {offset + 1}-{Math.min(offset + limit, data.pagination.total)} of {data.pagination.total} transactions
+                    Showing {offset + 1}-{Math.min(offset + limit, (data as any)?.pagination?.total || 0)} of {(data as any)?.pagination?.total || 0} transactions
                   </p>
                   <div className="flex items-center gap-2">
                     <Button
@@ -293,7 +363,7 @@ export default function CreditTransactions({ accountId }: Props) {
                       variant="outline"
                       size="sm"
                       onClick={handleNextPage}
-                      disabled={!data.pagination.has_more}
+                      disabled={!(data as any)?.pagination?.has_more}
                     >
                       Next
                     </Button>
@@ -301,9 +371,10 @@ export default function CreditTransactions({ accountId }: Props) {
                 </div>
               )}
             </>
-          )}
-        </CardContent>
-      </Card>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 } 

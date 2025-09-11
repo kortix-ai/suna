@@ -26,20 +26,39 @@ export default function ActivateTrialPage() {
   const { data: maintenanceNotice, isLoading: maintenanceLoading } = useMaintenanceNoticeQuery();
 
   useEffect(() => {
-    if (!isLoadingSubscription && !isLoadingTrial && subscription && trialStatus) {
-      const hasActiveTrial = trialStatus.has_trial && trialStatus.trial_status === 'active';
-      const hasUsedTrial = trialStatus.trial_status === 'used' || 
-                           trialStatus.trial_status === 'expired' || 
-                           trialStatus.trial_status === 'cancelled' ||
-                           trialStatus.trial_status === 'converted';
-      const hasActiveSubscription = subscription.tier && 
-                                   subscription.tier.name !== 'none' && 
-                                   subscription.tier.name !== 'free';
-      
-      if (hasActiveTrial || hasActiveSubscription) {
-        router.push('/dashboard');
-      } else if (hasUsedTrial) {
-        router.push('/subscription');
+    // Check if enterprise mode is enabled - if so, redirect to dashboard immediately
+    const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
+    if (isEnterpriseMode) {
+      router.push('/dashboard');
+      return;
+    }
+
+    if (!isLoadingSubscription && !isLoadingTrial && subscription) {
+      // In enterprise mode, trialStatus will be undefined, so only check subscription
+      if (trialStatus) {
+        const hasActiveTrial = trialStatus.has_trial && trialStatus.trial_status === 'active';
+        const hasUsedTrial = trialStatus.trial_status === 'used' || 
+                             trialStatus.trial_status === 'expired' || 
+                             trialStatus.trial_status === 'cancelled' ||
+                             trialStatus.trial_status === 'converted';
+        const hasActiveSubscription = subscription.tier && 
+                                     subscription.tier.name !== 'none' && 
+                                     subscription.tier.name !== 'free';
+        
+        if (hasActiveTrial || hasActiveSubscription) {
+          router.push('/dashboard');
+        } else if (hasUsedTrial) {
+          router.push('/subscription');
+        }
+      } else {
+        // No trial status (enterprise mode), only check subscription
+        const hasActiveSubscription = subscription.tier && 
+                                     subscription.tier.name !== 'none' && 
+                                     subscription.tier.name !== 'free';
+        
+        if (hasActiveSubscription) {
+          router.push('/dashboard');
+        }
       }
     }
   }, [subscription, trialStatus, isLoadingSubscription, isLoadingTrial, router]);
@@ -79,6 +98,19 @@ export default function ActivateTrialPage() {
 
   if (maintenanceNotice?.enabled) {
     return <MaintenanceAlert open={true} onOpenChange={() => {}} closeable={false} />;
+  }
+
+  // Show loading state for enterprise users while redirecting
+  const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
+  if (isEnterpriseMode) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center p-4">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Redirecting to dashboard...</p>
+        </div>
+      </div>
+    );
   }
 
   const isLoading = isLoadingSubscription || isLoadingTrial;

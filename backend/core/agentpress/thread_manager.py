@@ -28,6 +28,8 @@ from core.services.langfuse import langfuse
 from litellm.utils import token_counter
 from billing.billing_integration import billing_integration
 from billing.api import calculate_token_cost
+from core.services.billing_wrapper import handle_usage_with_credits
+
 import re
 from datetime import datetime, timezone, timedelta
 import aiofiles
@@ -191,7 +193,8 @@ class ThreadManager:
                                 prompt_tokens=prompt_tokens,
                                 completion_tokens=completion_tokens,
                                 model=model or "unknown",
-                                message_id=saved_message['message_id']
+                                message_id=saved_message['message_id'],
+                                thread_id=thread_id
                             )
                             
                             if deduct_result.get('success'):

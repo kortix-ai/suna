@@ -13,7 +13,12 @@ from core.services.supabase import DBConnection
 from core.services import redis
 
 async def verify_admin_api_key(x_admin_api_key: Optional[str] = Header(None)):
-    if not config.KORTIX_ADMIN_API_KEY:
+    # Safely get admin API keys (handle cases where attributes might not exist yet)
+    kortix_key = getattr(config, 'KORTIX_ADMIN_API_KEY', None)
+    omni_key = getattr(config, 'OMNI_ADMIN_API_KEY', None)
+    
+    # Check if at least one admin API key is configured
+    if not kortix_key and not omni_key:
         raise HTTPException(
             status_code=500,
             detail="Admin API key not configured on server"
@@ -25,7 +30,9 @@ async def verify_admin_api_key(x_admin_api_key: Optional[str] = Header(None)):
             detail="Admin API key required. Include X-Admin-Api-Key header."
         )
     
-    if x_admin_api_key != config.KORTIX_ADMIN_API_KEY:
+    # Check if the provided key matches either admin API key
+    valid_keys = [key for key in [kortix_key, omni_key] if key]
+    if x_admin_api_key not in valid_keys:
         raise HTTPException(
             status_code=403,
             detail="Invalid admin API key"

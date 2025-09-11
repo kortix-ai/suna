@@ -1,3 +1,5 @@
+
+
 import os
 import json
 import asyncio
@@ -23,6 +25,12 @@ from core.prompts.prompt import get_system_prompt
 from core.utils.logger import logger
 
 from billing.billing_integration import billing_integration
+from core.tools.sb_vision_tool import SandboxVisionTool
+from core.tools.sb_image_edit_tool import SandboxImageEditTool
+from core.tools.sb_video_avatar_tool import SandboxVideoAvatarTool
+from core.tools.sb_presentation_outline_tool import SandboxPresentationOutlineTool
+from core.tools.sb_presentation_tool import SandboxPresentationTool
+from core.services.billing_wrapper import check_billing_status
 from core.tools.sb_vision_tool import SandboxVisionTool
 from core.tools.sb_image_edit_tool import SandboxImageEditTool
 from core.tools.sb_video_avatar_tool import SandboxVideoAvatarTool
@@ -669,7 +677,7 @@ class AgentRunner:
                     temporary_message=temporary_message,
                     processor_config=ProcessorConfig(
                         xml_tool_calling=True,
-                        native_tool_calling=False,
+                        native_tool_calling=True,
                         execute_tools=True,
                         execute_on_stream=True,
                         tool_execution_strategy="sequential",

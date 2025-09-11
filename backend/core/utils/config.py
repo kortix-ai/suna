@@ -41,6 +41,14 @@ class Configuration:
     # Environment mode
     ENV_MODE: EnvMode = EnvMode.LOCAL
     
+    # Enterprise billing mode - enables enterprise credit-based billing system
+    ENTERPRISE_MODE: bool = False
+    
+    # Enterprise admin emails (comma-separated) - users with these emails get admin access
+    ADMIN_EMAILS: str = ""
+    
+    # OMNI admin emails (comma-separated) - users with these emails get super admin access including credit loading
+    OMNI_ADMIN: str = "sundar@latent-labs.ai,varnika@latent-labs.ai,arjun@latent-labs.ai"
     
     # Subscription tier IDs - Production
     STRIPE_FREE_TIER_ID_PROD: str = 'price_1RILb4G6l1KZGqIrK4QLrx9i'
@@ -435,6 +443,18 @@ class Configuration:
             self.ENV_MODE = EnvMode.LOCAL
             
         logger.debug(f"Environment mode: {self.ENV_MODE.value}")
+        
+        # Set enterprise mode
+        self.ENTERPRISE_MODE = os.getenv("ENTERPRISE_MODE", "false").lower() == "true"
+        logger.debug(f"Enterprise mode: {self.ENTERPRISE_MODE}")
+        
+        # Load admin emails
+        self.ADMIN_EMAILS = os.getenv("ADMIN_EMAILS", "")
+        logger.debug(f"Admin emails configured: {bool(self.ADMIN_EMAILS)}")
+        
+        # Load OMNI admin emails
+        self.OMNI_ADMIN = os.getenv("OMNI_ADMIN", "")
+        logger.debug(f"OMNI admin emails configured: {bool(self.OMNI_ADMIN)}")
         
         # Load configuration from environment variables
         self._load_from_env()

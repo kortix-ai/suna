@@ -11,8 +11,11 @@ export default function PersonalAccountSettingsPage({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
+  
   const items = [
-    { name: 'Billing', href: '/settings/billing' },
+    // Hide billing in enterprise mode, keep transactions
+    ...(isEnterpriseMode ? [] : [{ name: 'Billing', href: '/settings/billing' }]),
     { name: 'Transactions', href: '/settings/transactions' },
   ];
   return (
