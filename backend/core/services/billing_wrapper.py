@@ -14,11 +14,11 @@ billing systems seamlessly.
 from typing import Tuple, Optional, Dict, Any
 import asyncio
 
-from utils.logger import logger, structlog
-from utils.config import config
+from core.utils.logger import logger, structlog
+from core.utils.config import config
 
 # Import existing Stripe billing functions
-from services.billing import (
+from core.services.billing import (
     check_billing_status as stripe_check_billing_status,
     handle_usage_with_credits as stripe_handle_usage_with_credits,
     can_use_model as stripe_can_use_model,
@@ -27,7 +27,7 @@ from services.billing import (
 )
 
 # Import enterprise billing service
-from services.enterprise_billing import enterprise_billing
+from core.services.enterprise_billing import enterprise_billing
 
 
 async def check_billing_status_unified(client, account_id: str) -> Tuple[bool, str, Optional[Dict]]:
