@@ -342,7 +342,7 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['create-presentation', 'Creating Presentation'],
   ['present-presentation', 'Presenting'],
   ['clear-images-from-context', 'Clearing Images from context'],
-  ['load-image-in-context', 'Loading Image'],
+  ['load-image', 'Loading Image'],
 
   ['create-sheet', 'Creating Sheet'],
   ['update-sheet', 'Updating Sheet'],
