@@ -45,6 +45,9 @@ async def check_billing_status_unified(client, account_id: str) -> Tuple[bool, s
         Tuple[bool, str, Optional[Dict]]: (can_run, message, subscription_info)
     """
     try:
+        # Debug: Check the actual value of ENTERPRISE_MODE
+        logger.debug(f"ENTERPRISE_MODE value: {config.ENTERPRISE_MODE} (type: {type(config.ENTERPRISE_MODE)})")
+        
         # If enterprise mode is enabled, ALL accounts are enterprise accounts
         if config.ENTERPRISE_MODE:
             logger.debug(f"Enterprise mode enabled, using enterprise billing for account {account_id}")
