@@ -6,7 +6,7 @@ from core.utils.config import config
 TRIAL_ENABLED = True
 TRIAL_DURATION_DAYS = 7
 TRIAL_TIER = "tier_2_20"
-TRIAL_CREDITS = Decimal("20.00")
+TRIAL_CREDITS = Decimal("5.00")
 
 TOKEN_PRICE_MULTIPLIER = Decimal('1.2')
 MINIMUM_CREDIT_FOR_RUN = Decimal('0.01')
