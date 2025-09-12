@@ -11,7 +11,7 @@ from typing import Optional, Dict, Any
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from bs4 import BeautifulSoup, NavigableString, Comment
@@ -145,20 +145,7 @@ async def get_editable_elements(file_path: str):
                             editable_counter += 1
                             has_mixed_content = True
                 
-                # If this element has no mixed content but has text, make the whole element editable
-                if not has_mixed_content and element.get_text(strip=True):
-                    element_id = f"editable-{editable_counter}"
-                    element['data-editable-id'] = element_id
-                    element['class'] = element.get('class', []) + ['editable-element']
-                    
-                    elements.append({
-                        'id': element_id,
-                        'tag': element.name,
-                        'text': element.get_text(strip=True),
-                        'selector': f'[data-editable-id="{element_id}"]',
-                        'innerHTML': str(element.decode_contents()) if element.contents else element.get_text(strip=True)
-                    })
-                    editable_counter += 1
+                # Removed fallback - prevents complex containers from becoming editable text
         
         return {"elements": elements}
         
@@ -295,7 +282,7 @@ async def save_content(request: SaveContentRequest):
                 del element['data-original-text']
         
         # Remove editor controls
-        for control in soup.find_all(['div'], class_=['edit-controls', 'remove-controls']):
+        for control in soup.find_all(['div'], class_=['edit-controls', 'remove-controls', 'save-cancel-controls']):
             control.decompose()
         
         # Remove editor header
@@ -323,6 +310,30 @@ async def save_content(request: SaveContentRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/{file_path:path}/images/{image_path:path}")
+async def proxy_images(file_path: str, image_path: str):
+    """Proxy images for editor context - resolves relative paths"""
+    try:
+        # Extract the actual image path from the relative reference
+        # When HTML has ../images/image.jpg from presentations/pres_name/slide.html
+        # Browser requests /api/html/presentations/pres_name/slide.html/images/image.jpg
+        # We need to serve from /workspace/presentations/images/image.jpg
+        
+        # workspace_dir is /workspace, so presentations/images/ is the target
+        actual_image_path = os.path.join(workspace_dir, "presentations", "images", image_path)
+        actual_image_path = os.path.abspath(actual_image_path)
+        
+        if not os.path.exists(actual_image_path):
+            raise HTTPException(status_code=404, detail="Image not found")
+        
+        # Serve the image file
+        return FileResponse(actual_image_path)
+        
+    except Exception as e:
+        print(f"❌ Error serving image: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/{file_path:path}/editor")
 async def get_html_editor(file_path: str):
     """Serve the visual editor for an HTML file"""
@@ -344,49 +355,6 @@ async def get_html_editor(file_path: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-def rewrite_static_paths(soup: BeautifulSoup, file_path: str) -> None:
-    """Rewrite relative image paths to absolute paths using existing StaticFiles mount"""
-    
-    def is_relative_path(url: str) -> bool:
-        if not url or url.strip() == "":
-            return False
-        # Skip absolute URLs, data URIs, and anchor links
-        if url.startswith(('http://', 'https://', 'data:', 'mailto:', 'tel:', '#', '//', '/')):
-            return False
-        return True
-    
-    def resolve_relative_path(relative_path: str) -> str:
-        # Get directory of HTML file and resolve relative path
-        html_dir = os.path.dirname(file_path)
-        resolved_path = os.path.normpath(os.path.join(html_dir, relative_path))
-        
-        # Ensure forward slashes and leading slash for URL
-        resolved_path = resolved_path.replace('\\', '/')
-        if not resolved_path.startswith('/'):
-            resolved_path = '/' + resolved_path
-        return resolved_path
-    
-    # Fix image src attributes
-    for img in soup.find_all('img', src=True):
-        src = img['src']
-        if is_relative_path(src):
-            img['src'] = resolve_relative_path(src)
-            print(f"🖼️ Rewrote image: {src} -> {img['src']}")
-    
-    # Fix background images in style attributes
-    import re
-    for element in soup.find_all(style=True):
-        style = element['style']
-        def replace_url(match):
-            url = match.group(1).strip('\'"')
-            if is_relative_path(url):
-                new_url = resolve_relative_path(url)
-                print(f"🎭 Rewrote background: {url} -> {new_url}")
-                return f"url('{new_url}')"
-            return match.group(0)
-        
-        element['style'] = re.sub(r'url\(\s*([^)]+)\s*\)', replace_url, style)
-
 
 def inject_editor_functionality(html_content: str, file_path: str) -> str:
     """Inject visual editor functionality into existing HTML"""
@@ -394,8 +362,6 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
     # Parse the HTML
     soup = BeautifulSoup(html_content, 'html.parser')
     
-    # Rewrite relative paths for static assets (images, css, js) to use our static endpoint
-    rewrite_static_paths(soup, file_path)
     
     # Apply the same transformation as the API endpoint
     editable_counter = 0
@@ -453,17 +419,20 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
                         editable_counter += 1
                         has_mixed_content = True
             
-            # If this element has no mixed content but has text, make the whole element editable
-            if not has_mixed_content and element.get_text(strip=True):
-                element['data-editable-id'] = f"editable-{editable_counter}"
-                element['class'] = element.get('class', []) + ['editable-element']
-                editable_counter += 1
+            # Removed fallback - prevents complex containers from becoming editable text
     
-    # All divs are removable (regardless of text content)
+    # All divs are removable (except editor control elements)
     div_elements = soup.find_all('div')
-    for i, element in enumerate(div_elements):
-        element['data-removable-id'] = f'div-{i}'
+    removable_counter = 0
+    for element in div_elements:
+        # Skip editor control divs
+        element_classes = element.get('class', [])
+        if any(cls in ['edit-controls', 'remove-controls', 'save-cancel-controls', 'editor-header'] for cls in element_classes):
+            continue
+        
+        element['data-removable-id'] = f'div-{removable_counter}'
         element['class'] = element.get('class', []) + ['removable-element']
+        removable_counter += 1
     
     # Add editor CSS
     editor_css = """
@@ -532,41 +501,31 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
         }
         
         .edit-controls {
-            position: absolute;
-            top: -45px;
-            right: -5px;
+            position: fixed;
             display: none;
-            z-index: 1000;
+            z-index: 999999;
             background: white;
             border: 1px solid #e4e4e7;
             padding: 4px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
             border-radius: 8px;
             transition: opacity 0.15s ease;
+            pointer-events: auto;
         }
         
-        .editable-element.selected .edit-controls {
-            display: flex !important;
-            gap: 2px;
-        }
-        
-        .removable-element.selected .remove-controls {
-            display: flex !important;
-            gap: 2px;
-        }
+        /* Controls are now positioned via JavaScript - these selectors removed */
         
         .remove-controls {
-            position: absolute;
-            top: -45px;
-            right: -5px;
+            position: fixed;
             display: none;
-            z-index: 1000;
+            z-index: 999999;
             background: white;
             border: 1px solid #e4e4e7;
             padding: 4px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
             border-radius: 8px;
             transition: opacity 0.15s ease;
+            pointer-events: auto;
         }
         
         .edit-btn, .delete-btn {
@@ -753,6 +712,7 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
             cursor: pointer;
             transition: all 0.15s ease;
             border-radius: 6px;
+            width: 5rem;
         }
         
         .nav-btn:hover:not(:disabled) {
@@ -782,6 +742,7 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
             cursor: pointer;
             transition: all 0.15s ease;
             border-radius: 6px;
+            width: 7rem;
         }
         
         .header-btn:hover:not(:disabled) {
@@ -901,7 +862,10 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
                 
                 controls.appendChild(editBtn);
                 controls.appendChild(deleteBtn);
-                element.appendChild(controls);
+                document.body.appendChild(controls);
+                
+                // Position the controls intelligently
+                this.positionControls(controls, element);
                 
                 return controls;
             }}
@@ -919,7 +883,10 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
                 removeBtn.title = 'Remove this div';
                 
                 controls.appendChild(removeBtn);
-                element.appendChild(controls);
+                document.body.appendChild(controls);
+                
+                // Position the controls intelligently
+                this.positionControls(controls, element);
                 
                 return controls;
             }}
@@ -929,6 +896,79 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
                 document.querySelectorAll('.edit-controls, .remove-controls').forEach(control => {{
                     control.remove();
                 }});
+                
+                // Clean up scroll/resize listeners when all controls are removed
+                if (this._repositionHandler) {{
+                    window.removeEventListener('scroll', this._repositionHandler);
+                    window.removeEventListener('resize', this._repositionHandler);
+                    this._repositionHandler = null;
+                }}
+            }}
+            
+            positionControls(controls, element) {{
+                // Safety checks - ensure both controls and element exist
+                if (!controls || !element) {{
+                    console.error('❌ Cannot position controls: controls or element is null');
+                    return;
+                }}
+                
+                // Get element position and viewport dimensions
+                const rect = element.getBoundingClientRect();
+                const viewportWidth = window.innerWidth;
+                const viewportHeight = window.innerHeight;
+                
+                // Temporary append to measure control dimensions
+                controls.style.visibility = 'hidden';
+                controls.style.display = 'flex';
+                const controlsRect = controls.getBoundingClientRect();
+                controls.style.display = 'none';
+                controls.style.visibility = 'visible';
+                
+                // Calculate preferred position (above and to the right of element)
+                let left = rect.right - controlsRect.width - 5;
+                let top = rect.top - controlsRect.height - 10;
+                
+                // Ensure controls stay within viewport bounds
+                if (left < 10) {{
+                    left = 10; // Keep some margin from left edge
+                }}
+                if (left + controlsRect.width > viewportWidth - 10) {{
+                    left = viewportWidth - controlsRect.width - 10;
+                }}
+                
+                // If controls would be above viewport, position them below the element
+                if (top < 10) {{
+                    top = rect.bottom + 10;
+                }}
+                
+                // If still out of bounds below, position at top of viewport
+                if (top + controlsRect.height > viewportHeight - 10) {{
+                    top = 10;
+                }}
+                
+                // Apply position
+                controls.style.left = left + 'px';
+                controls.style.top = top + 'px';
+                controls.style.display = 'flex';
+                
+                // Store reference to element for repositioning on scroll/resize
+                controls._targetElement = element;
+                
+                // Add scroll and resize listeners to reposition
+                const repositionHandler = () => {{
+                    if (controls._targetElement && document.body.contains(controls) && document.body.contains(controls._targetElement)) {{
+                        this.positionControls(controls, controls._targetElement);
+                    }} else if (document.body.contains(controls)) {{
+                        // Target element no longer exists, remove controls
+                        controls.remove();
+                    }}
+                }};
+                
+                if (!this._repositionHandler) {{
+                    this._repositionHandler = repositionHandler;
+                    window.addEventListener('scroll', this._repositionHandler);
+                    window.addEventListener('resize', this._repositionHandler);
+                }}
             }}
             
 
@@ -937,11 +977,24 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
                 document.addEventListener('click', (e) => {{
                     if (e.target.classList.contains('edit-btn')) {{
                         e.stopPropagation();
-                        this.startEditing(e.target.closest('.editable-element'));
+                        // Use stored reference from controls
+                        const controls = e.target.closest('.edit-controls');
+                        const element = controls ? controls._targetElement : null;
+                        if (element) {{
+                            this.startEditing(element);
+                        }} else {{
+                            console.error('❌ Could not find element to edit - button may be detached');
+                        }}
                     }} else if (e.target.classList.contains('delete-btn')) {{
                         e.stopPropagation();
-                        const element = e.target.closest('.editable-element') || e.target.closest('.removable-element');
-                        this.deleteElement(element);
+                        // Use stored reference from controls  
+                        const controls = e.target.closest('.edit-controls') || e.target.closest('.remove-controls');
+                        const element = controls ? controls._targetElement : null;
+                        if (element) {{
+                            this.deleteElement(element);
+                        }} else {{
+                            console.error('❌ Could not find element to delete - button may be detached');
+                        }}
                     }} else if (e.target.classList.contains('save-btn')) {{
                         e.stopPropagation();
                         this.saveEdit();
@@ -962,10 +1015,16 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
                         this.redoLastChange();
                     }} else if (e.target.closest('.editable-element')) {{
                         e.stopPropagation();
-                        this.selectElement(e.target.closest('.editable-element'));
+                        const element = e.target.closest('.editable-element');
+                        if (element) {{
+                            this.selectElement(element);
+                        }}
                     }} else if (e.target.closest('.removable-element')) {{
                         e.stopPropagation();
-                        this.selectElement(e.target.closest('.removable-element'));
+                        const element = e.target.closest('.removable-element');
+                        if (element) {{
+                            this.selectElement(element);
+                        }}
                     }} else {{
                         // Clicking outside elements deselects
                         this.clearSelection();
@@ -1069,6 +1128,12 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
             }}
             
             selectElement(element) {{
+                // Safety check - ensure element exists
+                if (!element) {{
+                    console.error('❌ Cannot select: element is null');
+                    return;
+                }}
+                
                 // Clear previous selection
                 this.clearSelection();
                 
@@ -1236,6 +1301,12 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
             }}
             
             startEditing(element) {{
+                // Safety check - ensure element exists
+                if (!element) {{
+                    console.error('❌ Cannot edit: element is null');
+                    return;
+                }}
+                
                 if (this.currentlyEditing) {{
                     this.cancelEdit();
                 }}
@@ -1350,6 +1421,12 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
             }}
             
             deleteElement(element) {{
+                // Safety check - ensure element exists
+                if (!element) {{
+                    console.error('❌ Cannot delete: element is null');
+                    return;
+                }}
+                
                 const text = element.textContent.substring(0, 60);
                 if (!confirm('Delete this element?\\\\n\\\\n"' + text + '..."')) {{
                     return;
