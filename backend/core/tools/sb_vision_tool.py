@@ -142,8 +142,8 @@ class SandboxVisionTool(SandboxToolsBase):
     @openapi_schema({
         "type": "function",
         "function": {
-            "name": "see_image",
-            "description": "Allows the agent to 'see' an image file located in the /workspace directory or from a URL. Provide either a relative path to a local image or the URL to an image. The image will be compressed before sending to reduce token usage. IMPORTANT: If you previously saw an image but cleared context, you can see it again by calling this tool with the same file path - no need to ask user to re-upload.",
+            "name": "load_image_in_context",
+            "description": "Loads an image file into conversation context from the /workspace directory or from a URL. Provide either a relative path to a local image or the URL to an image. The image will be compressed before sending to reduce token usage. IMPORTANT: If you previously loaded an image but cleared context, you can load it again by calling this tool with the same file path - no need to ask user to re-upload.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -157,22 +157,22 @@ class SandboxVisionTool(SandboxToolsBase):
         }
     })
     @usage_example('''
-        <!-- Example: Request to see a local image named 'diagram.png' inside the 'docs' folder -->
+        <!-- Example: Load a local image named 'diagram.png' inside the 'docs' folder into context -->
         <function_calls>
-        <invoke name="see_image">
+        <invoke name="load_image_in_context">
         <parameter name="file_path">docs/diagram.png</parameter>
         </invoke>
         </function_calls>
 
-        <!-- Example: Request to see an image from a URL -->
+        <!-- Example: Load an image from a URL into context -->
         <function_calls>
-        <invoke name="see_image">
+        <invoke name="load_image_in_context">
         <parameter name="file_path">https://example.com/image.jpg</parameter>
         </invoke>
         </function_calls>
         ''')
-    async def see_image(self, file_path: str) -> ToolResult:
-        """Reads an image file from local file system or from a URL, compresses it, converts it to base64, and adds it as a temporary message."""
+    async def load_image_in_context(self, file_path: str) -> ToolResult:
+        """Loads an image file from local file system or from a URL, compresses it, converts it to base64, and adds it to conversation context."""
         try:
             is_url = self.is_url(file_path)
             if is_url:
@@ -261,7 +261,7 @@ class SandboxVisionTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "clear_images_from_context",
-            "description": "Clears all images from conversation memory. Use when done analyzing images or to free up context tokens. IMPORTANT: Files remain accessible - use see_image with the same path to view any image again instead of asking user to re-upload.",
+            "description": "Clears all images from conversation memory. Use when done analyzing images or to free up context tokens. IMPORTANT: Files remain accessible - use load_image_in_context with the same path to load any image again instead of asking user to re-upload.",
             "parameters": {
                 "type": "object",
                 "properties": {},
