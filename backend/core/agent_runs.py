@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_user_id_from_stream_auth, verify_and_authorize_thread_access
 from core.utils.logger import logger, structlog
-from core.services.billing_wrapper import check_billing_status, can_use_model
+from core.services.billing_wrapper import check_billing_status_unified, can_use_model
 from billing.billing_integration import billing_integration
 from core.utils.config import config
 from core.services import redis
@@ -183,7 +183,7 @@ async def start_agent(
 
     # Run all checks concurrently
     model_check_task = asyncio.create_task(can_use_model(client, account_id, model_name))
-    billing_check_task = asyncio.create_task(check_billing_status(client, account_id))
+    billing_check_task = asyncio.create_task(check_billing_status_unified(client, account_id))
     limit_check_task = asyncio.create_task(check_agent_run_limit(client, account_id))
 
     # Wait for all checks to complete
@@ -751,7 +751,7 @@ async def initiate_agent_with_files(
     # Run all checks concurrently
     logger.debug(f"Starting concurrent checks for account {account_id}")
     model_check_task = asyncio.create_task(can_use_model(client, account_id, model_name))
-    billing_check_task = asyncio.create_task(check_billing_status(client, account_id))
+    billing_check_task = asyncio.create_task(check_billing_status_unified(client, account_id))
     limit_check_task = asyncio.create_task(check_agent_run_limit(client, account_id))
     project_limit_check_task = asyncio.create_task(check_project_count_limit(client, account_id))
 
@@ -768,7 +768,7 @@ async def initiate_agent_with_files(
         raise HTTPException(status_code=403, detail={"message": model_message, "allowed_models": allowed_models})
 
     logger.debug(f"Running second billing check for account {account_id}")
-    can_run, message, subscription = await check_billing_status(client, account_id)
+    can_run, message, subscription = await check_billing_status_unified(client, account_id)
     logger.debug(f"Second billing check result for {account_id}: can_run={can_run}, message='{message}'")
     if not can_run:
         logger.warning(f"Billing check failed for {account_id}: {message}")

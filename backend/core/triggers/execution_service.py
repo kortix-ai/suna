@@ -381,7 +381,7 @@ class AgentExecutor:
         
         from core.services.billing import can_use_model
         from billing.billing_integration import billing_integration
-        from core.services.billing_wrapper import can_use_model, check_billing_status
+        from core.services.billing_wrapper import can_use_model, check_billing_status_unified
 
         
         can_use, model_message, allowed_models = await can_use_model(client, account_id, model_name)
@@ -612,7 +612,7 @@ class WorkflowExecutor:
     async def _validate_workflow_execution(self, account_id: str) -> None:
         from core.services.billing import can_use_model
         from billing.billing_integration import billing_integration
-        from core.services.billing_wrapper import check_billing_status, can_use_model
+        from core.services.billing_wrapper import check_billing_status_unified, can_use_model
 
         client = await self._db.client
         from core.ai_models import model_manager
@@ -693,7 +693,7 @@ class WorkflowExecutor:
         
         from core.services.billing import can_use_model
         from billing.billing_integration import billing_integration
-        from core.services.billing_wrapper import can_use_model, check_billing_status
+        from core.services.billing_wrapper import can_use_model, check_billing_status_unified
         
         can_use, model_message, allowed_models = await can_use_model(client, account_id, model_name)
         if not can_use:

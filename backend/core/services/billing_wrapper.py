@@ -408,7 +408,7 @@ async def charge_tool_usage_unified(
 
 
 # Maintain backward compatibility by exposing unified functions with original names
-check_billing_status = check_billing_status_unified
+# Note: check_billing_status is NOT aliased here to avoid conflicts with local functions
 handle_usage_with_credits = handle_usage_unified
 can_use_model = can_use_model_unified
 can_user_afford_tool = can_user_afford_tool_unified
