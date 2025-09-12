@@ -179,7 +179,7 @@ CREATE OR REPLACE FUNCTION basejump.generate_token(length int)
     RETURNS text AS
 $$
 select regexp_replace(replace(
-                              replace(replace(replace(encode(gen_random_bytes(length)::bytea, 'base64'), '/', ''), '+',
+                              replace(replace(replace(encode(extensions.gen_random_bytes(length)::bytea, 'base64'), '/', ''), '+',
                                               ''), '\', ''),
                               '=',
                               ''), E'[\\n\\r]+', '', 'g');
