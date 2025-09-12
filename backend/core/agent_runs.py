@@ -749,22 +749,29 @@ async def initiate_agent_with_files(
         logger.debug(f"[AGENT INITIATE] Agent config keys: {list(agent_config.keys())}")
 
     # Run all checks concurrently
+    logger.debug(f"Starting concurrent checks for account {account_id}")
     model_check_task = asyncio.create_task(can_use_model(client, account_id, model_name))
     billing_check_task = asyncio.create_task(check_billing_status(client, account_id))
     limit_check_task = asyncio.create_task(check_agent_run_limit(client, account_id))
     project_limit_check_task = asyncio.create_task(check_project_count_limit(client, account_id))
 
     # Wait for all checks to complete
+    logger.debug(f"Waiting for concurrent checks to complete for account {account_id}")
     (can_use, model_message, allowed_models), (can_run, message, subscription), limit_check, project_limit_check = await asyncio.gather(
         model_check_task, billing_check_task, limit_check_task, project_limit_check_task
     )
+
+    logger.debug(f"Concurrent billing check result for {account_id}: can_run={can_run}, message='{message}'")
 
     # Check results and raise appropriate errors
     if not can_use:
         raise HTTPException(status_code=403, detail={"message": model_message, "allowed_models": allowed_models})
 
+    logger.debug(f"Running second billing check for account {account_id}")
     can_run, message, subscription = await check_billing_status(client, account_id)
+    logger.debug(f"Second billing check result for {account_id}: can_run={can_run}, message='{message}'")
     if not can_run:
+        logger.warning(f"Billing check failed for {account_id}: {message}")
         raise HTTPException(status_code=402, detail={"message": message, "subscription": subscription})
 
     # Check agent run limit (maximum parallel runs in past 24 hours)
