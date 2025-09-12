@@ -81,9 +81,27 @@ class SimplifiedEnterpriseBillingService:
                 user_limit = user_limit_result.data
                 remaining = user_limit['monthly_limit'] - user_limit['current_month_usage']
             else:
-                # Get default limit from global settings
+                # No user limit exists - create one with default values
                 default_limit = await self.get_default_monthly_limit()
-                remaining = default_limit
+                
+                try:
+                    # Create user limit record with default values
+                    await client.table('enterprise_user_limits')\
+                        .insert({
+                            'account_id': account_id,
+                            'monthly_limit': default_limit,
+                            'current_month_usage': 0,
+                            'is_active': True
+                        })\
+                        .execute()
+                    
+                    logger.info(f"Created enterprise user limit for {account_id} with default limit ${default_limit}")
+                    remaining = default_limit
+                    
+                except Exception as create_error:
+                    logger.error(f"Failed to create user limit for {account_id}: {create_error}")
+                    # Fall back to using default limit without creating record
+                    remaining = default_limit
             
             # Check if enterprise has credits
             if enterprise['credit_balance'] < 0.01:  # Minimum to start
