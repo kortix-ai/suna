@@ -301,7 +301,7 @@ export function SeeImageToolView({
       <CardHeader className="h-14 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-b p-2 px-4 space-y-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-xl bg-gradient-to-br text-green-500 dark:text-green-400 from-green-500/20 to-green-600/10 border border-green-500/20 transition-colors">
+            <div className="relative p-2 bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20 rounded-xl transition-colors border border-blue-200/50 dark:border-blue-800/30 text-blue-500 dark:text-blue-400">
               {isClearTool ? (
                 <Trash2 className="w-5 h-5" />
               ) : (
@@ -409,7 +409,7 @@ export function SeeImageToolView({
 
       <div className="h-10 px-4 py-2 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
         <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-          <Badge className="py-0.5 h-6 bg-gradient-to-b from-green-200 to-green-100 text-green-700 dark:from-green-800/50 dark:to-green-900/60 dark:text-green-300">
+          <Badge className="py-0.5 h-6 bg-gradient-to-b from-blue-50 to-blue-100 text-blue-700 border border-blue-200/50 dark:from-blue-900/30 dark:to-blue-800/20 dark:text-blue-400 dark:border-blue-800/30">
             {isClearTool ? (
               <>
                 <Trash2 className="h-3 w-3 mr-1" />
