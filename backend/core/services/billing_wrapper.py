@@ -48,7 +48,9 @@ async def check_billing_status_unified(client, account_id: str) -> Tuple[bool, s
         # If enterprise mode is enabled, ALL accounts are enterprise accounts
         if config.ENTERPRISE_MODE:
             logger.debug(f"Enterprise mode enabled, using enterprise billing for account {account_id}")
-            return await enterprise_billing.check_billing_status(account_id)
+            result = await enterprise_billing.check_billing_status(account_id)
+            logger.debug(f"Enterprise billing result for {account_id}: {result}")
+            return result
         else:
             # Enterprise mode disabled, use Stripe
             logger.debug(f"Enterprise mode disabled, using Stripe billing for account {account_id}")
@@ -63,6 +65,7 @@ async def check_billing_status_unified(client, account_id: str) -> Tuple[bool, s
         )
         # Fall back to Stripe billing on error
         try:
+            logger.debug(f"Falling back to Stripe billing for account {account_id} due to error: {e}")
             return await stripe_check_billing_status(client, account_id)
         except Exception as fallback_error:
             logger.error(f"Fallback to Stripe billing also failed: {fallback_error}")
