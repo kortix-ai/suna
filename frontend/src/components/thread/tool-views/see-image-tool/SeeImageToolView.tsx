@@ -274,20 +274,6 @@ export function SeeImageToolView({
     );
   }
 
-  // For clear tool, if no output message and not streaming, use generic
-  if (isClearTool && !output && !isStreaming) {
-    return (
-      <GenericToolView
-        name={name || 'clear-images-from-context'}
-        assistantContent={assistantContent}
-        toolContent={toolContent}
-        assistantTimestamp={assistantTimestamp}
-        toolTimestamp={toolTimestamp}
-        isSuccess={isSuccess}
-        isStreaming={isStreaming}
-      />
-    );
-  }
 
   // Image-related data (not needed for clear tool)
   const imageUrl = !isClearTool && filePath ? constructImageUrl(filePath, project) : '';
@@ -350,7 +336,7 @@ export function SeeImageToolView({
         </div>
       </CardHeader>
 
-      <CardContent className="p-0 flex-1 overflow-hidden relative">
+      <CardContent className="p-0 flex-1 overflow-auto relative">
         {isStreaming ? (
           <div className="flex flex-col items-center justify-center h-full p-8 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
             <div className="text-center w-full max-w-xs">
