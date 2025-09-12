@@ -66,7 +66,10 @@ class SimplifiedEnterpriseBillingService:
             
             # Get enterprise balance
             enterprise = await self.get_enterprise_balance()
+            logger.debug(f"Enterprise balance check for {account_id}: {enterprise}")
+            
             if not enterprise:
+                logger.error(f"Enterprise billing account not found for {account_id}")
                 return False, "Enterprise billing not configured", None
             
             # Get user's limit and usage
@@ -104,14 +107,21 @@ class SimplifiedEnterpriseBillingService:
                     remaining = default_limit
             
             # Check if enterprise has credits
-            if enterprise['credit_balance'] < 0.01:  # Minimum to start
+            credit_balance = enterprise['credit_balance']
+            logger.debug(f"Enterprise credit balance: {credit_balance}, required minimum: 0.01")
+            
+            if credit_balance < 0.01:  # Minimum to start
+                logger.warning(f"Enterprise billing failed for {account_id}: insufficient credits (${credit_balance})")
                 return False, "Insufficient enterprise credits. Contact admin to load credits.", {
-                    'enterprise_balance': enterprise['credit_balance'],
+                    'enterprise_balance': credit_balance,
                     'user_remaining': remaining
                 }
             
             # Check if user has remaining monthly allowance
+            logger.debug(f"User {account_id} monthly allowance check: remaining=${remaining}")
+            
             if remaining <= 0:
+                logger.warning(f"Enterprise billing failed for {account_id}: monthly limit reached (remaining: ${remaining})")
                 return False, f"Monthly limit reached. Contact admin to increase limit.", {
                     'enterprise_balance': enterprise['credit_balance'],
                     'user_remaining': 0
