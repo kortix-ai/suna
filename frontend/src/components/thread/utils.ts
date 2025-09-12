@@ -341,6 +341,8 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['create-presentation-outline', 'Creating Presentation Outline'],
   ['create-presentation', 'Creating Presentation'],
   ['present-presentation', 'Presenting'],
+  ['clear-images-from-context', 'Clearing Image from context'],
+  ['load-image-in-context', 'Loading Image'],
 
   ['create-sheet', 'Creating Sheet'],
   ['update-sheet', 'Updating Sheet'],
