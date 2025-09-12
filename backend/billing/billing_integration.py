@@ -12,15 +12,33 @@ class BillingIntegration:
         if config.ENV_MODE == EnvMode.LOCAL:
             return True, "Local mode", None
         
-        balance_info = await credit_manager.get_balance(account_id)
-        balance = Decimal(str(balance_info.get('total', 0)))
-        
-        estimated_cost = Decimal('0.10')
-        
-        if balance < estimated_cost:
-            return False, f"Insufficient credits. Balance: ${balance:.2f}, Required: ~${estimated_cost:.2f}", None
-        
-        return True, f"Credits available: ${balance:.2f}", None
+        # Check if we're in enterprise mode to route appropriately
+        if config.ENTERPRISE_MODE:
+            # Enterprise mode: use unified billing wrapper
+            from core.services.billing_wrapper import check_billing_status_unified
+            
+            db = DBConnection()
+            client = await db.client
+            
+            can_run, message, subscription = await check_billing_status_unified(client, account_id)
+            
+            if can_run:
+                logger.debug(f"[BILLING] Enterprise credit check passed for user {account_id}: {message}")
+                return True, message, None
+            else:
+                logger.debug(f"[BILLING] Enterprise credit check failed for user {account_id}: {message}")
+                return False, message, None
+        else:
+            # Non-enterprise mode: use original credit manager logic
+            balance_info = await credit_manager.get_balance(account_id)
+            balance = Decimal(str(balance_info.get('total', 0)))
+            
+            estimated_cost = Decimal('0.10')
+            
+            if balance < estimated_cost:
+                return False, f"Insufficient credits. Balance: ${balance:.2f}, Required: ~${estimated_cost:.2f}", None
+            
+            return True, f"Credits available: ${balance:.2f}", None
     
     @staticmethod
     async def deduct_usage(
