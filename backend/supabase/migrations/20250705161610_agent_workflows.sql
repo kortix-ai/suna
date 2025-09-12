@@ -26,7 +26,7 @@ END $$;
 
 -- Agent workflows table
 CREATE TABLE IF NOT EXISTS agent_workflows (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     agent_id UUID NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     description TEXT,
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS agent_workflows (
 
 -- Workflow steps table
 CREATE TABLE IF NOT EXISTS workflow_steps (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     workflow_id UUID NOT NULL REFERENCES agent_workflows(id) ON DELETE CASCADE,
     step_order INTEGER NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS workflow_steps (
 
 -- Workflow executions table
 CREATE TABLE IF NOT EXISTS workflow_executions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     workflow_id UUID NOT NULL REFERENCES agent_workflows(id) ON DELETE CASCADE,
     agent_id UUID NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,
     thread_id UUID, -- Optional reference to thread if execution is part of a conversation
@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS workflow_executions (
 
 -- Workflow step executions table
 CREATE TABLE IF NOT EXISTS workflow_step_executions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     execution_id UUID NOT NULL REFERENCES workflow_executions(id) ON DELETE CASCADE,
     step_id UUID NOT NULL REFERENCES workflow_steps(id) ON DELETE CASCADE,
     step_order INTEGER NOT NULL,

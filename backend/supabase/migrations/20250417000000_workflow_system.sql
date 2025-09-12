@@ -37,7 +37,7 @@ END $$;
 
 -- Workflows table
 CREATE TABLE IF NOT EXISTS workflows (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
     description TEXT,
     project_id UUID NOT NULL REFERENCES projects(project_id) ON DELETE CASCADE,
@@ -61,7 +61,7 @@ CREATE INDEX IF NOT EXISTS idx_workflows_created_by ON workflows(created_by);
 
 -- Workflow executions table
 CREATE TABLE IF NOT EXISTS workflow_executions (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     workflow_id UUID NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
     workflow_version INTEGER NOT NULL,
     workflow_name VARCHAR(255) NOT NULL,
@@ -93,7 +93,7 @@ CREATE INDEX IF NOT EXISTS idx_workflow_executions_started_at ON workflow_execut
 
 -- Triggers table
 CREATE TABLE IF NOT EXISTS triggers (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     workflow_id UUID NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
     type trigger_type NOT NULL,
     config JSONB NOT NULL,
@@ -109,7 +109,7 @@ CREATE INDEX IF NOT EXISTS idx_triggers_is_active ON triggers(is_active);
 
 -- Webhook registrations table
 CREATE TABLE IF NOT EXISTS webhook_registrations (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     workflow_id UUID NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
     trigger_id VARCHAR(255) NOT NULL,
     path VARCHAR(255) UNIQUE NOT NULL,
@@ -130,7 +130,7 @@ CREATE INDEX IF NOT EXISTS idx_webhook_registrations_is_active ON webhook_regist
 
 -- Scheduled jobs table
 CREATE TABLE IF NOT EXISTS scheduled_jobs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     workflow_id UUID NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
     trigger_id VARCHAR(255) NOT NULL,
     cron_expression VARCHAR(255) NOT NULL,
@@ -154,7 +154,7 @@ CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_next_run ON scheduled_jobs(next_ru
 
 -- Workflow templates table
 CREATE TABLE IF NOT EXISTS workflow_templates (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
     description TEXT NOT NULL,
     category VARCHAR(100) NOT NULL,
@@ -181,7 +181,7 @@ CREATE INDEX IF NOT EXISTS idx_workflow_templates_rating ON workflow_templates(r
 
 -- Workflow execution logs table (for detailed logging)
 CREATE TABLE IF NOT EXISTS workflow_execution_logs (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     execution_id UUID NOT NULL REFERENCES workflow_executions(id) ON DELETE CASCADE,
     node_id VARCHAR(255) NOT NULL,
     node_name VARCHAR(255),
@@ -205,7 +205,7 @@ CREATE INDEX IF NOT EXISTS idx_workflow_execution_logs_status ON workflow_execut
 
 -- Workflow variables table (for storing workflow-specific variables/secrets)
 CREATE TABLE IF NOT EXISTS workflow_variables (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     workflow_id UUID NOT NULL REFERENCES workflows(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     value TEXT,
