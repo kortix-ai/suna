@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
 import GoogleSignIn from '@/components/GoogleSignIn';
+import GitHubSignIn from '@/components/GithubSignIn';
+import MicrosoftSignIn from '@/components/MicrosoftSignIn';
 import { useMediaQuery } from '@/hooks/use-media-query';
 import { useState, useEffect, Suspense } from 'react';
 import { signIn, signUp, forgotPassword } from './actions';
@@ -292,6 +294,7 @@ function LoginContent() {
               </div>
             <div className="space-y-3 mb-4">
               <GoogleSignIn returnUrl={returnUrl || undefined} />
+              <MicrosoftSignIn returnUrl={returnUrl || undefined} />
               <GitHubSignIn returnUrl={returnUrl || undefined} />
             </div>
             <div className="relative my-4">
