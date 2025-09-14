@@ -30,7 +30,6 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import GitHubSignIn from '@/components/GithubSignIn';
 import { OmniLogo } from '@/components/sidebar/omni-logo';
 import { Ripple } from '@/components/ui/ripple';
 import { ReleaseBadge } from '@/components/auth/release-badge';
