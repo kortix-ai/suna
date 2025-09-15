@@ -49,6 +49,28 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
   const [processedConfig, setProcessedConfig] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Headers state - MINIMAL addition
+  const [headers, setHeaders] = useState<Array<{id: string, key: string, value: string}>>([]);
+  const [showSensitiveValues, setShowSensitiveValues] = useState<Record<string, boolean>>({});
+
+  // Helper functions - MINIMAL additions
+  const isSensitiveHeader = (key: string) => {
+    return /authorization|bearer|token|key|secret|password|credential/i.test(key);
+  };
+
+  const handleAddHeader = () => {
+    setHeaders(prev => [...prev, { id: crypto.randomUUID(), key: '', value: '' }]);
+  };
+
+  const handleRemoveHeader = (id: string) => {
+    setHeaders(prev => prev.filter(h => h.id !== id));
+    setShowSensitiveValues(prev => { const updated = { ...prev }; delete updated[id]; return updated; });
+  };
+
+  const handleHeaderChange = (id: string, field: 'key' | 'value', value: string) => {
+    setHeaders(prev => prev.map(h => h.id === id ? { ...h, [field]: value } : h));
+  };
+
   const validateAndDiscoverTools = async () => {
     setIsValidating(true);
     setValidationError(null);
@@ -66,7 +88,15 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
           throw new Error('Please enter a name for this MCP server.');
         }
         
-        parsedConfig = { url };
+        parsedConfig = { 
+          url,
+          headers: headers.reduce((acc, h) => {
+            if (h.key.trim() && h.value.trim()) {
+              acc[h.key.trim()] = h.value.trim();
+            }
+            return acc;
+          }, {} as Record<string, string>)
+        };
         setServerName(manualServerName.trim());
       }
 
@@ -143,7 +173,15 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
     setValidationError(null);
 
     try {
-      let configToSave: any = { url: configText.trim() };
+      let configToSave: any = { 
+        url: configText.trim(),
+        headers: headers.reduce((acc, h) => {
+          if (h.key.trim() && h.value.trim()) {
+            acc[h.key.trim()] = h.value.trim();
+          }
+          return acc;
+        }, {} as Record<string, string>)
+      };
       
       onSave({
         name: serverName,
@@ -189,6 +227,8 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
   const handleReset = () => {
     setConfigText('');
     setManualServerName('');
+    setHeaders([]); // Reset headers
+    setShowSensitiveValues({}); // Reset sensitive values visibility
     setDiscoveredTools([]);
     setSelectedTools(new Set());
     setServerName('');
@@ -307,6 +347,70 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
                   <p className="text-sm text-muted-foreground">
                     Enter the complete URL to your MCP server endpoint
                   </p>
+                </div>
+
+                {/* Headers section - MINIMAL UI addition */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-base font-medium">Custom Headers (Optional)</Label>
+                    <Button type="button" variant="outline" size="sm" onClick={handleAddHeader}>
+                      + Add Header
+                    </Button>
+                  </div>
+                  
+                  {headers.length > 0 && (
+                    <div className="space-y-3">
+                      {headers.map((header) => {
+                        const isSensitive = isSensitiveHeader(header.key);
+                        const showValue = showSensitiveValues[header.id];
+                        return (
+                          <div key={header.id} className="flex gap-2 items-start">
+                            <div className="flex-1 space-y-2">
+                              <Input
+                                placeholder="Header name (e.g., Authorization)"
+                                value={header.key}
+                                onChange={(e) => handleHeaderChange(header.id, 'key', e.target.value)}
+                              />
+                              <div className="relative">
+                                <Input
+                                  placeholder="Header value"
+                                  type={isSensitive && !showValue ? 'password' : 'text'}
+                                  value={header.value}
+                                  onChange={(e) => handleHeaderChange(header.id, 'value', e.target.value)}
+                                />
+                                {isSensitive && (
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 h-6 w-6 p-0"
+                                    onClick={() => setShowSensitiveValues(prev => ({ ...prev, [header.id]: !prev[header.id] }))}
+                                  >
+                                    {showValue ? '🙈' : '👁️'}
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleRemoveHeader(header.id)}
+                              className="text-destructive hover:text-destructive/80 mt-0"
+                            >
+                              ×
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  
+                  {headers.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Custom headers will be sent with all requests to your MCP server
+                    </p>
+                  )}
                 </div>
               </div>
 
