@@ -45,11 +45,11 @@ interface Config {
 // Production tier IDs
 const PROD_TIERS: SubscriptionTiers = {
   TIER_2_20: {
-    priceId: 'price_1RILb4G6l1KZGqIrhomjgDnO',
+    priceId: 'price_1S7ibVRGnNhiCsluStxGPsPT',
     name: '2h/$20',
   },
   TIER_6_50: {
-    priceId: 'price_1RILb4G6l1KZGqIr5q0sybWn',
+    priceId: 'price_1S7ibVRGnNhiCslujX0nuAnS',
     name: '6h/$50',
   },
   TIER_12_100: {
@@ -57,7 +57,7 @@ const PROD_TIERS: SubscriptionTiers = {
     name: '12h/$100',
   },
   TIER_25_200: {
-    priceId: 'price_1RILb4G6l1KZGqIrGAD8rNjb',
+    priceId: 'price_1S7ibVRGnNhiCslub6EBP6fo',
     name: '25h/$200',
   },
   TIER_50_400: {
@@ -103,15 +103,15 @@ const PROD_TIERS: SubscriptionTiers = {
   },
   // Yearly commitment plans (15% discount, monthly payments with 12-month commitment)
   TIER_2_17_YEARLY_COMMITMENT: {
-    priceId: 'price_1RqtqiG6l1KZGqIrhjVPtE1s',
+    priceId: 'price_1S7ibVRGnNhiCsluhhvXWzqz',
     name: '2h/$17/month (yearly)',
   },
   TIER_6_42_YEARLY_COMMITMENT: {
-    priceId: 'price_1Rqtr8G6l1KZGqIrQ0ql0qHi',
+    priceId: 'price_1S7ibVRGnNhiCslumCV9PbBR',
     name: '6h/$42.50/month (yearly)',
   },
   TIER_25_170_YEARLY_COMMITMENT: {
-    priceId: 'price_1RqtrUG6l1KZGqIrEb8hLsk3',
+    priceId: 'price_1S7ibVRGnNhiCsluh23GQqnG',
     name: '25h/$170/month (yearly)',
   },
 } as const;
@@ -119,11 +119,11 @@ const PROD_TIERS: SubscriptionTiers = {
 // Staging tier IDs
 const STAGING_TIERS: SubscriptionTiers = {
   TIER_2_20: {
-    priceId: 'price_1RIGvuG6l1KZGqIrCRu0E4Gi',
+    priceId: 'price_1S7jUjRGnNhiCslu3LW4qtrW',
     name: '2h/$20',
   },
   TIER_6_50: {
-    priceId: 'price_1RIGvuG6l1KZGqIrvjlz5p5V',
+    priceId: 'price_1S7jUtRGnNhiCslufS8cVnKo',
     name: '6h/$50',
   },
   TIER_12_100: {
@@ -131,7 +131,7 @@ const STAGING_TIERS: SubscriptionTiers = {
     name: '12h/$100',
   },
   TIER_25_200: {
-    priceId: 'price_1RIGvuG6l1KZGqIrOVLKlOMj',
+    priceId: 'price_1S7jV3RGnNhiCsluip3seDaW',
     name: '25h/$200',
   },
   TIER_50_400: {
@@ -177,15 +177,15 @@ const STAGING_TIERS: SubscriptionTiers = {
   },
   // Yearly commitment plans (15% discount, monthly payments with 12-month commitment)
   TIER_2_17_YEARLY_COMMITMENT: {
-    priceId: 'price_1RqYGaG6l1KZGqIrIzcdPzeQ',
+    priceId: 'price_1S7jVbRGnNhiCslug83mGCUN',
     name: '2h/$17/month (yearly)',
   },
   TIER_6_42_YEARLY_COMMITMENT: {
-    priceId: 'price_1RqYH1G6l1KZGqIrWDKh8xIU',
+    priceId: 'price_1S7jVkRGnNhiCsluaHTHKO9b',
     name: '6h/$42.50/month (yearly)',
   },
   TIER_25_170_YEARLY_COMMITMENT: {
-    priceId: 'price_1RqYHbG6l1KZGqIrAUVf8KpG',
+    priceId: 'price_1S7jVtRGnNhiCsluBwmAztkE',
     name: '25h/$170/month (yearly)',
   },
 } as const;
