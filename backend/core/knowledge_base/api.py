@@ -7,7 +7,177 @@ from core.services.supabase import DBConnection
 from core.knowledge_base.file_processor import FileProcessor
 from core.utils.logger import logger
 
+db = DBConnection()
+
 router = APIRouter(prefix="/knowledge-base", tags=["knowledge-base"])
+
+# Folder management
+class CreateFolderRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
+
+class FolderResponse(BaseModel):
+    folder_id: str
+    name: str
+    description: Optional[str]
+    entry_count: int
+    created_at: str
+
+@router.get("/folders", response_model=List[FolderResponse])
+async def get_folders(
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    """Get all folders for the current user"""
+    try:
+        client = await db.client
+        
+        # Get current account_id from user
+        user_result = await client.from_("profiles").select("account_id").eq("id", user_id).single().execute()
+        if not user_result.data:
+            raise HTTPException(status_code=404, detail="User profile not found")
+        
+        account_id = user_result.data["account_id"]
+        
+        # Get folders for this account
+        result = await client.from_("knowledge_base_folders").select("*").eq("account_id", account_id).order("created_at", desc=True).execute()
+        
+        folders = []
+        for folder in result.data:
+            folders.append(FolderResponse(
+                folder_id=folder["folder_id"],
+                name=folder["name"],
+                description=folder.get("description"),
+                entry_count=folder.get("entry_count", 0),
+                created_at=folder["created_at"]
+            ))
+        
+        return folders
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting folders: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve folders")
+
+@router.post("/folders", response_model=FolderResponse)
+async def create_folder(
+    request: CreateFolderRequest,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    """Create a new folder"""
+    try:
+        client = await db.client
+        
+        # Get current account_id from user
+        user_result = await client.from_("profiles").select("account_id").eq("id", user_id).single().execute()
+        if not user_result.data:
+            raise HTTPException(status_code=404, detail="User profile not found")
+        
+        account_id = user_result.data["account_id"]
+        
+        # Create folder
+        result = await client.from_("knowledge_base_folders").insert({
+            "name": request.name,
+            "description": request.description,
+            "account_id": account_id
+        }).execute()
+        
+        if result.data:
+            folder = result.data[0]
+            return FolderResponse(
+                folder_id=folder["folder_id"],
+                name=folder["name"],
+                description=folder.get("description"),
+                entry_count=0,
+                created_at=folder["created_at"]
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to create folder")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating folder: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create folder")
+
+class UpdateFolderRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
+
+@router.put("/folders/{folder_id}", response_model=FolderResponse)
+async def update_folder(
+    folder_id: str,
+    request: UpdateFolderRequest,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    """Update/rename a folder"""
+    try:
+        client = await db.client
+        
+        # Verify folder access
+        folder_result = await client.from_("knowledge_base_folders").select("account_id").eq("folder_id", folder_id).single().execute()
+        if not folder_result.data:
+            raise HTTPException(status_code=404, detail="Folder not found")
+        
+        # Get current account_id from user
+        user_result = await client.from_("profiles").select("account_id").eq("id", user_id).single().execute()
+        if not user_result.data or user_result.data["account_id"] != folder_result.data["account_id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Update folder
+        result = await client.from_("knowledge_base_folders").update({
+            "name": request.name,
+            "description": request.description
+        }).eq("folder_id", folder_id).select().execute()
+        
+        if result.data:
+            folder = result.data[0]
+            return FolderResponse(
+                folder_id=folder["folder_id"],
+                name=folder["name"],
+                description=folder.get("description"),
+                entry_count=folder.get("entry_count", 0),
+                created_at=folder["created_at"]
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to update folder")
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating folder: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update folder")
+
+@router.get("/folders/{folder_id}/entries")
+async def get_folder_entries(
+    folder_id: str,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    """Get all entries in a folder"""
+    try:
+        client = await db.client
+        
+        # Verify folder access
+        folder_result = await client.from_("knowledge_base_folders").select("account_id").eq("folder_id", folder_id).single().execute()
+        if not folder_result.data:
+            raise HTTPException(status_code=404, detail="Folder not found")
+        
+        # Get current account_id from user
+        user_result = await client.from_("profiles").select("account_id").eq("id", user_id).single().execute()
+        if not user_result.data or user_result.data["account_id"] != folder_result.data["account_id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Get entries
+        result = await client.from_("knowledge_base_entries").select("*").eq("folder_id", folder_id).order("created_at", desc=True).execute()
+        
+        entries = result.data if result.data else []
+        return {"entries": entries}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting folder entries: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve folder entries")
 
 class KnowledgeBaseEntry(BaseModel):
     entry_id: Optional[str] = None
@@ -497,4 +667,110 @@ async def get_agent_knowledge_base_context(
     except Exception as e:
         logger.error(f"Error getting knowledge base context for agent {agent_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve agent knowledge base context")
+
+
+# Agent Assignment Management
+class AgentAssignmentRequest(BaseModel):
+    assignments: dict = Field(..., description="Dictionary of folder assignments")
+
+class AgentAssignmentResponse(BaseModel):
+    folder_id: str
+    enabled: bool
+    file_assignments: dict
+
+@router.get("/agents/{agent_id}/assignments")
+async def get_agent_assignments(
+    agent_id: str,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    """Get current knowledge base assignments for an agent"""
+    try:
+        client = await db.client
+        
+        # Verify agent access
+        await verify_and_get_agent_authorization(client, agent_id, user_id)
+        
+        # Get folder assignments
+        folder_result = await client.from_("agent_knowledge_assignments").select("folder_id").eq("agent_id", agent_id).execute()
+        assigned_folders = {row['folder_id'] for row in folder_result.data}
+        
+        # Get specific file assignments
+        file_result = await client.from_("agent_knowledge_entry_assignments").select("entry_id, enabled").eq("agent_id", agent_id).execute()
+        file_assignments = {}
+        for row in file_result.data:
+            file_assignments[row['entry_id']] = row['enabled']
+        
+        # Group file assignments by folder
+        entries_result = await client.from_("knowledge_base_entries").select("entry_id, folder_id").execute()
+        folder_file_assignments = {}
+        for entry in entries_result.data:
+            folder_id = entry['folder_id']
+            if folder_id not in folder_file_assignments:
+                folder_file_assignments[folder_id] = {}
+            if entry['entry_id'] in file_assignments:
+                folder_file_assignments[folder_id][entry['entry_id']] = file_assignments[entry['entry_id']]
+        
+        # Build response
+        assignments = {}
+        for folder_id in assigned_folders:
+            assignments[folder_id] = {
+                'folder_id': folder_id,
+                'enabled': True,
+                'file_assignments': folder_file_assignments.get(folder_id, {})
+            }
+        
+        return assignments
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting agent assignments for {agent_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve agent assignments")
+
+@router.post("/agents/{agent_id}/assignments")
+async def update_agent_assignments(
+    agent_id: str,
+    request: AgentAssignmentRequest,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    """Update knowledge base assignments for an agent"""
+    try:
+        client = await db.client
+        
+        # Verify agent access
+        agent_auth = await verify_and_get_agent_authorization(client, agent_id, user_id)
+        account_id = agent_auth.account_id
+        
+        # Delete existing assignments for this agent
+        await client.from_("agent_knowledge_assignments").delete().eq("agent_id", agent_id).execute()
+        await client.from_("agent_knowledge_entry_assignments").delete().eq("agent_id", agent_id).execute()
+        
+        # Insert new assignments
+        for folder_id, assignment in request.assignments.items():
+            if assignment.get('enabled', False):
+                # Add folder assignment
+                await client.from_("agent_knowledge_assignments").insert({
+                    "agent_id": agent_id,
+                    "folder_id": folder_id,
+                    "account_id": account_id
+                }).execute()
+                
+                # Add specific file assignments
+                file_assignments = assignment.get('file_assignments', {})
+                for entry_id, enabled in file_assignments.items():
+                    if enabled:
+                        await client.from_("agent_knowledge_entry_assignments").insert({
+                            "agent_id": agent_id,
+                            "entry_id": entry_id,
+                            "account_id": account_id,
+                            "enabled": enabled
+                        }).execute()
+        
+        return {"message": "Agent assignments updated successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating agent assignments for {agent_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update agent assignments")
 
