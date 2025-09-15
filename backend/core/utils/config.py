@@ -53,7 +53,11 @@ class Configuration:
     # Subscription tier IDs - Production
     STRIPE_TIER_2_20_ID_PROD: str = 'price_1S7ibVRGnNhiCsluStxGPsPT'
     STRIPE_TIER_6_50_ID_PROD: str = 'price_1S7ibVRGnNhiCslujX0nuAnS'
+    STRIPE_TIER_12_100_ID_PROD: str = 'price_1S7ibVRGnNhiCsluh23GQqnG'
     STRIPE_TIER_25_200_ID_PROD: str = 'price_1S7ibVRGnNhiCslub6EBP6fo'
+    STRIPE_TIER_50_400_ID_PROD: str = 'price_1S7ibVRGnNhiCslufS8cVnKo'
+    STRIPE_TIER_125_800_ID_PROD: str = 'price_1S7ibVRGnNhiCsluip3seDaW'
+    STRIPE_TIER_200_1000_ID_PROD: str = 'price_1S7ibVRGnNhiCsluhhvXWzqz'
     
     # Yearly subscription tier IDs - Production (15% discount)
     STRIPE_TIER_2_20_YEARLY_ID_PROD: str = 'price_1S7ibVRGnNhiCsluhhvXWzqz'  # $204/year
@@ -72,6 +76,7 @@ class Configuration:
     STRIPE_FREE_TIER_ID_STAGING: str = 'price_1RIGvuG6l1KZGqIrw14abxeL' 
     STRIPE_TIER_2_20_ID_STAGING: str = 'price_1S7jUjRGnNhiCslu3LW4qtrW'
     STRIPE_TIER_6_50_ID_STAGING: str = 'price_1S7jUtRGnNhiCslufS8cVnKo'
+    STRIPE_TIER_12_100_ID_STAGING: str = 'price_1S7jV2RGnNhiCsluZFfGsdsWm88'
     STRIPE_TIER_25_200_ID_STAGING: str = 'price_1S7jV3RGnNhiCsluip3seDaW'
     STRIPE_TIER_50_400_ID_STAGING: str = 'price_1RIKNgG6l1KZGqIrvsat5PW7'
     STRIPE_TIER_125_800_ID_STAGING: str = 'price_1RIKNrG6l1KZGqIrjKT0yGvI'
@@ -90,6 +95,7 @@ class Configuration:
     STRIPE_TIER_2_17_YEARLY_COMMITMENT_ID_STAGING: str = 'price_1S7jVbRGnNhiCslug83mGCUN'  # $17/month
     STRIPE_TIER_6_42_YEARLY_COMMITMENT_ID_STAGING: str = 'price_1S7jVkRGnNhiCsluaHTHKO9b'  # $42.50/month
     STRIPE_TIER_25_170_YEARLY_COMMITMENT_ID_STAGING: str = 'price_1S7jVtRGnNhiCsluBwmAztkE'  # $170/month
+
     
     # # Credit package price IDs - Production
     # Credit package price IDs - Production
@@ -98,7 +104,7 @@ class Configuration:
     STRIPE_CREDITS_50_PRICE_ID_PROD: str = 'price_1S7kkLRGnNhiCsluqZ5rxkGT'
     STRIPE_CREDITS_100_PRICE_ID_PROD: str = 'price_1S7kkURGnNhiCsluZFfGWm88'
     STRIPE_CREDITS_250_PRICE_ID_PROD: str = 'price_1S7kkeRGnNhiCsluRpfgrnAG'
-    STRIPE_CREDITS_500_PRICE_ID_PROD: str = 'price_1S7klMRGnNhiCsluFpOp3o8I'  # Fixed typo: 'l' not 'I'
+    STRIPE_CREDITS_500_PRICE_ID_PROD: str = 'price_1S7klMRGnNhiCsluFpOp3o8I'  
 
     # Credit package price IDs - Staging  
     STRIPE_CREDITS_10_PRICE_ID_STAGING: str = 'price_1S7keYRGnNhiCsluYKc3Y8v1'
