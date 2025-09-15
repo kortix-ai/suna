@@ -141,13 +141,18 @@ class SandboxWebSearchTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "scrape_webpage",
-            "description": "Extract full text content from multiple webpages in a single operation. IMPORTANT: You should ALWAYS collect multiple relevant URLs from web-search results and scrape them all in a single call for efficiency. This tool saves time by processing multiple pages simultaneously rather than one at a time. The extracted text includes the main content of each page without HTML markup.",
+            "description": "Extract full text content from multiple webpages in a single operation. IMPORTANT: You should ALWAYS collect multiple relevant URLs from web-search results and scrape them all in a single call for efficiency. This tool saves time by processing multiple pages simultaneously rather than one at a time. The extracted text includes the main content of each page without HTML markup by default, but can optionally include full HTML if needed for structure analysis.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "urls": {
                         "type": "string",
                         "description": "Multiple URLs to scrape, separated by commas. You should ALWAYS include several URLs when possible for efficiency. Example: 'https://example.com/page1,https://example.com/page2,https://example.com/page3'"
+                    },
+                    "include_html": {
+                        "type": "boolean",
+                        "description": "Whether to include the full raw HTML content alongside the extracted text. Set to true when you need to analyze page structure, extract specific HTML elements, or work with complex layouts. Default is false for cleaner text extraction.",
+                        "default": False
                     }
                 },
                 "required": ["urls"]
@@ -160,10 +165,19 @@ class SandboxWebSearchTool(SandboxToolsBase):
         <parameter name="urls">https://www.kortix.ai/,https://github.com/kortix-ai/suna</parameter>
         </invoke>
         </function_calls>
+        
+        <!-- Example with HTML content included -->
+        <function_calls>
+        <invoke name="scrape_webpage">
+        <parameter name="urls">https://example.com/complex-page</parameter>
+        <parameter name="include_html">true</parameter>
+        </invoke>
+        </function_calls>
         ''')
     async def scrape_webpage(
         self,
-        urls: str
+        urls: str,
+        include_html: bool = False
     ) -> ToolResult:
         """
         Retrieve the complete text content of multiple webpages in a single efficient operation.
@@ -173,6 +187,7 @@ class SandboxWebSearchTool(SandboxToolsBase):
         
         Parameters:
         - urls: Multiple URLs to scrape, separated by commas
+        - include_html: Whether to include full HTML content alongside markdown (default: False)
         """
         try:
             logging.info(f"Starting to scrape webpages: {urls}")
@@ -198,7 +213,7 @@ class SandboxWebSearchTool(SandboxToolsBase):
             logging.info(f"Processing {len(url_list)} URLs: {url_list}")
             
             # Process each URL concurrently and collect results
-            tasks = [self._scrape_single_url(url) for url in url_list]
+            tasks = [self._scrape_single_url(url, include_html) for url in url_list]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
             # Process results, handling exceptions
@@ -250,9 +265,13 @@ class SandboxWebSearchTool(SandboxToolsBase):
             logging.error(f"Error in scrape_webpage: {error_message}")
             return self.fail_response(f"Error processing scrape request: {error_message[:200]}")
     
-    async def _scrape_single_url(self, url: str) -> dict:
+    async def _scrape_single_url(self, url: str, include_html: bool = False) -> dict:
         """
         Helper function to scrape a single URL and return the result information.
+        
+        Parameters:
+        - url: URL to scrape
+        - include_html: Whether to include full HTML content alongside markdown
         """
         
         # # Add protocol if missing
@@ -270,9 +289,14 @@ class SandboxWebSearchTool(SandboxToolsBase):
                     "Authorization": f"Bearer {self.firecrawl_api_key}",
                     "Content-Type": "application/json",
                 }
+                # Determine formats to request based on include_html flag
+                formats = ["markdown"]
+                if include_html:
+                    formats.append("html")
+                
                 payload = {
                     "url": url,
-                    "formats": ["markdown"]
+                    "formats": formats
                 }
                 
                 # Use longer timeout and retry logic for more reliability
@@ -309,13 +333,20 @@ class SandboxWebSearchTool(SandboxToolsBase):
             # Format the response
             title = data.get("data", {}).get("metadata", {}).get("title", "")
             markdown_content = data.get("data", {}).get("markdown", "")
-            logging.info(f"Extracted content from {url}: title='{title}', content length={len(markdown_content)}")
+            html_content = data.get("data", {}).get("html", "") if include_html else ""
+            
+            logging.info(f"Extracted content from {url}: title='{title}', content length={len(markdown_content)}" + 
+                        (f", HTML length={len(html_content)}" if html_content else ""))
             
             formatted_result = {
                 "title": title,
                 "url": url,
                 "text": markdown_content
             }
+            
+            # Add HTML content if requested and available
+            if include_html and html_content:
+                formatted_result["html"] = html_content
             
             # Add metadata if available
             if "metadata" in data.get("data", {}):

@@ -66,7 +66,7 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(url);
     }
 
-    const isLocalMode = process.env.NEXT_PUBLIC_ENV_MODE === 'local'
+    const isLocalMode = process.env.NEXT_PUBLIC_ENV_MODE?.toLowerCase() === 'local'
     if (isLocalMode) {
       return supabaseResponse;
     }

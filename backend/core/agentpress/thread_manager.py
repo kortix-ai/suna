@@ -11,8 +11,9 @@ This module provides comprehensive conversation management, including:
 """
 
 import json
-from typing import List, Dict, Any, Optional, Type, Union, AsyncGenerator, Literal, cast
+from typing import List, Dict, Any, Optional, Type, Union, AsyncGenerator, Literal, cast, Callable
 from core.services.llm import make_llm_api_call
+from core.utils.llm_cache_utils import apply_cache_to_messages
 from core.agentpress.tool import Tool
 from core.agentpress.tool_registry import ToolRegistry
 from core.agentpress.context_manager import ContextManager
@@ -178,15 +179,21 @@ class ThreadManager:
                         usage = content.get("usage", {}) if isinstance(content, dict) else {}
                         prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
                         completion_tokens = int(usage.get("completion_tokens", 0) or 0)
+                        cache_read_tokens = int(usage.get("cache_read_input_tokens", 0) or 0)
+                        cache_creation_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
                         model = content.get("model") if isinstance(content, dict) else None
                         
-                        logger.debug(f"[THREAD_MANAGER] Processing assistant_response_end: model='{model}', prompt_tokens={prompt_tokens}, completion_tokens={completion_tokens}")
+                        logger.debug(f"[THREAD_MANAGER] Processing assistant_response_end: model='{model}', prompt_tokens={prompt_tokens}, completion_tokens={completion_tokens}, cache_read={cache_read_tokens}, cache_creation={cache_creation_tokens}")
                         
                         thread_row = await client.table('threads').select('account_id').eq('thread_id', thread_id).limit(1).execute()
                         user_id = thread_row.data[0]['account_id'] if thread_row.data and len(thread_row.data) > 0 else None
                         
                         if user_id and (prompt_tokens > 0 or completion_tokens > 0):
-                            logger.info(f"[THREAD_MANAGER] Deducting token usage for user {user_id}: model='{model}', tokens={prompt_tokens}+{completion_tokens}")
+                            # Log cache savings if applicable
+                            if cache_read_tokens > 0:
+                                logger.info(f"[THREAD_MANAGER] 🎯 Using cached tokens! cache_read={cache_read_tokens} of {prompt_tokens} total")
+                            
+                            logger.info(f"[THREAD_MANAGER] Deducting token usage for user {user_id}: model='{model}', tokens={prompt_tokens}+{completion_tokens}, cache_read={cache_read_tokens}")
                             
                             deduct_result = await billing_integration.deduct_usage(
                                 account_id=user_id,
@@ -194,7 +201,9 @@ class ThreadManager:
                                 completion_tokens=completion_tokens,
                                 model=model or "unknown",
                                 message_id=saved_message['message_id'],
-                                thread_id=thread_id
+                                thread_id=thread_id,
+                                cache_read_tokens=cache_read_tokens,
+                                cache_creation_tokens=cache_creation_tokens
                             )
                             
                             if deduct_result.get('success'):
@@ -299,6 +308,7 @@ class ThreadManager:
         reasoning_effort: Optional[str] = 'low',
         enable_context_manager: bool = True,
         generation: Optional[StatefulGenerationClient] = None,
+        cache_metrics: Optional[Dict[str, Any]] = None,
     ) -> Union[Dict[str, Any], AsyncGenerator]:
         """Run a conversation thread with LLM integration and tool execution.
 
@@ -430,6 +440,19 @@ When using the tools:
 
                 # 1. Get messages from thread for LLM call
                 messages = await self.get_llm_messages(thread_id)
+                
+                # Debug: Log retrieved messages
+                logger.info(f"📥 Retrieved {len(messages)} messages from thread")
+                for i, msg in enumerate(messages[:5]):  # Log first 5
+                    role = msg.get('role', 'unknown')
+                    content_len = len(str(msg.get('content', '')))
+                    logger.debug(f"  Thread msg {i}: role={role}, length={content_len}")
+                
+                # Filter out system messages from thread history since we have our own
+                original_count = len(messages)
+                messages = [msg for msg in messages if msg.get('role') != 'system']
+                if len(messages) < original_count:
+                    logger.info(f"🔧 Filtered out {original_count - len(messages)} system messages from thread history")
 
                 # 2. Check token count before proceeding
                 token_count = 0
@@ -452,18 +475,8 @@ When using the tools:
                     if isinstance(msg, dict) and msg.get('role') == 'user':
                         last_user_index = i
 
-                # Insert temporary message before the last user message if it exists
-                if temp_msg and last_user_index >= 0:
-                    prepared_messages.extend(messages[:last_user_index])
-                    prepared_messages.append(temp_msg)
-                    prepared_messages.extend(messages[last_user_index:])
-                    logger.debug("Added temporary message before the last user message")
-                else:
-                    # If no user message or no temporary message, just add all messages
-                    prepared_messages.extend(messages)
-                    if temp_msg:
-                        prepared_messages.append(temp_msg)
-                        logger.debug("Added temporary message to the end of prepared messages")
+                # Add all messages (temporary messages are no longer used)
+                prepared_messages.extend(messages)
 
                 # Add partial assistant content for auto-continue context (without saving to DB)
                 if auto_continue_count > 0 and continuous_state.get('accumulated_content'):
@@ -477,15 +490,12 @@ When using the tools:
                     prepared_messages.append(temporary_assistant_message)
                     logger.debug(f"Added temporary assistant message with {len(partial_content)} chars for auto-continue context")
 
-                # 4. Prepare tools for LLM call
                 openapi_tool_schemas = None
                 if config.native_tool_calling:
                     openapi_tool_schemas = self.tool_registry.get_openapi_schemas()
                     logger.debug(f"Retrieved {len(openapi_tool_schemas) if openapi_tool_schemas else 0} OpenAPI tool schemas")
 
-                # print(f"\n\n\n\n prepared_messages: {prepared_messages}\n\n\n\n")
-                
-                # 4.5. Retrieve relevant memories and inject context before LLM call
+# 4.5. Retrieve relevant memories and inject context before LLM call
                 try:
                     # Extract the latest user message for memory search
                     latest_user_message: Optional[str] = None
@@ -532,9 +542,37 @@ When using the tools:
                 except Exception as e:
                     logger.warning(f"Failed to retrieve and inject memory context: {str(e)}")
 
-                # prepared_messages = self.context_manager.compress_messages(prepared_messages, llm_model)
+                # 4.6. Apply caching logic to messages after memory injection
+                prepared_messages = apply_cache_to_messages(prepared_messages, llm_model)
+                
+                # Check for multiple system messages (which can break caching)
+                system_count = sum(1 for msg in prepared_messages if msg.get('role') == 'system')
+                if system_count > 1:
+                    logger.error(f"❌ Critical: {system_count} system messages detected! This will break caching.")
+                    first_system_found = False
+                    filtered_messages = []
+                    for msg in prepared_messages:
+                        if msg.get('role') == 'system':
+                            if not first_system_found:
+                                first_system_found = True
+                                filtered_messages.append(msg)
+                        else:
+                            filtered_messages.append(msg)
+                    prepared_messages = filtered_messages
+                    logger.info(f"🔧 Reduced to 1 system message for caching compatibility")
+                
+                # Debug: Log what we're sending to LLM
+                logger.info(f"📤 Sending {len(prepared_messages)} messages to LLM")
+                for i, msg in enumerate(prepared_messages):
+                    role = msg.get('role', 'unknown')
+                    content = msg.get('content', '')
+                    if isinstance(content, list) and content:
+                        has_cache = 'cache_control' in content[0] if isinstance(content[0], dict) else False
+                        content_len = len(str(content[0].get('text', ''))) if isinstance(content[0], dict) else 0
+                        logger.info(f"  Message {i}: role={role}, type=list, has_cache={has_cache}, length={content_len}")
+                    else:
+                        logger.info(f"  Message {i}: role={role}, type=string, length={len(str(content))}")
 
-                # 5. Make LLM API call
                 logger.debug("Making LLM API call")
                 try:
                     if generation:
@@ -582,7 +620,8 @@ When using the tools:
                             llm_model=llm_model,
                             can_auto_continue=(native_max_auto_continues > 0),
                             auto_continue_count=auto_continue_count,
-                            continuous_state=continuous_state
+                            continuous_state=continuous_state,
+                            cache_metrics=cache_metrics
                         )
                     else:
                         # Fallback to non-streaming if response is not iterable

@@ -54,8 +54,6 @@ BEGIN
 END;
 $$;
 
-CREATE INDEX IF NOT EXISTS idx_auth_users_email ON auth.users(email);
-
 CREATE OR REPLACE FUNCTION basejump.ensure_billing_customer_email()
 RETURNS TRIGGER
 LANGUAGE plpgsql

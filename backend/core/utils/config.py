@@ -324,8 +324,8 @@ class Configuration:
     STRIPE_PRODUCT_ID_STAGING: str = 'prod_SZqErtOBuura60'
     
     # Sandbox configuration
-    SANDBOX_IMAGE_NAME = "kortix/suna:0.1.3.15"
-    SANDBOX_SNAPSHOT_NAME = "kortix/suna:0.1.3.15"
+    SANDBOX_IMAGE_NAME = "kortix/suna:0.1.3.16"
+    SANDBOX_SNAPSHOT_NAME = "kortix/suna:0.1.3.16"
     SANDBOX_ENTRYPOINT = "/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf"
 
     # LangFuse configuration
