@@ -307,7 +307,8 @@ class MCPService:
             raise CustomMCPError("URL is required for HTTP MCP connections")
         
         try:
-            async with streamablehttp_client(url) as (read_stream, write_stream, _):
+            headers = self._get_custom_headers("discovery", config)
+            async with streamablehttp_client(url, headers=headers) as (read_stream, write_stream, _):
                 async with ClientSession(read_stream, write_stream) as session:
                     await session.initialize()
                     tool_result = await session.list_tools()
@@ -348,7 +349,8 @@ class MCPService:
             raise CustomMCPError("URL is required for SSE MCP connections")
         
         try:
-            async with sse_client(url) as (read_stream, write_stream):
+            headers = self._get_custom_headers("discovery", config)
+            async with sse_client(url, headers=headers) as (read_stream, write_stream):
                 async with ClientSession(read_stream, write_stream) as session:
                     await session.initialize()
                     tool_result = await session.list_tools()
