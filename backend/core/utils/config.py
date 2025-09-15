@@ -157,18 +157,18 @@ class Configuration:
     #         return self.STRIPE_TIER_200_1000_ID_STAGING
     #     return self.STRIPE_TIER_200_1000_ID_PROD
     
-    # Yearly tier computed properties
-    @property
-    def STRIPE_TIER_2_20_YEARLY_ID(self) -> str:
-        if self.ENV_MODE == EnvMode.STAGING:
-            return self.STRIPE_TIER_2_20_YEARLY_ID_STAGING
-        return self.STRIPE_TIER_2_20_YEARLY_ID_PROD
+    # # Yearly tier computed properties
+    # @property
+    # def STRIPE_TIER_2_20_YEARLY_ID(self) -> str:
+    #     if self.ENV_MODE == EnvMode.STAGING:
+    #         return self.STRIPE_TIER_2_20_YEARLY_ID_STAGING
+    #     return self.STRIPE_TIER_2_20_YEARLY_ID_PROD
     
-    @property
-    def STRIPE_TIER_6_50_YEARLY_ID(self) -> str:
-        if self.ENV_MODE == EnvMode.STAGING:
-            return self.STRIPE_TIER_6_50_YEARLY_ID_STAGING
-        return self.STRIPE_TIER_6_50_YEARLY_ID_PROD
+    # @property
+    # def STRIPE_TIER_6_50_YEARLY_ID(self) -> str:
+    #     if self.ENV_MODE == EnvMode.STAGING:
+    #         return self.STRIPE_TIER_6_50_YEARLY_ID_STAGING
+    #     return self.STRIPE_TIER_6_50_YEARLY_ID_PROD
     
     # @property
     # def STRIPE_TIER_12_100_YEARLY_ID(self) -> str:
@@ -176,11 +176,11 @@ class Configuration:
     #         return self.STRIPE_TIER_12_100_YEARLY_ID_STAGING
     #     return self.STRIPE_TIER_12_100_YEARLY_ID_PROD
     
-    @property
-    def STRIPE_TIER_25_200_YEARLY_ID(self) -> str:
-        if self.ENV_MODE == EnvMode.STAGING:
-            return self.STRIPE_TIER_25_200_YEARLY_ID_STAGING
-        return self.STRIPE_TIER_25_200_YEARLY_ID_PROD
+    # @property
+    # def STRIPE_TIER_25_200_YEARLY_ID(self) -> str:
+    #     if self.ENV_MODE == EnvMode.STAGING:
+    #         return self.STRIPE_TIER_25_200_YEARLY_ID_STAGING
+    #     return self.STRIPE_TIER_25_200_YEARLY_ID_PROD
     
     # @property
     # def STRIPE_TIER_50_400_YEARLY_ID(self) -> str:
