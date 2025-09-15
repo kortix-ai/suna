@@ -56,13 +56,12 @@ class Configuration:
     STRIPE_TIER_25_200_ID_PROD: str = 'price_1S7ibVRGnNhiCslub6EBP6fo'
     
     # Yearly subscription tier IDs - Production (15% discount)
-    STRIPE_TIER_2_20_YEARLY_ID_PROD: str = 'price_1ReHB5G6l1KZGqIrD70I1xqM'
-    STRIPE_TIER_6_50_YEARLY_ID_PROD: str = 'price_1ReHAsG6l1KZGqIrlAog487C'
-    STRIPE_TIER_12_100_YEARLY_ID_PROD: str = 'price_1ReHAWG6l1KZGqIrBHer2PQc'
-    STRIPE_TIER_25_200_YEARLY_ID_PROD: str = 'price_1ReH9uG6l1KZGqIrsvMLHViC'
-    STRIPE_TIER_50_400_YEARLY_ID_PROD: str = 'price_1ReH9fG6l1KZGqIrsPtu5KIA'
-    STRIPE_TIER_125_800_YEARLY_ID_PROD: str = 'price_1ReH9GG6l1KZGqIrfgqaJyat'
-    STRIPE_TIER_200_1000_YEARLY_ID_PROD: str = 'price_1ReH8qG6l1KZGqIrK1akY90q'
+    # STRIPE_TIER_2_20_YEARLY_ID_PROD: str = 'price_1S7ibVRGnNhiCsluhhvXWzqz'  # $204/year
+    # STRIPE_TIER_6_50_YEARLY_ID_PROD: str = 'price_1S7ibVRGnNhiCslumCV9PbBR'  # $510/year
+    # STRIPE_TIER_25_200_YEARLY_ID_PROD: str = 'price_1S7ibVRGnNhiCsluh23GQqnG'  # $2040/year
+    # # STRIPE_TIER_50_400_YEARLY_ID_PROD: str = 'price_1ReH9fG6l1KZGqIrsPtu5KIA'
+    # # STRIPE_TIER_125_800_YEARLY_ID_PROD: str = 'price_1ReH9GG6l1KZGqIrfgqaJyat'
+    # STRIPE_TIER_200_1000_YEARLY_ID_PROD: str = 'price_1ReH8qG6l1KZGqIrK1akY90q'
 
     # Yearly commitment prices - Production (15% discount, monthly payments with 12-month commitment via schedules)
     STRIPE_TIER_2_17_YEARLY_COMMITMENT_ID_PROD: str = 'price_1S7ibVRGnNhiCsluhhvXWzqz'  # $17/month
@@ -74,18 +73,18 @@ class Configuration:
     STRIPE_TIER_2_20_ID_STAGING: str = 'price_1S7jUjRGnNhiCslu3LW4qtrW'
     STRIPE_TIER_6_50_ID_STAGING: str = 'price_1S7jUtRGnNhiCslufS8cVnKo'
     STRIPE_TIER_25_200_ID_STAGING: str = 'price_1S7jV3RGnNhiCsluip3seDaW'
-    STRIPE_TIER_50_400_ID_STAGING: str = 'price_1RIKNgG6l1KZGqIrvsat5PW7'
-    STRIPE_TIER_125_800_ID_STAGING: str = 'price_1RIKNrG6l1KZGqIrjKT0yGvI'
-    STRIPE_TIER_200_1000_ID_STAGING: str = 'price_1RIKQ2G6l1KZGqIrum9n8SI7'
+    # STRIPE_TIER_50_400_ID_STAGING: str = 'price_1RIKNgG6l1KZGqIrvsat5PW7'
+    # STRIPE_TIER_125_800_ID_STAGING: str = 'price_1RIKNrG6l1KZGqIrjKT0yGvI'
+    # STRIPE_TIER_200_1000_ID_STAGING: str = 'price_1RIKQ2G6l1KZGqIrum9n8SI7'
     
-    # # Yearly subscription tier IDs - Staging (15% discount)
-    STRIPE_TIER_2_20_YEARLY_ID_STAGING: str = 'price_1ReGogG6l1KZGqIrEyBTmtPk'
-    STRIPE_TIER_6_50_YEARLY_ID_STAGING: str = 'price_1ReGoJG6l1KZGqIr0DJWtoOc'
-    STRIPE_TIER_12_100_YEARLY_ID_STAGING: str = 'price_1ReGnZG6l1KZGqIr0ThLEl5S'
-    STRIPE_TIER_25_200_YEARLY_ID_STAGING: str = 'price_1ReGmzG6l1KZGqIre31mqoEJ'
-    STRIPE_TIER_50_400_YEARLY_ID_STAGING: str = 'price_1ReGmgG6l1KZGqIrn5nBc7e5'
-    STRIPE_TIER_125_800_YEARLY_ID_STAGING: str = 'price_1ReGmMG6l1KZGqIrvE2ycrAX'
-    STRIPE_TIER_200_1000_YEARLY_ID_STAGING: str = 'price_1ReGlXG6l1KZGqIrlgurP5GU'
+    # # # Yearly subscription tier IDs - Staging (15% discount)
+    # STRIPE_TIER_2_20_YEARLY_ID_STAGING: str = 'price_1ReGogG6l1KZGqIrEyBTmtPk'
+    # STRIPE_TIER_6_50_YEARLY_ID_STAGING: str = 'price_1ReGoJG6l1KZGqIr0DJWtoOc'
+    # STRIPE_TIER_12_100_YEARLY_ID_STAGING: str = 'price_1ReGnZG6l1KZGqIr0ThLEl5S'
+    # STRIPE_TIER_25_200_YEARLY_ID_STAGING: str = 'price_1ReGmzG6l1KZGqIre31mqoEJ'
+    # STRIPE_TIER_50_400_YEARLY_ID_STAGING: str = 'price_1ReGmgG6l1KZGqIrn5nBc7e5'
+    # STRIPE_TIER_125_800_YEARLY_ID_STAGING: str = 'price_1ReGmMG6l1KZGqIrvE2ycrAX'
+    # STRIPE_TIER_200_1000_YEARLY_ID_STAGING: str = 'price_1ReGlXG6l1KZGqIrlgurP5GU'
 
     # Yearly commitment prices - Staging (15% discount, monthly payments with 12-month commitment via schedules)
     STRIPE_TIER_2_17_YEARLY_COMMITMENT_ID_STAGING: str = 'price_1S7jVbRGnNhiCslug83mGCUN'  # $17/month
@@ -93,20 +92,21 @@ class Configuration:
     STRIPE_TIER_25_170_YEARLY_COMMITMENT_ID_STAGING: str = 'price_1S7jVtRGnNhiCsluBwmAztkE'  # $170/month
     
     # # Credit package price IDs - Production
-    STRIPE_CREDITS_10_PRICE_ID_PROD: str = 'price_1RxmQUG6l1KZGqIru453O1zW'
-    STRIPE_CREDITS_25_PRICE_ID_PROD: str = 'price_1RxmQlG6l1KZGqIr3hS5WtGg'
-    STRIPE_CREDITS_50_PRICE_ID_PROD: str = 'price_1RxmQvG6l1KZGqIrLbMZ3D6r'
-    STRIPE_CREDITS_100_PRICE_ID_PROD: str = 'price_1RxmR3G6l1KZGqIrpLwFCGac'
-    STRIPE_CREDITS_250_PRICE_ID_PROD: str = 'price_1RxmRAG6l1KZGqIrtBIMsZAj'
-    STRIPE_CREDITS_500_PRICE_ID_PROD: str = 'price_1RxmRGG6l1KZGqIrSyvl6w1G'
-    
-    # # Credit package price IDs - Staging  
-    STRIPE_CREDITS_10_PRICE_ID_STAGING: str = 'price_1RxXOvG6l1KZGqIrMqsiYQvk'
-    STRIPE_CREDITS_25_PRICE_ID_STAGING: str = 'price_1RxXPNG6l1KZGqIrQprPgDme'
-    STRIPE_CREDITS_50_PRICE_ID_STAGING: str = 'price_1RxmNhG6l1KZGqIrTq2zPtgi'
-    STRIPE_CREDITS_100_PRICE_ID_STAGING: str = 'price_1RxmNwG6l1KZGqIrnliwPDM6'
-    STRIPE_CREDITS_250_PRICE_ID_STAGING: str = 'price_1RxmO6G6l1KZGqIrBF8Kx87G'
-    STRIPE_CREDITS_500_PRICE_ID_STAGING: str = 'price_1RxmOFG6l1KZGqIrn4wgORnH'
+    # Credit package price IDs - Production
+    STRIPE_CREDITS_10_PRICE_ID_PROD: str = 'price_1S7kjpRGnNhiCslub9tC24tc'
+    STRIPE_CREDITS_25_PRICE_ID_PROD: str = 'price_1S7kk5RGnNhiCsluEiemoeno'
+    STRIPE_CREDITS_50_PRICE_ID_PROD: str = 'price_1S7kkLRGnNhiCsluqZ5rxkGT'
+    STRIPE_CREDITS_100_PRICE_ID_PROD: str = 'price_1S7kkURGnNhiCsluZFfGWm88'
+    STRIPE_CREDITS_250_PRICE_ID_PROD: str = 'price_1S7kkeRGnNhiCsluRpfgrnAG'
+    STRIPE_CREDITS_500_PRICE_ID_PROD: str = 'price_1S7klMRGnNhiCsluFpOp3o8I'  # Fixed typo: 'l' not 'I'
+
+    # Credit package price IDs - Staging  
+    STRIPE_CREDITS_10_PRICE_ID_STAGING: str = 'price_1S7keYRGnNhiCsluYKc3Y8v1'
+    STRIPE_CREDITS_25_PRICE_ID_STAGING: str = 'price_1S7kejRGnNhiCslu8kXq31u3'
+    STRIPE_CREDITS_50_PRICE_ID_STAGING: str = 'price_1S7kesRGnNhiCsluhrrRCgwm'
+    STRIPE_CREDITS_100_PRICE_ID_STAGING: str = 'price_1S7kfERGnNhiCsluHpsy7hwL'
+    STRIPE_CREDITS_250_PRICE_ID_STAGING: str = 'price_1S7kfQRGnNhiCslu2Uo4tmT0'
+    STRIPE_CREDITS_500_PRICE_ID_STAGING: str = 'price_1S7kfcRGnNhiCslus18BHWCi'
     
     # Computed subscription tier IDs based on environment
     # @property
