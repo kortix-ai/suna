@@ -109,11 +109,11 @@ class Configuration:
     STRIPE_CREDITS_500_PRICE_ID_STAGING: str = 'price_1S7kfcRGnNhiCslus18BHWCi'
     
     # Computed subscription tier IDs based on environment
-    # @property
-    # def STRIPE_FREE_TIER_ID(self) -> str:   
-    #     if self.ENV_MODE == EnvMode.STAGING:
-    #         return self.STRIPE_FREE_TIER_ID_STAGING
-    #     return self.STRIPE_FREE_TIER_ID_PROD
+    @property
+    def STRIPE_FREE_TIER_ID(self) -> str:   
+        if self.ENV_MODE == EnvMode.STAGING:
+            return self.STRIPE_FREE_TIER_ID_STAGING
+        return self.STRIPE_FREE_TIER_ID_PROD
     
     @property
     def STRIPE_TIER_2_20_ID(self) -> str:
@@ -127,11 +127,11 @@ class Configuration:
             return self.STRIPE_TIER_6_50_ID_STAGING
         return self.STRIPE_TIER_6_50_ID_PROD
     
-    # @property
-    # def STRIPE_TIER_12_100_ID(self) -> str:
-    #     if self.ENV_MODE == EnvMode.STAGING:
-    #         return self.STRIPE_TIER_12_100_ID_STAGING
-    #     return self.STRIPE_TIER_12_100_ID_PROD
+    @property
+    def STRIPE_TIER_12_100_ID(self) -> str:
+        if self.ENV_MODE == EnvMode.STAGING:
+            return self.STRIPE_TIER_12_100_ID_STAGING
+        return self.STRIPE_TIER_12_100_ID_PROD
     
     @property
     def STRIPE_TIER_25_200_ID(self) -> str:
@@ -139,66 +139,66 @@ class Configuration:
             return self.STRIPE_TIER_25_200_ID_STAGING
         return self.STRIPE_TIER_25_200_ID_PROD
     
-    # @property
-    # def STRIPE_TIER_50_400_ID(self) -> str:
-    #     if self.ENV_MODE == EnvMode.STAGING:
-    #         return self.STRIPE_TIER_50_400_ID_STAGING
-    #     return self.STRIPE_TIER_50_400_ID_PROD
+    @property
+    def STRIPE_TIER_50_400_ID(self) -> str:
+        if self.ENV_MODE == EnvMode.STAGING:
+            return self.STRIPE_TIER_50_400_ID_STAGING
+        return self.STRIPE_TIER_50_400_ID_PROD
     
-    # @property
-    # def STRIPE_TIER_125_800_ID(self) -> str:
-    #     if self.ENV_MODE == EnvMode.STAGING:
-    #         return self.STRIPE_TIER_125_800_ID_STAGING
-    #     return self.STRIPE_TIER_125_800_ID_PROD
+    @property
+    def STRIPE_TIER_125_800_ID(self) -> str:
+        if self.ENV_MODE == EnvMode.STAGING:
+            return self.STRIPE_TIER_125_800_ID_STAGING
+        return self.STRIPE_TIER_125_800_ID_PROD
     
-    # @property
-    # def STRIPE_TIER_200_1000_ID(self) -> str:
-    #     if self.ENV_MODE == EnvMode.STAGING:
-    #         return self.STRIPE_TIER_200_1000_ID_STAGING
-    #     return self.STRIPE_TIER_200_1000_ID_PROD
+    @property
+    def STRIPE_TIER_200_1000_ID(self) -> str:
+        if self.ENV_MODE == EnvMode.STAGING:
+            return self.STRIPE_TIER_200_1000_ID_STAGING
+        return self.STRIPE_TIER_200_1000_ID_PROD
     
-    # # Yearly tier computed properties
-    # @property
-    # def STRIPE_TIER_2_20_YEARLY_ID(self) -> str:
-    #     if self.ENV_MODE == EnvMode.STAGING:
-    #         return self.STRIPE_TIER_2_20_YEARLY_ID_STAGING
-    #     return self.STRIPE_TIER_2_20_YEARLY_ID_PROD
+    # Yearly tier computed properties
+    @property
+    def STRIPE_TIER_2_20_YEARLY_ID(self) -> str:
+        if self.ENV_MODE == EnvMode.STAGING:
+            return self.STRIPE_TIER_2_20_YEARLY_ID_STAGING
+        return self.STRIPE_TIER_2_20_YEARLY_ID_PROD
     
-    # @property
-    # def STRIPE_TIER_6_50_YEARLY_ID(self) -> str:
-    #     if self.ENV_MODE == EnvMode.STAGING:
-    #         return self.STRIPE_TIER_6_50_YEARLY_ID_STAGING
-    #     return self.STRIPE_TIER_6_50_YEARLY_ID_PROD
+    @property
+    def STRIPE_TIER_6_50_YEARLY_ID(self) -> str:
+        if self.ENV_MODE == EnvMode.STAGING:
+            return self.STRIPE_TIER_6_50_YEARLY_ID_STAGING
+        return self.STRIPE_TIER_6_50_YEARLY_ID_PROD
     
-    # @property
-    # def STRIPE_TIER_12_100_YEARLY_ID(self) -> str:
-    #     if self.ENV_MODE == EnvMode.STAGING:
-    #         return self.STRIPE_TIER_12_100_YEARLY_ID_STAGING
-    #     return self.STRIPE_TIER_12_100_YEARLY_ID_PROD
+    @property
+    def STRIPE_TIER_12_100_YEARLY_ID(self) -> str:
+        if self.ENV_MODE == EnvMode.STAGING:
+            return self.STRIPE_TIER_12_100_YEARLY_ID_STAGING
+        return self.STRIPE_TIER_12_100_YEARLY_ID_PROD
     
-    # @property
-    # def STRIPE_TIER_25_200_YEARLY_ID(self) -> str:
-    #     if self.ENV_MODE == EnvMode.STAGING:
-    #         return self.STRIPE_TIER_25_200_YEARLY_ID_STAGING
-    #     return self.STRIPE_TIER_25_200_YEARLY_ID_PROD
+    @property
+    def STRIPE_TIER_25_200_YEARLY_ID(self) -> str:
+        if self.ENV_MODE == EnvMode.STAGING:
+            return self.STRIPE_TIER_25_200_YEARLY_ID_STAGING
+        return self.STRIPE_TIER_25_200_YEARLY_ID_PROD
     
-    # @property
-    # def STRIPE_TIER_50_400_YEARLY_ID(self) -> str:
-    #     if self.ENV_MODE == EnvMode.STAGING:
-    #         return self.STRIPE_TIER_50_400_YEARLY_ID_STAGING
-    #     return self.STRIPE_TIER_50_400_YEARLY_ID_PROD
+    @property
+    def STRIPE_TIER_50_400_YEARLY_ID(self) -> str:
+        if self.ENV_MODE == EnvMode.STAGING:
+            return self.STRIPE_TIER_50_400_YEARLY_ID_STAGING
+        return self.STRIPE_TIER_50_400_YEARLY_ID_PROD
     
-    # @property
-    # def STRIPE_TIER_125_800_YEARLY_ID(self) -> str:
-    #     if self.ENV_MODE == EnvMode.STAGING:
-    #         return self.STRIPE_TIER_125_800_YEARLY_ID_STAGING
-    #     return self.STRIPE_TIER_125_800_YEARLY_ID_PROD
+    @property
+    def STRIPE_TIER_125_800_YEARLY_ID(self) -> str:
+        if self.ENV_MODE == EnvMode.STAGING:
+            return self.STRIPE_TIER_125_800_YEARLY_ID_STAGING
+        return self.STRIPE_TIER_125_800_YEARLY_ID_PROD
     
-    # @property
-    # def STRIPE_TIER_200_1000_YEARLY_ID(self) -> str:
-    #     if self.ENV_MODE == EnvMode.STAGING:
-    #         return self.STRIPE_TIER_200_1000_YEARLY_ID_STAGING
-    #     return self.STRIPE_TIER_200_1000_YEARLY_ID_PROD
+    @property
+    def STRIPE_TIER_200_1000_YEARLY_ID(self) -> str:
+        if self.ENV_MODE == EnvMode.STAGING:
+            return self.STRIPE_TIER_200_1000_YEARLY_ID_STAGING
+        return self.STRIPE_TIER_200_1000_YEARLY_ID_PROD
     
     # Yearly commitment prices computed properties
     @property
