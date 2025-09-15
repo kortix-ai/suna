@@ -196,6 +196,7 @@ class ResponseProcessor:
         can_auto_continue: bool = False,
         auto_continue_count: int = 0,
         continuous_state: Optional[Dict[str, Any]] = None,
+        cache_metrics: Optional[Dict[str, Any]] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Process a streaming LLM response, handling tool calls and execution.
         
@@ -237,7 +238,9 @@ class ResponseProcessor:
             "usage": {
                 "prompt_tokens": 0,
                 "completion_tokens": 0,
-                "total_tokens": 0
+                "total_tokens": 0,
+                "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0
             },
             "response_ms": None,
             "first_chunk_time": None,
@@ -271,26 +274,72 @@ class ResponseProcessor:
 
             __sequence = continuous_state.get('sequence', 0)    # get the sequence from the previous auto-continue cycle
 
+            chunk_count = 0
             async for chunk in llm_response:
+                chunk_count += 1
+                
                 # Extract streaming metadata from chunks
                 current_time = datetime.now(timezone.utc).timestamp()
                 if streaming_metadata["first_chunk_time"] is None:
                     streaming_metadata["first_chunk_time"] = current_time
                 streaming_metadata["last_chunk_time"] = current_time
                 
-                # Extract metadata from chunk attributes
+                # Log info about chunks periodically
+                if chunk_count == 1 or (chunk_count % 100 == 0) or hasattr(chunk, 'usage'):
+                    chunk_info = f"📦 Chunk #{chunk_count}: "
+                    chunk_info += f"type={type(chunk).__name__}, "
+                    chunk_info += f"has_usage={hasattr(chunk, 'usage')}, "
+                    chunk_info += f"has_choices={hasattr(chunk, 'choices')}"
+                    if hasattr(chunk, 'choices') and chunk.choices:
+                        if hasattr(chunk.choices[0], 'finish_reason'):
+                            chunk_info += f", finish_reason={chunk.choices[0].finish_reason}"
+                    logger.info(chunk_info)
+                
                 if hasattr(chunk, 'created') and chunk.created:
                     streaming_metadata["created"] = chunk.created
                 if hasattr(chunk, 'model') and chunk.model:
                     streaming_metadata["model"] = chunk.model
                 if hasattr(chunk, 'usage') and chunk.usage:
-                    # Update usage information if available (including zero values)
+                    try:
+                        usage_dict = chunk.usage.model_dump() if hasattr(chunk.usage, 'model_dump') else chunk.usage.__dict__
+                        logger.info(f"📊 RAW USAGE DATA: {usage_dict}")
+                    except Exception as e:
+                        logger.info(f"📊 Could not dump usage object: {e}")
+                    
                     if hasattr(chunk.usage, 'prompt_tokens') and chunk.usage.prompt_tokens is not None:
                         streaming_metadata["usage"]["prompt_tokens"] = chunk.usage.prompt_tokens
                     if hasattr(chunk.usage, 'completion_tokens') and chunk.usage.completion_tokens is not None:
                         streaming_metadata["usage"]["completion_tokens"] = chunk.usage.completion_tokens
                     if hasattr(chunk.usage, 'total_tokens') and chunk.usage.total_tokens is not None:
                         streaming_metadata["usage"]["total_tokens"] = chunk.usage.total_tokens
+                    
+                    cache_creation = getattr(chunk.usage, 'cache_creation_input_tokens', 0)
+                    cache_read = getattr(chunk.usage, 'cache_read_input_tokens', 0)
+                    
+                    if cache_creation == 0:
+                        cache_creation = getattr(chunk.usage, 'cache_creation_tokens', 0)
+                    if cache_read == 0:
+                        cache_read = getattr(chunk.usage, 'cache_read_tokens', 0)
+                    
+                    if hasattr(chunk.usage, 'prompt_tokens_details'):
+                        details = chunk.usage.prompt_tokens_details
+                        if details and hasattr(details, 'cached_tokens') and details.cached_tokens > 0:
+                            cache_read = details.cached_tokens
+                            logger.info(f"🎯 OpenAI cache detected: {cache_read} cached tokens")
+                    
+                    if cache_creation > 0:
+                        streaming_metadata["usage"]["cache_creation_input_tokens"] = cache_creation
+                    if cache_read > 0:
+                        streaming_metadata["usage"]["cache_read_input_tokens"] = cache_read
+                    
+                    if cache_creation > 0 or cache_read > 0:
+                        logger.info(f"🎯 STREAMING CACHE METRICS: creation={cache_creation}, read={cache_read}, total={chunk.usage.prompt_tokens}")
+                    elif chunk.usage.prompt_tokens and chunk.usage.prompt_tokens > 0:
+                        logger.warning(f"⚠️ STREAMING NO CACHE: total_tokens={chunk.usage.prompt_tokens}")
+                else:
+                    if hasattr(chunk, 'choices') and chunk.choices:
+                        if hasattr(chunk.choices[0], 'finish_reason') and chunk.choices[0].finish_reason:
+                            logger.info(f"📭 Final chunk #{chunk_count} has NO usage data (finish_reason={chunk.choices[0].finish_reason})")
 
                 if hasattr(chunk, 'choices') and chunk.choices and hasattr(chunk.choices[0], 'finish_reason') and chunk.choices[0].finish_reason:
                     finish_reason = chunk.choices[0].finish_reason
@@ -434,26 +483,58 @@ class ResponseProcessor:
                     self.trace.event(name="stopping_stream_processing_after_loop_due_to_xml_tool_call_limit", level="DEFAULT", status_message=(f"Stopping stream processing after loop due to XML tool call limit"))
                     break
 
-            # print() # Add a final newline after the streaming loop finishes
+            logger.info(f"📊 Stream complete. Total chunks: {chunk_count}")
+            logger.info(f"📊 Usage from stream: prompt={streaming_metadata['usage']['prompt_tokens']}, completion={streaming_metadata['usage']['completion_tokens']}, cache_read={streaming_metadata['usage'].get('cache_read_input_tokens', 0)}")
 
-            # --- After Streaming Loop ---
+            if cache_metrics:
+                cache_read = cache_metrics.get('cache_read_tokens', 0)
+                cache_creation = cache_metrics.get('cache_creation_tokens', 0)
+                probe_prompt_tokens = cache_metrics.get('total_prompt_tokens', 0)
+                
+                streaming_metadata["usage"]["cache_read_input_tokens"] = cache_read
+                streaming_metadata["usage"]["cache_creation_input_tokens"] = cache_creation
+                
+                if cache_read > 0:
+                    if cache_creation > 0:
+                        logger.info(f"📊 Cache HIT + NEW: {cache_read} tokens read from cache, {cache_creation} new tokens cached")
+                    else:
+                        logger.info(f"📊 Cache HIT: {cache_read} tokens read from cache")
+                    logger.info(f"📊 Total prompt tokens: {probe_prompt_tokens}")
+                    streaming_metadata["usage"]["prompt_tokens"] = probe_prompt_tokens
+                elif cache_creation > 0:
+                    actual_prompt_tokens = probe_prompt_tokens + cache_creation
+                    logger.info(f"📊 Cache CREATION (first time): {cache_creation} tokens being cached")
+                    logger.info(f"📊 Total input tokens: {actual_prompt_tokens} (base: {probe_prompt_tokens} + creation: {cache_creation})")
+                    streaming_metadata["usage"]["prompt_tokens"] = actual_prompt_tokens
+                elif probe_prompt_tokens > 0:
+                    old_count = streaming_metadata["usage"]["prompt_tokens"]
+                    streaming_metadata["usage"]["prompt_tokens"] = probe_prompt_tokens
+                    if old_count != probe_prompt_tokens:
+                        logger.info(f"📊 Corrected token count from probe: {probe_prompt_tokens} (was {old_count})")
+                
+                streaming_metadata["usage"]["total_tokens"] = streaming_metadata["usage"]["prompt_tokens"] + streaming_metadata["usage"]["completion_tokens"]
+                
+                if cache_read > 0 or cache_creation > 0:
+                    cache_percentage = cache_metrics.get('cache_percentage', 0)
+                    logger.info(f"💾 Cache activity: {cache_read} tokens read from cache, {cache_creation} tokens cached")
             
             if (
                 streaming_metadata["usage"]["total_tokens"] == 0
+                and not cache_metrics
             ):
-                logger.debug("🔥 No usage data from provider, counting with litellm.token_counter")
+                logger.warning("⚠️ No usage data from provider, using fallback token counting")
                 
                 try:
-                    # prompt side
+                    from litellm import token_counter
+                    
                     prompt_tokens = token_counter(
                         model=llm_model,
-                        messages=prompt_messages               # chat or plain; token_counter handles both
+                        messages=prompt_messages
                     )
 
-                    # completion side
                     completion_tokens = token_counter(
                         model=llm_model,
-                        text=accumulated_content or ""         # empty string safe
+                        text=accumulated_content or ""
                     )
 
                     streaming_metadata["usage"]["prompt_tokens"]      = prompt_tokens
@@ -470,12 +551,10 @@ class ResponseProcessor:
                     self.trace.event(name="failed_to_calculate_usage", level="WARNING", status_message=(f"Failed to calculate usage: {str(e)}"))
 
 
-            # Wait for pending tool executions from streaming phase
-            tool_results_buffer = [] # Stores (tool_call, result, tool_index, context)
+            tool_results_buffer = []
             if pending_tool_executions:
                 logger.debug(f"Waiting for {len(pending_tool_executions)} pending streamed tool executions")
                 self.trace.event(name="waiting_for_pending_streamed_tool_executions", level="DEFAULT", status_message=(f"Waiting for {len(pending_tool_executions)} pending streamed tool executions"))
-                # ... (asyncio.wait logic) ...
                 pending_tasks = [execution["task"] for execution in pending_tool_executions]
                 done, _ = await asyncio.wait(pending_tasks)
 
@@ -484,10 +563,8 @@ class ResponseProcessor:
                     context = execution["context"]
                     tool_name = context.function_name
                     
-                    # Check if status was already yielded during stream run
                     if tool_idx in yielded_tool_indices:
                          logger.debug(f"Status for tool index {tool_idx} already yielded.")
-                         # Still need to process the result for the buffer
                          try:
                              if execution["task"].done():
                                  result = execution["task"].result()
@@ -499,32 +576,28 @@ class ResponseProcessor:
                                      self.trace.event(name="terminating_tool_completed_during_streaming", level="DEFAULT", status_message=(f"Terminating tool '{tool_name}' completed during streaming. Setting termination flag."))
                                      agent_should_terminate = True
                                      
-                             else: # Should not happen with asyncio.wait
+                             else:
                                 logger.warning(f"Task for tool index {tool_idx} not done after wait.")
                                 self.trace.event(name="task_for_tool_index_not_done_after_wait", level="WARNING", status_message=(f"Task for tool index {tool_idx} not done after wait."))
                          except Exception as e:
                              logger.error(f"Error getting result for pending tool execution {tool_idx}: {str(e)}")
                              self.trace.event(name="error_getting_result_for_pending_tool_execution", level="ERROR", status_message=(f"Error getting result for pending tool execution {tool_idx}: {str(e)}"))
                              context.error = e
-                             # Save and Yield tool error status message (even if started was yielded)
                              error_msg_obj = await self._yield_and_save_tool_error(context, thread_id, thread_run_id)
                              if error_msg_obj: yield format_for_yield(error_msg_obj)
-                         continue # Skip further status yielding for this tool index
+                         continue
 
-                    # If status wasn't yielded before (shouldn't happen with current logic), yield it now
                     try:
                         if execution["task"].done():
                             result = execution["task"].result()
                             context.result = result
                             tool_results_buffer.append((execution["tool_call"], result, tool_idx, context))
                             
-                            # Check if this is a terminating tool
                             if tool_name in ['ask', 'complete', 'present_presentation']:
                                 logger.debug(f"Terminating tool '{tool_name}' completed during streaming. Setting termination flag.")
                                 self.trace.event(name="terminating_tool_completed_during_streaming", level="DEFAULT", status_message=(f"Terminating tool '{tool_name}' completed during streaming. Setting termination flag."))
                                 agent_should_terminate = True
                                 
-                            # Save and Yield tool completed/failed status
                             completed_msg_obj = await self._yield_and_save_tool_completed(
                                 context, None, thread_id, thread_run_id
                             )
@@ -534,13 +607,11 @@ class ResponseProcessor:
                         logger.error(f"Error getting result/yielding status for pending tool execution {tool_idx}: {str(e)}")
                         self.trace.event(name="error_getting_result_yielding_status_for_pending_tool_execution", level="ERROR", status_message=(f"Error getting result/yielding status for pending tool execution {tool_idx}: {str(e)}"))
                         context.error = e
-                        # Save and Yield tool error status
                         error_msg_obj = await self._yield_and_save_tool_error(context, thread_id, thread_run_id)
                         if error_msg_obj: yield format_for_yield(error_msg_obj)
                         yielded_tool_indices.add(tool_idx)
 
 
-            # Save and yield finish status if limit was reached
             if finish_reason == "xml_tool_limit_reached":
                 finish_content = {"status_type": "finish", "finish_reason": "xml_tool_limit_reached"}
                 finish_msg_obj = await self.add_message(
@@ -551,11 +622,8 @@ class ResponseProcessor:
                 logger.debug(f"Stream finished with reason: xml_tool_limit_reached after {xml_tool_call_count} XML tool calls")
                 self.trace.event(name="stream_finished_with_reason_xml_tool_limit_reached_after_xml_tool_calls", level="DEFAULT", status_message=(f"Stream finished with reason: xml_tool_limit_reached after {xml_tool_call_count} XML tool calls"))
 
-            # Calculate if auto-continue is needed if the finish reason is length
             should_auto_continue = (can_auto_continue and finish_reason == 'length')
 
-            # --- SAVE and YIELD Final Assistant Message ---
-            # Only save assistant message if NOT auto-continuing due to length to avoid duplicate messages
             if accumulated_content and not should_auto_continue:
                 # ... (Truncate accumulated_content logic) ...
                 if config.max_xml_tool_calls > 0 and xml_tool_call_count >= config.max_xml_tool_calls and xml_chunks_buffer:
