@@ -85,7 +85,10 @@ async def handle_usage_unified(
     message_id: str = None,
     model: str = None,
     prompt_tokens: int = None,
-    completion_tokens: int = None
+    completion_tokens: int = None,
+    description: str = None,
+    cache_read_tokens: int = 0,
+    cache_creation_tokens: int = 0
 ) -> Tuple[bool, str]:
     """
     Unified usage handling that routes to the appropriate billing system.
@@ -96,12 +99,15 @@ async def handle_usage_unified(
     Args:
         client: Supabase client (maintained for API compatibility)
         account_id: The basejump account ID
-        token_cost: Cost in dollars to charge
+        token_cost: Cost in dollars to charge (already includes cache discounts)
         thread_id: Optional thread ID for tracking
         message_id: Optional message ID for tracking
         model: Optional model name for tracking
         prompt_tokens: Optional prompt tokens count for detailed tracking
         completion_tokens: Optional completion tokens count for detailed tracking
+        description: Optional description including cache info
+        cache_read_tokens: Number of tokens read from cache (for tracking)
+        cache_creation_tokens: Number of tokens used for cache creation (for tracking)
         
     Returns:
         Tuple[bool, str]: (success, message)
@@ -109,13 +115,19 @@ async def handle_usage_unified(
     try:
         # If enterprise mode is enabled, ALL accounts use enterprise credits
         if config.ENTERPRISE_MODE:
+            cache_info = ""
+            if cache_read_tokens > 0:
+                cache_info = f" (🎯 cached: {cache_read_tokens} tokens)"
+            
             logger.debug(
-                f"Enterprise mode enabled, using enterprise credits for account {account_id}",
+                f"Enterprise mode enabled, using enterprise credits for account {account_id}{cache_info}",
                 account_id=account_id,
                 token_cost=token_cost,
                 thread_id=thread_id,
                 message_id=message_id,
-                model=model
+                model=model,
+                cache_read_tokens=cache_read_tokens,
+                cache_creation_tokens=cache_creation_tokens
             )
             
             # Calculate total tokens for enterprise billing

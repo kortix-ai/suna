@@ -1,5 +1,3 @@
-
-
 import os
 import json
 import asyncio
@@ -28,13 +26,6 @@ from core.utils.llm_cache_utils import format_message_with_cache
 from billing.billing_integration import billing_integration
 from core.tools.sb_vision_tool import SandboxVisionTool
 from core.tools.sb_image_edit_tool import SandboxImageEditTool
-from core.tools.sb_video_avatar_tool import SandboxVideoAvatarTool
-from core.tools.sb_presentation_outline_tool import SandboxPresentationOutlineTool
-from core.tools.sb_presentation_tool import SandboxPresentationTool
-from core.services.billing_wrapper import check_billing_status_unified
-from core.tools.sb_vision_tool import SandboxVisionTool
-from core.tools.sb_image_edit_tool import SandboxImageEditTool
-from core.tools.sb_video_avatar_tool import SandboxVideoAvatarTool
 from core.tools.sb_presentation_outline_tool import SandboxPresentationOutlineTool
 from core.tools.sb_presentation_tool import SandboxPresentationTool
 
@@ -47,7 +38,6 @@ from core.agentpress.tool import SchemaType
 from core.tools.sb_sheets_tool import SandboxSheetsTool
 # from core.tools.sb_web_dev_tool import SandboxWebDevTool  # DEACTIVATED
 from core.tools.sb_upload_file_tool import SandboxUploadFileTool
-from core.tools.podcast_tool import SandboxPodcastTool
 from core.tools.sb_docs_tool import SandboxDocsTool
 
 load_dotenv()
@@ -66,8 +56,6 @@ class AgentConfig:
     enable_context_manager: bool = True
     agent_config: Optional[dict] = None
     trace: Optional[StatefulTraceClient] = None
-    is_agent_builder: Optional[bool] = False
-    target_agent_id: Optional[str] = None
 
 
 class ToolManager:
@@ -123,13 +111,11 @@ class ToolManager:
             ('sb_image_edit_tool', SandboxImageEditTool, {'project_id': self.project_id, 'thread_id': self.thread_id, 'thread_manager': self.thread_manager}),
             ('sb_presentation_outline_tool', SandboxPresentationOutlineTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
             ('sb_presentation_tool', SandboxPresentationTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
-            ('sb_video_avatar_tool', SandboxVideoAvatarTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
+
             ('sb_sheets_tool', SandboxSheetsTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
             # ('sb_web_dev_tool', SandboxWebDevTool, {'project_id': self.project_id, 'thread_id': self.thread_id, 'thread_manager': self.thread_manager}),  # DEACTIVATED
             ('sb_upload_file_tool', SandboxUploadFileTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
-            ('podcast_tool', SandboxPodcastTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
             ('sb_docs_tool', SandboxDocsTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
-
         ]
         
         for tool_name, tool_class, kwargs in sandbox_tools:
@@ -398,6 +384,7 @@ class PromptManager:
         now = datetime.datetime.now(datetime.timezone.utc)
         datetime_info = f"\n\n=== CURRENT DATE/TIME INFORMATION ===\n"
         datetime_info += f"Today's date: {now.strftime('%A, %B %d, %Y')}\n"
+        datetime_info += f"Current UTC time: {now.strftime('%H:%M:%S UTC')}\n"
         datetime_info += f"Current year: {now.strftime('%Y')}\n"
         datetime_info += f"Current month: {now.strftime('%B')}\n"
         datetime_info += f"Current day: {now.strftime('%A')}\n"
@@ -486,28 +473,18 @@ class AgentRunner:
             logger.debug(f"No sandbox found for project {self.config.project_id}; will create lazily when needed")
     
     async def setup_tools(self):
-        # Enrich agent config with LlamaCloud knowledge bases if agent exists
-        if self.config.agent_config and self.config.agent_config.get('agent_id'):
-            try:
-                from core.config_helper import enrich_agent_config_with_llamacloud_kb
-                self.config.agent_config = await enrich_agent_config_with_llamacloud_kb(self.config.agent_config)
-            except Exception as e:
-                logger.error(f"Failed to enrich agent config with LlamaCloud knowledge bases: {e}")
-        
         tool_manager = ToolManager(self.thread_manager, self.config.project_id, self.config.thread_id)
         
+        # Use agent ID from agent config if available (for any agent with builder tools enabled)
         agent_id = None
-        if self.config.agent_config and (self.config.agent_config.get('is_suna_default', False) or self.config.agent_config.get('is_omni_default', False)):
+        if self.config.agent_config:
             agent_id = self.config.agent_config.get('agent_id')
-        elif self.config.is_agent_builder and self.config.target_agent_id:
-            agent_id = self.config.target_agent_id
         
+        # Convert agent config to disabled tools list
         disabled_tools = self._get_disabled_tools_from_config()
         
+        # Register all tools with exclusions
         tool_manager.register_all_tools(agent_id=agent_id, disabled_tools=disabled_tools)
-        
-        # Register LlamaCloud knowledge search tool (default Suna agent)
-        await self._register_llamacloud_knowledge_tool()
         
         # Register Suna-specific tools if this is a Suna default agent or no specific agent is configured
         is_suna_agent = (self.config.agent_config and self.config.agent_config.get('is_suna_default', False)) or (self.config.agent_config is None)
@@ -520,6 +497,7 @@ class AgentRunner:
             logger.debug("Not a Suna agent, skipping Suna-specific tool registration")
     
     def _register_suna_specific_tools(self, disabled_tools: List[str]):
+        """Register tools specific to Suna (the default agent)."""
         if 'agent_creation_tool' not in disabled_tools:
             from core.tools.agent_creation_tool import AgentCreationTool
             from core.services.supabase import DBConnection
@@ -543,8 +521,7 @@ class AgentRunner:
         if not isinstance(raw_tools, dict):
             return disabled_tools
         
-        # Special case: Suna default agents with empty tool config enable all tools
-        if (self.config.agent_config.get('is_suna_default', False) or self.config.agent_config.get('is_omni_default', False)) and not raw_tools:
+        if self.config.agent_config.get('is_suna_default', False) and not raw_tools:
             return disabled_tools
         
         def is_tool_enabled(tool_name: str) -> bool:
@@ -577,22 +554,6 @@ class AgentRunner:
         logger.debug(f"Disabled tools from config: {disabled_tools}")
         return disabled_tools
     
-    async def _register_llamacloud_knowledge_tool(self):
-        """Register LlamaCloud knowledge search tool if agent has LlamaCloud knowledge bases configured"""
-        if self.config.agent_config and self.config.agent_config.get('llamacloud_knowledge_bases'):
-            try:
-                from core.tools.knowledge_search_tool import KnowledgeSearchTool
-                logger.info(f"Registering LlamaCloud knowledge search tool with {len(self.config.agent_config['llamacloud_knowledge_bases'])} knowledge bases")
-                self.thread_manager.add_tool(
-                    KnowledgeSearchTool, 
-                    thread_manager=self.thread_manager, 
-                    knowledge_bases=self.config.agent_config['llamacloud_knowledge_bases']
-                )
-            except ImportError as e:
-                logger.error(f"Failed to import KnowledgeSearchTool: {e}")
-            except Exception as e:
-                logger.error(f"Failed to register LlamaCloud knowledge search tool: {e}")
-    
     async def setup_mcp_tools(self) -> Optional[MCPToolWrapper]:
         if not self.config.agent_config:
             return None
@@ -622,7 +583,6 @@ class AgentRunner:
             self.config.thread_id, 
             mcp_wrapper_instance, self.client
         )
-        logger.info(f"📝 System message built once: {len(str(system_message.get('content', '')))} chars")
         logger.debug(f"model_name received: {self.config.model_name}")
         iteration_count = 0
         continue_execution = True
@@ -663,61 +623,65 @@ class AgentRunner:
             logger.debug(f"max_tokens: {max_tokens}")
             generation = self.config.trace.generation(name="thread_manager.run_thread") if self.config.trace else None
             try:
+                # Hybrid approach: Get cache metrics via probe for models that need it, then stream
                 cache_metrics = None
                 from core.utils.llm_cache_utils import is_cache_supported, needs_cache_probe
                 
                 if self.config.stream and needs_cache_probe(self.config.model_name):
-                    logger.info(f"🔍 Making cache probe for {self.config.model_name} (doesn't send cache metrics in streaming)...")
+                    # Get conversation history
+                    existing_messages = await self.thread_manager.get_llm_messages(self.config.thread_id)
                     
-                    try:
-                        from core.services.llm import make_llm_api_call
-                        existing_messages = await self.thread_manager.get_llm_messages(self.config.thread_id)
-                        if existing_messages and len(existing_messages) > 0:
-                            probe_messages = [system_message] + existing_messages[-4:]  # Last 4 messages
-                        else:
-                            probe_messages = [system_message]
+                    if existing_messages and len(existing_messages) > 0:
+                        # Make a quick non-streaming probe to get cache metrics for models that don't send them in streaming
+                        logger.info(f"🔍 Making cache probe for {self.config.model_name} (doesn't send cache metrics in streaming)...")
                         
-                        probe_messages.append({
-                            "role": "user", 
-                            "content": "."
-                        })
-                        
-                        probe_response = await make_llm_api_call(
-                            messages=probe_messages,
-                            model_name=self.config.model_name,
-                            temperature=0,
-                            max_tokens=1,
-                            stream=False
-                        )
-                        
-                        if hasattr(probe_response, 'usage'):
-                            usage = probe_response.usage
-                            cache_creation = getattr(usage, 'cache_creation_input_tokens', 0)
-                            cache_read = getattr(usage, 'cache_read_input_tokens', 0)
-                            total_prompt = getattr(usage, 'prompt_tokens', 0)
+                        try:
+                            from core.services.llm import make_llm_api_call
                             
-                            if cache_read > 0 or cache_creation > 0:
-                                cache_percentage = (cache_read / total_prompt * 100) if total_prompt > 0 else 0
-                                logger.info(f"✅ CACHE PROBE: {cache_read}/{total_prompt} tokens cached ({cache_percentage:.1f}%), {cache_creation} created")
+                            # Get last few messages for the probe
+                            probe_messages = [system_message] + existing_messages[-2:]
+                            
+                            # Add a minimal probe message - just a single character to minimize cost
+                            probe_messages.append({
+                                "role": "user", 
+                                "content": "."  # Minimal content - just a period
+                            })
+                            
+                            # Make non-streaming probe call with minimal output
+                            probe_response = await make_llm_api_call(
+                                messages=probe_messages,
+                                model_name=self.config.model_name,
+                                temperature=0,
+                                max_tokens=1,  # Absolute minimum - 1 token output
+                                stream=False   # Non-streaming to get cache metrics
+                            )
+                            
+                            # Extract cache metrics from probe
+                            if hasattr(probe_response, 'usage'):
+                                usage = probe_response.usage
+                                cache_creation = getattr(usage, 'cache_creation_input_tokens', 0)
+                                cache_read = getattr(usage, 'cache_read_input_tokens', 0)
+                                total_prompt = getattr(usage, 'prompt_tokens', 0)
                                 
-                                cache_metrics = {
-                                    'cache_read_tokens': cache_read,
-                                    'cache_creation_tokens': cache_creation,
-                                    'cache_percentage': cache_percentage,
-                                    'total_prompt_tokens': total_prompt
-                                }
-                            else:
-                                logger.info(f"📊 CACHE PROBE: No cache activity (total prompt: {total_prompt} tokens)")
-                                cache_metrics = {
-                                    'cache_read_tokens': 0,
-                                    'cache_creation_tokens': 0,
-                                    'cache_percentage': 0,
-                                    'total_prompt_tokens': total_prompt
-                                }
-                    
-                    except Exception as e:
-                        logger.warning(f"Cache probe failed (continuing with streaming): {e}")
+                                if cache_read > 0:
+                                    cache_percentage = (cache_read / total_prompt * 100) if total_prompt > 0 else 0
+                                    logger.info(f"✅ CACHE PROBE SUCCESS: {cache_read}/{total_prompt} tokens cached ({cache_percentage:.1f}%)")
+                                    
+                                    # Store metrics for billing
+                                    cache_metrics = {
+                                        'cache_read_tokens': cache_read,
+                                        'cache_creation_tokens': cache_creation,
+                                        'cache_percentage': cache_percentage
+                                    }
+                                else:
+                                    logger.info(f"📊 CACHE PROBE: No cache used (first message or cache expired)")
+                        
+                        except Exception as e:
+                            logger.warning(f"Cache probe failed (continuing with streaming): {e}")
+                    else:
+                        logger.debug("📊 Skipping cache probe - no conversation history yet")
                 
+                # Now make the actual call (streaming or not)
                 response = await self.thread_manager.run_thread(
                     thread_id=self.config.thread_id,
                     system_prompt=system_message,
@@ -730,10 +694,10 @@ class AgentRunner:
                     temporary_message=temporary_message,
                     processor_config=ProcessorConfig(
                         xml_tool_calling=True,
-                        native_tool_calling=True,
+                        native_tool_calling=False,
                         execute_tools=True,
                         execute_on_stream=True,
-                        tool_execution_strategy="sequential",
+                        tool_execution_strategy="parallel",
                         xml_adding_strategy="user_message"
                     ),
                     native_max_auto_continues=self.config.native_max_auto_continues,
@@ -742,7 +706,7 @@ class AgentRunner:
                     reasoning_effort=self.config.reasoning_effort,
                     enable_context_manager=self.config.enable_context_manager,
                     generation=generation,
-                    cache_metrics=cache_metrics
+                    cache_metrics=cache_metrics  # Pass cache metrics from probe
                 )
 
                 if isinstance(response, dict) and "status" in response and response["status"] == "error":
@@ -825,7 +789,6 @@ class AgentRunner:
 
                 except Exception as e:
                     error_msg = f"Error during response streaming: {str(e)}"
-                    logger.error(f"Response streaming error: {error_msg}", exc_info=True)
                     if generation:
                         generation.end(output=full_response, status_message=error_msg, level="ERROR")
                     yield {
@@ -837,7 +800,6 @@ class AgentRunner:
                     
             except Exception as e:
                 error_msg = f"Error running thread: {str(e)}"
-                logger.error(f"Thread execution error: {error_msg}", exc_info=True)
                 yield {
                     "type": "status",
                     "status": "error",
@@ -863,9 +825,7 @@ async def run_agent(
     reasoning_effort: Optional[str] = 'low',
     enable_context_manager: bool = True,
     agent_config: Optional[dict] = None,    
-    trace: Optional[StatefulTraceClient] = None,
-    is_agent_builder: Optional[bool] = False,
-    target_agent_id: Optional[str] = None
+    trace: Optional[StatefulTraceClient] = None
 ):
     effective_model = model_name
     is_tier_default = model_name in ["Kimi K2", "Claude Sonnet 4", "openai/gpt-5-mini"]
@@ -889,9 +849,7 @@ async def run_agent(
         reasoning_effort=reasoning_effort,
         enable_context_manager=enable_context_manager,
         agent_config=agent_config,
-        trace=trace,
-        is_agent_builder=is_agent_builder,
-        target_agent_id=target_agent_id
+        trace=trace
     )
     
     runner = AgentRunner(config)

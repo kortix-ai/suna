@@ -140,42 +140,16 @@ def _configure_token_limits(params: Dict[str, Any], model_name: str, max_tokens:
     param_name = "max_completion_tokens" if (is_openai_o_series or is_openai_gpt5) else "max_tokens"
     params[param_name] = max_tokens
 
-def _apply_anthropic_caching(messages: List[Dict[str, Any]]) -> None:
-    """Apply Anthropic caching to the messages."""
-
-    # Apply cache control to the first 4 text blocks across all messages
-    cache_control_count = 0
-    max_cache_control_blocks = 3
-    
-    for message in messages:
-        if cache_control_count >= max_cache_control_blocks:
-            break
-            
-        content = message.get("content")
-        
-        if isinstance(content, str):
-            message["content"] = [
-                {"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}
-            ]
-            cache_control_count += 1
-        elif isinstance(content, list):
-            for item in content:
-                if cache_control_count >= max_cache_control_blocks:
-                    break
-                if isinstance(item, dict) and item.get("type") == "text" and "cache_control" not in item:
-                    item["cache_control"] = {"type": "ephemeral"}
-                    cache_control_count += 1
-
-def _configure_anthopic(params: Dict[str, Any], model_name: str, messages: List[Dict[str, Any]]) -> None:
+def _configure_anthropic(params: Dict[str, Any], model_name: str, messages: List[Dict[str, Any]]) -> None:
     """Configure Anthropic-specific parameters."""
     if not ("claude" in model_name.lower() or "anthropic" in model_name.lower()):
         return
     
+    # Include both prompt caching and extended output beta features
     params["extra_headers"] = {
-        "anthropic-beta": "output-128k-2025-02-19"
+        "anthropic-beta": "prompt-caching-2024-07-31,max-tokens-3-5-sonnet-2024-07-15"
     }
-    logger.debug("Added Anthropic-specific headers")
-    _apply_anthropic_caching(messages)
+    logger.debug(f"Added Anthropic-specific headers for prompt caching and extended output")
 
 def _configure_openrouter(params: Dict[str, Any], model_name: str) -> None:
     """Configure OpenRouter-specific parameters."""
@@ -330,7 +304,7 @@ def prepare_params(
     # Add tools if provided
     _add_tools_config(params, tools, tool_choice)
     # Add Anthropic-specific parameters
-    _configure_anthopic(params, resolved_model_name, params["messages"])
+    _configure_anthropic(params, resolved_model_name, params["messages"])
     # Add OpenRouter-specific parameters
     _configure_openrouter(params, resolved_model_name)
     # Add Bedrock-specific parameters
@@ -390,6 +364,16 @@ async def make_llm_api_call(
     # debug <timestamp>.json messages
     logger.debug(f"Making LLM API call to model: {model_name} (Thinking: {enable_thinking}, Effort: {reasoning_effort})")
     logger.debug(f"📡 API Call: Using model {model_name}")
+
+    logger.info(f"📥 Received {len(messages)} messages for LLM call")
+    for i, msg in enumerate(messages):
+        role = msg.get('role', 'unknown')
+        content = msg.get('content', '')
+        if isinstance(content, list) and content:
+            has_cache = 'cache_control' in content[0] if isinstance(content[0], dict) else False
+            content_len = len(str(content[0].get('text', ''))) if isinstance(content[0], dict) else 0
+            logger.info(f"  Input msg {i}: role={role}, has_cache={has_cache}, length={content_len}")
+    
     params = prepare_params(
         messages=messages,
         model_name=model_name,
@@ -406,16 +390,48 @@ async def make_llm_api_call(
         enable_thinking=enable_thinking,
         reasoning_effort=reasoning_effort,
     )
+    # Debug: Log what we're sending to LiteLLM
+    if 'messages' in params:
+        logger.info(f"📨 Sending to LiteLLM: {len(params['messages'])} messages")
+        for i, msg in enumerate(params['messages'][:3]):  # Only log first 3 to avoid spam
+            role = msg.get('role', 'unknown')
+            content = msg.get('content', '')
+            if isinstance(content, list) and content:
+                has_cache = 'cache_control' in content[0] if isinstance(content[0], dict) else False
+                logger.info(f"  Final msg {i}: role={role}, has_cache={has_cache}")
+                # Log the actual cache_control value if present
+                if has_cache:
+                    logger.info(f"    cache_control value: {content[0].get('cache_control')}")
+    
+    # Log the headers being sent
+    if 'extra_headers' in params:
+        logger.info(f"📮 Headers to LiteLLM: {params['extra_headers']}")
+    
     try:
         response = await provider_router.acompletion(**params)
         logger.debug(f"Successfully received API response from {model_name}")
-        # logger.debug(f"Response: {response}")
+        
+        # Check if streaming
+        is_streaming = params.get('stream', False)
+        
+        if not is_streaming and hasattr(response, 'usage'):
+            usage = response.usage
+            cache_creation = getattr(usage, 'cache_creation_input_tokens', 0)
+            cache_read = getattr(usage, 'cache_read_input_tokens', 0)
+            total_tokens = getattr(usage, 'prompt_tokens', 0)
+            
+            if cache_creation > 0 or cache_read > 0:
+                logger.info(f"🎯 CACHE METRICS: creation={cache_creation}, read={cache_read}, total={total_tokens}")
+            else:
+                logger.warning(f"⚠️ NO CACHE USED: total_tokens={total_tokens}")
+        elif is_streaming:
+            logger.info(f"📡 Streaming response - cache metrics will be in final chunk")
+        
         return response
 
     except Exception as e:
         logger.error(f"Unexpected error during API call: {str(e)}", exc_info=True)
         raise LLMError(f"API call failed: {str(e)}")
 
-# Initialize API keys on module import
 setup_api_keys()
 setup_provider_router()

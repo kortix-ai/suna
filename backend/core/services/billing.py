@@ -880,7 +880,7 @@ async def get_allowed_models_for_user(client, user_id: str):
         
         # If user has an active trial, they get paid tier access
         if trial_status == 'active':
-            tier_name = 'tier_2_20'  # Trial gives access to $20 tier
+            tier_name = 'tier_2_20'  # Trial gives access to Starter tier features
         else:
             tier_name = credit_account.get('tier', 'none')
     
