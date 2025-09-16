@@ -16,6 +16,7 @@ import { toast } from 'sonner';
 import { TrialManagement } from '@/components/dashboard/trial-management';
 import { useTransactions } from '@/hooks/react-query/billing/use-transactions';
 import { Clock, Infinity, TrendingUp, TrendingDown, RefreshCw, DollarSign } from 'lucide-react';
+import CreditTransactions from '@/components/billing/credit-transactions';
 
 const returnUrl = process.env.NEXT_PUBLIC_URL as string;
 
@@ -163,6 +164,11 @@ export default function PersonalAccountBillingPage() {
             </div>
           </>
         )}
+      </div>
+      
+      {/* Usage Logs / Transaction History */}
+      <div className="mt-8">
+        <CreditTransactions />
       </div>
     </div>
   );
