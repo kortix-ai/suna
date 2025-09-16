@@ -100,7 +100,8 @@ const defaultRegistry: ToolViewRegistryType = {
 
   'expose-port': ExposePortToolView,
 
-  'see-image': SeeImageToolView,
+  'load-image': SeeImageToolView,
+  'clear-images-from-context': SeeImageToolView,
   'image-edit-or-generate': ImageEditGenerateToolView,
 
   'ask': AskToolView,

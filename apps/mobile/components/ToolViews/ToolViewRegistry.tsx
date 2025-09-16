@@ -64,7 +64,7 @@ const defaultRegistry: Record<string, ToolViewComponent> = {
     'terminate-command': TerminateCommandToolView,
 
 
-    'see-image': SeeImageToolView,
+    'load-image': SeeImageToolView,
 
     'expose-port': ExposePortToolView,
     'get-data-provider-endpoints': DataProviderEndpointsToolView,

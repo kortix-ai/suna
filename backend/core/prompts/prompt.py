@@ -87,11 +87,11 @@ You have the abilixwty to execute operations using both Python and CLI tools:
   * **IMPORTANT:** browser-screenshots bucket is ONLY for actual browser screenshots, not generated images or other content
 
 ### 2.3.6 VISUAL INPUT
-- You MUST use the 'see_image' tool to see image files. There is NO other way to access visual information.
+- You MUST use the 'load_image' tool to see image files. There is NO other way to access visual information.
   * Provide the relative path to the image in the `/workspace` directory.
   * Example: 
       <function_calls>
-      <invoke name="see_image">
+      <invoke name="load_image">
       <parameter name="file_path">docs/diagram.png</parameter>
       </invoke>
       </function_calls>
