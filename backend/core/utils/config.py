@@ -51,7 +51,7 @@ class Configuration:
     OMNI_ADMIN: str = "sundar@latent-labs.ai,varnika@latent-labs.ai,arjun@latent-labs.ai"
     
     # Subscription tier IDs - Production
-    STRIPE_FREE_TIER_ID_PROD: str = 'price_1S7ibVRGnNhiCsluStxGsdsPT'
+    STRIPE_FREE_TIER_ID_PROD: str = 'price_1S7ibVRGnNsdCsluStxGPsPT'
     STRIPE_TIER_2_20_ID_PROD: str = 'price_1S7ibVRGnNhiCsluStxGPsPT'
     STRIPE_TIER_6_50_ID_PROD: str = 'price_1S7ibVRGnNhiCslujX0nuAnS'
     STRIPE_TIER_12_100_ID_PROD: str = 'price_1S7ibVRGnNhiCsluh23GQqnG'
@@ -368,6 +368,8 @@ class Configuration:
         'tier_2_17_yearly_commitment': 5,
         'tier_6_42_yearly_commitment': 20,
         'tier_25_170_yearly_commitment': 100,
+        # Enterprise mode - generous limit for on-premise deployments
+        'enterprise': 100,
     }
 
     # Project limits per billing tier

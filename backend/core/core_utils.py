@@ -383,6 +383,28 @@ async def check_agent_count_limit(client, account_id: str) -> Dict[str, Any]:
                 'tier_name': 'local'
             }
         
+        # In enterprise mode, use generous enterprise limits
+        if getattr(config, 'ENTERPRISE_MODE', False):
+            # Still count agents for tracking purposes
+            agents_result = await client.table('agents').select('agent_id, metadata').eq('account_id', account_id).execute()
+            
+            non_default_agents = []
+            for agent in agents_result.data or []:
+                metadata = agent.get('metadata', {}) or {}
+                is_default_agent = metadata.get('is_suna_default', False) or metadata.get('is_omni_default', False)
+                if not is_default_agent:
+                    non_default_agents.append(agent)
+                    
+            current_count = len(non_default_agents)
+            agent_limit = config.AGENT_LIMITS['enterprise']
+            
+            return {
+                'can_create': current_count < agent_limit,
+                'current_count': current_count,
+                'limit': agent_limit,
+                'tier_name': 'enterprise'
+            }
+        
         # Always query fresh data from database to avoid stale cache issues
         agents_result = await client.table('agents').select('agent_id, metadata').eq('account_id', account_id).execute()
         
