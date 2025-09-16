@@ -62,6 +62,7 @@ class Configuration:
     # Yearly subscription tier IDs - Production (15% discount)
     STRIPE_TIER_2_20_YEARLY_ID_PROD: str = 'price_1S7ibVRGnNhiCsluhhvXWzqz'  # $204/year
     STRIPE_TIER_6_50_YEARLY_ID_PROD: str = 'price_1S7ibVRGnNhiCslumCV9PbBR'  # $510/year
+    STRIPE_TIER_12_100_YEARLY_ID_PROD: str = 'price_1S7ibVRGnNhiCslujX0nuAnS'  # random price id
     STRIPE_TIER_25_200_YEARLY_ID_PROD: str = 'price_1S7ibVRGnNhiCsluh23GQqnG'  # $2040/year
     STRIPE_TIER_50_400_YEARLY_ID_PROD: str = 'price_1ReH9fG6l1KZGqIrsPtu5KIA'
     STRIPE_TIER_125_800_YEARLY_ID_PROD: str = 'price_1ReH9GG6l1KZGqIrfgqaJyat'
