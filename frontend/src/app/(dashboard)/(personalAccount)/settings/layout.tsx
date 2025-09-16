@@ -15,13 +15,10 @@ export default function PersonalAccountSettingsPage({
   const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
   
   const items = [
-    // Show billing and usage logs for SaaS mode, transactions for enterprise mode
+    // Show billing for SaaS mode (includes usage logs), transactions for enterprise mode  
     ...(isEnterpriseMode 
       ? [{ name: 'Transactions', href: '/settings/transactions' }]
-      : [
-          { name: 'Billing', href: '/settings/billing' },
-          { name: 'Usage Logs', href: '/settings/usage-logs' }
-        ]
+      : [{ name: 'Billing', href: '/settings/billing' }]
     ),
   ];
   return (
