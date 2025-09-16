@@ -20,7 +20,7 @@ interface CustomMCPDialogProps {
 
 interface CustomMCPConfiguration {
   name: string;
-  type: 'http';
+  type: 'http' | 'sse';
   config: any;
   enabledTools: string[];
   selectedProfileId?: string;
@@ -77,8 +77,6 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
     setDiscoveredTools([]);
     
     try {
-      let parsedConfig: any;
-      
       const url = configText.trim();
       if (!url) {
         throw new Error('Please enter the MCP server URL.');
@@ -87,7 +85,7 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
         throw new Error('Please enter a name for this MCP server.');
       }
       
-      parsedConfig = { 
+      const parsedConfig = { 
         url,
         headers: headers.reduce((acc, h) => {
           if (h.key.trim() && h.value.trim()) {
@@ -171,7 +169,7 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
     setValidationError(null);
 
     try {
-      let configToSave: any = { 
+      const configToSave = { 
         url: configText.trim(),
         headers: headers.reduce((acc, h) => {
           if (h.key.trim() && h.value.trim()) {
