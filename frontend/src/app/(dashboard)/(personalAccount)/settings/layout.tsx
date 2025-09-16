@@ -14,9 +14,11 @@ export default function PersonalAccountSettingsPage({
   const isEnterpriseMode = process.env.NEXT_PUBLIC_ENTERPRISE_MODE === 'true';
   
   const items = [
-    // Hide billing in enterprise mode, keep transactions
-    ...(isEnterpriseMode ? [] : [{ name: 'Billing', href: '/settings/billing' }]),
-    { name: 'Transactions', href: '/settings/transactions' },
+    // Show billing for SaaS mode, transactions for enterprise mode
+    ...(isEnterpriseMode 
+      ? [{ name: 'Transactions', href: '/settings/transactions' }]
+      : [{ name: 'Billing', href: '/settings/billing' }]
+    ),
   ];
   return (
     <>
