@@ -350,6 +350,7 @@ class MCPService:
         
         try:
             headers = self._get_custom_headers("discovery", config)
+            self._logger.debug(f"Attempting SSE discovery for {url} with headers: {list(headers.keys())}")
             try:
                 # Try with headers first
                 async with sse_client(url, headers=headers) as (read_stream, write_stream):
