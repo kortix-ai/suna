@@ -368,6 +368,8 @@ class Configuration:
         'tier_2_17_yearly_commitment': 5,
         'tier_6_42_yearly_commitment': 20,
         'tier_25_170_yearly_commitment': 100,
+        # Enterprise mode - generous limit for on-premise deployments
+        'enterprise': 100,
     }
 
     # Project limits per billing tier
