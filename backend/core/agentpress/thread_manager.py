@@ -13,7 +13,7 @@ This module provides comprehensive conversation management, including:
 import json
 from typing import List, Dict, Any, Optional, Type, Union, AsyncGenerator, Literal, cast, Callable
 from core.services.llm import make_llm_api_call
-from core.utils.llm_cache_utils import apply_cache_to_messages
+from core.utils.llm_cache_utils import apply_cache_to_messages, validate_cache_blocks
 from core.agentpress.tool import Tool
 from core.agentpress.tool_registry import ToolRegistry
 from core.agentpress.context_manager import ContextManager
@@ -475,14 +475,11 @@ When using the tools:
                     if isinstance(msg, dict) and msg.get('role') == 'user':
                         last_user_index = i
 
-                # Add all messages (temporary messages are no longer used)
                 prepared_messages.extend(messages)
 
-                # Add partial assistant content for auto-continue context (without saving to DB)
                 if auto_continue_count > 0 and continuous_state.get('accumulated_content'):
                     partial_content = continuous_state.get('accumulated_content', '')
                     
-                    # Create temporary assistant message with just the text content
                     temporary_assistant_message = {
                         "role": "assistant",
                         "content": partial_content
@@ -542,8 +539,49 @@ When using the tools:
                 except Exception as e:
                     logger.warning(f"Failed to retrieve and inject memory context: {str(e)}")
 
-                # 4.6. Apply caching logic to messages after memory injection
-                prepared_messages = apply_cache_to_messages(prepared_messages, llm_model)
+                # 4.6. Apply enhanced caching logic to messages after memory injection
+                if token_count < 80_000:
+                    prepared_messages = apply_cache_to_messages(prepared_messages, llm_model)
+                    prepared_messages = validate_cache_blocks(prepared_messages, llm_model)
+                else:
+                    logger.warning(f"⚠️ Skipping cache formatting due to high token count: {token_count}")
+
+                # 4.7. Enhanced token management and context window handling
+                try:
+                    final_token_count = token_counter(model=llm_model, messages=prepared_messages)
+                    
+                    if final_token_count != token_count:
+                        logger.info(f"📊 Final token count: {final_token_count} (initial was {token_count})")
+                    
+                    from core.ai_models import model_manager
+                    context_window = model_manager.get_context_window(llm_model)
+                    
+                    if context_window >= 200_000:
+                        safe_limit = 168_000
+                    elif context_window >= 100_000:
+                        safe_limit = context_window - 20_000
+                    else:
+                        safe_limit = context_window - 10_000
+                    
+                    if final_token_count > safe_limit:
+                        logger.warning(f"⚠️ Token count {final_token_count} exceeds safe limit {safe_limit}, compressing messages...")
+                        prepared_messages = self.context_manager.compress_messages(
+                            prepared_messages, 
+                            llm_model,
+                            max_tokens=safe_limit
+                        )
+                        compressed_token_count = token_counter(model=llm_model, messages=prepared_messages)
+                        logger.info(f"✅ Compressed messages: {final_token_count} → {compressed_token_count} tokens")
+                        
+                        if compressed_token_count > safe_limit:
+                            logger.error(f"❌ Still over limit after compression: {compressed_token_count} > {safe_limit}")
+                            prepared_messages = self.context_manager.compress_messages_by_omitting_messages(
+                                prepared_messages,
+                                llm_model, 
+                                max_tokens=safe_limit - 10_000
+                            )   
+                except Exception as e:
+                    logger.error(f"Error in token checking/compression: {str(e)}")
                 
                 # Check for multiple system messages (which can break caching)
                 system_count = sum(1 for msg in prepared_messages if msg.get('role') == 'system')
@@ -591,7 +629,7 @@ When using the tools:
                         )
 
                     llm_response = await make_llm_api_call(
-                        prepared_messages, # Pass the potentially modified messages
+                        prepared_messages,
                         llm_model,
                         temperature=llm_temperature,
                         max_tokens=llm_max_tokens,

@@ -20,7 +20,7 @@ def get_resolved_model_id(model_name: str) -> str:
         return model_name
 
 
-def format_message_with_cache(message: Dict[str, Any], model_name: str, min_chars_for_cache: int = 3584) -> Dict[str, Any]:
+def format_message_with_cache(message: Dict[str, Any], model_name: str, min_chars_for_cache: int = 10000) -> Dict[str, Any]:
     if not message or not isinstance(message, dict):
         logger.debug(f"Skipping cache format: message is not a dict")
         return message
@@ -37,6 +37,7 @@ def format_message_with_cache(message: Dict[str, Any], model_name: str, min_char
             logger.debug(f"Content is already a list but no cache_control found")
         return message
     
+    # Increased min chars threshold to be more selective about what gets cached
     if len(str(content)) < min_chars_for_cache:
         logger.debug(f"Content too short for caching: {len(str(content))} < {min_chars_for_cache}")
         return message
@@ -68,11 +69,17 @@ def format_message_with_cache(message: Dict[str, Any], model_name: str, min_char
 
 
 def apply_cache_to_messages(messages: List[Dict[str, Any]], model_name: str, 
-                           max_messages_to_cache: int = 4) -> List[Dict[str, Any]]:
+                           max_messages_to_cache: int = 2) -> List[Dict[str, Any]]:
     if not messages:
         return messages
     
     resolved_model = get_resolved_model_id(model_name)
+    model_lower = resolved_model.lower()
+    
+    if not any(provider in model_lower for provider in ['anthropic', 'claude', 'sonnet', 'haiku', 'opus']):
+        logger.debug(f"Model {resolved_model} doesn't need cache_control blocks")
+        return messages
+    
     logger.info(f"📊 apply_cache_to_messages called with {len(messages)} messages for model: {model_name} (resolved: {resolved_model})")
     
     formatted_messages = []
@@ -88,22 +95,28 @@ def apply_cache_to_messages(messages: List[Dict[str, Any]], model_name: str,
                 formatted_messages.append(message)
                 continue
         
-        if cache_count < max_messages_to_cache:
-            logger.debug(f"Processing message {i+1}/{len(messages)} for caching")
+        total_cached = already_cached_count + cache_count
+        if total_cached < max_messages_to_cache:
+            logger.debug(f"Processing message {i+1}/{len(messages)} for caching (total cached: {total_cached})")
             formatted_message = format_message_with_cache(message, resolved_model)
             
             if formatted_message != message:
                 cache_count += 1
-                logger.info(f"✅ Cache applied to message {i+1}")
+                logger.info(f"✅ Cache applied to message {i+1} (total cached: {already_cached_count + cache_count})")
             
             formatted_messages.append(formatted_message)
         else:
+            logger.debug(f"Skipping cache for message {i+1} - limit reached (total cached: {total_cached})")
             formatted_messages.append(message)
     
-    if cache_count > 0 or already_cached_count > 0:
-        logger.info(f"🎯 Caching status: {cache_count} newly cached, {already_cached_count} already cached for model {resolved_model}")
+    total_final = cache_count + already_cached_count
+    if total_final > 0:
+        logger.info(f"🎯 Caching status: {cache_count} newly cached, {already_cached_count} already cached, {total_final} total for model {resolved_model}")
     else:
         logger.debug(f"ℹ️ No messages needed caching for model {resolved_model}")
+    
+    if total_final > max_messages_to_cache:
+        logger.warning(f"⚠️ Total cached messages ({total_final}) exceeds limit ({max_messages_to_cache})")
     
     return formatted_messages
 
@@ -134,4 +147,47 @@ def needs_cache_probe(model_name: str) -> bool:
     ]
     
     return any(provider in model_lower for provider in streaming_cache_issues)
+
+
+def validate_cache_blocks(messages: List[Dict[str, Any]], model_name: str, max_blocks: int = 4) -> List[Dict[str, Any]]:
+    resolved_model = get_resolved_model_id(model_name)
+    model_lower = resolved_model.lower()
+    
+    if not any(provider in model_lower for provider in ['anthropic', 'claude', 'sonnet', 'haiku', 'opus']):
+        return messages
+    
+    cache_block_count = 0
+    for msg in messages:
+        content = msg.get('content')
+        if isinstance(content, list) and content:
+            if isinstance(content[0], dict) and 'cache_control' in content[0]:
+                cache_block_count += 1
+    
+    if cache_block_count <= max_blocks:
+        logger.debug(f"✅ Cache validation passed: {cache_block_count}/{max_blocks} blocks")
+        return messages
+    
+    logger.warning(f"⚠️ Cache validation failed: {cache_block_count}/{max_blocks} blocks. Removing excess cache blocks.")
+    
+    fixed_messages = []
+    blocks_seen = 0
+    
+    for msg in messages:
+        content = msg.get('content')
+        if isinstance(content, list) and content:
+            if isinstance(content[0], dict) and 'cache_control' in content[0]:
+                blocks_seen += 1
+                if blocks_seen > max_blocks:
+                    logger.info(f"🔧 Removing cache_control from message {blocks_seen} (role: {msg.get('role')})")
+                    new_content = [{k: v for k, v in content[0].items() if k != 'cache_control'}]
+                    fixed_messages.append({**msg, 'content': new_content})
+                else:
+                    fixed_messages.append(msg)
+            else:
+                fixed_messages.append(msg)
+        else:
+            fixed_messages.append(msg)
+    
+    logger.info(f"✅ Fixed cache blocks: {max_blocks}/{cache_block_count} blocks retained")
+    return fixed_messages
 
