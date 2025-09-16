@@ -42,8 +42,8 @@ async def fix_trial_users():
         expiring = Decimal(str(account.get('expiring_credits', 0)))
         balance = Decimal(str(account.get('balance', 0)))
         
-        # Check if user has exactly $20 in non-expiring credits (the trial amount)
-        if non_expiring >= Decimal('20') and trial_status in ['active', 'converted']:
+
+        if non_expiring >= Decimal('5') and trial_status in ['active', 'converted']:
             print(f"\nUser {account_id[:8]}... has incorrect trial credits:")
             print(f"  Trial Status: {trial_status}")
             print(f"  Current Balance: ${balance}")
@@ -51,7 +51,7 @@ async def fix_trial_users():
             print(f"  Expiring: ${expiring}")
             
             # Calculate the correction
-            trial_amount = Decimal('20')
+            trial_amount = Decimal('5')
             corrected_non_expiring = non_expiring - trial_amount
             corrected_expiring = expiring + trial_amount
             
@@ -75,7 +75,7 @@ async def fix_trial_users():
                     'amount': 0,  # No balance change, just reclassification
                     'balance_after': float(balance),
                     'type': 'adjustment',
-                    'description': 'Fixed trial credits: moved $20 from non-expiring to expiring'
+                    'description': 'Fixed trial credits: moved $5 from non-expiring to expiring'
                 }).execute()
                 
                 print(f"  ✅ Fixed credits for user {account_id[:8]}...")
