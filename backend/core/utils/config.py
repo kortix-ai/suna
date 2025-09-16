@@ -51,6 +51,7 @@ class Configuration:
     OMNI_ADMIN: str = "sundar@latent-labs.ai,varnika@latent-labs.ai,arjun@latent-labs.ai"
     
     # Subscription tier IDs - Production
+    STRIPE_FREE_TIER_ID_PROD: str = 'price_1S7ibVRGnNhiCsluStxGsdsPT'
     STRIPE_TIER_2_20_ID_PROD: str = 'price_1S7ibVRGnNhiCsluStxGPsPT'
     STRIPE_TIER_6_50_ID_PROD: str = 'price_1S7ibVRGnNhiCslujX0nuAnS'
     STRIPE_TIER_12_100_ID_PROD: str = 'price_1S7ibVRGnNhiCsluh23GQqnG'
