@@ -446,16 +446,9 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
                   )}
                   
                   {headers.length > 0 && (
-                    <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">
-                        Custom headers will be sent with all requests to your MCP server
-                      </p>
-                      {serverType === 'sse' && headers.length > 0 && (
-                        <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
-                          ⚠️ Some SSE implementations may not support headers. If discovery fails, try switching to HTTP transport.
-                        </p>
-                      )}
-                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Custom headers will be sent with all requests to your MCP server
+                    </p>
                   )}
                 </div>
               </div>
