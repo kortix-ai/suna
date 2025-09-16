@@ -20,7 +20,7 @@ interface CustomMCPDialogProps {
 
 interface CustomMCPConfiguration {
   name: string;
-  type: 'http';
+  type: 'http' | 'sse';
   config: any;
   enabledTools: string[];
   selectedProfileId?: string;
@@ -38,7 +38,7 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
   onSave
 }) => {
   const [step, setStep] = useState<'setup' | 'tools'>('setup');
-  const [serverType, setServerType] = useState<'http'>('http');
+  const [serverType, setServerType] = useState<'http' | 'sse'>('http');
   const [configText, setConfigText] = useState('');
   const [serverName, setServerName] = useState('');
   const [manualServerName, setManualServerName] = useState('');
@@ -77,28 +77,24 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
     setDiscoveredTools([]);
     
     try {
-      let parsedConfig: any;
-      
-      if (serverType === 'http') {
-        const url = configText.trim();
-        if (!url) {
-          throw new Error('Please enter the MCP server URL.');
-        }
-        if (!manualServerName.trim()) {
-          throw new Error('Please enter a name for this MCP server.');
-        }
-        
-        parsedConfig = { 
-          url,
-          headers: headers.reduce((acc, h) => {
-            if (h.key.trim() && h.value.trim()) {
-              acc[h.key.trim()] = h.value.trim();
-            }
-            return acc;
-          }, {} as Record<string, string>)
-        };
-        setServerName(manualServerName.trim());
+      const url = configText.trim();
+      if (!url) {
+        throw new Error('Please enter the MCP server URL.');
       }
+      if (!manualServerName.trim()) {
+        throw new Error('Please enter a name for this MCP server.');
+      }
+      
+      const parsedConfig = { 
+        url,
+        headers: headers.reduce((acc, h) => {
+          if (h.key.trim() && h.value.trim()) {
+            acc[h.key.trim()] = h.value.trim();
+          }
+          return acc;
+        }, {} as Record<string, string>)
+      };
+      setServerName(manualServerName.trim());
 
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
@@ -173,7 +169,7 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
     setValidationError(null);
 
     try {
-      let configToSave: any = { 
+      const configToSave = { 
         url: configText.trim(),
         headers: headers.reduce((acc, h) => {
           if (h.key.trim() && h.value.trim()) {
@@ -229,6 +225,7 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
     setManualServerName('');
     setHeaders([]); // Reset headers
     setShowSensitiveValues({}); // Reset sensitive values visibility
+    setServerType('http'); // Reset to default transport
     setDiscoveredTools([]);
     setSelectedTools(new Set());
     setServerName('');
@@ -240,7 +237,8 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
   };
 
   const exampleConfigs = {
-    http: `https://server.example.com/mcp`
+    http: `https://server.example.com/mcp`,
+    sse: `https://server.example.com/mcp/sse`
   };
 
   return (
@@ -296,22 +294,63 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
               <div className="space-y-4">
                 <div className="space-y-3">
                   <Label className="text-base font-medium">Connection Type</Label>
-                  <div className={cn(
-                    "flex items-start space-x-3 p-4 rounded-lg border bg-primary/5",
-                    "border-primary"
-                  )}>
-                    <div className="flex-1 space-y-1">
-                      <div className="flex items-center gap-2">
-                        <Server className="h-4 w-4 text-primary" />
-                        <Label className="text-base font-medium">
-                          Streamable HTTP MCP Server
-                        </Label>
+                  <div className="space-y-2">
+                    <div
+                      className={cn(
+                        "flex items-start space-x-3 p-3 rounded-lg border cursor-pointer transition-colors",
+                        serverType === 'http' ? "bg-primary/5 border-primary" : "bg-muted/30 border-input hover:bg-muted/50"
+                      )}
+                      onClick={() => setServerType('http')}
+                    >
+                      <input
+                        type="radio"
+                        name="serverType"
+                        value="http"
+                        checked={serverType === 'http'}
+                        onChange={() => setServerType('http')}
+                        className="mt-1"
+                      />
+                      <div className="flex-1 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Server className="h-4 w-4" />
+                          <Label className="text-sm font-medium">Streamable HTTP</Label>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Standard HTTP transport with full header support
+                        </p>
                       </div>
-                      <p className="text-sm text-muted-foreground">
-                        Connect to any Model Context Protocol server via HTTP. MCP provides a standardized way for AI applications to securely connect to external tools and data sources.
-                      </p>
+                    </div>
+                    
+                    <div
+                      className={cn(
+                        "flex items-start space-x-3 p-3 rounded-lg border cursor-pointer transition-colors",
+                        serverType === 'sse' ? "bg-primary/5 border-primary" : "bg-muted/30 border-input hover:bg-muted/50"
+                      )}
+                      onClick={() => setServerType('sse')}
+                    >
+                      <input
+                        type="radio"
+                        name="serverType"
+                        value="sse"
+                        checked={serverType === 'sse'}
+                        onChange={() => setServerType('sse')}
+                        className="mt-1"
+                      />
+                      <div className="flex-1 space-y-1">
+                        <div className="flex items-center gap-2">
+                          <Zap className="h-4 w-4" />
+                          <Label className="text-sm font-medium">Server-Sent Events (SSE)</Label>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Real-time streaming transport for live updates
+                        </p>
+                      </div>
                     </div>
                   </div>
+                  
+                  <p className="text-xs text-muted-foreground">
+                    Choose the transport method that matches your MCP server implementation
+                  </p>
                 </div>
               </div>
               <div className="space-y-4">
@@ -339,7 +378,7 @@ export const CustomMCPDialog: React.FC<CustomMCPDialogProps> = ({
                   <Input
                       id="config"
                       type="url"
-                      placeholder={exampleConfigs.http}
+                      placeholder={exampleConfigs[serverType]}
                       value={configText}
                       onChange={(e) => setConfigText(e.target.value)}
                       className="w-full px-4 py-3 border border-input bg-muted rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent font-mono"
