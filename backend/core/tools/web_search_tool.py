@@ -14,7 +14,7 @@ import logging
 # TODO: add subpages, etc... in filters as sometimes its necessary 
 
 class SandboxWebSearchTool(SandboxToolsBase):
-    """Tool for performing web searches using Tavily API and web scraping using Firecrawl."""
+    """Tool for performing web searches using Tavily API, image searches using SERPER API, and web scraping using Firecrawl."""
 
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
@@ -24,6 +24,7 @@ class SandboxWebSearchTool(SandboxToolsBase):
         self.tavily_api_key = config.TAVILY_API_KEY
         self.firecrawl_api_key = config.FIRECRAWL_API_KEY
         self.firecrawl_url = config.FIRECRAWL_URL
+        self.serper_api_key = config.SERPER_API_KEY
         
         if not self.tavily_api_key:
             raise ValueError("TAVILY_API_KEY not found in configuration")
@@ -398,6 +399,144 @@ class SandboxWebSearchTool(SandboxToolsBase):
                 "success": False,
                 "error": error_message
             }
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "image_search",
+            "description": "Search for images using SERPER API. Returns a list of image URLs for the given search query. Perfect for finding visual content, illustrations, photos, or any images related to your search terms.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query to find relevant images. Be specific about what kind of images you're looking for (e.g., 'cats playing', 'mountain landscape', 'modern architecture')"
+                    },
+                    "num_results": {
+                        "type": "integer",
+                        "description": "The number of image results to return. Default is 10, maximum is 100.",
+                        "default": 12,
+                        "minimum": 1,
+                        "maximum": 100
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    })
+    @usage_example('''
+        <function_calls>
+        <invoke name="image_search">
+        <parameter name="query">cute cats playing</parameter>
+        <parameter name="num_results">20</parameter>
+        </invoke>
+        </function_calls>
+        
+        <!-- Another search example -->
+        <function_calls>
+        <invoke name="image_search">
+        <parameter name="query">modern office workspace</parameter>
+        </invoke>
+        </function_calls>
+        ''')
+    async def image_search(
+        self, 
+        query: str,
+        num_results: int = 12
+    ) -> ToolResult:
+        """
+        Search for images using SERPER API and return a clean list of image URLs.
+        """
+        try:
+            # Validate inputs
+            if not query or not isinstance(query, str) or not query.strip():
+                return self.fail_response("A valid search query is required.")
+            
+            # Check if SERPER API key is available
+            if not self.serper_api_key:
+                return self.fail_response("SERPER_API_KEY not configured. Image search is not available.")
+            
+            # Normalize num_results
+            if num_results is None:
+                num_results = 12
+            elif isinstance(num_results, str):
+                try:
+                    num_results = int(num_results)
+                except ValueError:
+                    num_results = 12
+            
+            # Clamp num_results to valid range
+            num_results = max(1, min(num_results, 100))
+
+            logging.info(f"Executing image search for query: '{query}' with {num_results} results")
+            
+            # SERPER API request
+            async with httpx.AsyncClient() as client:
+                headers = {
+                    "X-API-KEY": self.serper_api_key,
+                    "Content-Type": "application/json"
+                }
+                
+                payload = {
+                    "q": query,
+                    "num": num_results
+                }
+                
+                response = await client.post(
+                    "https://google.serper.dev/images",
+                    json=payload,
+                    headers=headers,
+                    timeout=30.0
+                )
+                
+                response.raise_for_status()
+                data = response.json()
+                
+                # Extract image URLs from response
+                images = data.get("images", [])
+                
+                if not images:
+                    logging.warning(f"No images found for query: '{query}'")
+                    return self.fail_response(f"No images found for query: '{query}'")
+                
+                # Extract just the image URLs - keep it simple
+                image_urls = []
+                for img in images:
+                    img_url = img.get("imageUrl")
+                    if img_url:
+                        image_urls.append(img_url)
+                
+                logging.info(f"Found {len(image_urls)} image URLs for query: '{query}'")
+                
+                # Return simple list of URLs
+                result = {
+                    "query": query,
+                    "total_found": len(image_urls),
+                    "images": image_urls
+                }
+                
+                return ToolResult(
+                    success=True,
+                    output=json.dumps(result, ensure_ascii=False)
+                )
+        
+        except httpx.HTTPStatusError as e:
+            error_message = f"SERPER API error: {e.response.status_code}"
+            if e.response.status_code == 429:
+                error_message = "SERPER API rate limit exceeded. Please try again later."
+            elif e.response.status_code == 401:
+                error_message = "Invalid SERPER API key."
+            
+            logging.error(f"SERPER API error for query '{query}': {error_message}")
+            return self.fail_response(error_message)
+        
+        except Exception as e:
+            error_message = str(e)
+            logging.error(f"Error performing image search for '{query}': {error_message}")
+            simplified_message = f"Error performing image search: {error_message[:200]}"
+            if len(error_message) > 200:
+                simplified_message += "..."
+            return self.fail_response(simplified_message)
 
 if __name__ == "__main__":
     async def test_web_search():
