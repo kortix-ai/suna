@@ -518,6 +518,10 @@ class ThreadManager:
             # Check if _make_llm_call returned an error dict
             if isinstance(llm_response, dict) and llm_response.get("status") == "error":
                 logger.error(f"💥 _make_llm_call returned error dict: {llm_response}")
+                logger.error(f"💥 Error dict type: {type(llm_response)}")
+                logger.error(f"💥 Error dict message type: {type(llm_response.get('message'))}")
+                logger.error(f"💥 Error dict message repr: {repr(llm_response.get('message'))}")
+                logger.error(f"💥 Returning error dict from _execute_single_run to auto-continue generator")
                 return llm_response  # Return error dict directly to auto-continue generator
             
             logger.info(f"✅ _make_llm_call completed successfully")
@@ -541,11 +545,20 @@ class ThreadManager:
             logger.error(f"💥 CAUGHT ERROR IN _execute_single_run: {str(e)}", exc_info=True)
             logger.error(f"💥 Error type: {type(e).__name__}")
             logger.error(f"💥 Error occurred in _execute_single_run - converting to error dict")
+            
+            # Safely convert exception to string
+            try:
+                error_message = str(e)
+                logger.error(f"💥 Raw error message in _execute_single_run: {repr(error_message)}")
+            except Exception as str_error:
+                logger.error(f"💥 Error converting exception to string in _execute_single_run: {str_error}")
+                error_message = f"Execution failed: {type(e).__name__}"
+            
             # Return the error as a dict to be handled by the auto-continue wrapper
             error_dict = {
                 "type": "status",
                 "status": "error",
-                "message": str(e)
+                "message": error_message
             }
             logger.error(f"💥 RETURNING ERROR DICT FROM _execute_single_run: {error_dict}")
             return error_dict
@@ -603,8 +616,12 @@ class ThreadManager:
                 # Handle error responses from _execute_single_run
                 if isinstance(response_gen, dict) and "status" in response_gen and response_gen["status"] == "error":
                     logger.error(f"💥 Auto-continue generator received error dict: {response_gen}")
-                    logger.error(f"💥 Yielding error to stream and stopping")
+                    logger.error(f"💥 Error dict type: {type(response_gen)}")
+                    logger.error(f"💥 Error dict message type: {type(response_gen.get('message'))}")
+                    logger.error(f"💥 Error dict message repr: {repr(response_gen.get('message'))}")
+                    logger.error(f"💥 About to yield error dict to stream and stop")
                     yield response_gen
+                    logger.error(f"💥 Successfully yielded error dict, breaking from auto-continue loop")
                     break
 
                 # Process streaming response and check for auto-continue triggers
@@ -757,8 +774,9 @@ class ThreadManager:
 
         # Make the actual API call
         logger.info(f"🔥 Calling make_llm_api_call with {len(prepared_messages)} messages")
+        
+        logger.info(f"🔥 About to AWAIT make_llm_api_call...")
         try:
-            logger.info(f"🔥 About to AWAIT make_llm_api_call...")
             llm_response = await make_llm_api_call(
                 prepared_messages,
                 llm_model,
@@ -770,23 +788,84 @@ class ThreadManager:
                 enable_thinking=enable_thinking,
                 reasoning_effort=reasoning_effort
             )
-            
             logger.info(f"✅ Successfully received LLM API response from make_llm_api_call")
+            logger.info(f"✅ Response type: {type(llm_response)}")
+            logger.info(f"✅ Response has __aiter__: {hasattr(llm_response, '__aiter__')}")
+            logger.info(f"✅ Response str representation: {str(llm_response)[:200]}")
+            
+            # If it's a stream, peek at the first chunk to force any immediate errors to surface
+            if hasattr(llm_response, '__aiter__'):
+                logger.info(f"🔍 Peeking at first chunk to detect streaming errors...")
+                try:
+                    # Get the first chunk to trigger any immediate errors
+                    first_chunk = await llm_response.__anext__()
+                    logger.info(f"🔍 First chunk type: {type(first_chunk)}")
+                    
+                    # Create a new generator that yields the first chunk then the rest
+                    async def peek_generator():
+                        yield first_chunk
+                        async for chunk in llm_response:
+                            yield chunk
+                    
+                    logger.info(f"✅ Stream peek successful, returning wrapped generator")
+                    return peek_generator()
+                    
+                except Exception as peek_error:
+                    logger.error(f"💥 Stream peek failed - error detected: {str(peek_error)}")
+                    logger.error(f"💥 Peek error type: {type(peek_error).__name__}")
+                    # Return error dict instead of raising
+                    error_dict = {
+                        "type": "status",
+                        "status": "error", 
+                        "message": str(peek_error)
+                    }
+                    logger.error(f"💥 Returning error dict from stream peek: {error_dict}")
+                    return error_dict
+            
             logger.info(f"✅ About to return llm_response from _make_llm_call")
             return llm_response
-        except Exception as e:
-            logger.error(f"💥 make_llm_api_call failed in _make_llm_call: {str(e)}", exc_info=True)
-            logger.error(f"💥 Exception type in _make_llm_call: {type(e).__name__}")
-            logger.error(f"💥 About to re-raise exception from _make_llm_call")
             
-            # Instead of re-raising, return an error dict that can be handled
-            error_dict = {
-                "type": "status",
-                "status": "error", 
-                "message": str(e)
-            }
-            logger.error(f"💥 Returning error dict from _make_llm_call: {error_dict}")
-            return error_dict
+        except Exception as e:
+            logger.error(f"💥 FINALLY CAUGHT THE EXCEPTION IN _make_llm_call!!!")
+            
+            # Very safe error message extraction
+            error_message = "LLM API call failed"
+            try:
+                # First try to get the basic string representation
+                error_str = str(e)
+                logger.error(f"💥 Exception str(): {repr(error_str)}")
+                error_message = error_str
+            except Exception as str_err:
+                logger.error(f"💥 str(e) failed: {str_err}")
+                try:
+                    # Try to get error from exception args
+                    if hasattr(e, 'args') and e.args:
+                        error_message = str(e.args[0])
+                        logger.error(f"💥 Using args[0]: {repr(error_message)}")
+                    else:
+                        error_message = f"LLM call failed with {type(e).__name__}"
+                        logger.error(f"💥 Using fallback message: {repr(error_message)}")
+                except Exception as args_err:
+                    logger.error(f"💥 args extraction failed: {args_err}")
+                    error_message = f"LLM call failed with {type(e).__name__}"
+            
+            # Create error dict with extra safety
+            try:
+                error_dict = {
+                    "type": "status",
+                    "status": "error", 
+                    "message": error_message
+                }
+                logger.error(f"💥 Successfully created error dict: {error_dict}")
+                return error_dict
+            except Exception as dict_err:
+                logger.error(f"💥 Error dict creation failed: {dict_err}")
+                # Ultimate fallback
+                return {
+                    "type": "status",
+                    "status": "error", 
+                    "message": "LLM API call failed with unknown error"
+                }
 
     async def _process_llm_response(
         self,

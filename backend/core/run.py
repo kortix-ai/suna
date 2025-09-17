@@ -705,6 +705,9 @@ class AgentRunner:
                 try:
                     if hasattr(response, '__aiter__') and not isinstance(response, dict):
                         async for chunk in response:
+                            # Log every chunk to debug the flow
+                            logger.debug(f"🔍 run.py received chunk type: {type(chunk)}, chunk: {chunk}")
+                            
                             # Check for error status from thread_manager (dict format)
                             if isinstance(chunk, dict) and chunk.get('type') == 'status' and chunk.get('status') == 'error':
                                 logger.error(f"💥 run.py received error chunk from thread_manager: {chunk}")
@@ -764,9 +767,18 @@ class AgentRunner:
 
                             yield chunk
                     else:
-                        # Non-streaming response
-                        logger.error(f"Response is not async iterable: {type(response)}")
-                        error_detected = True
+                        # Non-streaming response or error dict
+                        logger.info(f"✅ Response is not async iterable: {type(response)}")
+                        logger.info(f"✅ Response content: {response}")
+                        
+                        # Check if it's an error dict
+                        if isinstance(response, dict) and response.get('type') == 'status' and response.get('status') == 'error':
+                            logger.error(f"💥 run.py received error dict as response: {response}")
+                            error_detected = True
+                            yield response
+                        else:
+                            logger.error(f"Response is not async iterable and not an error dict: {type(response)}")
+                            error_detected = True
 
                     if error_detected:
                         if generation:

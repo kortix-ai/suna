@@ -22,8 +22,8 @@ from core.utils.config import config
 # Simplified approach - just catch all exceptions and parse error messages
 logger.debug("Using simplified exception handling for LiteLLM")
 
-# Enable verbose mode for debugging context window errors
-litellm.set_verbose = True  # Enabled to see what LiteLLM is actually doing
+# Configure LiteLLM logging via environment variable instead of deprecated set_verbose
+os.environ['LITELLM_LOG'] = 'DEBUG'
 # Let LiteLLM auto-adjust params and drop unsupported ones (e.g., GPT-5 temperature!=1)
 litellm.modify_params = True
 litellm.drop_params = True
@@ -426,9 +426,17 @@ async def make_llm_api_call(
             logger.error(f"💥 LiteLLM exception module: {type(litellm_error).__module__}")
             logger.error(f"💥 LiteLLM exception args: {litellm_error.args}")
             
+            # Safely create error message for LLMError
+            try:
+                error_msg = str(litellm_error)
+                logger.error(f"💥 Converted litellm_error to string: {repr(error_msg)}")
+            except Exception as str_err:
+                logger.error(f"💥 Failed to convert litellm_error to string: {str_err}")
+                error_msg = f"LiteLLM {type(litellm_error).__name__} error"
+            
             # Re-raise as LLMError so our error handling chain can catch it
-            logger.error(f"💥 About to raise LLMError from make_llm_api_call")
-            raise LLMError(f"LiteLLM error: {str(litellm_error)}")
+            logger.error(f"💥 About to raise LLMError with message: {repr(error_msg)}")
+            raise LLMError(error_msg)
 
     except LLMError:
         # Re-raise LLMError as-is so it propagates to thread manager

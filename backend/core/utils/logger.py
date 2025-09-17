@@ -11,8 +11,7 @@ else:
 
 LOGGING_LEVEL = logging.getLevelNamesMapping().get(
     os.getenv("LOGGING_LEVEL", default_level).upper(), 
-    # logging.DEBUG if ENV_MODE.upper() == "PRODUCTION" else logging.INFO    
-    logging.DEBUG  # Use DEBUG as fallback for all environments
+    logging.DEBUG  
 )
 
 renderer = [structlog.processors.JSONRenderer()]
