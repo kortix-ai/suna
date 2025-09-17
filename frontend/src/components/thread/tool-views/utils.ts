@@ -41,6 +41,7 @@ export function getToolTitle(toolName: string): string {
     'full-file-rewrite': 'Rewrite File',
     'delete-file': 'Delete File',
     'web-search': 'Web Search',
+    'image-search': 'Image Search',
     'crawl-webpage': 'Web Crawl',
     'scrape-webpage': 'Web Scrape',
     'browser-navigate-to': 'Browser Navigate',
@@ -1279,6 +1280,8 @@ export function getToolComponent(toolName: string): string {
 
     // Web operations
     case 'web-search':
+      return 'WebSearchToolView';
+    case 'image-search':
       return 'WebSearchToolView';
     case 'crawl-webpage':
       return 'WebCrawlToolView';

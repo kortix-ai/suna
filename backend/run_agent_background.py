@@ -112,22 +112,25 @@ async def run_agent_background(
     })
     
     from core.ai_models import model_manager
-    is_tier_default = model_name in ["Kimi K2", "Claude Sonnet 4", "openai/gpt-5-mini"]
+
+    effective_model = model_manager.resolve_model_id(model_name)
     
-    if is_tier_default and agent_config and agent_config.get('model'):
-        agent_model = agent_config['model']
-        effective_model = model_manager.resolve_model_id(agent_model)
-        logger.debug(f"Using model from agent config: {agent_model} -> {effective_model} (tier default was {model_name})")
-    else:
-        effective_model = model_manager.resolve_model_id(model_name)
-        if not is_tier_default:
-            logger.debug(f"Using user-selected model: {model_name} -> {effective_model}")
-        else:
-            logger.debug(f"Using tier default model: {model_name} -> {effective_model}")
+    # is_tier_default = model_name in ["Kimi K2", "Claude Sonnet 4", "openai/gpt-5-mini"]
     
+    # if is_tier_default and agent_config and agent_config.get('model'):
+    #     agent_model = agent_config['model']
+    #     effective_model = model_manager.resolve_model_id(agent_model)
+    #     logger.debug(f"Using model from agent config: {agent_model} -> {effective_model} (tier default was {model_name})")
+    # else:
+    #     effective_model = model_manager.resolve_model_id(model_name)
+    #     if not is_tier_default:
+    #         logger.debug(f"Using user-selected model: {model_name} -> {effective_model}")
+    #     else:
+    #         logger.debug(f"Using tier default model: {model_name} -> {effective_model}")
+
     logger.debug(f"🚀 Using model: {effective_model} (thinking: {enable_thinking}, reasoning_effort: {reasoning_effort})")
-    if agent_config:
-        logger.debug(f"Using custom agent: {agent_config.get('name', 'Unknown')}")
+    # if agent_config:
+    #     logger.debug(f"Using custom agent: {agent_config.get('name', 'Unknown')}")
 
     client = await db.client
     start_time = datetime.now(timezone.utc)

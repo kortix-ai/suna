@@ -18,7 +18,12 @@ from litellm.files.main import ModelResponse
 from core.utils.logger import logger
 from core.utils.config import config
 
-# litellm.set_verbose=True
+# Import common LiteLLM exceptions for better error handling
+# Simplified approach - just catch all exceptions and parse error messages
+logger.debug("Using simplified exception handling for LiteLLM")
+
+# Enable verbose mode for debugging context window errors
+litellm.set_verbose = True  # Enabled to see what LiteLLM is actually doing
 # Let LiteLLM auto-adjust params and drop unsupported ones (e.g., GPT-5 temperature!=1)
 litellm.modify_params = True
 litellm.drop_params = True
@@ -71,7 +76,6 @@ def setup_api_keys() -> None:
     else:
         logger.warning(f"Missing AWS credentials for Bedrock integration - access_key: {bool(aws_access_key)}, secret_key: {bool(aws_secret_key)}, region: {aws_region}")
 
-
 def setup_provider_router(openai_compatible_api_key: str = None, openai_compatible_api_base: str = None):
     global provider_router
     model_list = [
@@ -91,38 +95,6 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
         },
     ]
     provider_router = Router(model_list=model_list)
-
-
-def get_openrouter_fallback(model_name: str) -> Optional[str]:
-    """Get OpenRouter fallback model for a given model name."""
-    # Skip if already using OpenRouter
-    if model_name.startswith("openrouter/"):
-        return None
-    
-    # Map models to their OpenRouter equivalents
-    fallback_mapping = {
-        "anthropic/claude-3-7-sonnet-latest": "openrouter/anthropic/claude-3.7-sonnet",
-        "anthropic/claude-sonnet-4-20250514": "openrouter/anthropic/claude-sonnet-4",
-        "xai/grok-4": "openrouter/x-ai/grok-4",
-        "gemini/gemini-2.5-pro": "openrouter/google/gemini-2.5-pro",
-    }
-    
-    # Check for exact match first
-    if model_name in fallback_mapping:
-        return fallback_mapping[model_name]
-    
-    # Check for partial matches (e.g., bedrock models)
-    for key, value in fallback_mapping.items():
-        if key in model_name:
-            return value
-    
-    # Default fallbacks by provider
-    if "claude" in model_name.lower() or "anthropic" in model_name.lower():
-        return "openrouter/anthropic/claude-sonnet-4"
-    elif "xai" in model_name.lower() or "grok" in model_name.lower():
-        return "openrouter/x-ai/grok-4"
-    
-    return None
 
 def _configure_token_limits(params: Dict[str, Any], model_name: str, max_tokens: Optional[int]) -> None:
     """Configure token limits based on model type."""
@@ -145,11 +117,11 @@ def _configure_anthropic(params: Dict[str, Any], model_name: str, messages: List
     if not ("claude" in model_name.lower() or "anthropic" in model_name.lower()):
         return
     
-    # Include both prompt caching and extended output beta features
+    # Include prompt caching and context-1m beta features
     params["extra_headers"] = {
-        "anthropic-beta": "prompt-caching-2024-07-31,max-tokens-3-5-sonnet-2024-07-15"
+        "anthropic-beta": "prompt-caching-2024-07-31" #context-1m-2025-08-07
     }
-    logger.debug(f"Added Anthropic-specific headers for prompt caching and extended output")
+    logger.debug(f"Added Anthropic-specific headers for prompt caching and context-1m")
 
 def _configure_openrouter(params: Dict[str, Any], model_name: str) -> None:
     """Configure OpenRouter-specific parameters."""
@@ -230,15 +202,6 @@ def _configure_thinking(params: Dict[str, Any], model_name: str, enable_thinking
         params["reasoning_effort"] = effort_level
         logger.info(f"xAI thinking enabled with reasoning_effort='{effort_level}'")
 
-def _add_fallback_model(params: Dict[str, Any], model_name: str, messages: List[Dict[str, Any]]) -> None:
-    """Add fallback model to the parameters."""
-    fallback_model = get_openrouter_fallback(model_name)
-    if fallback_model:
-        params["fallbacks"] = [{
-            "model": fallback_model,
-            "messages": messages,
-        }]
-        logger.debug(f"Added OpenRouter fallback for model: {model_name} to {fallback_model}")
 
 def _add_tools_config(params: Dict[str, Any], tools: Optional[List[Dict[str, Any]]], tool_choice: str) -> None:
     """Add tools configuration to parameters."""
@@ -280,6 +243,11 @@ def prepare_params(
         "stream": stream,
         "num_retries": MAX_RETRIES,
     }
+    
+    # Enable usage tracking for streaming requests
+    if stream:
+        params["stream_options"] = {"include_usage": True}
+        logger.info(f"🎯 Added stream_options for usage tracking: {params['stream_options']}")
 
     if api_key:
         params["api_key"] = api_key
@@ -309,8 +277,7 @@ def prepare_params(
     _configure_openrouter(params, resolved_model_name)
     # Add Bedrock-specific parameters
     _configure_bedrock(params, resolved_model_name, model_id)
-    
-    _add_fallback_model(params, resolved_model_name, messages)
+
     # Add OpenAI GPT-5 specific parameters
     _configure_openai_gpt5(params, resolved_model_name)
     # Add Kimi K2-specific parameters
@@ -361,18 +328,20 @@ async def make_llm_api_call(
         LLMRetryError: If API call fails after retries
         LLMError: For other API-related errors
     """
-    # debug <timestamp>.json messages
-    logger.debug(f"Making LLM API call to model: {model_name} (Thinking: {enable_thinking}, Effort: {reasoning_effort})")
-    logger.debug(f"📡 API Call: Using model {model_name}")
-
+    logger.debug(f"Making LLM API call to model: {model_name}")
     logger.info(f"📥 Received {len(messages)} messages for LLM call")
-    for i, msg in enumerate(messages):
-        role = msg.get('role', 'unknown')
-        content = msg.get('content', '')
-        if isinstance(content, list) and content:
-            has_cache = 'cache_control' in content[0] if isinstance(content[0], dict) else False
-            content_len = len(str(content[0].get('text', ''))) if isinstance(content[0], dict) else 0
-            logger.info(f"  Input msg {i}: role={role}, has_cache={has_cache}, length={content_len}")
+    
+    # Calculate approximate token count for context window checking
+    try:
+        from litellm import token_counter
+        total_tokens = token_counter(model=model_name, messages=messages)
+        logger.info(f"🔢 Estimated input tokens: {total_tokens}")
+        
+        # Log potential context window issues
+        if total_tokens > 200000:  # High token count
+            logger.warning(f"⚠️  Very high token count detected: {total_tokens} - potential context window issue")
+    except Exception as token_error:
+        logger.debug(f"Could not calculate token count: {token_error}")
     
     params = prepare_params(
         messages=messages,
@@ -390,48 +359,105 @@ async def make_llm_api_call(
         enable_thinking=enable_thinking,
         reasoning_effort=reasoning_effort,
     )
-    # Debug: Log what we're sending to LiteLLM
-    if 'messages' in params:
-        logger.info(f"📨 Sending to LiteLLM: {len(params['messages'])} messages")
-        for i, msg in enumerate(params['messages'][:3]):  # Only log first 3 to avoid spam
-            role = msg.get('role', 'unknown')
-            content = msg.get('content', '')
-            if isinstance(content, list) and content:
-                has_cache = 'cache_control' in content[0] if isinstance(content[0], dict) else False
-                logger.info(f"  Final msg {i}: role={role}, has_cache={has_cache}")
-                # Log the actual cache_control value if present
-                if has_cache:
-                    logger.info(f"    cache_control value: {content[0].get('cache_control')}")
+    logger.info(f"📨 Sending to LiteLLM: {len(params['messages'])} messages")
     
-    # Log the headers being sent
+    # Log headers being sent (especially important for Anthropic beta features)
     if 'extra_headers' in params:
-        logger.info(f"📮 Headers to LiteLLM: {params['extra_headers']}")
-    
+        logger.info(f"🔧 Extra headers: {params['extra_headers']}")
+        
+        # Check for context window issues with Anthropic models
+        if (model_name.startswith("anthropic/") and 
+            'total_tokens' in locals() and 
+            total_tokens > 200000 and 
+            "context-1m-2025-08-07" not in str(params['extra_headers'])):
+            logger.error(f"💥 Context window will be exceeded: {total_tokens} tokens without context-1m header")
+            raise LLMError(f"Context window exceeded: {total_tokens} tokens is too many for this model without context-1m header")
+    else:
+        logger.debug("🔧 No extra headers set")
     try:
-        response = await provider_router.acompletion(**params)
-        logger.debug(f"Successfully received API response from {model_name}")
+        logger.info(f"🚀 About to call LiteLLM acompletion with {model_name}")
+        logger.info(f"🔧 Params: model={params.get('model')}, stream={params.get('stream')}, messages_count={len(params.get('messages', []))}")
         
-        # Check if streaming
-        is_streaming = params.get('stream', False)
+        import asyncio
+        logger.info(f"💫 Starting LiteLLM acompletion call...")
         
-        if not is_streaming and hasattr(response, 'usage'):
-            usage = response.usage
-            cache_creation = getattr(usage, 'cache_creation_input_tokens', 0)
-            cache_read = getattr(usage, 'cache_read_input_tokens', 0)
-            total_tokens = getattr(usage, 'prompt_tokens', 0)
+        try:
+            # Make the direct call without timeout first to see what happens
+            logger.info(f"🔥 Making direct LiteLLM call without timeout...")
+            response = await provider_router.acompletion(**params)
             
-            if cache_creation > 0 or cache_read > 0:
-                logger.info(f"🎯 CACHE METRICS: creation={cache_creation}, read={cache_read}, total={total_tokens}")
-            else:
-                logger.warning(f"⚠️ NO CACHE USED: total_tokens={total_tokens}")
-        elif is_streaming:
-            logger.info(f"📡 Streaming response - cache metrics will be in final chunk")
-        
-        return response
+            logger.info(f"✅ Successfully received API response from {model_name}, type: {type(response)}")
+            logger.info(f"✅ Response has __aiter__: {hasattr(response, '__aiter__')}")
+            logger.info(f"✅ Response dir: {[attr for attr in dir(response) if not attr.startswith('_')]}")
+            
+            # If it's a streaming response, try to peek at the first chunk
+            if hasattr(response, '__aiter__'):
+                logger.info(f"💫 Testing streaming response by trying to peek at first chunk...")
+                try:
+                    # Convert to list to peek at first few items
+                    first_chunks = []
+                    count = 0
+                    async for chunk in response:
+                        first_chunks.append(chunk)
+                        count += 1
+                        logger.info(f"💫 Chunk {count}: {type(chunk)}, content preview: {str(chunk)[:200]}")
+                        if count >= 3:  # Only peek at first 3 chunks
+                            break
+                    
+                    # Create a new generator that yields the peeked chunks plus the rest
+                    async def response_generator():
+                        for chunk in first_chunks:
+                            yield chunk
+                        async for chunk in response:
+                            yield chunk
+                    
+                    return response_generator()
+                    
+                except Exception as stream_error:
+                    logger.error(f"💥 Error when trying to peek at streaming response: {str(stream_error)}")
+                    logger.error(f"💥 Stream error type: {type(stream_error).__name__}")
+                    raise LLMError(f"Streaming response error: {str(stream_error)}")
+            
+            return response
+            
+        except Exception as litellm_error:
+            logger.error(f"💥 LiteLLM threw exception: {str(litellm_error)}")
+            logger.error(f"💥 LiteLLM exception type: {type(litellm_error).__name__}")
+            logger.error(f"💥 LiteLLM exception module: {type(litellm_error).__module__}")
+            logger.error(f"💥 LiteLLM exception args: {litellm_error.args}")
+            
+            # Re-raise as LLMError so our error handling chain can catch it
+            logger.error(f"💥 About to raise LLMError from make_llm_api_call")
+            raise LLMError(f"LiteLLM error: {str(litellm_error)}")
 
+    except LLMError:
+        # Re-raise LLMError as-is so it propagates to thread manager
+        logger.error(f"💥 LLMError caught in outer handler - re-raising")
+        raise
     except Exception as e:
-        logger.error(f"Unexpected error during API call: {str(e)}", exc_info=True)
-        raise LLMError(f"API call failed: {str(e)}")
+        logger.error(f"💥 LLM API call failed: {str(e)}", exc_info=True)
+        logger.error(f"💥 Error type: {type(e).__name__}, Model: {model_name}")
+        
+        # Create a descriptive error message for the user
+        error_message = f"LLM API error: {str(e)}"
+        
+        # Check for specific error patterns
+        error_str = str(e).lower()
+        if any(keyword in error_str for keyword in [
+            'context_length_exceeded', 'context window', 'maximum context length',
+            'token limit', 'too many tokens', 'request too large', 'content_length_exceeded',
+            'message content is too long', 'input is too long', 'prompt is too long'
+        ]):
+            error_message = f"Context window exceeded: The conversation is too long for this model. {str(e)}"
+        elif 'timeout' in error_str or isinstance(e, asyncio.TimeoutError):
+            error_message = f"Request timeout: The API call took too long to respond. {str(e)}"
+        elif any(keyword in error_str for keyword in ['authentication', 'unauthorized', 'api key']):
+            error_message = f"Authentication error: Invalid API key or credentials. {str(e)}"
+        elif 'rate limit' in error_str:
+            error_message = f"Rate limit exceeded: Too many requests to the API. {str(e)}"
+        
+        # Always raise LLMError with descriptive message
+        raise LLMError(error_message)
 
 setup_api_keys()
 setup_provider_router()

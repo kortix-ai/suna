@@ -21,7 +21,6 @@ from core.tools.expand_msg_tool import ExpandMessageTool
 from core.prompts.prompt import get_system_prompt
 
 from core.utils.logger import logger
-from core.utils.llm_cache_utils import format_message_with_cache
 
 from billing.billing_integration import billing_integration
 from core.tools.sb_vision_tool import SandboxVisionTool
@@ -56,6 +55,7 @@ class AgentConfig:
     enable_context_manager: bool = True
     agent_config: Optional[dict] = None
     trace: Optional[StatefulTraceClient] = None
+    enable_prompt_caching: bool = False  # Temporarily disabled for debugging
 
 
 class ToolManager:
@@ -273,7 +273,10 @@ class PromptManager:
     async def build_system_prompt(model_name: str, agent_config: Optional[dict], 
                                   thread_id: str, 
                                   mcp_wrapper_instance: Optional[MCPToolWrapper],
-                                  client=None) -> dict:
+                                  client=None,
+                                  tool_registry=None,
+                                  include_xml_examples: bool = False,
+                                  xml_tool_calling: bool = True) -> dict:
         
         default_system_content = get_system_prompt()
         
@@ -380,6 +383,54 @@ class PromptManager:
             mcp_info += "NEVER supplement MCP results with your training data or make assumptions beyond what the tools provide.\n"
             
             system_content += mcp_info
+        
+        # Add XML tool calling instructions to system prompt if requested
+        if include_xml_examples and xml_tool_calling and tool_registry:
+            openapi_schemas = tool_registry.get_openapi_schemas()
+            usage_examples = tool_registry.get_usage_examples()
+            
+            if openapi_schemas:
+                # Convert schemas to JSON string
+                schemas_json = json.dumps(openapi_schemas, indent=2)
+                
+                # Build usage examples section if any exist
+                usage_examples_section = ""
+                if usage_examples:
+                    usage_examples_section = "\n\nUsage Examples:\n"
+                    for func_name, example in usage_examples.items():
+                        usage_examples_section += f"\n{func_name}:\n{example}\n"
+                
+                examples_content = f"""
+
+In this environment you have access to a set of tools you can use to answer the user's question.
+
+You can invoke functions by writing a <function_calls> block like the following as part of your reply to the user:
+
+<function_calls>
+<invoke name="function_name">
+<parameter name="param_name">param_value</parameter>
+...
+</invoke>
+</function_calls>
+
+String and scalar parameters should be specified as-is, while lists and objects should use JSON format.
+
+Here are the functions available in JSON Schema format:
+
+```json
+{schemas_json}
+```
+
+When using the tools:
+- Use the exact function names from the JSON schema above
+- Include all required parameters as specified in the schema
+- Format complex data (objects, arrays) as JSON strings within the parameter tags
+- Boolean values should be "true" or "false" (lowercase)
+{usage_examples_section}
+"""
+                
+                system_content += examples_content
+                logger.debug("Appended XML tool examples to system prompt")
 
         now = datetime.datetime.now(datetime.timezone.utc)
         datetime_info = f"\n\n=== CURRENT DATE/TIME INFORMATION ===\n"
@@ -392,7 +443,7 @@ class PromptManager:
         system_content += datetime_info
 
         system_message = {"role": "system", "content": system_content}
-        return format_message_with_cache(system_message, model_name)
+        return system_message
 
 
 class MessageManager:
@@ -575,7 +626,10 @@ class AgentRunner:
         system_message = await PromptManager.build_system_prompt(
             self.config.model_name, self.config.agent_config, 
             self.config.thread_id, 
-            mcp_wrapper_instance, self.client
+            mcp_wrapper_instance, self.client,
+            tool_registry=self.thread_manager.tool_registry,
+            include_xml_examples=True,
+            xml_tool_calling=True
         )
         logger.info(f"📝 System message built once: {len(str(system_message.get('content', '')))} chars")
         logger.debug(f"model_name received: {self.config.model_name}")
@@ -589,9 +643,6 @@ class AgentRunner:
                 data = json.loads(data)
             if self.config.trace:
                 self.config.trace.update(input=data['content'])
-
-        message_manager = MessageManager(self.client, self.config.thread_id, self.config.model_name, self.config.trace, 
-                                         agent_config=self.config.agent_config, enable_context_manager=self.config.enable_context_manager)
 
         while continue_execution and iteration_count < self.config.max_iterations:
             iteration_count += 1
@@ -618,61 +669,7 @@ class AgentRunner:
             logger.debug(f"max_tokens: {max_tokens}")
             generation = self.config.trace.generation(name="thread_manager.run_thread") if self.config.trace else None
             try:
-                cache_metrics = None
-                from core.utils.llm_cache_utils import is_cache_supported, needs_cache_probe
-                
-                if self.config.stream and needs_cache_probe(self.config.model_name):
-                    logger.info(f"🔍 Making cache probe for {self.config.model_name} (doesn't send cache metrics in streaming)...")
-                    
-                    try:
-                        from core.services.llm import make_llm_api_call
-                        existing_messages = await self.thread_manager.get_llm_messages(self.config.thread_id)
-                        if existing_messages and len(existing_messages) > 0:
-                            probe_messages = [system_message] + existing_messages[-4:]  # Last 4 messages
-                        else:
-                            probe_messages = [system_message]
-                        
-                        probe_messages.append({
-                            "role": "user", 
-                            "content": "."
-                        })
-                        
-                        probe_response = await make_llm_api_call(
-                            messages=probe_messages,
-                            model_name=self.config.model_name,
-                            temperature=0,
-                            max_tokens=1,
-                            stream=False
-                        )
-                        
-                        if hasattr(probe_response, 'usage'):
-                            usage = probe_response.usage
-                            cache_creation = getattr(usage, 'cache_creation_input_tokens', 0)
-                            cache_read = getattr(usage, 'cache_read_input_tokens', 0)
-                            total_prompt = getattr(usage, 'prompt_tokens', 0)
-                            
-                            if cache_read > 0 or cache_creation > 0:
-                                cache_percentage = (cache_read / total_prompt * 100) if total_prompt > 0 else 0
-                                logger.info(f"✅ CACHE PROBE: {cache_read}/{total_prompt} tokens cached ({cache_percentage:.1f}%), {cache_creation} created")
-                                
-                                cache_metrics = {
-                                    'cache_read_tokens': cache_read,
-                                    'cache_creation_tokens': cache_creation,
-                                    'cache_percentage': cache_percentage,
-                                    'total_prompt_tokens': total_prompt
-                                }
-                            else:
-                                logger.info(f"📊 CACHE PROBE: No cache activity (total prompt: {total_prompt} tokens)")
-                                cache_metrics = {
-                                    'cache_read_tokens': 0,
-                                    'cache_creation_tokens': 0,
-                                    'cache_percentage': 0,
-                                    'total_prompt_tokens': total_prompt
-                                }
-                    
-                    except Exception as e:
-                        logger.warning(f"Cache probe failed (continuing with streaming): {e}")
-                
+                logger.info(f"🎭 About to call thread_manager.run_thread...")
                 response = await self.thread_manager.run_thread(
                     thread_id=self.config.thread_id,
                     system_prompt=system_message,
@@ -692,43 +689,49 @@ class AgentRunner:
                         xml_adding_strategy="user_message"
                     ),
                     native_max_auto_continues=self.config.native_max_auto_continues,
-                    include_xml_examples=True,
                     enable_thinking=self.config.enable_thinking,
                     reasoning_effort=self.config.reasoning_effort,
-                    enable_context_manager=self.config.enable_context_manager,
                     generation=generation,
-                    cache_metrics=cache_metrics
+                    enable_prompt_caching=self.config.enable_prompt_caching
                 )
-
-                if isinstance(response, dict) and "status" in response and response["status"] == "error":
-                    yield response
-                    break
+                logger.info(f"✅ thread_manager.run_thread returned: {type(response)}")
+                logger.info(f"✅ Response has __aiter__: {hasattr(response, '__aiter__')}")
+                logger.info(f"✅ Response is dict: {isinstance(response, dict)}")
 
                 last_tool_call = None
                 agent_should_terminate = False
                 error_detected = False
-                full_response = ""
 
                 try:
                     if hasattr(response, '__aiter__') and not isinstance(response, dict):
                         async for chunk in response:
+                            # Check for error status from thread_manager (dict format)
                             if isinstance(chunk, dict) and chunk.get('type') == 'status' and chunk.get('status') == 'error':
+                                logger.error(f"💥 run.py received error chunk from thread_manager: {chunk}")
                                 error_detected = True
                                 yield chunk
                                 continue
-                            
-                            if chunk.get('type') == 'status':
+
+                            # Check for error status in the stream (message format)
+                            if isinstance(chunk, dict) and chunk.get('type') == 'status':
                                 try:
+                                    content = chunk.get('content', {})
+                                    if isinstance(content, str):
+                                        content = json.loads(content)
+                                    
+                                    # Check for error status
+                                    if content.get('status_type') == 'error':
+                                        error_detected = True
+                                        yield chunk
+                                        continue
+                                    
+                                    # Check for agent termination
                                     metadata = chunk.get('metadata', {})
                                     if isinstance(metadata, str):
                                         metadata = json.loads(metadata)
                                     
                                     if metadata.get('agent_should_terminate'):
                                         agent_should_terminate = True
-                                        
-                                        content = chunk.get('content', {})
-                                        if isinstance(content, str):
-                                            content = json.loads(content)
                                         
                                         if content.get('function_name'):
                                             last_tool_call = content['function_name']
@@ -738,6 +741,7 @@ class AgentRunner:
                                 except Exception:
                                     pass
                             
+                            # Check for terminating XML tools in assistant content
                             if chunk.get('type') == 'assistant' and 'content' in chunk:
                                 try:
                                     content = chunk.get('content', '{}')
@@ -747,41 +751,38 @@ class AgentRunner:
                                         assistant_content_json = content
 
                                     assistant_text = assistant_content_json.get('content', '')
-                                    full_response += assistant_text
                                     if isinstance(assistant_text, str):
-                                        if '</ask>' in assistant_text or '</complete>' in assistant_text or '</web-browser-takeover>' in assistant_text:
-                                           if '</ask>' in assistant_text:
-                                               xml_tool = 'ask'
-                                           elif '</complete>' in assistant_text:
-                                               xml_tool = 'complete'
-                                           elif '</web-browser-takeover>' in assistant_text:
-                                               xml_tool = 'web-browser-takeover'
-
-                                           last_tool_call = xml_tool
+                                        if '</ask>' in assistant_text:
+                                            last_tool_call = 'ask'
+                                        elif '</complete>' in assistant_text:
+                                            last_tool_call = 'complete'
+                                        elif '</web-browser-takeover>' in assistant_text:
+                                            last_tool_call = 'web-browser-takeover'
                                 
-                                except json.JSONDecodeError:
-                                    pass
-                                except Exception:
+                                except (json.JSONDecodeError, Exception):
                                     pass
 
                             yield chunk
                     else:
+                        # Non-streaming response
+                        logger.error(f"Response is not async iterable: {type(response)}")
                         error_detected = True
 
                     if error_detected:
                         if generation:
-                            generation.end(output=full_response, status_message="error_detected", level="ERROR")
+                            generation.end(status_message="error_detected", level="ERROR")
                         break
                         
                     if agent_should_terminate or last_tool_call in ['ask', 'complete', 'web-browser-takeover', 'present_presentation']:
                         if generation:
-                            generation.end(output=full_response, status_message="agent_stopped")
+                            generation.end(status_message="agent_stopped")
                         continue_execution = False
 
                 except Exception as e:
                     error_msg = f"Error during response streaming: {str(e)}"
+                    logger.error(f"Response streaming error: {str(e)}", exc_info=True)
                     if generation:
-                        generation.end(output=full_response, status_message=error_msg, level="ERROR")
+                        generation.end(status_message=error_msg, level="ERROR")
                     yield {
                         "type": "status",
                         "status": "error",
@@ -799,7 +800,7 @@ class AgentRunner:
                 break
             
             if generation:
-                generation.end(output=full_response)
+                generation.end()
 
         asyncio.create_task(asyncio.to_thread(lambda: langfuse.flush()))
 
@@ -819,15 +820,16 @@ async def run_agent(
     trace: Optional[StatefulTraceClient] = None
 ):
     effective_model = model_name
-    is_tier_default = model_name in ["Kimi K2", "Claude Sonnet 4", "openai/gpt-5-mini"]
+
+    # is_tier_default = model_name in ["Kimi K2", "Claude Sonnet 4", "openai/gpt-5-mini"]
     
-    if is_tier_default and agent_config and agent_config.get('model'):
-        effective_model = agent_config['model']
-        logger.debug(f"Using model from agent config: {effective_model} (tier default was {model_name})")
-    elif not is_tier_default:
-        logger.debug(f"Using user-selected model: {effective_model}")
-    else:
-        logger.debug(f"Using tier default model: {effective_model}")
+    # if is_tier_default and agent_config and agent_config.get('model'):
+    #     effective_model = agent_config['model']
+    #     logger.debug(f"Using model from agent config: {effective_model} (tier default was {model_name})")
+    # elif not is_tier_default:
+    #     logger.debug(f"Using user-selected model: {effective_model}")
+    # else:
+    #     logger.debug(f"Using tier default model: {effective_model}")
     
     config = AgentConfig(
         thread_id=thread_id,

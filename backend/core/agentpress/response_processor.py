@@ -196,7 +196,7 @@ class ResponseProcessor:
         can_auto_continue: bool = False,
         auto_continue_count: int = 0,
         continuous_state: Optional[Dict[str, Any]] = None,
-        cache_metrics: Optional[Dict[str, Any]] = None,
+        generation = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Process a streaming LLM response, handling tool calls and execution.
         
@@ -213,6 +213,29 @@ class ResponseProcessor:
         Yields:
             Complete message objects matching the DB schema, except for content chunks.
         """
+        logger.info(f"🎬 Starting process_streaming_response for thread {thread_id}")
+        logger.info(f"📊 Response type: {type(llm_response)}, has __aiter__: {hasattr(llm_response, '__aiter__')}")
+        
+        # Try to iterate over the response and see what happens
+        logger.info(f"💫 About to start iterating over LLM response...")
+        
+        try:
+            chunk_count = 0
+            async for chunk in llm_response:
+                chunk_count += 1
+                logger.info(f"💫 Processing chunk {chunk_count}: {type(chunk)}")
+                if chunk_count <= 3:  # Log details of first few chunks
+                    logger.info(f"💫 Chunk {chunk_count} preview: {str(chunk)[:200]}")
+                
+                # If we get this far, iteration is working, continue with normal processing
+                # (This is just debugging - normal processing should continue below)
+                break
+                
+        except Exception as iter_error:
+            logger.error(f"💥 Error iterating over LLM response: {str(iter_error)}")
+            logger.error(f"💥 Iteration error type: {type(iter_error).__name__}")
+            raise
+        
         # Initialize from continuous state if provided (for auto-continue)
         continuous_state = continuous_state or {}
         accumulated_content = continuous_state.get('accumulated_content', "")
@@ -240,7 +263,7 @@ class ResponseProcessor:
                 "completion_tokens": 0,
                 "total_tokens": 0,
                 "cache_creation_input_tokens": 0,
-                "cache_read_input_tokens": 0
+                "prompt_tokens_details": {"cached_tokens": 0}
             },
             "response_ms": None,
             "first_chunk_time": None,
@@ -262,21 +285,29 @@ class ResponseProcessor:
                     thread_id=thread_id, type="status", content=start_content, 
                     is_llm_message=False, metadata={"thread_run_id": thread_run_id}
                 )
-                if start_msg_obj: yield format_for_yield(start_msg_obj)
+                if start_msg_obj: 
+                    logger.info(f"📤 About to yield start_msg_obj")
+                    yield format_for_yield(start_msg_obj)
+                    logger.info(f"✅ Successfully yielded start_msg_obj")
 
                 assist_start_content = {"status_type": "assistant_response_start"}
                 assist_start_msg_obj = await self.add_message(
                     thread_id=thread_id, type="status", content=assist_start_content, 
                     is_llm_message=False, metadata={"thread_run_id": thread_run_id}
                 )
-                if assist_start_msg_obj: yield format_for_yield(assist_start_msg_obj)
+                if assist_start_msg_obj: 
+                    logger.info(f"📤 About to yield assist_start_msg_obj")
+                    yield format_for_yield(assist_start_msg_obj)
+                    logger.info(f"✅ Successfully yielded assist_start_msg_obj")
             # --- End Start Events ---
 
             __sequence = continuous_state.get('sequence', 0)    # get the sequence from the previous auto-continue cycle
 
             chunk_count = 0
+            logger.info(f"🔄 About to start iterating over LLM response chunks")
             async for chunk in llm_response:
                 chunk_count += 1
+                logger.info(f"📦 Processing chunk #{chunk_count}: type={type(chunk)}")
                 
                 # Extract streaming metadata from chunks
                 current_time = datetime.now(timezone.utc).timestamp()
@@ -294,18 +325,22 @@ class ResponseProcessor:
                         if hasattr(chunk.choices[0], 'finish_reason'):
                             chunk_info += f", finish_reason={chunk.choices[0].finish_reason}"
                     logger.info(chunk_info)
+                    
+                    # Debug: Log chunk attributes for the first few chunks or usage chunks
+                    if chunk_count <= 3 or hasattr(chunk, 'usage'):
+                        logger.debug(f"🔍 Chunk #{chunk_count} attributes: {dir(chunk)}")
+                        if hasattr(chunk, 'usage') and chunk.usage:
+                            logger.debug(f"🔍 Usage object: {chunk.usage}")
+                            logger.debug(f"🔍 Usage attributes: {dir(chunk.usage)}")
+                        if hasattr(chunk, 'choices') and chunk.choices and hasattr(chunk.choices[0], 'finish_reason'):
+                            logger.debug(f"🔍 Finish reason: {chunk.choices[0].finish_reason}")
                 
                 if hasattr(chunk, 'created') and chunk.created:
                     streaming_metadata["created"] = chunk.created
                 if hasattr(chunk, 'model') and chunk.model:
                     streaming_metadata["model"] = chunk.model
                 if hasattr(chunk, 'usage') and chunk.usage:
-                    try:
-                        usage_dict = chunk.usage.model_dump() if hasattr(chunk.usage, 'model_dump') else chunk.usage.__dict__
-                        logger.info(f"📊 RAW USAGE DATA: {usage_dict}")
-                    except Exception as e:
-                        logger.info(f"📊 Could not dump usage object: {e}")
-                    
+                    # Extract basic usage tokens
                     if hasattr(chunk.usage, 'prompt_tokens') and chunk.usage.prompt_tokens is not None:
                         streaming_metadata["usage"]["prompt_tokens"] = chunk.usage.prompt_tokens
                     if hasattr(chunk.usage, 'completion_tokens') and chunk.usage.completion_tokens is not None:
@@ -313,33 +348,21 @@ class ResponseProcessor:
                     if hasattr(chunk.usage, 'total_tokens') and chunk.usage.total_tokens is not None:
                         streaming_metadata["usage"]["total_tokens"] = chunk.usage.total_tokens
                     
+                    # Extract cache metrics (LiteLLM standardized format)
                     cache_creation = getattr(chunk.usage, 'cache_creation_input_tokens', 0)
-                    cache_read = getattr(chunk.usage, 'cache_read_input_tokens', 0)
+                    cache_read = 0
                     
-                    if cache_creation == 0:
-                        cache_creation = getattr(chunk.usage, 'cache_creation_tokens', 0)
-                    if cache_read == 0:
-                        cache_read = getattr(chunk.usage, 'cache_read_tokens', 0)
-                    
+                    # LiteLLM puts cached tokens in prompt_tokens_details.cached_tokens for ALL providers
                     if hasattr(chunk.usage, 'prompt_tokens_details'):
                         details = chunk.usage.prompt_tokens_details
-                        if details and hasattr(details, 'cached_tokens') and details.cached_tokens > 0:
-                            cache_read = details.cached_tokens
-                            logger.info(f"🎯 OpenAI cache detected: {cache_read} cached tokens")
+                        if details and hasattr(details, 'cached_tokens'):
+                            cache_read = details.cached_tokens or 0
                     
-                    if cache_creation > 0:
-                        streaming_metadata["usage"]["cache_creation_input_tokens"] = cache_creation
-                    if cache_read > 0:
-                        streaming_metadata["usage"]["cache_read_input_tokens"] = cache_read
-                    
-                    if cache_creation > 0 or cache_read > 0:
-                        logger.info(f"🎯 STREAMING CACHE METRICS: creation={cache_creation}, read={cache_read}, total={chunk.usage.prompt_tokens}")
-                    elif chunk.usage.prompt_tokens and chunk.usage.prompt_tokens > 0:
-                        logger.warning(f"⚠️ STREAMING NO CACHE: total_tokens={chunk.usage.prompt_tokens}")
-                else:
-                    if hasattr(chunk, 'choices') and chunk.choices:
-                        if hasattr(chunk.choices[0], 'finish_reason') and chunk.choices[0].finish_reason:
-                            logger.info(f"📭 Final chunk #{chunk_count} has NO usage data (finish_reason={chunk.choices[0].finish_reason})")
+                    # Update cache metrics in streaming metadata
+                    streaming_metadata["usage"]["cache_creation_input_tokens"] = cache_creation
+                    if "prompt_tokens_details" not in streaming_metadata["usage"]:
+                        streaming_metadata["usage"]["prompt_tokens_details"] = {}
+                    streaming_metadata["usage"]["prompt_tokens_details"]["cached_tokens"] = cache_read
 
                 if hasattr(chunk, 'choices') and chunk.choices and hasattr(chunk.choices[0], 'finish_reason') and chunk.choices[0].finish_reason:
                     finish_reason = chunk.choices[0].finish_reason
@@ -355,13 +378,23 @@ class ResponseProcessor:
                             has_printed_thinking_prefix = True
                         # print(delta.reasoning_content, end='', flush=True)
                         # Append reasoning to main content to be saved in the final message
-                        accumulated_content += delta.reasoning_content
+                        reasoning_content = delta.reasoning_content
+                        logger.debug(f"Processing reasoning_content: type={type(reasoning_content)}, value={reasoning_content}")
+                        if isinstance(reasoning_content, list):
+                            reasoning_content = ''.join(str(item) for item in reasoning_content)
+                        logger.debug(f"About to concatenate reasoning_content (type={type(reasoning_content)}) to accumulated_content (type={type(accumulated_content)})")
+                        accumulated_content += reasoning_content
 
                     # Process content chunk
                     if delta and hasattr(delta, 'content') and delta.content:
                         chunk_content = delta.content
+                        logger.debug(f"Processing chunk_content: type={type(chunk_content)}, value={chunk_content}")
+                        if isinstance(chunk_content, list):
+                            chunk_content = ''.join(str(item) for item in chunk_content)
                         # print(chunk_content, end='', flush=True)
+                        logger.debug(f"About to concatenate chunk_content (type={type(chunk_content)}) to accumulated_content (type={type(accumulated_content)})")
                         accumulated_content += chunk_content
+                        logger.debug(f"About to concatenate chunk_content (type={type(chunk_content)}) to current_xml_content (type={type(current_xml_content)})")
                         current_xml_content += chunk_content
 
                         if not (config.max_xml_tool_calls > 0 and xml_tool_call_count >= config.max_xml_tool_calls):
@@ -484,45 +517,26 @@ class ResponseProcessor:
                     break
 
             logger.info(f"📊 Stream complete. Total chunks: {chunk_count}")
-            logger.info(f"📊 Usage from stream: prompt={streaming_metadata['usage']['prompt_tokens']}, completion={streaming_metadata['usage']['completion_tokens']}, cache_read={streaming_metadata['usage'].get('cache_read_input_tokens', 0)}")
-
-            if cache_metrics:
-                cache_read = cache_metrics.get('cache_read_tokens', 0)
-                cache_creation = cache_metrics.get('cache_creation_tokens', 0)
-                probe_prompt_tokens = cache_metrics.get('total_prompt_tokens', 0)
-                
-                streaming_metadata["usage"]["cache_read_input_tokens"] = cache_read
-                streaming_metadata["usage"]["cache_creation_input_tokens"] = cache_creation
-                
-                if cache_read > 0:
-                    if cache_creation > 0:
-                        logger.info(f"📊 Cache HIT + NEW: {cache_read} tokens read from cache, {cache_creation} new tokens cached")
-                    else:
-                        logger.info(f"📊 Cache HIT: {cache_read} tokens read from cache")
-                    logger.info(f"📊 Total prompt tokens: {probe_prompt_tokens}")
-                    streaming_metadata["usage"]["prompt_tokens"] = probe_prompt_tokens
-                elif cache_creation > 0:
-                    actual_prompt_tokens = probe_prompt_tokens + cache_creation
-                    logger.info(f"📊 Cache CREATION (first time): {cache_creation} tokens being cached")
-                    logger.info(f"📊 Total input tokens: {actual_prompt_tokens} (base: {probe_prompt_tokens} + creation: {cache_creation})")
-                    streaming_metadata["usage"]["prompt_tokens"] = actual_prompt_tokens
-                elif probe_prompt_tokens > 0:
-                    old_count = streaming_metadata["usage"]["prompt_tokens"]
-                    streaming_metadata["usage"]["prompt_tokens"] = probe_prompt_tokens
-                    if old_count != probe_prompt_tokens:
-                        logger.info(f"📊 Corrected token count from probe: {probe_prompt_tokens} (was {old_count})")
-                
-                streaming_metadata["usage"]["total_tokens"] = streaming_metadata["usage"]["prompt_tokens"] + streaming_metadata["usage"]["completion_tokens"]
-                
-                if cache_read > 0 or cache_creation > 0:
-                    cache_percentage = cache_metrics.get('cache_percentage', 0)
-                    logger.info(f"💾 Cache activity: {cache_read} tokens read from cache, {cache_creation} tokens cached")
             
-            if (
-                streaming_metadata["usage"]["total_tokens"] == 0
-                and not cache_metrics
-            ):
-                logger.warning("⚠️ No usage data from provider, using fallback token counting")
+            # Extract final cache metrics
+            final_cache_creation = streaming_metadata['usage'].get('cache_creation_input_tokens', 0)
+            final_cache_read = streaming_metadata['usage'].get('prompt_tokens_details', {}).get('cached_tokens', 0)
+            final_prompt_tokens = streaming_metadata['usage']['prompt_tokens']
+            final_completion_tokens = streaming_metadata['usage']['completion_tokens']
+            
+            logger.info(f"📊 Final usage: prompt={final_prompt_tokens}, completion={final_completion_tokens}")
+            
+            if final_cache_read > 0 or final_cache_creation > 0:
+                cache_percentage = (final_cache_read / final_prompt_tokens * 100) if final_prompt_tokens > 0 else 0
+                logger.info(f"✅ Cache success: {final_cache_read}/{final_prompt_tokens} tokens cached ({cache_percentage:.1f}%), {final_cache_creation} created")
+            else:
+                logger.debug(f"No cache activity detected")
+
+            # Note: cache_metrics is now None since we removed the probe
+            # All cache data should be captured directly from streaming chunks above
+            
+            if streaming_metadata["usage"]["total_tokens"] == 0:
+                logger.debug("No usage data from provider, using fallback token counting (normal for some providers like Anthropic)")
                 
                 try:
                     from litellm import token_counter
@@ -930,8 +944,8 @@ class ResponseProcessor:
         except Exception as e:
             logger.error(f"Error processing stream: {str(e)}", exc_info=True)
             self.trace.event(name="error_processing_stream", level="ERROR", status_message=(f"Error processing stream: {str(e)}"))
-            # Save and yield error status message
             
+            # Save and yield error status message
             err_content = {"role": "system", "status_type": "error", "message": str(e)}
             if (not "AnthropicException - Overloaded" in str(e)):
                 err_msg_obj = await self.add_message(
@@ -955,6 +969,14 @@ class ResponseProcessor:
                 
                 logger.debug(f"Updated continuous state for auto-continue with {len(accumulated_content)} chars")
             else:
+                # Set the final output in the generation object if provided
+                if generation and 'accumulated_content' in locals():
+                    try:
+                        generation.end(output=accumulated_content)
+                        logger.debug(f"Set generation output: {len(accumulated_content)} chars")
+                    except Exception as gen_e:
+                        logger.error(f"Error setting generation output: {str(gen_e)}", exc_info=True)
+                
                 # Save and Yield the final thread_run_end status (only if not auto-continuing and finish_reason is not 'length')
                 try:
                     end_content = {"status_type": "thread_run_end"}
@@ -974,6 +996,7 @@ class ResponseProcessor:
         prompt_messages: List[Dict[str, Any]],
         llm_model: str,
         config: ProcessorConfig = ProcessorConfig(),
+        generation = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Process a non-streaming LLM response, handling tool calls and execution.
         
@@ -1143,6 +1166,7 @@ class ResponseProcessor:
         except Exception as e:
              logger.error(f"Error processing non-streaming response: {str(e)}", exc_info=True)
              self.trace.event(name="error_processing_non_streaming_response", level="ERROR", status_message=(f"Error processing non-streaming response: {str(e)}"))
+             
              # Save and yield error status
              err_content = {"role": "system", "status_type": "error", "message": str(e)}
              err_msg_obj = await self.add_message(
@@ -1157,7 +1181,15 @@ class ResponseProcessor:
              raise # Use bare 'raise' to preserve the original exception with its traceback
 
         finally:
-             # Save and Yield the final thread_run_end status
+            # Set the final output in the generation object if provided
+            if generation and 'content' in locals():
+                try:
+                    generation.end(output=content)
+                    logger.debug(f"Set non-streaming generation output: {len(content)} chars")
+                except Exception as gen_e:
+                    logger.error(f"Error setting non-streaming generation output: {str(gen_e)}", exc_info=True)
+            
+            # Save and Yield the final thread_run_end status
             end_content = {"status_type": "thread_run_end"}
             end_msg_obj = await self.add_message(
                 thread_id=thread_id, type="status", content=end_content, 
