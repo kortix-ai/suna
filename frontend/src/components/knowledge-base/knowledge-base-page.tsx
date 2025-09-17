@@ -532,6 +532,7 @@ export function KnowledgeBasePage() {
 
             // Upload files one by one
             let successCount = 0;
+            let limitErrorShown = false; // Track if we've shown the limit error
 
             for (let i = 0; i < fileArray.length; i++) {
                 const file = fileArray[i];
@@ -561,9 +562,26 @@ export function KnowledgeBasePage() {
                     if (response.ok) {
                         successCount++;
                     } else {
-                        console.error(`Failed to upload ${file.name}:`, response.status);
+                        // Handle specific error cases
+                        if (response.status === 413) {
+                            // Only show one limit error per upload session
+                            if (!limitErrorShown) {
+                                try {
+                                    const errorData = await response.json();
+                                    toast.error(`Knowledge base limit exceeded: ${errorData.detail || 'Total file size limit (50MB) exceeded'}`);
+                                } catch {
+                                    toast.error('Knowledge base limit exceeded: Total file size limit (50MB) exceeded');
+                                }
+                                limitErrorShown = true;
+                            }
+                            // Don't log console error for limit exceeded
+                        } else {
+                            toast.error(`Failed to upload ${file.name}: Error ${response.status}`);
+                            console.error(`Failed to upload ${file.name}:`, response.status);
+                        }
                     }
                 } catch (error) {
+                    toast.error(`Error uploading ${file.name}`);
                     console.error(`Error uploading ${file.name}:`, error);
                 }
 

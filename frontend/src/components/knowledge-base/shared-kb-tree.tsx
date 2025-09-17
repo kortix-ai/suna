@@ -67,6 +67,7 @@ interface SharedTreeItemProps {
     // Assignment state
     assignments?: { [id: string]: boolean };
     onToggleAssignment?: (id: string) => void;
+    assignmentIndeterminate?: { [id: string]: boolean }; // For folder indeterminate states
 
     // Upload status
     uploadStatus?: {
@@ -98,6 +99,7 @@ export function SharedTreeItem({
     editingName,
     assignments,
     onToggleAssignment,
+    assignmentIndeterminate,
     uploadStatus
 }: SharedTreeItemProps) {
 
@@ -251,12 +253,24 @@ export function SharedTreeItem({
 
                         {/* Assignment Switch */}
                         {enableAssignment && (
-                            <Switch
-                                checked={assignments?.[item.id] || false}
-                                onCheckedChange={() => onToggleAssignment?.(item.id)}
-                                onClick={(e) => e.stopPropagation()}
-                                className="shrink-0"
-                            />
+                            <div className="relative shrink-0">
+                                <Switch
+                                    checked={assignments?.[item.id] || false}
+                                    onCheckedChange={() => onToggleAssignment?.(item.id)}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="shrink-0"
+                                />
+                                {/* Indeterminate indicator for folders */}
+                                {assignmentIndeterminate?.[item.id] && (
+                                    <div
+                                        className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                                        style={{
+                                            background: 'linear-gradient(45deg, transparent 30%, hsl(var(--primary)) 30%, hsl(var(--primary)) 70%, transparent 70%)',
+                                            borderRadius: 'inherit'
+                                        }}
+                                    />
+                                )}
+                            </div>
                         )}
 
                         {/* Actions Dropdown */}
@@ -322,6 +336,7 @@ export function SharedTreeItem({
                                     editingName={editingName}
                                     assignments={assignments}
                                     onToggleAssignment={onToggleAssignment}
+                                    assignmentIndeterminate={assignmentIndeterminate}
                                 />
                             ))}
                         </div>
@@ -361,9 +376,14 @@ export function SharedTreeItem({
                         </div>
                     </div>
 
-                    {/* Assignment Indicator */}
-                    {enableAssignment && assignments?.[item.parentId || ''] && (
-                        <div className="w-2 h-2 bg-green-500 rounded-full ml-2 shrink-0"></div>
+                    {/* Assignment Switch for Files */}
+                    {enableAssignment && (
+                        <Switch
+                            checked={assignments?.[item.id] || false}
+                            onCheckedChange={() => onToggleAssignment?.(item.id)}
+                            onClick={(e) => e.stopPropagation()}
+                            className="shrink-0"
+                        />
                     )}
 
 

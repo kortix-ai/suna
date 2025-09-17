@@ -39,7 +39,7 @@ interface AgentKnowledgeBaseManagerProps {
 
 export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledgeBaseManagerProps) => {
     const [treeData, setTreeData] = useState<TreeItem[]>([]);
-    const [assignments, setAssignments] = useState<{ [id: string]: boolean }>({});
+    const [selectedEntries, setSelectedEntries] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(true);
 
     // Load folders and entries
@@ -64,21 +64,19 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
 
             const foldersData = await foldersResponse.json();
             console.log('Folders data:', foldersData);
-            console.log('Folders data type:', typeof foldersData);
 
-            // The API returns an array directly, not wrapped in an object
             const folders = Array.isArray(foldersData) ? foldersData : (foldersData.folders || []);
             console.log('Final folders array:', folders);
 
-            // Load current assignments - but don't fail if this errors
-            let assignmentsData = {};
+            // Load current assignments (just entry IDs)
+            let currentAssignments = {};
             try {
                 const assignmentsResponse = await fetch(`${API_URL}/knowledge-base/agents/${agentId}/assignments`, { headers });
                 console.log('Assignments response status:', assignmentsResponse.status);
 
                 if (assignmentsResponse.ok) {
-                    assignmentsData = await assignmentsResponse.json();
-                    console.log('Assignments data:', assignmentsData);
+                    currentAssignments = await assignmentsResponse.json();
+                    console.log('Assignments data:', currentAssignments);
                 }
             } catch (assignError) {
                 console.warn('Failed to load assignments (continuing anyway):', assignError);
@@ -86,11 +84,16 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
 
             // Build tree structure
             const tree: TreeItem[] = [];
-            const assignmentMap: { [id: string]: boolean } = {};
+            const selectedEntrySet = new Set<string>();
+
+            // Add enabled entries to selection
+            Object.entries(currentAssignments).forEach(([entryId, enabled]) => {
+                if (enabled) {
+                    selectedEntrySet.add(entryId);
+                }
+            });
 
             console.log('Processing folders:', folders);
-            console.log('Folders type:', typeof folders);
-            console.log('Is array:', Array.isArray(folders));
 
             if (!Array.isArray(folders)) {
                 console.error('Folders is not an array:', folders);
@@ -100,7 +103,7 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
             for (const folder of folders) {
                 console.log('Processing folder:', folder);
 
-                // Load entries for this folder - but don't fail if this errors
+                // Load entries for this folder
                 let entriesData = { entries: [] };
                 try {
                     const entriesResponse = await fetch(`${API_URL}/knowledge-base/folders/${folder.folder_id}/entries`, { headers });
@@ -110,7 +113,6 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
                         const rawEntriesData = await entriesResponse.json();
                         console.log(`Entries data for folder ${folder.folder_id}:`, rawEntriesData);
 
-                        // Handle both formats: { entries: [...] } or just [...]
                         if (Array.isArray(rawEntriesData)) {
                             entriesData = { entries: rawEntriesData };
                         } else {
@@ -121,18 +123,11 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
                     console.warn(`Failed to load entries for folder ${folder.folder_id} (continuing):`, entriesError);
                 }
 
-                const folderAssignment = assignmentsData[folder.folder_id];
-                const isFolderEnabled = folderAssignment?.enabled || false;
-                assignmentMap[folder.folder_id] = isFolderEnabled;
-
                 const children: TreeItem[] = [];
                 const entries = entriesData.entries || [];
                 console.log(`Processing ${entries.length} entries for folder ${folder.name}`);
 
                 for (const entry of entries) {
-                    const isFileEnabled = folderAssignment?.file_assignments?.[entry.entry_id] || false;
-                    assignmentMap[entry.entry_id] = isFileEnabled;
-
                     children.push({
                         id: entry.entry_id,
                         name: entry.filename,
@@ -145,17 +140,17 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
                     id: folder.folder_id,
                     name: folder.name,
                     type: 'folder',
-                    expanded: true, // Always expand to show content
+                    expanded: true,
                     children,
                     data: folder
                 });
             }
 
             console.log('Final tree:', tree);
-            console.log('Final assignments:', assignmentMap);
+            console.log('Selected entries:', selectedEntrySet);
 
             setTreeData(tree);
-            setAssignments(assignmentMap);
+            setSelectedEntries(selectedEntrySet);
             setLoading(false);
         } catch (error) {
             console.error('Failed to load data:', error);
@@ -164,55 +159,64 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
         }
     };
 
-    const toggleFolderAssignment = async (folderId: string) => {
-        const newAssignments = { ...assignments };
-        const isEnabled = !newAssignments[folderId];
-
-        // Toggle the folder
-        newAssignments[folderId] = isEnabled;
-
-        // When enabling a folder, enable ALL its files
-        // When disabling a folder, disable ALL its files  
+    const getFolderSelectionState = (folderId: string) => {
         const folder = treeData.find(f => f.id === folderId);
-        if (folder?.children) {
-            folder.children.forEach(child => {
-                newAssignments[child.id] = isEnabled;
-            });
+        if (!folder?.children || folder.children.length === 0) {
+            return { selected: false, indeterminate: false };
         }
 
-        setAssignments(newAssignments);
-        await saveAssignments(newAssignments);
+        const folderEntryIds = folder.children.map(child => child.id);
+        const selectedCount = folderEntryIds.filter(id => selectedEntries.has(id)).length;
+
+        if (selectedCount === 0) {
+            return { selected: false, indeterminate: false };
+        } else if (selectedCount === folderEntryIds.length) {
+            return { selected: true, indeterminate: false };
+        } else {
+            return { selected: false, indeterminate: true };
+        }
     };
 
-    const saveAssignments = async (newAssignments: { [id: string]: boolean }) => {
+    const toggleEntrySelection = async (entryId: string) => {
+        const newSelection = new Set(selectedEntries);
+        if (newSelection.has(entryId)) {
+            newSelection.delete(entryId);
+        } else {
+            newSelection.add(entryId);
+        }
+        setSelectedEntries(newSelection);
+        await saveAssignments(newSelection);
+    };
+
+    const toggleFolderSelection = async (folderId: string) => {
+        const folder = treeData.find(f => f.id === folderId);
+        if (!folder?.children) return;
+
+        const folderEntryIds = folder.children.map(child => child.id);
+        const allSelected = folderEntryIds.every(id => selectedEntries.has(id));
+
+        const newSelection = new Set(selectedEntries);
+
+        if (allSelected) {
+            // Deselect all entries in folder
+            folderEntryIds.forEach(id => newSelection.delete(id));
+        } else {
+            // Select all entries in folder
+            folderEntryIds.forEach(id => newSelection.add(id));
+        }
+
+        setSelectedEntries(newSelection);
+        await saveAssignments(newSelection);
+    };
+
+    const saveAssignments = async (selectedSet: Set<string>) => {
         try {
             const headers = await getAuthHeaders();
-
-            // Build assignments object for API - only include enabled folders
-            const assignmentsPayload: any = {};
-
-            for (const folder of treeData) {
-                if (newAssignments[folder.id]) {
-                    // If folder is enabled, include all its files
-                    const fileAssignments: { [id: string]: boolean } = {};
-                    if (folder.children) {
-                        folder.children.forEach(child => {
-                            fileAssignments[child.id] = true; // All files enabled when folder is enabled
-                        });
-                    }
-
-                    assignmentsPayload[folder.id] = {
-                        folder_id: folder.id,
-                        enabled: true,
-                        file_assignments: fileAssignments
-                    };
-                }
-            }
 
             const response = await fetch(`${API_URL}/knowledge-base/agents/${agentId}/assignments`, {
                 method: 'POST',
                 headers,
-                body: JSON.stringify({ assignments: assignmentsPayload })
+                body: JSON.stringify({ entry_ids: Array.from(selectedSet) })
             });
 
             if (!response.ok) {
@@ -276,20 +280,64 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
                         </div>
                     ) : (
                         <div className="p-2 space-y-0">
-                            {treeData.map((item) => (
-                                <SharedTreeItem
-                                    key={item.id}
-                                    item={item}
-                                    onExpand={toggleExpand}
-                                    onSelect={() => { }} // No selection needed in agent config
-                                    enableDnd={false}
-                                    enableActions={false}
-                                    enableEdit={false}
-                                    enableAssignment={true}
-                                    assignments={assignments}
-                                    onToggleAssignment={toggleFolderAssignment}
-                                />
-                            ))}
+                            {treeData.map((item) => {
+                                // Build assignments for ALL items every time
+                                const allAssignments: { [id: string]: boolean } = {};
+
+                                // Add all files from all folders
+                                treeData.forEach(folder => {
+                                    if (folder.children) {
+                                        folder.children.forEach(child => {
+                                            allAssignments[child.id] = selectedEntries.has(child.id);
+                                        });
+                                    }
+                                });
+
+                                // Add folder states
+                                treeData.forEach(folder => {
+                                    const folderState = getFolderSelectionState(folder.id);
+                                    allAssignments[folder.id] = folderState.selected;
+                                });
+
+                                // Build indeterminate states for all folders
+                                const allIndeterminateStates: { [id: string]: boolean } = {};
+                                treeData.forEach(folder => {
+                                    const folderState = getFolderSelectionState(folder.id);
+                                    if (folderState.indeterminate) {
+                                        allIndeterminateStates[folder.id] = true;
+                                    }
+                                });
+
+                                return (
+                                    <SharedTreeItem
+                                        key={item.id}
+                                        item={item}
+                                        onExpand={toggleExpand}
+                                        onSelect={() => {
+                                            if (item.type === 'folder') {
+                                                toggleFolderSelection(item.id);
+                                            } else {
+                                                toggleEntrySelection(item.id);
+                                            }
+                                        }}
+                                        enableDnd={false}
+                                        enableActions={false}
+                                        enableEdit={false}
+                                        enableAssignment={true}
+                                        assignments={allAssignments}
+                                        assignmentIndeterminate={allIndeterminateStates}
+                                        onToggleAssignment={(id) => {
+                                            const targetItem = treeData.find(f => f.id === id) ||
+                                                treeData.flatMap(f => f.children || []).find(c => c.id === id);
+                                            if (targetItem?.type === 'folder') {
+                                                toggleFolderSelection(id);
+                                            } else {
+                                                toggleEntrySelection(id);
+                                            }
+                                        }}
+                                    />
+                                );
+                            })}
                         </div>
                     )}
                 </div>
@@ -297,7 +345,7 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
 
             {/* Summary */}
             <div className="text-xs text-muted-foreground">
-                {Object.values(assignments).filter(Boolean).length} items enabled for this agent
+                {selectedEntries.size} items enabled for this agent
             </div>
         </div>
     );

@@ -109,42 +109,147 @@ class FileProcessor:
             return {'success': False, 'error': str(e)}
     
     async def _generate_summary(self, content: str, filename: str) -> str:
-        """Generate LLM summary of file content."""
+        """Generate LLM summary of file content with smart chunking and fallbacks."""
         try:
-            prompt = f"""Create a concise summary of this file for use in an AI agent's knowledge base.
+            # Model priority: Google Gemini → OpenRouter → GPT-5 Mini
+            models = [
+                ("google/gemini-2.5-flash-lite", 1_000_000),  # 1M context
+                ("openrouter/google/gemini-2.5-flash-lite", 1_000_000),  # Fallback
+                ("gpt-5-mini", 400_000)  # Final fallback
+            ]
+            
+            # Estimate tokens (rough: 1 token ≈ 4 chars)
+            estimated_tokens = len(content) // 4
+            
+            for model_name, context_limit in models:
+                try:
+                    # Reserve tokens for prompt and response
+                    usable_context = context_limit - 1000  # Reserve for prompt + response
+                    
+                    if estimated_tokens <= usable_context:
+                        # Content fits, use full content
+                        processed_content = content
+                    else:
+                        # Content too large, intelligent chunking
+                        processed_content = self._smart_chunk_content(content, usable_context * 4)  # Convert back to chars
+                    
+                    prompt = f"""Analyze this file and create a concise, actionable summary for an AI agent's knowledge base.
 
 File: {filename}
-Content: {content[:8000]}
+Content: {processed_content}
 
 Generate a 2-3 sentence summary that captures:
 1. What this file contains
-2. Key information or purpose
+2. Key information or purpose  
 3. When this knowledge would be useful
 
 Keep it under 200 words and make it actionable for context injection."""
 
-            messages = [{"role": "user", "content": prompt}]
+                    messages = [{"role": "user", "content": prompt}]
+                    
+                    response = await make_llm_api_call(
+                        messages=messages,
+                        model_name=model_name,
+                        temperature=0.1,
+                        max_tokens=300
+                    )
+                    
+                    summary = response.choices[0].message.content.strip()
+                    
+                    if summary:
+                        logger.info(f"Summary generated successfully using {model_name}")
+                        return summary
+                        
+                except Exception as e:
+                    logger.warning(f"Model {model_name} failed: {str(e)}")
+                    continue
             
-            response = await make_llm_api_call(
-                messages=messages,
-                model_name="anthropic/claude-4-sonnet",
-                temperature=0.1,
-                max_tokens=300
-            )
-            
-            summary = response.choices[0].message.content.strip()
-            
-            # Ensure summary is never empty
-            if not summary:
-                summary = f"File '{filename}' contains {len(content)} characters of content."
-            
-            return summary
+            # All models failed - high-reliability fallback
+            logger.error("All LLM models failed, using intelligent fallback")
+            return self._create_fallback_summary(content, filename)
             
         except Exception as e:
             logger.error(f"Error generating summary: {str(e)}")
-            # Ensure fallback is never empty
-            fallback = f"File '{filename}' uploaded successfully. Content length: {len(content)} characters."
-            return fallback
+            return self._create_fallback_summary(content, filename)
+    
+    def _smart_chunk_content(self, content: str, max_chars: int) -> str:
+        """Intelligently chunk content to fit context limits."""
+        if len(content) <= max_chars:
+            return content
+        
+        # Strategy: Take beginning + end with priority sections
+        quarter = max_chars // 4
+        
+        # Always include beginning (most important)
+        beginning = content[:quarter * 2]
+        
+        # Include end for conclusion/summary
+        ending = content[-quarter:]
+        
+        # Try to find important middle sections (headers, key terms)
+        middle_section = ""
+        remaining_chars = max_chars - len(beginning) - len(ending) - 100  # Buffer
+        
+        if remaining_chars > 0:
+            middle_start = len(beginning)
+            middle_end = len(content) - quarter
+            middle_content = content[middle_start:middle_end]
+            
+            # Look for important sections (lines with caps, numbers, bullets)
+            lines = middle_content.split('\n')
+            important_lines = []
+            current_length = 0
+            
+            for line in lines:
+                line_stripped = line.strip()
+                if not line_stripped:
+                    continue
+                    
+                # Prioritize lines that look important
+                is_important = (
+                    line_stripped.isupper() or  # Headers
+                    line_stripped.startswith(('•', '-', '*', '1.', '2.')) or  # Lists
+                    any(keyword in line_stripped.lower() for keyword in ['summary', 'conclusion', 'important', 'key', 'main']) or
+                    len(line_stripped) < 100  # Short lines often important
+                )
+                
+                if is_important and current_length + len(line) < remaining_chars:
+                    important_lines.append(line)
+                    current_length += len(line)
+            
+            if important_lines:
+                middle_section = '\n'.join(important_lines)
+        
+        # Combine sections
+        if middle_section:
+            return f"{beginning}\n\n[KEY SECTIONS]\n{middle_section}\n\n[ENDING]\n{ending}"
+        else:
+            return f"{beginning}\n\n[...content truncated...]\n\n{ending}"
+    
+    def _create_fallback_summary(self, content: str, filename: str) -> str:
+        """Create intelligent fallback summary when LLM fails."""
+        # Extract first meaningful portion
+        preview = content[:2000].strip()
+        
+        # Basic content analysis
+        lines = content.split('\n')
+        non_empty_lines = [line.strip() for line in lines if line.strip()]
+        
+        # Try to identify content type
+        content_type = "document"
+        if filename.endswith('.py'):
+            content_type = "Python code"
+        elif filename.endswith('.js'):
+            content_type = "JavaScript code"
+        elif filename.endswith('.md'):
+            content_type = "Markdown document"
+        elif filename.endswith('.txt'):
+            content_type = "text document"
+        elif filename.endswith('.csv'):
+            content_type = "CSV data file"
+        
+        # Generate intelligent fallback
+        return f"This {content_type} '{filename}' contains {len(content):,} characters across {len(non_empty_lines)} lines. Preview: {preview[:200]}{'...' if len(preview) > 200 else ''} This file would be useful for understanding the specific content and context it provides."
     
     def _extract_content(self, file_content: bytes, filename: str, mime_type: str) -> str:
         """Extract text content from file bytes."""

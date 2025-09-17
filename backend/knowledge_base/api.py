@@ -6,7 +6,42 @@ from core.services.supabase import DBConnection
 from core.knowledge_base.file_processor import FileProcessor
 from core.utils.logger import logger
 
+# Constants
+MAX_TOTAL_FILE_SIZE = 50 * 1024 * 1024  # 50MB total limit per user
+
 router = APIRouter(prefix="/knowledge-base", tags=["knowledge-base"])
+
+# Helper function to check total file size limit
+async def check_total_file_size_limit(account_id: str, new_file_size: int):
+    """Check if adding a new file would exceed the total file size limit."""
+    try:
+        client = await DBConnection().client
+        
+        # Get total size of all current entries for this account
+        result = await client.table('knowledge_base_entries').select(
+            'file_size'
+        ).eq('account_id', account_id).eq('is_active', True).execute()
+        
+        current_total_size = sum(entry['file_size'] for entry in result.data)
+        new_total_size = current_total_size + new_file_size
+        
+        if new_total_size > MAX_TOTAL_FILE_SIZE:
+            current_mb = current_total_size / (1024 * 1024)
+            new_mb = new_file_size / (1024 * 1024)
+            limit_mb = MAX_TOTAL_FILE_SIZE / (1024 * 1024)
+            
+            raise HTTPException(
+                status_code=413,
+                detail=f"File size limit exceeded. Current total: {current_mb:.1f}MB, New file: {new_mb:.1f}MB, Limit: {limit_mb}MB"
+            )
+            
+        return True
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error checking file size limit: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to check file size limit")
 
 # Models
 class FolderRequest(BaseModel):
@@ -245,6 +280,9 @@ async def upload_file(
         # Read file content
         file_content = await file.read()
         
+        # Check total file size limit before processing
+        await check_total_file_size_limit(account_id, len(file_content))
+        
         # Process file
         result = await file_processor.process_file(
             account_id=account_id,
@@ -348,48 +386,16 @@ async def get_agent_assignments(
     agent_id: str,
     auth: AuthorizedAgentAccess = Depends(require_agent_access)
 ):
-    """Get detailed assignments (folders and files) for an agent."""
+    """Get entry assignments for an agent."""
     try:
         client = await db.client
         
-        # Get folder assignments
-        folder_result = await client.table('agent_knowledge_assignments').select(
-            'folder_id'
+        # Get file-level assignments only
+        file_result = await client.table('agent_knowledge_entry_assignments').select(
+            'entry_id, enabled'
         ).eq('agent_id', agent_id).execute()
         
-        assigned_folder_ids = [row['folder_id'] for row in folder_result.data]
-        
-        # Get file-level assignments
-        if assigned_folder_ids:
-            file_result = await client.table('agent_knowledge_entry_assignments').select(
-                'entry_id, enabled'
-            ).eq('agent_id', agent_id).execute()
-            
-            file_assignments = {row['entry_id']: row['enabled'] for row in file_result.data}
-        else:
-            file_assignments = {}
-        
-        # Build response structure
-        assignments = {}
-        for folder_id in assigned_folder_ids:
-            # Get entries for this folder to build file assignments
-            entries_result = await client.table('knowledge_base_entries').select(
-                'entry_id'
-            ).eq('folder_id', folder_id).execute()
-            
-            folder_file_assignments = {}
-            for entry in entries_result.data:
-                entry_id = entry['entry_id']
-                # Default to enabled if no specific assignment
-                folder_file_assignments[entry_id] = file_assignments.get(entry_id, True)
-            
-            assignments[folder_id] = {
-                'folder_id': folder_id,
-                'enabled': True,
-                'file_assignments': folder_file_assignments
-            }
-        
-        return assignments
+        return {row['entry_id']: row['enabled'] for row in file_result.data}
         
     except Exception as e:
         logger.error(f"Error getting agent assignments: {str(e)}")
@@ -401,35 +407,23 @@ async def update_agent_assignments(
     assignment_data: dict,
     auth: AuthorizedAgentAccess = Depends(require_agent_access)
 ):
-    """Update agent assignments with folder and file-level control."""
+    """Update agent entry assignments."""
     try:
         client = await db.client
         account_id = auth.user_id
-        assignments = assignment_data.get('assignments', {})
+        entry_ids = assignment_data.get('entry_ids', [])
         
         # Clear existing assignments
-        await client.table('agent_knowledge_assignments').delete().eq('agent_id', agent_id).execute()
         await client.table('agent_knowledge_entry_assignments').delete().eq('agent_id', agent_id).execute()
         
-        # Process new assignments
-        for folder_id, assignment in assignments.items():
-            if assignment.get('enabled'):
-                # Create folder assignment
-                await client.table('agent_knowledge_assignments').insert({
-                    'agent_id': agent_id,
-                    'folder_id': folder_id,
-                    'account_id': account_id
-                }).execute()
-                
-                # Create file-level assignments
-                file_assignments = assignment.get('file_assignments', {})
-                for entry_id, enabled in file_assignments.items():
-                    await client.table('agent_knowledge_entry_assignments').insert({
-                        'agent_id': agent_id,
-                        'entry_id': entry_id,
-                        'account_id': account_id,
-                        'enabled': enabled
-                    }).execute()
+        # Insert new entry assignments
+        for entry_id in entry_ids:
+            await client.table('agent_knowledge_entry_assignments').insert({
+                'agent_id': agent_id,
+                'entry_id': entry_id,
+                'account_id': account_id,
+                'enabled': True
+            }).execute()
         
         return {"success": True, "message": "Assignments updated successfully"}
         

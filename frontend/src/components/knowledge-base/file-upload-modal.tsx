@@ -129,13 +129,24 @@ export function FileUploadModal({
                         ));
                         completedFiles++;
                     } else {
+                        // Handle specific error cases
+                        let errorMessage = `Upload failed: ${response.status}`;
+                        if (response.status === 413) {
+                            try {
+                                const errorData = await response.json();
+                                errorMessage = errorData.detail || 'Knowledge base limit (50MB) exceeded';
+                            } catch {
+                                errorMessage = 'Knowledge base limit (50MB) exceeded';
+                            }
+                        }
+
                         // Mark file as error
                         setUploadStatuses(prev => prev.map((status, index) =>
                             index === i ? {
                                 ...status,
                                 status: 'error',
                                 progress: 0,
-                                error: `Upload failed: ${response.status}`
+                                error: errorMessage
                             } : status
                         ));
                     }
