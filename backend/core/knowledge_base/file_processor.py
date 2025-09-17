@@ -26,7 +26,7 @@ class FileProcessor:
         '.pdf', '.docx'
     }
     
-    MAX_FILE_SIZE = 50 * 1024 * 1024
+    MAX_FILE_SIZE = 500 * 1024 * 1024
     MAX_ZIP_ENTRIES = 1000
     MAX_CONTENT_LENGTH = 100000
     
