@@ -218,14 +218,14 @@ async def run_agent_background(
             # Check for agent-signaled completion or error
             if response.get('type') == 'status':
                  status_val = response.get('status')
-                 logger.debug(f"🎯 run_agent_background received status: {status_val}, full response: {response}")
+                 logger.debug(f"Agent status: {status_val}")
                  
                  if status_val in ['completed', 'failed', 'stopped', 'error']:
-                     logger.debug(f"Agent run {agent_run_id} finished via status message: {status_val}")
+                     logger.debug(f"Agent run {agent_run_id} finished with status: {status_val}")
                      final_status = status_val if status_val != 'error' else 'failed'
                      if status_val in ['failed', 'stopped', 'error']:
                          error_message = response.get('message', f"Run ended with status: {status_val}")
-                         logger.error(f"💥 Agent run {agent_run_id} failed with error: {error_message}")
+                         logger.error(f"Agent run failed: {error_message}")
                      break
 
         # If loop finished without explicit completion/error/stop signal, mark as completed

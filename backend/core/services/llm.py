@@ -2,29 +2,21 @@
 LLM API interface for making calls to various language models.
 
 This module provides a unified interface for making API calls to different LLM providers
-(OpenAI, Anthropic, Groq, xAI, etc.) using LiteLLM. It includes support for:
-- Streaming responses
-- Tool calls and function calling
-- Retry logic with exponential backoff
-- Model-specific configurations
-- Comprehensive error handling and logging
+using LiteLLM with simplified error handling and clean parameter management.
 """
 
 from typing import Union, Dict, Any, Optional, AsyncGenerator, List
 import os
+import asyncio
 import litellm
 from litellm.router import Router
 from litellm.files.main import ModelResponse
 from core.utils.logger import logger
 from core.utils.config import config
+from core.agentpress.error_processor import ErrorProcessor
 
-# Import common LiteLLM exceptions for better error handling
-# Simplified approach - just catch all exceptions and parse error messages
-logger.debug("Using simplified exception handling for LiteLLM")
-
-# Configure LiteLLM logging via environment variable instead of deprecated set_verbose
-os.environ['LITELLM_LOG'] = 'DEBUG'
-# Let LiteLLM auto-adjust params and drop unsupported ones (e.g., GPT-5 temperature!=1)
+# Configure LiteLLM
+os.environ['LITELLM_LOG'] = 'INFO'  # Reduced verbosity
 litellm.modify_params = True
 litellm.drop_params = True
 
@@ -34,7 +26,7 @@ provider_router = None
 
 
 class LLMError(Exception):
-    """Base exception for LLM-related errors."""
+    """Exception for LLM-related errors."""
     pass
 
 def setup_api_keys() -> None:
@@ -247,7 +239,7 @@ def prepare_params(
     # Enable usage tracking for streaming requests
     if stream:
         params["stream_options"] = {"include_usage": True}
-        logger.info(f"🎯 Added stream_options for usage tracking: {params['stream_options']}")
+        logger.debug(f"Added stream_options for usage tracking: {params['stream_options']}")
 
     if api_key:
         params["api_key"] = api_key
@@ -302,47 +294,21 @@ async def make_llm_api_call(
     enable_thinking: Optional[bool] = False,
     reasoning_effort: Optional[str] = "low",
 ) -> Union[Dict[str, Any], AsyncGenerator, ModelResponse]:
-    """
-    Make an API call to a language model using LiteLLM.
-
-    Args:
-        messages: List of message dictionaries for the conversation
-        model_name: Name of the model to use (e.g., "gpt-4", "claude-3", "openrouter/openai/gpt-4", "bedrock/anthropic.claude-3-sonnet-20240229-v1:0")
-        response_format: Desired format for the response
-        temperature: Sampling temperature (0-1)
-        max_tokens: Maximum tokens in the response
-        tools: List of tool definitions for function calling
-        tool_choice: How to select tools ("auto" or "none")
-        api_key: Override default API key
-        api_base: Override default API base URL
-        stream: Whether to stream the response
-        top_p: Top-p sampling parameter
-        model_id: Optional ARN for Bedrock inference profiles
-        enable_thinking: Whether to enable thinking
-        reasoning_effort: Level of reasoning effort
-
-    Returns:
-        Union[Dict[str, Any], AsyncGenerator]: API response or stream
-
-    Raises:
-        LLMRetryError: If API call fails after retries
-        LLMError: For other API-related errors
-    """
-    logger.debug(f"Making LLM API call to model: {model_name}")
-    logger.info(f"📥 Received {len(messages)} messages for LLM call")
+    """Make an API call to a language model using LiteLLM."""
+    logger.debug(f"Making LLM API call to model: {model_name} with {len(messages)} messages")
     
-    # Calculate approximate token count for context window checking
+    # Check token count for context window issues
     try:
         from litellm import token_counter
         total_tokens = token_counter(model=model_name, messages=messages)
-        logger.info(f"🔢 Estimated input tokens: {total_tokens}")
+        logger.debug(f"Estimated input tokens: {total_tokens}")
         
-        # Log potential context window issues
-        if total_tokens > 200000:  # High token count
-            logger.warning(f"⚠️  Very high token count detected: {total_tokens} - potential context window issue")
-    except Exception as token_error:
-        logger.debug(f"Could not calculate token count: {token_error}")
+        if total_tokens > 200000:
+            logger.warning(f"High token count detected: {total_tokens}")
+    except Exception:
+        pass  # Token counting is optional
     
+    # Prepare parameters
     params = prepare_params(
         messages=messages,
         model_name=model_name,
@@ -359,113 +325,34 @@ async def make_llm_api_call(
         enable_thinking=enable_thinking,
         reasoning_effort=reasoning_effort,
     )
-    logger.info(f"📨 Sending to LiteLLM: {len(params['messages'])} messages")
     
-    # Log headers being sent (especially important for Anthropic beta features)
-    if 'extra_headers' in params:
-        logger.info(f"🔧 Extra headers: {params['extra_headers']}")
-        
-        # Check for context window issues with Anthropic models
-        if (model_name.startswith("anthropic/") and 
-            'total_tokens' in locals() and 
-            total_tokens > 200000 and 
-            "context-1m-2025-08-07" not in str(params['extra_headers'])):
-            logger.error(f"💥 Context window will be exceeded: {total_tokens} tokens without context-1m header")
-            raise LLMError(f"Context window exceeded: {total_tokens} tokens is too many for this model without context-1m header")
-    else:
-        logger.debug("🔧 No extra headers set")
     try:
-        logger.info(f"🚀 About to call LiteLLM acompletion with {model_name}")
-        logger.info(f"🔧 Params: model={params.get('model')}, stream={params.get('stream')}, messages_count={len(params.get('messages', []))}")
+        logger.debug(f"Calling LiteLLM acompletion for {model_name}")
+        response = await provider_router.acompletion(**params)
         
-        import asyncio
-        logger.info(f"💫 Starting LiteLLM acompletion call...")
+        # For streaming responses, we need to handle errors that occur during iteration
+        if hasattr(response, '__aiter__') and stream:
+            return _wrap_streaming_response(response)
         
-        try:
-            # Make the direct call without timeout first to see what happens
-            logger.info(f"🔥 Making direct LiteLLM call without timeout...")
-            response = await provider_router.acompletion(**params)
-            
-            logger.info(f"✅ Successfully received API response from {model_name}, type: {type(response)}")
-            logger.info(f"✅ Response has __aiter__: {hasattr(response, '__aiter__')}")
-            logger.info(f"✅ Response dir: {[attr for attr in dir(response) if not attr.startswith('_')]}")
-            
-            # If it's a streaming response, try to peek at the first chunk
-            if hasattr(response, '__aiter__'):
-                logger.info(f"💫 Testing streaming response by trying to peek at first chunk...")
-                try:
-                    # Convert to list to peek at first few items
-                    first_chunks = []
-                    count = 0
-                    async for chunk in response:
-                        first_chunks.append(chunk)
-                        count += 1
-                        logger.info(f"💫 Chunk {count}: {type(chunk)}, content preview: {str(chunk)[:200]}")
-                        if count >= 3:  # Only peek at first 3 chunks
-                            break
-                    
-                    # Create a new generator that yields the peeked chunks plus the rest
-                    async def response_generator():
-                        for chunk in first_chunks:
-                            yield chunk
-                        async for chunk in response:
-                            yield chunk
-                    
-                    return response_generator()
-                    
-                except Exception as stream_error:
-                    logger.error(f"💥 Error when trying to peek at streaming response: {str(stream_error)}")
-                    logger.error(f"💥 Stream error type: {type(stream_error).__name__}")
-                    raise LLMError(f"Streaming response error: {str(stream_error)}")
-            
-            return response
-            
-        except Exception as litellm_error:
-            logger.error(f"💥 LiteLLM threw exception: {str(litellm_error)}")
-            logger.error(f"💥 LiteLLM exception type: {type(litellm_error).__name__}")
-            logger.error(f"💥 LiteLLM exception module: {type(litellm_error).__module__}")
-            logger.error(f"💥 LiteLLM exception args: {litellm_error.args}")
-            
-            # Safely create error message for LLMError
-            try:
-                error_msg = str(litellm_error)
-                logger.error(f"💥 Converted litellm_error to string: {repr(error_msg)}")
-            except Exception as str_err:
-                logger.error(f"💥 Failed to convert litellm_error to string: {str_err}")
-                error_msg = f"LiteLLM {type(litellm_error).__name__} error"
-            
-            # Re-raise as LLMError so our error handling chain can catch it
-            logger.error(f"💥 About to raise LLMError with message: {repr(error_msg)}")
-            raise LLMError(error_msg)
-
-    except LLMError:
-        # Re-raise LLMError as-is so it propagates to thread manager
-        logger.error(f"💥 LLMError caught in outer handler - re-raising")
-        raise
+        return response
+        
     except Exception as e:
-        logger.error(f"💥 LLM API call failed: {str(e)}", exc_info=True)
-        logger.error(f"💥 Error type: {type(e).__name__}, Model: {model_name}")
-        
-        # Create a descriptive error message for the user
-        error_message = f"LLM API error: {str(e)}"
-        
-        # Check for specific error patterns
-        error_str = str(e).lower()
-        if any(keyword in error_str for keyword in [
-            'context_length_exceeded', 'context window', 'maximum context length',
-            'token limit', 'too many tokens', 'request too large', 'content_length_exceeded',
-            'message content is too long', 'input is too long', 'prompt is too long'
-        ]):
-            error_message = f"Context window exceeded: The conversation is too long for this model. {str(e)}"
-        elif 'timeout' in error_str or isinstance(e, asyncio.TimeoutError):
-            error_message = f"Request timeout: The API call took too long to respond. {str(e)}"
-        elif any(keyword in error_str for keyword in ['authentication', 'unauthorized', 'api key']):
-            error_message = f"Authentication error: Invalid API key or credentials. {str(e)}"
-        elif 'rate limit' in error_str:
-            error_message = f"Rate limit exceeded: Too many requests to the API. {str(e)}"
-        
-        # Always raise LLMError with descriptive message
-        raise LLMError(error_message)
+        # Use ErrorProcessor to handle the error consistently
+        processed_error = ErrorProcessor.process_llm_error(e, context={"model": model_name})
+        ErrorProcessor.log_error(processed_error)
+        raise LLMError(processed_error.message)
+
+
+async def _wrap_streaming_response(response) -> AsyncGenerator:
+    """Wrap streaming response to handle errors during iteration."""
+    try:
+        async for chunk in response:
+            yield chunk
+    except Exception as e:
+        # Convert streaming errors to processed errors
+        processed_error = ErrorProcessor.process_llm_error(e)
+        ErrorProcessor.log_error(processed_error)
+        raise LLMError(processed_error.message)
 
 setup_api_keys()
 setup_provider_router()

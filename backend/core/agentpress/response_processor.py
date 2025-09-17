@@ -19,6 +19,7 @@ from core.utils.logger import logger
 from core.agentpress.tool import ToolResult
 from core.agentpress.tool_registry import ToolRegistry
 from core.agentpress.xml_tool_parser import XMLToolParser
+from core.agentpress.error_processor import ErrorProcessor
 from langfuse.client import StatefulTraceClient
 from core.services.langfuse import langfuse
 from core.utils.json_helpers import (
@@ -213,28 +214,7 @@ class ResponseProcessor:
         Yields:
             Complete message objects matching the DB schema, except for content chunks.
         """
-        logger.info(f"🎬 Starting process_streaming_response for thread {thread_id}")
-        logger.info(f"📊 Response type: {type(llm_response)}, has __aiter__: {hasattr(llm_response, '__aiter__')}")
-        
-        # Try to iterate over the response and see what happens
-        logger.info(f"💫 About to start iterating over LLM response...")
-        
-        try:
-            chunk_count = 0
-            async for chunk in llm_response:
-                chunk_count += 1
-                logger.info(f"💫 Processing chunk {chunk_count}: {type(chunk)}")
-                if chunk_count <= 3:  # Log details of first few chunks
-                    logger.info(f"💫 Chunk {chunk_count} preview: {str(chunk)[:200]}")
-                
-                # If we get this far, iteration is working, continue with normal processing
-                # (This is just debugging - normal processing should continue below)
-                break
-                
-        except Exception as iter_error:
-            logger.error(f"💥 Error iterating over LLM response: {str(iter_error)}")
-            logger.error(f"💥 Iteration error type: {type(iter_error).__name__}")
-            raise
+        logger.debug(f"Starting streaming response processing for thread {thread_id}")
         
         # Initialize from continuous state if provided (for auto-continue)
         continuous_state = continuous_state or {}
@@ -304,10 +284,8 @@ class ResponseProcessor:
             __sequence = continuous_state.get('sequence', 0)    # get the sequence from the previous auto-continue cycle
 
             chunk_count = 0
-            logger.info(f"🔄 About to start iterating over LLM response chunks")
             async for chunk in llm_response:
                 chunk_count += 1
-                logger.info(f"📦 Processing chunk #{chunk_count}: type={type(chunk)}")
                 
                 # Extract streaming metadata from chunks
                 current_time = datetime.now(timezone.utc).timestamp()
@@ -315,25 +293,9 @@ class ResponseProcessor:
                     streaming_metadata["first_chunk_time"] = current_time
                 streaming_metadata["last_chunk_time"] = current_time
                 
-                # Log info about chunks periodically
+                # Log info about chunks periodically for debugging
                 if chunk_count == 1 or (chunk_count % 100 == 0) or hasattr(chunk, 'usage'):
-                    chunk_info = f"📦 Chunk #{chunk_count}: "
-                    chunk_info += f"type={type(chunk).__name__}, "
-                    chunk_info += f"has_usage={hasattr(chunk, 'usage')}, "
-                    chunk_info += f"has_choices={hasattr(chunk, 'choices')}"
-                    if hasattr(chunk, 'choices') and chunk.choices:
-                        if hasattr(chunk.choices[0], 'finish_reason'):
-                            chunk_info += f", finish_reason={chunk.choices[0].finish_reason}"
-                    logger.info(chunk_info)
-                    
-                    # Debug: Log chunk attributes for the first few chunks or usage chunks
-                    if chunk_count <= 3 or hasattr(chunk, 'usage'):
-                        logger.debug(f"🔍 Chunk #{chunk_count} attributes: {dir(chunk)}")
-                        if hasattr(chunk, 'usage') and chunk.usage:
-                            logger.debug(f"🔍 Usage object: {chunk.usage}")
-                            logger.debug(f"🔍 Usage attributes: {dir(chunk.usage)}")
-                        if hasattr(chunk, 'choices') and chunk.choices and hasattr(chunk.choices[0], 'finish_reason'):
-                            logger.debug(f"🔍 Finish reason: {chunk.choices[0].finish_reason}")
+                    logger.debug(f"Processing chunk #{chunk_count}, type={type(chunk).__name__}")
                 
                 if hasattr(chunk, 'created') and chunk.created:
                     streaming_metadata["created"] = chunk.created
@@ -516,7 +478,7 @@ class ResponseProcessor:
                     self.trace.event(name="stopping_stream_processing_after_loop_due_to_xml_tool_call_limit", level="DEFAULT", status_message=(f"Stopping stream processing after loop due to XML tool call limit"))
                     break
 
-            logger.info(f"📊 Stream complete. Total chunks: {chunk_count}")
+            logger.debug(f"Stream complete. Total chunks: {chunk_count}")
             
             # Extract final cache metrics
             final_cache_creation = streaming_metadata['usage'].get('cache_creation_input_tokens', 0)
@@ -524,13 +486,13 @@ class ResponseProcessor:
             final_prompt_tokens = streaming_metadata['usage']['prompt_tokens']
             final_completion_tokens = streaming_metadata['usage']['completion_tokens']
             
-            logger.info(f"📊 Final usage: prompt={final_prompt_tokens}, completion={final_completion_tokens}")
+            logger.debug(f"Final usage: prompt={final_prompt_tokens}, completion={final_completion_tokens}")
             
             if final_cache_read > 0 or final_cache_creation > 0:
                 cache_percentage = (final_cache_read / final_prompt_tokens * 100) if final_prompt_tokens > 0 else 0
-                logger.info(f"✅ Cache success: {final_cache_read}/{final_prompt_tokens} tokens cached ({cache_percentage:.1f}%), {final_cache_creation} created")
+                logger.info(f"Cache hit: {final_cache_read}/{final_prompt_tokens} tokens ({cache_percentage:.1f}%)")
             else:
-                logger.debug(f"No cache activity detected")
+                logger.debug(f"No cache activity")
 
             # Note: cache_metrics is now None since we removed the probe
             # All cache data should be captured directly from streaming chunks above
@@ -942,24 +904,19 @@ class ResponseProcessor:
                         self.trace.event(name="error_saving_assistant_response_end_for_stream", level="ERROR", status_message=(f"Error saving assistant response end for stream: {str(e)}"))
 
         except Exception as e:
-            logger.error(f"Error processing stream: {str(e)}", exc_info=True)
-            self.trace.event(name="error_processing_stream", level="ERROR", status_message=(f"Error processing stream: {str(e)}"))
+            # Use ErrorProcessor for consistent error handling
+            processed_error = ErrorProcessor.process_system_error(e, context={"thread_id": thread_id})
+            ErrorProcessor.log_error(processed_error)
             
             # Save and yield error status message
-            err_content = {"role": "system", "status_type": "error", "message": str(e)}
-            if (not "AnthropicException - Overloaded" in str(e)):
-                err_msg_obj = await self.add_message(
-                    thread_id=thread_id, type="status", content=err_content, 
-                    is_llm_message=False, metadata={"thread_run_id": thread_run_id if 'thread_run_id' in locals() else None}
-                )
-                if err_msg_obj: yield format_for_yield(err_msg_obj) # Yield the saved error message
-                # Re-raise the same exception (not a new one) to ensure proper error propagation
-                logger.critical(f"Re-raising error to stop further processing: {str(e)}")
-                self.trace.event(name="re_raising_error_to_stop_further_processing", level="ERROR", status_message=(f"Re-raising error to stop further processing: {str(e)}"))
-            else:
-                logger.error(f"AnthropicException - Overloaded detected - Falling back to OpenRouter: {str(e)}", exc_info=True)
-                self.trace.event(name="anthropic_exception_overloaded_detected", level="ERROR", status_message=(f"AnthropicException - Overloaded detected - Falling back to OpenRouter: {str(e)}"))
-            raise # Use bare 'raise' to preserve the original exception with its traceback
+            err_content = {"role": "system", "status_type": "error", "message": processed_error.message}
+            err_msg_obj = await self.add_message(
+                thread_id=thread_id, type="status", content=err_content, 
+                is_llm_message=False, metadata={"thread_run_id": thread_run_id if 'thread_run_id' in locals() else None}
+            )
+            if err_msg_obj: 
+                yield format_for_yield(err_msg_obj)
+            raise
 
         finally:
             # Update continuous state for potential auto-continue
@@ -1164,21 +1121,20 @@ class ResponseProcessor:
                     self.trace.event(name="error_saving_assistant_response_end_for_non_stream", level="ERROR", status_message=(f"Error saving assistant response end for non-stream: {str(e)}"))
 
         except Exception as e:
-             logger.error(f"Error processing non-streaming response: {str(e)}", exc_info=True)
-             self.trace.event(name="error_processing_non_streaming_response", level="ERROR", status_message=(f"Error processing non-streaming response: {str(e)}"))
+             # Use ErrorProcessor for consistent error handling
+             processed_error = ErrorProcessor.process_system_error(e, context={"thread_id": thread_id})
+             ErrorProcessor.log_error(processed_error)
              
              # Save and yield error status
-             err_content = {"role": "system", "status_type": "error", "message": str(e)}
+             err_content = {"role": "system", "status_type": "error", "message": processed_error.message}
              err_msg_obj = await self.add_message(
                  thread_id=thread_id, type="status", content=err_content, 
                  is_llm_message=False, metadata={"thread_run_id": thread_run_id if 'thread_run_id' in locals() else None}
              )
-             if err_msg_obj: yield format_for_yield(err_msg_obj)
+             if err_msg_obj: 
+                 yield format_for_yield(err_msg_obj)
              
-             # Re-raise the same exception (not a new one) to ensure proper error propagation
-             logger.critical(f"Re-raising error to stop further processing: {str(e)}")
-             self.trace.event(name="re_raising_error_to_stop_further_processing", level="CRITICAL", status_message=(f"Re-raising error to stop further processing: {str(e)}"))
-             raise # Use bare 'raise' to preserve the original exception with its traceback
+             raise
 
         finally:
             # Set the final output in the generation object if provided

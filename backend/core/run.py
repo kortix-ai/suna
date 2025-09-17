@@ -14,6 +14,7 @@ from core.utils.config import config
 from core.prompts.agent_builder_prompt import get_agent_builder_prompt
 from core.agentpress.thread_manager import ThreadManager
 from core.agentpress.response_processor import ProcessorConfig
+from core.agentpress.error_processor import ErrorProcessor
 from core.tools.sb_shell_tool import SandboxShellTool
 from core.tools.sb_files_tool import SandboxFilesTool
 from core.tools.data_providers_tool import DataProvidersTool
@@ -669,7 +670,7 @@ class AgentRunner:
             logger.debug(f"max_tokens: {max_tokens}")
             generation = self.config.trace.generation(name="thread_manager.run_thread") if self.config.trace else None
             try:
-                logger.info(f"🎭 About to call thread_manager.run_thread...")
+                logger.debug(f"Starting thread execution for {self.config.thread_id}")
                 response = await self.thread_manager.run_thread(
                     thread_id=self.config.thread_id,
                     system_prompt=system_message,
@@ -694,9 +695,6 @@ class AgentRunner:
                     generation=generation,
                     enable_prompt_caching=self.config.enable_prompt_caching
                 )
-                logger.info(f"✅ thread_manager.run_thread returned: {type(response)}")
-                logger.info(f"✅ Response has __aiter__: {hasattr(response, '__aiter__')}")
-                logger.info(f"✅ Response is dict: {isinstance(response, dict)}")
 
                 last_tool_call = None
                 agent_should_terminate = False
@@ -705,12 +703,9 @@ class AgentRunner:
                 try:
                     if hasattr(response, '__aiter__') and not isinstance(response, dict):
                         async for chunk in response:
-                            # Log every chunk to debug the flow
-                            logger.debug(f"🔍 run.py received chunk type: {type(chunk)}, chunk: {chunk}")
-                            
-                            # Check for error status from thread_manager (dict format)
+                            # Check for error status from thread_manager
                             if isinstance(chunk, dict) and chunk.get('type') == 'status' and chunk.get('status') == 'error':
-                                logger.error(f"💥 run.py received error chunk from thread_manager: {chunk}")
+                                logger.error(f"Error in thread execution: {chunk.get('message', 'Unknown error')}")
                                 error_detected = True
                                 yield chunk
                                 continue
@@ -768,16 +763,15 @@ class AgentRunner:
                             yield chunk
                     else:
                         # Non-streaming response or error dict
-                        logger.info(f"✅ Response is not async iterable: {type(response)}")
-                        logger.info(f"✅ Response content: {response}")
+                        logger.debug(f"Response is not async iterable: {type(response)}")
                         
                         # Check if it's an error dict
                         if isinstance(response, dict) and response.get('type') == 'status' and response.get('status') == 'error':
-                            logger.error(f"💥 run.py received error dict as response: {response}")
+                            logger.error(f"Thread returned error: {response.get('message', 'Unknown error')}")
                             error_detected = True
                             yield response
                         else:
-                            logger.error(f"Response is not async iterable and not an error dict: {type(response)}")
+                            logger.warning(f"Unexpected response type: {type(response)}")
                             error_detected = True
 
                     if error_detected:
@@ -791,24 +785,19 @@ class AgentRunner:
                         continue_execution = False
 
                 except Exception as e:
-                    error_msg = f"Error during response streaming: {str(e)}"
-                    logger.error(f"Response streaming error: {str(e)}", exc_info=True)
+                    # Use ErrorProcessor for safe error handling
+                    processed_error = ErrorProcessor.process_system_error(e, context={"thread_id": self.config.thread_id})
+                    ErrorProcessor.log_error(processed_error)
                     if generation:
-                        generation.end(status_message=error_msg, level="ERROR")
-                    yield {
-                        "type": "status",
-                        "status": "error",
-                        "message": error_msg
-                    }
+                        generation.end(status_message=processed_error.message, level="ERROR")
+                    yield processed_error.to_stream_dict()
                     break
                     
             except Exception as e:
-                error_msg = f"Error running thread: {str(e)}"
-                yield {
-                    "type": "status",
-                    "status": "error",
-                    "message": error_msg
-                }
+                # Use ErrorProcessor for safe error conversion
+                processed_error = ErrorProcessor.process_system_error(e, context={"thread_id": self.config.thread_id})
+                ErrorProcessor.log_error(processed_error)
+                yield processed_error.to_stream_dict()
                 break
             
             if generation:
