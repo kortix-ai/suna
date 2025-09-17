@@ -40,15 +40,35 @@ const extractFromNewFormat = (content: any): WebSearchData => {
     }
     parsedOutput = parsedOutput || {};
 
+    // Handle both single and batch image search responses
+    let images: string[] = [];
+    let query = args.query || parsedOutput?.query || null;
+    
+    if (parsedOutput?.batch_results && Array.isArray(parsedOutput.batch_results)) {
+      // Batch response: flatten all images from all queries
+      images = parsedOutput.batch_results.reduce((acc: string[], result: any) => {
+        return acc.concat(result.images || []);
+      }, []);
+      
+      // Create combined query string for display
+      const queries = parsedOutput.batch_results.map((r: any) => r.query).filter(Boolean);
+      if (queries.length > 0) {
+        query = queries.length > 1 ? `${queries.length} queries: ${queries.join(', ')}` : queries[0];
+      }
+    } else {
+      // Single response
+      images = parsedOutput?.images || [];
+    }
+
     const extractedData = {
-      query: args.query || parsedOutput?.query || null,
+      query,
       results: parsedOutput?.results?.map((result: any) => ({
         title: result.title || '',
         url: result.url || '',
         snippet: result.content || result.snippet || ''
       })) || [],
       answer: parsedOutput?.answer || null,
-      images: parsedOutput?.images || [],
+      images,
       success: toolExecution.result?.success,
       timestamp: toolExecution.execution_details?.timestamp
     };
@@ -157,7 +177,14 @@ export function extractWebSearchData(
         if (parsedContent.answer && typeof parsedContent.answer === 'string') {
           answer = parsedContent.answer;
         }
-        if (parsedContent.images && Array.isArray(parsedContent.images)) {
+        
+        // Handle both single and batch image responses in legacy format
+        if (parsedContent.batch_results && Array.isArray(parsedContent.batch_results)) {
+          // Batch response: flatten all images from all queries
+          images = parsedContent.batch_results.reduce((acc: string[], result: any) => {
+            return acc.concat(result.images || []);
+          }, []);
+        } else if (parsedContent.images && Array.isArray(parsedContent.images)) {
           images = parsedContent.images;
         }
       } catch (e) {
