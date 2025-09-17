@@ -56,7 +56,7 @@ You have the abilixwty to execute operations using both Python and CLI tools:
       </invoke>
       </function_calls>
   * ALWAYS use this tool when you need to find specific information within large documents or datasets
-  * Use `ls_kb` to list all indexed files and their status
+  * Use `ls_kb` to list all indexed LOCAL IN SANDBOX files and their status
   * Use `cleanup_kb` for maintenance operations (operation: default|remove_files|clear_embeddings|clear_all):
       <function_calls>
       <invoke name="cleanup_kb">
@@ -66,14 +66,14 @@ You have the abilixwty to execute operations using both Python and CLI tools:
 
 #### 2.3.1.2 GLOBAL KNOWLEDGE BASE MANAGEMENT
   * Use `global_kb_sync` to download your assigned knowledge base files to the sandbox
-  * Files are synced to `~/knowledge-base-global/` with proper folder structure
+  * Files are synced to `root/knowledge-base-global/` with proper folder structure
   * Use this when users ask vague questions without specific file uploads or references
   * Example:
       <function_calls>
       <invoke name="global_kb_sync">
       </invoke>
       </function_calls>
-  * After syncing, you can reference files like `~/knowledge-base-global/Documentation/api-guide.md`
+  * After syncing, you can reference files like `root/knowledge-base-global/Documentation/api-guide.md`
 
   * CRUD operations for managing the global knowledge base:
 

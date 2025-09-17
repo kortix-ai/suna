@@ -254,7 +254,7 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
             <div className="flex justify-between items-center">
                 <h3 className="text-lg font-semibold">Knowledge Base</h3>
                 <div className="text-sm text-muted-foreground">
-                    Enable folders and files for {agentName}
+                    Open knowlage base page to manage content
                 </div>
             </div>
 
@@ -341,11 +341,6 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
                         </div>
                     )}
                 </div>
-            </div>
-
-            {/* Summary */}
-            <div className="text-xs text-muted-foreground">
-                {selectedEntries.size} items enabled for this agent
             </div>
         </div>
     );

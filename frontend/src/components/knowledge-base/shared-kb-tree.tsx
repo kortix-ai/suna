@@ -64,6 +64,9 @@ interface SharedTreeItemProps {
     editingFolder?: string | null;
     editingName?: string;
 
+    // Validation state
+    validationError?: string | null;
+
     // Assignment state
     assignments?: { [id: string]: boolean };
     onToggleAssignment?: (id: string) => void;
@@ -100,7 +103,8 @@ export function SharedTreeItem({
     assignments,
     onToggleAssignment,
     assignmentIndeterminate,
-    uploadStatus
+    uploadStatus,
+    validationError
 }: SharedTreeItemProps) {
 
     const isEditingJustStarted = useRef(false);
@@ -208,29 +212,39 @@ export function SharedTreeItem({
                         }
 
                         {/* Folder Icon */}
-                        <FolderIcon className="h-4 w-4 mr-2 text-blue-500 shrink-0" />
+                        <div className="w-8 h-8 mr-3 bg-muted border border-border rounded-md flex items-center justify-center shrink-0">
+                            <FolderIcon className="h-4 w-4 text-muted-foreground" />
+                        </div>
 
                         {/* Folder Name */}
                         <div className="flex-1 text-left min-w-0">
                             {enableEdit && editingFolder === item.id ? (
-                                <Input
-                                    ref={editInputRef}
-                                    value={editingName}
-                                    onChange={(e) => onEditChange?.(e.target.value)}
-                                    onKeyDown={onEditKeyPress}
-                                    onBlur={(e) => {
-                                        // Prevent immediate blur when editing just started
-                                        if (isEditingJustStarted.current) {
-                                            isEditingJustStarted.current = false;
-                                            editInputRef?.current?.focus();
-                                            return;
-                                        }
-                                        onFinishEdit?.();
-                                    }}
-                                    className="h-5 text-sm border-0 bg-transparent p-0 focus:ring-1 focus:ring-blue-500"
-                                    autoFocus
-                                    onClick={(e) => e.stopPropagation()}
-                                />
+                                <div>
+                                    <Input
+                                        ref={editInputRef}
+                                        value={editingName}
+                                        onChange={(e) => onEditChange?.(e.target.value)}
+                                        onKeyDown={onEditKeyPress}
+                                        onBlur={(e) => {
+                                            // Prevent immediate blur when editing just started
+                                            if (isEditingJustStarted.current) {
+                                                isEditingJustStarted.current = false;
+                                                editInputRef?.current?.focus();
+                                                return;
+                                            }
+                                            onFinishEdit?.();
+                                        }}
+                                        className={`h-5 text-sm border-0 bg-transparent p-0 focus:ring-1 ${validationError ? 'focus:ring-red-500' : 'focus:ring-blue-500'
+                                            }`}
+                                        autoFocus
+                                        onClick={(e) => e.stopPropagation()}
+                                    />
+                                    {validationError && (
+                                        <div className="text-xs text-red-500 mt-1">
+                                            {validationError}
+                                        </div>
+                                    )}
+                                </div>
                             ) : (
                                 <div>
                                     <div className="font-medium truncate">{item.name}</div>
@@ -365,7 +379,9 @@ export function SharedTreeItem({
                         </div>
                     )}
                     {/* File Icon */}
-                    <FileIcon className="h-4 w-4 mr-2 text-gray-500 shrink-0" />
+                    <div className="w-8 h-8 mr-3 bg-background border border-border rounded-md flex items-center justify-center shrink-0">
+                        <FileIcon className="h-4 w-4 text-foreground/60" />
+                    </div>
 
 
                     {/* File Details */}

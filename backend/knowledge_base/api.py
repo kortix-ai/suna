@@ -1,10 +1,11 @@
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, require_agent_access, AuthorizedAgentAccess
 from core.services.supabase import DBConnection
 from core.knowledge_base.file_processor import FileProcessor
 from core.utils.logger import logger
+from .validation import FileNameValidator, ValidationError, validate_folder_name_unique, validate_file_name_unique_in_folder
 
 # Constants
 MAX_TOTAL_FILE_SIZE = 50 * 1024 * 1024  # 50MB total limit per user
@@ -47,10 +48,26 @@ async def check_total_file_size_limit(account_id: str, new_file_size: int):
 class FolderRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
+    
+    @validator('name')
+    def validate_folder_name(cls, v):
+        is_valid, error_message = FileNameValidator.validate_name(v, "folder")
+        if not is_valid:
+            raise ValueError(error_message)
+        return FileNameValidator.sanitize_name(v)
 
 class UpdateFolderRequest(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
+    
+    @validator('name')
+    def validate_folder_name(cls, v):
+        if v is not None:
+            is_valid, error_message = FileNameValidator.validate_name(v, "folder")
+            if not is_valid:
+                raise ValueError(error_message)
+            return FileNameValidator.sanitize_name(v)
+        return v
 
 class FolderResponse(BaseModel):
     folder_id: str
@@ -115,9 +132,16 @@ async def create_folder(
         client = await db.client
         account_id = user_id
         
+        # Get existing folder names to check for conflicts
+        existing_result = await client.table('knowledge_base_folders').select('name').eq('account_id', account_id).execute()
+        existing_names = [folder['name'] for folder in existing_result.data]
+        
+        # Generate unique name if there's a conflict
+        final_name = FileNameValidator.generate_unique_name(folder_data.name, existing_names, "folder")
+        
         insert_data = {
             'account_id': account_id,
-            'name': folder_data.name,
+            'name': final_name,
             'description': folder_data.description
         }
         
@@ -136,6 +160,8 @@ async def create_folder(
             created_at=created_folder['created_at']
         )
         
+    except ValidationError:
+        raise
     except HTTPException:
         raise
     except Exception as e:
@@ -166,6 +192,8 @@ async def update_folder(
         # Build update data with only provided fields
         update_data = {}
         if folder_data.name is not None:
+            # Validate name uniqueness (excluding current folder)
+            await validate_folder_name_unique(folder_data.name, account_id, folder_id)
             update_data['name'] = folder_data.name
         if folder_data.description is not None:
             update_data['description'] = folder_data.description
@@ -208,6 +236,8 @@ async def update_folder(
             created_at=updated_folder['created_at']
         )
         
+    except ValidationError:
+        raise
     except HTTPException:
         raise
     except Exception as e:
@@ -277,26 +307,45 @@ async def upload_file(
         if not folder_result.data:
             raise HTTPException(status_code=404, detail="Folder not found")
         
+        # Validate and sanitize filename
+        if not file.filename:
+            raise ValidationError("Filename is required")
+        
+        is_valid, error_message = FileNameValidator.validate_name(file.filename, "file")
+        if not is_valid:
+            raise ValidationError(error_message)
+        
         # Read file content
         file_content = await file.read()
         
         # Check total file size limit before processing
         await check_total_file_size_limit(account_id, len(file_content))
         
+        # Generate unique filename if there's a conflict
+        final_filename = await validate_file_name_unique_in_folder(file.filename, folder_id)
+        
         # Process file
         result = await file_processor.process_file(
             account_id=account_id,
             folder_id=folder_id,
             file_content=file_content,
-            filename=file.filename,
+            filename=final_filename,
             mime_type=file.content_type or 'application/octet-stream'
         )
         
         if not result['success']:
             raise HTTPException(status_code=400, detail=result['error'])
         
+        # Add info about filename changes
+        if final_filename != file.filename:
+            result['filename_changed'] = True
+            result['original_filename'] = file.filename
+            result['final_filename'] = final_filename
+        
         return result
         
+    except ValidationError:
+        raise
     except HTTPException:
         raise
     except Exception as e:

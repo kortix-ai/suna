@@ -4,6 +4,7 @@ from core.agentpress.tool import ToolResult, openapi_schema, usage_example
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from core.utils.config import config
+from knowledge_base.validation import FileNameValidator, ValidationError
 
 class SandboxKbTool(SandboxToolsBase):
     """Tool for knowledge base operations using kb-fusion binary in a Daytona sandbox.
@@ -161,7 +162,7 @@ class SandboxKbTool(SandboxToolsBase):
             
             # Build search command
             query_args = " ".join([f'"{query}"' for query in queries])
-            search_command = f'kb search {path} {query_args} -k 18 --json'
+            search_command = f'kb search "{path}" {query_args} -k 18 --json'
             
             result = await self._execute_kb_command(search_command)
             
@@ -461,12 +462,21 @@ Agent ID: {agent_id}
     async def global_kb_create_folder(self, name: str, description: str = None) -> ToolResult:
         """Create a new folder in the global knowledge base."""
         try:
+            # Validate folder name
+            is_valid, error_message = FileNameValidator.validate_name(name, "folder")
+            if not is_valid:
+                return self.fail_response(f"Invalid folder name: {error_message}")
+            
+            # Sanitize the name
+            sanitized_name = FileNameValidator.sanitize_name(name)
+            
             # Get agent ID from thread manager
             agent_id = getattr(self.thread_manager, 'agent_config', {}).get('agent_id') if hasattr(self.thread_manager, 'agent_config') else None
             if not agent_id:
                 return self.fail_response("No agent ID found for knowledge base operations")
             
             from core.services.supabase import DBConnection
+            from knowledge_base.validation import validate_folder_name_unique
             db = DBConnection()
             client = await db.client
             
@@ -477,10 +487,17 @@ Agent ID: {agent_id}
             
             account_id = agent_result.data[0]['account_id']
             
+            # Get existing folder names to avoid conflicts
+            existing_result = await client.table('knowledge_base_folders').select('name').eq('account_id', account_id).execute()
+            existing_names = [folder['name'] for folder in existing_result.data]
+            
+            # Generate unique name if there's a conflict
+            final_name = FileNameValidator.generate_unique_name(sanitized_name, existing_names, "folder")
+            
             # Create folder
             folder_data = {
                 'account_id': account_id,
-                'name': name.strip(),
+                'name': final_name,
                 'description': description.strip() if description else None
             }
             
@@ -491,12 +508,21 @@ Agent ID: {agent_id}
             
             folder = result.data[0]
             
-            return self.success_response({
-                "message": f"Successfully created folder '{name}'",
+            response_data = {
+                "message": f"Successfully created folder '{final_name}'",
                 "folder_id": folder['folder_id'],
                 "name": folder['name'],
                 "description": folder['description']
-            })
+            }
+            
+            # Add info about name changes
+            if final_name != sanitized_name:
+                response_data["name_auto_adjusted"] = True
+                response_data["requested_name"] = sanitized_name
+                response_data["final_name"] = final_name
+                response_data["message"] = f"Successfully created folder '{sanitized_name}' as '{final_name}' (name auto-adjusted to avoid conflicts)"
+            
+            return self.success_response(response_data)
             
         except Exception as e:
             return self.fail_response(f"Failed to create folder: {str(e)}")
@@ -578,6 +604,12 @@ Agent ID: {agent_id}
             
             # Get filename and mime type
             filename = os.path.basename(sandbox_file_path)
+            
+            # Validate filename
+            is_valid, error_message = FileNameValidator.validate_name(filename, "file")
+            if not is_valid:
+                return self.fail_response(f"Invalid filename: {error_message}")
+            
             mime_type, _ = mimetypes.guess_type(filename)
             if not mime_type:
                 mime_type = 'application/octet-stream'
@@ -594,24 +626,37 @@ Agent ID: {agent_id}
                 new_mb = len(file_content) / (1024 * 1024)
                 return self.fail_response(f"File size limit exceeded. Current: {current_mb:.1f}MB, New: {new_mb:.1f}MB, Limit: 50MB")
             
+            # Generate unique filename if there's a conflict
+            from knowledge_base.validation import validate_file_name_unique_in_folder
+            final_filename = await validate_file_name_unique_in_folder(filename, folder_id)
+            
             # Process file using existing processor
             processor = FileProcessor()
             result = await processor.process_file(
                 account_id=account_id,
                 folder_id=folder_id,
                 file_content=file_content,
-                filename=filename,
+                filename=final_filename,
                 mime_type=mime_type
             )
             
-            return self.success_response({
-                "message": f"Successfully uploaded '{filename}' to folder '{folder_name}'",
+            response_data = {
+                "message": f"Successfully uploaded '{final_filename}' to folder '{folder_name}'",
                 "entry_id": result['entry_id'],
-                "filename": filename,
+                "filename": final_filename,
                 "folder_name": folder_name,
                 "file_size": len(file_content),
                 "summary": result.get('summary', 'Processing...')
-            })
+            }
+            
+            # Add info about filename changes
+            if final_filename != filename:
+                response_data["filename_changed"] = True
+                response_data["original_filename"] = filename
+                response_data["final_filename"] = final_filename
+                response_data["message"] = f"Successfully uploaded '{filename}' as '{final_filename}' to folder '{folder_name}' (name was auto-adjusted to avoid conflicts)"
+            
+            return self.success_response(response_data)
             
         except Exception as e:
             return self.fail_response(f"Failed to upload file: {str(e)}")
