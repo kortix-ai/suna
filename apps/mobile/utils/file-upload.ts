@@ -22,8 +22,8 @@ export interface FileUploadResult {
   error?: string;
 }
 
-// File size limit (50MB)
-const MAX_FILE_SIZE = 50 * 1024 * 1024;
+// File size limit (500MB)
+const MAX_FILE_SIZE = 500 * 1024 * 1024;
 
 // Normalize filename to NFC (Unicode normalization)
 const normalizeFilenameToNFC = (filename: string): string => {
@@ -153,7 +153,7 @@ export const handleLocalFiles = async (
 
   for (const file of files) {
     if (file.size && file.size > MAX_FILE_SIZE) {
-      Alert.alert('File Too Large', `File size exceeds 50MB limit: ${file.name || 'Unknown file'}`);
+      Alert.alert('File Too Large', `File size exceeds 500MB limit: ${file.name || 'Unknown file'}`);
       continue;
     }
 
@@ -200,7 +200,7 @@ export const uploadFilesToSandbox = async (
   // First, show all files immediately with loading state + optimistic caching
   for (const file of files) {
     if (file.size && file.size > MAX_FILE_SIZE) {
-      Alert.alert('File Too Large', `File size exceeds 50MB limit: ${file.name || 'Unknown file'}`);
+      Alert.alert('File Too Large', `File size exceeds 500MB limit: ${file.name || 'Unknown file'}`);
       continue;
     }
 
