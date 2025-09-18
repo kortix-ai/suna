@@ -48,7 +48,7 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { SharedTreeItem } from '@/components/knowledge-base/shared-kb-tree';
+import { SharedTreeItem, FileDragOverlay } from '@/components/knowledge-base/shared-kb-tree';
 
 // Get backend URL from environment variables
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
@@ -830,9 +830,11 @@ export function KnowledgeBasePage() {
                                                 const fileInfo = getFileTypeInfo(file.filename);
                                                 return (
                                                     <div key={file.entry_id} className="group cursor-pointer">
-                                                        <div className="bg-muted/20 rounded-xl p-4 mb-2 transition-colors group-hover:bg-muted/30">
-                                                            <div className={`w-12 h-14 mx-auto rounded-lg border-2 flex items-center justify-center ${fileInfo.colorClass}`}>
-                                                                <span className="text-xs font-bold">{fileInfo.extension}</span>
+                                                        <div className="bg-muted/70 rounded-xl h-22 mb-2 transition-colors flex items-center justify-center">
+                                                            <div className='relative flex flex-col items-center justify-center'>
+                                                                <FileIcon className="h-12 w-12 opacity-55" />
+                                                                <span className="text-[10px] font-bold absolute top-7 left-4">{fileInfo.extension.slice(0, 4)}</span>
+
                                                             </div>
                                                         </div>
                                                         <div className="text-center">
@@ -904,16 +906,36 @@ export function KnowledgeBasePage() {
                                             </SortableContext>
 
                                             <DragOverlay>
-                                                {activeId ? (
-                                                    <div className="bg-background border rounded-lg p-3">
-                                                        <div className="flex items-center gap-2">
-                                                            <FolderIcon className="h-4 w-4 text-blue-500" />
-                                                            <span className="font-medium text-sm">
-                                                                {treeData.find(item => item.id === activeId)?.name}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                ) : null}
+                                                {activeId ? (() => {
+                                                    // Find the active item in the tree data
+                                                    const findActiveItem = (items: any[]): any => {
+                                                        for (const item of items) {
+                                                            if (item.id === activeId) return item;
+                                                            if (item.children) {
+                                                                const found = findActiveItem(item.children);
+                                                                if (found) return found;
+                                                            }
+                                                        }
+                                                        return null;
+                                                    };
+
+                                                    const activeItem = findActiveItem(treeData);
+
+                                                    if (activeItem?.type === 'file') {
+                                                        return <FileDragOverlay item={activeItem} />;
+                                                    } else {
+                                                        return (
+                                                            <div className="bg-background border rounded-lg p-3">
+                                                                <div className="flex items-center gap-2">
+                                                                    <FolderIcon className="h-4 w-4 text-blue-500" />
+                                                                    <span className="font-medium text-sm">
+                                                                        {activeItem?.name}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    }
+                                                })() : null}
                                             </DragOverlay>
                                         </DndContext>
                                     </div>

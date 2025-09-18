@@ -12,7 +12,7 @@ class SandboxKbTool(SandboxToolsBase):
 
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
-        self.kb_version = "0.1.0"
+        self.kb_version = "0.1.1"
         self.kb_download_url = f"https://github.com/kortix-ai/kb-fusion/releases/download/v{self.kb_version}/kb"
 
     async def _execute_kb_command(self, command: str) -> dict:
@@ -639,6 +639,11 @@ Agent ID: {agent_id}
                 filename=final_filename,
                 mime_type=mime_type
             )
+            
+            # Check if processing was successful
+            if not result.get('success', False):
+                error_msg = result.get('error', 'Unknown processing error')
+                return self.fail_response(f"Failed to process file: {error_msg}")
             
             response_data = {
                 "message": f"Successfully uploaded '{final_filename}' to folder '{folder_name}'",

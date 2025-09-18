@@ -44,6 +44,20 @@ class FileProcessor:
         
         return f"{name}{ext}"
     
+    def _is_likely_text_file(self, file_content: bytes) -> bool:
+        """Check if file content is likely text-based."""
+        try:
+            # Try to decode as text
+            detected = chardet.detect(file_content[:1024])  # Check first 1KB
+            if detected.get('confidence', 0) > 0.7:
+                decoded = file_content[:1024].decode(detected.get('encoding', 'utf-8'))
+                # Check if most characters are printable
+                printable_ratio = len([c for c in decoded if c.isprintable() or c.isspace()]) / len(decoded)
+                return printable_ratio > 0.8
+        except:
+            pass
+        return False
+    
     async def process_file(
         self, 
         account_id: str, 
@@ -57,7 +71,16 @@ class FileProcessor:
                 raise ValueError(f"File too large: {len(file_content)} bytes")
             
             file_extension = Path(filename).suffix.lower()
-            if file_extension not in self.SUPPORTED_EXTENSIONS:
+            
+            # Check if it's text-based first
+            is_text_based = (
+                mime_type.startswith('text/') or 
+                mime_type in ['application/json', 'application/xml', 'text/xml'] or
+                self._is_likely_text_file(file_content)
+            )
+            
+            # If not text-based, check allowed extensions
+            if not is_text_based and file_extension not in self.SUPPORTED_EXTENSIONS:
                 raise ValueError(f"Unsupported file type: {file_extension}")
             
             # Generate unique entry ID
@@ -77,7 +100,8 @@ class FileProcessor:
             # Extract content for summary
             content = self._extract_content(file_content, filename, mime_type)
             if not content:
-                raise ValueError("No extractable content found")
+                # If no content could be extracted, create a basic file info summary
+                content = f"File: {filename} ({len(file_content)} bytes, {mime_type})"
             
             # Generate LLM summary
             summary = await self._generate_summary(content, filename)
@@ -256,7 +280,11 @@ Keep it under 200 words and make it actionable for context injection."""
         file_extension = Path(filename).suffix.lower()
         
         try:
-            if file_extension == '.txt' or mime_type.startswith('text/'):
+            # Handle text-based files (including JSON, XML, CSV, etc.)
+            if (file_extension in ['.txt', '.json', '.xml', '.csv', '.yml', '.yaml', '.md', '.log', '.ini', '.cfg', '.conf'] 
+                or mime_type.startswith('text/') 
+                or mime_type in ['application/json', 'application/xml', 'text/xml']):
+                
                 detected = chardet.detect(file_content)
                 encoding = detected.get('encoding', 'utf-8')
                 try:
@@ -272,8 +300,21 @@ Keep it under 200 words and make it actionable for context injection."""
                 doc = docx.Document(io.BytesIO(file_content))
                 return '\n'.join(paragraph.text for paragraph in doc.paragraphs)
             
-            return ""
+            # For any other file type, try to decode as text (fallback)
+            else:
+                try:
+                    detected = chardet.detect(file_content)
+                    encoding = detected.get('encoding', 'utf-8')
+                    content = file_content.decode(encoding)
+                    # Only return if it seems to be mostly text content
+                    if len([c for c in content[:1000] if c.isprintable() or c.isspace()]) > 800:
+                        return content
+                except:
+                    pass
+                
+                # If we can't extract text content, return a placeholder
+                return f"[Binary file: {filename}] - Content cannot be extracted as text, but file is stored and available for download."
             
         except Exception as e:
             logger.error(f"Error extracting content from {filename}: {str(e)}")
-            return "" 
+            return f"[Error extracting content from {filename}] - File is stored but content extraction failed: {str(e)}" 

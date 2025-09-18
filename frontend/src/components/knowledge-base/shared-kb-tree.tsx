@@ -26,6 +26,7 @@ import {
 } from '@dnd-kit/sortable';
 import {
     useDroppable,
+    DragOverlay,
 } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 
@@ -190,9 +191,9 @@ export function SharedTreeItem({
     };
 
     return (
-        <div ref={combinedRef} style={style} className="select-none">
+        <div ref={combinedRef} style={style} className="select-none my-1">
             {item.type === 'folder' ? (
-                <div className="mb-1">
+                <div>
                     {/* Folder Row - Using div instead of button to avoid nesting */}
                     <div
                         className={`flex items-center w-full text-sm h-8 px-3 py-5 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer ${(isOver && enableDnd) || isDragOverNative
@@ -328,7 +329,7 @@ export function SharedTreeItem({
 
                     {/* Files (when expanded) */}
                     {item.expanded && item.children && (
-                        <div className="space-y-0">
+                        <div className="gap-1 flex flex-col">
                             {item.children.map((file) => (
                                 <SharedTreeItem
                                     key={file.id}
@@ -360,7 +361,7 @@ export function SharedTreeItem({
                 /* File Row - Using div instead of button to avoid nesting */
                 <div
                     ref={setNodeRef}
-                    className={`group flex items-center w-full text-sm h-8 px-3 py-5 rounded-md hover:bg-accent hover:text-accent-foreground mb-1 ${isDragging ? 'opacity-50' : ''
+                    className={`group flex items-center w-full text-sm h-8 px-3 py-5 rounded-md hover:bg-accent hover:text-accent-foreground ${isDragging ? 'opacity-50' : ''
                         }`}
                     style={{
                         paddingLeft: `${level * 16 + 20}px`,
@@ -431,6 +432,34 @@ export function SharedTreeItem({
                     )}
                 </div>
             )}
+        </div>
+    );
+}
+
+// Custom drag overlay component that matches the file row styling
+export function FileDragOverlay({ item }: { item: TreeItem }) {
+    const formatFileSize = (bytes: number) => {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    };
+
+    return (
+        <div className="flex items-center w-full text-sm h-8 px-3 py-5 rounded-md bg-accent text-accent-foreground border shadow-lg">
+            {/* File Icon */}
+            <div className="w-8 h-8 mr-3 bg-background border border-border rounded-md flex items-center justify-center shrink-0">
+                <FileIcon className="h-4 w-4 text-foreground/60" />
+            </div>
+
+            {/* File Details */}
+            <div className="flex-1 text-left min-w-0">
+                <div className="font-medium truncate">{item.name}</div>
+                <div className="text-xs text-muted-foreground">
+                    {formatFileSize(item.data?.file_size || 0)}
+                </div>
+            </div>
         </div>
     );
 }
