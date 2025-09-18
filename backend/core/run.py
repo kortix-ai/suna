@@ -56,7 +56,7 @@ class AgentConfig:
     enable_context_manager: bool = True
     agent_config: Optional[dict] = None
     trace: Optional[StatefulTraceClient] = None
-    enable_prompt_caching: bool = False  # Temporarily disabled for debugging
+    enable_prompt_caching: bool = True
 
 
 class ToolManager:

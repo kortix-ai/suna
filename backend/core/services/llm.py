@@ -298,15 +298,15 @@ async def make_llm_api_call(
     logger.debug(f"Making LLM API call to model: {model_name} with {len(messages)} messages")
     
     # Check token count for context window issues
-    try:
-        from litellm import token_counter
-        total_tokens = token_counter(model=model_name, messages=messages)
-        logger.debug(f"Estimated input tokens: {total_tokens}")
+    # try:
+    #     from litellm import token_counter
+    #     total_tokens = token_counter(model=model_name, messages=messages)
+    #     logger.debug(f"Estimated input tokens: {total_tokens}")
         
-        if total_tokens > 200000:
-            logger.warning(f"High token count detected: {total_tokens}")
-    except Exception:
-        pass  # Token counting is optional
+    #     if total_tokens > 200000:
+    #         logger.warning(f"High token count detected: {total_tokens}")
+    # except Exception:
+    #     pass  # Token counting is optional
     
     # Prepare parameters
     params = prepare_params(

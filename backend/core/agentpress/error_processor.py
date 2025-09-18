@@ -72,7 +72,6 @@ class ErrorProcessor:
         """Process LLM-related errors using LiteLLM's exception types."""
         error_message = ErrorProcessor.safe_error_to_string(error)
         
-        # Use LiteLLM's exception types for precise error categorization
         if isinstance(error, ContextWindowExceededError):
             return ProcessedError(
                 error_type="context_window_exceeded",
