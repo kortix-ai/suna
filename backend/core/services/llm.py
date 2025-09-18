@@ -90,7 +90,9 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
 
 def _configure_token_limits(params: Dict[str, Any], model_name: str, max_tokens: Optional[int]) -> None:
     """Configure token limits based on model type."""
+    # Only set max_tokens if explicitly provided - let providers use their defaults otherwise
     if max_tokens is None:
+        logger.debug(f"No max_tokens specified, using provider defaults for model: {model_name}")
         return
     
     if model_name.startswith("bedrock/") and "claude-3-7" in model_name:
@@ -103,6 +105,7 @@ def _configure_token_limits(params: Dict[str, Any], model_name: str, max_tokens:
     is_openai_gpt5 = 'gpt-5' in model_name
     param_name = "max_completion_tokens" if (is_openai_o_series or is_openai_gpt5) else "max_tokens"
     params[param_name] = max_tokens
+    logger.debug(f"Set {param_name}={max_tokens} for model: {model_name}")
 
 def _configure_anthropic(params: Dict[str, Any], model_name: str, messages: List[Dict[str, Any]]) -> None:
     """Configure Anthropic-specific parameters."""

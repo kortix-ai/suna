@@ -39,6 +39,7 @@ from core.tools.sb_sheets_tool import SandboxSheetsTool
 # from core.tools.sb_web_dev_tool import SandboxWebDevTool  # DEACTIVATED
 from core.tools.sb_upload_file_tool import SandboxUploadFileTool
 from core.tools.sb_docs_tool import SandboxDocsTool
+from core.ai_models.manager import model_manager
 
 load_dotenv()
 
@@ -122,13 +123,13 @@ class ToolManager:
         for tool_name, tool_class, kwargs in sandbox_tools:
             if tool_name not in disabled_tools:
                 self.thread_manager.add_tool(tool_class, **kwargs)
-                logger.debug(f"Registered {tool_name}")
+                # logger.debug(f"Registered {tool_name}")
     
     def _register_utility_tools(self, disabled_tools: List[str]):
         """Register utility and data provider tools."""
         if config.RAPID_API_KEY and 'data_providers_tool' not in disabled_tools:
             self.thread_manager.add_tool(DataProvidersTool)
-            logger.debug("Registered data_providers_tool")
+            # logger.debug("Registered data_providers_tool")
     
     def _register_agent_builder_tools(self, agent_id: str, disabled_tools: List[str]):
         """Register agent builder tools."""
@@ -607,18 +608,6 @@ class AgentRunner:
         mcp_manager = MCPManager(self.thread_manager, self.account_id)
         return await mcp_manager.register_mcp_tools(self.config.agent_config)
     
-    def get_max_tokens(self) -> Optional[int]:
-        logger.debug(f"get_max_tokens called with: '{self.config.model_name}' (type: {type(self.config.model_name)})")
-        if "sonnet" in self.config.model_name.lower():
-            return 8192
-        elif "gpt-4" in self.config.model_name.lower():
-            return 4096
-        elif "gemini-2.5-pro" in self.config.model_name.lower():
-            return 64000
-        elif "kimi-k2" in self.config.model_name.lower():
-            return 8192
-        return None
-    
     async def run(self) -> AsyncGenerator[Dict[str, Any], None]:
         await self.setup()
         await self.setup_tools()
@@ -666,8 +655,9 @@ class AgentRunner:
                     break
 
             temporary_message = None
-            max_tokens = self.get_max_tokens()
-            logger.debug(f"max_tokens: {max_tokens}")
+            # Don't set max_tokens by default - let LiteLLM and providers handle their own defaults
+            max_tokens = None
+            logger.debug(f"max_tokens: {max_tokens} (using provider defaults)")
             generation = self.config.trace.generation(name="thread_manager.run_thread") if self.config.trace else None
             try:
                 logger.debug(f"Starting thread execution for {self.config.thread_id}")

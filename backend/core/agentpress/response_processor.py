@@ -1677,15 +1677,6 @@ class ResponseProcessor:
                 # If parsing fails, keep the original string
                 pass
 
-        output_to_use = output
-        # If this is for the LLM and it's an edit_file tool, create a concise output
-        if for_llm and function_name == 'edit_file' and isinstance(output, dict):
-            # The frontend needs original_content and updated_content to render diffs.
-            # The concise version for the LLM was causing issues.
-            # We will now pass the full output, and rely on the ContextManager to truncate if needed.
-            output_to_use = output
-
-        # Create the structured result
         structured_result_v1 = {
             "tool_execution": {
                 "function_name": function_name,
@@ -1694,7 +1685,7 @@ class ResponseProcessor:
                 "arguments": arguments,
                 "result": {
                     "success": result.success if hasattr(result, 'success') else True,
-                    "output": output_to_use,  # This will be either rich or concise based on `for_llm`
+                    "output": output, 
                     "error": getattr(result, 'error', None) if hasattr(result, 'error') else None
                 },
             }

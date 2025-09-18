@@ -111,13 +111,13 @@ def _add_schema(func, schema: ToolSchema):
     if not hasattr(func, 'tool_schemas'):
         func.tool_schemas = []
     func.tool_schemas.append(schema)
-    logger.debug(f"Added {schema.schema_type.value} schema to function {func.__name__}")
+    # logger.debug(f"Added {schema.schema_type.value} schema to function {func.__name__}")
     return func
 
 def openapi_schema(schema: Dict[str, Any]):
     """Decorator for OpenAPI schema tools."""
     def decorator(func):
-        logger.debug(f"Applying OpenAPI schema to function {func.__name__}")
+        # logger.debug(f"Applying OpenAPI schema to function {func.__name__}")
         return _add_schema(func, ToolSchema(
             schema_type=SchemaType.OPENAPI,
             schema=schema
@@ -127,7 +127,7 @@ def openapi_schema(schema: Dict[str, Any]):
 def usage_example(example: str):
     """Decorator for providing usage examples for tools in prompts."""
     def decorator(func):
-        logger.debug(f"Adding usage example to function {func.__name__}")
+        # logger.debug(f"Adding usage example to function {func.__name__}")
         return _add_schema(func, ToolSchema(
             schema_type=SchemaType.USAGE_EXAMPLE,
             schema={"example": example}
