@@ -80,6 +80,7 @@ const defaultRegistry: ToolViewRegistryType = {
   'web-search': WebSearchToolView,
   'crawl-webpage': WebCrawlToolView,
   'scrape-webpage': WebScrapeToolView,
+  'image-search': WebSearchToolView,
 
   'execute-data-provider-call': ExecuteDataProviderCallToolView,
   'get-data-provider-endpoints': DataProviderEndpointsToolView,
