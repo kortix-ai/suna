@@ -15,6 +15,7 @@ import { SeeImageToolView } from '../see-image-tool/SeeImageToolView';
 import { TerminateCommandToolView } from '../command-tool/TerminateCommandToolView';
 import { AskToolView } from '../ask-tool/AskToolView';
 import { CompleteToolView } from '../CompleteToolView';
+import { WaitToolView } from '../wait-tool/WaitToolView';
 import { ExecuteDataProviderCallToolView } from '../data-provider-tool/ExecuteDataProviderCallToolView';
 import { DataProviderEndpointsToolView } from '../data-provider-tool/DataProviderEndpointsToolView';
 import { DeployToolView } from '../DeployToolView';
@@ -110,6 +111,7 @@ const defaultRegistry: ToolViewRegistryType = {
 
   'ask': AskToolView,
   'complete': CompleteToolView,
+  'wait': WaitToolView,
 
   'deploy': DeployToolView,
 
