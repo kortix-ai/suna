@@ -26,7 +26,14 @@ class ThreadManager:
     def __init__(self, trace: Optional[StatefulTraceClient] = None, agent_config: Optional[dict] = None):
         self.db = DBConnection()
         self.tool_registry = ToolRegistry()
-        self.trace = trace or langfuse.trace(name="anonymous:thread_manager")
+        
+        # Initialize trace with error handling
+        try:
+            self.trace = trace or langfuse.trace(name="anonymous:thread_manager")
+        except Exception as e:
+            logger.warning(f"Failed to create Langfuse trace: {e}, continuing without tracing")
+            self.trace = None
+            
         self.agent_config = agent_config
         self.response_processor = ResponseProcessor(
             tool_registry=self.tool_registry,
@@ -34,7 +41,6 @@ class ThreadManager:
             trace=self.trace,
             agent_config=self.agent_config
         )
-        self.context_manager = ContextManager()
 
     def add_tool(self, tool_class: Type[Tool], function_names: Optional[List[str]] = None, **kwargs):
         """Add a tool to the ThreadManager."""
@@ -178,13 +184,6 @@ class ThreadManager:
 
             messages = []
             for item in all_messages:
-                if item.get('type') == 'image_context':
-                    image_message = self._process_image_context_message(item)
-                    if image_message:
-                        messages.append(image_message)
-                    continue
-                
-                # Handle regular messages
                 if isinstance(item['content'], str):
                     try:
                         parsed_item = json.loads(item['content'])
@@ -203,34 +202,6 @@ class ThreadManager:
             logger.error(f"Failed to get messages for thread {thread_id}: {str(e)}", exc_info=True)
             return []
     
-    def _process_image_context_message(self, item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Process an image_context message into LLM-compatible format."""
-        try:
-            content = item['content']
-            if isinstance(content, str):
-                content = json.loads(content)
-            
-            if not isinstance(content, dict):
-                return None
-            
-            base64_data = content.get('base64')
-            mime_type = content.get('mime_type', 'image/jpeg')
-            file_path = content.get('file_path', 'image')
-            
-            if not base64_data:
-                return None
-            
-            return {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": f"Here is the image from '{file_path}':"},
-                    {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_data}"}}
-                ],
-                "message_id": item['message_id']
-            }
-        except Exception as e:
-            logger.error(f"Failed to process image_context message: {str(e)}")
-            return None
 
     async def run_thread(
         self,
@@ -249,9 +220,13 @@ class ThreadManager:
         reasoning_effort: Optional[str] = 'low',
         generation: Optional[StatefulGenerationClient] = None,
         enable_prompt_caching: bool = True,
+        enable_context_manager: Optional[bool] = None,
     ) -> Union[Dict[str, Any], AsyncGenerator]:
         """Run a conversation thread with LLM integration and tool execution."""
         logger.debug(f"🚀 Starting thread execution for {thread_id} with model {llm_model}")
+
+        # Determine if context manager should be used (default to True)
+        use_context_manager = enable_context_manager if enable_context_manager is not None else True
 
         # Ensure we have a valid ProcessorConfig object
         if processor_config is None:
@@ -276,7 +251,8 @@ class ThreadManager:
             result = await self._execute_run(
                 thread_id, system_prompt, llm_model, llm_temperature, llm_max_tokens,
                 tool_choice, config, stream, enable_thinking, reasoning_effort,
-                generation, auto_continue_state, temporary_message, enable_prompt_caching
+                generation, auto_continue_state, temporary_message, enable_prompt_caching,
+                use_context_manager
             )
             
             # If result is an error dict, convert it to a generator that yields the error
@@ -290,7 +266,7 @@ class ThreadManager:
             thread_id, system_prompt, llm_model, llm_temperature, llm_max_tokens,
             tool_choice, config, stream, enable_thinking, reasoning_effort,
             generation, auto_continue_state, temporary_message,
-            native_max_auto_continues, enable_prompt_caching
+            native_max_auto_continues, enable_prompt_caching, use_context_manager
         )
 
     async def _execute_run(
@@ -299,7 +275,7 @@ class ThreadManager:
         config: ProcessorConfig, stream: bool, enable_thinking: Optional[bool],
         reasoning_effort: Optional[str], generation: Optional[StatefulGenerationClient],
         auto_continue_state: Dict[str, Any], temporary_message: Optional[Dict[str, Any]] = None,
-        enable_prompt_caching: bool = True
+        enable_prompt_caching: bool = True, use_context_manager: bool = True
     ) -> Union[Dict[str, Any], AsyncGenerator]:
         """Execute a single LLM run."""
         logger.debug(f"_execute_run called with config type: {type(config)}")
@@ -318,6 +294,18 @@ class ThreadManager:
                 partial_content = auto_continue_state['continuous_state']['accumulated_content']
                 messages.append({"role": "assistant", "content": partial_content})
 
+            # Apply context compression if enabled
+            if use_context_manager:
+                logger.debug(f"Context manager enabled, compressing {len(messages)} messages")
+                context_manager = ContextManager()
+                compressed_messages = context_manager.compress_messages(
+                    messages, llm_model, max_tokens=llm_max_tokens
+                )
+                logger.debug(f"Context compression completed: {len(messages)} -> {len(compressed_messages)} messages")
+                messages = compressed_messages
+            else:
+                logger.debug("Context manager disabled, using raw messages")
+
             # Apply caching if enabled
             if enable_prompt_caching:
                 prepared_messages = apply_anthropic_caching_strategy(system_prompt, messages, llm_model)
@@ -330,19 +318,22 @@ class ThreadManager:
 
             # Update generation tracking
             if generation:
-                generation.update(
-                    input=prepared_messages,
-                    start_time=datetime.now(timezone.utc),
-                    model=llm_model,
-                    model_parameters={
-                        "max_tokens": llm_max_tokens,
-                        "temperature": llm_temperature,
-                        "enable_thinking": enable_thinking,
-                        "reasoning_effort": reasoning_effort,
-                        "tool_choice": tool_choice,
-                        "tools": openapi_tool_schemas,
-                    }
-                )
+                try:
+                    generation.update(
+                        input=prepared_messages,
+                        start_time=datetime.now(timezone.utc),
+                        model=llm_model,
+                        model_parameters={
+                            "max_tokens": llm_max_tokens,
+                            "temperature": llm_temperature,
+                            "enable_thinking": enable_thinking,
+                            "reasoning_effort": reasoning_effort,
+                            "tool_choice": tool_choice,
+                            "tools": openapi_tool_schemas,
+                        }
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to update Langfuse generation: {e}")
 
             # Make LLM call
             try:
@@ -392,7 +383,8 @@ class ThreadManager:
         config: ProcessorConfig, stream: bool, enable_thinking: Optional[bool],
         reasoning_effort: Optional[str], generation: Optional[StatefulGenerationClient],
         auto_continue_state: Dict[str, Any], temporary_message: Optional[Dict[str, Any]],
-        native_max_auto_continues: int, enable_prompt_caching: bool = True
+        native_max_auto_continues: int, enable_prompt_caching: bool = True,
+        use_context_manager: bool = True
     ) -> AsyncGenerator:
         """Generator that handles auto-continue logic."""
         logger.debug(f"Starting auto-continue generator, max: {native_max_auto_continues}")
@@ -412,7 +404,7 @@ class ThreadManager:
                     tool_choice, config, stream, enable_thinking, reasoning_effort,
                     generation, auto_continue_state,
                     temporary_message if auto_continue_state['count'] == 0 else None,
-                    enable_prompt_caching
+                    enable_prompt_caching, use_context_manager
                 )
 
                 # Handle error responses

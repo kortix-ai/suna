@@ -61,7 +61,7 @@ def setup_api_keys() -> None:
     aws_region = config.AWS_REGION_NAME
 
     if aws_access_key and aws_secret_key and aws_region:
-        logger.info(f"AWS Bedrock configured for region: {aws_region}")
+        logger.debug(f"AWS Bedrock configured for region: {aws_region}")
         # Configure LiteLLM to use AWS credentials
         os.environ["AWS_ACCESS_KEY_ID"] = aws_access_key
         os.environ["AWS_SECRET_ACCESS_KEY"] = aws_secret_key

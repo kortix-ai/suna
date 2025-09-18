@@ -14,7 +14,7 @@ daytona_config = DaytonaConfig(
 )
 
 if daytona_config.api_key:
-    logger.info("Daytona sandbox configured successfully")
+    logger.debug("Daytona sandbox configured successfully")
 else:
     logger.warning("No Daytona API key found in environment variables")
 

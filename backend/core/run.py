@@ -498,7 +498,11 @@ class AgentRunner:
     
     async def setup(self):
         if not self.config.trace:
-            self.config.trace = langfuse.trace(name="run_agent", session_id=self.config.thread_id, metadata={"project_id": self.config.project_id})
+            try:
+                self.config.trace = langfuse.trace(name="run_agent", session_id=self.config.thread_id, metadata={"project_id": self.config.project_id})
+            except Exception as e:
+                logger.warning(f"Failed to create Langfuse trace: {e}, continuing without tracing")
+                self.config.trace = None
         
         self.thread_manager = ThreadManager(
             trace=self.config.trace, 
@@ -795,7 +799,10 @@ class AgentRunner:
             if generation:
                 generation.end()
 
-        asyncio.create_task(asyncio.to_thread(lambda: langfuse.flush()))
+        try:
+            asyncio.create_task(asyncio.to_thread(lambda: langfuse.flush()))
+        except Exception as e:
+            logger.warning(f"Failed to flush Langfuse: {e}")
 
 
 async def run_agent(

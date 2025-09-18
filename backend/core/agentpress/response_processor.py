@@ -98,7 +98,14 @@ class ResponseProcessor:
         """
         self.tool_registry = tool_registry
         self.add_message = add_message_callback
-        self.trace = trace or langfuse.trace(name="anonymous:response_processor")
+        
+        # Initialize trace with error handling
+        try:
+            self.trace = trace or langfuse.trace(name="anonymous:response_processor")
+        except Exception as e:
+            logger.warning(f"Failed to create Langfuse trace: {e}, continuing without tracing")
+            self.trace = None
+            
         # Initialize the XML parser
         self.xml_parser = XMLToolParser()
         self.is_agent_builder = False  # Deprecated - keeping for compatibility
@@ -266,9 +273,9 @@ class ResponseProcessor:
                     is_llm_message=False, metadata={"thread_run_id": thread_run_id}
                 )
                 if start_msg_obj: 
-                    logger.info(f"📤 About to yield start_msg_obj")
+                    # logger.debug(f"📤 About to yield start_msg_obj")
                     yield format_for_yield(start_msg_obj)
-                    logger.info(f"✅ Successfully yielded start_msg_obj")
+                    # logger.debug(f"✅ Successfully yielded start_msg_obj")
 
                 assist_start_content = {"status_type": "assistant_response_start"}
                 assist_start_msg_obj = await self.add_message(
@@ -276,9 +283,9 @@ class ResponseProcessor:
                     is_llm_message=False, metadata={"thread_run_id": thread_run_id}
                 )
                 if assist_start_msg_obj: 
-                    logger.info(f"📤 About to yield assist_start_msg_obj")
+                    # logger.debug(f"📤 About to yield assist_start_msg_obj")
                     yield format_for_yield(assist_start_msg_obj)
-                    logger.info(f"✅ Successfully yielded assist_start_msg_obj")
+                    # logger.debug(f"✅ Successfully yielded assist_start_msg_obj")
             # --- End Start Events ---
 
             __sequence = continuous_state.get('sequence', 0)    # get the sequence from the previous auto-continue cycle
@@ -295,7 +302,7 @@ class ResponseProcessor:
                 
                 # Log info about chunks periodically for debugging
                 if chunk_count == 1 or (chunk_count % 100 == 0) or hasattr(chunk, 'usage'):
-                    logger.info(f"Processing chunk #{chunk_count}, type={type(chunk).__name__}")
+                    logger.debug(f"Processing chunk #{chunk_count}, type={type(chunk).__name__}")
                 
                 if hasattr(chunk, 'created') and chunk.created:
                     streaming_metadata["created"] = chunk.created
