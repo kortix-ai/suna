@@ -331,6 +331,7 @@ const TOOL_DISPLAY_NAMES = new Map([
   
   ['deploy', 'Deploying'],
   ['ask', 'Ask'],
+  ['wait', 'Wait'],
   ['create-tasks', 'Creating Tasks'],
   ['update-tasks', 'Updating Tasks'],
   ['complete', 'Completing Task'],
