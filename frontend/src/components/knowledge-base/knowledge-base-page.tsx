@@ -9,7 +9,7 @@ import { getSandboxFileContent } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { FileNameValidator, useNameValidation } from '@/lib/validation';
+import { FileNameValidator } from '@/lib/validation';
 import {
     FolderIcon,
     FileIcon,
@@ -327,8 +327,14 @@ export function KnowledgeBasePage() {
             .map(f => f.name)
             .filter(name => name !== folders.find(f => f.folder_id === editingFolder)?.name);
 
-        const validation = useNameValidation(newName, 'folder', existingNames);
-        setValidationError(validation.isValid ? null : validation.friendlyError || 'Invalid folder name');
+        const nameValidation = FileNameValidator.validateName(newName, 'folder');
+        const hasConflict = nameValidation.isValid && FileNameValidator.checkNameConflict(newName, existingNames);
+        const isValid = nameValidation.isValid && !hasConflict;
+        const errorMessage = hasConflict
+            ? 'A folder with this name already exists'
+            : FileNameValidator.getFriendlyErrorMessage(newName, 'folder');
+
+        setValidationError(isValid ? null : errorMessage);
     };
 
     const handleFinishEdit = async () => {
@@ -341,10 +347,15 @@ export function KnowledgeBasePage() {
 
         // Validate the name
         const existingNames = folders.map(f => f.name).filter(name => name !== folders.find(f => f.folder_id === editingFolder)?.name);
-        const validation = useNameValidation(trimmedName, 'folder', existingNames);
+        const nameValidation = FileNameValidator.validateName(trimmedName, 'folder');
+        const hasConflict = nameValidation.isValid && FileNameValidator.checkNameConflict(trimmedName, existingNames);
+        const isValid = nameValidation.isValid && !hasConflict;
 
-        if (!validation.isValid) {
-            toast.error(validation.friendlyError || 'Invalid folder name');
+        if (!isValid) {
+            const errorMessage = hasConflict
+                ? 'A folder with this name already exists'
+                : FileNameValidator.getFriendlyErrorMessage(trimmedName, 'folder');
+            toast.error(errorMessage);
             return;
         }
 
@@ -541,11 +552,13 @@ export function KnowledgeBasePage() {
     };
 
     const handleDragStart = (event: DragStartEvent) => {
+        console.log('Drag started:', event.active.id, event.active.data.current);
         setActiveId(event.active.id as string);
     };
 
     const handleDragEnd = (event: DragEndEvent) => {
         const { active, over } = event;
+        console.log('Drag ended:', { activeId: active.id, overId: over?.id });
 
         if (!over || active.id === over.id) {
             setActiveId(null);
@@ -565,8 +578,12 @@ export function KnowledgeBasePage() {
             return;
         }
 
-        const activeItem = treeData.flatMap(folder => [folder, ...(folder.children || [])]).find(item => item.id === active.id);
-        const overItem = treeData.flatMap(folder => [folder, ...(folder.children || [])]).find(item => item.id === over.id);
+        // Handle internal DND - get the actual item IDs
+        const activeItemId = active.id.toString();
+        const overItemId = over.id.toString().replace('droppable-', ''); // Remove droppable prefix if present
+
+        const activeItem = treeData.flatMap(folder => [folder, ...(folder.children || [])]).find(item => item.id === activeItemId);
+        const overItem = treeData.flatMap(folder => [folder, ...(folder.children || [])]).find(item => item.id === overItemId);
 
         if (!activeItem || !overItem) {
             setActiveId(null);
@@ -575,19 +592,12 @@ export function KnowledgeBasePage() {
 
         // File to folder: Move file to different folder
         if (activeItem.type === 'file' && overItem.type === 'folder') {
+            console.log('Moving file', activeItem.id, 'to folder', overItem.id);
             handleMoveFile(activeItem.id, overItem.id);
         }
-        // Folder to folder: Reorder folders
-        else if (activeItem.type === 'folder' && overItem.type === 'folder') {
-            setTreeData((items) => {
-                const oldIndex = items.findIndex(item => item.id === active.id);
-                const newIndex = items.findIndex(item => item.id === over.id);
-
-                if (oldIndex !== -1 && newIndex !== -1) {
-                    return arrayMove(items, oldIndex, newIndex);
-                }
-                return items;
-            });
+        // Block all other drag operations - no folder reordering, no file reordering
+        else {
+            console.log('Blocked drag operation:', activeItem.type, 'to', overItem.type);
         }
 
         setActiveId(null);
@@ -729,6 +739,8 @@ export function KnowledgeBasePage() {
 
             // Refresh the folder contents
             refetchFolders();
+            // Also refresh the specific folder's entries to show new files immediately
+            await fetchFolderEntries(folderId);
 
         } catch (error) {
             console.error('Error uploading files:', error);
@@ -876,7 +888,7 @@ export function KnowledgeBasePage() {
                                             onDragEnd={handleDragEnd}
                                         >
                                             <SortableContext
-                                                items={treeData.flatMap(folder => [folder.id, ...(folder.children?.map(child => child.id) || [])])}
+                                                items={[]} // No sorting - only drag files to folders
                                                 strategy={verticalListSortingStrategy}
                                             >
                                                 <div className="space-y-1">

@@ -8,11 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
-import { 
-  FolderIcon, 
-  FileIcon, 
-  PlusIcon, 
-  UploadIcon, 
+import {
+  FolderIcon,
+  FileIcon,
+  PlusIcon,
+  UploadIcon,
   TrashIcon,
   Settings,
   CheckIcon,
@@ -65,7 +65,7 @@ interface AgentAssignment {
 const useKnowledgeFolders = () => {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [loading, setLoading] = useState(true);
-  
+
   const fetchFolders = async () => {
     try {
       const headers = await getAuthHeaders();
@@ -84,14 +84,14 @@ const useKnowledgeFolders = () => {
   useEffect(() => {
     fetchFolders();
   }, []);
-  
+
   return { folders, loading, refetch: fetchFolders };
 };
 
 const useAgentFolders = (agentId: string) => {
   const [assignments, setAssignments] = useState<{ [folderId: string]: AgentAssignment }>({});
   const [loading, setLoading] = useState(true);
-  
+
   const fetchAssignments = async () => {
     try {
       const headers = await getAuthHeaders();
@@ -115,16 +115,6 @@ const useAgentFolders = (agentId: string) => {
 
   return { assignments, setAssignments, loading, refetch: fetchAssignments };
 };
-      setLoading(false);
-    }
-  };
-  
-  React.useEffect(() => {
-    fetchAssignments();
-  }, [agentId]);
-  
-  return { assignments, setAssignments, loading, refetch: fetchAssignments };
-};
 
 export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledgeBaseManagerProps) => {
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
@@ -136,10 +126,10 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
   const [uploading, setUploading] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   const { folders, loading: foldersLoading, refetch: refetchFolders } = useKnowledgeFolders();
   const { assignments, setAssignments, loading: assignedLoading, refetch: refetchAssigned } = useAgentFolders(agentId);
-  
+
   // Load all entries for all folders when assignments dialog is opened
   useEffect(() => {
     if (showAssignments && folders.length > 0) {
@@ -149,7 +139,7 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
 
   const loadAllEntries = async () => {
     const entriesData: { [folderId: string]: Entry[] } = {};
-    
+
     for (const folder of folders) {
       try {
         const response = await fetch(`/api/knowledge-base/folders/${folder.folder_id}/entries`);
@@ -163,13 +153,13 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
         entriesData[folder.folder_id] = [];
       }
     }
-    
+
     setAllEntries(entriesData);
     // Expand all folders by default so users can see all available content
     const allFolderIds = new Set(folders.map(f => f.folder_id));
     setExpandedFolders(allFolderIds);
   };
-  
+
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -177,17 +167,17 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
   };
-  
+
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
-    
+
     try {
       const response = await fetch('/api/knowledge-base/folders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: newFolderName })
       });
-      
+
       if (response.ok) {
         toast.success('Folder created successfully');
         setNewFolderName('');
@@ -200,22 +190,22 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
       toast.error('Failed to create folder');
     }
   };
-  
+
   const handleUploadFile = async (files: FileList | null) => {
     if (!files || !selectedFolder) return;
-    
+
     setUploading(true);
-    
+
     for (const file of Array.from(files)) {
       const formData = new FormData();
       formData.append('file', file);
-      
+
       try {
         const response = await fetch(`/api/knowledge-base/folders/${selectedFolder}/upload`, {
           method: 'POST',
           body: formData
         });
-        
+
         if (response.ok) {
           toast.success(`${file.name} uploaded successfully`);
         } else {
@@ -225,13 +215,13 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
         toast.error(`Failed to upload ${file.name}`);
       }
     }
-    
+
     setUploading(false);
     setShowUpload(false);
     fetchFolderEntries(selectedFolder);
     refetchFolders(); // Update entry counts
   };
-  
+
   const fetchFolderEntries = async (folderId: string) => {
     try {
       const response = await fetch(`/api/knowledge-base/folders/${folderId}/entries`);
@@ -243,20 +233,20 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
       console.error('Failed to fetch entries:', error);
     }
   };
-  
+
   const handleFolderSelect = (folderId: string) => {
     setSelectedFolder(folderId);
     fetchFolderEntries(folderId);
   };
-  
+
   const handleDeleteFolder = async (folderId: string) => {
     if (!confirm('Are you sure? This will delete all files in the folder.')) return;
-    
+
     try {
       const response = await fetch(`/api/knowledge-base/folders/${folderId}`, {
         method: 'DELETE'
       });
-      
+
       if (response.ok) {
         toast.success('Folder deleted');
         refetchFolders();
@@ -275,7 +265,7 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
       toast.error('Failed to delete folder');
     }
   };
-  
+
   const handleUpdateAssignments = async () => {
     try {
       const response = await fetch(`/api/knowledge-base/agents/${agentId}/assignments`, {
@@ -283,7 +273,7 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ assignments })
       });
-      
+
       if (response.ok) {
         toast.success('Agent knowledge assignments updated');
         setShowAssignments(false);
@@ -295,7 +285,7 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
       toast.error('Failed to update assignments');
     }
   };
-  
+
   const toggleFolderAssignment = (folderId: string) => {
     setAssignments(prev => ({
       ...prev,
@@ -306,7 +296,7 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
       }
     }));
   };
-  
+
   const toggleFileAssignment = (folderId: string, entryId: string) => {
     setAssignments(prev => ({
       ...prev,
@@ -319,7 +309,7 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
       }
     }));
   };
-  
+
   const toggleFolderExpansion = (folderId: string) => {
     setExpandedFolders(prev => {
       const newSet = new Set(prev);
@@ -333,15 +323,15 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
       return newSet;
     });
   };
-  
+
   const isFolderAssigned = (folderId: string) => {
     return assignments[folderId]?.enabled || false;
   };
-  
+
   const isFileAssigned = (folderId: string, entryId: string) => {
     return assignments[folderId]?.file_assignments?.[entryId] || false;
   };
-  
+
   if (foldersLoading || assignedLoading) {
     return (
       <div className="space-y-4">
@@ -353,15 +343,15 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
       </div>
     );
   }
-  
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h3 className="text-lg font-semibold">Knowledge Base</h3>
         <div className="flex gap-2">
-          <Button 
-            variant="outline" 
-            size="sm" 
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setShowAssignments(true)}
           >
             <Settings className="h-4 w-4 mr-2" />
@@ -373,7 +363,7 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
           </Button>
         </div>
       </div>
-      
+
       {/* Agent Current Access Overview */}
       <Card>
         <CardHeader>
@@ -400,7 +390,7 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
           )}
         </CardContent>
       </Card>
-      
+
       {/* Create Folder Dialog */}
       <Dialog open={showCreateFolder} onOpenChange={setShowCreateFolder}>
         <DialogContent>
@@ -423,7 +413,7 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
           </div>
         </DialogContent>
       </Dialog>
-      
+
       {/* Upload Dialog */}
       <Dialog open={showUpload} onOpenChange={setShowUpload}>
         <DialogContent>
@@ -453,7 +443,7 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
           </div>
         </DialogContent>
       </Dialog>
-      
+
       {/* Enhanced Agent Assignment Dialog with Tree View */}
       <Dialog open={showAssignments} onOpenChange={setShowAssignments}>
         <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
@@ -464,7 +454,7 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
             <p className="text-sm text-muted-foreground">
               All folders and files are shown below. Enable the folders and specific files that this agent should have access to:
             </p>
-            
+
             <div className="space-y-2">
               {folders.map((folder) => (
                 <div key={folder.folder_id} className="border rounded-lg">
@@ -476,8 +466,8 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
                       onClick={() => toggleFolderExpansion(folder.folder_id)}
                       className="p-0 h-6 w-6"
                     >
-                      {expandedFolders.has(folder.folder_id) ? 
-                        <ChevronDownIcon className="h-4 w-4" /> : 
+                      {expandedFolders.has(folder.folder_id) ?
+                        <ChevronDownIcon className="h-4 w-4" /> :
                         <ChevronRightIcon className="h-4 w-4" />
                       }
                     </Button>
@@ -494,7 +484,7 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
                       </p>
                     </div>
                   </div>
-                  
+
                   {/* Folder Files (when expanded) */}
                   {expandedFolders.has(folder.folder_id) && (
                     <div className="border-t">
@@ -529,7 +519,7 @@ export const AgentKnowledgeBaseManager = ({ agentId, agentName }: AgentKnowledge
               ))}
             </div>
           </div>
-          
+
           <div className="flex justify-end gap-2 pt-4 border-t">
             <Button variant="outline" onClick={() => setShowAssignments(false)}>
               Cancel

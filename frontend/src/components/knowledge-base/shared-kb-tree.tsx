@@ -22,13 +22,10 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
-    useSortable,
-} from '@dnd-kit/sortable';
-import {
     useDroppable,
     DragOverlay,
+    useDraggable,
 } from '@dnd-kit/core';
-import { CSS } from '@dnd-kit/utilities';
 
 interface TreeItem {
     id: string;
@@ -110,36 +107,41 @@ export function SharedTreeItem({
 
     const isEditingJustStarted = useRef(false);
 
-    // Only files should be sortable, not folders
-    const dndHooks = (enableDnd && item.type === 'file') ? useSortable({ id: item.id }) : {
-        attributes: {},
-        listeners: {},
-        setNodeRef: () => { },
-        transform: null,
-        transition: null,
-        isDragging: false,
-    };
+    // Only files are draggable, folders are only drop targets
+    const fileDragHooks = useDraggable({
+        id: item.id,
+        disabled: !enableDnd || item.type !== 'file'
+    });
 
+    // Folders are droppable but NOT sortable
+    const { setNodeRef: setDroppableRef, isOver } = useDroppable({
+        id: `droppable-${item.id}`,
+        disabled: !enableDnd || item.type !== 'folder'
+    });
+
+    // Only use drag hooks for files
     const {
         attributes,
         listeners,
         setNodeRef,
         transform,
-        transition,
         isDragging,
-    } = dndHooks;
+    } = item.type === 'file' ? fileDragHooks : {
+        attributes: {},
+        listeners: {},
+        setNodeRef: () => { },
+        transform: null,
+        isDragging: false,
+    };
 
-    // Make folders droppable for files (only if DND enabled)
-    const { setNodeRef: setDroppableRef, isOver } = (enableDnd && item.type === 'folder') ? useDroppable({
-        id: `droppable-${item.id}`,
-    }) : { setNodeRef: () => { }, isOver: false };
-
-    // Combine refs - folders are droppable, files are sortable
+    // Combine refs - only files need drag ref, folders need droppable ref
     const combinedRef = (node: HTMLElement | null) => {
-        if (item.type === 'file' && enableDnd) {
-            setNodeRef(node);
-        } else if (item.type === 'folder' && enableDnd) {
-            setDroppableRef(node);
+        if (enableDnd) {
+            if (item.type === 'file') {
+                setNodeRef(node); // draggable ref for files
+            } else if (item.type === 'folder') {
+                setDroppableRef(node); // droppable ref for folders
+            }
         }
     };
 
@@ -176,10 +178,10 @@ export function SharedTreeItem({
         }
     };
 
-    const style = enableDnd ? {
-        transform: CSS.Transform.toString(transform),
-        transition,
-        opacity: isDragging ? 0.5 : 1,
+    const style = enableDnd && item.type === 'file' ? {
+        transform: `translate3d(${transform?.x ?? 0}px, ${transform?.y ?? 0}px, 0)`,
+        opacity: isDragging ? 0 : 1, // Completely hide the original when dragging
+        zIndex: isDragging ? 1000 : 'auto',
     } : {};
 
     const formatFileSize = (bytes: number) => {
@@ -196,7 +198,7 @@ export function SharedTreeItem({
                 <div>
                     {/* Folder Row - Using div instead of button to avoid nesting */}
                     <div
-                        className={`flex items-center w-full text-sm h-8 px-3 py-5 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer ${(isOver && enableDnd) || isDragOverNative
+                        className={`group flex items-center w-full text-sm h-8 px-3 py-5 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer ${(isOver && enableDnd) || isDragOverNative
                             ? 'bg-blue-100 border-2 border-blue-300 border-dashed'
                             : ''
                             }`}
@@ -329,7 +331,7 @@ export function SharedTreeItem({
 
                     {/* Files (when expanded) */}
                     {item.expanded && item.children && (
-                        <div className="gap-1 flex flex-col">
+                        <div className="flex flex-col">
                             {item.children.map((file) => (
                                 <SharedTreeItem
                                     key={file.id}
@@ -360,7 +362,7 @@ export function SharedTreeItem({
             ) : (
                 /* File Row - Using div instead of button to avoid nesting */
                 <div
-                    ref={setNodeRef}
+                    ref={combinedRef}
                     className={`group flex items-center w-full text-sm h-8 px-3 py-5 rounded-md hover:bg-accent hover:text-accent-foreground ${isDragging ? 'opacity-50' : ''
                         }`}
                     style={{
@@ -369,8 +371,8 @@ export function SharedTreeItem({
                     }}
                     onClick={() => onSelect(item)}
                 >
-                    {/* Drag Handle - Only visible on hover and only when DND is enabled */}
-                    {enableDnd && (
+                    {/* Drag Handle - Only visible on hover and only when DND is enabled for files */}
+                    {enableDnd && item.type === 'file' && (
                         <div
                             className="opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1 ml-1"
                             {...attributes}
