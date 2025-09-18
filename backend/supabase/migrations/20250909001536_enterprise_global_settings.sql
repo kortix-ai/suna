@@ -52,7 +52,7 @@ CREATE TRIGGER update_enterprise_global_settings_updated_at
 INSERT INTO public.enterprise_global_settings (setting_key, setting_value, description)
 VALUES (
     'default_monthly_limit',
-    '{"value": 1000.0}',
+    '{"value": 100.0}',
     'Default monthly spending limit for new enterprise users (in USD)'
 ) ON CONFLICT (setting_key) DO NOTHING;
 
@@ -61,7 +61,7 @@ INSERT INTO public.enterprise_global_settings (setting_key, setting_value, descr
 VALUES (
     'default_settings',
     '{
-        "monthly_limit": 1000.0,
+        "monthly_limit": 100.0,
         "allow_overages": false,
         "notification_threshold": 80.0
     }',
@@ -102,16 +102,16 @@ BEGIN
     -- Get the setting
     SELECT get_enterprise_setting('default_monthly_limit') INTO setting_value;
     
-    -- Extract the value, fallback to 1000.0 if not found
+    -- Extract the value, fallback to 100.0 if not found
     IF setting_value IS NULL THEN
-        RETURN 1000.0;
+        RETURN 100.0;
     END IF;
     
     result := (setting_value->>'value')::DECIMAL;
     
     -- Ensure we have a valid value
     IF result IS NULL OR result <= 0 THEN
-        RETURN 1000.0;
+        RETURN 100.0;
     END IF;
     
     RETURN result;

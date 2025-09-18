@@ -562,7 +562,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                 // Render scrollable content container with column-reverse (or just content when external scrolling)
                 <div
                     ref={scrollContainerRef || messagesContainerRef}
-                    className={scrollContainerRef ? `${containerClassName} flex flex-col-reverse ${shouldJustifyToTop ? 'justify-end min-h-full' : ''}` : 'py-4 pb-0'}
+                    className={scrollContainerRef ? `${containerClassName} flex flex-col-reverse ${shouldJustifyToTop ? 'justify-end min-h-full' : ''}` : 'py-4 pb-0 overflow-auto'}
                     onScroll={scrollContainerRef ? handleScroll : undefined}
                 >
                     <div ref={contentRef} className="mx-auto min-w-0 w-full max-w-3xl px-4 md:px-6">

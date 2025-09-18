@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS public.enterprise_billing (
 -- Per-user monthly limits
 CREATE TABLE IF NOT EXISTS public.enterprise_user_limits (
     account_id UUID PRIMARY KEY REFERENCES basejump.accounts(id) ON DELETE CASCADE,
-    monthly_limit DECIMAL(10, 2) DEFAULT 1000.00 CHECK (monthly_limit >= 0),
+    monthly_limit DECIMAL(10, 2) DEFAULT 100.00 CHECK (monthly_limit >= 0),
     current_month_usage DECIMAL(10, 4) DEFAULT 0 CHECK (current_month_usage >= 0),
     last_reset_at TIMESTAMPTZ DEFAULT NOW(),
     is_active BOOLEAN DEFAULT TRUE,
@@ -289,7 +289,7 @@ BEGIN
         VALUES (p_account_id)
         ON CONFLICT (account_id) DO UPDATE SET is_active = TRUE;
         
-        v_monthly_limit := 1000.00;
+        v_monthly_limit := 100.00;
         v_current_usage := 0;
     END IF;
     

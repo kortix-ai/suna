@@ -369,6 +369,67 @@ All deliverables are attached for your review.</parameter>
         except Exception as e:
             return self.fail_response(f"Error entering complete state: {str(e)}")
 
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "wait",
+            "description": "Pause execution for a specified number of seconds. Use this tool to add deliberate pauses in long-running processes to prevent rushing and maintain a steady, thoughtful pace. This helps prevent errors and ensures quality execution.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "seconds": {
+                        "type": "integer",
+                        "description": "Number of seconds to wait (1-300 seconds). Use 1-3 seconds for brief pauses, 5-10 seconds for processing waits, 60+ seconds for longer operations.",
+                        "minimum": 1,
+                        "maximum": 300
+                    }
+                },
+                "required": ["seconds"]
+            }
+        }
+    })
+    @usage_example('''
+        <function_calls>
+        <invoke name="wait">
+        <parameter name="seconds">3</parameter>
+        </invoke>
+        </function_calls>
+
+        <function_calls>
+        <invoke name="wait">
+        <parameter name="seconds">5</parameter>
+        </invoke>
+        </function_calls>
+        ''')
+    async def wait(self, seconds: int) -> ToolResult:
+        """Pause execution for a specified number of seconds.
+
+        Args:
+            seconds: Number of seconds to wait (1-300)
+
+        Returns:
+            ToolResult indicating the wait was completed
+        """
+        try:
+            # Validate duration
+            if seconds < 1 or seconds > 300:
+                return self.fail_response("Duration must be between 1 and 300 seconds")
+            
+            # Import asyncio for the sleep
+            import asyncio
+            
+            # Log the wait
+            logger.info(f"Agent waiting {seconds} seconds")
+            
+            # Perform the wait
+            await asyncio.sleep(seconds)
+            
+            # Return success
+            return self.success_response(f"Waited {seconds} seconds")
+            
+        except Exception as e:
+            return self.fail_response(f"Error during wait: {str(e)}")
+
 
 if __name__ == "__main__":
     import asyncio

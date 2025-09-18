@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 
 interface ReleaseBadgeProps {
     text: string;
-    link: string;
+    link?: string;
     className?: string;
 }
 export const ReleaseBadge = ({ text, link, className }: ReleaseBadgeProps) => {
@@ -15,9 +15,9 @@ export const ReleaseBadge = ({ text, link, className }: ReleaseBadgeProps) => {
   return (
     <div className="z-10 flex items-center justify-center px-2 sm:px-0">
       <div
-        onClick={() => router.push(link)}
+        onClick={() => link && router.push(link)}
         className={cn(
-          "group rounded-full border border-black/5 bg-neutral-100 text-base text-white transition-all ease-in hover:cursor-pointer hover:bg-neutral-200 dark:border-white/5 dark:bg-neutral-900 dark:hover:bg-neutral-800 active:scale-95 touch-manipulation max-w-[calc(100vw-2rem)] sm:max-w-none",
+          "group rounded-full border border-black/5 bg-neutral-100 text-base text-white transition-all ease-in hover:bg-neutral-200 dark:border-white/5 dark:bg-neutral-900 dark:hover:bg-neutral-800 active:scale-95 touch-manipulation max-w-[calc(100vw-2rem)] sm:max-w-none",
           className
         )}
       >

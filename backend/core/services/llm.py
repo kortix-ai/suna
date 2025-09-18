@@ -145,11 +145,11 @@ def _configure_anthropic(params: Dict[str, Any], model_name: str, messages: List
     if not ("claude" in model_name.lower() or "anthropic" in model_name.lower()):
         return
     
-    # Include both prompt caching and extended output beta features
+    # Include prompt caching, extended output, and 1M context window beta features
     params["extra_headers"] = {
-        "anthropic-beta": "prompt-caching-2024-07-31,max-tokens-3-5-sonnet-2024-07-15"
+        "anthropic-beta": "prompt-caching-2024-07-31,max-tokens-3-5-sonnet-2024-07-15,context-1m-2025-08-07"
     }
-    logger.debug(f"Added Anthropic-specific headers for prompt caching and extended output")
+    logger.debug(f"Added Anthropic-specific headers for prompt caching, extended output, and 1M context window")
 
 def _configure_openrouter(params: Dict[str, Any], model_name: str) -> None:
     """Configure OpenRouter-specific parameters."""

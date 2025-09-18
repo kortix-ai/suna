@@ -265,6 +265,7 @@ export const extractPrimaryParam = (
 
       // Web search
       case 'web-search':
+      case 'image-search':
         match = content.match(/query=(?:"|')([^"|']+)(?:"|')/);
         return match
           ? match[1].length > 30
@@ -330,6 +331,7 @@ const TOOL_DISPLAY_NAMES = new Map([
   
   ['deploy', 'Deploying'],
   ['ask', 'Ask'],
+  ['wait', 'Wait'],
   ['create-tasks', 'Creating Tasks'],
   ['update-tasks', 'Updating Tasks'],
   ['complete', 'Completing Task'],
@@ -337,10 +339,13 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['expose-port', 'Exposing Port'],
   ['scrape-webpage', 'Scraping Website'],
   ['web-search', 'Searching Web'],
-  ['see-image', 'Viewing Image'],
+  ['load-image', 'Loading Image'],
   ['create-presentation-outline', 'Creating Presentation Outline'],
   ['create-presentation', 'Creating Presentation'],
   ['present-presentation', 'Presenting'],
+  ['clear-images-from-context', 'Clearing Images from context'],
+  ['load-image', 'Loading Image'],
+  ['image-search', 'Searching Image'],
 
   ['create-sheet', 'Creating Sheet'],
   ['update-sheet', 'Updating Sheet'],
@@ -389,7 +394,7 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['expose_port', 'Exposing Port'],
   ['scrape_webpage', 'Scraping Website'],
   ['web_search', 'Searching Web'],
-  ['see_image', 'Viewing Image'],
+  ['load_image', 'Loading Image'],
   
   ['update_agent', 'Updating Agent'],
   ['get_current_agent_config', 'Getting Agent Config'],
@@ -515,7 +520,7 @@ export const HIDE_STREAMING_XML_TAGS = new Set([
   'complete',
   'crawl-webpage',
   'web-search',
-  'see-image',
+  'load-image',
   'execute_data_provider_call',
   'execute_data_provider_endpoint',
 

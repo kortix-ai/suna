@@ -222,7 +222,7 @@ class ContextManager:
         context_window = model_manager.get_context_window(llm_model)
         
         # Reserve tokens for output generation and safety margin
-        if context_window >= 1_000_000:  # Very large context models (Gemini)
+        if context_window >= 1_000_000:  # Very large context models (Claude Sonnet 4, Gemini)
             max_tokens = context_window - 300_000  # Large safety margin for huge contexts
         elif context_window >= 400_000:  # Large context models (GPT-5)
             max_tokens = context_window - 64_000  # Reserve for output + margin
