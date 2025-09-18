@@ -351,7 +351,14 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = ({
             </Dialog>
 
             {/* Create Agent */}
-            <NewAgentDialog open={showNewAgentDialog} onOpenChange={setShowNewAgentDialog} />
+            <NewAgentDialog 
+                open={showNewAgentDialog} 
+                onOpenChange={setShowNewAgentDialog}
+                onSuccess={(agentId) => {
+                    setShowNewAgentDialog(false);
+                    onAgentSelect?.(agentId);
+                }}
+            />
 
             {/* Execute Playbook */}
             <PlaybookExecuteDialog
