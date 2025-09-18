@@ -625,8 +625,12 @@ When using the tools:
                     from core.ai_models import model_manager
                     context_window = model_manager.get_context_window(llm_model)
                     
-                    if context_window >= 200_000:
-                        safe_limit = 168_000
+                    if context_window >= 1_000_000:
+                        safe_limit = context_window - 200_000  # Large safety margin for 1M+ context models
+                    elif context_window >= 400_000:
+                        safe_limit = context_window - 50_000   # Safety margin for 400k+ models
+                    elif context_window >= 200_000:
+                        safe_limit = context_window - 32_000   # Safety margin for 200k+ models
                     elif context_window >= 100_000:
                         safe_limit = context_window - 20_000
                     else:
