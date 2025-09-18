@@ -127,10 +127,10 @@ def get_model_pricing(model: str) -> tuple[float, float] | None:
             # logger.debug(f"Found pricing for model {model_to_try}: input=${model_obj.pricing.input_cost_per_million_tokens}/M, output=${model_obj.pricing.output_cost_per_million_tokens}/M")
             return model_obj.pricing.input_cost_per_million_tokens, model_obj.pricing.output_cost_per_million_tokens
         else:
-            # logger.debug(f"No pricing for model_to_try='{model_to_try}' (model_obj: {model_obj is not None}, has_pricing: {model_obj.pricing is not None if model_obj else False})")
+            logger.debug(f"No pricing for model_to_try='{model_to_try}' (model_obj: {model_obj is not None}, has_pricing: {model_obj.pricing is not None if model_obj else False})")
     
     # Silently return None for unknown models to avoid log spam
-    # logger.debug(f"No pricing found for model '{model}' (resolved: '{resolved_model}')")
+    logger.debug(f"No pricing found for model '{model}' (resolved: '{resolved_model}')")
     return None
 
 

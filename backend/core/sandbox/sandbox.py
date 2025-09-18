@@ -19,12 +19,12 @@ else:
     logger.warning("No Daytona API key found in environment variables")
 
 if daytona_config.api_url:
-    # logger.debug(f"Daytona API URL set to: {daytona_config.api_url}")
+    logger.debug(f"Daytona API URL set to: {daytona_config.api_url}")
 else:
     logger.warning("No Daytona API URL found in environment variables")
 
 if daytona_config.target:
-    # logger.debug(f"Daytona target set to: {daytona_config.target}")
+    logger.debug(f"Daytona target set to: {daytona_config.target}")
 else:
     logger.warning("No Daytona target found in environment variables")
 

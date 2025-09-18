@@ -93,7 +93,7 @@ class ToolManager:
         # Browser tool
         self._register_browser_tool(disabled_tools)
         
-        logger.info(f"Tool registration complete. Registered {len(self.thread_manager.tool_registry.tools)} tools")
+        logger.debug(f"Tool registration complete. Registered {len(self.thread_manager.tool_registry.tools)} tools")
     
     def _register_core_tools(self):
         """Register core tools that are always available."""
