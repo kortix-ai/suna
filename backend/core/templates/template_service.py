@@ -46,8 +46,6 @@ class AgentTemplate:
     download_count: int = 0
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    avatar: Optional[str] = None
-    avatar_color: Optional[str] = None
     profile_image_url: Optional[str] = None
     icon_name: Optional[str] = None
     icon_color: Optional[str] = None
@@ -223,8 +221,6 @@ class TemplateService:
             tags=tags or [],
             is_public=make_public,
             marketplace_published_at=datetime.now(timezone.utc) if make_public else None,
-            avatar=agent.get('avatar'),
-            avatar_color=agent.get('avatar_color'),
             profile_image_url=agent.get('profile_image_url'),
             icon_name=agent.get('icon_name'),
             icon_color=agent.get('icon_color'),
@@ -545,10 +541,7 @@ class TemplateService:
             },
             'workflows': sanitized_workflows,
             'triggers': sanitized_triggers,
-            'metadata': {
-                'avatar': config.get('metadata', {}).get('avatar'),
-                'avatar_color': config.get('metadata', {}).get('avatar_color')
-            }
+            'metadata': {}
         }
         
         custom_mcps = config.get('tools', {}).get('custom_mcp', [])
@@ -650,8 +643,6 @@ class TemplateService:
             'download_count': template.download_count,
             'created_at': template.created_at.isoformat(),
             'updated_at': template.updated_at.isoformat(),
-            'avatar': template.avatar,
-            'avatar_color': template.avatar_color,
             'profile_image_url': template.profile_image_url,
             'icon_name': template.icon_name,
             'icon_color': template.icon_color,
@@ -677,8 +668,6 @@ class TemplateService:
             download_count=data.get('download_count', 0),
             created_at=datetime.fromisoformat(data['created_at'].replace('Z', '+00:00')),
             updated_at=datetime.fromisoformat(data['updated_at'].replace('Z', '+00:00')),
-            avatar=data.get('avatar'),
-            avatar_color=data.get('avatar_color'),
             profile_image_url=data.get('profile_image_url'),
             icon_name=data.get('icon_name'),
             icon_color=data.get('icon_color'),

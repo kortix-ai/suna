@@ -56,8 +56,6 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
       creator_name: template.creator_name,
       created_at: template.created_at,
       profile_image_url: template.profile_image_url,
-      avatar: template.avatar,
-      avatar_color: template.avatar_color,
       icon_name: template.icon_name,
       icon_color: template.icon_color,
       icon_background: template.icon_background,

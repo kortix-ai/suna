@@ -56,8 +56,6 @@ interface MarketplaceTemplate {
   download_count: number;
   created_at: string;
   updated_at: string;
-  avatar: string | null;
-  avatar_color: string | null;
   profile_image_url: string | null;
   icon_name: string | null;
   icon_color: string | null;
@@ -362,12 +360,11 @@ export default function TemplateSharePage() {
     const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD'];
     const color = colors[Math.floor(Math.random() * colors.length)];
     return (
-      <div 
-        className="w-full h-full flex items-center justify-center text-6xl bg-muted rounded-2xl"
-        style={{ backgroundColor: color + '10' }}
-      >
-        {template.avatar || '🤖'}
-      </div>
+      <DynamicIcon
+        name={template.icon_name || 'bot' as any}
+        size={28}
+        color={color}
+      />
     );
   };
 

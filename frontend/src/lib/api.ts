@@ -204,8 +204,6 @@ export type Message = {
   agent_id?: string;
   agents?: {
     name: string;
-    avatar?: string;
-    avatar_color?: string;
     profile_image_url?: string;
   };
 };
@@ -696,9 +694,7 @@ export const getMessages = async (threadId: string): Promise<Message[]> => {
       .select(`
         *,
         agents:agent_id (
-          name,
-          avatar,
-          avatar_color
+          name
         )
       `)
       .eq('thread_id', threadId)

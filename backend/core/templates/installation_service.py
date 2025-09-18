@@ -23,8 +23,6 @@ class AgentInstance:
     is_default: bool = False
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    avatar: Optional[str] = None
-    avatar_color: Optional[str] = None
 
 @dataclass
 class TemplateInstallationRequest:

@@ -31,8 +31,6 @@ interface ApiMessageType {
   agent_id?: string;
   agents?: {
     name: string;
-    avatar?: string;
-    avatar_color?: string;
   };
 }
 

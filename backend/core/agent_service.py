@@ -381,7 +381,6 @@ class AgentService:
                 "custom_mcps": [],
                 "agentpress_tools": template_data.get('agentpress_tools', {}),
                 "is_default": False,
-                            # Removed avatar, avatar_color, and profile_image_url - using icons instead
                 "icon_name": template_data.get('icon_name'),
                 "icon_color": template_data.get('icon_color'),
                 "icon_background": template_data.get('icon_background'),
@@ -418,7 +417,6 @@ class AgentService:
                 "custom_mcps": [],
                 "agentpress_tools": {},
                 "is_default": False,
-                            # Removed avatar, avatar_color, and profile_image_url fields - using icons instead
                 "icon_name": None,
                 "icon_color": None,
                 "icon_background": None,
