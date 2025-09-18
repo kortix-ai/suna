@@ -213,7 +213,7 @@ class ContextManager:
         else:  # Smaller context models
             max_tokens = context_window - 8_000   # Reserve for output + margin
         
-        logger.debug(f"Model {llm_model}: context_window={context_window}, effective_limit={max_tokens}")
+        # logger.debug(f"Model {llm_model}: context_window={context_window}, effective_limit={max_tokens}")
 
         result = messages
         result = self.remove_meta_messages(result)
@@ -226,7 +226,7 @@ class ContextManager:
 
         compressed_token_count = token_counter(model=llm_model, messages=result)
 
-        logger.debug(f"compress_messages: {uncompressed_total_token_count} -> {compressed_token_count}")  # Log the token compression for debugging later
+        logger.info(f"Context compression: {uncompressed_total_token_count} -> {compressed_token_count} tokens")
 
         if max_iterations <= 0:
             logger.warning(f"compress_messages: Max iterations reached, omitting messages")
@@ -306,7 +306,7 @@ class ContextManager:
         final_messages = ([system_message] + conversation_messages) if system_message else conversation_messages
         final_token_count = token_counter(model=llm_model, messages=final_messages)
         
-        logger.debug(f"compress_messages_by_omitting_messages: {initial_token_count} -> {final_token_count} tokens ({len(messages)} -> {len(final_messages)} messages)")
+        logger.info(f"Context compression (omit): {initial_token_count} -> {final_token_count} tokens ({len(messages)} -> {len(final_messages)} messages)")
             
         return final_messages
     

@@ -48,7 +48,7 @@ class ThreadManager:
         metadata: Optional[Dict[str, Any]] = None
     ) -> str:
         """Create a new thread in the database."""
-        logger.debug(f"Creating new thread (account_id: {account_id}, project_id: {project_id})")
+        # logger.debug(f"Creating new thread (account_id: {account_id}, project_id: {project_id})")
         client = await self.db.client
 
         thread_data = {'is_public': is_public, 'metadata': metadata or {}}
@@ -61,7 +61,7 @@ class ThreadManager:
             result = await client.table('threads').insert(thread_data).execute()
             if result.data and len(result.data) > 0 and 'thread_id' in result.data[0]:
                 thread_id = result.data[0]['thread_id']
-                logger.debug(f"Successfully created thread: {thread_id}")
+                logger.info(f"Successfully created thread: {thread_id}")
                 return thread_id
             else:
                 raise Exception("Failed to create thread: no thread_id returned")
@@ -80,7 +80,7 @@ class ThreadManager:
         agent_version_id: Optional[str] = None
     ):
         """Add a message to the thread in the database."""
-        logger.debug(f"Adding message of type '{type}' to thread {thread_id}")
+        # logger.debug(f"Adding message of type '{type}' to thread {thread_id}")
         client = await self.db.client
 
         data_to_insert = {
@@ -98,7 +98,7 @@ class ThreadManager:
 
         try:
             result = await client.table('messages').insert(data_to_insert).execute()
-            logger.debug(f"Successfully added message to thread {thread_id}")
+            # logger.debug(f"Successfully added message to thread {thread_id}")
 
             if result.data and len(result.data) > 0 and 'message_id' in result.data[0]:
                 saved_message = result.data[0]
@@ -125,7 +125,7 @@ class ThreadManager:
             cache_creation_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
             model = content.get("model")
             
-            logger.debug(f"Processing billing: model='{model}', tokens={prompt_tokens}+{completion_tokens}")
+            # logger.debug(f"Processing billing: model='{model}', tokens={prompt_tokens}+{completion_tokens}")
             
             client = await self.db.client
             thread_row = await client.table('threads').select('account_id').eq('thread_id', thread_id).limit(1).execute()

@@ -55,7 +55,7 @@ class ToolRegistry:
                         registered_openapi += 1
                         # logger.debug(f"Registered OpenAPI function {func_name} from {tool_class.__name__}")
         
-        logger.debug(f"Tool registration complete for {tool_class.__name__}: {registered_openapi} OpenAPI functions")
+        logger.info(f"Tool registration complete for {tool_class.__name__}: {registered_openapi} OpenAPI functions")
 
     def get_available_functions(self) -> Dict[str, Callable]:
         """Get all available tool functions.
@@ -72,7 +72,7 @@ class ToolRegistry:
             function = getattr(tool_instance, function_name)
             available_functions[function_name] = function
             
-        logger.debug(f"Retrieved {len(available_functions)} available functions")
+        # logger.debug(f"Retrieved {len(available_functions)} available functions")
         return available_functions
 
     def get_tool(self, tool_name: str) -> Dict[str, Any]:
@@ -100,7 +100,7 @@ class ToolRegistry:
             for tool_info in self.tools.values()
             if tool_info['schema'].schema_type == SchemaType.OPENAPI
         ]
-        logger.debug(f"Retrieved {len(schemas)} OpenAPI schemas")
+        # logger.debug(f"Retrieved {len(schemas)} OpenAPI schemas")
         return schemas
 
     def get_usage_examples(self) -> Dict[str, str]:

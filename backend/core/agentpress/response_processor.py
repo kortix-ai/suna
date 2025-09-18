@@ -214,7 +214,7 @@ class ResponseProcessor:
         Yields:
             Complete message objects matching the DB schema, except for content chunks.
         """
-        logger.debug(f"Starting streaming response processing for thread {thread_id}")
+        logger.info(f"Starting streaming response processing for thread {thread_id}")
         
         # Initialize from continuous state if provided (for auto-continue)
         continuous_state = continuous_state or {}
@@ -295,7 +295,7 @@ class ResponseProcessor:
                 
                 # Log info about chunks periodically for debugging
                 if chunk_count == 1 or (chunk_count % 100 == 0) or hasattr(chunk, 'usage'):
-                    logger.debug(f"Processing chunk #{chunk_count}, type={type(chunk).__name__}")
+                    logger.info(f"Processing chunk #{chunk_count}, type={type(chunk).__name__}")
                 
                 if hasattr(chunk, 'created') and chunk.created:
                     streaming_metadata["created"] = chunk.created
@@ -341,22 +341,22 @@ class ResponseProcessor:
                         # print(delta.reasoning_content, end='', flush=True)
                         # Append reasoning to main content to be saved in the final message
                         reasoning_content = delta.reasoning_content
-                        logger.debug(f"Processing reasoning_content: type={type(reasoning_content)}, value={reasoning_content}")
+                        # logger.debug(f"Processing reasoning_content: type={type(reasoning_content)}, value={reasoning_content}")
                         if isinstance(reasoning_content, list):
                             reasoning_content = ''.join(str(item) for item in reasoning_content)
-                        logger.debug(f"About to concatenate reasoning_content (type={type(reasoning_content)}) to accumulated_content (type={type(accumulated_content)})")
+                        # logger.debug(f"About to concatenate reasoning_content (type={type(reasoning_content)}) to accumulated_content (type={type(accumulated_content)})")
                         accumulated_content += reasoning_content
 
                     # Process content chunk
                     if delta and hasattr(delta, 'content') and delta.content:
                         chunk_content = delta.content
-                        logger.debug(f"Processing chunk_content: type={type(chunk_content)}, value={chunk_content}")
+                        # logger.debug(f"Processing chunk_content: type={type(chunk_content)}, value={chunk_content}")
                         if isinstance(chunk_content, list):
                             chunk_content = ''.join(str(item) for item in chunk_content)
                         # print(chunk_content, end='', flush=True)
-                        logger.debug(f"About to concatenate chunk_content (type={type(chunk_content)}) to accumulated_content (type={type(accumulated_content)})")
+                        # logger.debug(f"About to concatenate chunk_content (type={type(chunk_content)}) to accumulated_content (type={type(accumulated_content)})")
                         accumulated_content += chunk_content
-                        logger.debug(f"About to concatenate chunk_content (type={type(chunk_content)}) to current_xml_content (type={type(current_xml_content)})")
+                        # logger.debug(f"About to concatenate chunk_content (type={type(chunk_content)}) to current_xml_content (type={type(current_xml_content)})")
                         current_xml_content += chunk_content
 
                         if not (config.max_xml_tool_calls > 0 and xml_tool_call_count >= config.max_xml_tool_calls):
@@ -372,7 +372,7 @@ class ResponseProcessor:
                             }
                             __sequence += 1
                         else:
-                            logger.debug("XML tool call limit reached - not yielding more content chunks")
+                            # logger.debug("XML tool call limit reached - not yielding more content chunks")
                             self.trace.event(name="xml_tool_call_limit_reached", level="DEFAULT", status_message=(f"XML tool call limit reached - not yielding more content chunks"))
 
                         # --- Process XML Tool Calls (if enabled and limit not reached) ---
@@ -404,7 +404,7 @@ class ResponseProcessor:
                                         tool_index += 1
 
                                     if config.max_xml_tool_calls > 0 and xml_tool_call_count >= config.max_xml_tool_calls:
-                                        logger.debug(f"Reached XML tool call limit ({config.max_xml_tool_calls})")
+                                        logger.info(f"Reached XML tool call limit ({config.max_xml_tool_calls})")
                                         finish_reason = "xml_tool_limit_reached"
                                         break # Stop processing more XML chunks in this delta
 
@@ -474,11 +474,11 @@ class ResponseProcessor:
                                 tool_index += 1
 
                 if finish_reason == "xml_tool_limit_reached":
-                    logger.debug("Stopping stream processing after loop due to XML tool call limit")
+                    logger.info("Stopping stream processing after loop due to XML tool call limit")
                     self.trace.event(name="stopping_stream_processing_after_loop_due_to_xml_tool_call_limit", level="DEFAULT", status_message=(f"Stopping stream processing after loop due to XML tool call limit"))
                     break
 
-            logger.debug(f"Stream complete. Total chunks: {chunk_count}")
+            logger.info(f"Stream complete. Total chunks: {chunk_count}")
             
             # Extract final cache metrics
             final_cache_creation = streaming_metadata['usage'].get('cache_creation_input_tokens', 0)
@@ -486,19 +486,20 @@ class ResponseProcessor:
             final_prompt_tokens = streaming_metadata['usage']['prompt_tokens']
             final_completion_tokens = streaming_metadata['usage']['completion_tokens']
             
-            logger.debug(f"Final usage: prompt={final_prompt_tokens}, completion={final_completion_tokens}")
+            logger.info(f"Final usage: prompt={final_prompt_tokens}, completion={final_completion_tokens}")
             
             if final_cache_read > 0 or final_cache_creation > 0:
                 cache_percentage = (final_cache_read / final_prompt_tokens * 100) if final_prompt_tokens > 0 else 0
                 logger.info(f"Cache hit: {final_cache_read}/{final_prompt_tokens} tokens ({cache_percentage:.1f}%)")
             else:
-                logger.debug(f"No cache activity")
+                # logger.debug(f"No cache activity")
+                pass
 
             # Note: cache_metrics is now None since we removed the probe
             # All cache data should be captured directly from streaming chunks above
             
             if streaming_metadata["usage"]["total_tokens"] == 0:
-                logger.debug("No usage data from provider, using fallback token counting (normal for some providers like Anthropic)")
+                # logger.debug("No usage data from provider, using fallback token counting (normal for some providers like Anthropic)")
                 
                 try:
                     from litellm import token_counter
@@ -517,7 +518,7 @@ class ResponseProcessor:
                     streaming_metadata["usage"]["completion_tokens"]  = completion_tokens
                     streaming_metadata["usage"]["total_tokens"]       = prompt_tokens + completion_tokens
 
-                    logger.debug(
+                    logger.info(
                         f"🔥 Estimated tokens – prompt: {prompt_tokens}, "
                         f"completion: {completion_tokens}, total: {prompt_tokens + completion_tokens}"
                     )
@@ -529,7 +530,7 @@ class ResponseProcessor:
 
             tool_results_buffer = []
             if pending_tool_executions:
-                logger.debug(f"Waiting for {len(pending_tool_executions)} pending streamed tool executions")
+                logger.info(f"Waiting for {len(pending_tool_executions)} pending streamed tool executions")
                 self.trace.event(name="waiting_for_pending_streamed_tool_executions", level="DEFAULT", status_message=(f"Waiting for {len(pending_tool_executions)} pending streamed tool executions"))
                 pending_tasks = [execution["task"] for execution in pending_tool_executions]
                 done, _ = await asyncio.wait(pending_tasks)
@@ -540,7 +541,7 @@ class ResponseProcessor:
                     tool_name = context.function_name
                     
                     if tool_idx in yielded_tool_indices:
-                         logger.debug(f"Status for tool index {tool_idx} already yielded.")
+                         # logger.debug(f"Status for tool index {tool_idx} already yielded.")
                          try:
                              if execution["task"].done():
                                  result = execution["task"].result()
@@ -707,7 +708,7 @@ class ResponseProcessor:
 
                 # Populate from buffer if executed on stream
                 if config.execute_on_stream and tool_results_buffer:
-                    logger.debug(f"Processing {len(tool_results_buffer)} buffered tool results")
+                    logger.info(f"Processing {len(tool_results_buffer)} buffered tool results")
                     self.trace.event(name="processing_buffered_tool_results", level="DEFAULT", status_message=(f"Processing {len(tool_results_buffer)} buffered tool results"))
                     for tool_call, result, tool_idx, context in tool_results_buffer:
                         if last_assistant_message_object: context.assistant_message_id = last_assistant_message_object['message_id']
@@ -715,7 +716,7 @@ class ResponseProcessor:
 
                 # Or execute now if not streamed
                 elif final_tool_calls_to_process and not config.execute_on_stream:
-                    logger.debug(f"Executing {len(final_tool_calls_to_process)} tools ({config.tool_execution_strategy}) after stream")
+                    logger.info(f"Executing {len(final_tool_calls_to_process)} tools ({config.tool_execution_strategy}) after stream")
                     self.trace.event(name="executing_tools_after_stream", level="DEFAULT", status_message=(f"Executing {len(final_tool_calls_to_process)} tools ({config.tool_execution_strategy}) after stream"))
                     results_list = await self._execute_tools(final_tool_calls_to_process, config.tool_execution_strategy)
                     current_tool_idx = 0

@@ -44,14 +44,15 @@ def setup_api_keys() -> None:
     for provider in providers:
         key = getattr(config, f"{provider}_API_KEY")
         if key:
-            logger.debug(f"API key set for provider: {provider}")
+            # logger.debug(f"API key set for provider: {provider}")
+            pass
         else:
             logger.warning(f"No API key found for provider: {provider}")
 
     # Set up OpenRouter API base if not already set
     if config.OPENROUTER_API_KEY and config.OPENROUTER_API_BASE:
         os.environ["OPENROUTER_API_BASE"] = config.OPENROUTER_API_BASE
-        logger.debug(f"Set OPENROUTER_API_BASE to {config.OPENROUTER_API_BASE}")
+        # logger.debug(f"Set OPENROUTER_API_BASE to {config.OPENROUTER_API_BASE}")
 
 
     # Set up AWS Bedrock credentials
@@ -60,7 +61,7 @@ def setup_api_keys() -> None:
     aws_region = config.AWS_REGION_NAME
 
     if aws_access_key and aws_secret_key and aws_region:
-        logger.debug(f"AWS credentials set for Bedrock in region: {aws_region}")
+        logger.info(f"AWS Bedrock configured for region: {aws_region}")
         # Configure LiteLLM to use AWS credentials
         os.environ["AWS_ACCESS_KEY_ID"] = aws_access_key
         os.environ["AWS_SECRET_ACCESS_KEY"] = aws_secret_key
@@ -92,20 +93,20 @@ def _configure_token_limits(params: Dict[str, Any], model_name: str, max_tokens:
     """Configure token limits based on model type."""
     # Only set max_tokens if explicitly provided - let providers use their defaults otherwise
     if max_tokens is None:
-        logger.debug(f"No max_tokens specified, using provider defaults for model: {model_name}")
+        # logger.debug(f"No max_tokens specified, using provider defaults for model: {model_name}")
         return
     
     if model_name.startswith("bedrock/") and "claude-3-7" in model_name:
         # For Claude 3.7 in Bedrock, do not set max_tokens or max_tokens_to_sample
         # as it causes errors with inference profiles
-        logger.debug(f"Skipping max_tokens for Claude 3.7 model: {model_name}")
+        # logger.debug(f"Skipping max_tokens for Claude 3.7 model: {model_name}")
         return
     
     is_openai_o_series = 'o1' in model_name
     is_openai_gpt5 = 'gpt-5' in model_name
     param_name = "max_completion_tokens" if (is_openai_o_series or is_openai_gpt5) else "max_tokens"
     params[param_name] = max_tokens
-    logger.debug(f"Set {param_name}={max_tokens} for model: {model_name}")
+    # logger.debug(f"Set {param_name}={max_tokens} for model: {model_name}")
 
 def _configure_anthropic(params: Dict[str, Any], model_name: str, messages: List[Dict[str, Any]]) -> None:
     """Configure Anthropic-specific parameters."""
@@ -116,14 +117,14 @@ def _configure_anthropic(params: Dict[str, Any], model_name: str, messages: List
     params["extra_headers"] = {
         "anthropic-beta": "prompt-caching-2024-07-31" #context-1m-2025-08-07
     }
-    logger.debug(f"Added Anthropic-specific headers for prompt caching and context-1m")
+    # logger.debug(f"Added Anthropic-specific headers for prompt caching and context-1m")
 
 def _configure_openrouter(params: Dict[str, Any], model_name: str) -> None:
     """Configure OpenRouter-specific parameters."""
     if not model_name.startswith("openrouter/"):
         return
     
-    logger.debug(f"Preparing OpenRouter parameters for model: {model_name}")
+    # logger.debug(f"Preparing OpenRouter parameters for model: {model_name}")
 
     # Add optional site URL and app name from config
     site_url = config.OR_SITE_URL
@@ -135,19 +136,19 @@ def _configure_openrouter(params: Dict[str, Any], model_name: str) -> None:
         if app_name:
             extra_headers["X-Title"] = app_name
         params["extra_headers"] = extra_headers
-        logger.debug(f"Added OpenRouter site URL and app name to headers")
+        # logger.debug(f"Added OpenRouter site URL and app name to headers")
 
 def _configure_bedrock(params: Dict[str, Any], model_name: str, model_id: Optional[str]) -> None:
     """Configure Bedrock-specific parameters."""
     if not model_name.startswith("bedrock/"):
         return
     
-    logger.debug(f"Preparing AWS Bedrock parameters for model: {model_name}")
+    # logger.debug(f"Preparing AWS Bedrock parameters for model: {model_name}")
 
     # Auto-set model_id for Claude 3.7 Sonnet if not provided
     if not model_id and "anthropic.claude-3-7-sonnet" in model_name:
         params["model_id"] = "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
-        logger.debug(f"Auto-set model_id for Claude 3.7 Sonnet: {params['model_id']}")
+        # logger.debug(f"Auto-set model_id for Claude 3.7 Sonnet: {params['model_id']}")
 
 def _configure_openai_gpt5(params: Dict[str, Any], model_name: str) -> None:
     """Configure OpenAI GPT-5 specific parameters."""
@@ -207,7 +208,7 @@ def _add_tools_config(params: Dict[str, Any], tools: Optional[List[Dict[str, Any
         "tools": tools,
         "tool_choice": tool_choice
     })
-    logger.debug(f"Added {len(tools)} tools to API parameters")
+    # logger.debug(f"Added {len(tools)} tools to API parameters")
 
 def prepare_params(
     messages: List[Dict[str, Any]],
@@ -227,7 +228,7 @@ def prepare_params(
 ) -> Dict[str, Any]:
     from core.ai_models import model_manager
     resolved_model_name = model_manager.resolve_model_id(model_name)
-    logger.debug(f"Model resolution: '{model_name}' -> '{resolved_model_name}'")
+    # logger.debug(f"Model resolution: '{model_name}' -> '{resolved_model_name}'")
     
     params = {
         "model": resolved_model_name,
@@ -242,7 +243,7 @@ def prepare_params(
     # Enable usage tracking for streaming requests
     if stream:
         params["stream_options"] = {"include_usage": True}
-        logger.debug(f"Added stream_options for usage tracking: {params['stream_options']}")
+        # logger.debug(f"Added stream_options for usage tracking: {params['stream_options']}")
 
     if api_key:
         params["api_key"] = api_key
@@ -298,7 +299,7 @@ async def make_llm_api_call(
     reasoning_effort: Optional[str] = "low",
 ) -> Union[Dict[str, Any], AsyncGenerator, ModelResponse]:
     """Make an API call to a language model using LiteLLM."""
-    logger.debug(f"Making LLM API call to model: {model_name} with {len(messages)} messages")
+    logger.info(f"Making LLM API call to model: {model_name} with {len(messages)} messages")
     
     # Check token count for context window issues
     # try:
@@ -330,7 +331,7 @@ async def make_llm_api_call(
     )
     
     try:
-        logger.debug(f"Calling LiteLLM acompletion for {model_name}")
+        # logger.debug(f"Calling LiteLLM acompletion for {model_name}")
         response = await provider_router.acompletion(**params)
         
         # For streaming responses, we need to handle errors that occur during iteration

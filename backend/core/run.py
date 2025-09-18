@@ -75,7 +75,7 @@ class ToolManager:
         """
         disabled_tools = disabled_tools or []
         
-        logger.debug(f"Registering tools with disabled list: {disabled_tools}")
+        # logger.debug(f"Registering tools with disabled list: {disabled_tools}")
         
         # Core tools - always enabled
         self._register_core_tools()
@@ -93,7 +93,7 @@ class ToolManager:
         # Browser tool
         self._register_browser_tool(disabled_tools)
         
-        logger.debug(f"Tool registration complete. Registered tools: {list(self.thread_manager.tool_registry.tools.keys())}")
+        logger.info(f"Tool registration complete. Registered {len(self.thread_manager.tool_registry.tools)} tools")
     
     def _register_core_tools(self):
         """Register core tools that are always available."""
@@ -150,18 +150,20 @@ class ToolManager:
             ('trigger_tool', TriggerTool),
         ]
         
-        logger.debug(f"Registering agent builder tools for agent_id: {agent_id}")
-        logger.debug(f"Disabled tools list: {disabled_tools}")
+        # logger.debug(f"Registering agent builder tools for agent_id: {agent_id}")
+        # logger.debug(f"Disabled tools list: {disabled_tools}")
         
         for tool_name, tool_class in agent_builder_tools:
             if tool_name not in disabled_tools:
                 try:
                     self.thread_manager.add_tool(tool_class, thread_manager=self.thread_manager, db_connection=db, agent_id=agent_id)
-                    logger.debug(f"✅ Registered {tool_name}")
+                    # logger.debug(f"✅ Registered {tool_name}")
+                    pass
                 except Exception as e:
                     logger.warning(f"❌ Failed to register {tool_name}: {e}")
             else:
-                logger.debug(f"⏭️ Skipping {tool_name} - disabled")
+                # logger.debug(f"⏭️ Skipping {tool_name} - disabled")
+                pass
     
     def _register_suna_specific_tools(self, disabled_tools: List[str]):
         """Register tools specific to Suna (the default agent)."""
@@ -182,7 +184,7 @@ class ToolManager:
         if 'browser_tool' not in disabled_tools:
             from core.tools.browser_tool import BrowserTool
             self.thread_manager.add_tool(BrowserTool, project_id=self.project_id, thread_id=self.thread_id, thread_manager=self.thread_manager)
-            logger.debug("Registered browser_tool")
+            # logger.debug("Registered browser_tool")
     
 
 class MCPManager:
@@ -263,7 +265,7 @@ class MCPManager:
                         "schema": schema
                     }
             
-            logger.debug(f"⚡ Registered {len(updated_schemas)} MCP tools (Redis cache enabled)")
+            logger.info(f"⚡ Registered {len(updated_schemas)} MCP tools (Redis cache enabled)")
             return mcp_wrapper_instance
         except Exception as e:
             logger.error(f"Failed to initialize MCP tools: {e}")
