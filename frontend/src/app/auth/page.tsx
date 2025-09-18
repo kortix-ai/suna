@@ -268,24 +268,13 @@ function LoginContent() {
   return (
       <div className="min-h-screen bg-background relative">
         <div className="absolute top-6 left-6 z-10">
-          <Link href="/" className="flex items-center">
             <KortixLogo size={28} />
-          </Link>
         </div>
         <div className="flex min-h-screen">
           <div className="relative flex-1 flex items-center justify-center p-4 lg:p-8">
-            <div className="absolute top-6 right-10 z-10">
-              <Link
-                href="/"
-                className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
-              >
-                <ArrowLeft className="h-4 w-4" />
-                Back to home
-              </Link>
-            </div>
             <div className="w-full max-w-sm">
               <div className="mb-4 flex items-center flex-col gap-3 sm:gap-4 justify-center">
-                <ReleaseBadge className='mb-2 sm:mb-4' text="Custom Agents, Playbooks, and more!" link="/changelog" />
+                <ReleaseBadge className='mb-2 sm:mb-4' text="Custom Agents, Playbooks, and more!" />
                 <h1 className="text-xl sm:text-2xl font-semibold text-foreground text-center leading-tight">
                   {isSignUp ? 'Create your account' : 'Log into your account'}
                 </h1>

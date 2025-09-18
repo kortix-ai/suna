@@ -11,8 +11,9 @@ This module provides comprehensive conversation management, including:
 """
 
 import json
-from typing import List, Dict, Any, Optional, Type, Union, AsyncGenerator, Literal, cast
+from typing import List, Dict, Any, Optional, Type, Union, AsyncGenerator, Literal, cast, Callable
 from core.services.llm import make_llm_api_call
+from core.utils.llm_cache_utils import apply_cache_to_messages, validate_cache_blocks
 from core.agentpress.tool import Tool
 from core.agentpress.tool_registry import ToolRegistry
 from core.agentpress.context_manager import ContextManager
@@ -175,22 +176,30 @@ class ThreadManager:
                         usage = content.get("usage", {}) if isinstance(content, dict) else {}
                         prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
                         completion_tokens = int(usage.get("completion_tokens", 0) or 0)
+                        cache_read_tokens = int(usage.get("cache_read_input_tokens", 0) or 0)
+                        cache_creation_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
                         model = content.get("model") if isinstance(content, dict) else None
                         
-                        logger.debug(f"[THREAD_MANAGER] Processing assistant_response_end: model='{model}', prompt_tokens={prompt_tokens}, completion_tokens={completion_tokens}")
+                        logger.debug(f"[THREAD_MANAGER] Processing assistant_response_end: model='{model}', prompt_tokens={prompt_tokens}, completion_tokens={completion_tokens}, cache_read={cache_read_tokens}, cache_creation={cache_creation_tokens}")
                         
                         thread_row = await client.table('threads').select('account_id').eq('thread_id', thread_id).limit(1).execute()
                         user_id = thread_row.data[0]['account_id'] if thread_row.data and len(thread_row.data) > 0 else None
                         
                         if user_id and (prompt_tokens > 0 or completion_tokens > 0):
-                            logger.info(f"[THREAD_MANAGER] Deducting token usage for user {user_id}: model='{model}', tokens={prompt_tokens}+{completion_tokens}")
+                            # Log cache savings if applicable
+                            if cache_read_tokens > 0:
+                                logger.info(f"[THREAD_MANAGER] 🎯 Using cached tokens! cache_read={cache_read_tokens} of {prompt_tokens} total")
+                            
+                            logger.info(f"[THREAD_MANAGER] Deducting token usage for user {user_id}: model='{model}', tokens={prompt_tokens}+{completion_tokens}, cache_read={cache_read_tokens}")
                             
                             deduct_result = await billing_integration.deduct_usage(
                                 account_id=user_id,
                                 prompt_tokens=prompt_tokens,
                                 completion_tokens=completion_tokens,
                                 model=model or "unknown",
-                                message_id=saved_message['message_id']
+                                message_id=saved_message['message_id'],
+                                cache_read_tokens=cache_read_tokens,
+                                cache_creation_tokens=cache_creation_tokens
                             )
                             
                             if deduct_result.get('success'):
@@ -230,12 +239,13 @@ class ThreadManager:
             # result = await client.rpc('get_llm_formatted_messages', {'p_thread_id': thread_id}).execute()
             
             # Fetch messages in batches of 1000 to avoid overloading the database
+            # Include both type and content to handle image_context messages
             all_messages = []
             batch_size = 1000
             offset = 0
             
             while True:
-                result = await client.table('messages').select('message_id, content').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').range(offset, offset + batch_size - 1).execute()
+                result = await client.table('messages').select('message_id, type, content').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').range(offset, offset + batch_size - 1).execute()
                 
                 if not result.data or len(result.data) == 0:
                     break
@@ -258,6 +268,16 @@ class ThreadManager:
             # Return properly parsed JSON objects
             messages = []
             for item in result_data:
+                message_type = item.get('type', '')
+                
+                # Handle image_context messages specially
+                if message_type == 'image_context':
+                    image_message = self._process_image_context_message(item)
+                    if image_message:
+                        messages.append(image_message)
+                    continue
+                
+                # Handle regular messages
                 if isinstance(item['content'], str):
                     try:
                         parsed_item = json.loads(item['content'])
@@ -275,6 +295,64 @@ class ThreadManager:
         except Exception as e:
             logger.error(f"Failed to get messages for thread {thread_id}: {str(e)}", exc_info=True)
             return []
+    
+    def _process_image_context_message(self, item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Process an image_context message into LLM-compatible format.
+        
+        Args:
+            item: The database message item with image_context type
+            
+        Returns:
+            Formatted message for LLM vision models or None if processing fails
+        """
+        try:
+            content = item['content']
+            
+            # Handle both string and dict content
+            if isinstance(content, str):
+                try:
+                    content = json.loads(content)
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to parse image_context content: {content}")
+                    return None
+            
+            if not isinstance(content, dict):
+                logger.error(f"Image context content is not a dict: {type(content)}")
+                return None
+            
+            # Extract image data
+            base64_data = content.get('base64')
+            mime_type = content.get('mime_type', 'image/jpeg')
+            file_path = content.get('file_path', 'image')
+            
+            if not base64_data:
+                logger.error("Image context message missing base64 data")
+                return None
+            
+            # Create LLM-compatible image message
+            image_message = {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text", 
+                        "text": f"Here is the image from '{file_path}' that you requested to see:"
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{mime_type};base64,{base64_data}"
+                        }
+                    }
+                ],
+                "message_id": item['message_id']
+            }
+            
+            logger.debug(f"Successfully processed image_context message for file: {file_path}")
+            return image_message
+            
+        except Exception as e:
+            logger.error(f"Failed to process image_context message: {str(e)}", exc_info=True)
+            return None
 
 
     async def run_thread(
@@ -295,6 +373,7 @@ class ThreadManager:
         reasoning_effort: Optional[str] = 'low',
         enable_context_manager: bool = True,
         generation: Optional[StatefulGenerationClient] = None,
+        cache_metrics: Optional[Dict[str, Any]] = None,
     ) -> Union[Dict[str, Any], AsyncGenerator]:
         """Run a conversation thread with LLM integration and tool execution.
 
@@ -426,6 +505,19 @@ When using the tools:
 
                 # 1. Get messages from thread for LLM call
                 messages = await self.get_llm_messages(thread_id)
+                
+                # Debug: Log retrieved messages
+                logger.info(f"📥 Retrieved {len(messages)} messages from thread")
+                for i, msg in enumerate(messages[:5]):  # Log first 5
+                    role = msg.get('role', 'unknown')
+                    content_len = len(str(msg.get('content', '')))
+                    logger.debug(f"  Thread msg {i}: role={role}, length={content_len}")
+                
+                # Filter out system messages from thread history since we have our own
+                original_count = len(messages)
+                messages = [msg for msg in messages if msg.get('role') != 'system']
+                if len(messages) < original_count:
+                    logger.info(f"🔧 Filtered out {original_count - len(messages)} system messages from thread history")
 
                 # 2. Check token count before proceeding
                 token_count = 0
@@ -448,24 +540,11 @@ When using the tools:
                     if isinstance(msg, dict) and msg.get('role') == 'user':
                         last_user_index = i
 
-                # Insert temporary message before the last user message if it exists
-                if temp_msg and last_user_index >= 0:
-                    prepared_messages.extend(messages[:last_user_index])
-                    prepared_messages.append(temp_msg)
-                    prepared_messages.extend(messages[last_user_index:])
-                    logger.debug("Added temporary message before the last user message")
-                else:
-                    # If no user message or no temporary message, just add all messages
-                    prepared_messages.extend(messages)
-                    if temp_msg:
-                        prepared_messages.append(temp_msg)
-                        logger.debug("Added temporary message to the end of prepared messages")
+                prepared_messages.extend(messages)
 
-                # Add partial assistant content for auto-continue context (without saving to DB)
                 if auto_continue_count > 0 and continuous_state.get('accumulated_content'):
                     partial_content = continuous_state.get('accumulated_content', '')
                     
-                    # Create temporary assistant message with just the text content
                     temporary_assistant_message = {
                         "role": "assistant",
                         "content": partial_content
@@ -473,17 +552,79 @@ When using the tools:
                     prepared_messages.append(temporary_assistant_message)
                     logger.debug(f"Added temporary assistant message with {len(partial_content)} chars for auto-continue context")
 
-                # 4. Prepare tools for LLM call
                 openapi_tool_schemas = None
                 if config.native_tool_calling:
                     openapi_tool_schemas = self.tool_registry.get_openapi_schemas()
                     logger.debug(f"Retrieved {len(openapi_tool_schemas) if openapi_tool_schemas else 0} OpenAPI tool schemas")
 
-                # print(f"\n\n\n\n prepared_messages: {prepared_messages}\n\n\n\n")
+                if token_count < 80_000:
+                    prepared_messages = apply_cache_to_messages(prepared_messages, llm_model)
+                    prepared_messages = validate_cache_blocks(prepared_messages, llm_model)
+                else:
+                    logger.warning(f"⚠️ Skipping cache formatting due to high token count: {token_count}")
 
-                # prepared_messages = self.context_manager.compress_messages(prepared_messages, llm_model)
+                try:
+                    final_token_count = token_counter(model=llm_model, messages=prepared_messages)
+                    
+                    if final_token_count != token_count:
+                        logger.info(f"📊 Final token count: {final_token_count} (initial was {token_count})")
+                    
+                    from core.ai_models import model_manager
+                    context_window = model_manager.get_context_window(llm_model)
+                    
+                    if context_window >= 200_000:
+                        safe_limit = 168_000
+                    elif context_window >= 100_000:
+                        safe_limit = context_window - 20_000
+                    else:
+                        safe_limit = context_window - 10_000
+                    
+                    if final_token_count > safe_limit:
+                        logger.warning(f"⚠️ Token count {final_token_count} exceeds safe limit {safe_limit}, compressing messages...")
+                        prepared_messages = self.context_manager.compress_messages(
+                            prepared_messages, 
+                            llm_model,
+                            max_tokens=safe_limit
+                        )
+                        compressed_token_count = token_counter(model=llm_model, messages=prepared_messages)
+                        logger.info(f"✅ Compressed messages: {final_token_count} → {compressed_token_count} tokens")
+                        
+                        if compressed_token_count > safe_limit:
+                            logger.error(f"❌ Still over limit after compression: {compressed_token_count} > {safe_limit}")
+                            prepared_messages = self.context_manager.compress_messages_by_omitting_messages(
+                                prepared_messages,
+                                llm_model, 
+                                max_tokens=safe_limit - 10_000
+                            )   
+                except Exception as e:
+                    logger.error(f"Error in token checking/compression: {str(e)}")
+                
+                system_count = sum(1 for msg in prepared_messages if msg.get('role') == 'system')
+                if system_count > 1:
+                    logger.error(f"❌ Critical: {system_count} system messages detected! This will break caching.")
+                    first_system_found = False
+                    filtered_messages = []
+                    for msg in prepared_messages:
+                        if msg.get('role') == 'system':
+                            if not first_system_found:
+                                first_system_found = True
+                                filtered_messages.append(msg)
+                        else:
+                            filtered_messages.append(msg)
+                    prepared_messages = filtered_messages
+                    logger.info(f"🔧 Reduced to 1 system message")
+                
+                logger.info(f"📤 Sending {len(prepared_messages)} messages to LLM")
+                for i, msg in enumerate(prepared_messages):
+                    role = msg.get('role', 'unknown')
+                    content = msg.get('content', '')
+                    if isinstance(content, list) and content:
+                        has_cache = 'cache_control' in content[0] if isinstance(content[0], dict) else False
+                        content_len = len(str(content[0].get('text', ''))) if isinstance(content[0], dict) else 0
+                        logger.info(f"  Message {i}: role={role}, type=list, has_cache={has_cache}, length={content_len}")
+                    else:
+                        logger.info(f"  Message {i}: role={role}, type=string, length={len(str(content))}")
 
-                # 5. Make LLM API call
                 logger.debug("Making LLM API call")
                 try:
                     if generation:
@@ -502,7 +643,7 @@ When using the tools:
                         )
 
                     llm_response = await make_llm_api_call(
-                        prepared_messages, # Pass the potentially modified messages
+                        prepared_messages,
                         llm_model,
                         temperature=llm_temperature,
                         max_tokens=llm_max_tokens,
@@ -531,7 +672,8 @@ When using the tools:
                             llm_model=llm_model,
                             can_auto_continue=(native_max_auto_continues > 0),
                             auto_continue_count=auto_continue_count,
-                            continuous_state=continuous_state
+                            continuous_state=continuous_state,
+                            cache_metrics=cache_metrics
                         )
                     else:
                         # Fallback to non-streaming if response is not iterable
