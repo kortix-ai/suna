@@ -41,13 +41,14 @@ export function getToolTitle(toolName: string): string {
     'full-file-rewrite': 'Rewrite File',
     'delete-file': 'Delete File',
     'web-search': 'Web Search',
+    'image-search': 'Image Search',
     'crawl-webpage': 'Web Crawl',
     'scrape-webpage': 'Web Scrape',
     'browser-navigate-to': 'Browser Navigate',
     'browser-act': 'Browser Action',
     'browser-extract-content': 'Browser Extract',
     'browser-screenshot': 'Browser Screenshot',
-    'see-image': 'View Image',
+    'load-image': 'Load Image',
     'ask': 'Ask',
     'complete': 'Task Complete',
     'execute-data-provider-call': 'Data Provider Call',
@@ -1279,6 +1280,8 @@ export function getToolComponent(toolName: string): string {
 
     // Web operations
     case 'web-search':
+      return 'WebSearchToolView';
+    case 'image-search':
       return 'WebSearchToolView';
     case 'crawl-webpage':
       return 'WebCrawlToolView';

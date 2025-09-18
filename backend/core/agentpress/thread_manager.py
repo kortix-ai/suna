@@ -243,12 +243,13 @@ class ThreadManager:
             # result = await client.rpc('get_llm_formatted_messages', {'p_thread_id': thread_id}).execute()
             
             # Fetch messages in batches of 1000 to avoid overloading the database
+            # Include both type and content to handle image_context messages
             all_messages = []
             batch_size = 1000
             offset = 0
             
             while True:
-                result = await client.table('messages').select('message_id, content').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').range(offset, offset + batch_size - 1).execute()
+                result = await client.table('messages').select('message_id, type, content').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').range(offset, offset + batch_size - 1).execute()
                 
                 if not result.data or len(result.data) == 0:
                     break
@@ -271,6 +272,16 @@ class ThreadManager:
             # Return properly parsed JSON objects
             messages = []
             for item in result_data:
+                message_type = item.get('type', '')
+                
+                # Handle image_context messages specially
+                if message_type == 'image_context':
+                    image_message = self._process_image_context_message(item)
+                    if image_message:
+                        messages.append(image_message)
+                    continue
+                
+                # Handle regular messages
                 if isinstance(item['content'], str):
                     try:
                         parsed_item = json.loads(item['content'])
@@ -288,6 +299,64 @@ class ThreadManager:
         except Exception as e:
             logger.error(f"Failed to get messages for thread {thread_id}: {str(e)}", exc_info=True)
             return []
+    
+    def _process_image_context_message(self, item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Process an image_context message into LLM-compatible format.
+        
+        Args:
+            item: The database message item with image_context type
+            
+        Returns:
+            Formatted message for LLM vision models or None if processing fails
+        """
+        try:
+            content = item['content']
+            
+            # Handle both string and dict content
+            if isinstance(content, str):
+                try:
+                    content = json.loads(content)
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to parse image_context content: {content}")
+                    return None
+            
+            if not isinstance(content, dict):
+                logger.error(f"Image context content is not a dict: {type(content)}")
+                return None
+            
+            # Extract image data
+            base64_data = content.get('base64')
+            mime_type = content.get('mime_type', 'image/jpeg')
+            file_path = content.get('file_path', 'image')
+            
+            if not base64_data:
+                logger.error("Image context message missing base64 data")
+                return None
+            
+            # Create LLM-compatible image message
+            image_message = {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text", 
+                        "text": f"Here is the image from '{file_path}' that you requested to see:"
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:{mime_type};base64,{base64_data}"
+                        }
+                    }
+                ],
+                "message_id": item['message_id']
+            }
+            
+            logger.debug(f"Successfully processed image_context message for file: {file_path}")
+            return image_message
+            
+        except Exception as e:
+            logger.error(f"Failed to process image_context message: {str(e)}", exc_info=True)
+            return None
 
 
     async def run_thread(
