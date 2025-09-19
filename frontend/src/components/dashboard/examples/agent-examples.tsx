@@ -7,6 +7,7 @@ import { ResearchExamples } from './research-examples';
 import { CodeExamples } from './code-examples';
 import { BusinessExamples } from './business-examples';
 import { PresentationExamples } from './presentation-examples';
+import { DesignerExamples } from './designer-examples';
 import { useAgents } from '@/hooks/react-query/agents/use-agents';
 
 interface AgentExamplesProps {
@@ -111,10 +112,18 @@ export function AgentExamples({
       );
     }
     
-    // Add more agent types here as they are created
+    if (
+      agentName.includes('designer') || 
+      templateName.includes('designer')
+    ) {
+      return (
+        <DesignerExamples 
+          onSelectPrompt={onSelectPrompt} 
+          count={count} 
+        />
+      );
+    }
   }
-  
-  // Default to the original examples for non-Kortix agents or unmatched types
   return (
     <DefaultExamples 
       onSelectPrompt={onSelectPrompt} 

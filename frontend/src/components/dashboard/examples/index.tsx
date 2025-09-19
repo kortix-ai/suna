@@ -8,4 +8,5 @@ export { ResearchExamples } from './research-examples';
 export { CodeExamples } from './code-examples';
 export { BusinessExamples } from './business-examples';
 export { PresentationExamples } from './presentation-examples';
+export { DesignerExamples } from './designer-examples';
 export { AgentExamples } from './agent-examples';

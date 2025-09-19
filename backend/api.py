@@ -22,9 +22,9 @@ import uuid
 from core import api as core_api
 
 from core.sandbox import api as sandbox_api
-from billing.api import router as billing_router
-from billing.admin import router as billing_admin_router
-from admin import users_admin
+from core.billing.api import router as billing_router
+from core.billing.admin import router as billing_admin_router
+from core.admin.users_admin import router as users_admin_router
 from core.services import transcription as transcription_api
 import sys
 from core.services import email_api
@@ -158,7 +158,7 @@ api_router.include_router(sandbox_api.router)
 api_router.include_router(billing_router)
 api_router.include_router(api_keys_api.router)
 api_router.include_router(billing_admin_router)
-api_router.include_router(users_admin.router)
+api_router.include_router(users_admin_router)
 
 from core.mcp_module import api as mcp_api
 from core.credentials import api as credentials_api
