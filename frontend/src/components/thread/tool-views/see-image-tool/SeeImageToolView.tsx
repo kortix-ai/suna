@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Image as ImageIcon, ImageOff, CheckCircle, AlertTriangle, Loader2, Download, ZoomIn, ZoomOut, ExternalLink, Check } from 'lucide-react';
+import { Image as ImageIcon, ImageOff, CheckCircle, AlertTriangle, Loader2, Download, ZoomIn, ZoomOut, Trash2 } from 'lucide-react';
 import { ToolViewProps } from '../types';
 import {
   formatTimestamp,
@@ -224,7 +224,9 @@ export function SeeImageToolView({
   project,
 }: ToolViewProps) {
   const [progress, setProgress] = useState(0);
+  const isClearTool = name === 'clear-images-from-context';
 
+  // Extract data - use existing function for both tools
   const {
     filePath,
     description,
@@ -257,10 +259,11 @@ export function SeeImageToolView({
     }
   }, [isStreaming]);
 
-  if (!filePath) {
+  // For clear tool, we don't need filePath, but for image tool we do
+  if (!isClearTool && !filePath) {
     return (
       <GenericToolView
-        name={name || 'see-image'}
+        name={name}
         assistantContent={assistantContent}
         toolContent={toolContent}
         assistantTimestamp={assistantTimestamp}
@@ -271,32 +274,32 @@ export function SeeImageToolView({
     );
   }
 
-  const config = {
-    color: 'text-blue-500 dark:text-blue-400',
-    bgColor: 'bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20',
-    badgeColor: 'bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300',
-    hoverColor: 'hover:bg-gradient-to-b hover:from-blue-200 hover:to-blue-100 dark:hover:from-blue-800/60 dark:hover:to-blue-900/40'
-  };
 
-  const imageUrl = constructImageUrl(filePath, project);
-  const filename = filePath.split('/').pop() || filePath;
-  const fileExt = filename.split('.').pop() || '';
-  const isAnimated = ['gif', 'webp'].includes(fileExt.toLowerCase());
+  // Image-related data (not needed for clear tool)
+  const imageUrl = !isClearTool && filePath ? constructImageUrl(filePath, project) : '';
+  const filename = !isClearTool && filePath ? filePath.split('/').pop() || filePath : '';
+  const fileExt = filename ? filename.split('.').pop() || '' : '';
+  const isAnimated = !isClearTool && ['gif', 'webp'].includes(fileExt.toLowerCase());
+
 
   return (
     <Card className="flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-b p-2 px-4 space-y-0">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className={cn("relative p-2 rounded-xl bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/20 transition-colors", config.bgColor)}>
-              <ImageIcon className={cn("w-5 h-5", config.color)} />
+            <div className="relative p-2 bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20 rounded-xl transition-colors border border-blue-200/50 dark:border-blue-800/30 text-blue-500 dark:text-blue-400">
+              {isClearTool ? (
+                <Trash2 className="w-5 h-5" />
+              ) : (
+                <ImageIcon className="w-5 h-5" />
+              )}
             </div>
             <div>
               <div className="flex items-center">
                 <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
-                  {truncateString(filename, 25)}
+                  {isClearTool ? "Clear Images from Context" : truncateString(filename, 25)}
                 </CardTitle>
-                {isAnimated && (
+                {!isClearTool && isAnimated && (
                   <Badge variant="outline" className="ml-2 text-[10px] py-0 px-1.5 h-4 border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-400">
                     ANIMATED
                   </Badge>
@@ -315,7 +318,7 @@ export function SeeImageToolView({
               {actualIsSuccess ? (
                 <>
                   <CheckCircle className="h-3.5 w-3.5" />
-                  Success
+                  {isClearTool ? 'Cleared' : 'Success'}
                 </>
               ) : (
                 <>
@@ -325,24 +328,24 @@ export function SeeImageToolView({
               )}
             </Badge>
           ) : (
-            <Badge variant="secondary" className="bg-gradient-to-b from-blue-50 to-blue-100 text-blue-700 border border-blue-200/50 dark:from-blue-900/30 dark:to-blue-800/20 dark:text-blue-400 dark:border-blue-800/30 px-2.5 py-1 flex items-center gap-1.5">
+            <Badge variant="secondary" className="bg-gradient-to-b from-green-50 to-green-100 text-green-700 border border-green-200/50 dark:from-green-900/30 dark:to-green-800/20 dark:text-green-400 dark:border-green-800/30 px-2.5 py-1 flex items-center gap-1.5">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Loading image...
+              {isClearTool ? "Clearing..." : "Loading image..."}
             </Badge>
           )}
         </div>
       </CardHeader>
 
-      <CardContent className="p-0 flex-1 overflow-hidden relative">
+      <CardContent className="p-0 flex-1 overflow-auto relative">
         {isStreaming ? (
-          <div className="flex flex-col items-center justify-center h-full p-12 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
+          <div className="flex flex-col items-center justify-center h-full p-8 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
             <div className="text-center w-full max-w-xs">
               <div className="space-y-3 mb-6">
                 <Skeleton className="h-12 w-12 rounded-full mx-auto" />
                 <Skeleton className="h-6 w-32 mx-auto" />
                 <Skeleton className="h-4 w-48 mx-auto" />
               </div>
-              <Skeleton className="h-48 w-full rounded-lg mb-6" />
+              {!isClearTool && <Skeleton className="h-48 w-full rounded-lg mb-6" />}
               <div className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
                 <div
                   className="h-full bg-gradient-to-r from-blue-400 to-blue-500 dark:from-blue-600 dark:to-blue-400 rounded-full transition-all duration-300 ease-out"
@@ -350,6 +353,30 @@ export function SeeImageToolView({
                 ></div>
               </div>
               <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-2">{progress}%</p>
+            </div>
+          </div>
+        ) : isClearTool ? (
+          <div className="flex flex-col items-center justify-center h-full p-8">
+            <div className="text-center max-w-md">
+              <div className={cn(
+                "w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-4",
+                actualIsSuccess ? 'bg-gradient-to-b from-green-100 to-green-50 shadow-inner dark:from-green-800/40 dark:to-green-900/60 dark:shadow-green-950/20' : 'bg-gradient-to-b from-red-100 to-red-50 shadow-inner dark:from-red-800/40 dark:to-red-900/60 dark:shadow-red-950/20'
+              )}>
+                {actualIsSuccess ? (
+                  <CheckCircle className="h-8 w-8 text-green-500 dark:text-green-400" />
+                ) : (
+                  <AlertTriangle className="h-8 w-8 text-red-500 dark:text-red-400" />
+                )}
+              </div>
+
+              <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
+                {actualIsSuccess ? 'Context Cleared' : 'Clear Failed'}
+              </h3>
+
+              <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-4">
+                Images have been cleared from context. They are not deleted and can be loaded again with load image in context tool.
+              </p>
+
             </div>
           </div>
         ) : (
@@ -369,8 +396,17 @@ export function SeeImageToolView({
       <div className="h-10 px-4 py-2 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
         <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
           <Badge className="py-0.5 h-6 bg-gradient-to-b from-blue-50 to-blue-100 text-blue-700 border border-blue-200/50 dark:from-blue-900/30 dark:to-blue-800/20 dark:text-blue-400 dark:border-blue-800/30">
-            <ImageIcon className="h-3 w-3 mr-1" />
-            IMAGE
+            {isClearTool ? (
+              <>
+                <Trash2 className="h-3 w-3 mr-1" />
+                CLEAR
+              </>
+            ) : (
+              <>
+                <ImageIcon className="h-3 w-3 mr-1" />
+                IMAGE
+              </>
+            )}
           </Badge>
           {fileExt && (
             <Badge variant="outline" className="py-0 px-1.5 h-5 text-[10px] uppercase font-medium">

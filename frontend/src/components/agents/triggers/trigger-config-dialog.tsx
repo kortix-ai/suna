@@ -115,6 +115,29 @@ export const TriggerConfigDialog: React.FC<TriggerConfigDialogProps> = ({
     }
   };
 
+  if (provider.provider_id === 'schedule') {
+    return (
+      <SimplifiedScheduleConfig
+        provider={provider}
+        config={config as ScheduleTriggerConfig}
+        onChange={setConfig}
+        errors={errors}
+        agentId={agentId}
+        name={name}
+        description={description}
+        onNameChange={setName}
+        onDescriptionChange={setDescription}
+        isActive={isActive}
+        onActiveChange={setIsActive}
+        selectedAgent={selectedAgent}
+        onAgentSelect={onAgentSelect}
+        open={open}
+        onOpenChange={onOpenChange || onCancel}
+        onSave={onSave}
+      />
+    );
+  }
+
   const renderProviderSpecificConfig = () => {
     switch (provider.provider_id) {
       case 'schedule':
@@ -133,8 +156,9 @@ export const TriggerConfigDialog: React.FC<TriggerConfigDialogProps> = ({
             onActiveChange={setIsActive}
             selectedAgent={selectedAgent}
             onAgentSelect={onAgentSelect}
-            open={false}
-            onOpenChange={() => {}}
+            open={open}
+            onOpenChange={onOpenChange || onCancel}
+            onSave={onSave}
           />
         );
       case 'composio':
@@ -154,7 +178,6 @@ export const TriggerConfigDialog: React.FC<TriggerConfigDialogProps> = ({
           />
         );
       default:
-        // Check if it's an event-based trigger (webhook type)
         if (provider.trigger_type === 'webhook') {
           return (
             <EventTriggerConfigForm
@@ -185,7 +208,7 @@ export const TriggerConfigDialog: React.FC<TriggerConfigDialogProps> = ({
     <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-hidden p-0 flex flex-col">
       <div className="flex-1 overflow-y-auto">
         {renderProviderSpecificConfig()}
-        {provider.webhook_enabled && existingConfig?.webhook_url && (
+        {/* {provider.webhook_enabled && existingConfig?.webhook_url && (
           <div className="px-6 pb-6">
             <div className="border-t pt-6">
               <h3 className="text-sm font-medium mb-4">Webhook Information</h3>
@@ -218,7 +241,7 @@ export const TriggerConfigDialog: React.FC<TriggerConfigDialogProps> = ({
               </div>
             </div>
           </div>
-        )}
+        )} */}
       </div>
       <div className="flex-shrink-0 px-6 py-6 border-t bg-muted/20">
         <div className="flex gap-3">

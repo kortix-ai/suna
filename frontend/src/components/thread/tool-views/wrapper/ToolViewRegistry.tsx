@@ -15,6 +15,7 @@ import { SeeImageToolView } from '../see-image-tool/SeeImageToolView';
 import { TerminateCommandToolView } from '../command-tool/TerminateCommandToolView';
 import { AskToolView } from '../ask-tool/AskToolView';
 import { CompleteToolView } from '../CompleteToolView';
+import { WaitToolView } from '../wait-tool/WaitToolView';
 import { ExecuteDataProviderCallToolView } from '../data-provider-tool/ExecuteDataProviderCallToolView';
 import { DataProviderEndpointsToolView } from '../data-provider-tool/DataProviderEndpointsToolView';
 import { DeployToolView } from '../DeployToolView';
@@ -39,6 +40,7 @@ import { SheetsToolView } from '../sheets-tools/sheets-tool-view';
 import { GetProjectStructureView } from '../web-dev/GetProjectStructureView';
 import { ImageEditGenerateToolView } from '../image-edit-generate-tool/ImageEditGenerateToolView';
 import { UploadFileToolView } from '../UploadFileToolView';
+import { DocsToolView, ListDocumentsToolView, DeleteDocumentToolView } from '../docs-tool';
 import { CreateNewAgentToolView } from '../create-new-agent/create-new-agent';
 import { SearchMcpServersForAgentToolView } from '../search-mcp-servers-for-agent/search-mcp-servers-for-agent';
 import { CreateCredentialProfileForAgentToolView } from '../create-credential-profile-for-agent/create-credential-profile-for-agent';
@@ -78,6 +80,7 @@ const defaultRegistry: ToolViewRegistryType = {
   'web-search': WebSearchToolView,
   'crawl-webpage': WebCrawlToolView,
   'scrape-webpage': WebScrapeToolView,
+  'image-search': WebSearchToolView,
 
   'execute-data-provider-call': ExecuteDataProviderCallToolView,
   'get-data-provider-endpoints': DataProviderEndpointsToolView,
@@ -99,11 +102,13 @@ const defaultRegistry: ToolViewRegistryType = {
 
   'expose-port': ExposePortToolView,
 
-  'see-image': SeeImageToolView,
+  'load-image': SeeImageToolView,
+  'clear-images-from-context': SeeImageToolView,
   'image-edit-or-generate': ImageEditGenerateToolView,
 
   'ask': AskToolView,
   'complete': CompleteToolView,
+  'wait': WaitToolView,
 
   'deploy': DeployToolView,
 
@@ -130,6 +135,21 @@ const defaultRegistry: ToolViewRegistryType = {
   'list-web-projects': GenericToolView,
 
   'upload-file': UploadFileToolView,
+
+  // Document operations - using specific views for different operations
+  'create-document': DocsToolView,
+  'update-document': DocsToolView,
+  'read-document': DocsToolView,
+  'list-documents': ListDocumentsToolView,
+  'delete-document': DeleteDocumentToolView,
+  'export-document': DocsToolView,
+  'create_document': DocsToolView,
+  'update_document': DocsToolView,
+  'read_document': DocsToolView,
+  'list_documents': ListDocumentsToolView,
+  'delete_document': DeleteDocumentToolView,
+  'export_document': DocsToolView,
+  'get_tiptap_format_guide': DocsToolView,
 
   'default': GenericToolView,
 

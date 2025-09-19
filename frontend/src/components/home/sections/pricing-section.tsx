@@ -6,7 +6,20 @@ import { siteConfig } from '@/lib/home';
 import { cn } from '@/lib/utils';
 import { motion } from 'motion/react';
 import React, { useState, useEffect, useCallback } from 'react';
-import { CheckIcon } from 'lucide-react';
+import { 
+  CheckIcon, 
+  Clock, 
+  Bot, 
+  FileText, 
+  Settings, 
+  Grid3X3, 
+  Image, 
+  Video, 
+  Presentation, 
+  Diamond, 
+  Heart,
+  Zap
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   createCheckoutSession,
@@ -55,6 +68,42 @@ interface PricingTierProps {
   insideDialog?: boolean;
   billingPeriod?: 'monthly' | 'yearly' | 'yearly_commitment';
 }
+
+// Feature icon mapping
+const getFeatureIcon = (feature: string) => {
+  const featureLower = feature.toLowerCase();
+  
+  if (featureLower.includes('token credits') || featureLower.includes('ai token')) {
+    return <Clock className="size-4" />;
+  }
+  if (featureLower.includes('custom agents') || featureLower.includes('agents')) {
+    return <Bot className="size-4" />;
+  }
+  if (featureLower.includes('private projects') || featureLower.includes('public projects')) {
+    return <FileText className="size-4" />;
+  }
+  if (featureLower.includes('custom abilities') || featureLower.includes('basic abilities')) {
+    return <Settings className="size-4" />;
+  }
+  if (featureLower.includes('integrations') || featureLower.includes('100+')) {
+    return <Grid3X3 className="size-4" />;
+  }
+  if (featureLower.includes('premium ai models')) {
+    return <Diamond className="size-4" />;
+  }
+  if (featureLower.includes('community support') || featureLower.includes('priority support')) {
+    return <Heart className="size-4" />;
+  }
+  if (featureLower.includes('image') || featureLower.includes('video') || featureLower.includes('slides') || featureLower.includes('generation')) {
+    return <Image className="size-4" />;
+  }
+  if (featureLower.includes('dedicated account manager')) {
+    return <Zap className="size-4" />;
+  }
+  
+  // Default icon
+  return <CheckIcon className="size-4" />;
+};
 
 // Components
 
@@ -159,7 +208,7 @@ function PricingTier({
   const displayPrice = getDisplayPrice();
   const priceId = getPriceId();
 
-  // Auto-select the correct plan only on initial load - simplified since no more Custom tier
+  // Handle subscription/trial start
   const handleSubscribe = async (planStripePriceId: string) => {
     if (!isAuthenticated) {
       window.location.href = '/auth?mode=signup';
@@ -172,8 +221,6 @@ function PricingTier({
 
     try {
       onPlanSelect?.(planStripePriceId);
-
-      // Determine commitment type based on billing period
       const commitmentType = billingPeriod === 'yearly_commitment' ? 'yearly_commitment' : 
                           billingPeriod === 'yearly' ? 'yearly' : 
                           'monthly';
@@ -256,37 +303,54 @@ function PricingTier({
     (p) => p.stripePriceId === currentSubscription?.price_id || p.yearlyStripePriceId === currentSubscription?.price_id,
   );
 
-  const isCurrentActivePlan =
-    isAuthenticated && currentSubscription?.price_id === priceId;
+  const userPlanName = currentSubscription?.plan_name || 'none';
+  const isCurrentActivePlan = isAuthenticated && (
+    currentSubscription?.price_id === priceId ||
+    (userPlanName === 'trial' && tier.price === '$20' && billingPeriod === 'monthly') ||
+    (userPlanName === 'tier_2_20' && tier.price === '$20' && billingPeriod === 'monthly') ||
+    (currentSubscription?.subscription && 
+     userPlanName === 'tier_2_20' && 
+     tier.price === '$20' && 
+     currentSubscription?.subscription?.status === 'active')
+  );
+
   const isScheduled = isAuthenticated && currentSubscription?.has_schedule;
   const isScheduledTargetPlan =
     isScheduled && currentSubscription?.scheduled_price_id === priceId;
   const isPlanLoading = isLoading[priceId];
 
-  let buttonText = isAuthenticated ? 'Select Plan' : 'Start Free';
+  let buttonText = isAuthenticated ? 'Select Plan' : tier.buttonText;
   let buttonDisabled = isPlanLoading;
   let buttonVariant: ButtonVariant = null;
   let ringClass = '';
   let statusBadge = null;
   let buttonClassName = '';
   
-  // Check plan change restrictions using comprehensive validation
   const planChangeValidation = (isAuthenticated && currentSubscription?.price_id) 
     ? isPlanChangeAllowed(currentSubscription.price_id, priceId)
     : { allowed: true };
 
   if (isAuthenticated) {
     if (isCurrentActivePlan) {
-      buttonText = 'Current Plan';
+      if (userPlanName === 'trial') {
+        buttonText = 'Trial Active';
+        statusBadge = (
+          <span className="bg-green-500/10 text-green-600 text-[10px] font-medium px-1.5 py-0.5 rounded-full">
+            7-Day Trial
+          </span>
+        );
+      } else {
+        buttonText = 'Current Plan';
+        statusBadge = (
+          <span className="bg-primary/10 text-primary text-[10px] font-medium px-1.5 py-0.5 rounded-full">
+            Current
+          </span>
+        );
+      }
       buttonDisabled = true;
       buttonVariant = 'secondary';
       ringClass = isCompact ? 'ring-1 ring-primary' : 'ring-2 ring-primary';
       buttonClassName = 'bg-primary/5 hover:bg-primary/10 text-primary';
-      statusBadge = (
-        <span className="bg-primary/10 text-primary text-[10px] font-medium px-1.5 py-0.5 rounded-full">
-          Current
-        </span>
-      );
     } else if (isScheduledTargetPlan) {
       buttonText = 'Scheduled';
       buttonDisabled = true;
@@ -494,9 +558,9 @@ function PricingTier({
         {tier.features && tier.features.length > 0 && (
           <ul className="space-y-3">
             {tier.features.map((feature) => (
-              <li key={feature} className="flex items-center gap-2">
-                <div className="size-5 min-w-5 rounded-full border border-primary/20 flex items-center justify-center">
-                  <CheckIcon className="size-3 text-primary" />
+              <li key={feature} className="flex items-center gap-3">
+                <div className="size-5 min-w-5 flex items-center justify-center text-muted-foreground">
+                  {getFeatureIcon(feature)}
                 </div>
                 <span className="text-sm">{feature}</span>
               </li>
@@ -535,6 +599,7 @@ interface PricingSectionProps {
   insideDialog?: boolean;
   showInfo?: boolean;
   noPadding?: boolean;
+  onSubscriptionUpdate?: () => void;
 }
 
 export function PricingSection({
@@ -544,6 +609,7 @@ export function PricingSection({
   insideDialog = false,
   showInfo = true,
   noPadding = false,
+  onSubscriptionUpdate,
 }: PricingSectionProps) {
 
   const { data: subscriptionData, isLoading: isFetchingPlan, error: subscriptionQueryError, refetch: refetchSubscription } = useSubscription();
@@ -564,25 +630,21 @@ export function PricingSection({
     );
 
     if (currentTier) {
-      // Check if current subscription is yearly commitment (new yearly)
       if (currentTier.monthlyCommitmentStripePriceId === currentSubscription.price_id) {
         return 'yearly_commitment';
       } else if (currentTier.yearlyStripePriceId === currentSubscription.price_id) {
-        // Legacy yearly plans
         return 'yearly';
       } else if (currentTier.stripePriceId === currentSubscription.price_id) {
         return 'monthly';
       }
     }
 
-    // Default to yearly_commitment (new yearly) if we can't determine current plan type
     return 'yearly_commitment';
   }, [isAuthenticated, currentSubscription]);
 
   const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly' | 'yearly_commitment'>(getDefaultBillingPeriod());
   const [planLoadingStates, setPlanLoadingStates] = useState<Record<string, boolean>>({});
 
-  // Update billing period when subscription data changes
   useEffect(() => {
     setBillingPeriod(getDefaultBillingPeriod());
   }, [getDefaultBillingPeriod]);
@@ -598,6 +660,10 @@ export function PricingSection({
     setTimeout(() => {
       setPlanLoadingStates({});
     }, 1000);
+    // Call parent's update handler if provided
+    if (onSubscriptionUpdate) {
+      onSubscriptionUpdate();
+    }
   };
 
 
@@ -639,8 +705,8 @@ export function PricingSection({
         <div className={cn(
           "grid gap-6 w-full",
           insideDialog
-            ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 2xl:grid-cols-4"
-            : "min-[650px]:grid-cols-2 lg:grid-cols-4",
+            ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 2xl:grid-cols-3"
+            : "min-[650px]:grid-cols-2 lg:grid-cols-3",
           !insideDialog && "grid-rows-1 items-stretch"
         )}>
           {siteConfig.cloudPricingItems

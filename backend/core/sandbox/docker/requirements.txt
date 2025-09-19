@@ -1,0 +1,12 @@
+fastapi==0.115.12
+uvicorn==0.34.0
+pyautogui==0.9.54
+pillow==10.2.0
+pydantic==2.6.1
+pytesseract==0.3.13
+pandas==2.3.0
+playwright==1.54.0
+PyPDF2>=3.0.0
+bs4==0.0.2
+python-pptx>=0.6.23
+openpyxl>=3.1.0

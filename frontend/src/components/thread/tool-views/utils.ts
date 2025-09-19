@@ -41,13 +41,14 @@ export function getToolTitle(toolName: string): string {
     'full-file-rewrite': 'Rewrite File',
     'delete-file': 'Delete File',
     'web-search': 'Web Search',
+    'image-search': 'Image Search',
     'crawl-webpage': 'Web Crawl',
     'scrape-webpage': 'Web Scrape',
     'browser-navigate-to': 'Browser Navigate',
     'browser-act': 'Browser Action',
     'browser-extract-content': 'Browser Extract',
     'browser-screenshot': 'Browser Screenshot',
-    'see-image': 'View Image',
+    'load-image': 'Load Image',
     'ask': 'Ask',
     'complete': 'Task Complete',
     'execute-data-provider-call': 'Data Provider Call',
@@ -66,6 +67,14 @@ export function getToolTitle(toolName: string): string {
     'create-presentation-outline': 'Create Presentation Outline',
     'list-presentation-templates': 'List Presentation Templates',
     'upload-file': 'Upload File',
+    
+    // Docs tools
+    'create-document': 'Create Document',
+    'update-document': 'Update Document',
+    'read-document': 'Read Document',
+    'list-documents': 'List Documents',
+    'delete-document': 'Delete Document',
+    'export-document': 'Export Document',
     
     // Agent Creation Tools
     'create-new-agent': 'Create New Agent',
@@ -1272,6 +1281,8 @@ export function getToolComponent(toolName: string): string {
     // Web operations
     case 'web-search':
       return 'WebSearchToolView';
+    case 'image-search':
+      return 'WebSearchToolView';
     case 'crawl-webpage':
       return 'WebCrawlToolView';
     case 'scrape-webpage':
@@ -1307,6 +1318,15 @@ export function getToolComponent(toolName: string): string {
     // Upload operations
     case 'upload-file':
       return 'UploadFileToolView';
+    
+    // Docs operations
+    case 'create-document':
+    case 'update-document':
+    case 'read-document':
+    case 'list-documents':
+    case 'delete-document':
+    case 'export-document':
+      return 'DocsToolView';
 
     // Port operations
     case 'expose-port':

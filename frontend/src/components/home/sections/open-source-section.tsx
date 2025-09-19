@@ -379,9 +379,9 @@ export function SecuritySection() {
                       </svg>
                     </div>
                     <div>
-                      <h4 className="font-medium">Transparency</h4>
+                      <h4 className="font-medium">On-Premises</h4>
                       <p className="text-muted-foreground text-sm">
-                        Fully auditable codebase
+                        100% private deployment
                       </p>
                     </div>
                   </div>

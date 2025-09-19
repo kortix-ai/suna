@@ -150,13 +150,13 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
   };
 
   return (
-    <div className={"h-full bg-white flex flex-col w-full sm:w-[440px] xl:w-2xl"}>
+    <div className={"h-full bg-background flex flex-col w-full sm:w-[440px] xl:w-2xl"}>
       {/* Header */}
-      <div className="px-8 py-6 border-b border-gray-200">
+      <div className="px-8 py-6 border-b">
         <div className="flex items-start justify-between mb-6">
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
-              <h1 className="text-2xl font-medium text-black">{trigger.name}</h1>
+              <h1 className="text-2xl font-medium text-foreground">{trigger.name}</h1>
               <Badge
                 variant={trigger.is_active ? "highlight" : "secondary"}
                 className="text-xs"
@@ -165,7 +165,7 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
               </Badge>
             </div>
             {trigger.description && (
-              <p className="text-gray-600 text-sm leading-relaxed">{trigger.description}</p>
+              <p className="text-muted-foreground text-sm leading-relaxed">{trigger.description}</p>
             )}
           </div>
           <div className="flex items-center gap-2">
@@ -173,7 +173,7 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
               size="sm"
               variant="outline"
               onClick={() => setShowEditDialog(true)}
-              className="border-gray-200 hover:bg-gray-50"
+              className="hover:bg-muted"
             >
               <Edit2 className="h-4 w-4 mr-2" />
               Edit
@@ -183,14 +183,14 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
               variant="outline"
               onClick={() => setShowDeleteDialog(true)}
               disabled={isLoading}
-              className="border-gray-200 hover:bg-red-50 hover:border-red-200 hover:text-red-600"
+              className="hover:bg-destructive/10 hover:border-destructive hover:text-destructive"
             >
               <Trash2 className="h-4 w-4" />
             </Button>
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8 hover:bg-gray-100"
+              className="h-8 w-8 hover:bg-muted"
               onClick={onClose}
             >
               <X className="h-4 w-4" />
@@ -206,10 +206,10 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
             onClick={handleToggle}
             disabled={isLoading}
             className={cn(
-              "flex-1 border-gray-200",
+              "flex-1",
               trigger.is_active
-                ? "hover:bg-gray-50"
-                : "bg-black hover:bg-gray-900 text-white"
+                ? "hover:bg-muted"
+                : "bg-primary hover:bg-primary/90 text-primary-foreground"
             )}
           >
             {trigger.is_active ? (
@@ -231,34 +231,34 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
       <div className="flex-1 overflow-y-auto px-8 py-6 space-y-8">
         {/* Schedule Info */}
         {isScheduled && (
-          <div className="border border-gray-200 rounded-lg p-6 bg-white">
+          <div className="border rounded-lg p-6 bg-card">
             <div className="flex items-start gap-4">
-              <div className="p-2 rounded-lg bg-gray-100">
-                <Clock className="h-5 w-5 text-gray-700" />
+              <div className="p-2 rounded-lg bg-muted">
+                <Clock className="h-5 w-5 text-muted-foreground" />
               </div>
               <div className="flex-1">
-                <h3 className="font-medium text-black mb-1">Schedule</h3>
-                <p className="text-sm text-gray-600">{scheduleDisplay.name}</p>
+                <h3 className="font-medium text-foreground mb-1">Schedule</h3>
+                <p className="text-sm text-muted-foreground">{scheduleDisplay.name}</p>
               </div>
             </div>
           </div>
         )}
 
         {/* Execution Details */}
-        <div className="border border-gray-200 rounded-lg p-6 bg-white">
+        <div className="border rounded-lg p-6 bg-card">
           <div className="flex items-start gap-4 mb-4">
-            <div className="p-2 rounded-lg bg-gray-100">
+            <div className="p-2 rounded-lg bg-muted">
               {trigger.config?.execution_type === 'agent' ? (
-                <Sparkles className="h-5 w-5 text-gray-700" />
+                <Sparkles className="h-5 w-5 text-muted-foreground" />
               ) : (
-                <Activity className="h-5 w-5 text-gray-700" />
+                <Activity className="h-5 w-5 text-muted-foreground" />
               )}
             </div>
             <div className="flex-1">
-              <h3 className="font-medium text-black mb-1">
+              <h3 className="font-medium text-foreground mb-1">
                 {trigger.config?.execution_type === 'agent' ? 'Agent Instructions' : 'Workflow Execution'}
               </h3>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-muted-foreground">
                 {trigger.config?.execution_type === 'agent'
                   ? 'Custom prompt for the agent'
                   : `Runs workflow: ${workflowName || 'Unknown'}`
@@ -268,17 +268,17 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
           </div>
 
           {trigger.config?.execution_type === 'agent' && trigger.config.agent_prompt && (
-            <div className="mt-4 p-4 rounded-lg bg-gray-50 border border-gray-200">
-              <p className="text-sm font-mono text-gray-800 whitespace-pre-wrap leading-relaxed">
+            <div className="mt-4 p-4 rounded-lg bg-muted border">
+              <p className="text-sm font-mono text-foreground whitespace-pre-wrap leading-relaxed">
                 {trigger.config.agent_prompt}
               </p>
             </div>
           )}
 
           {trigger.config?.execution_type === 'workflow' && trigger.config.workflow_input && (
-            <div className="mt-4 p-4 rounded-lg bg-gray-50 border border-gray-200">
-              <p className="text-xs text-gray-500 mb-2 font-medium">Workflow Input:</p>
-              <pre className="text-xs font-mono text-gray-800 overflow-x-auto">
+            <div className="mt-4 p-4 rounded-lg bg-muted border">
+              <p className="text-xs text-muted-foreground mb-2 font-medium">Workflow Input:</p>
+              <pre className="text-xs font-mono text-foreground overflow-x-auto">
                 {JSON.stringify(trigger.config.workflow_input, null, 2)}
               </pre>
             </div>
@@ -286,7 +286,7 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
         </div>
 
         {/* Agent Info */}
-        <div className="border border-gray-200 rounded-lg p-6 bg-white">
+        <div className="border rounded-lg p-6 bg-card">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
               <AgentAvatar
@@ -295,38 +295,38 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
                 fallbackName={trigger.agent_name}
               />
               <div>
-                <h3 className="font-medium text-black">{trigger.agent_name || 'Unknown Agent'}</h3>
-                <p className="text-sm text-gray-600">Assigned Agent</p>
+                <h3 className="font-medium text-foreground">{trigger.agent_name || 'Unknown Agent'}</h3>
+                <p className="text-sm text-muted-foreground">Assigned Agent</p>
               </div>
             </div>
             <Link
               href={`/agents/config/${trigger.agent_id}`}
-              className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
+              className="p-2 rounded-lg hover:bg-muted transition-colors"
             >
-              <ExternalLink className="h-4 w-4 text-gray-500" />
+              <ExternalLink className="h-4 w-4 text-muted-foreground" />
             </Link>
           </div>
         </div>
 
         {/* Technical Details */}
-        <div className="border border-gray-200 rounded-lg p-6 bg-white">
-          <h3 className="font-medium text-black mb-4">Technical Details</h3>
+        <div className="border rounded-lg p-6 bg-card">
+          <h3 className="font-medium text-foreground mb-4">Technical Details</h3>
           <div className="space-y-3">
-            <div className="flex justify-between items-center py-2 border-b border-gray-100 last:border-b-0">
-              <span className="text-sm text-gray-600">Type</span>
-              <span className="text-sm font-mono text-gray-900">{trigger.trigger_type}</span>
+            <div className="flex justify-between items-center py-2 border-b last:border-b-0">
+              <span className="text-sm text-muted-foreground">Type</span>
+              <span className="text-sm font-mono text-foreground">{trigger.trigger_type}</span>
             </div>
-            <div className="flex justify-between items-center py-2 border-b border-gray-100 last:border-b-0">
-              <span className="text-sm text-gray-600">Provider</span>
-              <span className="text-sm font-mono text-gray-900">{trigger.provider_id}</span>
+            <div className="flex justify-between items-center py-2 border-b last:border-b-0">
+              <span className="text-sm text-muted-foreground">Provider</span>
+              <span className="text-sm font-mono text-foreground">{trigger.provider_id}</span>
             </div>
-            <div className="flex justify-between items-center py-2 border-b border-gray-100 last:border-b-0">
-              <span className="text-sm text-gray-600">Created</span>
-              <span className="text-sm text-gray-900">{new Date(trigger.created_at).toLocaleDateString()}</span>
+            <div className="flex justify-between items-center py-2 border-b last:border-b-0">
+              <span className="text-sm text-muted-foreground">Created</span>
+              <span className="text-sm text-foreground">{new Date(trigger.created_at).toLocaleDateString()}</span>
             </div>
             <div className="flex justify-between items-center py-2">
-              <span className="text-sm text-gray-600">Last Updated</span>
-              <span className="text-sm text-gray-900">{new Date(trigger.updated_at).toLocaleDateString()}</span>
+              <span className="text-sm text-muted-foreground">Last Updated</span>
+              <span className="text-sm text-foreground">{new Date(trigger.updated_at).toLocaleDateString()}</span>
             </div>
           </div>
         </div>
@@ -348,18 +348,18 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
 
       {/* Delete Dialog */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <AlertDialogContent className="bg-white border border-gray-200">
+        <AlertDialogContent className="bg-background border">
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-black font-medium">Delete Task</AlertDialogTitle>
-            <AlertDialogDescription className="text-gray-600">
+            <AlertDialogTitle className="text-foreground font-medium">Delete Task</AlertDialogTitle>
+            <AlertDialogDescription className="text-muted-foreground">
               Are you sure you want to delete "{trigger.name}"? This action cannot be undone and will stop all automated runs from this task.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel className="border-gray-200 hover:bg-gray-50">Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="hover:bg-muted">Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDelete}
-              className="bg-black hover:bg-gray-900 text-white"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
               Delete Task
             </AlertDialogAction>

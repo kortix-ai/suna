@@ -412,13 +412,11 @@ export default function PricingPage() {
           </CardContent>
         </Card>
       )}
-
-      {/* Model Pricing Table */}
       <Card>
         <CardHeader>
           <CardTitle>Compute Pricing by Model</CardTitle>
           <CardDescription>
-            Detailed pricing information for available AI models. We apply a 50%
+            Detailed pricing information for available AI models. We apply a 20%
             markup on direct LLM provider costs to maintain our service and
             generate profit.
           </CardDescription>

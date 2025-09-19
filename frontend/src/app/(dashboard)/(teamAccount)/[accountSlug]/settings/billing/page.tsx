@@ -137,12 +137,12 @@ export default function TeamBillingPage({
                       Agent Usage This Month
                     </span>
                     <span className="text-sm font-medium">
-                      ${subscriptionData.current_usage?.toFixed(2) || '0'} /{' '}
-                      ${subscriptionData.cost_limit || '0'}
+                      {subscriptionData.credits?.lifetime_used?.toFixed(2) || '0'} /{' '}
+                      {subscriptionData.credits?.tier_credits || '0'}
                     </span>
                     <Button variant='outline' asChild className='text-sm'>
-                      <Link href="/settings/usage-logs">
-                        Usage logs
+                      <Link href="/settings/transactions">
+                        Transactions
                       </Link>
                     </Button>
                   </div>

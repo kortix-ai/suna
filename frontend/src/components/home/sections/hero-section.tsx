@@ -12,6 +12,7 @@ import { useAuth } from '@/components/AuthProvider';
 import {
   BillingError,
   AgentRunLimitError,
+  ProjectLimitError,
 } from '@/lib/api';
 import { useInitiateAgentMutation } from '@/hooks/react-query/dashboard/use-initiate-agent';
 import { useThreadQuery } from '@/hooks/react-query/threads/use-threads';
@@ -46,10 +47,45 @@ const BlurredDialogOverlay = () => (
   <DialogOverlay className="bg-background/40 backdrop-blur-md" />
 );
 
+// Rotating text component for job types
+const RotatingText = ({ 
+  texts, 
+  className = "" 
+}: { 
+  texts: string[]; 
+  className?: string; 
+}) => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [isVisible, setIsVisible] = useState(true);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setIsVisible(false);
+      
+      setTimeout(() => {
+        setCurrentIndex((prev) => (prev + 1) % texts.length);
+        setIsVisible(true);
+      }, 150); // Half of the transition duration
+    }, 2000); // Change every 2 seconds
+
+    return () => clearInterval(interval);
+  }, [texts.length]);
+
+  return (
+    <span className={`inline-block transition-all duration-300 ${className}`}>
+      <span 
+        className={`inline-block transition-opacity duration-300 ${
+          isVisible ? 'opacity-100' : 'opacity-0'
+        }`}
+      >
+        {texts[currentIndex]}
+      </span>
+    </span>
+  );
+};
+
 // Constant for localStorage key to ensure consistency
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
-
-
 
 export function HeroSection() {
   const { hero } = siteConfig;
@@ -216,6 +252,8 @@ export function HeroSection() {
           runningThreadIds: running_thread_ids,
         });
         setShowAgentLimitDialog(true);
+      } else if (error instanceof ProjectLimitError) {
+        setShowPaymentModal(true);
       } else {
         const isConnectionError =
           error instanceof TypeError &&
@@ -325,11 +363,14 @@ export function HeroSection() {
           </Link> */}
           <div className="flex flex-col items-center justify-center gap-3 sm:gap-4 pt-8 sm:pt-12 max-w-4xl mx-auto">
             <h1 className="text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-medium tracking-tighter text-balance text-center px-2">
-              <span className="text-primary">Build, manage and train your </span>
-              <span className="text-secondary">AI Workforce.</span>
+              <span className="text-primary">Hire Kortix for </span>
+              <RotatingText 
+                texts={['Research', 'Presentations', 'Docs', 'Spreadsheets', 'Design', 'Data Analysis', 'Email Management', 'Social Media', 'SEO', 'Lead Generation', 'Customer Support', 'Content Creation', 'Project Management', 'Sales', 'Marketing', 'Analytics']}
+                className="text-secondary"
+              />
             </h1>
             <p className="text-base md:text-lg text-center text-muted-foreground font-medium text-balance leading-relaxed tracking-tight max-w-2xl px-2">
-            Kortix – the simplest way to migrate from human to AI.
+            Deploy AI Workers that run your business autonomously.
             </p>
           </div>
 
@@ -339,7 +380,7 @@ export function HeroSection() {
                 <ChatInput
                   ref={chatInputRef}
                   onSubmit={handleChatInputSubmit}
-                  placeholder="Describe the agent you want to build or the task you want completed..."
+                  placeholder="Give Kortix a task to complete..."
                   loading={isSubmitting}
                   disabled={isSubmitting}
                   value={inputValue}

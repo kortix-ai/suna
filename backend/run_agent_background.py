@@ -7,18 +7,18 @@ import json
 import traceback
 from datetime import datetime, timezone
 from typing import Optional
-from services import redis
-from agent.run import run_agent
-from utils.logger import logger, structlog
+from core.services import redis
+from core.run import run_agent
+from core.utils.logger import logger, structlog
 import dramatiq
 import uuid
-from agentpress.thread_manager import ThreadManager
-from services.supabase import DBConnection
-from services import redis
+from core.agentpress.thread_manager import ThreadManager
+from core.services.supabase import DBConnection
+from core.services import redis
 from dramatiq.brokers.redis import RedisBroker
 import os
-from services.langfuse import langfuse
-from utils.retry import retry
+from core.services.langfuse import langfuse
+from core.utils.retry import retry
 
 import sentry_sdk
 from typing import Dict, Any
@@ -111,7 +111,7 @@ async def run_agent_background(
         "agent_config": agent_config,
     })
     
-    from models import model_manager
+    from core.ai_models import model_manager
     is_tier_default = model_name in ["Kimi K2", "Claude Sonnet 4", "openai/gpt-5-mini"]
     
     if is_tier_default and agent_config and agent_config.get('model'):

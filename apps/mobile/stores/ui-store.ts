@@ -400,6 +400,19 @@ export const useUIStore = create<UIState>()(
       };
     }),
     
+    jumpToLive: () => set((state) => {
+      const snapshots = state.toolViewState.toolCallSnapshots;
+      if (snapshots.length === 0) return state;
+      
+      return {
+        toolViewState: {
+          ...state.toolViewState,
+          currentSnapshotIndex: snapshots.length - 1,
+          navigationMode: 'live',
+        }
+      };
+    }),
+    
     // Legacy time playback functions
     startTimePlayback: (messages) => set((state) => ({
       toolViewState: {

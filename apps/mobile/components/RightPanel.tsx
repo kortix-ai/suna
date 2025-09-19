@@ -239,39 +239,56 @@ export const RightPanel: React.FC<RightPanelProps> = ({ isVisible, onClose, mess
     const renderStatusBadge = () => {
         const isOnLatest = currentSnapshotIndex === totalSnapshots - 1;
 
-        if (isGenerating) {
-            return (
-                <View style={[styles.statusBadge, {
-                    backgroundColor: theme.primary + '10',
-                    borderColor: theme.primary + '30'
-                }]}>
-                    <View style={[styles.statusDot, { backgroundColor: theme.primary }]} />
-                    <Caption style={[styles.statusText, { color: theme.primary }]}>Live</Caption>
-                </View>
-            );
-        } else if (isOnLatest) {
-            return (
-                <View style={[styles.statusBadge, {
-                    backgroundColor: theme.accent + '10',
-                    borderColor: theme.accent + '30'
-                }]}>
-                    <View style={[styles.statusDot, { backgroundColor: theme.accent }]} />
-                    <Caption style={[styles.statusText, { color: theme.accent }]}>Latest</Caption>
-                </View>
-            );
+        if (isLiveMode) {
+            if (isGenerating) {
+                return (
+                    <View style={[styles.statusBadge, {
+                        backgroundColor: theme.primary + '10',
+                        borderColor: theme.primary + '30'
+                    }]}>
+                        <View style={[styles.statusDot, { backgroundColor: theme.primary }]} />
+                        <Caption style={[styles.statusText, { color: theme.primary }]}>Live Updates</Caption>
+                    </View>
+                );
+            } else {
+                return (
+                    <View style={[styles.statusBadge, {
+                        backgroundColor: theme.accent + '10',
+                        borderColor: theme.accent + '30'
+                    }]}>
+                        <View style={[styles.statusDot, { backgroundColor: theme.accent }]} />
+                        <Caption style={[styles.statusText, { color: theme.accent }]}>Latest Tool</Caption>
+                    </View>
+                );
+            }
         } else {
-            return (
-                <TouchableOpacity
-                    style={[styles.statusBadge, {
-                        backgroundColor: theme.muted + '20',
-                        borderColor: theme.border
-                    }]}
-                    onPress={handleJumpToLatest}
-                >
-                    <View style={[styles.statusDot, { backgroundColor: theme.mutedForeground }]} />
-                    <Caption style={[styles.statusText, { color: theme.mutedForeground }]}>Jump to latest</Caption>
-                </TouchableOpacity>
-            );
+            if (isGenerating) {
+                return (
+                    <TouchableOpacity
+                        style={[styles.statusBadge, {
+                            backgroundColor: theme.primary + '10',
+                            borderColor: theme.primary + '30'
+                        }]}
+                        onPress={handleJumpToLatest}
+                    >
+                        <View style={[styles.statusDot, { backgroundColor: theme.primary }]} />
+                        <Caption style={[styles.statusText, { color: theme.primary }]}>Jump to Live</Caption>
+                    </TouchableOpacity>
+                );
+            } else {
+                return (
+                    <TouchableOpacity
+                        style={[styles.statusBadge, {
+                            backgroundColor: theme.muted + '20',
+                            borderColor: theme.border
+                        }]}
+                        onPress={handleJumpToLatest}
+                    >
+                        <View style={[styles.statusDot, { backgroundColor: theme.mutedForeground }]} />
+                        <Caption style={[styles.statusText, { color: theme.mutedForeground }]}>Jump to latest</Caption>
+                    </TouchableOpacity>
+                );
+            }
         }
     };
 

@@ -8,6 +8,7 @@ import {
   Bell,
   ChevronDown,
   ChevronsUpDown,
+  ChevronRight,
   Command,
   CreditCard,
   Key,
@@ -21,6 +22,11 @@ import {
   KeyRound,
   Plug,
   Zap,
+  Shield,
+  DollarSign,
+  Users,
+  BarChart3,
+  FileText,
 } from 'lucide-react';
 import { useAccounts } from '@/hooks/use-accounts';
 import NewTeamForm from '@/components/basejump/new-team-form';
@@ -35,6 +41,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuPortal,
 } from '@/components/ui/dropdown-menu';
 import {
   SidebarMenu,
@@ -63,6 +73,7 @@ export function NavUserWithTeams({
     name: string;
     email: string;
     avatar: string;
+    isAdmin?: boolean;
   };
 }) {
   const router = useRouter();
@@ -290,6 +301,25 @@ export function NavUserWithTeams({
 
               {/* User Settings Section */}
               <DropdownMenuGroup>
+                {user.isAdmin && (
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>
+                      <Shield className="h-4 w-4 mr-2" />
+                      <span>Admin</span>
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuPortal>
+                      <DropdownMenuSubContent>
+                        <DropdownMenuItem asChild>
+                          <Link href="/admin/billing">
+                            <DollarSign className="h-4 w-4" />
+                            Billing Management
+                          </Link>
+                        </DropdownMenuItem>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuPortal>
+                  </DropdownMenuSub>
+                )}
+                
                 <DropdownMenuItem onClick={() => setShowBillingModal(true)}>
                   <Zap className="h-4 w-4" />
                   Upgrade

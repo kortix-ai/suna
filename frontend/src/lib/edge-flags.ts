@@ -27,16 +27,29 @@ export const maintenanceNoticeFlag = flag({
         'maintenance-notice_enabled',
       ]);
 
-      if (!flags['maintenance-notice_enabled']) {
+      if (!flags || Object.keys(flags).length === 0) {
         return { enabled: false } as const;
       }
 
-      const startTime = new Date(flags['maintenance-notice_start-time']);
-      const endTime = new Date(flags['maintenance-notice_end-time']);
+      const enabled = flags['maintenance-notice_enabled'];
+
+      if (!enabled) {
+        return { enabled: false } as const;
+      }
+
+      const startTimeRaw = flags['maintenance-notice_start-time'];
+      const endTimeRaw = flags['maintenance-notice_end-time'];
+
+      if (!startTimeRaw || !endTimeRaw) {
+        return { enabled: false } as const;
+      }
+
+      const startTime = new Date(startTimeRaw);
+      const endTime = new Date(endTimeRaw);
 
       if (isNaN(startTime.getTime()) || isNaN(endTime.getTime())) {
         throw new Error(
-          `Invalid maintenance notice start or end time: ${flags['maintenance-notice_start-time']} or ${flags['maintenance-notice_end-time']}`,
+          `Invalid maintenance notice start or end time: ${startTimeRaw} or ${endTimeRaw}`,
         );
       }
 

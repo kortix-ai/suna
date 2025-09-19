@@ -119,6 +119,7 @@ def load_existing_env_vars():
             "SUPABASE_SERVICE_ROLE_KEY": backend_env.get(
                 "SUPABASE_SERVICE_ROLE_KEY", ""
             ),
+            "SUPABASE_JWT_SECRET": backend_env.get("SUPABASE_JWT_SECRET", ""),
         },
         "daytona": {
             "DAYTONA_API_KEY": backend_env.get("DAYTONA_API_KEY", ""),
@@ -285,8 +286,17 @@ class SetupWizard:
         config_items = []
 
         # Check Supabase
-        if self.env_vars["supabase"]["SUPABASE_URL"]:
-            config_items.append(f"{Colors.GREEN}✓{Colors.ENDC} Supabase")
+        supabase_complete = (
+            self.env_vars["supabase"]["SUPABASE_URL"] and 
+            self.env_vars["supabase"]["SUPABASE_ANON_KEY"] and
+            self.env_vars["supabase"]["SUPABASE_SERVICE_ROLE_KEY"]
+        )
+        supabase_secure = self.env_vars["supabase"]["SUPABASE_JWT_SECRET"]
+        
+        if supabase_complete and supabase_secure:
+            config_items.append(f"{Colors.GREEN}✓{Colors.ENDC} Supabase (secure)")
+        elif supabase_complete:
+            config_items.append(f"{Colors.YELLOW}⚠{Colors.ENDC} Supabase (missing JWT secret)")
         else:
             config_items.append(f"{Colors.YELLOW}○{Colors.ENDC} Supabase")
 
@@ -600,8 +610,12 @@ class SetupWizard:
                 "You'll need a Supabase project. Visit https://supabase.com/dashboard/projects to create one."
             )
             print_info(
-                "In your project settings, go to 'API' to find the required information."
+                "In your project settings, go to 'API' to find the required information:"
             )
+            print_info("  - Project URL (at the top)")
+            print_info("  - anon public key (under 'Project API keys')")
+            print_info("  - service_role secret key (under 'Project API keys')")
+            print_info("  - JWT Secret (under 'JWT Settings' - critical for security!)")
             input("Press Enter to continue once you have your project details...")
 
         self.env_vars["supabase"]["SUPABASE_URL"] = self._get_input(
@@ -621,6 +635,12 @@ class SetupWizard:
             validate_api_key,
             "This does not look like a valid key. It should be at least 10 characters.",
             default_value=self.env_vars["supabase"]["SUPABASE_SERVICE_ROLE_KEY"],
+        )
+        self.env_vars["supabase"]["SUPABASE_JWT_SECRET"] = self._get_input(
+            "Enter your Supabase JWT secret (for signature verification): ",
+            validate_api_key,
+            "This does not look like a valid JWT secret. It should be at least 10 characters.",
+            default_value=self.env_vars["supabase"]["SUPABASE_JWT_SECRET"],
         )
         print_success("Supabase information saved.")
 
@@ -666,9 +686,9 @@ class SetupWizard:
         )
         print_info("Create a snapshot with these exact settings:")
         print_info(
-            f"   - Name:\t\t{Colors.GREEN}kortix/suna:0.1.3.12{Colors.ENDC}")
+            f"   - Name:\t\t{Colors.GREEN}kortix/suna:0.1.3.16{Colors.ENDC}")
         print_info(
-            f"   - Snapshot name:\t{Colors.GREEN}kortix/suna:0.1.3.12{Colors.ENDC}")
+            f"   - Snapshot name:\t{Colors.GREEN}kortix/suna:0.1.3.16{Colors.ENDC}")
         print_info(
             f"   - Entrypoint:\t{Colors.GREEN}/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf{Colors.ENDC}"
         )
@@ -1130,21 +1150,21 @@ class SetupWizard:
 
         try:
             subprocess.run(
-                ["supabase", "--version"],
+                ["npx", "supabase", "--version"],
                 check=True,
                 capture_output=True,
                 shell=IS_WINDOWS,
             )
         except (subprocess.SubprocessError, FileNotFoundError):
             print_error(
-                "Supabase CLI not found. Install it from: https://supabase.com/docs/guides/cli"
+                "Node.js/npm not found or Supabase CLI not available. Make sure Node.js is installed."
             )
             print_info(
                 "You can skip this step and set up the database manually later.")
-            skip_due_to_cli = (
-                input("Skip database setup due to missing CLI? (y/N): ").lower().strip()
+            skip_due_to_node = (
+                input("Skip database setup due to missing Node.js/npm? (y/N): ").lower().strip()
             )
-            if skip_due_to_cli == "y":
+            if skip_due_to_node == "y":
                 print_info("Skipping Supabase database setup.")
                 return
             sys.exit(1)
@@ -1160,11 +1180,11 @@ class SetupWizard:
 
         try:
             print_info("Logging into Supabase CLI...")
-            subprocess.run(["supabase", "login"], check=True, shell=IS_WINDOWS)
+            subprocess.run(["npx", "supabase", "login"], check=True, shell=IS_WINDOWS)
 
             print_info(f"Linking to Supabase project {project_ref}...")
             subprocess.run(
-                ["supabase", "link", "--project-ref", project_ref],
+                ["npx", "supabase", "link", "--project-ref", project_ref],
                 cwd="backend",
                 check=True,
                 shell=IS_WINDOWS,
@@ -1172,7 +1192,7 @@ class SetupWizard:
 
             print_info("Pushing database migrations...")
             subprocess.run(
-                ["supabase", "db", "push"], cwd="backend", check=True, shell=IS_WINDOWS
+                ["npx", "supabase", "db", "push"], cwd="backend", check=True, shell=IS_WINDOWS
             )
             print_success("Database migrations pushed successfully.")
 

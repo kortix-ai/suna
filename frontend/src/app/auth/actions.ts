@@ -1,5 +1,6 @@
 'use server';
 
+import { createTrialCheckout } from '@/lib/api/billing-v2';
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 
@@ -34,6 +35,7 @@ async function sendWelcomeEmail(email: string, name?: string) {
     console.error('Error sending welcome email:', error);
   }
 }
+
 
 export async function signIn(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;

@@ -5,8 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ArrowLeft, Check, AlertCircle, Plus, ExternalLink, ChevronRight, Search, Save, Loader2, User, Settings, Info, Eye, Zap, Wrench } from 'lucide-react';
-import { useCreateComposioProfile, useComposioTools } from '@/hooks/react-query/composio/use-composio';
+import { ArrowLeft, Check, AlertCircle, Plus, ExternalLink, ChevronRight, Search, Save, Loader2, User, Settings, Info, Eye, Zap, Wrench, X, Shield } from 'lucide-react';
+import { useCreateComposioProfile, useComposioTools, useCheckProfileNameAvailability } from '@/hooks/react-query/composio/use-composio';
 import { useComposioProfiles } from '@/hooks/react-query/composio/use-composio-profiles';
 import { useComposioToolkitDetails } from '@/hooks/react-query/composio/use-composio';
 import type { ComposioToolkit, ComposioProfile, AuthConfigField } from '@/hooks/react-query/composio/utils';
@@ -96,11 +96,11 @@ const StepIndicator = ({ currentStep, mode }: { currentStep: Step; mode: 'full' 
   const visibleCurrentIndex = visibleSteps.findIndex(step => step.id === currentStep);
 
   return (
-    <div className="px-8 py-6">
+    <div className="px-6 py-3">
       <div className="flex items-center justify-between relative">
-        <div className="absolute left-0 right-0 top-[14px] h-[2px] bg-muted-foreground/20 -z-10" />
+        <div className="absolute left-0 right-0 top-[10px] h-[1px] bg-muted-foreground/20 -z-10" />
         <motion.div
-          className="absolute left-0 top-[14px] h-[2px] bg-primary -z-10"
+          className="absolute left-0 top-[10px] h-[1px] bg-primary -z-10"
           initial={{ width: 0 }}
           animate={{
             width: `${(visibleCurrentIndex / (visibleSteps.length - 1)) * 100}%`
@@ -117,25 +117,25 @@ const StepIndicator = ({ currentStep, mode }: { currentStep: Step; mode: 'full' 
           return (
             <motion.div
               key={step.id}
-              className="flex flex-col items-center gap-2 relative"
+              className="flex flex-col items-center gap-1 relative"
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ delay: index * 0.1 }}
             >
-              <div className="bg-background p-1 rounded-full">
+              <div className="bg-background p-0.5 rounded-full">
                 <div
                   className={cn(
-                    "w-6 h-6 rounded-full flex items-center justify-center transition-all duration-300 relative",
+                    "w-5 h-5 rounded-full flex items-center justify-center transition-all duration-300 relative",
                     isCompleted && "bg-primary text-primary-foreground",
                     isCurrent && "bg-primary text-primary-foreground shadow-lg shadow-primary/25",
                     isUpcoming && "bg-muted-foreground/20 text-muted-foreground",
-                    isCurrent && "ring-4 ring-primary/20"
+                    isCurrent && "ring-2 ring-primary/20"
                   )}
                 >
                   {isCompleted ? (
-                    <Check className="h-3 w-3" />
+                    <Check className="h-2.5 w-2.5" />
                   ) : (
-                    <div className="h-3 w-3 flex items-center justify-center">
+                    <div className="h-2.5 w-2.5 flex items-center justify-center">
                       {step.icon}
                     </div>
                   )}
@@ -239,6 +239,10 @@ const InitiationFieldInput = ({ field, value, onChange, error }: {
 
 import type { ComposioTool } from '@/hooks/react-query/composio/utils';
 
+const CUSTOM_OAUTH_REQUIRED_APPS = [
+  'zendesk',
+];
+
 const ToolPreviewCard = ({ tool, searchTerm }: {
   tool: ComposioTool;
   searchTerm: string;
@@ -326,6 +330,11 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
   const [initiationFields, setInitiationFields] = useState<Record<string, string>>({});
   const [initiationFieldsErrors, setInitiationFieldsErrors] = useState<Record<string, string>>({});
 
+  // Custom OAuth configuration state
+  const [useCustomAuth, setUseCustomAuth] = useState(false);
+  const [customAuthConfig, setCustomAuthConfig] = useState<Record<string, string>>({});
+  const [customAuthConfigErrors, setCustomAuthConfigErrors] = useState<Record<string, string>>({});
+
   const [selectedTools, setSelectedTools] = useState<string[]>([]);
 
   const { mutate: createProfile, isPending: isCreating } = useCreateComposioProfile();
@@ -334,6 +343,16 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
   const { data: toolkitDetails, isLoading: isLoadingToolkitDetails } = useComposioToolkitDetails(
     app.slug,
     { enabled: open && currentStep === Step.ProfileCreate }
+  );
+  
+  // Profile name availability checking
+  const { data: nameAvailability, isLoading: isCheckingName } = useCheckProfileNameAvailability(
+    app.slug,
+    profileName,
+    { 
+      enabled: open && currentStep === Step.ProfileCreate && profileName.length > 0,
+      debounceMs: 500 
+    }
   );
 
   const existingProfiles = profiles?.filter(p =>
@@ -355,6 +374,7 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
 
   useEffect(() => {
     if (open) {
+      const requiresCustomAuth = CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug);
       setCurrentStep(mode === 'profile-only' ? Step.ProfileCreate : Step.ProfileSelect);
       setProfileName(`${app.name} Profile`);
       setSelectedProfileId('');
@@ -367,8 +387,11 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
       setSelectedTools([]);
       setInitiationFields({});
       setInitiationFieldsErrors({});
+      setUseCustomAuth(requiresCustomAuth);
+      setCustomAuthConfig({});
+      setCustomAuthConfigErrors({});
     }
-  }, [open, app.name, mode]);
+  }, [open, app.name, app.slug, mode]);
 
 
 
@@ -411,6 +434,37 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
     return Object.keys(newErrors).length === 0;
   };
 
+  const handleCustomAuthFieldChange = (fieldName: string, value: string) => {
+    setCustomAuthConfig(prev => ({ ...prev, [fieldName]: value }));
+    if (customAuthConfigErrors[fieldName]) {
+      setCustomAuthConfigErrors(prev => ({ ...prev, [fieldName]: '' }));
+    }
+  };
+
+  const validateCustomAuthFields = (): boolean => {
+    if (!useCustomAuth) return true;
+    
+    const newErrors: Record<string, string> = {};
+    const authConfigDetails = toolkitDetails?.toolkit.auth_config_details?.[0];
+    const authConfigFields = authConfigDetails?.fields?.auth_config_creation;
+
+    if (authConfigFields?.required) {
+      for (const field of authConfigFields.required) {
+        if (field.required) {
+          const value = customAuthConfig[field.name];
+          const isEmpty = !value || value.trim() === '';
+
+          if (isEmpty) {
+            newErrors[field.name] = `${field.displayName} is required`;
+          }
+        }
+      }
+    }
+
+    setCustomAuthConfigErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const handleSaveTools = async () => {
     if (!selectedProfile || !agentId) return;
 
@@ -432,6 +486,15 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
     const currentIndex = getStepIndex(currentStep);
     const newIndex = getStepIndex(newStep);
     setDirection(newIndex > currentIndex ? 'forward' : 'backward');
+    if (newStep === Step.ProfileCreate) {
+      const requiresCustomAuth = CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug);
+      setInitiationFields({});
+      setInitiationFieldsErrors({});
+      setCustomAuthConfig({});
+      setCustomAuthConfigErrors({});
+      setUseCustomAuth(requiresCustomAuth);
+      setProfileName(`${app.name} Profile`);
+    }
     setCurrentStep(newStep);
   };
 
@@ -459,6 +522,16 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
       return;
     }
 
+    if (nameAvailability && !nameAvailability.available) {
+      toast.error('This profile name is already in use. Please choose a different name.');
+      return;
+    }
+
+    if (!validateCustomAuthFields()) {
+      toast.error('Please fill in all required OAuth configuration fields');
+      return;
+    }
+
     if (!validateInitiationFields()) {
       toast.error('Please fill in all required fields');
       return;
@@ -468,6 +541,8 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
       toolkit_slug: app.slug,
       profile_name: profileName,
       initiation_fields: Object.keys(initiationFields).length > 0 ? initiationFields : undefined,
+      custom_auth_config: useCustomAuth && Object.keys(customAuthConfig).length > 0 ? customAuthConfig : undefined,
+      use_custom_auth: useCustomAuth,
     }, {
       onSuccess: (response) => {
         setCreatedProfileId(response.profile_id);
@@ -542,6 +617,13 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
         if (mode === 'profile-only') {
           onOpenChange(false);
         } else {
+          const requiresCustomAuth = CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug);
+          setInitiationFields({});
+          setInitiationFieldsErrors({});
+          setCustomAuthConfig({});
+          setCustomAuthConfigErrors({});
+          setUseCustomAuth(requiresCustomAuth);
+          setProfileName(`${app.name} Profile`);
           navigateToStep(Step.ProfileSelect);
         }
         break;
@@ -593,20 +675,20 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
 
         {currentStep !== Step.ToolsSelection ? (
           <>
-            <DialogHeader className="px-8 pb-2">
-              <div className="flex items-center gap-4">
+            <DialogHeader className="px-6 pb-3">
+              <div className="flex items-center gap-3">
                 {app.logo ? (
-                  <img src={app.logo} alt={app.name} className="w-14 h-14 rounded-xl object-contain bg-muted p-2 border" />
+                  <img src={app.logo} alt={app.name} className="w-10 h-10 rounded-lg object-contain bg-muted p-1.5 border" />
                 ) : (
-                  <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center text-primary font-semibold shadow-sm">
+                  <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center text-primary font-semibold text-sm">
                     {app.name.charAt(0)}
                   </div>
                 )}
                 <div className="flex-1">
-                  <DialogTitle className="text-xl font-semibold">
+                  <DialogTitle className="text-base font-semibold">
                     {stepConfigs.find(config => config.id === currentStep)?.title}
                   </DialogTitle>
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     {stepConfigs.find(config => config.id === currentStep)?.description}
                   </p>
                 </div>
@@ -729,6 +811,14 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                               } else {
                                 setSelectedConnectionType('new');
                                 setSelectedProfileId('new');
+                                // Clear all fields when selecting new connection to prevent stale data
+                                const requiresCustomAuth = CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug);
+                                setInitiationFields({});
+                                setInitiationFieldsErrors({});
+                                setCustomAuthConfig({});
+                                setCustomAuthConfigErrors({});
+                                setUseCustomAuth(requiresCustomAuth);
+                                setProfileName(`${app.name} Profile`);
                               }
                             }}>
                               <CardContent className='p-2'>
@@ -795,8 +885,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                         </AnimatePresence>
                       </div>
                     </div>
-
-                    {/* Action Bar */}
                     <div className="px-6 py-4 border-t border-border/50 bg-muted/20 flex-shrink-0">
                       <div className="flex items-center justify-between">
                         <div className="text-sm text-muted-foreground">
@@ -852,95 +940,314 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                     animate="center"
                     exit="exit"
                     transition={{ duration: 0.3, ease: "easeInOut" }}
-                    className="space-y-6"
+                    className="flex flex-col h-full"
                   >
-                    <div className="space-y-3">
-                      <Label htmlFor="profileName" className="text-sm font-medium">Profile Name</Label>
-                      <Input
-                        id="profileName"
-                        value={profileName}
-                        onChange={(e) => setProfileName(e.target.value)}
-                        placeholder="Enter a name for this profile"
-                        className="text-base"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Choose a memorable name to identify this connection
-                      </p>
-                    </div>
-                    {isLoadingToolkitDetails && (
+                    <div className="flex-1 overflow-y-auto">
                       <div className="space-y-3">
-                        <div className="text-sm text-muted-foreground">Loading connection requirements...</div>
-                        <div className="space-y-2">
-                          <Skeleton className="h-4 w-24" />
-                          <Skeleton className="h-10 w-full" />
-                          <Skeleton className="h-3 w-3/4" />
+                        <div className="space-y-1.5">
+                          <Label htmlFor="profileName" className="text-sm font-medium">
+                            Profile Name
+                          </Label>
+                          <div className="relative">
+                            <Input
+                              id="profileName"
+                              value={profileName}
+                              onChange={(e) => setProfileName(e.target.value)}
+                              placeholder={`e.g., ${app.name} Production`}
+                              className={cn(
+                                "pr-10 h-9",
+                                nameAvailability && !nameAvailability.available && "border-destructive",
+                                nameAvailability && nameAvailability.available && profileName.length > 0 && "border-green-500"
+                              )}
+                            />
+                            <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                              {isCheckingName && profileName.length > 0 && (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                              )}
+                              {!isCheckingName && nameAvailability && profileName.length > 0 && (
+                                <>
+                                  {nameAvailability.available ? (
+                                    <Check className="h-3.5 w-3.5 text-green-500" />
+                                  ) : (
+                                    <X className="h-3.5 w-3.5 text-destructive" />
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          
+                          {nameAvailability && !nameAvailability.available && (
+                            <div className="space-y-1">
+                              <p className="text-xs text-destructive">
+                                This name is already in use
+                              </p>
+                              {nameAvailability.suggestions.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                  {nameAvailability.suggestions.map((suggestion) => (
+                                    <button
+                                      key={suggestion}
+                                      type="button"
+                                      onClick={() => setProfileName(suggestion)}
+                                      className="text-xs px-2 py-0.5 rounded bg-muted hover:bg-muted/80 transition-colors"
+                                    >
+                                      {suggestion}
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          {nameAvailability && nameAvailability.available && profileName.length > 0 && (
+                            <p className="text-xs text-green-600 dark:text-green-400">
+                              Name available
+                            </p>
+                          )}
+                        </div>
+
+                        {!isLoadingToolkitDetails && 
+                         toolkitDetails?.toolkit.connected_account_initiation_fields?.required?.length > 0 && (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-1.5">
+                              <Settings className="h-3.5 w-3.5 text-muted-foreground" />
+                              <Label className="text-sm font-medium">Connection Details</Label>
+                            </div>
+                            {toolkitDetails.toolkit.connected_account_initiation_fields.required.map((field) => {
+                              const fieldType = field.type?.toLowerCase() || 'string';
+                              const isBoolean = fieldType === 'boolean';
+                              const isNumber = fieldType === 'number' || fieldType === 'double';
+                              
+                              return (
+                                <div key={field.name} className="space-y-1">
+                                  <Label htmlFor={field.name} className="text-xs">
+                                    {field.displayName}
+                                    {field.required && <span className="text-destructive ml-1">*</span>}
+                                  </Label>
+                                  
+                                  {isBoolean ? (
+                                    <div className="flex items-center space-x-2">
+                                      <Switch
+                                        id={field.name}
+                                        checked={initiationFields[field.name] === 'true'}
+                                        onCheckedChange={(checked) => 
+                                          handleInitiationFieldChange(field.name, checked ? 'true' : 'false')
+                                        }
+                                      />
+                                      <Label htmlFor={field.name} className="text-xs font-normal">
+                                        {field.description || 'Enable'}
+                                      </Label>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <Input
+                                        id={field.name}
+                                        type={fieldType === 'password' ? 'password' : 
+                                              fieldType === 'email' ? 'email' :
+                                              fieldType === 'url' ? 'url' :
+                                              isNumber ? 'number' : 'text'}
+                                        value={initiationFields[field.name] || ''}
+                                        onChange={(e) => handleInitiationFieldChange(field.name, e.target.value)}
+                                        placeholder={field.default || field.description || `Enter ${field.displayName.toLowerCase()}`}
+                                        className={cn(
+                                          "h-8",
+                                          initiationFieldsErrors[field.name] && "border-destructive"
+                                        )}
+                                        step={isNumber ? "any" : undefined}
+                                      />
+                                      {field.description && !isBoolean && (
+                                        <p className="text-[10px] text-muted-foreground">{field.description}</p>
+                                      )}
+                                    </>
+                                  )}
+                                  
+                                  {initiationFieldsErrors[field.name] && (
+                                    <p className="text-[10px] text-destructive">{initiationFieldsErrors[field.name]}</p>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {toolkitDetails?.toolkit.auth_config_details?.[0]?.fields?.auth_config_creation && (
+                          <div className="space-y-3 border rounded-lg p-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Shield className="h-3.5 w-3.5 text-primary" />
+                                <div>
+                                  <Label htmlFor="custom-auth" className="text-sm font-medium cursor-pointer">
+                                    Custom OAuth App
+                                    {CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug) && (
+                                      <Badge variant="secondary" className="ml-2 text-xs">Required</Badge>
+                                    )}
+                                  </Label>
+                                  <p className="text-xs text-muted-foreground">
+                                    {CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug) 
+                                      ? `${app.name} requires your own OAuth credentials`
+                                      : 'Use your own OAuth credentials'
+                                    }
+                                  </p>
+                                </div>
+                              </div>
+                              <Switch
+                                id="custom-auth"
+                                checked={useCustomAuth}
+                                disabled={CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug)}
+                                onCheckedChange={(checked) => {
+                                  if (CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug)) return;
+                                  setUseCustomAuth(checked);
+                                  if (checked && toolkitDetails?.toolkit.auth_config_details?.[0]?.fields?.auth_config_creation?.optional) {
+                                    const defaults: Record<string, string> = {};
+                                    for (const field of toolkitDetails.toolkit.auth_config_details[0].fields.auth_config_creation.optional) {
+                                      if (field.default) {
+                                        defaults[field.name] = field.default;
+                                      }
+                                    }
+                                    setCustomAuthConfig(prev => ({ ...prev, ...defaults }));
+                                  }
+                                }}
+                              />
+                            </div>
+                              <AnimatePresence>
+                                {useCustomAuth && (
+                                  <motion.div
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: "auto", opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    transition={{ duration: 0.2 }}
+                                    className="overflow-hidden"
+                                  >
+                                    <div className="space-y-2 pt-2 border-t">
+                                      <div className="grid gap-2 sm:grid-cols-2">
+                                        {toolkitDetails.toolkit.auth_config_details[0].fields.auth_config_creation.required?.map((field) => (
+                                            <div key={field.name} className="space-y-1">
+                                              <Label htmlFor={`auth-${field.name}`} className="text-xs">
+                                                {field.displayName}
+                                                <span className="text-destructive ml-1">*</span>
+                                              </Label>
+                                              <Input
+                                                id={`auth-${field.name}`}
+                                                type={field.name.includes('secret') ? 'password' : 'text'}
+                                                value={customAuthConfig[field.name] || ''}
+                                                onChange={(e) => handleCustomAuthFieldChange(field.name, e.target.value)}
+                                                placeholder={`Enter ${field.displayName.toLowerCase()}`}
+                                                className={cn(
+                                                  "h-8 text-xs",
+                                                  customAuthConfigErrors[field.name] && "border-destructive"
+                                                )}
+                                              />
+                                              {customAuthConfigErrors[field.name] && (
+                                                <p className="text-[10px] text-destructive">
+                                                  {customAuthConfigErrors[field.name]}
+                                                </p>
+                                              )}
+                                            </div>
+                                        ))}
+                                          {toolkitDetails.toolkit.auth_config_details[0].fields.auth_config_creation.optional
+                                            ?.filter(field => !['bearer_token', 'access_token'].includes(field.name))
+                                            .map((field) => (
+                                              <div key={field.name} className={cn(
+                                                "space-y-1",
+                                                ['oauth_redirect_uri', 'scopes'].includes(field.name) ? 'sm:col-span-2' : ''
+                                              )}>
+                                                <Label htmlFor={`auth-opt-${field.name}`} className="text-xs">
+                                                  {field.displayName}
+                                                </Label>
+                                                {field.name === 'oauth_redirect_uri' && field.default ? (
+                                                  <div className="flex gap-1">
+                                                    <Input
+                                                      id={`auth-opt-${field.name}`}
+                                                      value={field.default}
+                                                      className="h-8 text-[10px] flex-1"
+                                                      readOnly
+                                                    />
+                                                    <Button
+                                                      type="button"
+                                                      variant="outline"
+                                                      size="sm"
+                                                      className="h-8 px-2 text-xs"
+                                                      onClick={() => {
+                                                        navigator.clipboard.writeText(field.default || '');
+                                                        toast.success('Copied!');
+                                                      }}
+                                                    >
+                                                      Copy
+                                                    </Button>
+                                                  </div>
+                                                ) : (
+                                                  <Input
+                                                    id={`auth-opt-${field.name}`}
+                                                    type={field.name.includes('secret') ? 'password' : 'text'}
+                                                    value={customAuthConfig[field.name] || field.default || ''}
+                                                    onChange={(e) => handleCustomAuthFieldChange(field.name, e.target.value)}
+                                                    placeholder={field.default || `Enter ${field.displayName.toLowerCase()}`}
+                                                    className={cn(
+                                                      "h-8 text-xs",
+                                                      field.name === 'scopes' && "text-[10px]"
+                                                    )}
+                                                  />
+                                                )}
+                                                {field.description && (
+                                                  <p className="text-[10px] text-muted-foreground">
+                                                    {field.description}
+                                                  </p>
+                                                )}
+                                              </div>
+                                            ))}
+                                      </div>
+                                    </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                          </div>
+                        )}
+
+                        {/* Loading State */}
+                        {isLoadingToolkitDetails && (
+                          <div className="space-y-3">
+                            <Skeleton className="h-4 w-32" />
+                            <Skeleton className="h-10 w-full" />
+                            <Skeleton className="h-10 w-full" />
+                          </div>
+                        )}
                         </div>
                       </div>
-                    )}
-                    {!isLoadingToolkitDetails && toolkitDetails?.toolkit.connected_account_initiation_fields && (
-                      <div className="space-y-4">
-                        {(toolkitDetails.toolkit.connected_account_initiation_fields.required?.length ?? 0) > 0 && (
-                          <div className="text-sm font-medium text-muted-foreground">
-                            Connection Requirements
-                          </div>
-                        )}
-                        {(toolkitDetails.toolkit.connected_account_initiation_fields.required?.length ?? 0) > 0 && (
-                          <div className="space-y-3">
-                            {toolkitDetails.toolkit.connected_account_initiation_fields.required.map((field) => (
-                              <InitiationFieldInput
-                                key={field.name}
-                                field={field}
-                                value={initiationFields[field.name] || ''}
-                                onChange={(value) => handleInitiationFieldChange(field.name, value)}
-                                error={initiationFieldsErrors[field.name]}
-                              />
-                            ))}
-                          </div>
-                        )}
-                        {(toolkitDetails.toolkit.connected_account_initiation_fields.optional?.length ?? 0) > 0 && (
-                          <div className="space-y-3">
-                            <div className="text-xs text-muted-foreground">Optional</div>
-                            {toolkitDetails.toolkit.connected_account_initiation_fields.optional.map((field) => (
-                              <InitiationFieldInput
-                                key={field.name}
-                                field={field}
-                                value={initiationFields[field.name] || ''}
-                                onChange={(value) => handleInitiationFieldChange(field.name, value)}
-                                error={initiationFieldsErrors[field.name]}
-                              />
-                            ))}
-                          </div>
-                        )}
+                      <div className='mt-4'>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleBack}
+                            disabled={isCreating}
+                            className="flex-1 h-8"
+                          >
+                            <ArrowLeft className="h-3.5 w-3.5 mr-1" />
+                            Back
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={handleCreateProfile}
+                            disabled={
+                              isCreating || 
+                              isLoadingToolkitDetails || 
+                              !profileName.trim() ||
+                              isCheckingName ||
+                              (nameAvailability && !nameAvailability.available)
+                            }
+                            className="flex-1 h-8"
+                          >
+                            {isCreating ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                                Creating...
+                              </>
+                            ) : (
+                              <>
+                                Connect
+                                <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                              </>
+                            )}
+                          </Button>
+                        </div>
                       </div>
-                    )}
-                    <div className="flex gap-3 pt-2">
-                      <Button
-                        variant="outline"
-                        onClick={handleBack}
-                        disabled={isCreating}
-                        className="flex-1"
-                      >
-                        <ArrowLeft className="h-4 w-4" />
-                        Back
-                      </Button>
-                      <Button
-                        onClick={handleCreateProfile}
-                        disabled={isCreating || isLoadingToolkitDetails || !profileName.trim()}
-                        className="flex-1"
-                      >
-                        {isCreating ? (
-                          <>
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                            Creating...
-                          </>
-                        ) : (
-                          <>
-                            Connect
-                            <ChevronRight className="h-4 w-4" />
-                          </>
-                        )}
-                      </Button>
-                    </div>
                   </motion.div>
                 )}
                 {currentStep === Step.Connecting && (

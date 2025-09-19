@@ -9,6 +9,52 @@ const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 const nonRunningAgentRuns = new Set<string>();
 // Map to keep track of active EventSource streams
 const activeStreams = new Map<string, EventSource>();
+// Map to keep track of safety timeouts
+const safetyTimeouts = new Map<string, number>();
+
+/**
+ * Helper function to safely cleanup EventSource connections
+ * This ensures consistent cleanup and prevents memory leaks
+ */
+const cleanupEventSource = (agentRunId: string, reason?: string): void => {
+  const stream = activeStreams.get(agentRunId);
+  if (stream) {
+    if (reason) {
+      console.log(`[STREAM] Cleaning up EventSource for ${agentRunId}: ${reason}`);
+    }
+    
+    // Close the connection
+    if (stream.readyState !== EventSource.CLOSED) {
+      stream.close();
+    }
+    
+    // Remove from active streams
+    activeStreams.delete(agentRunId);
+  }
+
+  // Clear any associated safety timeout
+  const timeout = safetyTimeouts.get(agentRunId);
+  if (timeout) {
+    clearTimeout(timeout);
+    safetyTimeouts.delete(agentRunId);
+  }
+};
+
+/**
+ * Failsafe cleanup function to prevent memory leaks
+ * Should be called periodically or during app teardown
+ */
+const cleanupAllEventSources = (reason = 'batch cleanup'): void => {
+  console.log(`[STREAM] Running batch cleanup: ${activeStreams.size} active streams`);
+  
+  const streamIds = Array.from(activeStreams.keys());
+  streamIds.forEach(agentRunId => {
+    cleanupEventSource(agentRunId, reason);
+  });
+};
+
+// Export cleanup function for external use
+export { cleanupAllEventSources };
 
 // Custom error for billing issues
 export class BillingError extends Error {
@@ -89,6 +135,36 @@ export class AgentCountLimitError extends Error {
   }
 }
 
+export class ProjectLimitError extends Error {
+  status: number;
+  detail: { 
+    message: string;
+    current_count: number;
+    limit: number;
+    tier_name: string;
+    error_code: string;
+  };
+
+  constructor(
+    status: number,
+    detail: { 
+      message: string;
+      current_count: number;
+      limit: number;
+      tier_name: string;
+      error_code: string;
+      [key: string]: any;
+    },
+    message?: string,
+  ) {
+    super(message || detail.message || `Project Limit Exceeded: ${status}`);
+    this.name = 'ProjectLimitError';
+    this.status = status;
+    this.detail = detail;
+    Object.setPrototypeOf(this, ProjectLimitError.prototype);
+  }
+}
+
 export class NoAccessTokenAvailableError extends Error {
   constructor(message?: string, options?: { cause?: Error }) {
     super(message || 'No access token available', options);
@@ -96,7 +172,6 @@ export class NoAccessTokenAvailableError extends Error {
   name = 'NoAccessTokenAvailableError';
 }
 
-// Type Definitions (moved from potential separate file for clarity)
 export type Project = {
   id: string;
   name: string;
@@ -110,6 +185,8 @@ export type Project = {
     pass?: string;
   };
   is_public?: boolean; // Flag to indicate if the project is public
+  // Icon system field for thread categorization
+  icon_name?: string | null;
   [key: string]: any; // Allow additional properties to handle database fields
 };
 
@@ -279,6 +356,8 @@ export const getProjects = async (): Promise<Project[]> => {
         vnc_preview: '',
         sandbox_url: '',
       },
+      // Include icon field for thread categorization
+      icon_name: project.icon_name,
     }));
 
     return mappedProjects;
@@ -745,6 +824,29 @@ export const startAgent = async (
           throw new AgentRunLimitError(response.status, detail);
       }
 
+      // Check for project limit errors (402 with PROJECT_LIMIT_EXCEEDED error_code)
+      if (response.status === 402) {
+        try {
+          const errorData = await response.json();
+          const detail = errorData?.detail || {};
+          
+          if (detail.error_code === 'PROJECT_LIMIT_EXCEEDED') {
+            throw new ProjectLimitError(response.status, {
+              message: detail.message || 'Project limit exceeded',
+              current_count: detail.current_count || 0,
+              limit: detail.limit || 0,
+              tier_name: detail.tier_name || 'none',
+              error_code: detail.error_code
+            });
+          }
+        } catch (parseError) {
+          if (parseError instanceof ProjectLimitError) {
+            throw parseError;
+          }
+          // If it's not a project limit error, continue to general error handling
+        }
+      }
+
       const errorText = await response
         .text()
         .catch(() => 'No error details available');
@@ -931,8 +1033,7 @@ export const streamAgent = (
 
   const existingStream = activeStreams.get(agentRunId);
   if (existingStream) {
-    existingStream.close();
-    activeStreams.delete(agentRunId);
+    cleanupEventSource(agentRunId, 'replacing existing stream');
   }
 
   try {
@@ -982,7 +1083,19 @@ export const streamAgent = (
 
       activeStreams.set(agentRunId, eventSource);
 
+      // Safety timeout to prevent indefinite connections (30 minutes)
+      const safetyTimeout = setTimeout(() => {
+        console.warn(`[STREAM] Safety timeout reached for ${agentRunId}, cleaning up`);
+        cleanupEventSource(agentRunId, 'safety timeout');
+        callbacks.onError('Connection timeout - stream has been running too long');
+        callbacks.onClose();
+      }, 30 * 60 * 1000); // 30 minutes
+
+      // Store the timeout ID for cleanup
+      safetyTimeouts.set(agentRunId, safetyTimeout as unknown as number);
+
       eventSource.onopen = () => {
+        console.log(`[STREAM] EventSource opened for ${agentRunId}`);
       };
 
       eventSource.onmessage = (event) => {
@@ -1023,8 +1136,7 @@ export const streamAgent = (
             callbacks.onError('Agent run not found in active runs');
 
             // Clean up
-            eventSource.close();
-            activeStreams.delete(agentRunId);
+            cleanupEventSource(agentRunId, 'agent run not found');
             callbacks.onClose();
 
             return;
@@ -1045,8 +1157,7 @@ export const streamAgent = (
             callbacks.onMessage(rawData);
 
             // Clean up
-            eventSource.close();
-            activeStreams.delete(agentRunId);
+            cleanupEventSource(agentRunId, 'agent run completed');
             callbacks.onClose();
 
             return;
@@ -1071,13 +1182,14 @@ export const streamAgent = (
       };
 
       eventSource.onerror = (event) => {
+        console.error(`[STREAM] EventSource error for ${agentRunId}:`, event);
+        
         // Check if the agent is still running
         getAgentStatus(agentRunId)
           .then((status) => {
             if (status.status !== 'running') {
               nonRunningAgentRuns.add(agentRunId);
-              eventSource.close();
-              activeStreams.delete(agentRunId);
+              cleanupEventSource(agentRunId, 'agent not running');
               callbacks.onClose();
             } else {
               // Let the browser handle reconnection for non-fatal errors
@@ -1098,13 +1210,16 @@ export const streamAgent = (
 
             if (isNotFoundErr) {
               nonRunningAgentRuns.add(agentRunId);
-              eventSource.close();
-              activeStreams.delete(agentRunId);
+              cleanupEventSource(agentRunId, 'agent not found');
+              callbacks.onClose();
+            } else {
+              // For other errors, still clean up the stream to prevent memory leaks
+              // but don't add to nonRunningAgentRuns as it might be a temporary network issue
+              console.warn(`[STREAM] Cleaning up stream for ${agentRunId} due to persistent error`);
+              cleanupEventSource(agentRunId, 'persistent error');
+              callbacks.onError(errMsg);
               callbacks.onClose();
             }
-
-            // For other errors, notify but don't close the stream
-            callbacks.onError(errMsg);
           });
       };
     };
@@ -1114,11 +1229,7 @@ export const streamAgent = (
 
     // Return a cleanup function
     return () => {
-      const stream = activeStreams.get(agentRunId);
-      if (stream) {
-        stream.close();
-        activeStreams.delete(agentRunId);
-      }
+      cleanupEventSource(agentRunId, 'manual cleanup');
     };
   } catch (error) {
     console.error(`[STREAM] Error setting up stream for ${agentRunId}:`, error);
@@ -1593,6 +1704,13 @@ export interface SubscriptionStatus {
   // Credit information
   credit_balance?: number;
   can_purchase_credits?: boolean;
+  tier?: {
+    name: string;
+    credits: number;
+    can_purchase_credits: boolean;
+    models?: string[];
+    project_limit?: number;
+  };
 }
 
 export interface CommitmentInfo {
@@ -1783,6 +1901,7 @@ export const createCheckoutSession = async (
     
     const requestBody = { ...request, tolt_referral: window.tolt_referral };
     
+    // Use the new billing v2 API endpoint
     const response = await fetch(`${API_URL}/billing/create-checkout-session`, {
       method: 'POST',
       headers: {
@@ -1806,25 +1925,19 @@ export const createCheckoutSession = async (
     }
 
     const data = await response.json();
-    switch (data.status) {
-      case 'upgraded':
-      case 'updated':
-      case 'downgrade_scheduled':
-      case 'scheduled':
-      case 'no_change':
-        return data;
-      case 'new':
-      case 'checkout_created':
-        if (!data.url) {
-          throw new Error('No checkout URL provided');
-        }
-        return data;
-      default:
-        console.warn(
-          'Unexpected status from createCheckoutSession:',
-          data.status,
-        );
-        return data;
+    if (data.checkout_url) {
+      return {
+        status: 'checkout_created',
+        url: data.checkout_url
+      };
+    } else if (data.success && data.subscription_id) {
+      return {
+        status: 'updated',
+        message: data.message || 'Subscription updated successfully',
+        subscription_id: data.subscription_id
+      };
+    } else {
+      return data;
     }
   } catch (error) {
     console.error('Failed to create checkout session:', error);
@@ -1869,7 +1982,11 @@ export const createPortalSession = async (
       );
     }
 
-    return response.json();
+    const data = await response.json();
+    
+    return {
+      url: data.portal_url
+    };
   } catch (error) {
     console.error('Failed to create portal session:', error);
     handleApiError(error, { operation: 'create portal session', resource: 'billing portal' });
@@ -1880,9 +1997,6 @@ export const createPortalSession = async (
 
 export const getSubscription = async (): Promise<SubscriptionStatus> => {
   try {
-    // Log when subscription API is called for debugging
-    console.log('🔍 [BILLING] Making subscription API call:', new Date().toISOString());
-    
     const supabase = createClient();
     const {
       data: { session },
@@ -1911,7 +2025,19 @@ export const getSubscription = async (): Promise<SubscriptionStatus> => {
       );
     }
 
-    return response.json();
+    const data = await response.json();
+
+    return {
+      subscription: data.subscription ? {
+        ...data.subscription,
+        cancel_at_period_end: data.subscription.cancel_at ? true : false,
+      } : null,
+      current_usage: data.credits?.lifetime_used || 0,
+      cost_limit: data.tier?.credits || 0,
+      credit_balance: data.credits?.balance || 0,
+      can_purchase_credits: data.credits?.can_purchase || false,
+      ...data 
+    } as SubscriptionStatus;
   } catch (error) {
     if (error instanceof NoAccessTokenAvailableError) {
       throw error;
@@ -1934,6 +2060,7 @@ export const getSubscriptionCommitment = async (subscriptionId: string): Promise
       throw new NoAccessTokenAvailableError();
     }
 
+    // Use the new billing v2 API endpoint
     const response = await fetch(`${API_URL}/billing/subscription-commitment/${subscriptionId}`, {
       headers: {
         Authorization: `Bearer ${session.access_token}`,
@@ -2066,6 +2193,7 @@ export const cancelSubscription = async (): Promise<CancelSubscriptionResponse> 
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session.access_token}`,
       },
+      body: JSON.stringify({}),
     });
 
     if (!response.ok) {
@@ -2106,6 +2234,7 @@ export const reactivateSubscription = async (): Promise<ReactivateSubscriptionRe
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session.access_token}`,
       },
+      body: JSON.stringify({}),
     });
 
     if (!response.ok) {

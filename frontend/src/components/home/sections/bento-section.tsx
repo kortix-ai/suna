@@ -9,21 +9,21 @@ export function BentoSection() {
     {
       id: 1,
       content: <FirstBentoAnimation />,
-      title: 'Design with conversation',
+      title: 'Describe your needs',
       description:
-        'Simply describe what you need your agent to accomplish, and Suna will build it for you.',
+        'Tell Kortix what you need and customize your AI worker for your use cases.',
     },
     {
       id: 2,
       content: <SecondBentoAnimation />,
-      title: 'Integrate everything',
+      title: 'Connect 100s of tools',
       description:
         'Connect to your favorite tools and services with our extensive library of integrations.',
     },
     {
       id: 3,
       content: <ThirdBentoAnimation />,
-      title: 'Automate intelligently',
+      title: 'Deploy and personalize',
       description:
         'Watch your agent handle complex tasks and workflows with advanced AI reasoning.',
     },
@@ -38,10 +38,10 @@ export function BentoSection() {
         <div className="max-w-6xl mx-auto border-l border-r border-border">
           <SectionHeader>
             <h2 className="text-3xl md:text-4xl font-medium tracking-tighter text-center text-balance pb-1">
-              Build Your AI Worker in 3 Simple Steps
+              Create a New AI Worker in 3 Simple Steps
             </h2>
             <p className="text-muted-foreground text-center text-balance font-medium">
-              From description to deployment, create powerful AI Workers that work autonomously in minutes.
+              Customize powerful AI Workers to work on your tailored use cases.
             </p>
           </SectionHeader>
 

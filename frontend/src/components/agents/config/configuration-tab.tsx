@@ -362,7 +362,7 @@ export function ConfigurationTab({
                 </div>
               </div>
             </div>
-            {/* <div className="group overflow-hidden rounded-2xl border border-border bg-card transition-all duration-300 hover:border-primary/10" data-tour="triggers-section">
+            <div className="group overflow-hidden rounded-2xl border border-border bg-card transition-all duration-300 hover:border-primary/10" data-tour="triggers-section">
               <button
                 className="w-full p-4 text-left group-hover:bg-muted/30 transition-all duration-300"
                 onClick={() => setOpenAccordion(openAccordion === 'triggers' ? '' : 'triggers')}
@@ -393,7 +393,7 @@ export function ConfigurationTab({
                   </div>
                 </div>
               </div>
-            </div> */}
+            </div>
           </div>
         </div>
       </div>

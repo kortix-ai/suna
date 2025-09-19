@@ -7,7 +7,7 @@ import React, {
   useState,
 } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { BillingError, AgentRunLimitError } from '@/lib/api';
+import { BillingError, AgentRunLimitError, ProjectLimitError } from '@/lib/api';
 import { toast } from 'sonner';
 import { ChatInput } from '@/components/thread/chat-input/chat-input';
 import { useSidebar } from '@/components/ui/sidebar';
@@ -98,6 +98,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const latestMessageRef = useRef<HTMLDivElement>(null);
   const initialLayoutAppliedRef = useRef(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const lastStreamStartedRef = useRef<string | null>(null); // Track last runId we started streaming for
 
   // Sidebar
   const { state: leftSidebarState, setOpen: setLeftSidebarOpen } = useSidebar();
@@ -490,6 +491,25 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
             return;
           }
 
+          if (error instanceof ProjectLimitError) {
+            setBillingData({
+              currentUsage: error.detail.current_count as number,
+              limit: error.detail.limit as number,
+              message:
+                error.detail.message ||
+                `You've reached your project limit (${error.detail.current_count}/${error.detail.limit}). Please upgrade to create more projects.`,
+              accountId: null,
+            });
+            setShowBillingAlert(true);
+
+            setMessages((prev) =>
+              prev.filter(
+                (m) => m.message_id !== optimisticUserMessage.message_id,
+              ),
+            );
+            return;
+          }
+
           throw new Error(`Failed to start agent: ${error?.message || error}`);
         }
 
@@ -637,9 +657,16 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   ]);
 
   useEffect(() => {
+    // Prevent duplicate streaming calls for the same runId
+    if (agentRunId && lastStreamStartedRef.current === agentRunId) {
+      return;
+    }
+
     // Start streaming if user initiated a run (don't wait for initialLoadCompleted for first-time users)
     if (agentRunId && agentRunId !== currentHookRunId && userInitiatedRun) {
+      console.log(`[ThreadComponent] Starting user-initiated stream for runId: ${agentRunId}`);
       startStreaming(agentRunId);
+      lastStreamStartedRef.current = agentRunId; // Track that we started this runId
       setUserInitiatedRun(false); // Reset flag after starting
       return;
     }
@@ -652,7 +679,9 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       !userInitiatedRun &&
       agentStatus === 'running'
     ) {
+      console.log(`[ThreadComponent] Starting auto stream for runId: ${agentRunId}`);
       startStreaming(agentRunId);
+      lastStreamStartedRef.current = agentRunId; // Track that we started this runId
     }
   }, [
     agentRunId,
@@ -673,8 +702,15 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     ) {
       setAgentStatus('idle');
       setAgentRunId(null);
+      // Reset the stream tracking ref when stream completes
+      lastStreamStartedRef.current = null;
     }
   }, [streamHookStatus, agentStatus, setAgentStatus, setAgentRunId]);
+
+  // Reset stream tracking ref when threadId changes  
+  useEffect(() => {
+    lastStreamStartedRef.current = null;
+  }, [threadId]);
 
   // SEO title update
   useEffect(() => {

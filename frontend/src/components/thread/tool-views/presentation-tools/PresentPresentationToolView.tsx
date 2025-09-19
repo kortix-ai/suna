@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Markdown } from '@/components/ui/markdown';
 import { FileAttachment } from '../../file-attachment';
+import { PresentationViewer } from './PresentationViewer';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -34,6 +35,9 @@ import {
 
 interface PresentPresentationToolViewProps extends ToolViewProps {
   onFileClick?: (filePath: string) => void;
+  assistantContent?: string;
+  assistantTimestamp?: string;
+  toolTimestamp?: string;
 }
 
 export function PresentPresentationToolView({
@@ -43,6 +47,9 @@ export function PresentPresentationToolView({
   isStreaming = false,
   onFileClick,
   project,
+  assistantContent,
+  assistantTimestamp,
+  toolTimestamp,
 }: PresentPresentationToolViewProps) {
   // Extract data using the standard utility function
   const { toolResult, arguments: args } = useMemo(() => 
@@ -115,7 +122,7 @@ export function PresentPresentationToolView({
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-lg bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 border border-emerald-500/20">
+            <div className="relative p-2 rounded-xl bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 border border-emerald-500/20">
               <PresentationIcon className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />
             </div>
             <div>
@@ -154,7 +161,7 @@ export function PresentPresentationToolView({
 
       <CardContent className="p-0 flex-1 overflow-hidden relative">
         <ScrollArea className="h-full w-full">
-          <div className="p-4 space-y-6">
+          <div className="p-4 space-y-4">
             {/* Presentation Info */}
             {(presentationName || slideCount) && (
               <div className="bg-white/50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
@@ -175,17 +182,6 @@ export function PresentPresentationToolView({
                       <span className="text-gray-900 dark:text-gray-100">{slideCount} slide{slideCount !== 1 ? 's' : ''}</span>
                     </div>
                   )}
-                </div>
-              </div>
-            )}
-
-            {/* Summary Section */}
-            {summary && (
-              <div className="space-y-2">
-                <div className="bg-white/50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
-                  <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3">
-                    {summary}
-                  </Markdown>
                 </div>
               </div>
             )}
@@ -248,6 +244,40 @@ export function PresentPresentationToolView({
                   </DropdownMenuContent>
                 </DropdownMenu>
             </div>
+
+            {/* Presentation Viewer */}
+            {toolContent && !isStreaming && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Play className="h-4 w-4 text-muted-foreground" />
+                  <h3 className="font-medium">Presentation Preview</h3>
+                </div>
+                <div className="rounded-lg border bg-card h-[500px] overflow-hidden">
+                  <PresentationViewer
+                    assistantContent={assistantContent}
+                    toolContent={toolContent}
+                    assistantTimestamp={assistantTimestamp}
+                    toolTimestamp={toolTimestamp}
+                    isSuccess={isSuccess}
+                    isStreaming={false}
+                    name={name}
+                    project={project}
+                    showHeader={false}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Summary Section */}
+            {summary && (
+              <div className="space-y-2">
+                <div className="bg-white/50 dark:bg-gray-800/50 rounded-xl p-4 border border-gray-200 dark:border-gray-700">
+                  <Markdown className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3">
+                    {summary}
+                  </Markdown>
+                </div>
+              </div>
+            )}
 
             {/* Attachments Section */}
             {attachments && attachments.length > 0 && (

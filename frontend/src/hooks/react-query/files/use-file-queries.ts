@@ -51,7 +51,7 @@ function getContentTypeFromPath(path: string): 'text' | 'blob' | 'json' {
   const ext = path.toLowerCase().split('.').pop() || '';
   
   // Binary file extensions
-  if (/^(xlsx|xls|docx|doc|pptx|ppt|pdf|png|jpg|jpeg|gif|bmp|webp|svg|ico|zip|exe|dll|bin|dat|obj|o|so|dylib|mp3|mp4|avi|mov|wmv|flv|wav|ogg)$/.test(ext)) {
+  if (/^(xlsx|xls|docx|pptx|ppt|pdf|png|jpg|jpeg|gif|bmp|webp|svg|ico|zip|exe|dll|bin|dat|obj|o|so|dylib|mp3|mp4|avi|mov|wmv|flv|wav|ogg)$/.test(ext)) {
     return 'blob';
   }
   
@@ -87,7 +87,7 @@ function getMimeTypeFromPath(path: string): string {
     case 'xlsx': return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
     case 'xls': return 'application/vnd.ms-excel';
     case 'docx': return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-    case 'doc': return 'application/msword';
+    case 'doc': return 'application/json';
     case 'pptx': return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
     case 'ppt': return 'application/vnd.ms-powerpoint';
     case 'pdf': return 'application/pdf';

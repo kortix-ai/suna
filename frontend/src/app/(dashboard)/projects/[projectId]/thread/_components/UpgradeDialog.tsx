@@ -34,7 +34,7 @@ export function UpgradeDialog({ open, onOpenChange, onDismiss }: UpgradeDialogPr
         onOpenChange={onOpenChange}
         icon={Crown}
         title="Unlock the Full Suna Experience"
-        description="You're currently using Suna's free tier with limited capabilities. Upgrade now to access our most powerful AI model."
+        description="Upgrade to unlock Suna's full potential. Access our most powerful AI models and enhanced capabilities."
         theme="primary"
         size="sm"
         preventOutsideClick={true}

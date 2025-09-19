@@ -2,24 +2,30 @@
 
 import { useMemo, useState } from 'react';
 import { BillingModal } from '@/components/billing/billing-modal';
-import {
-  CreditBalanceDisplay,
-  CreditPurchaseModal
-} from '@/components/billing/credit-purchase';
+import { CreditBalanceCard } from '@/components/billing/credit-balance-card';
 import { useAccounts } from '@/hooks/use-accounts';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
-import { useSharedSubscription } from '@/contexts/SubscriptionContext';
-import { isLocalMode } from '@/lib/config';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useSharedSubscription, useSubscriptionContext } from '@/contexts/SubscriptionContext';
+import { isLocalMode, isStagingMode } from '@/lib/config';
 import Link from 'next/link';
+import { useCreatePortalSession, useTriggerTestRenewal } from '@/hooks/react-query/use-billing-v2';
+import { toast } from 'sonner';
+import { TrialManagement } from '@/components/dashboard/trial-management';
+import { useTransactions } from '@/hooks/react-query/billing/use-transactions';
+import { Clock, Infinity, TrendingUp, TrendingDown, RefreshCw, DollarSign } from 'lucide-react';
 
 const returnUrl = process.env.NEXT_PUBLIC_URL as string;
 
 export default function PersonalAccountBillingPage() {
   const { data: accounts, isLoading, error } = useAccounts();
   const [showBillingModal, setShowBillingModal] = useState(false);
-  const [showCreditPurchaseModal, setShowCreditPurchaseModal] = useState(false);
+  const triggerTestRenewal = useTriggerTestRenewal();
+  
+  // Fetch transaction data to get credit breakdown
+  const { data: transactionData } = useTransactions(1, 0); // Only need current balance
 
   const {
     data: subscriptionData,
@@ -76,8 +82,7 @@ export default function PersonalAccountBillingPage() {
         onOpenChange={setShowBillingModal}
         returnUrl={`${returnUrl}/settings/billing`}
       />
-      
-      {/* Billing Status Card */}
+      <TrialManagement />
       <div className="rounded-xl border shadow-sm bg-card p-6">
         <h2 className="text-xl font-semibold mb-4">Billing Status</h2>
 
@@ -103,38 +108,42 @@ export default function PersonalAccountBillingPage() {
           </div>
         ) : (
           <>
-            {subscriptionData && (
-              <div className="mb-6">
-                <div className="rounded-lg border bg-background p-4">
-                  <div className="flex justify-between items-center gap-4">
-                    <span className="text-sm font-medium text-foreground/90">
-                      Agent Usage This Month
+            <div className="mb-6">
+              <CreditBalanceCard 
+                showPurchaseButton={
+                  (subscriptionData?.credits?.can_purchase_credits || false) && 
+                  subscriptionData?.tier?.name === 'tier_25_200'
+                }
+                tierCredits={subscriptionData?.credits?.tier_credits || subscriptionData?.tier?.credits}
+              />
+              {transactionData?.current_balance && (
+                <div className="grid gap-4 grid-cols-1">
+                  <div className="flex items-center justify-between p-3 rounded-lg border bg-orange-50 dark:bg-orange-950/20 border-orange-200 dark:border-orange-800">
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-4 w-4 text-orange-600" />
+                      <div>
+                        <p className="text-sm font-medium">Expiring Credits</p>
+                        <p className="text-xs text-muted-foreground">Resets monthly with subscription</p>
+                      </div>
+                    </div>
+                    <span className="text-lg font-bold text-orange-600">
+                      ${transactionData.current_balance.expiring.toFixed(2)}
                     </span>
-                    <span className="text-sm font-medium">
-                      ${subscriptionData.current_usage?.toFixed(2) || '0'} /{' '}
-                      ${subscriptionData.cost_limit || '0'}
+                  </div>
+                  <div className="flex items-center justify-between p-3 rounded-lg border bg-blue-50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800">
+                    <div className="flex items-center gap-2">
+                      <Infinity className="h-4 w-4 text-blue-600" />
+                      <div>
+                        <p className="text-sm font-medium">Non-Expiring Credits</p>
+                      </div>
+                    </div>
+                    <span className="text-lg font-bold text-blue-600">
+                      ${transactionData.current_balance.non_expiring.toFixed(2)}
                     </span>
-                    <Button variant='outline' asChild className='text-sm'>
-                      <Link href="/settings/usage-logs">
-                        Usage logs
-                      </Link>
-                    </Button>
                   </div>
                 </div>
-              </div>
-            )}
-
-            {/* Credit Balance Display - Only show for users who can purchase credits */}
-            {subscriptionData?.can_purchase_credits && (
-              <div className="mb-6">
-                <CreditBalanceDisplay 
-                  balance={subscriptionData.credit_balance || 0}
-                  canPurchase={subscriptionData.can_purchase_credits}
-                  onPurchaseClick={() => setShowCreditPurchaseModal(true)}
-                />
-              </div>
-            )}
-
+              )}
+            </div>
             <div className='flex justify-center items-center gap-4'>
               <Button
                 variant="outline"
@@ -155,18 +164,6 @@ export default function PersonalAccountBillingPage() {
           </>
         )}
       </div>
-      
-      {/* Credit Purchase Modal */}
-      <CreditPurchaseModal
-        open={showCreditPurchaseModal}
-        onOpenChange={setShowCreditPurchaseModal}
-        currentBalance={subscriptionData?.credit_balance || 0}
-        canPurchase={subscriptionData?.can_purchase_credits || false}
-        onPurchaseComplete={() => {
-          // Optionally refresh subscription data here
-          window.location.reload();
-        }}
-      />
     </div>
   );
 }

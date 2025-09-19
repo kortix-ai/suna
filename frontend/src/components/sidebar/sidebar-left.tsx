@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Bot, Menu, Store, Plus, Zap, ChevronRight, Loader2 } from 'lucide-react';
+import { Bot, Menu, Plus, Zap, ChevronRight } from 'lucide-react';
 
 import { NavAgents } from '@/components/sidebar/nav-agents';
 import { NavUserWithTeams } from '@/components/sidebar/nav-user-with-teams';
@@ -42,7 +42,8 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { usePathname, useSearchParams } from 'next/navigation';
 import posthog from 'posthog-js';
-// Floating mobile menu button component
+import { useDocumentModalStore } from '@/lib/stores/use-document-modal-store';
+
 function FloatingMobileMenuButton() {
   const { setOpenMobile, openMobile } = useSidebar();
   const isMobile = useIsMobile();
@@ -50,7 +51,7 @@ function FloatingMobileMenuButton() {
   if (!isMobile || openMobile) return null;
 
   return (
-    <div className="fixed top-6 left-4 z-50 md:hidden">
+    <div className="fixed top-6 left-4 z-50">
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -79,17 +80,19 @@ export function SidebarLeft({
     name: string;
     email: string;
     avatar: string;
+    isAdmin?: boolean;
   }>({
     name: 'Loading...',
     email: 'loading@example.com',
     avatar: '',
+    isAdmin: false,
   });
 
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [showNewAgentDialog, setShowNewAgentDialog] = useState(false);
+  const { isOpen: isDocumentModalOpen } = useDocumentModalStore();
 
-  // Close mobile menu on page navigation
   useEffect(() => {
     if (isMobile) {
       setOpenMobile(false);
@@ -101,8 +104,14 @@ export function SidebarLeft({
     const fetchUserData = async () => {
       const supabase = createClient();
       const { data } = await supabase.auth.getUser();
-
       if (data.user) {
+        const { data: roleData } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', data.user.id)
+          .in('role', ['admin', 'super_admin']);
+        const isAdmin = roleData && roleData.length > 0;
+        
         setUser({
           name:
             data.user.user_metadata?.name ||
@@ -110,6 +119,7 @@ export function SidebarLeft({
             'User',
           email: data.user.email || '',
           avatar: data.user.user_metadata?.avatar_url || '',
+          isAdmin: isAdmin,
         });
       }
     };
@@ -119,6 +129,8 @@ export function SidebarLeft({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      if (isDocumentModalOpen) return;
+      
       if ((event.metaKey || event.ctrlKey) && event.key === 'b') {
         event.preventDefault();
         setOpen(!state.startsWith('expanded'));
@@ -132,7 +144,7 @@ export function SidebarLeft({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [state, setOpen]);
+  }, [state, setOpen, isDocumentModalOpen]);
 
 
 
@@ -255,7 +267,6 @@ export function SidebarLeft({
               </Collapsible>
             </SidebarMenu>
           )}
-
         </SidebarGroup>
         <NavAgents />
       </SidebarContent>

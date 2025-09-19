@@ -11,6 +11,7 @@ import {
 import {
   BillingError,
   AgentRunLimitError,
+  ProjectLimitError,
 } from '@/lib/api';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { useBillingError } from '@/hooks/useBillingError';
@@ -222,6 +223,8 @@ export function DashboardContent() {
           runningThreadIds: running_thread_ids,
         });
         setShowAgentLimitDialog(true);
+      } else if (error instanceof ProjectLimitError) {
+        setShowPaymentModal(true);
       } else {
         const errorMessage = error instanceof Error ? error.message : 'Operation failed';
         toast.error(errorMessage);
@@ -336,12 +339,13 @@ export function DashboardContent() {
         onOpenChange={setShowPaymentModal}
         showUsageLimitAlert={true}
       />
+      
       <div className="flex flex-col h-screen w-full overflow-hidden">
         <div className="flex-1 overflow-y-auto">
           <div className="min-h-full flex flex-col">
             {(
               <div className="flex justify-center px-4 pt-4 md:pt-8">
-                <ReleaseBadge text="Custom Agents, Playbooks, and more!" link="/agents?tab=my-agents" />
+                <ReleaseBadge className='hover:cursor-pointer' text="Custom Agents, Playbooks, and more!" link="/agents?tab=my-agents" />
               </div>
             )}
             <div className="flex-1 flex items-center justify-center px-4 py-8">
