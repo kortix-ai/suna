@@ -9,7 +9,7 @@ from core.ai_models import model_manager
 
 from .api_models import (
     AgentUpdateRequest, AgentResponse, AgentVersionResponse, AgentsResponse, 
-    PaginationInfo, AgentCreateRequest
+    PaginationInfo, AgentCreateRequest, AgentIconGenerationRequest, AgentIconGenerationResponse
 )
 from . import core_utils as utils
 from .core_utils import _get_version_service, merge_custom_mcps
@@ -825,3 +825,33 @@ async def create_agent(
     except Exception as e:
         logger.error(f"Error creating agent for user {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to create agent: {str(e)}")
+
+
+@router.post("/agents/generate-icon", response_model=AgentIconGenerationResponse)
+async def generate_agent_icon(
+    request: AgentIconGenerationRequest,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    """Generate an appropriate icon and colors for an agent based on its name and description."""
+    logger.debug(f"Generating icon and colors for agent: {request.name}")
+    
+    try:
+        from .core_utils import generate_agent_icon_and_colors
+        
+        result = await generate_agent_icon_and_colors(
+            name=request.name,
+            description=request.description
+        )
+        
+        response = AgentIconGenerationResponse(
+            icon_name=result["icon_name"],
+            icon_color=result["icon_color"],
+            icon_background=result["icon_background"]
+        )
+        
+        logger.debug(f"Generated agent icon: {response.icon_name}, colors: {response.icon_color}/{response.icon_background}")
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error generating agent icon for user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate agent icon: {str(e)}")

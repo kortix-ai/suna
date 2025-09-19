@@ -134,3 +134,16 @@ class AgentImportRequest(BaseModel):
     import_as_new: bool = True  # Always true, only creating new agents is supported
 
 
+class AgentIconGenerationRequest(BaseModel):
+    """Request model for generating agent icon and colors."""
+    name: str
+    description: Optional[str] = None
+
+
+class AgentIconGenerationResponse(BaseModel):
+    """Response model for generated agent icon and colors."""
+    icon_name: str
+    icon_color: str
+    icon_background: str
+
+
