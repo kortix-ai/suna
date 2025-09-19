@@ -979,6 +979,60 @@ export const getAgentStatus = async (agentRunId: string): Promise<AgentRun> => {
   }
 };
 
+export interface AgentIconGenerationRequest {
+  name: string;
+  description?: string;
+}
+
+export interface AgentIconGenerationResponse {
+  icon_name: string;
+  icon_color: string;
+  icon_background: string;
+}
+
+export const generateAgentIcon = async (request: AgentIconGenerationRequest): Promise<AgentIconGenerationResponse> => {
+  try {
+    const supabase = createClient();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      throw new NoAccessTokenAvailableError();
+    }
+
+    const response = await fetch(`${API_URL}/agents/generate-icon`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify(request),
+    });
+
+    if (!response.ok) {
+      const errorText = await response
+        .text()
+        .catch(() => 'No error details available');
+      console.error(
+        `[API] Error generating agent icon: ${response.status} ${response.statusText}`,
+        errorText,
+      );
+
+      throw new Error(
+        `Error generating agent icon: ${response.statusText} (${response.status})`,
+      );
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('[API] Failed to generate agent icon:', error);
+    handleApiError(error, { operation: 'generate agent icon', resource: 'agent icon generation' });
+    throw error;
+  }
+};
+
 export const getAgentRuns = async (threadId: string): Promise<AgentRun[]> => {
   try {
     const supabase = createClient();
