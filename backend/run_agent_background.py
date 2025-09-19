@@ -62,7 +62,7 @@ async def run_agent_background(
     enable_thinking: Optional[bool] = False,
     reasoning_effort: Optional[str] = 'low',
     stream: bool = True,
-    enable_context_manager: bool = True,
+    enable_context_manager: bool = False,
     agent_config: Optional[dict] = None,
     request_id: Optional[str] = None
 ):
@@ -170,11 +170,7 @@ async def run_agent_background(
             logger.error(f"Error in stop signal checker for {agent_run_id}: {e}", exc_info=True)
             stop_signal_received = True # Stop the run if the checker fails
 
-    try:
-        trace = langfuse.trace(name="agent_run", id=agent_run_id, session_id=thread_id, metadata={"project_id": project_id, "instance_id": instance_id})
-    except Exception as e:
-        logger.warning(f"Failed to create Langfuse trace: {e}, continuing without tracing")
-        trace = None
+    trace = langfuse.trace(name="agent_run", id=agent_run_id, session_id=thread_id, metadata={"project_id": project_id, "instance_id": instance_id})
     try:
         # Setup Pub/Sub listener for control signals
         pubsub = await redis.create_pubsub()

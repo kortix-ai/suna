@@ -498,11 +498,7 @@ class AgentRunner:
     
     async def setup(self):
         if not self.config.trace:
-            try:
-                self.config.trace = langfuse.trace(name="run_agent", session_id=self.config.thread_id, metadata={"project_id": self.config.project_id})
-            except Exception as e:
-                logger.warning(f"Failed to create Langfuse trace: {e}, continuing without tracing")
-                self.config.trace = None
+            self.config.trace = langfuse.trace(name="run_agent", session_id=self.config.thread_id, metadata={"project_id": self.config.project_id})
         
         self.thread_manager = ThreadManager(
             trace=self.config.trace, 

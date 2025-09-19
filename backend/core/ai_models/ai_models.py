@@ -52,10 +52,7 @@ class Model:
     priority: int = 0
     recommended: bool = False
     
-    def __post_init__(self):
-        if self.max_output_tokens is None:
-            self.max_output_tokens = min(self.context_window // 4, 32_000)
-        
+    def __post_init__(self):        
         if ModelCapability.CHAT not in self.capabilities:
             self.capabilities.insert(0, ModelCapability.CHAT)
     

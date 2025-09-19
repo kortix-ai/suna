@@ -27,12 +27,9 @@ class ThreadManager:
         self.db = DBConnection()
         self.tool_registry = ToolRegistry()
         
-        # Initialize trace with error handling
-        try:
-            self.trace = trace or langfuse.trace(name="anonymous:thread_manager")
-        except Exception as e:
-            logger.warning(f"Failed to create Langfuse trace: {e}, continuing without tracing")
-            self.trace = None
+        self.trace = trace
+        if not self.trace:
+            self.trace = langfuse.trace(name="anonymous:thread_manager")
             
         self.agent_config = agent_config
         self.response_processor = ResponseProcessor(

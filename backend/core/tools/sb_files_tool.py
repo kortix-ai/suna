@@ -132,11 +132,11 @@ class SandboxFilesTool(SandboxToolsBase):
             parent_dir = '/'.join(full_path.split('/')[:-1])
             if parent_dir:
                 await self.sandbox.fs.create_folder(parent_dir, "755")
-            
+
             # convert to json string if file_contents is a dict
             if isinstance(file_contents, dict):
                 file_contents = json.dumps(file_contents, indent=4)
-            
+
             # Write the file content
             await self.sandbox.fs.upload_file(file_contents.encode(), full_path)
             await self.sandbox.fs.set_file_permissions(full_path, permissions)
@@ -281,7 +281,7 @@ class SandboxFilesTool(SandboxToolsBase):
             full_path = f"{self.workspace_path}/{file_path}"
             if not await self._file_exists(full_path):
                 return self.fail_response(f"File '{file_path}' does not exist. Use create_file to create a new file.")
-            
+
             await self.sandbox.fs.upload_file(file_contents.encode(), full_path)
             await self.sandbox.fs.set_file_permissions(full_path, permissions)
             
