@@ -284,18 +284,11 @@ async def generate_agent_icon_and_colors(name: str, description: str = None) -> 
         # Use pre-loaded Lucide React icons (loaded once at module level)
         relevant_icons = RELEVANT_ICONS
         
-        # Define a curated set of professional background colors for agents
-        background_colors = [
-            "#F3F4F6", "#FEF3C7", "#DBEAFE", "#D1FAE5", "#FCE7F3", "#E0E7FF",
-            "#FEE2E2", "#F3E8FF", "#ECFDF5", "#FDF4FF", "#F0F9FF", "#FFFBEB",
-            "#F9FAFB", "#FDF2F8", "#EFF6FF", "#F0FDF4", "#FEFCE8", "#FEF7ED"
-        ]
-        
-        # Define corresponding text colors that work well with the backgrounds
-        text_colors = [
-            "#374151", "#92400E", "#1E40AF", "#065F46", "#BE185D", "#3730A3",
-            "#DC2626", "#7C3AED", "#047857", "#A21CAF", "#0369A1", "#D97706",
-            "#111827", "#BE185D", "#1D4ED8", "#166534", "#CA8A04", "#EA580C"
+        # Use exact colors from frontend presetColors array
+        frontend_colors = [
+            "#000000", "#FFFFFF", "#6366F1", "#10B981", "#F59E0B", 
+            "#EF4444", "#8B5CF6", "#EC4899", "#14B8A6", "#F97316",
+            "#06B6D4", "#84CC16", "#F43F5E", "#A855F7", "#3B82F6"
         ]
         
         agent_context = f"Agent name: {name}"
@@ -307,21 +300,16 @@ async def generate_agent_icon_and_colors(name: str, description: str = None) -> 
         Available Lucide React icons to choose from:
         {', '.join(relevant_icons)}
 
-        Available background colors (hex codes):
-        {', '.join(background_colors)}
-
-        Available text colors (hex codes):
-        {', '.join(text_colors)}
-
-        Select colors that work well together - the text color should be readable on the background color.
+        Available colors (hex codes):
+        {', '.join(frontend_colors)}
 
         Respond with a JSON object containing:
         - "icon": The most appropriate icon name from the available icons
         - "background_color": A background color hex code from the available colors
-        - "text_color": A text color hex code that contrasts well with the background
+        - "text_color": A text color hex code from the available colors (choose one that contrasts well with the background)
 
         Example response:
-        {{"icon": "bot", "background_color": "#F3F4F6", "text_color": "#374151"}}"""
+        {{"icon": "youtube", "background_color": "#EF4444", "text_color": "#FFFFFF"}}"""
 
         user_message = f"Select the most appropriate icon and color scheme for this AI agent:\n{agent_context}"
         messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_message}]
@@ -338,8 +326,8 @@ async def generate_agent_icon_and_colors(name: str, description: str = None) -> 
         # Default fallback values
         result = {
             "icon_name": "bot",
-            "icon_color": "#374151", 
-            "icon_background": "#F3F4F6"
+            "icon_color": "#FFFFFF", 
+            "icon_background": "#6366F1"
         }
         
         if response and response.get('choices') and response['choices'][0].get('message'):
@@ -356,17 +344,17 @@ async def generate_agent_icon_and_colors(name: str, description: str = None) -> 
                     else:
                         logger.warning(f"LLM selected invalid icon '{icon}', using default 'bot'")
                     
-                    # Extract and validate background color
+                    # Extract and validate colors
                     bg_color = parsed_response.get('background_color', '').strip()
-                    if bg_color and bg_color in background_colors:
+                    text_color = parsed_response.get('text_color', '').strip()
+                    
+                    if bg_color in frontend_colors:
                         result["icon_background"] = bg_color
                         logger.debug(f"LLM selected background color: '{bg_color}'")
                     else:
                         logger.warning(f"LLM selected invalid background color '{bg_color}', using default")
                     
-                    # Extract and validate text color
-                    text_color = parsed_response.get('text_color', '').strip()
-                    if text_color and text_color in text_colors:
+                    if text_color in frontend_colors:
                         result["icon_color"] = text_color
                         logger.debug(f"LLM selected text color: '{text_color}'")
                     else:
@@ -385,11 +373,11 @@ async def generate_agent_icon_and_colors(name: str, description: str = None) -> 
 
     except Exception as e:
         logger.error(f"Error in agent icon generation: {str(e)}\n{traceback.format_exc()}")
-        # Return safe defaults on error
+        # Return safe defaults on error (using Indigo theme)
         return {
             "icon_name": "bot",
-            "icon_color": "#374151", 
-            "icon_background": "#F3F4F6"
+            "icon_color": "#FFFFFF", 
+            "icon_background": "#6366F1"
         }
 
 def merge_custom_mcps(existing_mcps: List[Dict[str, Any]], new_mcps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
