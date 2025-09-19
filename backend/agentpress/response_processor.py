@@ -494,7 +494,7 @@ class ResponseProcessor:
                                  context.result = result
                                  tool_results_buffer.append((execution["tool_call"], result, tool_idx, context))
                                  
-                                 if tool_name in ['ask', 'complete']:
+                                 if tool_name in ['ask', 'complete', 'present_presentation']:
                                      logger.debug(f"Terminating tool '{tool_name}' completed during streaming. Setting termination flag.")
                                      self.trace.event(name="terminating_tool_completed_during_streaming", level="DEFAULT", status_message=(f"Terminating tool '{tool_name}' completed during streaming. Setting termination flag."))
                                      agent_should_terminate = True
@@ -519,7 +519,7 @@ class ResponseProcessor:
                             tool_results_buffer.append((execution["tool_call"], result, tool_idx, context))
                             
                             # Check if this is a terminating tool
-                            if tool_name in ['ask', 'complete']:
+                            if tool_name in ['ask', 'complete', 'present_presentation']:
                                 logger.debug(f"Terminating tool '{tool_name}' completed during streaming. Setting termination flag.")
                                 self.trace.event(name="terminating_tool_completed_during_streaming", level="DEFAULT", status_message=(f"Terminating tool '{tool_name}' completed during streaming. Setting termination flag."))
                                 agent_should_terminate = True
@@ -1703,7 +1703,7 @@ class ResponseProcessor:
             metadata["linked_tool_result_message_id"] = tool_message_id
             
         # <<< ADDED: Signal if this is a terminating tool >>>
-        if context.function_name in ['ask', 'complete']:
+        if context.function_name in ['ask', 'complete', 'present_presentation']:
             metadata["agent_should_terminate"] = "true"
             logger.debug(f"Marking tool status for '{context.function_name}' with termination signal.")
             self.trace.event(name="marking_tool_status_for_termination", level="DEFAULT", status_message=(f"Marking tool status for '{context.function_name}' with termination signal."))

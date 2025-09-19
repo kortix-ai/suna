@@ -686,7 +686,7 @@ class TriggerTool(AgentBuilderBaseTool):
                     provider_id="composio",
                     name=name or slug,
                     config=suna_config,
-                    description=f"Composio event: {slug}"
+                    description=f"{slug}"
                 )
             except Exception as e:
                 logger.error(f"Failed to create Suna trigger: {e}")

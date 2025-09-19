@@ -11,7 +11,6 @@ import hmac
 from services.supabase import DBConnection
 from utils.auth_utils import get_current_user_id_from_jwt
 from utils.logger import logger
-from flags.flags import is_enabled
 from utils.config import config
 from services.billing import check_billing_status, can_use_model
 
@@ -215,8 +214,6 @@ async def sync_triggers_to_version_config(agent_id: str):
 
 @router.get("/providers")
 async def get_providers():
-    if not await is_enabled("agent_triggers"):
-        raise HTTPException(status_code=403, detail="Agent triggers are not enabled")
     
     try:
         provider_service = get_provider_service(db)
@@ -233,8 +230,6 @@ async def get_agent_triggers(
     agent_id: str,
     user_id: str = Depends(get_current_user_id_from_jwt)
 ):
-    if not await is_enabled("agent_triggers"):
-        raise HTTPException(status_code=403, detail="Agent triggers are not enabled")
     
     await verify_agent_access(agent_id, user_id)
     
@@ -269,6 +264,85 @@ async def get_agent_triggers(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@router.get("/all", response_model=List[Dict[str, Any]])
+async def get_all_user_triggers(
+    user_id: str = Depends(get_current_user_id_from_jwt)
+):
+    try:
+        client = await db.client
+        
+        agents_result = await client.table('agents').select(
+            'agent_id, name, description, current_version_id, icon_name, icon_color, icon_background, profile_image_url'
+        ).eq('account_id', user_id).execute()
+        
+        if not agents_result.data:
+            return []
+        
+        agent_info = {}
+        for agent in agents_result.data:
+            agent_name = agent.get('name', 'Untitled Agent')
+            agent_description = agent.get('description', '')
+            
+            agent_info[agent['agent_id']] = {
+                'agent_name': agent_name,
+                'agent_description': agent_description,
+                'icon_name': agent.get('icon_name'),
+                'icon_color': agent.get('icon_color'),
+                'icon_background': agent.get('icon_background'),
+                'profile_image_url': agent.get('profile_image_url')
+            }
+        
+        agent_ids = [agent['agent_id'] for agent in agents_result.data]
+        triggers_result = await client.table('agent_triggers').select('*').in_('agent_id', agent_ids).execute()
+        
+        if not triggers_result.data:
+            return []
+        
+        base_url = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
+        
+        responses = []
+        for trigger in triggers_result.data:
+            agent_id = trigger['agent_id']
+            webhook_url = f"{base_url}/api/triggers/{trigger['trigger_id']}/webhook"
+
+            config = trigger.get('config', {})
+            if isinstance(config, str):
+                try:
+                    import json
+                    config = json.loads(config)
+                except json.JSONDecodeError:
+                    config = {}
+            
+            response_data = {
+                'trigger_id': trigger['trigger_id'],
+                'agent_id': agent_id,
+                'trigger_type': trigger['trigger_type'],
+                'provider_id': trigger.get('provider_id', ''),
+                'name': trigger['name'],
+                'description': trigger.get('description'),
+                'is_active': trigger.get('is_active', False),
+                'webhook_url': webhook_url,
+                'created_at': trigger['created_at'],
+                'updated_at': trigger['updated_at'],
+                'config': config,
+                'agent_name': agent_info.get(agent_id, {}).get('agent_name', 'Untitled Agent'),
+                'agent_description': agent_info.get(agent_id, {}).get('agent_description', ''),
+                'icon_name': agent_info.get(agent_id, {}).get('icon_name'),
+                'icon_color': agent_info.get(agent_id, {}).get('icon_color'),
+                'icon_background': agent_info.get(agent_id, {}).get('icon_background'),
+                'profile_image_url': agent_info.get(agent_id, {}).get('profile_image_url')
+            }
+            
+            responses.append(response_data)
+        responses.sort(key=lambda x: x['updated_at'], reverse=True)
+        
+        return responses
+        
+    except Exception as e:
+        logger.error(f"Error getting all user triggers: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @router.get("/agents/{agent_id}/upcoming-runs", response_model=UpcomingRunsResponse)
 async def get_agent_upcoming_runs(
     agent_id: str,
@@ -276,8 +350,6 @@ async def get_agent_upcoming_runs(
     user_id: str = Depends(get_current_user_id_from_jwt)
 ):
     """Get upcoming scheduled runs for agent triggers"""
-    if not await is_enabled("agent_triggers"):
-        raise HTTPException(status_code=403, detail="Agent triggers are not enabled")
     
     await verify_agent_access(agent_id, user_id)
     
@@ -350,8 +422,6 @@ async def create_agent_trigger(
     user_id: str = Depends(get_current_user_id_from_jwt)
 ):
     """Create a new trigger for an agent"""
-    if not await is_enabled("agent_triggers"):
-        raise HTTPException(status_code=403, detail="Agent triggers are not enabled")
         
     await verify_agent_access(agent_id, user_id)
     
@@ -399,8 +469,6 @@ async def get_trigger(
     user_id: str = Depends(get_current_user_id_from_jwt)
 ):
     """Get a trigger by ID"""
-    if not await is_enabled("agent_triggers"):
-        raise HTTPException(status_code=403, detail="Agent triggers are not enabled")
     
     try:
         trigger_service = get_trigger_service(db)
@@ -440,8 +508,6 @@ async def update_trigger(
     user_id: str = Depends(get_current_user_id_from_jwt)
 ):
     """Update a trigger"""
-    if not await is_enabled("agent_triggers"):
-        raise HTTPException(status_code=403, detail="Agent triggers are not enabled")
     
     try:
         trigger_service = get_trigger_service(db)
@@ -493,8 +559,6 @@ async def delete_trigger(
     user_id: str = Depends(get_current_user_id_from_jwt)
 ):
     """Delete a trigger"""
-    if not await is_enabled("agent_triggers"):
-        raise HTTPException(status_code=403, detail="Agent triggers are not enabled")
     
     try:
         trigger_service = get_trigger_service(db)
@@ -527,8 +591,6 @@ async def trigger_webhook(
     request: Request
 ):
     """Handle incoming webhook for a trigger"""
-    if not await is_enabled("agent_triggers"):
-        raise HTTPException(status_code=403, detail="Agent triggers are not enabled")
     
     try:
         # Simple header-based auth using a shared secret

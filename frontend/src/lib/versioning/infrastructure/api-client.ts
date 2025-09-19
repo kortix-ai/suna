@@ -1,16 +1,10 @@
 import { createClient } from '@/lib/supabase/client';
 import { IApiClient } from '../repositories/interfaces';
-import { isFlagEnabled } from '@/lib/feature-flags';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
 export class SupabaseApiClient implements IApiClient {
   private async getAuthHeaders(): Promise<Record<string, string>> {
-    const agentPlaygroundEnabled = await isFlagEnabled('custom_agents');
-    if (!agentPlaygroundEnabled) {
-      throw new Error('Custom agents is not enabled');
-    }
-    
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
 

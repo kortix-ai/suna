@@ -187,7 +187,7 @@ export function AgentHeader({
           ) : (
             <div
               className={cn(
-                "text-base font-medium text-muted-foreground hover:text-foreground cursor-pointer flex items-center truncate max-w-[300px]",
+                "text-base font-medium text-muted-foreground hover:text-foreground cursor-pointer flex items-center truncate max-w-[400px]",
                 !isNameEditable && isSunaAgent && "cursor-not-allowed opacity-75"
               )}
               onClick={isNameEditable ? startEditing : undefined}

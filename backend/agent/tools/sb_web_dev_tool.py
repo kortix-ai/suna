@@ -13,11 +13,12 @@ from utils.logger import logger
 
 class SandboxWebDevTool(SandboxToolsBase):
     WORKSPACE_PATH = "/workspace"
-    TEMPLATE_DIR = "/opt/templates/next-app"
+    TEMPLATE_DIR = "/opt/templates/vite-react-template"
     DEFAULT_TIMEOUT = 60
     BUILD_TIMEOUT = 1800
     INSTALL_TIMEOUT = 900
-    DEFAULT_PORT = 3000
+    DEFAULT_DEV_PORT = 5173
+    DEFAULT_PREVIEW_PORT = 4173
 
     def __init__(self, project_id: str, thread_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
@@ -87,51 +88,117 @@ class SandboxWebDevTool(SandboxToolsBase):
 
     def _get_package_manager_command(self, package_manager: str, command_type: str, additional_args: str = "") -> str:
         commands = {
-            "pnpm": {
-                "install": f"pnpm install --prefer-offline {additional_args}",
-                "add": f"pnpm add {additional_args}",
-                "add_dev": f"pnpm add -D {additional_args}",
-                "build": "pnpm run build",
-                "dev": "pnpm run dev",
-                "start": "pnpm run start"
-            },
             "npm": {
                 "install": f"npm install --no-audit --no-fund --progress=false {additional_args}",
                 "add": f"npm install --save {additional_args}",
                 "add_dev": f"npm install --save-dev {additional_args}",
                 "build": "npm run build",
                 "dev": "npm run dev",
-                "start": "npm run start"
+                "preview": "npm run preview"
             }
         }
         return commands.get(package_manager, commands["npm"]).get(command_type, "")
 
-    async def _has_optimized_template(self) -> bool:
+    async def _has_template(self) -> bool:
+        """Check if the Vite React template exists"""
         dir_check = await self._exec_sh(f"test -d {self.TEMPLATE_DIR} && echo EXISTS || echo MISSING")
-        if "MISSING" in dir_check.get("output", ""):
-            logger.debug(f"Template directory {self.TEMPLATE_DIR} does not exist")
-            return False
-        
-        checks = [
-            (f"test -f {self.TEMPLATE_DIR}/package.json", "package.json"),
-            (f"test -f {self.TEMPLATE_DIR}/components.json", "components.json"), 
-            (f"test -d {self.TEMPLATE_DIR}/src/components/ui", "src/components/ui directory")
-        ]
-        
-        missing_files = []
-        for check_cmd, file_desc in checks:
-            result = await self._exec_sh(check_cmd)
-            if result.get("exit_code") != 0:
-                missing_files.append(file_desc)
-        
-        if missing_files:
-            logger.debug(f"Template missing files: {', '.join(missing_files)}")
-            ls_result = await self._exec_sh(f"ls -la {self.TEMPLATE_DIR}")
-            logger.debug(f"Template directory contents: {ls_result.get('output', 'Could not list')}")
-            return False
-        
-        logger.debug("Optimized template found and validated")
-        return True
+        return "EXISTS" in dir_check.get("output", "")
+
+    async def _copy_template(self, project_name: str) -> Dict[str, Any]:
+        """Copy the Vite React template to create a new project"""
+        try:
+            if not await self._has_template():
+                return {"success": False, "error": f"Template directory {self.TEMPLATE_DIR} not found"}
+            
+            project_path = self._get_project_path(project_name)
+            
+            # Copy template
+            copy_cmd = f"cp -r {self.TEMPLATE_DIR} {project_path}"
+            copy_result = await self._exec_sh(copy_cmd, timeout=60)
+            
+            if copy_result["exit_code"] != 0:
+                return {"success": False, "error": f"Failed to copy template: {copy_result['output']}"}
+            
+            # Install dependencies in the new project
+            install_cmd = f"cd {project_path} && npm install"
+            install_result = await self._exec_sh(install_cmd, timeout=self.INSTALL_TIMEOUT)
+            
+            if install_result["exit_code"] != 0:
+                return {"success": False, "error": f"Failed to install dependencies: {install_result['output']}"}
+            
+            return {"success": True, "message": f"Vite React project '{project_name}' created successfully from template"}
+            
+        except Exception as e:
+            return {"success": False, "error": f"Exception copying template: {str(e)}"}
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "create_vite_react_project",
+            "description": "Create a new Vite + React project with TypeScript, Tailwind CSS, and shadcn/ui setup from template.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_name": {
+                        "type": "string", 
+                        "description": "Name of the project to create"
+                    }
+                },
+                "required": ["project_name"]
+            }
+        }
+    })
+    @usage_example('''
+        <!-- Create a new Vite React project -->
+        <function_calls>
+        <invoke name="create_vite_react_project">
+        <parameter name="project_name">my-react-app</parameter>
+
+        </invoke>
+        </function_calls>
+        ''')
+    async def create_vite_react_project(self, project_name: str) -> ToolResult:
+        try:
+            await self._ensure_sandbox()
+            
+            # Check if project already exists
+            if await self._project_exists(project_name):
+                return self.fail_response(f"Project '{project_name}' already exists")
+            
+            # Copy template to create the project
+            copy_result = await self._copy_template(project_name)
+            
+            if not copy_result["success"]:
+                return self.fail_response(copy_result["error"])
+            
+            project_path = self._get_project_path(project_name)
+            
+            # Show project structure
+            structure_cmd = f"cd {project_path} && find . -maxdepth 3 -type f | grep -v node_modules | head -20"
+            structure_result = await self._exec_sh(structure_cmd)
+            
+            success_message = f"""
+            ✅ Vite React project '{project_name}' created successfully from template!
+
+            📦 **Stack:** Vite + React + TypeScript + Tailwind CSS + shadcn/ui ready
+
+            📁 **Project Structure:**
+            {structure_result.get('output', 'Could not display structure')}
+
+            🚀 **Next Steps:**
+            1. Start development: Use start_dev_server tool
+            2. Edit files in src/ folder
+            3. Install components: Use generic command tool with `npx shadcn@latest add button`
+            4. Build for production: Use build_project tool
+
+            💡 **Template includes:** Tailwind CSS, shadcn/ui utils, and basic setup ready to go!
+            """
+            
+            return self.success_response(success_message)
+            
+        except Exception as e:
+            logger.error(f"Error creating Vite React project: {str(e)}", exc_info=True)
+            return self.fail_response(f"Error creating project: {str(e)}")
 
     @openapi_schema({
         "type": "function",
@@ -169,7 +236,7 @@ class SandboxWebDevTool(SandboxToolsBase):
 
             tree_cmd = (
                 f"cd {project_path} && find . -maxdepth {max_depth} -type f -o -type d | "
-                "grep -v node_modules | grep -v '\\.next' | grep -v '\\.git' | grep -v 'dist' | sort"
+                "grep -v node_modules | grep -v '\\.git' | grep -v 'dist' | sort"
             )
             tree_result = await self._execute_command(tree_cmd)
             
@@ -186,15 +253,16 @@ class SandboxWebDevTool(SandboxToolsBase):
                 package_info = f"\n\n📋 Package.json info:\n{package_result.get('output', '')}"
 
             return self.success_response(f"""
-📁 Project structure for '{project_name}':
+            📁 Project structure for '{project_name}':
 
-{structure}
-{package_info}
+            {structure}
+            {package_info}
 
-To run this project:
-1. Use install_dependencies if needed
-2. Use start_server (mode='dev' or 'prod')
-3. Use expose_port to make it publicly accessible (start_server returns the preview URL)
+            To run this project:
+            1. Use install_dependencies if needed
+            2. Use start_dev_server for development
+            3. Use build_project then start_preview_server for production preview
+            4. Use expose_port to make it publicly accessible
 """)
 
         except Exception as e:
@@ -210,22 +278,22 @@ To run this project:
                 "type": "object",
                 "properties": {
                     "project_name": {"type": "string"},
-                    "package_manager": {"type": "string", "default": "pnpm"}
+                    "package_manager": {"type": "string", "default": "npm"}
                 },
                 "required": ["project_name"]
             }
         }
     })
     @usage_example('''
-        <!-- Build a Next.js project for production -->
+        <!-- Build a Vite React project for production -->
         <function_calls>
         <invoke name="build_project">
         <parameter name="project_name">my-app</parameter>
-        <parameter name="package_manager">pnpm</parameter>
+        <parameter name="package_manager">npm</parameter>
         </invoke>
         </function_calls>
         ''')
-    async def build_project(self, project_name: str, package_manager: str = "pnpm") -> ToolResult:
+    async def build_project(self, project_name: str, package_manager: str = "npm") -> ToolResult:
         try:
             await self._ensure_sandbox()
             
@@ -245,3 +313,144 @@ To run this project:
         except Exception as e:
             logger.error(f"Error building project: {e}", exc_info=True)
             return self.fail_response(f"Error building project: {e}")
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "start_dev_server",
+            "description": "Start the Vite development server for a project.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_name": {"type": "string"},
+                    "package_manager": {"type": "string", "default": "npm"},
+                    "port": {"type": "integer", "default": 5173}
+                },
+                "required": ["project_name"]
+            }
+        }
+    })
+    @usage_example('''
+        <!-- Start development server -->
+        <function_calls>
+        <invoke name="start_dev_server">
+        <parameter name="project_name">my-app</parameter>
+        <parameter name="port">5173</parameter>
+        </invoke>
+        </function_calls>
+        ''')
+    async def start_dev_server(self, project_name: str, package_manager: str = "npm", port: int = 5173) -> ToolResult:
+        try:
+            await self._ensure_sandbox()
+            
+            if not await self._project_exists(project_name):
+                return self.fail_response(f"Project '{project_name}' not found")
+
+            project_path = self._get_project_path(project_name)
+            session_name = f"dev_{project_name}"
+            
+            # Start dev server in background using tmux
+            dev_cmd = f"{self._get_package_manager_command(package_manager, 'dev')} --host 0.0.0.0 --port {port}"
+            await self._run_in_tmux_background(session_name, f"cd {project_path} && {dev_cmd}")
+            
+            # Wait a moment for server to start
+            await asyncio.sleep(3)
+            
+            return self.success_response(f"""
+🚀 Development server started for '{project_name}'!
+
+📍 **Server Details:**
+- Port: {port}
+- Session: {session_name}
+- URL: http://localhost:{port}
+
+⚡ **Vite Features Active:**
+- Hot Module Replacement (HMR)
+- TypeScript support
+- Fast refresh
+
+🔧 **Next Steps:**
+1. Use expose_port tool with port {port} to make it publicly accessible
+2. Edit files in src/ and see changes instantly
+3. Install shadcn components: `npx shadcn@latest add button card`
+
+💡 **Server is running in background session '{session_name}'**
+""")
+
+        except Exception as e:
+            logger.error(f"Error starting dev server: {e}", exc_info=True)
+            return self.fail_response(f"Error starting dev server: {e}")
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "start_preview_server",
+            "description": "Start the Vite preview server to serve the built production files.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_name": {"type": "string"},
+                    "package_manager": {"type": "string", "default": "npm"},
+                    "port": {"type": "integer", "default": 4173}
+                },
+                "required": ["project_name"]
+            }
+        }
+    })
+    @usage_example('''
+        <!-- Start preview server after building -->
+        <function_calls>
+        <invoke name="start_preview_server">
+        <parameter name="project_name">my-app</parameter>
+        <parameter name="port">4173</parameter>
+        </invoke>
+        </function_calls>
+        ''')
+    async def start_preview_server(self, project_name: str, package_manager: str = "npm", port: int = 4173) -> ToolResult:
+        try:
+            await self._ensure_sandbox()
+            
+            if not await self._project_exists(project_name):
+                return self.fail_response(f"Project '{project_name}' not found")
+
+            project_path = self._get_project_path(project_name)
+            
+            # Check if build exists
+            dist_check = await self._exec_sh(f"test -d {project_path}/dist && echo EXISTS || echo MISSING")
+            if "MISSING" in dist_check.get("output", ""):
+                return self.fail_response(f"No build found for '{project_name}'. Run build_project first.")
+            
+            session_name = f"preview_{project_name}"
+            
+            # Start preview server in background using tmux
+            preview_cmd = f"{self._get_package_manager_command(package_manager, 'preview')} --host 0.0.0.0 --port {port}"
+            await self._run_in_tmux_background(session_name, f"cd {project_path} && {preview_cmd}")
+            
+            # Wait a moment for server to start
+            await asyncio.sleep(3)
+            
+            return self.success_response(f"""
+🎯 Preview server started for '{project_name}'!
+
+📍 **Production Preview:**
+- Port: {port}
+- Session: {session_name}
+- URL: http://localhost:{port}
+
+📦 **Serving optimized build:**
+- Minified assets
+- Production performance
+- Optimized bundle sizes
+
+🔧 **Next Steps:**
+1. Use expose_port tool with port {port} to make it publicly accessible
+2. Test production performance and functionality
+
+💡 **Server is running in background session '{session_name}'**
+""")
+
+        except Exception as e:
+            logger.error(f"Error starting preview server: {e}", exc_info=True)
+            return self.fail_response(f"Error starting preview server: {e}")
+
+# Removed install_dependencies - use the generic command tool instead

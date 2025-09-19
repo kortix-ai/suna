@@ -165,7 +165,7 @@ const IntegrationIcon: React.FC<{
 
 export default function TemplateSharePage() {
   const params = useParams();
-  const shareId = params.shareId as string;
+  const templateId = params.shareId as string; // Note: keeping shareId param name for URL compatibility
   const router = useRouter();
   const { user } = useAuth();
   const { theme, resolvedTheme, setTheme } = useTheme();
@@ -240,16 +240,16 @@ export default function TemplateSharePage() {
   }, [activeSection]);
 
   const { data: template, isLoading, error } = useQuery({
-    queryKey: ['template-share', shareId],
+    queryKey: ['template-public', templateId],
     queryFn: async () => {
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
-      const response = await fetch(`${backendUrl}/templates/share/${shareId}`);
+      const response = await fetch(`${backendUrl}/templates/public/${templateId}`);
       if (!response.ok) {
         throw new Error('Template not found');
       }
       return response.json() as Promise<MarketplaceTemplate>;
     },
-    enabled: !!shareId,
+    enabled: !!templateId,
   });
 
   const rgbToHex = (r: number, g: number, b: number) => {
@@ -585,16 +585,16 @@ export default function TemplateSharePage() {
                   <div className="relative">
                     <div className={cn(
                       "transition-all duration-300 overflow-hidden",
-                      !isPromptExpanded && "max-h-[200px]"
+                      !isPromptExpanded && "max-h-[600px]"
                     )}>
                       <Markdown className="prose prose-sm dark:prose-invert max-w-none">
                         {template.system_prompt || 'No system prompt available'}
                       </Markdown>
-                      {!isPromptExpanded && template.system_prompt && template.system_prompt.length > 500 && (
+                      {!isPromptExpanded && template.system_prompt && template.system_prompt.length > 10000 && (
                         <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-muted/10 to-transparent pointer-events-none" />
                       )}
                     </div>
-                    {template.system_prompt && template.system_prompt.length > 500 && (
+                    {template.system_prompt && template.system_prompt.length > 10000 && (
                       <Button
                         variant="ghost"
                         size="sm"

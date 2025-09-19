@@ -473,7 +473,7 @@ When using the tools:
 
                 # print(f"\n\n\n\n prepared_messages: {prepared_messages}\n\n\n\n")
 
-                prepared_messages = self.context_manager.compress_messages(prepared_messages, llm_model)
+                # prepared_messages = self.context_manager.compress_messages(prepared_messages, llm_model)
 
                 # 5. Make LLM API call
                 logger.debug("Making LLM API call")

@@ -1,5 +1,4 @@
 import { createClient } from "@/lib/supabase/client";
-import { isFlagEnabled } from "@/lib/feature-flags";
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
@@ -169,10 +168,6 @@ export type AgentUpdateRequest = {
 
 export const getAgents = async (params: AgentsParams = {}): Promise<AgentsResponse> => {
   try {
-    const agentPlaygroundEnabled = await isFlagEnabled('custom_agents');
-    if (!agentPlaygroundEnabled) {
-      throw new Error('Custom agents is not enabled');
-    }
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
 
@@ -217,10 +212,6 @@ export const getAgents = async (params: AgentsParams = {}): Promise<AgentsRespon
 
 export const getAgent = async (agentId: string): Promise<Agent> => {
   try {
-    const agentPlaygroundEnabled = await isFlagEnabled('custom_agents');
-    if (!agentPlaygroundEnabled) {
-      throw new Error('Custom agents is not enabled');
-    }
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
 
@@ -251,10 +242,6 @@ export const getAgent = async (agentId: string): Promise<Agent> => {
 
 export const createAgent = async (agentData: AgentCreateRequest): Promise<Agent> => {
   try {
-    const agentPlaygroundEnabled = await isFlagEnabled('custom_agents');
-    if (!agentPlaygroundEnabled) {
-      throw new Error('Custom agents is not enabled');
-    }
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
 
@@ -297,10 +284,6 @@ export const createAgent = async (agentData: AgentCreateRequest): Promise<Agent>
 
 export const updateAgent = async (agentId: string, agentData: AgentUpdateRequest): Promise<Agent> => {
   try {
-    const agentPlaygroundEnabled = await isFlagEnabled('custom_agents');
-    if (!agentPlaygroundEnabled) {
-      throw new Error('Custom agents is not enabled');
-    }
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
 
@@ -332,10 +315,6 @@ export const updateAgent = async (agentId: string, agentData: AgentUpdateRequest
 
 export const deleteAgent = async (agentId: string): Promise<void> => {
   try {
-    const agentPlaygroundEnabled = await isFlagEnabled('custom_agents');
-    if (!agentPlaygroundEnabled) {
-      throw new Error('Custom agents is not enabled');
-    }
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
 
@@ -363,10 +342,6 @@ export const deleteAgent = async (agentId: string): Promise<void> => {
 
 export const getThreadAgent = async (threadId: string): Promise<ThreadAgentResponse> => {
   try {
-    const agentPlaygroundEnabled = await isFlagEnabled('custom_agents');
-    if (!agentPlaygroundEnabled) {
-      throw new Error('Custom agents is not enabled');
-    }
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
 
@@ -399,10 +374,6 @@ export const getThreadAgent = async (threadId: string): Promise<ThreadAgentRespo
 
 export const getAgentVersions = async (agentId: string): Promise<AgentVersion[]> => {
   try {
-    const agentPlaygroundEnabled = await isFlagEnabled('custom_agents');
-    if (!agentPlaygroundEnabled) {
-      throw new Error('Custom agents is not enabled');
-    }
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
 
@@ -434,10 +405,6 @@ export const createAgentVersion = async (
   data: AgentVersionCreateRequest
 ): Promise<AgentVersion> => {
   try {
-    const agentPlaygroundEnabled = await isFlagEnabled('custom_agents');
-    if (!agentPlaygroundEnabled) {
-      throw new Error('Custom agents is not enabled');
-    }
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
 
@@ -472,10 +439,6 @@ export const activateAgentVersion = async (
   versionId: string
 ): Promise<void> => {
   try {
-    const agentPlaygroundEnabled = await isFlagEnabled('custom_agents');
-    if (!agentPlaygroundEnabled) {
-      throw new Error('Custom agents is not enabled');
-    }
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
 
@@ -508,10 +471,6 @@ export const getAgentVersion = async (
   versionId: string
 ): Promise<AgentVersion> => {
   try {
-    const agentPlaygroundEnabled = await isFlagEnabled('custom_agents');
-    if (!agentPlaygroundEnabled) {
-      throw new Error('Custom agents is not enabled');
-    }
     const supabase = createClient();
     const { data: { session } } = await supabase.auth.getSession();
 

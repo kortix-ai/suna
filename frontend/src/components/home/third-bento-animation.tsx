@@ -138,7 +138,7 @@ export function AITaskExecution({
       </div>
 
       {/* Task List */}
-      <AnimatePresence mode="wait">
+      <AnimatePresence>
         {taskConfigs.map((task, index) => (
           <motion.div
             key={index}

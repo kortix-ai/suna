@@ -204,6 +204,109 @@ If you encounter any issues or need to take additional steps, please let me know
     @openapi_schema({
         "type": "function",
         "function": {
+            "name": "present_presentation",
+            "description": "Present the final presentation to the user. Use this tool when: 1) All slides have been created and formatted, 2) The presentation is ready for user review, 3) You want to show the user the complete presentation with all files, 4) The presentation creation process is finished and you want to deliver the final result. IMPORTANT: This tool is specifically for presenting completed presentations, not for intermediate steps. Include the presentation name, slide count, and all relevant file attachments. This tool provides a special UI for presentation delivery.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "presentation_name": {
+                        "type": "string",
+                        "description": "The name of the presentation that was created. This will be displayed prominently to the user."
+                    },
+                    "presentation_path": {
+                        "type": "string",
+                        "description": "The file path where the presentation is located (e.g., 'presentations/my-presentation/'). This helps users locate the files."
+                    },
+                    "slide_count": {
+                        "type": "integer",
+                        "description": "The total number of slides in the presentation. This gives users a quick overview of the presentation size."
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "A summary or description of the presentation to present to the user. Include: 1) What the presentation covers, 2) Key highlights or features, 3) Any important notes about the presentation, 4) How to use or view the presentation."
+                    },
+                    "attachments": {
+                        "anyOf": [
+                            {"type": "string"},
+                            {"items": {"type": "string"}, "type": "array"}
+                        ],
+                        "description": "List of presentation files to attach. Include: 1) All HTML slide files (e.g., 'presentations/my-presentation/slide_01.html'), 2) Any additional presentation files (PDF exports, etc.), 3) Supporting files if relevant. Always use relative paths to /workspace directory."
+                    },
+                    "presentation_url": {
+                        "type": "string",
+                        "description": "(Optional) A direct URL to view the presentation if available. This could be a hosted version or a specific viewing link."
+                    }
+                },
+                "required": ["presentation_name", "presentation_path", "slide_count", "text", "attachments"]
+            }
+        }
+    })
+    @usage_example('''
+        <function_calls>
+        <invoke name="present_presentation">
+        <parameter name="presentation_name">Quarterly Sales Report 2024</parameter>
+        <parameter name="presentation_path">presentations/quarterly-sales-report-2024/</parameter>
+        <parameter name="slide_count">8</parameter>
+        <parameter name="text">I've created a comprehensive quarterly sales report presentation with 8 slides covering:
+1. Executive Summary
+2. Sales Performance Overview
+3. Regional Breakdown
+4. Product Performance
+5. Key Metrics & KPIs
+6. Challenges & Opportunities
+7. Recommendations
+8. Next Steps
+
+The presentation is ready for your review. You can view each slide individually or download the files for offline use.</parameter>
+        <parameter name="attachments">presentations/quarterly-sales-report-2024/slide_01.html,presentations/quarterly-sales-report-2024/slide_02.html,presentations/quarterly-sales-report-2024/slide_03.html,presentations/quarterly-sales-report-2024/slide_04.html,presentations/quarterly-sales-report-2024/slide_05.html,presentations/quarterly-sales-report-2024/slide_06.html,presentations/quarterly-sales-report-2024/slide_07.html,presentations/quarterly-sales-report-2024/slide_08.html</parameter>
+        </invoke>
+        </function_calls>
+        ''')
+    async def present_presentation(
+        self, 
+        presentation_name: str,
+        presentation_path: str,
+        slide_count: int,
+        text: str,
+        attachments: Union[str, List[str]],
+        presentation_url: Optional[str] = None
+    ) -> ToolResult:
+        """Present the final presentation to the user.
+
+        Args:
+            presentation_name: The name of the presentation
+            presentation_path: The file path where the presentation is located
+            slide_count: The total number of slides in the presentation
+            text: A summary or description of the presentation
+            attachments: List of presentation files to attach
+            presentation_url: Optional direct URL to view the presentation
+
+        Returns:
+            ToolResult indicating successful presentation delivery
+        """
+        try:
+            # Convert single attachment to list for consistent handling
+            if attachments and isinstance(attachments, str):
+                attachments = [attachments]
+
+            # Create a structured response with all presentation data
+            result_data = {
+                "presentation_name": presentation_name,
+                "presentation_path": presentation_path,
+                "slide_count": slide_count,
+                "text": text,
+                "attachments": attachments,
+                "presentation_url": presentation_url,
+                "status": "presentation_delivered"
+            }
+                
+            return self.success_response(result_data)
+        except Exception as e:
+            return self.fail_response(f"Error presenting presentation: {str(e)}")
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
             "name": "complete",
             "description": "A special tool to indicate you have completed all tasks and are about to enter complete state. Use ONLY when: 1) All tasks in todo.md are marked complete [x], 2) The user's original request has been fully addressed, 3) There are no pending actions or follow-ups required, 4) You've delivered all final outputs and results to the user. IMPORTANT: This is the ONLY way to properly terminate execution. Never use this tool unless ALL tasks are complete and verified. Always ensure you've provided all necessary outputs and references before using this tool. Include relevant attachments when the completion relates to specific files or resources.",
             "parameters": {

@@ -788,7 +788,7 @@ async def create_composio_trigger(req: CreateComposioTriggerRequest, current_use
             provider_id="composio",
             name=req.name or f"{req.slug}",
             config=suna_config,
-            description=f"Composio event: {req.slug}"
+            description=f"{req.slug}"
         )
 
         # Immediately sync triggers to the current version config

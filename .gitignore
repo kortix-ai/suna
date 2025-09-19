@@ -204,3 +204,21 @@ dump.rdb
 
 # CodeWebChat state and logs (auto-added)
 .cwc/
+
+
+# mobile specific
+apps/mobile/node_modules/
+apps/mobile/.expo/
+apps/mobile/dist/
+apps/mobile/web-build/
+apps/mobile/expo-env.d.ts
+apps/mobile/.metro-health-check*
+apps/mobile/npm-debug.*
+apps/mobile/yarn-debug.*
+apps/mobile/yarn-error.*
+apps/mobile/*.tsbuildinfo
+apps/mobile/.DS_Store
+apps/mobile/*.pem
+apps/mobile/.env
+apps/mobile/.env*.local
+apps/mobile/app-example

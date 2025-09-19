@@ -139,6 +139,8 @@ def _extract_custom_agent_config(agent_data: Dict[str, Any], version_data: Optio
         return config
     
     logger.warning(f"No version data found for custom agent {agent_id}, creating default configuration")
+    logger.debug(f"Agent data keys: {list(agent_data.keys())}")
+    logger.debug(f"Agent current_version_id: {agent_data.get('current_version_id')}")
     
     fallback_config = {
         'agent_id': agent_data['agent_id'],
@@ -224,7 +226,7 @@ def _get_default_agentpress_tools() -> Dict[str, bool]:
         "sb_presentation_outline_tool": True,
         "sb_presentation_tool": True,
 
-        "sb_sheets_tool": True,
+        "sb_sheets_tool": False,
         "sb_web_dev_tool": True,
         "browser_tool": True,
         "data_providers_tool": True,

@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from bs4 import BeautifulSoup, NavigableString
+from bs4 import BeautifulSoup, NavigableString, Comment
 
 # Create router
 router = APIRouter(prefix="/api/html", tags=["visual-editor"])
@@ -78,6 +78,24 @@ async def get_editable_elements(file_path: str):
         # Find all elements that could contain text
         all_elements = soup.find_all(TEXT_ELEMENTS + ['div'])
         
+        # Filter out elements that only contain comments
+        filtered_elements = []
+        for element in all_elements:
+            # Check if element only contains comments
+            only_comments = True
+            for child in element.children:
+                if isinstance(child, Comment):
+                    continue
+                if isinstance(child, NavigableString) and not child.strip():
+                    continue
+                only_comments = False
+                break
+                
+            if not only_comments:
+                filtered_elements.append(element)
+                
+        all_elements = filtered_elements
+        
         for element in all_elements:
             # Strategy 1: Elements with ONLY text content (no child elements)
             if element.string and element.string.strip():
@@ -99,6 +117,9 @@ async def get_editable_elements(file_path: str):
                 has_mixed_content = False
                 # Process each child node
                 for child in list(element.contents):  # Use list() to avoid modification during iteration
+                    # Skip comment nodes (Comments are a subclass of NavigableString)
+                    if isinstance(child, Comment):
+                        continue
                     # Check if it's a NavigableString (raw text) with actual content
                     if (isinstance(child, NavigableString) and child.strip()):
                         
@@ -335,6 +356,24 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
     # Find all elements that could contain text
     all_elements = soup.find_all(TEXT_ELEMENTS + ['div'])
     
+    # Filter out elements that only contain comments
+    filtered_elements = []
+    for element in all_elements:
+        # Check if element only contains comments
+        only_comments = True
+        for child in element.children:
+            if isinstance(child, Comment):
+                continue
+            if isinstance(child, NavigableString) and not child.strip():
+                continue
+            only_comments = False
+            break
+            
+        if not only_comments:
+            filtered_elements.append(element)
+            
+    all_elements = filtered_elements
+    
     for element in all_elements:
         # Strategy 1: Elements with ONLY text content (no child elements)
         if element.string and element.string.strip():
@@ -347,6 +386,9 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
             has_mixed_content = False
             # Process each child node
             for child in list(element.contents):  # Use list() to avoid modification during iteration
+                # Skip comment nodes (Comments are a subclass of NavigableString)
+                if isinstance(child, Comment):
+                    continue
                 # Check if it's a NavigableString (raw text) with actual content
                 if (isinstance(child, NavigableString) and child.strip()):
                     
@@ -611,18 +653,35 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
         /* Editor header */
         .editor-header {
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            background: white;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
             color: #09090b;
             padding: 12px 20px;
             z-index: 9999;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
-            border-bottom: 1px solid #e4e4e7;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
             display: flex;
             justify-content: center;
             align-items: center;
+            cursor: move;
+            user-select: none;
+            transition: all 0.15s ease;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .editor-header:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+        
+        .editor-header.dragging {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateX(-50%) scale(1.05);
         }
         
         .editor-actions {
@@ -655,13 +714,13 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
         }
         
         .nav-btn:disabled {
-            opacity: 0.4;
+            opacity: 1;
             cursor: not-allowed;
         }
         
         .editor-status {
             font-size: 13px;
-            color: #71717a;
+            color: white;
             font-weight: 500;
             margin: 0 8px;
         }
@@ -684,7 +743,7 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
         }
         
         .header-btn:disabled {
-            opacity: 0.4;
+            opacity: 1;
             cursor: not-allowed;
         }
         
@@ -700,7 +759,7 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
         }
         
         body {
-            padding-top: 70px !important;
+            padding-top: 0 !important;
         }
     </style>
     """
@@ -720,6 +779,12 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
                 this.selectedElement = null; // Currently selected element
                 this.changeOrder = []; // Array to track order of changes (for undo)
                 this.undoneChanges = []; // Array to track undone changes (for redo)
+                
+                // Header drag functionality
+                this.isDraggingHeader = false;
+                this.headerDragOffset = {{ x: 0, y: 0 }};
+                this.headerPosition = {{ x: 0, y: 20 }};
+                
                 this.init();
                 this.setupBeforeUnload();
             }}
@@ -875,6 +940,85 @@ def inject_editor_functionality(html_content: str, file_path: str) -> str:
                         this.saveAllChanges();
                     }}
                 }});
+                
+                // Header drag functionality
+                this.setupHeaderDrag();
+            }}
+            
+            setupHeaderDrag() {{
+                document.addEventListener('mousedown', (e) => {{
+                    const header = e.target.closest('.editor-header');
+                    if (header && !e.target.closest('button') && !e.target.closest('.nav-controls')) {{
+                        this.startHeaderDrag(e, header);
+                    }}
+                }});
+                
+                document.addEventListener('mousemove', (e) => {{
+                    if (this.isDraggingHeader) {{
+                        this.handleHeaderDrag(e);
+                    }}
+                }});
+                
+                document.addEventListener('mouseup', () => {{
+                    if (this.isDraggingHeader) {{
+                        this.endHeaderDrag();
+                    }}
+                }});
+            }}
+            
+            startHeaderDrag(e, header) {{
+                e.preventDefault();
+                e.stopPropagation();
+                
+                this.isDraggingHeader = true;
+                this.headerElement = header;
+                
+                // Calculate offset from mouse to element center
+                const rect = header.getBoundingClientRect();
+                this.headerDragOffset.x = e.clientX - (rect.left + rect.width / 2);
+                this.headerDragOffset.y = e.clientY - rect.top;
+                
+                // Add dragging class for visual feedback
+                header.classList.add('dragging');
+                
+                console.log('🖱️ Started dragging header');
+            }}
+            
+            handleHeaderDrag(e) {{
+                if (!this.headerElement) return;
+                
+                const newCenterX = e.clientX - this.headerDragOffset.x;
+                const newY = e.clientY - this.headerDragOffset.y;
+                
+                // Keep within viewport bounds
+                const viewportWidth = window.innerWidth;
+                const viewportHeight = window.innerHeight;
+                const headerRect = this.headerElement.getBoundingClientRect();
+                
+                const constrainedCenterX = Math.max(headerRect.width / 2, Math.min(viewportWidth - headerRect.width / 2, newCenterX));
+                const constrainedY = Math.max(0, Math.min(viewportHeight - headerRect.height, newY));
+                
+                // Apply position
+                this.headerElement.style.left = constrainedCenterX + 'px';
+                this.headerElement.style.top = constrainedY + 'px';
+                this.headerElement.style.transform = 'translateX(-50%) scale(1.05)';
+                
+                // Store position
+                this.headerPosition.x = constrainedCenterX - viewportWidth / 2;
+                this.headerPosition.y = constrainedY;
+            }}
+            
+            endHeaderDrag() {{
+                if (!this.headerElement) return;
+                
+                // Remove dragging class
+                this.headerElement.classList.remove('dragging');
+                this.headerElement.style.transform = 'translateX(-50%)';
+                
+                console.log('🖱️ Ended dragging header');
+                
+                this.isDraggingHeader = false;
+                this.headerElement = null;
             }}
             
             selectElement(element) {{

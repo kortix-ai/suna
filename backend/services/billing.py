@@ -129,7 +129,8 @@ def get_model_pricing(model: str) -> tuple[float, float] | None:
         else:
             logger.debug(f"No pricing for model_to_try='{model_to_try}' (model_obj: {model_obj is not None}, has_pricing: {model_obj.pricing is not None if model_obj else False})")
     
-    logger.warning(f"No pricing found for model '{model}' (resolved: '{resolved_model}')")
+    # Silently return None for unknown models to avoid log spam
+    logger.debug(f"No pricing found for model '{model}' (resolved: '{resolved_model}')")
     return None
 
 
@@ -738,8 +739,12 @@ def calculate_token_cost(prompt_tokens: int, completion_tokens: int, model: str)
         
         # Try to resolve the model name using new model manager first
         from models import model_manager
-        resolved_model = model_manager.resolve_model_id(model)
-        logger.debug(f"Model '{model}' resolved to '{resolved_model}'")
+        try:
+            resolved_model = model_manager.resolve_model_id(model)
+            logger.debug(f"Model '{model}' resolved to '{resolved_model}'")
+        except Exception as resolve_error:
+            logger.warning(f"Could not resolve model ID '{model}': {str(resolve_error)}, returning 0 cost")
+            return 0.0
 
         # Check if we have hardcoded pricing for this model (try both original and resolved)
         hardcoded_pricing = get_model_pricing(model) or get_model_pricing(resolved_model)
@@ -784,11 +789,11 @@ def calculate_token_cost(prompt_tokens: int, completion_tokens: int, model: str)
                         continue
                 
                 if message_cost is None:
-                    logger.warning(f"Could not get pricing for model {model} (resolved: {resolved_model}), returning 0 cost")
+                    logger.debug(f"Could not get pricing for model {model} (resolved: {resolved_model}), returning 0 cost")
                     return 0.0
                     
             except Exception as e:
-                logger.warning(f"Could not get pricing for model {model} (resolved: {resolved_model}): {str(e)}, returning 0 cost")
+                logger.debug(f"Could not get pricing for model {model} (resolved: {resolved_model}): {str(e)}, returning 0 cost")
                 return 0.0
         
         # Apply the TOKEN_PRICE_MULTIPLIER

@@ -138,7 +138,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = ({
 
 
     const renderAgentIcon = (agent: any) => {
-        return <AgentAvatar agentId={agent?.agent_id} size={16} className="h-4 w-4" fallbackName={agent?.name} />;
+        return <AgentAvatar agentId={agent?.agent_id} size={20} className="flex-shrink-0" fallbackName={agent?.name} />;
     };
 
     const displayAgent = useMemo(() => {
@@ -163,14 +163,12 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = ({
                         aria-label="Config menu"
                     >
                         {onAgentSelect ? (
-                            <div className="flex items-center gap-2 max-w-[140px]">
-                                <div className="flex-shrink-0">
-                                    {renderAgentIcon(displayAgent)}
-                                </div>
-                                <span className="truncate text-sm">
+                            <div className="flex items-center gap-2 min-w-0 max-w-[180px]">
+                                {renderAgentIcon(displayAgent)}
+                                <span className="truncate text-sm font-medium">
                                     {displayAgent?.name || 'Kusor'}
                                 </span>
-                                <ChevronDown size={12} className="opacity-60" />
+                                <ChevronDown size={12} className="opacity-60 flex-shrink-0" />
                             </div>
                         ) : (
                             <div className="flex items-center gap-1.5">
@@ -221,12 +219,12 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = ({
                                             className="text-sm px-3 py-2 mx-0 my-0.5 flex items-center justify-between cursor-pointer rounded-lg"
                                             onClick={() => handleAgentClick(agent.agent_id)}
                                         >
-                                            <div className="flex items-center gap-2 min-w-0">
+                                            <div className="flex items-center gap-3 min-w-0 flex-1">
                                                 {renderAgentIcon(agent)}
-                                                <span className="truncate">{agent.name}</span>
+                                                <span className="truncate font-medium">{agent.name}</span>
                                             </div>
                                             {selectedAgentId === agent.agent_id && (
-                                                <Check className="h-4 w-4 text-blue-500" />
+                                                <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
                                             )}
                                         </DropdownMenuItem>
                                     ))}
@@ -380,12 +378,12 @@ const GuestMenu: React.FC<UnifiedConfigMenuProps> = () => {
                             className="h-8 px-2 bg-transparent border-0 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5 cursor-not-allowed opacity-80 pointer-events-none"
                             disabled
                         >
-                            <div className="flex items-center gap-2 max-w-[160px]">
+                            <div className="flex items-center gap-2 min-w-0 max-w-[180px]">
                                 <div className="flex-shrink-0">
-                                    <KortixLogo size={16} />
+                                    <KortixLogo size={20} />
                                 </div>
-                                <span className="truncate text-sm">Kusor</span>
-                                <ChevronDown size={12} className="opacity-60" />
+                                <span className="truncate text-sm font-medium">Kusor</span>
+                                <ChevronDown size={12} className="opacity-60 flex-shrink-0" />
                             </div>
                         </Button>
                     </span>

@@ -453,6 +453,47 @@ async def get_my_templates(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@router.get("/public/{template_id}", response_model=TemplateResponse)
+async def get_public_template(template_id: str):
+    """Get a public template by ID without authentication"""
+    try:
+        logger.info(f"Attempting to fetch public template: {template_id}")
+        
+        # Validate template_id format (should be UUID)
+        if not template_id or len(template_id) < 10:
+            logger.warning(f"Invalid template_id format: {template_id}")
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        template_service = get_template_service(db)
+        
+        try:
+            template = await template_service.get_template(template_id)
+        except Exception as db_error:
+            logger.error(f"Database error getting template {template_id}: {db_error}")
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        if not template:
+            logger.warning(f"Template {template_id} not found in database")
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        logger.info(f"Template {template_id} found, is_public: {template.is_public}")
+        
+        if not template.is_public:
+            logger.warning(f"Template {template_id} is not public (is_public={template.is_public})")
+            raise HTTPException(status_code=404, detail="Template not found")
+        
+        logger.info(f"Successfully returning public template {template_id}: {template.name}")
+        
+        return TemplateResponse(**format_template_for_response(template))
+        
+    except HTTPException as http_exc:
+        # Re-raise HTTP exceptions as-is
+        raise http_exc
+    except Exception as e:
+        logger.error(f"Unexpected error getting public template {template_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @router.get("/{template_id}", response_model=TemplateResponse)
 async def get_template(
     template_id: str,
@@ -475,89 +516,4 @@ async def get_template(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-class CreateShareLinkResponse(BaseModel):
-    share_id: str
-    share_url: str
-
-
-class ShareLinkInfo(BaseModel):
-    share_id: str
-    template_id: str
-    created_at: str
-    views_count: int
-    last_viewed_at: Optional[str]
-    share_url: str
-
-
-@router.post("/{template_id}/share", response_model=CreateShareLinkResponse)
-async def create_share_link(
-    template_id: str,
-    user_id: str = Depends(get_current_user_id_from_jwt)
-):
-    try:
-        template_service = get_template_service(db)
-        share_id = await template_service.create_share_link(template_id, user_id)
-        
-        share_url = f"/marketplace/templates/{share_id}"
-        
-        logger.info(f"Created share link {share_id} for template {template_id} by user {user_id}")
-        
-        return CreateShareLinkResponse(
-            share_id=share_id,
-            share_url=share_url
-        )
-        
-    except TemplateNotFoundError:
-        raise HTTPException(status_code=404, detail="Template not found")
-    except TemplateAccessDeniedError:
-        raise HTTPException(status_code=403, detail="You can only create share links for your own templates")
-    except Exception as e:
-        logger.error(f"Error creating share link for template {template_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-
-@router.get("/share/{share_id}", response_model=TemplateResponse)
-async def get_template_by_share_id(share_id: str):
-    try:
-        template_service = get_template_service(db)
-        template = await template_service.get_template_by_share_id(share_id)
-        
-        if not template:
-            raise HTTPException(status_code=404, detail="Share link not found or expired")
-        
-        logger.debug(f"Accessed template via share link {share_id}")
-        
-        return TemplateResponse(**format_template_for_response(template))
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting template by share ID {share_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-
-@router.get("/my/share-links", response_model=List[ShareLinkInfo])
-async def get_my_share_links(
-    user_id: str = Depends(get_current_user_id_from_jwt)
-):
-    try:
-        template_service = get_template_service(db)
-        share_links = await template_service.get_share_links_for_user(user_id)
-        
-        result = []
-        for link in share_links:
-            result.append(ShareLinkInfo(
-                share_id=link['share_id'],
-                template_id=link['template_id'],
-                created_at=link['created_at'],
-                views_count=link.get('views_count', 0),
-                last_viewed_at=link.get('last_viewed_at'),
-                share_url=f"/marketplace/templates/{link['share_id']}"
-            ))
-        
-        logger.debug(f"Retrieved {len(result)} share links for user {user_id}")
-        return result
-        
-    except Exception as e:
-        logger.error(f"Error getting share links for user {user_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error") 
+# Share link functionality removed - now using direct template ID URLs for simplicity 

@@ -80,7 +80,8 @@ Backend keys (by purpose):
 |               | TRIGGER_WEBHOOK_SECRET        |                              Recommended | -                          | Verifies inbound triggers                                           |
 | Billing       | STRIPE\_\*                    |                                       No | -                          | Only if you enable billing                                          |
 | Admin         | KORTIX_ADMIN_API_KEY          |                                       No | -                          | Protects admin APIs                                                 |
-| Integrations  | COMPOSIO\_\*                  |                                       No | -                          | Optional Composio integration                                       |
+| Integrations  | COMPOSIO_API_KEY              |                                       No | -                          | Optional Composio integration for tool connections                  |
+|               | COMPOSIO_WEBHOOK_SECRET       |                                       No | -                          | Optional Composio webhook secret                                    |
 
 Frontend keys:
 

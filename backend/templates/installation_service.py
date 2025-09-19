@@ -390,9 +390,12 @@ class InstallationService:
             agentpress_tools = tools.get('agentpress', {})
             model = agent_config.get('model')
             
-            from agent.versioning.version_service import get_version_service
+            logger.debug(f"Creating initial version for agent {agent_id} with system_prompt: {system_prompt[:100]}...")
+            logger.debug(f"Agent config tools: agentpress={len(agentpress_tools)}, mcp={len(configured_mcps)}, custom_mcp={len(custom_mcps)}")
+            
+            from agent.handlers.versioning.version_service import get_version_service
             version_service = await get_version_service()
-            await version_service.create_version(
+            version = await version_service.create_version(
                 agent_id=agent_id,
                 user_id=user_id,
                 system_prompt=system_prompt,
@@ -404,10 +407,19 @@ class InstallationService:
                 change_description="Initial version from template"
             )
             
-            logger.debug(f"Created initial version for agent {agent_id}")
+            logger.info(f"Successfully created initial version {version.version_id} for agent {agent_id}")
+            
+            # Verify the agent was updated with current_version_id
+            client = await self._db.client
+            agent_check = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).execute()
+            if agent_check.data and agent_check.data[0].get('current_version_id'):
+                logger.debug(f"Agent {agent_id} current_version_id updated to: {agent_check.data[0]['current_version_id']}")
+            else:
+                logger.error(f"Agent {agent_id} current_version_id was not updated after version creation!")
             
         except Exception as e:
-            logger.warning(f"Failed to create initial version for agent {agent_id}: {e}")
+            logger.error(f"Failed to create initial version for agent {agent_id}: {e}", exc_info=True)
+            raise  # Re-raise the exception to ensure installation fails if version creation fails
     
     async def _restore_workflows(self, agent_id: str, template_config: Dict[str, Any]) -> None:
         workflows = template_config.get('workflows', [])

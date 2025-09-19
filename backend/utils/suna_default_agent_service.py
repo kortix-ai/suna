@@ -216,17 +216,3 @@ class SunaDefaultAgentService:
             logger.error(f"Failed to delete agent {agent_id}: {e}")
             raise
 
-    # Legacy methods for backward compatibility
-    async def sync_all_suna_agents(self) -> Dict[str, Any]:
-        """Legacy method - no longer needed as config is always current."""
-        logger.warning("sync_all_suna_agents is deprecated - Suna config is always current")
-        return {
-            "updated_count": 0,
-            "failed_count": 0,
-            "details": ["Sync not needed - Suna agents always use current config"]
-        }
-    
-    async def update_all_suna_agents(self, target_version: Optional[str] = None) -> Dict[str, Any]:
-        """Legacy method - no longer needed as config is always current."""
-        logger.warning("update_all_suna_agents is deprecated - Suna config is always current")
-        return await self.sync_all_suna_agents() 

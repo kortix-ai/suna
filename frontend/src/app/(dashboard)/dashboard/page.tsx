@@ -3,7 +3,6 @@ import { DashboardContent } from "../../../components/dashboard/dashboard-conten
 import { BackgroundAALChecker } from "@/components/auth/background-aal-checker";
 import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
-import { isFlagEnabled } from "@/lib/feature-flags";
 
 export default async function DashboardPage() {
   return (

@@ -23,7 +23,6 @@ from agent import api as agent_api
 
 from sandbox import api as sandbox_api
 from services import billing as billing_api
-from flags import api as feature_flags_api
 from services import transcription as transcription_api
 import sys
 from services import email_api
@@ -159,7 +158,6 @@ api_router = APIRouter()
 api_router.include_router(agent_api.router)
 api_router.include_router(sandbox_api.router)
 api_router.include_router(billing_api.router)
-api_router.include_router(feature_flags_api.router)
 api_router.include_router(api_keys_api.router)
 
 from mcp_module import api as mcp_api
@@ -181,15 +179,14 @@ api_router.include_router(triggers_api.router)
 from pipedream import api as pipedream_api
 api_router.include_router(pipedream_api.router)
 
-# MFA functionality moved to frontend
-
-
-
 from admin import api as admin_api
 api_router.include_router(admin_api.router)
 
 from composio_integration import api as composio_api
 api_router.include_router(composio_api.router)
+
+from google.google_slides_api import router as google_slides_router
+api_router.include_router(google_slides_router)
 
 @api_router.get("/health")
 async def health_check():

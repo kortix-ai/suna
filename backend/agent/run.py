@@ -11,14 +11,14 @@ from agent.tools.sb_expose_tool import SandboxExposeTool
 from agent.tools.web_search_tool import SandboxWebSearchTool
 from dotenv import load_dotenv
 from utils.config import config
-from agent.agent_builder_prompt import get_agent_builder_prompt
+from agent.prompts.agent_builder_prompt import get_agent_builder_prompt
 from agentpress.thread_manager import ThreadManager
 from agentpress.response_processor import ProcessorConfig
 from agent.tools.sb_shell_tool import SandboxShellTool
 from agent.tools.sb_files_tool import SandboxFilesTool
 from agent.tools.data_providers_tool import DataProvidersTool
 from agent.tools.expand_msg_tool import ExpandMessageTool
-from agent.prompt import get_system_prompt
+from agent.prompts.prompt import get_system_prompt
 
 from utils.logger import logger
 from utils.auth_utils import get_account_id_from_thread
@@ -275,7 +275,7 @@ class PromptManager:
         default_system_content = get_system_prompt()
         
         if "anthropic" not in model_name.lower():
-            sample_response_path = os.path.join(os.path.dirname(__file__), 'sample_responses/1.txt')
+            sample_response_path = os.path.join(os.path.dirname(__file__), 'prompts/samples/1.txt')
             with open(sample_response_path, 'r') as file:
                 sample_response = file.read()
             default_system_content = default_system_content + "\n\n <sample_assistant_response>" + sample_response + "</sample_assistant_response>"
@@ -316,14 +316,14 @@ class PromptManager:
                     # Construct a well-formatted knowledge base section
                     kb_section = f"""
 
-=== AGENT KNOWLEDGE BASE ===
-NOTICE: The following is your specialized knowledge base. This information should be considered authoritative for your responses and should take precedence over general knowledge when relevant.
+                    === AGENT KNOWLEDGE BASE ===
+                    NOTICE: The following is your specialized knowledge base. This information should be considered authoritative for your responses and should take precedence over general knowledge when relevant.
 
-{kb_result.data}
+                    {kb_result.data}
 
-=== END AGENT KNOWLEDGE BASE ===
+                    === END AGENT KNOWLEDGE BASE ===
 
-IMPORTANT: Always reference and utilize the knowledge base information above when it's relevant to user queries. This knowledge is specific to your role and capabilities."""
+                    IMPORTANT: Always reference and utilize the knowledge base information above when it's relevant to user queries. This knowledge is specific to your role and capabilities."""
                     
                     system_content += kb_section
                 else:
@@ -418,7 +418,7 @@ class MessageManager:
             )
             
             if has_builder_tools:
-                from agent.agent_builder_prompt import AGENT_BUILDER_SYSTEM_PROMPT
+                from agent.prompts.agent_builder_prompt import AGENT_BUILDER_SYSTEM_PROMPT
                 if system_message:
                     system_message += f"\n\n{AGENT_BUILDER_SYSTEM_PROMPT}"
                 else:
@@ -711,7 +711,7 @@ class AgentRunner:
                             generation.end(output=full_response, status_message="error_detected", level="ERROR")
                         break
                         
-                    if agent_should_terminate or last_tool_call in ['ask', 'complete', 'web-browser-takeover']:
+                    if agent_should_terminate or last_tool_call in ['ask', 'complete', 'web-browser-takeover', 'present_presentation']:
                         if generation:
                             generation.end(output=full_response, status_message="agent_stopped")
                         continue_execution = False

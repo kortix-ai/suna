@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { MarketplaceTemplate } from '@/components/agents/installation/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { AgentIconAvatar } from '@/components/agents/config/agent-icon-avatar';
 import { 
   Bot, 
   Download, 
@@ -119,13 +119,26 @@ export const AgentTemplateLandingPage: React.FC<AgentTemplateLandingPageProps> =
     setIsInstalling(true);
     try {
       const response = await backendApi.post(`/api/templates/${template.id}/install`);
-      if (response.data.agent_id) {
+      
+      if (response?.data?.agent_id) {
         toast.success('Agent installed successfully!');
         router.push(`/agents/config/${response.data.agent_id}`);
+      } else {
+        throw new Error('Invalid response: missing agent_id');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to install agent:', error);
-      toast.error('Failed to install agent. Please try again.');
+      
+      // Handle specific error cases
+      if (error.response?.status === 403) {
+        toast.error('Access denied. Please check your permissions.');
+      } else if (error.response?.status === 404) {
+        toast.error('Template not found');
+      } else if (error.response?.data?.detail) {
+        toast.error(error.response.data.detail);
+      } else {
+        toast.error('Failed to install agent. Please try again.');
+      }
     } finally {
       setIsInstalling(false);
     }
@@ -188,17 +201,15 @@ export const AgentTemplateLandingPage: React.FC<AgentTemplateLandingPageProps> =
               variants={fadeInUp}
             >
               <div className="relative">
-                {template.profile_image_url ? (
-                  <img 
-                    src={template.profile_image_url} 
-                    alt={template.name}
-                    className="w-24 h-24 rounded-2xl object-cover"
-                  />
-                ) : (
-                  <div className="w-24 h-24 bg-muted rounded-2xl flex items-center justify-center">
-                    <span className="text-4xl">{template.avatar || '🤖'}</span>
-                  </div>
-                )}
+                <AgentIconAvatar
+                  profileImageUrl={template.profile_image_url}
+                  iconName={template.icon_name}
+                  iconColor={template.icon_color}
+                  backgroundColor={template.icon_background}
+                  agentName={template.name}
+                  size={96}
+                  className="shadow-lg"
+                />
               </div>
             </motion.div>
             
