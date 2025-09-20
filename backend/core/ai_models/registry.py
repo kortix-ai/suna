@@ -160,13 +160,10 @@ class ModelRegistry:
             name="Grok 4 Fast (Free)",
             provider=ModelProvider.XAI,
             aliases=[
-                "grok-4-fast:free",  
                 "grok-4-fast",
-                "x-ai/grok-4-fast:free",  
                 "x-ai/grok-4-fast",
-                "openrouter/x-ai/grok-4-fast",  
-                "openrouter/x-ai/grok-4-fast:free",  
-                "Grok 4 Fast Free",
+                "openrouter/x-ai/grok-4-fast",   
+                "Grok 4 Fast",
             ],
             context_window=2_000_000,
             capabilities=[
@@ -178,7 +175,7 @@ class ModelRegistry:
                 input_cost_per_million_tokens=0.4,
                 output_cost_per_million_tokens=1.0
             ),
-            tier_availability=["free"],
+            tier_availability=["paid"],
             priority=72,  
             enabled=True
         ))

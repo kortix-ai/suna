@@ -67,6 +67,12 @@ export const MODELS = {
     recommended: false,
     lowQuality: false
   },
+  'xai/grok-4-fast': {
+    tier: 'premium',
+    priority: 72,
+    recommended: false,
+    lowQuality: false
+  },
   'sonnet-3.7': { 
     tier: 'premium', 
     priority: 93, 
