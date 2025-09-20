@@ -11,6 +11,7 @@ import { AgentCard } from './custom-agents-page/agent-card';
 import { KortixLogo } from '../sidebar/kortix-logo';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { AgentConfigurationDialog } from './agent-configuration-dialog';
+import { isStagingMode } from '@/lib/config';
 
 interface Agent {
   agent_id: string;
@@ -165,7 +166,7 @@ const AgentModal: React.FC<AgentModalProps> = ({
                 Chat
               </Button>
             </div>
-            {/* {!isSunaAgent && (
+            {!isSunaAgent && isStagingMode && (
               <div className="pt-2">
                 {agent.is_public ? (
                   <div className="space-y-2">
@@ -216,7 +217,7 @@ const AgentModal: React.FC<AgentModalProps> = ({
                   </Button>
                 )}
               </div>
-            )} */}
+            )}
           </div>
         </div>
       </DialogContent>
