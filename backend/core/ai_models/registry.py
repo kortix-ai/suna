@@ -154,6 +154,34 @@ class ModelRegistry:
             enabled=True
         ))
         
+        # Grok 4 Fast (Free)
+        self.register(Model(
+            id="xai/grok-4-fast",
+            name="Grok 4 Fast (Free)",
+            provider=ModelProvider.XAI,
+            aliases=[
+                "grok-4-fast:free",  
+                "grok-4-fast",
+                "x-ai/grok-4-fast:free",  
+                "x-ai/grok-4-fast",
+                "openrouter/x-ai/grok-4-fast",  
+                "openrouter/x-ai/grok-4-fast:free",  
+                "Grok 4 Fast Free",
+            ],
+            context_window=128_000,
+            capabilities=[
+                ModelCapability.CHAT,
+                ModelCapability.FUNCTION_CALLING,
+            ],
+            pricing=ModelPricing(
+                input_cost_per_million_tokens=0.0,
+                output_cost_per_million_tokens=0.0
+            ),
+            tier_availability=["free"],
+            priority=72,  
+            enabled=True
+        ))
+        
         self.register(Model(
             id="openrouter/moonshotai/kimi-k2",
             name="Kimi K2",
