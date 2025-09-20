@@ -61,15 +61,66 @@ export function DocsToolView({
     checkPendingGoogleDocsUpload();
   }, []);
   
+  const handleOpenInEditor = useCallback(async (doc: DocumentInfo, content?: string, data?: any) => {
+    let actualContent = content || doc.content || '';
+    if (data?.sandbox_id && doc.path) {
+      try {
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session?.access_token) {
+          const response = await fetch(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${data.sandbox_id}/files?path=${encodeURIComponent(doc.path)}`,
+            {
+              headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+              },
+            }
+          );
+
+          if (response.ok) {
+            const fileContent = await response.text();
+            try {
+              const parsedDocument = JSON.parse(fileContent);
+              if (parsedDocument.type === 'tiptap_document' && parsedDocument.content) {
+                actualContent = parsedDocument.content;
+              }
+            } catch {}
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch latest content:', error);
+      }
+    }
+    if (actualContent === '<p></p>' || actualContent === '<p><br></p>' || actualContent.trim() === '') {
+      if (data && data.content) {
+        actualContent = data.content;
+      }
+    }
+    
+    const documentData = {
+      type: 'tiptap_document',
+      version: '1.0',
+      title: doc.title,
+      content: actualContent,
+      metadata: doc.metadata || {},
+      created_at: doc.created_at,
+      updated_at: doc.updated_at || new Date().toISOString(),
+      doc_id: doc.id
+    };
+    
+    setEditorDocumentData(documentData);
+    setEditorFilePath(doc.path);
+    setEditorOpen(true);
+  }, []);
+  
   const toolName = extractToolName(toolContent) || name || 'docs';
   let data = extractDocsData(toolContent);
   
-  // Also check if we have a project with sandbox_id
   if (!data?.sandbox_id && project?.id) {
     data = { ...data, sandbox_id: project.id };
   }
   
-  // Handle streaming content
   let streamingContent: { content?: string; title?: string; metadata?: any } | null = null;
   if (isStreaming && !data) {
     streamingContent = extractStreamingDocumentContent(assistantContent, toolName);
@@ -77,7 +128,6 @@ export function DocsToolView({
 
   const handleExport = useCallback(async (format: ExportFormat | 'google-docs') => {
     if (format === 'google-docs') {
-      // Handle Google Docs export
       if (!project?.sandbox?.sandbox_url || !data?.document?.path) {
         console.error('Missing sandbox URL or document path for Google Docs export');
         return;
@@ -89,7 +139,6 @@ export function DocsToolView({
           project.sandbox.sandbox_url,
           data.document.path
         );
-        // If redirected to auth, don't set loading false
         if (result?.redirected_to_auth) {
           return;
         }
@@ -99,7 +148,6 @@ export function DocsToolView({
         setIsExporting(false);
       }
     } else {
-      // Handle regular export formats
       const content = data?.content || data?.document?.content || streamingContent?.content || '';
       const fileName = data?.document?.title || streamingContent?.title || 'document';
 
@@ -147,63 +195,6 @@ export function DocsToolView({
     return <CheckCircle className="w-2 h-2 text-emerald-500" />;
   };
   
-  const handleOpenInEditor = useCallback(async (doc: DocumentInfo, content?: string) => {
-    let actualContent = content || doc.content || '';
-    
-    // Try to fetch the latest content from the sandbox first
-    if (data?.sandbox_id && doc.path) {
-      try {
-        const supabase = createClient();
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session?.access_token) {
-          const response = await fetch(
-            `${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${data.sandbox_id}/files?path=${encodeURIComponent(doc.path)}`,
-            {
-              headers: {
-                'Authorization': `Bearer ${session.access_token}`,
-              },
-            }
-          );
-
-          if (response.ok) {
-            const fileContent = await response.text();
-            try {
-              const parsedDocument = JSON.parse(fileContent);
-              if (parsedDocument.type === 'tiptap_document' && parsedDocument.content) {
-                actualContent = parsedDocument.content;
-              }
-            } catch {}
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch latest content:', error);
-      }
-    }
-    
-    // Fallback to provided content
-    if (actualContent === '<p></p>' || actualContent === '<p><br></p>' || actualContent.trim() === '') {
-      if (data && data.content) {
-        actualContent = data.content;
-      }
-    }
-    
-    const documentData = {
-      type: 'tiptap_document',
-      version: '1.0',
-      title: doc.title,
-      content: actualContent,
-      metadata: doc.metadata || {},
-      created_at: doc.created_at,
-      updated_at: doc.updated_at || new Date().toISOString(),
-      doc_id: doc.id
-    };
-    
-    setEditorDocumentData(documentData);
-    setEditorFilePath(doc.path);
-    setEditorOpen(true);
-  }, [data]);
-  
   return (
     <>
     <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
@@ -240,7 +231,7 @@ export function DocsToolView({
                         }
                       } catch {}
                     }
-                    handleOpenInEditor(data.document, content);
+                    handleOpenInEditor(data.document, content, data);
                   }}
                 >
                   <Pen className="h-3 w-3" />
