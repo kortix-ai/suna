@@ -103,8 +103,6 @@ def get_openrouter_fallback(model_name: str) -> Optional[str]:
     fallback_mapping = {
         "anthropic/claude-3-7-sonnet-latest": "openrouter/anthropic/claude-3.7-sonnet",
         "anthropic/claude-sonnet-4-20250514": "openrouter/anthropic/claude-sonnet-4",
-        "xai/grok-4": "openrouter/x-ai/grok-4",
-        "xai/grok-4-fast-reasoning": "openrouter/x-ai/grok-4-fast-reasoning",
         "gemini/gemini-2.5-pro": "openrouter/google/gemini-2.5-pro",
     }
     
@@ -121,8 +119,8 @@ def get_openrouter_fallback(model_name: str) -> Optional[str]:
     if "claude" in model_name.lower() or "anthropic" in model_name.lower():
         return "openrouter/anthropic/claude-sonnet-4"
     elif "xai" in model_name.lower() or "grok" in model_name.lower():
-        # Prefer Grok 4 Fast when available
-        return "openrouter/x-ai/grok-4-fast-reasoning"
+        # No OpenRouter fallback for xAI Grok 4 Fast; must use official xAI API
+        return None
     
     return None
 
