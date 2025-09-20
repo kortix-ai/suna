@@ -341,7 +341,6 @@ export function FileOperationToolView({
                   </a>
                 </Button>
               )}
-              {/* Copy button - only show when there's file content */}
               {fileContent && !isStreaming && (
                 <Button
                   variant="outline"

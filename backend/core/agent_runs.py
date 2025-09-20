@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_user_id_from_stream_auth, verify_and_authorize_thread_access
 from core.utils.logger import logger, structlog
 from core.services.billing import can_use_model
-from billing.billing_integration import billing_integration
+from core.billing.billing_integration import billing_integration
 from core.utils.config import config
 from core.services import redis
 from core.sandbox.sandbox import create_sandbox, delete_sandbox
@@ -427,8 +427,6 @@ async def get_thread_agent(thread_id: str, user_id: str = Depends(verify_and_get
                 is_default=agent_data.get('is_default', False),
                 is_public=agent_data.get('is_public', False),
                 tags=agent_data.get('tags', []),
-                avatar=agent_config.get('avatar'),
-                avatar_color=agent_config.get('avatar_color'),
                 profile_image_url=agent_config.get('profile_image_url'),
                 created_at=agent_data['created_at'],
                 updated_at=agent_data.get('updated_at', agent_data['created_at']),

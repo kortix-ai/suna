@@ -166,8 +166,6 @@ class AgentResponse:
     marketplace_published_at: Optional[str]
     download_count: Optional[int]
     tags: Optional[List[str]]
-    avatar: Optional[str]
-    avatar_color: Optional[str]
     created_at: str
     updated_at: Optional[str]
     current_version_id: Optional[str]
