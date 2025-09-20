@@ -185,6 +185,8 @@ export type Project = {
     pass?: string;
   };
   is_public?: boolean; // Flag to indicate if the project is public
+  // Icon system field for thread categorization
+  icon_name?: string | null;
   [key: string]: any; // Allow additional properties to handle database fields
 };
 
@@ -352,6 +354,8 @@ export const getProjects = async (): Promise<Project[]> => {
         vnc_preview: '',
         sandbox_url: '',
       },
+      // Include icon field for thread categorization
+      icon_name: project.icon_name,
     }));
 
     return mappedProjects;
