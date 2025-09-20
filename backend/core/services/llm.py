@@ -104,6 +104,7 @@ def get_openrouter_fallback(model_name: str) -> Optional[str]:
         "anthropic/claude-3-7-sonnet-latest": "openrouter/anthropic/claude-3.7-sonnet",
         "anthropic/claude-sonnet-4-20250514": "openrouter/anthropic/claude-sonnet-4",
         "xai/grok-4": "openrouter/x-ai/grok-4",
+        "xai/grok-4-fast-reasoning": "openrouter/x-ai/grok-4-fast-reasoning",
         "gemini/gemini-2.5-pro": "openrouter/google/gemini-2.5-pro",
     }
     
@@ -120,7 +121,8 @@ def get_openrouter_fallback(model_name: str) -> Optional[str]:
     if "claude" in model_name.lower() or "anthropic" in model_name.lower():
         return "openrouter/anthropic/claude-sonnet-4"
     elif "xai" in model_name.lower() or "grok" in model_name.lower():
-        return "openrouter/x-ai/grok-4"
+        # Prefer Grok 4 Fast when available
+        return "openrouter/x-ai/grok-4-fast-reasoning"
     
     return None
 
@@ -220,7 +222,14 @@ def _configure_thinking(params: Dict[str, Any], model_name: str, enable_thinking
 
     effort_level = reasoning_effort or 'low'
     is_anthropic = "anthropic" in model_name.lower() or "claude" in model_name.lower()
-    is_xai = "xai" in model_name.lower() or model_name.startswith("xai/")
+    # Detect xAI models, including OpenRouter's x-ai namespace
+    lower_name = model_name.lower()
+    is_xai = (
+        "xai" in lower_name or
+        lower_name.startswith("xai/") or
+        "/x-ai/" in lower_name or
+        lower_name.startswith("openrouter/x-ai/")
+    )
     
     if is_anthropic:
         params["reasoning_effort"] = effort_level

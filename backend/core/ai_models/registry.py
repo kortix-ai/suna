@@ -153,6 +153,34 @@ class ModelRegistry:
             priority=94,
             enabled=True
         ))
+
+        # xAI - Grok 4 Fast (Reasoning)
+        self.register(Model(
+            id="xai/grok-4-fast-reasoning",
+            name="Grok 4 Fast",
+            provider=ModelProvider.XAI,
+            aliases=[
+                "grok-4-fast-reasoning",
+                "grok-4-fast",
+                "x-ai/grok-4-fast-reasoning",
+                "openrouter/x-ai/grok-4-fast-reasoning",
+                "Grok 4 Fast"
+            ],
+            context_window=2_000_000,
+            capabilities=[
+                ModelCapability.CHAT,
+                ModelCapability.FUNCTION_CALLING,
+                ModelCapability.STRUCTURED_OUTPUT,
+                ModelCapability.THINKING,
+            ],
+            pricing=ModelPricing(
+                input_cost_per_million_tokens=0.20,
+                output_cost_per_million_tokens=0.50
+            ),
+            tier_availability=["paid"],
+            priority=95,
+            enabled=True
+        ))
         
         self.register(Model(
             id="openrouter/moonshotai/kimi-k2",

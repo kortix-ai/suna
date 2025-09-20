@@ -61,9 +61,9 @@ export const MODELS = {
     recommended: false,
     lowQuality: false
   },
-  'grok-4': { 
+  'grok-4-fast-reasoning': { 
     tier: 'premium', 
-    priority: 94,
+    priority: 95,
     recommended: false,
     lowQuality: false
   },
