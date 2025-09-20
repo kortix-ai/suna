@@ -139,7 +139,7 @@ class ModelRegistry:
             id="xai/grok-4",
             name="Grok 4",
             provider=ModelProvider.XAI,
-            aliases=["grok-4", "x-ai/grok-4", "Grok 4"],
+            aliases=["grok-4", "x-ai/grok-4", "openrouter/x-ai/grok-4", "Grok 4"],
             context_window=128_000,
             capabilities=[
                 ModelCapability.CHAT,
