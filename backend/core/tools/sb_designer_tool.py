@@ -229,10 +229,12 @@ class SandboxDesignerTool(SandboxToolsBase):
             style_text = f" in {design_style} style" if design_style else ""
             
             await self._ensure_sandbox()
+            sandbox_file_url = f"/api/sandboxes/{self.sandbox_id}/files?path={design_path.lstrip('/')}"
             
             return self.success_response({
                 "success": True,
                 "design_path": design_path,
+                "design_url": sandbox_file_url,
                 "sandbox_id": self.sandbox_id,
                 "platform": platform_preset,
                 "dimensions": {"width": actual_width, "height": actual_height},

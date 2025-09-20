@@ -188,6 +188,9 @@ api_router.include_router(composio_api.router)
 from core.google.google_slides_api import router as google_slides_router
 api_router.include_router(google_slides_router)
 
+from core.google.google_docs_api import router as google_docs_router
+api_router.include_router(google_docs_router)
+
 @api_router.get("/health")
 async def health_check():
     logger.debug("Health check endpoint called")

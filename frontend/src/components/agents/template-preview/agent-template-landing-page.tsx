@@ -122,7 +122,7 @@ export const AgentTemplateLandingPage: React.FC<AgentTemplateLandingPageProps> =
       
       if (response?.data?.agent_id) {
         toast.success('Agent installed successfully!');
-        router.push(`/agents/config/${response.data.agent_id}`);
+        router.push(`/?agent_id=${response.data.agent_id}`);
       } else {
         throw new Error('Invalid response: missing agent_id');
       }
@@ -142,15 +142,6 @@ export const AgentTemplateLandingPage: React.FC<AgentTemplateLandingPageProps> =
     } finally {
       setIsInstalling(false);
     }
-  };
-
-  const handleShare = () => {
-    const currentUrl = window.location.href;
-    navigator.clipboard.writeText(currentUrl).then(() => {
-      toast.success('Share link copied to clipboard!');
-    }).catch(() => {
-      toast.error('Failed to copy link to clipboard');
-    });
   };
 
   const formatDate = (dateString: string) => {

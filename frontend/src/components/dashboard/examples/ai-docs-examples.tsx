@@ -131,7 +131,7 @@ export function AIDocsExamples({ onSelectPrompt, count = 4 }: AIDocsExamplesProp
   return (
     <div className="w-full">
       <div className="flex justify-center">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 w-full max-w-4xl px-4 lg:px-0">
           {displayedExamples.map((example, index) => (
             <DocExampleCard
               key={example.title}

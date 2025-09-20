@@ -295,7 +295,7 @@ export default function TemplateSharePage() {
 
   const handleInstall = () => {
     if (!template) return;
-    router.push(`/agents?tab=marketplace&agent=${template.template_id}`);
+    router.push(`/agents?tab=my-agents&agent=${template.template_id}`);
   };
 
   const handleShare = async () => {
@@ -333,8 +333,8 @@ export default function TemplateSharePage() {
           <div className="text-center">
             <h2 className="text-2xl font-semibold mb-2">Template not found</h2>
             <p className="text-muted-foreground mb-4">The template you're looking for doesn't exist or has been removed.</p>
-            <Button onClick={() => router.push('/agents?tab=marketplace')} className="rounded-lg">
-              Browse Marketplace
+            <Button onClick={() => router.push('/agents?tab=my-agents')} className="rounded-lg">
+              Browse Agents
             </Button>
           </div>
         </div>
@@ -450,11 +450,11 @@ export default function TemplateSharePage() {
           <div className="lg:col-span-4">
             <div className="lg:sticky lg:top-24 space-y-6">
               <Link 
-                href="/agents?tab=marketplace" 
+                href="/agents?tab=my-agents" 
                 className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
               >
                 <ArrowLeft className="w-4 h-4 mr-2" />
-                Back to Marketplace
+                Back to Agents
               </Link>
               <div className="relative">
                 {colorPalette.length > 0 && (
@@ -756,7 +756,7 @@ export default function TemplateSharePage() {
                   <Button 
                     size="lg"
                     variant="outline"
-                    onClick={() => router.push('/agents?tab=marketplace')}
+                    onClick={() => router.push('/agents?tab=my-agents')}
                   >
                     Browse More Agents
                   </Button>

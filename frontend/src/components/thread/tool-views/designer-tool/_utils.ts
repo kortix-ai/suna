@@ -4,11 +4,13 @@ interface DesignerData {
   mode?: string;
   prompt?: string;
   designStyle?: string;
+  platformPreset?: string;
   width?: number;
   height?: number;
   quality?: string;
   imagePath?: string;
   generatedImagePath?: string;
+  designUrl?: string;
   status?: string;
   error?: string;
   actualIsSuccess: boolean;
@@ -30,12 +32,14 @@ export function extractDesignerData(
   const mode = assistantData.arguments?.mode;
   const prompt = assistantData.arguments?.prompt;
   const designStyle = assistantData.arguments?.design_style;
+  const platformPreset = assistantData.arguments?.platform_preset;
   const width = assistantData.arguments?.width;
   const height = assistantData.arguments?.height;
   const quality = assistantData.arguments?.quality;
   const imagePath = assistantData.arguments?.image_path;
 
   let generatedImagePath: string | undefined;
+  let designUrl: string | undefined;
   let status: string | undefined;
   let error: string | undefined;
   let actualIsSuccess = isSuccess;
@@ -57,6 +61,9 @@ export function extractDesignerData(
       if (typeof output === 'object' && output !== null) {
         if (output.design_path) {
           generatedImagePath = output.design_path;
+        }
+        if (output.design_url) {
+          designUrl = output.design_url;
         }
         if (output.message) {
           status = output.message;
@@ -89,14 +96,17 @@ export function extractDesignerData(
     
     if (tc.metadata?.frontend_content?.tool_execution?.result?.output) {
       const output = tc.metadata.frontend_content.tool_execution.result.output;
-      if (!generatedImagePath) {
-        if (typeof output === 'object' && output !== null && output.design_path) {
+      if (typeof output === 'object' && output !== null) {
+        if (!generatedImagePath && output.design_path) {
           generatedImagePath = output.design_path;
-        } else if (typeof output === 'string') {
-          const pathMatch = output.match(/(\/workspace\/designs\/[^\s]+\.png)/i);
-          if (pathMatch) {
-            generatedImagePath = pathMatch[1];
-          }
+        }
+        if (!designUrl && output.design_url) {
+          designUrl = output.design_url;
+        }
+      } else if (typeof output === 'string' && !generatedImagePath) {
+        const pathMatch = output.match(/(\/workspace\/designs\/[^\s]+\.png)/i);
+        if (pathMatch) {
+          generatedImagePath = pathMatch[1];
         }
       }
     }
@@ -150,11 +160,13 @@ export function extractDesignerData(
     mode,
     prompt,
     designStyle,
+    platformPreset,
     width,
     height,
     quality,
     imagePath,
     generatedImagePath,
+    designUrl,
     status,
     error,
     actualIsSuccess,

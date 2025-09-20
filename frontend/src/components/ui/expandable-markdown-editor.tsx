@@ -117,10 +117,10 @@ export const ExpandableMarkdownEditor: React.FC<ExpandableMarkdownEditorProps> =
     <>
       <div className={cn('relative', className)}>
         <div 
-          className="group relative pb-4 border rounded-2xl bg-muted/30 hover:opacity-80 transition-colors cursor-pointer overflow-hidden"
+          className="group h-full relative pb-4 border rounded-2xl bg-muted/30 hover:opacity-80 transition-colors cursor-pointer overflow-hidden"
           onClick={openDialog}
         >
-          <div className="p-4 max-h-32 overflow-hidden">
+          <div className="p-4 h-full overflow-hidden">
             {value ? (
               <div className="prose prose-sm dark:prose-invert max-w-none text-sm">
                 {renderMarkdown(value, true)}
@@ -131,7 +131,7 @@ export const ExpandableMarkdownEditor: React.FC<ExpandableMarkdownEditorProps> =
               </div>
             )}
           </div>
-          {value && value.length > 200 && (
+          {value && value.length > 600 && (
             <div className="absolute bottom-2 left-4 text-xs text-muted-foreground/60 z-10">
               .........
             </div>

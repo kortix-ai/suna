@@ -12,6 +12,9 @@ import {
   Layers,
   Sparkles,
   Wand2,
+  ExternalLink,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
 import { formatTimestamp } from '../utils';
@@ -34,6 +37,7 @@ interface DesignElement {
   id: string;
   sandboxId: string;
   filePath: string;
+  directUrl?: string;
   x: number;
   y: number;
   width: number;
@@ -56,33 +60,49 @@ function DesignElementImage({
   element: DesignElement;
   isSelected: boolean;
 }) {
+  const [imageError, setImageError] = useState(false);
+  
+  // If we have a direct URL, use it; otherwise load via hook
   const { data: imageUrl, isLoading, error } = useImageContent(
     element.sandboxId,
-    element.filePath
+    element.filePath,
+    { 
+      enabled: !element.directUrl && !imageError
+    }
   );
 
-  if (isLoading) {
+  const finalUrl = element.directUrl || imageUrl;
+
+  // Loading state
+  if (!element.directUrl && isLoading && !finalUrl) {
     return (
-      <div className="flex items-center justify-center w-full h-full bg-muted animate-pulse">
+      <div className="flex items-center justify-center w-full h-full bg-muted/50 animate-pulse rounded-lg">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
-  if (error || !imageUrl) {
+  // Error state
+  if (!finalUrl || imageError || (!element.directUrl && error)) {
     return (
-      <div className="flex items-center justify-center w-full h-full bg-muted">
-        <AlertTriangle className="h-8 w-8 text-muted-foreground" />
+      <div className="flex flex-col items-center justify-center w-full h-full bg-muted/50 rounded-lg">
+        <AlertTriangle className="h-8 w-8 text-muted-foreground mb-2" />
+        <span className="text-xs text-muted-foreground text-center px-2">
+          {element.name}
+        </span>
       </div>
     );
   }
 
   return (
     <img
-      src={imageUrl}
+      src={finalUrl}
       alt={element.name}
-      className="w-full h-full object-contain rounded-lg shadow-lg"
+      className="w-full h-full object-contain"
+      style={{ borderRadius: 'inherit' }}
       draggable={false}
+      onError={() => setImageError(true)}
+      loading="eager"
     />
   );
 }
@@ -102,23 +122,30 @@ export function DesignerToolView({
   const [selectedElement, setSelectedElement] = useState<string | null>(null);
   const [elements, setElements] = useState<DesignElement[]>([]);
   const [isDragging, setIsDragging] = useState(false);
+  const [draggedElement, setDraggedElement] = useState<string | null>(null);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [elementStart, setElementStart] = useState({ x: 0, y: 0 });
   const [canvasScale, setCanvasScale] = useState(1);
   const [showGrid, setShowGrid] = useState(true);
   const [snapToGrid, setSnapToGrid] = useState(true);
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [canvasOffset, setCanvasOffset] = useState({ x: 0, y: 0 });
+  const [canvasOffsetStart, setCanvasOffsetStart] = useState({ x: 0, y: 0 });
   const gridSize = 20;
-  const addedImagesRef = useRef<Set<string>>(new Set());
+  const artboardPadding = 50;
 
   const {
     mode,
     prompt,
     designStyle,
+    platformPreset,
     width,
     height,
     quality,
     imagePath,
     generatedImagePath,
+    designUrl,
     status,
     error,
     actualIsSuccess,
@@ -133,12 +160,16 @@ export function DesignerToolView({
     assistantTimestamp
   );
 
+  // Track processed paths to avoid duplicates
+  const processedPathsRef = useRef<Set<string>>(new Set());
+  const lastProcessedPath = useRef<string>('');
+
   useEffect(() => {
-    if (generatedImagePath) {
+    if (generatedImagePath && !isStreaming) {
       const sandboxId = sandbox_id || project?.sandbox?.id || project?.id;
       
       if (!sandboxId) {
-        console.error('Designer Tool - No sandbox ID available');
+        console.warn('Designer Tool: No sandbox ID available');
         return;
       }
       
@@ -149,102 +180,164 @@ export function DesignerToolView({
         relativePath = relativePath.substring(1);
       }
       
-      // Create a unique key for this image
-      const imageKey = `${sandboxId}:${relativePath}`;
+      // Create a unique key based on the actual content
+      const contentKey = `${relativePath}-${designUrl || ''}-${JSON.stringify(toolContent)}`;
       
-      // Check if we've already added this image
-      if (addedImagesRef.current.has(imageKey)) {
-        console.log('Designer Tool - Image already added to canvas, skipping:', relativePath);
+      // Skip if this is the exact same content we just processed
+      if (lastProcessedPath.current === contentKey) {
+        console.log('Designer Tool: Skipping duplicate content');
         return;
       }
       
-      console.log('Designer Tool - Adding design element:', {
-        originalPath: generatedImagePath,
+      lastProcessedPath.current = contentKey;
+      const elementId = `design-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      
+      console.log('Designer Tool: Adding new element', {
         relativePath,
-        sandboxId
+        designUrl,
+        elementId,
+        currentCount: elements.length
       });
-
-      addedImagesRef.current.add(imageKey);
-      setElements(prev => {
-        const exists = prev.some(el => el.filePath === relativePath && el.sandboxId === sandboxId);
-        if (exists) {
-          console.log('Designer Tool - Image already exists in state, skipping');
-          return prev;
+      
+      setElements(prevElements => {
+        let x = 100;
+        let y = 100;
+        
+        // Calculate position for new element
+        if (prevElements.length > 0) {
+          const rightmostElement = prevElements.reduce((rightmost, el) => {
+            const rightmostRight = rightmost.x + rightmost.width;
+            const currentRight = el.x + el.width;
+            return currentRight > rightmostRight ? el : rightmost;
+          }, prevElements[0]);
+          
+          x = rightmostElement.x + rightmostElement.width + artboardPadding;
+          y = rightmostElement.y;
         }
         
         const newElement: DesignElement = {
-          id: `design-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          id: elementId,
           sandboxId: sandboxId,
           filePath: relativePath,
-          x: 100 + (prev.length * 20),
-          y: 100 + (prev.length * 20),
+          directUrl: designUrl,
+          x: x,
+          y: y,
           width: width || 400,
           height: height || 400,
           rotation: 0,
-          zIndex: prev.length,
+          zIndex: prevElements.length,
           opacity: 100,
           name: relativePath.split('/').pop() || 'design',
           locked: false,
         };
         
-        setTimeout(() => setSelectedElement(newElement.id), 0);
-        
-        return [...prev, newElement];
+        console.log('Designer Tool: New elements array', [...prevElements, newElement]);
+        return [...prevElements, newElement];
       });
+      
+      setSelectedElement(elementId);
     }
-  }, [generatedImagePath, sandbox_id, project, width, height]);
+  }, [generatedImagePath, designUrl, sandbox_id, project, width, height, isStreaming, toolContent]);
 
   const snapToGridValue = (value: number) => {
     if (!snapToGrid) return value;
     return Math.round(value / gridSize) * gridSize;
   };
 
-  const handleMouseDown = (e: React.MouseEvent, elementId: string) => {
+  const handleElementMouseDown = (e: React.MouseEvent, elementId: string) => {
+    e.stopPropagation();
     const element = elements.find(el => el.id === elementId);
     if (!element || element.locked) return;
 
     setSelectedElement(elementId);
+    setDraggedElement(elementId);
     setIsDragging(true);
     setDragStart({ x: e.clientX, y: e.clientY });
     setElementStart({ x: element.x, y: element.y });
     e.preventDefault();
   };
 
+  const handleCanvasMouseDown = (e: React.MouseEvent) => {
+    if (e.target === canvasRef.current || (e.target as HTMLElement).classList.contains('canvas-content')) {
+      if (e.button === 0 || e.button === 1) {
+        setIsPanning(true);
+        setPanStart({ x: e.clientX, y: e.clientY });
+        setCanvasOffsetStart({ ...canvasOffset });
+        e.preventDefault();
+      }
+    }
+  };
+
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (!isDragging || !selectedElement) return;
+    if (isDragging && draggedElement) {
+      const deltaX = e.clientX - dragStart.x;
+      const deltaY = e.clientY - dragStart.y;
 
-    const deltaX = e.clientX - dragStart.x;
-    const deltaY = e.clientY - dragStart.y;
+      setElements(prevElements => {
+        return prevElements.map(el => {
+          if (el.id === draggedElement) {
+            return {
+              ...el,
+              x: snapToGridValue(elementStart.x + deltaX / canvasScale),
+              y: snapToGridValue(elementStart.y + deltaY / canvasScale),
+            };
+          }
+          return el;
+        });
+      });
+    } else if (isPanning) {
+      const deltaX = e.clientX - panStart.x;
+      const deltaY = e.clientY - panStart.y;
 
-    setElements(prev =>
-      prev.map(el => {
-        if (el.id === selectedElement) {
-          return {
-            ...el,
-            x: snapToGridValue(elementStart.x + deltaX / canvasScale),
-            y: snapToGridValue(elementStart.y + deltaY / canvasScale),
-          };
-        }
-        return el;
-      })
-    );
+      setCanvasOffset({
+        x: canvasOffsetStart.x + deltaX,
+        y: canvasOffsetStart.y + deltaY,
+      });
+    }
   };
 
   const handleMouseUp = () => {
     setIsDragging(false);
+    setDraggedElement(null);
+    setIsPanning(false);
   };
 
-  const updateSelectedElement = (updates: Partial<DesignElement>) => {
-    if (!selectedElement) return;
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      setIsPanning(true);
+      setPanStart({ x: touch.clientX, y: touch.clientY });
+      setCanvasOffsetStart({ ...canvasOffset });
+      e.preventDefault();
+    }
+  };
 
-    setElements(prev =>
-      prev.map(el => {
-        if (el.id === selectedElement) {
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (isPanning && e.touches.length === 1) {
+      const touch = e.touches[0];
+      const deltaX = touch.clientX - panStart.x;
+      const deltaY = touch.clientY - panStart.y;
+
+      setCanvasOffset({
+        x: canvasOffsetStart.x + deltaX,
+        y: canvasOffsetStart.y + deltaY,
+      });
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setIsPanning(false);
+  };
+
+  const updateElement = (elementId: string, updates: Partial<DesignElement>) => {
+    setElements(prevElements => {
+      return prevElements.map(el => {
+        if (el.id === elementId) {
           return { ...el, ...updates };
         }
         return el;
-      })
-    );
+      });
+    });
   };
 
   const handleZoomIn = () => {
@@ -257,35 +350,28 @@ export function DesignerToolView({
 
   const handleResetView = () => {
     setCanvasScale(1);
+    setCanvasOffset({ x: 0, y: 0 });
   };
 
-  const handleDownloadCanvas = () => {
-    const selected = elements.find(el => el.id === selectedElement);
-    if (selected && onFileClick) {
-      onFileClick(selected.filePath);
+  const handleDownload = () => {
+    const element = elements.find(el => el.id === selectedElement);
+    if (element?.directUrl || element?.filePath) {
+      const link = document.createElement('a');
+      link.href = element.directUrl || `/api/sandboxes/${element.sandboxId}/files?path=${encodeURIComponent(element.filePath)}`;
+      link.download = element.name;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
     }
   };
 
-  const bringToFront = () => {
-    if (!selectedElement) return;
-    const maxZ = Math.max(...elements.map(el => el.zIndex));
-    updateSelectedElement({ zIndex: maxZ + 1 });
+  const handleOpenInNewTab = () => {
+    const element = elements.find(el => el.id === selectedElement);
+    if (element?.directUrl || element?.filePath) {
+      const url = element.directUrl || `/api/sandboxes/${element.sandboxId}/files?path=${encodeURIComponent(element.filePath)}`;
+      window.open(url, '_blank');
+    }
   };
-
-  const sendToBack = () => {
-    if (!selectedElement) return;
-    updateSelectedElement({ zIndex: 0 });
-    setElements(prev =>
-      prev.map(el => {
-        if (el.id !== selectedElement && el.zIndex >= 0) {
-          return { ...el, zIndex: el.zIndex + 1 };
-        }
-        return el;
-      })
-    );
-  };
-
-  const selectedElementData = elements.find(el => el.id === selectedElement);
 
   return (
     <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
@@ -297,17 +383,17 @@ export function DesignerToolView({
             </div>
             <div>
               <CardTitle className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
-                Designer
+                Designer Canvas
               </CardTitle>
               <div className="flex items-center gap-2 mt-1">
-                {designStyle && (
+                {platformPreset && platformPreset !== 'custom' && (
                   <Badge variant="secondary" className="text-xs">
-                    {designStyle}
+                    {platformPreset.replace(/_/g, ' ')}
                   </Badge>
                 )}
-                {quality === 'hd' && (
-                  <Badge variant="secondary" className="text-xs">
-                    HD
+                {designStyle && (
+                  <Badge variant="outline" className="text-xs capitalize">
+                    {designStyle}
                   </Badge>
                 )}
                 {width && height && (
@@ -321,52 +407,54 @@ export function DesignerToolView({
 
           <div className="flex items-center gap-2">
             <TooltipProvider>
-              <div className="flex items-center gap-1 p-1 bg-background/80 rounded-lg border">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={handleZoomOut}
-                      className="h-8 w-8"
-                    >
-                      <ZoomOut className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Zoom Out</TooltipContent>
-                </Tooltip>
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1 p-1 bg-background/80 rounded-lg border">
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleZoomOut}
+                        className="h-8 w-8"
+                      >
+                        <ZoomOut className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Zoom Out</TooltipContent>
+                  </Tooltip>
 
-                <span className="text-xs px-2 min-w-[50px] text-center">
-                  {Math.round(canvasScale * 100)}%
-                </span>
+                  <span className="text-xs px-2 min-w-[50px] text-center">
+                    {Math.round(canvasScale * 100)}%
+                  </span>
 
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={handleZoomIn}
-                      className="h-8 w-8"
-                    >
-                      <ZoomIn className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Zoom In</TooltipContent>
-                </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleZoomIn}
+                        className="h-8 w-8"
+                      >
+                        <ZoomIn className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Zoom In</TooltipContent>
+                  </Tooltip>
 
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={handleResetView}
-                      className="h-8 w-8"
-                    >
-                      <Maximize2 className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Reset View</TooltipContent>
-                </Tooltip>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleResetView}
+                        className="h-8 w-8"
+                      >
+                        <Maximize2 className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Reset View</TooltipContent>
+                  </Tooltip>
+                </div>
               </div>
 
               <div className="flex items-center gap-1 bg-background/80 rounded-lg p-1 border">
@@ -442,10 +530,17 @@ export function DesignerToolView({
         <div className="flex flex-1">
           <div
             ref={canvasRef}
-            className="flex-1 relative overflow-auto bg-zinc-50 dark:bg-zinc-950"
+            className={cn(
+              "flex-1 relative overflow-auto bg-zinc-50 dark:bg-zinc-950",
+              isPanning && "cursor-grab"
+            )}
+            onMouseDown={handleCanvasMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
           >
             {showGrid && (
               <div
@@ -458,20 +553,19 @@ export function DesignerToolView({
               />
             )}
             <div
-              className="relative m-8"
+              className="relative m-8 canvas-content"
               style={{
-                transform: `scale(${canvasScale})`,
+                transform: `translate(${canvasOffset.x}px, ${canvasOffset.y}px) scale(${canvasScale})`,
                 transformOrigin: 'top left',
-                minWidth: '1200px',
-                minHeight: '800px',
+                minWidth: '2400px',
+                minHeight: '1600px',
               }}
             >
-              {elements.map(element => (
+              {elements.map((element) => (
                 <div
                   key={element.id}
                   className={cn(
-                    "absolute cursor-move select-none",
-                    selectedElement === element.id && "ring-2 ring-purple-500 ring-offset-2",
+                    "absolute cursor-move select-none rounded-lg",
                     element.locked && "cursor-not-allowed opacity-50"
                   )}
                   style={{
@@ -480,10 +574,13 @@ export function DesignerToolView({
                     width: `${element.width}px`,
                     height: `${element.height}px`,
                     transform: `rotate(${element.rotation}deg)`,
-                    zIndex: element.zIndex,
+                    zIndex: selectedElement === element.id ? 999 : element.zIndex,
                     opacity: element.opacity / 100,
+                    boxSizing: 'border-box',
+                    outline: selectedElement === element.id ? '2px solid rgb(168 85 247)' : 'none',
+                    outlineOffset: '0px',
                   }}
-                  onMouseDown={e => handleMouseDown(e, element.id)}
+                  onMouseDown={(e) => handleElementMouseDown(e, element.id)}
                   onClick={() => setSelectedElement(element.id)}
                 >
                   <DesignElementImage
@@ -492,10 +589,10 @@ export function DesignerToolView({
                   />
                   {selectedElement === element.id && !element.locked && (
                     <>
-                      <div className="absolute -top-2 -left-2 w-4 h-4 bg-white border-2 border-purple-500 rounded-full cursor-nw-resize" />
-                      <div className="absolute -top-2 -right-2 w-4 h-4 bg-white border-2 border-purple-500 rounded-full cursor-ne-resize" />
-                      <div className="absolute -bottom-2 -left-2 w-4 h-4 bg-white border-2 border-purple-500 rounded-full cursor-sw-resize" />
-                      <div className="absolute -bottom-2 -right-2 w-4 h-4 bg-white border-2 border-purple-500 rounded-full cursor-se-resize" />
+                      <div className="absolute -top-3 -left-3 w-6 h-6 bg-white border-2 border-purple-500 rounded-full cursor-nw-resize z-10 shadow-sm" />
+                      <div className="absolute -top-3 -right-3 w-6 h-6 bg-white border-2 border-purple-500 rounded-full cursor-ne-resize z-10 shadow-sm" />
+                      <div className="absolute -bottom-3 -left-3 w-6 h-6 bg-white border-2 border-purple-500 rounded-full cursor-sw-resize z-10 shadow-sm" />
+                      <div className="absolute -bottom-3 -right-3 w-6 h-6 bg-white border-2 border-purple-500 rounded-full cursor-se-resize z-10 shadow-sm" />
                     </>
                   )}
                 </div>
@@ -509,148 +606,191 @@ export function DesignerToolView({
                     Professional Design Canvas
                   </h3>
                   <p className="text-sm text-muted-foreground max-w-md">
-                    Your designs will appear here. Drag to position, use controls to transform.
+                    Your design will appear here. Drag to position, use controls to transform.
+                  </p>
+                </div>
+              )}
+              {isStreaming && (
+                <div className="flex flex-col items-center justify-center h-96 text-center">
+                  <Loader2 className="h-10 w-10 text-purple-600 dark:text-purple-400 animate-spin mb-4" />
+                  <h3 className="text-lg font-medium text-foreground mb-2">
+                    Generating Design
+                  </h3>
+                  <p className="text-sm text-muted-foreground max-w-md">
+                    Creating your {platformPreset?.replace(/_/g, ' ')} design...
                   </p>
                 </div>
               )}
             </div>
           </div>
-          {selectedElementData && (
-            <div className="w-80 border-l bg-background p-4 space-y-4 overflow-y-auto">
-              <div>
-                <h3 className="font-medium text-sm mb-3 flex items-center gap-2">
-                  <Layers className="h-4 w-4" />
-                  Element Properties
-                </h3>
-                <div className="space-y-3">
-                  <div className="space-y-2">
-                    <label className="text-xs text-muted-foreground">Position</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="text-xs">X</label>
-                        <input
-                          type="number"
-                          value={selectedElementData.x}
-                          onChange={e => updateSelectedElement({ x: Number(e.target.value) })}
-                          className="w-full px-2 py-1 text-sm border rounded"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs">Y</label>
-                        <input
-                          type="number"
-                          value={selectedElementData.y}
-                          onChange={e => updateSelectedElement({ y: Number(e.target.value) })}
-                          className="w-full px-2 py-1 text-sm border rounded"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs text-muted-foreground">Size</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="text-xs">Width</label>
-                        <input
-                          type="number"
-                          value={selectedElementData.width}
-                          onChange={e => updateSelectedElement({ width: Number(e.target.value) })}
-                          className="w-full px-2 py-1 text-sm border rounded"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs">Height</label>
-                        <input
-                          type="number"
-                          value={selectedElementData.height}
-                          onChange={e => updateSelectedElement({ height: Number(e.target.value) })}
-                          className="w-full px-2 py-1 text-sm border rounded"
-                        />
+          {selectedElement && elements.length > 0 && (() => {
+            const element = elements.find(el => el.id === selectedElement);
+            if (!element) return null;
+            
+            return (
+              <div className="w-80 border-l bg-background p-4 space-y-4 overflow-y-auto">
+                <div>
+                  <h3 className="font-medium text-sm mb-3 flex items-center gap-2">
+                    <Layers className="h-4 w-4" />
+                    Artboard Properties
+                  </h3>
+                  
+                  {elements.length > 1 && (
+                    <div className="mb-4 space-y-2">
+                      <label className="text-xs text-muted-foreground">Artboards ({elements.length})</label>
+                      <div className="space-y-1 max-h-32 overflow-y-auto">
+                        {elements.map((el, idx) => (
+                          <div
+                            key={el.id}
+                            onClick={() => setSelectedElement(el.id)}
+                            className={cn(
+                              "p-2 rounded cursor-pointer text-xs flex items-center justify-between",
+                              selectedElement === el.id 
+                                ? "bg-purple-100 dark:bg-purple-900/50 border border-purple-500" 
+                                : "hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent"
+                            )}
+                          >
+                            <span className="truncate">
+                              {idx + 1}. {el.name}
+                            </span>
+                            <Badge variant="outline" className="text-[10px] px-1 py-0">
+                              {el.width}×{el.height}
+                            </Badge>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs text-muted-foreground">
-                      Rotation: {selectedElementData.rotation}°
-                    </label>
-                    <Slider
-                      value={[selectedElementData.rotation]}
-                      onValueChange={([value]) => updateSelectedElement({ rotation: value })}
-                      min={-180}
-                      max={180}
-                      step={1}
-                      className="w-full"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs text-muted-foreground">
-                      Opacity: {selectedElementData.opacity}%
-                    </label>
-                    <Slider
-                      value={[selectedElementData.opacity]}
-                      onValueChange={([value]) => updateSelectedElement({ opacity: value })}
-                      min={0}
-                      max={100}
-                      step={1}
-                      className="w-full"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs text-muted-foreground">Layer Order</label>
-                    <div className="flex gap-2">
+                  )}
+                  
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      <label className="text-xs text-muted-foreground">Position</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs">X</label>
+                          <input
+                            type="number"
+                            value={element.x}
+                            onChange={e => updateElement(element.id, { x: Number(e.target.value) })}
+                            className="w-full px-2 py-1 text-sm border rounded"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs">Y</label>
+                          <input
+                            type="number"
+                            value={element.y}
+                            onChange={e => updateElement(element.id, { y: Number(e.target.value) })}
+                            className="w-full px-2 py-1 text-sm border rounded"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs text-muted-foreground">Size</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs">Width</label>
+                          <input
+                            type="number"
+                            value={element.width}
+                            onChange={e => updateElement(element.id, { width: Number(e.target.value) })}
+                            className="w-full px-2 py-1 text-sm border rounded"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs">Height</label>
+                          <input
+                            type="number"
+                            value={element.height}
+                            onChange={e => updateElement(element.id, { height: Number(e.target.value) })}
+                            className="w-full px-2 py-1 text-sm border rounded"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs text-muted-foreground">
+                        Rotation: {element.rotation}°
+                      </label>
+                      <Slider
+                        value={[element.rotation]}
+                        onValueChange={([value]) => updateElement(element.id, { rotation: value })}
+                        min={-180}
+                        max={180}
+                        step={1}
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs text-muted-foreground">
+                        Opacity: {element.opacity}%
+                      </label>
+                      <Slider
+                        value={[element.opacity]}
+                        onValueChange={([value]) => updateElement(element.id, { opacity: value })}
+                        min={0}
+                        max={100}
+                        step={1}
+                        className="w-full"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs text-muted-foreground">Lock Artboard</label>
+                      <Toggle
+                        pressed={element.locked}
+                        onPressedChange={locked => updateElement(element.id, { locked })}
+                        className="h-8"
+                      >
+                        {element.locked ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+                      </Toggle>
+                    </div>
+                    <div className="flex gap-2 pt-2">
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={bringToFront}
                         className="flex-1"
+                        onClick={handleOpenInNewTab}
                       >
-                        Bring to Front
+                        <ExternalLink className="h-4 w-4 mr-1" />
+                        Open
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={sendToBack}
                         className="flex-1"
+                        onClick={handleDownload}
                       >
-                        Send to Back
+                        <Download className="h-4 w-4 mr-1" />
+                        Export
                       </Button>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs text-muted-foreground">Lock Element</label>
-                    <Toggle
-                      pressed={selectedElementData.locked}
-                      onPressedChange={locked => updateSelectedElement({ locked })}
-                      className="h-8"
-                    >
-                      {selectedElementData.locked ? '🔒' : '🔓'}
-                    </Toggle>
-                  </div>
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={handleDownloadCanvas}
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Export Design
-                  </Button>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </div>
       </CardContent>
       <div className="px-4 py-2 h-10 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
         <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
           <Badge className="h-6 py-0.5" variant="outline">
             <Wand2 className="h-3 w-3 mr-1" />
-            Designer Tool
+            Designer Canvas
           </Badge>
           {elements.length > 0 && (
             <Badge variant="secondary" className="h-6 py-0.5">
-              {elements.length} element{elements.length !== 1 ? 's' : ''}
+              {elements.length} Artboard{elements.length !== 1 ? 's' : ''}
             </Badge>
           )}
+          {selectedElement && (() => {
+            const element = elements.find(el => el.id === selectedElement);
+            return element ? (
+              <Badge variant="secondary" className="h-6 py-0.5">
+                {element.name}
+              </Badge>
+            ) : null;
+          })()}
         </div>
         <div className="text-xs text-zinc-500 dark:text-zinc-400">
           {actualAssistantTimestamp ? formatTimestamp(actualAssistantTimestamp) : ''}
@@ -658,4 +798,4 @@ export function DesignerToolView({
       </div>
     </Card>
   );
-} 
+}

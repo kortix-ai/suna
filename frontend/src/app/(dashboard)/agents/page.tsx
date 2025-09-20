@@ -89,8 +89,20 @@ export default function AgentsPage() {
   const [agentLimitError, setAgentLimitError] = useState<AgentCountLimitError | null>(null);
 
   const activeTab = useMemo(() => {
-    return searchParams.get('tab') || 'my-agents';
+    const tab = searchParams.get('tab');
+    if (tab === 'marketplace') {
+      return 'my-agents';
+    }
+    return tab || 'my-agents';
   }, [searchParams]);
+
+  useEffect(() => {
+    if (searchParams.get('tab') === 'marketplace') {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('tab', 'my-agents');
+      router.replace(`${pathname}?${params.toString()}`);
+    }
+  }, [searchParams, pathname, router]);
 
   const agentsQueryParams: AgentsParams = useMemo(() => {
     const params: AgentsParams = {
@@ -310,7 +322,7 @@ export default function AgentsPage() {
     // Update URL with agent parameter for sharing
     const currentUrl = new URL(window.location.href);
     currentUrl.searchParams.set('agent', agent.id);
-    currentUrl.searchParams.set('tab', 'marketplace');
+    currentUrl.searchParams.set('tab', 'my-agents');
     router.replace(currentUrl.toString(), { scroll: false });
   };
 
@@ -591,6 +603,7 @@ export default function AgentsPage() {
             />
           )}
 
+          {/* Marketplace tab is disabled
           {activeTab === "marketplace" && (
             <MarketplaceTab
               marketplaceSearchQuery={marketplaceSearchQuery}
@@ -612,7 +625,7 @@ export default function AgentsPage() {
               onMarketplacePageSizeChange={handleMarketplacePageSizeChange}
               marketplacePagination={marketplaceTemplates?.pagination}
             />
-          )}
+          )} */}
         </div>
 
         <PublishDialog

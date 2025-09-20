@@ -165,7 +165,7 @@ const AgentModal: React.FC<AgentModalProps> = ({
                 Chat
               </Button>
             </div>
-            {!isSunaAgent && (
+            {/* {!isSunaAgent && (
               <div className="pt-2">
                 {agent.is_public ? (
                   <div className="space-y-2">
@@ -216,7 +216,7 @@ const AgentModal: React.FC<AgentModalProps> = ({
                   </Button>
                 )}
               </div>
-            )}
+            )} */}
           </div>
         </div>
       </DialogContent>

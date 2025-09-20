@@ -15,7 +15,6 @@ import { AgentCountLimitDialog } from '@/components/agents/agent-count-limit-dia
 import type { MarketplaceTemplate } from '@/components/agents/installation/types';
 import { AgentCountLimitError } from '@/lib/api';
 import { AgentIconAvatar } from '@/components/agents/config/agent-icon-avatar';
-import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
 
 interface CustomAgentsSectionProps {
   onAgentSelect?: (templateId: string) => void;
@@ -43,8 +42,6 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
   const [showAgentLimitDialog, setShowAgentLimitDialog] = React.useState(false);
   const [agentLimitError, setAgentLimitError] = React.useState<any>(null);
   const [installingItemId, setInstallingItemId] = React.useState<string | null>(null);
-  const [showConfigDialog, setShowConfigDialog] = React.useState(false);
-  const [configAgentId, setConfigAgentId] = React.useState<string | null>(null);
 
   const handleCardClick = (template: any) => {
     const marketplaceTemplate: MarketplaceTemplate = {
@@ -100,8 +97,6 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
       if (result.status === 'installed' && result.instance_id) {
         toast.success(`Agent "${instanceName}" installed successfully!`);
         setShowInstallDialog(false);
-        setConfigAgentId(result.instance_id);
-        setShowConfigDialog(true);
         
         if (onAgentSelect) {
           onAgentSelect(result.instance_id);
@@ -258,15 +253,6 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
           currentCount={agentLimitError.current_count}
           limit={agentLimitError.limit}
           tierName={agentLimitError.tier_name}
-        />
-      )}
-      
-      {/* Agent Configuration Dialog */}
-      {configAgentId && (
-        <AgentConfigurationDialog
-          open={showConfigDialog}
-          onOpenChange={setShowConfigDialog}
-          agentId={configAgentId}
         />
       )}
     </>

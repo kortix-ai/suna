@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   Dialog,
   DialogContent,
@@ -15,13 +17,11 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/components/ui/tabs';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import {
-  Bot,
   Settings,
   Wrench,
   Server,
@@ -29,14 +29,12 @@ import {
   Workflow,
   Zap,
   Download,
-  Camera,
   Loader2,
   Check,
   X,
   Edit3,
   Save,
   Brain,
-  Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -55,30 +53,43 @@ import { AgentPlaybooksConfiguration } from './playbooks/agent-playbooks-configu
 import { AgentTriggersConfiguration } from './triggers/agent-triggers-configuration';
 import { ProfilePictureDialog } from './config/profile-picture-dialog';
 import { AgentIconAvatar } from './config/agent-icon-avatar';
+import { AgentVersionSwitcher } from './agent-version-switcher';
 import { DEFAULT_AGENTPRESS_TOOLS } from './tools';
 
 interface AgentConfigurationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   agentId: string;
+  initialTab?: 'general' | 'instructions' | 'tools' | 'integrations' | 'knowledge' | 'playbooks' | 'triggers';
 }
 
 export function AgentConfigurationDialog({
   open,
   onOpenChange,
   agentId,
+  initialTab = 'general',
 }: AgentConfigurationDialogProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
+  
   const { agent, versionData, isViewingOldVersion, isLoading, error } = useAgentVersionData({ agentId });
   
   const updateAgentMutation = useUpdateAgent();
   const updateAgentMCPsMutation = useUpdateAgentMCPs();
   const exportMutation = useExportAgent();
   
-  const [activeTab, setActiveTab] = useState('general');
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
+  
+  useEffect(() => {
+    if (open && initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [open, initialTab]);
   
   const [formData, setFormData] = useState({
     name: '',
@@ -94,6 +105,7 @@ export function AgentConfigurationDialog({
     icon_color: '#000000',
     icon_background: '#e5e5e5',
   });
+  
   
   const [originalFormData, setOriginalFormData] = useState(formData);
   const [isSaving, setIsSaving] = useState(false);
@@ -134,9 +146,9 @@ export function AgentConfigurationDialog({
 
   const isSunaAgent = agent?.metadata?.is_suna_default || false;
   const restrictions = agent?.metadata?.restrictions || {};
-  const isNameEditable = !isViewingOldVersion && (restrictions.name_editable !== false);
-  const isSystemPromptEditable = !isViewingOldVersion && (restrictions.system_prompt_editable !== false);
-  const areToolsEditable = !isViewingOldVersion && (restrictions.tools_editable !== false);
+  const isNameEditable = !isViewingOldVersion && (restrictions.name_editable !== false) && !isSunaAgent;
+  const isSystemPromptEditable = !isViewingOldVersion && (restrictions.system_prompt_editable !== false) && !isSunaAgent;
+  const areToolsEditable = !isViewingOldVersion && (restrictions.tools_editable !== false) && !isSunaAgent;
   
   const hasChanges = useMemo(() => {
     return JSON.stringify(formData) !== JSON.stringify(originalFormData);
@@ -162,7 +174,8 @@ export function AgentConfigurationDialog({
       if (formData.icon_background !== undefined) updateData.icon_background = formData.icon_background;
       if (formData.is_default !== undefined) updateData.is_default = formData.is_default;
       
-      await updateAgentMutation.mutateAsync(updateData);
+      const updatedAgent = await updateAgentMutation.mutateAsync(updateData);
+      
       const mcpsChanged = 
         JSON.stringify(formData.configured_mcps) !== JSON.stringify(originalFormData.configured_mcps) ||
         JSON.stringify(formData.custom_mcps) !== JSON.stringify(originalFormData.custom_mcps);
@@ -174,6 +187,16 @@ export function AgentConfigurationDialog({
           custom_mcps: formData.custom_mcps,
           replace_mcps: true
         });
+      }
+      
+      queryClient.invalidateQueries({ queryKey: ['versions', 'list', agentId] });
+      queryClient.invalidateQueries({ queryKey: ['agents', 'detail', agentId] });
+      
+      if (updatedAgent.current_version_id) {
+        const params = new URLSearchParams(searchParams.toString());
+        params.delete('version');
+        const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
+        router.push(newUrl);
       }
       
       setOriginalFormData(formData);
@@ -193,10 +216,12 @@ export function AgentConfigurationDialog({
       return;
     }
     
-    if (!isNameEditable && isSunaAgent) {
-      toast.error("Name cannot be edited", {
-        description: "Suna's name is managed centrally and cannot be changed.",
-      });
+    if (!isNameEditable) {
+      if (isSunaAgent) {
+        toast.error("Name cannot be edited", {
+          description: "Suna's name is managed centrally and cannot be changed.",
+        });
+      }
       setEditName(formData.name);
       setIsEditingName(false);
       return;
@@ -207,10 +232,12 @@ export function AgentConfigurationDialog({
   };
 
   const handleSystemPromptChange = (value: string) => {
-    if (!isSystemPromptEditable && isSunaAgent) {
-      toast.error("System prompt cannot be edited", {
-        description: "Suna's system prompt is managed centrally.",
-      });
+    if (!isSystemPromptEditable) {
+      if (isSunaAgent) {
+        toast.error("System prompt cannot be edited", {
+          description: "Suna's system prompt is managed centrally.",
+        });
+      }
       return;
     }
     
@@ -222,10 +249,12 @@ export function AgentConfigurationDialog({
   };
 
   const handleToolsChange = (tools: Record<string, boolean | { enabled: boolean; description: string }>) => {
-    if (!areToolsEditable && isSunaAgent) {
-      toast.error("Tools cannot be edited", {
-        description: "Suna's tools are managed centrally.",
-      });
+    if (!areToolsEditable) {
+      if (isSunaAgent) {
+        toast.error("Tools cannot be edited", {
+          description: "Suna's tools are managed centrally.",
+        });
+      }
       return;
     }
     
@@ -283,8 +312,8 @@ export function AgentConfigurationDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent className="max-w-5xl h-[85vh] p-0 gap-0 flex flex-col">
-          <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
+        <DialogContent className="max-w-5xl h-[85vh] overflow-hidden p-0 gap-0 flex flex-col">
+          <DialogHeader className="px-6 pt-6 pb-4 flex-shrink-0">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <button
@@ -356,7 +385,7 @@ export function AgentConfigurationDialog({
                       <DialogTitle className="text-xl font-semibold">
                         {isLoading ? 'Loading...' : formData.name || 'Agent'}
                       </DialogTitle>
-                      {isNameEditable && !isSunaAgent && (
+                      {isNameEditable && (
                         <Button
                           size="icon"
                           variant="ghost"
@@ -380,52 +409,62 @@ export function AgentConfigurationDialog({
                 </div>
               </div>
               
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleExport}
-                disabled={exportMutation.isPending}
-              >
-                {exportMutation.isPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Download className="h-4 w-4" />
-                )}
-              </Button>
+              <div className="flex items-center gap-2">
+                <AgentVersionSwitcher
+                  agentId={agentId}
+                  currentVersionId={agent?.current_version_id || null}
+                  currentFormData={{
+                    system_prompt: formData.system_prompt,
+                    configured_mcps: formData.configured_mcps,
+                    custom_mcps: formData.custom_mcps,
+                    agentpress_tools: formData.agentpress_tools,
+                  }}
+                />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleExport}
+                  disabled={exportMutation.isPending}
+                >
+                  {exportMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
             </div>
           </DialogHeader>
-
           {isLoading ? (
             <div className="flex-1 flex items-center justify-center">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
-              <TabsList className="w-full justify-start rounded-none border-b px-6 h-10 bg-background flex-shrink-0">
-                {tabItems.map((tab) => {
-                  const Icon = tab.icon;
-                  return (
-                    <TabsTrigger
-                      key={tab.id}
-                      value={tab.id}
-                      disabled={tab.disabled}
-                      className={cn(
-                        "data-[state=active]:bg-muted data-[state=active]:shadow-none",
-                        "rounded-lg px-3",
-                        tab.disabled && "opacity-50 cursor-not-allowed"
-                      )}
-                    >
-                      <Icon className="h-4 w-4" />
-                      {tab.label}
-                    </TabsTrigger>
-                  );
-                })}
-              </TabsList>
-
+            <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)} className="flex-1 flex flex-col min-h-0">
+              <div className='flex items-center justify-center w-full'>
+                <TabsList className="mt-4 w-[95%] flex-shrink-0">
+                    {tabItems.map((tab) => {
+                    const Icon = tab.icon;
+                    return (
+                        <TabsTrigger
+                        key={tab.id}
+                        value={tab.id}
+                        disabled={tab.disabled}
+                        className={cn(
+                            tab.disabled && "opacity-50 cursor-not-allowed"
+                        )}
+                        >
+                        <Icon className="h-4 w-4" />
+                        {tab.label}
+                        </TabsTrigger>
+                    );
+                    })}
+                </TabsList>
+              </div>
               <div className="flex-1 overflow-auto">
-                  <TabsContent value="general" className="p-6 space-y-6 mt-0">
-                    <div className="space-y-4">
-                      <div>
+                  <TabsContent value="general" className="p-6 mt-0 flex flex-col h-full">
+                    <div className="flex flex-col flex-1 gap-6">
+                      <div className="flex-shrink-0">
                         <Label className="text-base font-semibold mb-3 block">Model</Label>
                         <AgentModelSelector
                           value={formData.model}
@@ -435,28 +474,28 @@ export function AgentConfigurationDialog({
                         />
                       </div>
 
-                      <div>
+                      <div className="flex flex-col flex-1 min-h-0">
                         <Label className="text-base font-semibold mb-3 block">Description</Label>
                         <Textarea
                           value={formData.description}
                           onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
                           placeholder="Describe what this agent does..."
-                          className="min-h-[100px] resize-none"
+                          className="flex-1 resize-none bg-muted/50"
                           disabled={isViewingOldVersion}
                         />
                       </div>
                     </div>
                   </TabsContent>
 
-                  <TabsContent value="instructions" className="p-6 mt-0">
-                    <div>
-                      <Label className="text-base font-semibold mb-3 block">System Prompt</Label>
+                  <TabsContent value="instructions" className="p-6 mt-0 flex flex-col h-full">
+                    <div className="flex flex-col flex-1 min-h-0">
+                      <Label className="text-base font-semibold mb-3 block flex-shrink-0">System Prompt</Label>
                       <ExpandableMarkdownEditor
                         value={formData.system_prompt}
                         onSave={handleSystemPromptChange}
                         disabled={!isSystemPromptEditable}
                         placeholder="Define how your agent should behave..."
-                        className="min-h-[300px]"
+                        className="flex-1 h-[90%]"
                       />
                     </div>
                   </TabsContent>

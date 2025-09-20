@@ -3,9 +3,6 @@
 import React from 'react';
 import { Examples as DefaultExamples } from '../examples';
 import { AIDocsExamples } from './ai-docs-examples';
-import { ResearchExamples } from './research-examples';
-import { CodeExamples } from './code-examples';
-import { BusinessExamples } from './business-examples';
 import { PresentationExamples } from './presentation-examples';
 import { DesignerExamples } from './designer-examples';
 import { useAgents } from '@/hooks/react-query/agents/use-agents';
@@ -47,53 +44,7 @@ export function AgentExamples({
         />
       );
     }
-    
-    if (
-      agentName.includes('research') || 
-      templateName.includes('research') ||
-      agentName.includes('analysis') ||
-      templateName.includes('analysis')
-    ) {
-      return (
-        <ResearchExamples 
-          onSelectPrompt={onSelectPrompt} 
-          count={count} 
-        />
-      );
-    }
-    
-    if (
-      agentName.includes('code') || 
-      templateName.includes('code') ||
-      agentName.includes('developer') ||
-      templateName.includes('developer') ||
-      agentName.includes('programming') ||
-      templateName.includes('programming')
-    ) {
-      return (
-        <CodeExamples 
-          onSelectPrompt={onSelectPrompt} 
-          count={count} 
-        />
-      );
-    }
-    
-    if (
-      agentName.includes('business') || 
-      templateName.includes('business') ||
-      agentName.includes('finance') ||
-      templateName.includes('finance') ||
-      agentName.includes('strategy') ||
-      templateName.includes('strategy')
-    ) {
-      return (
-        <BusinessExamples 
-          onSelectPrompt={onSelectPrompt} 
-          count={count} 
-        />
-      );
-    }
-    
+
     if (
       agentName.includes('presentation') || 
       templateName.includes('presentation') ||
@@ -127,7 +78,7 @@ export function AgentExamples({
   return (
     <DefaultExamples 
       onSelectPrompt={onSelectPrompt} 
-      count={count} 
+      count={4} 
     />
   );
 }
