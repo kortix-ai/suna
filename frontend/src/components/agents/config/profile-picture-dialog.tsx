@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useCallback, useEffect } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Sparkles, Wand2, Loader2 } from 'lucide-react';
 import { 
   Dialog, 
   DialogContent, 
@@ -21,12 +21,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { HexColorPicker } from 'react-colorful';
+import { useGenerateAgentIcon } from '@/hooks/react-query/agents/use-agent-icon-generation';
 
 interface ProfilePictureDialogProps {
   isOpen: boolean;
   onClose: () => void;
   currentImageUrl?: string;
   agentName?: string;
+  agentDescription?: string;
   onImageUpdate: (url: string | null) => void;
   currentIconName?: string;
   currentIconColor?: string;
@@ -39,6 +41,7 @@ export function ProfilePictureDialog({
   onClose,
   currentImageUrl,
   agentName,
+  agentDescription,
   onImageUpdate,
   currentIconName,
   currentIconColor = '#000000',
@@ -48,6 +51,8 @@ export function ProfilePictureDialog({
   const [selectedIcon, setSelectedIcon] = useState(currentIconName || 'bot');
   const [iconColor, setIconColor] = useState(currentIconColor || '#000000');
   const [backgroundColor, setBackgroundColor] = useState(currentBackgroundColor || '#e5e5e5');
+  
+  const generateIconMutation = useGenerateAgentIcon();
 
   useEffect(() => {
     if (isOpen) {
@@ -65,6 +70,32 @@ export function ProfilePictureDialog({
       onClose();
     }
   }, [selectedIcon, iconColor, backgroundColor, onIconUpdate, onImageUpdate, onClose]);
+
+  const handleAutoGenerate = useCallback(() => {
+    if (!agentName) {
+      toast.error('Agent name is required for auto-generation');
+      return;
+    }
+
+    generateIconMutation.mutate(
+      {
+        name: agentName,
+        description: agentDescription,
+      },
+      {
+        onSuccess: (result) => {
+          setSelectedIcon(result.icon_name);
+          setIconColor(result.icon_color);
+          setBackgroundColor(result.icon_background);
+          toast.success('Agent icon auto-generated!');
+        },
+        onError: (error) => {
+          console.error('Auto-generation failed:', error);
+          toast.error('Failed to auto-generate icon. Please try again.');
+        },
+      }
+    );
+  }, [agentName, agentDescription, generateIconMutation]);
 
   const presetColors = [
     '#000000', '#FFFFFF', '#6366F1', '#10B981', '#F59E0B', 
@@ -324,6 +355,21 @@ export function ProfilePictureDialog({
           </Tabs>
         </div>
         <DialogFooter className="px-6 py-4 shrink-0 border-t">
+          <div className="flex items-center gap-2 mr-auto">
+            <Button
+              variant="outline"
+              onClick={handleAutoGenerate}
+              disabled={generateIconMutation.isPending || !agentName}
+              className="gap-2"
+            >
+              {generateIconMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Wand2 className="h-4 w-4" />
+              )}
+              Auto-generate
+            </Button>
+          </div>
           <Button
             variant="outline"
             onClick={onClose}

@@ -248,7 +248,7 @@ async def generate_and_update_project_name(project_id: str, prompt: str):
                 cleaned_content = raw_content.strip('\'" \n\t{}')
                 if cleaned_content:
                     generated_name = cleaned_content[:50]  # Limit fallback title length
-                    selected_icon = "message-circle"  # Default icon
+                selected_icon = "message-circle"  # Default icon
         else:
             logger.warning(f"Failed to get valid response from LLM for project {project_id} naming. Response: {response}")
 
@@ -274,6 +274,111 @@ async def generate_and_update_project_name(project_id: str, prompt: str):
     finally:
         # No need to disconnect DBConnection singleton instance here
         logger.debug(f"Finished background naming and icon selection task for project: {project_id}")
+
+async def generate_agent_icon_and_colors(name: str, description: str = None) -> dict:
+    """Generates an agent icon and colors using an LLM based on agent name and description."""
+    logger.debug(f"Generating icon and colors for agent: {name}")
+    try:
+        model_name = "openai/gpt-5-nano"
+        
+        # Use pre-loaded Lucide React icons (loaded once at module level)
+        relevant_icons = RELEVANT_ICONS
+        
+        # Use exact colors from frontend presetColors array
+        frontend_colors = [
+            "#000000", "#FFFFFF", "#6366F1", "#10B981", "#F59E0B", 
+            "#EF4444", "#8B5CF6", "#EC4899", "#14B8A6", "#F97316",
+            "#06B6D4", "#84CC16", "#F43F5E", "#A855F7", "#3B82F6"
+        ]
+        
+        agent_context = f"Agent name: {name}"
+        if description:
+            agent_context += f"\nAgent description: {description}"
+            
+        system_prompt = f"""You are a helpful assistant that selects appropriate icons and colors for AI agents based on their name and description.
+
+        Available Lucide React icons to choose from:
+        {', '.join(relevant_icons)}
+
+        Available colors (hex codes):
+        {', '.join(frontend_colors)}
+
+        Respond with a JSON object containing:
+        - "icon": The most appropriate icon name from the available icons
+        - "background_color": A background color hex code from the available colors
+        - "text_color": A text color hex code from the available colors (choose one that contrasts well with the background)
+
+        Example response:
+        {{"icon": "youtube", "background_color": "#EF4444", "text_color": "#FFFFFF"}}"""
+
+        user_message = f"Select the most appropriate icon and color scheme for this AI agent:\n{agent_context}"
+        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_message}]
+
+        logger.debug(f"Calling LLM ({model_name}) for agent icon and color generation.")
+        response = await make_llm_api_call(
+            messages=messages, 
+            model_name=model_name, 
+            max_tokens=4000, 
+            temperature=0.7,
+            response_format={"type": "json_object"}
+        )
+
+        # Default fallback values
+        result = {
+            "icon_name": "bot",
+            "icon_color": "#FFFFFF", 
+            "icon_background": "#6366F1"
+        }
+        
+        if response and response.get('choices') and response['choices'][0].get('message'):
+            raw_content = response['choices'][0]['message'].get('content', '').strip()
+            try:
+                parsed_response = json.loads(raw_content)
+                
+                if isinstance(parsed_response, dict):
+                    # Extract and validate icon
+                    icon = parsed_response.get('icon', '').strip()
+                    if icon and icon in relevant_icons:
+                        result["icon_name"] = icon
+                        logger.debug(f"LLM selected icon: '{icon}'")
+                    else:
+                        logger.warning(f"LLM selected invalid icon '{icon}', using default 'bot'")
+                    
+                    # Extract and validate colors
+                    bg_color = parsed_response.get('background_color', '').strip()
+                    text_color = parsed_response.get('text_color', '').strip()
+                    
+                    if bg_color in frontend_colors:
+                        result["icon_background"] = bg_color
+                        logger.debug(f"LLM selected background color: '{bg_color}'")
+                    else:
+                        logger.warning(f"LLM selected invalid background color '{bg_color}', using default")
+                    
+                    if text_color in frontend_colors:
+                        result["icon_color"] = text_color
+                        logger.debug(f"LLM selected text color: '{text_color}'")
+                    else:
+                        logger.warning(f"LLM selected invalid text color '{text_color}', using default")
+                        
+                else:
+                    logger.warning(f"LLM returned non-dict JSON: {parsed_response}")
+                    
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse LLM JSON response: {e}. Raw content: {raw_content}")
+        else:
+            logger.warning(f"Failed to get valid response from LLM for agent icon generation. Response: {response}")
+
+        logger.debug(f"Generated agent styling: icon={result['icon_name']}, bg={result['icon_background']}, color={result['icon_color']}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Error in agent icon generation: {str(e)}\n{traceback.format_exc()}")
+        # Return safe defaults on error (using Indigo theme)
+        return {
+            "icon_name": "bot",
+            "icon_color": "#FFFFFF", 
+            "icon_background": "#6366F1"
+        }
 
 def merge_custom_mcps(existing_mcps: List[Dict[str, Any]], new_mcps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     if not new_mcps:
