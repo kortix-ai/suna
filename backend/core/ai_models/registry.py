@@ -168,10 +168,11 @@ class ModelRegistry:
                 "openrouter/x-ai/grok-4-fast:free",  
                 "Grok 4 Fast Free",
             ],
-            context_window=128_000,
+            context_window=2_000_000,
             capabilities=[
                 ModelCapability.CHAT,
                 ModelCapability.FUNCTION_CALLING,
+                ModelCapability.VISION,
             ],
             pricing=ModelPricing(
                 input_cost_per_million_tokens=0.0,
