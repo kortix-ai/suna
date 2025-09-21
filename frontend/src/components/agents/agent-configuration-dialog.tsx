@@ -48,7 +48,7 @@ import { ExpandableMarkdownEditor } from '@/components/ui/expandable-markdown-ed
 import { AgentModelSelector } from './config/model-selector';
 import { AgentToolsConfiguration } from './agent-tools-configuration';
 import { AgentMCPConfiguration } from './agent-mcp-configuration';
-import { AgentKnowledgeBaseManager } from './knowledge-base/agent-knowledge-base-manager';
+import { AgentKnowledgeBaseManager } from './knowledge-base/agent-kb-tree';
 import { AgentPlaybooksConfiguration } from './playbooks/agent-playbooks-configuration';
 import { AgentTriggersConfiguration } from './triggers/agent-triggers-configuration';
 import { ProfilePictureDialog } from './config/profile-picture-dialog';
@@ -72,25 +72,25 @@ export function AgentConfigurationDialog({
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  
+
   const { agent, versionData, isViewingOldVersion, isLoading, error } = useAgentVersionData({ agentId });
-  
+
   const updateAgentMutation = useUpdateAgent();
   const updateAgentMCPsMutation = useUpdateAgentMCPs();
   const exportMutation = useExportAgent();
-  
+
   const [activeTab, setActiveTab] = useState(initialTab);
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
-  
+
   useEffect(() => {
     if (open && initialTab) {
       setActiveTab(initialTab);
     }
   }, [open, initialTab]);
-  
+
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -105,14 +105,14 @@ export function AgentConfigurationDialog({
     icon_color: '#000000',
     icon_background: '#e5e5e5',
   });
-  
-  
+
+
   const [originalFormData, setOriginalFormData] = useState(formData);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (!agent) return;
-    
+
     let configSource = agent;
     if (versionData) {
       configSource = {
@@ -123,7 +123,7 @@ export function AgentConfigurationDialog({
         icon_background: versionData.icon_background || agent.icon_background,
       };
     }
-    
+
     const newFormData = {
       name: configSource.name || '',
       description: configSource.description || '',
@@ -138,7 +138,7 @@ export function AgentConfigurationDialog({
       icon_color: configSource.icon_color || '#000000',
       icon_background: configSource.icon_background || '#e5e5e5',
     };
-    
+
     setFormData(newFormData);
     setOriginalFormData(newFormData);
     setEditName(configSource.name || '');
@@ -149,14 +149,14 @@ export function AgentConfigurationDialog({
   const isNameEditable = !isViewingOldVersion && (restrictions.name_editable !== false) && !isSunaAgent;
   const isSystemPromptEditable = !isViewingOldVersion && (restrictions.system_prompt_editable !== false) && !isSunaAgent;
   const areToolsEditable = !isViewingOldVersion && (restrictions.tools_editable !== false) && !isSunaAgent;
-  
+
   const hasChanges = useMemo(() => {
     return JSON.stringify(formData) !== JSON.stringify(originalFormData);
   }, [formData, originalFormData]);
 
   const handleSaveAll = async () => {
     if (!hasChanges) return;
-    
+
     setIsSaving(true);
     try {
       const updateData: any = {
@@ -166,20 +166,20 @@ export function AgentConfigurationDialog({
         system_prompt: formData.system_prompt,
         agentpress_tools: formData.agentpress_tools,
       };
-      
+
       if (formData.model !== undefined) updateData.model = formData.model;
       if (formData.profile_image_url !== undefined) updateData.profile_image_url = formData.profile_image_url;
       if (formData.icon_name !== undefined) updateData.icon_name = formData.icon_name;
       if (formData.icon_color !== undefined) updateData.icon_color = formData.icon_color;
       if (formData.icon_background !== undefined) updateData.icon_background = formData.icon_background;
       if (formData.is_default !== undefined) updateData.is_default = formData.is_default;
-      
+
       const updatedAgent = await updateAgentMutation.mutateAsync(updateData);
-      
-      const mcpsChanged = 
+
+      const mcpsChanged =
         JSON.stringify(formData.configured_mcps) !== JSON.stringify(originalFormData.configured_mcps) ||
         JSON.stringify(formData.custom_mcps) !== JSON.stringify(originalFormData.custom_mcps);
-      
+
       if (mcpsChanged) {
         await updateAgentMCPsMutation.mutateAsync({
           agentId,
@@ -188,17 +188,17 @@ export function AgentConfigurationDialog({
           replace_mcps: true
         });
       }
-      
+
       queryClient.invalidateQueries({ queryKey: ['versions', 'list', agentId] });
       queryClient.invalidateQueries({ queryKey: ['agents', 'detail', agentId] });
-      
+
       if (updatedAgent.current_version_id) {
         const params = new URLSearchParams(searchParams.toString());
         params.delete('version');
         const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
         router.push(newUrl);
       }
-      
+
       setOriginalFormData(formData);
       toast.success('Agent configuration saved successfully');
     } catch (error) {
@@ -215,7 +215,7 @@ export function AgentConfigurationDialog({
       setIsEditingName(false);
       return;
     }
-    
+
     if (!isNameEditable) {
       if (isSunaAgent) {
         toast.error("Name cannot be edited", {
@@ -226,7 +226,7 @@ export function AgentConfigurationDialog({
       setIsEditingName(false);
       return;
     }
-    
+
     setFormData(prev => ({ ...prev, name: editName }));
     setIsEditingName(false);
   };
@@ -240,7 +240,7 @@ export function AgentConfigurationDialog({
       }
       return;
     }
-    
+
     setFormData(prev => ({ ...prev, system_prompt: value }));
   };
 
@@ -257,7 +257,7 @@ export function AgentConfigurationDialog({
       }
       return;
     }
-    
+
     setFormData(prev => ({ ...prev, agentpress_tools: tools }));
   };
 
@@ -272,12 +272,12 @@ export function AgentConfigurationDialog({
   const handleProfileImageChange = (profileImageUrl: string | null) => {
     setFormData(prev => ({ ...prev, profile_image_url: profileImageUrl || '' }));
   };
-  
+
   const handleIconChange = (iconName: string | null, iconColor: string, iconBackground: string) => {
-    setFormData(prev => ({ 
-      ...prev, 
-      icon_name: iconName, 
-      icon_color: iconColor, 
+    setFormData(prev => ({
+      ...prev,
+      icon_name: iconName,
+      icon_color: iconColor,
       icon_background: iconBackground,
       profile_image_url: iconName && prev.profile_image_url ? '' : prev.profile_image_url
     }));
@@ -286,7 +286,7 @@ export function AgentConfigurationDialog({
   const handleExport = () => {
     exportMutation.mutate(agentId);
   };
-  
+
   const handleClose = (open: boolean) => {
     if (!open && hasChanges) {
       setFormData(originalFormData);
@@ -341,7 +341,7 @@ export function AgentConfigurationDialog({
                     />
                   )}
                 </button>
-                
+
                 <div>
                   {isEditingName ? (
                     <div className="flex items-center gap-2">
@@ -408,7 +408,7 @@ export function AgentConfigurationDialog({
                   </DialogDescription>
                 </div>
               </div>
-              
+
               <div className="flex items-center gap-2">
                 <AgentVersionSwitcher
                   agentId={agentId}
@@ -443,111 +443,111 @@ export function AgentConfigurationDialog({
             <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)} className="flex-1 flex flex-col min-h-0">
               <div className='flex items-center justify-center w-full'>
                 <TabsList className="mt-4 w-[95%] flex-shrink-0">
-                    {tabItems.map((tab) => {
+                  {tabItems.map((tab) => {
                     const Icon = tab.icon;
                     return (
-                        <TabsTrigger
+                      <TabsTrigger
                         key={tab.id}
                         value={tab.id}
                         disabled={tab.disabled}
                         className={cn(
-                            tab.disabled && "opacity-50 cursor-not-allowed"
+                          tab.disabled && "opacity-50 cursor-not-allowed"
                         )}
-                        >
+                      >
                         <Icon className="h-4 w-4" />
                         {tab.label}
-                        </TabsTrigger>
+                      </TabsTrigger>
                     );
-                    })}
+                  })}
                 </TabsList>
               </div>
               <div className="flex-1 overflow-auto">
-                  <TabsContent value="general" className="p-6 mt-0 flex flex-col h-full">
-                    <div className="flex flex-col flex-1 gap-6">
-                      <div className="flex-shrink-0">
-                        <Label className="text-base font-semibold mb-3 block">Model</Label>
-                        <AgentModelSelector
-                          value={formData.model}
-                          onChange={handleModelChange}
-                          disabled={isViewingOldVersion}
-                          variant="default"
-                        />
-                      </div>
-
-                      <div className="flex flex-col flex-1 min-h-0">
-                        <Label className="text-base font-semibold mb-3 block">Description</Label>
-                        <Textarea
-                          value={formData.description}
-                          onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                          placeholder="Describe what this agent does..."
-                          className="flex-1 resize-none bg-muted/50"
-                          disabled={isViewingOldVersion}
-                        />
-                      </div>
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent value="instructions" className="p-6 mt-0 flex flex-col h-full">
-                    <div className="flex flex-col flex-1 min-h-0">
-                      <Label className="text-base font-semibold mb-3 block flex-shrink-0">System Prompt</Label>
-                      <ExpandableMarkdownEditor
-                        value={formData.system_prompt}
-                        onSave={handleSystemPromptChange}
-                        disabled={!isSystemPromptEditable}
-                        placeholder="Define how your agent should behave..."
-                        className="flex-1 h-[90%]"
+                <TabsContent value="general" className="p-6 mt-0 flex flex-col h-full">
+                  <div className="flex flex-col flex-1 gap-6">
+                    <div className="flex-shrink-0">
+                      <Label className="text-base font-semibold mb-3 block">Model</Label>
+                      <AgentModelSelector
+                        value={formData.model}
+                        onChange={handleModelChange}
+                        disabled={isViewingOldVersion}
+                        variant="default"
                       />
                     </div>
-                  </TabsContent>
 
-                  <TabsContent value="tools" className="p-6 mt-0 h-[calc(100vh-16rem)]">
-                    <AgentToolsConfiguration
-                      tools={formData.agentpress_tools}
-                      onToolsChange={handleToolsChange}
-                      disabled={!areToolsEditable}
+                    <div className="flex flex-col flex-1 min-h-0">
+                      <Label className="text-base font-semibold mb-3 block">Description</Label>
+                      <Textarea
+                        value={formData.description}
+                        onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                        placeholder="Describe what this agent does..."
+                        className="flex-1 resize-none bg-muted/50"
+                        disabled={isViewingOldVersion}
+                      />
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="instructions" className="p-6 mt-0 flex flex-col h-full">
+                  <div className="flex flex-col flex-1 min-h-0">
+                    <Label className="text-base font-semibold mb-3 block flex-shrink-0">System Prompt</Label>
+                    <ExpandableMarkdownEditor
+                      value={formData.system_prompt}
+                      onSave={handleSystemPromptChange}
+                      disabled={!isSystemPromptEditable}
+                      placeholder="Define how your agent should behave..."
+                      className="flex-1 h-[90%]"
                     />
-                  </TabsContent>
-                  <TabsContent value="integrations" className="p-6 mt-0 h-[calc(100vh-16rem)]">
-                    <AgentMCPConfiguration
-                      configuredMCPs={formData.configured_mcps}
-                      customMCPs={formData.custom_mcps}
-                      onMCPChange={handleMCPChange}
-                      agentId={agentId}
-                      versionData={{
-                        configured_mcps: formData.configured_mcps,
-                        custom_mcps: formData.custom_mcps,
-                        system_prompt: formData.system_prompt,
-                        agentpress_tools: formData.agentpress_tools
-                      }}
-                      saveMode="callback"
-                      isLoading={updateAgentMCPsMutation.isPending}
-                    />
-                  </TabsContent>
+                  </div>
+                </TabsContent>
 
-                  <TabsContent value="knowledge" className="p-6 mt-0 h-[calc(100vh-16rem)]">
-                    <AgentKnowledgeBaseManager agentId={agentId} agentName={formData.name || 'Agent'} />
-                  </TabsContent>
+                <TabsContent value="tools" className="p-6 mt-0 h-[calc(100vh-16rem)]">
+                  <AgentToolsConfiguration
+                    tools={formData.agentpress_tools}
+                    onToolsChange={handleToolsChange}
+                    disabled={!areToolsEditable}
+                  />
+                </TabsContent>
+                <TabsContent value="integrations" className="p-6 mt-0 h-[calc(100vh-16rem)]">
+                  <AgentMCPConfiguration
+                    configuredMCPs={formData.configured_mcps}
+                    customMCPs={formData.custom_mcps}
+                    onMCPChange={handleMCPChange}
+                    agentId={agentId}
+                    versionData={{
+                      configured_mcps: formData.configured_mcps,
+                      custom_mcps: formData.custom_mcps,
+                      system_prompt: formData.system_prompt,
+                      agentpress_tools: formData.agentpress_tools
+                    }}
+                    saveMode="callback"
+                    isLoading={updateAgentMCPsMutation.isPending}
+                  />
+                </TabsContent>
 
-                  <TabsContent value="playbooks" className="p-6 mt-0 h-[calc(100vh-16rem)]">
-                    <AgentPlaybooksConfiguration agentId={agentId} agentName={formData.name || 'Agent'} />
-                  </TabsContent>
+                <TabsContent value="knowledge" className="p-6 mt-0 h-[calc(100vh-16rem)]">
+                  <AgentKnowledgeBaseManager agentId={agentId} agentName={formData.name || 'Agent'} />
+                </TabsContent>
 
-                  <TabsContent value="triggers" className="p-6 mt-0 h-[calc(100vh-16rem)]">
-                    <AgentTriggersConfiguration agentId={agentId} />
-                  </TabsContent>
+                <TabsContent value="playbooks" className="p-6 mt-0 h-[calc(100vh-16rem)]">
+                  <AgentPlaybooksConfiguration agentId={agentId} agentName={formData.name || 'Agent'} />
+                </TabsContent>
+
+                <TabsContent value="triggers" className="p-6 mt-0 h-[calc(100vh-16rem)]">
+                  <AgentTriggersConfiguration agentId={agentId} />
+                </TabsContent>
               </div>
             </Tabs>
           )}
-          
+
           <DialogFooter className="px-6 py-4 border-t bg-background flex-shrink-0">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => handleClose(false)}
               disabled={isSaving}
             >
               Cancel
             </Button>
-            <Button 
+            <Button
               onClick={handleSaveAll}
               disabled={!hasChanges || isSaving}
             >

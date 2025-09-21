@@ -1,12 +1,8 @@
 import os
 import io
-import zipfile
-import tempfile
-import shutil
-import asyncio
-import subprocess
+import uuid
 import re
-from typing import List, Dict, Any, Optional, Tuple
+from typing import Dict, Any
 from pathlib import Path
 import mimetypes
 import chardet
@@ -16,438 +12,309 @@ import docx
 
 from core.utils.logger import logger
 from core.services.supabase import DBConnection
+from core.services.llm import make_llm_api_call
 
 class FileProcessor:
-    SUPPORTED_TEXT_EXTENSIONS = {
-        '.txt'
-    }
-    
-    SUPPORTED_DOCUMENT_EXTENSIONS = {
-        '.pdf', '.docx'
-    }
-    
+    SUPPORTED_EXTENSIONS = {'.txt', '.pdf', '.docx'}
     MAX_FILE_SIZE = 50 * 1024 * 1024
-    MAX_ZIP_ENTRIES = 1000
-    MAX_CONTENT_LENGTH = 100000
     
     def __init__(self):
         self.db = DBConnection()
     
-    async def process_file_upload(
+    def sanitize_filename(self, filename: str) -> str:
+        """Sanitize filename for S3 storage - remove/replace invalid characters."""
+        # Keep the file extension
+        name, ext = os.path.splitext(filename)
+        
+        # Replace emojis and other problematic Unicode characters with underscores
+        name = re.sub(r'[^\w\s\-\.]', '_', name)
+        
+        # Replace spaces with underscores
+        name = re.sub(r'\s+', '_', name)
+        
+        # Remove multiple consecutive underscores
+        name = re.sub(r'_+', '_', name)
+        
+        # Remove leading/trailing underscores
+        name = name.strip('_')
+        
+        # Ensure name is not empty
+        if not name:
+            name = 'file'
+        
+        return f"{name}{ext}"
+    
+    def _is_likely_text_file(self, file_content: bytes) -> bool:
+        """Check if file content is likely text-based."""
+        try:
+            # Try to decode as text
+            detected = chardet.detect(file_content[:1024])  # Check first 1KB
+            if detected.get('confidence', 0) > 0.7:
+                decoded = file_content[:1024].decode(detected.get('encoding', 'utf-8'))
+                # Check if most characters are printable
+                printable_ratio = len([c for c in decoded if c.isprintable() or c.isspace()]) / len(decoded)
+                return printable_ratio > 0.8
+        except:
+            pass
+        return False
+    
+    async def process_file(
         self, 
-        agent_id: str, 
         account_id: str, 
+        folder_id: str,
         file_content: bytes, 
         filename: str, 
         mime_type: str
     ) -> Dict[str, Any]:
         try:
-            file_size = len(file_content)
-            if file_size > self.MAX_FILE_SIZE:
-                raise ValueError(f"File too large: {file_size} bytes (max: {self.MAX_FILE_SIZE})")
+            if len(file_content) > self.MAX_FILE_SIZE:
+                raise ValueError(f"File too large: {len(file_content)} bytes")
             
             file_extension = Path(filename).suffix.lower()
-
-            if file_extension == '.zip':
-                return await self._process_zip_file(agent_id, account_id, file_content, filename)
             
-            content = await self._extract_file_content(file_content, filename, mime_type)
+            # Check if it's text-based first
+            is_text_based = (
+                mime_type.startswith('text/') or 
+                mime_type in ['application/json', 'application/xml', 'text/xml'] or
+                self._is_likely_text_file(file_content)
+            )
             
-            if not content or not content.strip():
-                raise ValueError(f"No extractable content found in {filename}")
+            # If not text-based, check allowed extensions
+            if not is_text_based and file_extension not in self.SUPPORTED_EXTENSIONS:
+                raise ValueError(f"Unsupported file type: {file_extension}")
             
+            # Generate unique entry ID
+            entry_id = str(uuid.uuid4())
+            
+            # Sanitize filename for S3 storage
+            sanitized_filename = self.sanitize_filename(filename)
+            
+            # Upload to S3
+            s3_path = f"knowledge-base/{folder_id}/{entry_id}/{sanitized_filename}"
             client = await self.db.client
             
+            await client.storage.from_('file-uploads').upload(
+                s3_path, file_content, {"content-type": mime_type}
+            )
+            
+            # Extract content for summary
+            content = self._extract_content(file_content, filename, mime_type)
+            if not content:
+                # If no content could be extracted, create a basic file info summary
+                content = f"File: {filename} ({len(file_content)} bytes, {mime_type})"
+            
+            # Generate LLM summary
+            summary = await self._generate_summary(content, filename)
+            
+            # Save to database
             entry_data = {
-                'agent_id': agent_id,
+                'entry_id': entry_id,
+                'folder_id': folder_id,
                 'account_id': account_id,
-                'name': f"📄 {filename}",
-                'description': f"Content extracted from uploaded file: {filename}",
-                'content': content[:self.MAX_CONTENT_LENGTH],
-                'source_type': 'file',
-                'source_metadata': {
-                    'filename': filename,
-                    'mime_type': mime_type,
-                    'file_size': file_size,
-                    'extraction_method': self._get_extraction_method(file_extension, mime_type)
-                },
-                'file_size': file_size,
-                'file_mime_type': mime_type,
-                'usage_context': 'always',
+                'filename': filename,
+                'file_path': s3_path,
+                'file_size': len(file_content),
+                'mime_type': mime_type,
+                'summary': summary,
                 'is_active': True
             }
             
-            result = await client.table('agent_knowledge_base_entries').insert(entry_data).execute()
-            
-            if not result.data:
-                raise Exception("Failed to create knowledge base entry")
+            result = await client.table('knowledge_base_entries').insert(entry_data).execute()
             
             return {
                 'success': True,
-                'entry_id': result.data[0]['entry_id'],
+                'entry_id': entry_id,
                 'filename': filename,
-                'content_length': len(content),
-                'extraction_method': entry_data['source_metadata']['extraction_method']
+                'summary_length': len(summary)
             }
             
         except Exception as e:
             logger.error(f"Error processing file {filename}: {str(e)}")
-            return {
-                'success': False,
-                'filename': filename,
-                'error': str(e)
-            }
+            return {'success': False, 'error': str(e)}
     
-    async def _process_zip_file(
-        self, 
-        agent_id: str, 
-        account_id: str, 
-        zip_content: bytes, 
-        zip_filename: str
-    ) -> Dict[str, Any]:
+    async def _generate_summary(self, content: str, filename: str) -> str:
+        """Generate LLM summary of file content with smart chunking and fallbacks."""
         try:
-            client = await self.db.client
+            # Model priority: Google Gemini → OpenRouter → GPT-5 Mini
+            models = [
+                ("google/gemini-2.5-flash-lite", 1_000_000),  # 1M context
+                ("openrouter/google/gemini-2.5-flash-lite", 1_000_000),  # Fallback
+                ("gpt-5-mini", 400_000)  # Final fallback
+            ]
             
-            zip_entry_data = {
-                'agent_id': agent_id,
-                'account_id': account_id,
-                'name': f"📦 {zip_filename}",
-                'description': f"ZIP archive: {zip_filename}",
-                'content': f"ZIP archive containing multiple files. Extracted files will appear as separate entries.",
-                'source_type': 'file',
-                'source_metadata': {
-                    'filename': zip_filename,
-                    'mime_type': 'application/zip',
-                    'file_size': len(zip_content),
-                    'is_zip_container': True
-                },
-                'file_size': len(zip_content),
-                'file_mime_type': 'application/zip',
-                'usage_context': 'always',
-                'is_active': True
-            }
+            # Estimate tokens (rough: 1 token ≈ 4 chars)
+            estimated_tokens = len(content) // 4
             
-            zip_result = await client.table('agent_knowledge_base_entries').insert(zip_entry_data).execute()
-            zip_entry_id = zip_result.data[0]['entry_id']
-            
-            extracted_files = []
-            failed_files = []
-            
-            with zipfile.ZipFile(io.BytesIO(zip_content), 'r') as zip_ref:
-                file_list = zip_ref.namelist()
-                
-                if len(file_list) > self.MAX_ZIP_ENTRIES:
-                    raise ValueError(f"ZIP contains too many files: {len(file_list)} (max: {self.MAX_ZIP_ENTRIES})")
-                
-                for file_path in file_list:
-                    if file_path.endswith('/'):
-                        continue
+            for model_name, context_limit in models:
+                try:
+                    # Reserve tokens for prompt and response
+                    usable_context = context_limit - 1000  # Reserve for prompt + response
                     
-                    try:
-                        file_content = zip_ref.read(file_path)
-                        filename = os.path.basename(file_path)
+                    if estimated_tokens <= usable_context:
+                        # Content fits, use full content
+                        processed_content = content
+                    else:
+                        # Content too large, intelligent chunking
+                        processed_content = self._smart_chunk_content(content, usable_context * 4)  # Convert back to chars
+                    
+                    prompt = f"""Analyze this file and create a concise, actionable summary for an AI agent's knowledge base.
+
+File: {filename}
+Content: {processed_content}
+
+Generate a 2-3 sentence summary that captures:
+1. What this file contains
+2. Key information or purpose  
+3. When this knowledge would be useful
+
+Keep it under 200 words and make it actionable for context injection."""
+
+                    messages = [{"role": "user", "content": prompt}]
+                    
+                    response = await make_llm_api_call(
+                        messages=messages,
+                        model_name=model_name,
+                        temperature=0.1,
+                        max_tokens=300
+                    )
+                    
+                    summary = response.choices[0].message.content.strip()
+                    
+                    if summary:
+                        logger.info(f"Summary generated successfully using {model_name}")
+                        return summary
                         
-                        if not filename:
-                            continue
-                        
-                        mime_type, _ = mimetypes.guess_type(filename)
-                        if not mime_type:
-                            mime_type = 'application/octet-stream'
-                        
-                        content = await self._extract_file_content(file_content, filename, mime_type)
-                        
-                        if content and content.strip():
-                            extracted_entry_data = {
-                                'agent_id': agent_id,
-                                'account_id': account_id,
-                                'name': f"📄 {filename}",
-                                'description': f"Extracted from {zip_filename}: {file_path}",
-                                'content': content[:self.MAX_CONTENT_LENGTH],
-                                'source_type': 'zip_extracted',
-                                'source_metadata': {
-                                    'filename': filename,
-                                    'original_path': file_path,
-                                    'zip_filename': zip_filename,
-                                    'mime_type': mime_type,
-                                    'file_size': len(file_content),
-                                    'extraction_method': self._get_extraction_method(Path(filename).suffix.lower(), mime_type)
-                                },
-                                'file_size': len(file_content),
-                                'file_mime_type': mime_type,
-                                'extracted_from_zip_id': zip_entry_id,
-                                'usage_context': 'always',
-                                'is_active': True
-                            }
-                            
-                            extracted_result = await client.table('agent_knowledge_base_entries').insert(extracted_entry_data).execute()
-                            
-                            extracted_files.append({
-                                'filename': filename,
-                                'path': file_path,
-                                'entry_id': extracted_result.data[0]['entry_id'],
-                                'content_length': len(content)
-                            })
-                        
-                    except Exception as e:
-                        logger.error(f"Error extracting {file_path} from ZIP: {str(e)}")
-                        failed_files.append({
-                            'filename': os.path.basename(file_path),
-                            'path': file_path,
-                            'error': str(e)
-                        })
+                except Exception as e:
+                    logger.warning(f"Model {model_name} failed: {str(e)}")
+                    continue
             
-            return {
-                'success': True,
-                'zip_entry_id': zip_entry_id,
-                'zip_filename': zip_filename,
-                'extracted_files': extracted_files,
-                'failed_files': failed_files,
-                'total_extracted': len(extracted_files),
-                'total_failed': len(failed_files)
-            }
+            # All models failed - high-reliability fallback
+            logger.error("All LLM models failed, using intelligent fallback")
+            return self._create_fallback_summary(content, filename)
             
         except Exception as e:
-            logger.error(f"Error processing ZIP file {zip_filename}: {str(e)}")
-            return {
-                'success': False,
-                'zip_filename': zip_filename,
-                'error': str(e)
-            }
+            logger.error(f"Error generating summary: {str(e)}")
+            return self._create_fallback_summary(content, filename)
     
-    async def process_git_repository(
-        self, 
-        agent_id: str, 
-        account_id: str, 
-        git_url: str,
-        branch: str = 'main',
-        include_patterns: List[str] = None,
-        exclude_patterns: List[str] = None
-    ) -> Dict[str, Any]:
-        if include_patterns is None:
-            include_patterns = ['*.txt', '*.pdf', '*.docx']
+    def _smart_chunk_content(self, content: str, max_chars: int) -> str:
+        """Intelligently chunk content to fit context limits."""
+        if len(content) <= max_chars:
+            return content
         
-        if exclude_patterns is None:
-            exclude_patterns = ['node_modules/*', '.git/*', '*.pyc', '__pycache__/*', '.env', '*.log']
+        # Strategy: Take beginning + end with priority sections
+        quarter = max_chars // 4
         
-        temp_dir = None
-        try:
-            temp_dir = tempfile.mkdtemp()
+        # Always include beginning (most important)
+        beginning = content[:quarter * 2]
+        
+        # Include end for conclusion/summary
+        ending = content[-quarter:]
+        
+        # Try to find important middle sections (headers, key terms)
+        middle_section = ""
+        remaining_chars = max_chars - len(beginning) - len(ending) - 100  # Buffer
+        
+        if remaining_chars > 0:
+            middle_start = len(beginning)
+            middle_end = len(content) - quarter
+            middle_content = content[middle_start:middle_end]
             
-            clone_cmd = ['git', 'clone', '--depth', '1', '--branch', branch, git_url, temp_dir]
-            process = await asyncio.create_subprocess_exec(
-                *clone_cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            stdout, stderr = await process.communicate()
+            # Look for important sections (lines with caps, numbers, bullets)
+            lines = middle_content.split('\n')
+            important_lines = []
+            current_length = 0
             
-            if process.returncode != 0:
-                raise Exception(f"Git clone failed: {stderr.decode()}")
-            
-            client = await self.db.client
-            
-            repo_name = git_url.split('/')[-1].replace('.git', '')
-            repo_entry_data = {
-                'agent_id': agent_id,
-                'account_id': account_id,
-                'name': f"🔗 {repo_name}",
-                'description': f"Git repository: {git_url} (branch: {branch})",
-                'content': f"Git repository cloned from {git_url}. Individual files are processed as separate entries.",
-                'source_type': 'git_repo',
-                'source_metadata': {
-                    'git_url': git_url,
-                    'branch': branch,
-                    'include_patterns': include_patterns,
-                    'exclude_patterns': exclude_patterns
-                },
-                'usage_context': 'always',
-                'is_active': True
-            }
-            
-            repo_result = await client.table('agent_knowledge_base_entries').insert(repo_entry_data).execute()
-            repo_entry_id = repo_result.data[0]['entry_id']
-            
-            processed_files = []
-            failed_files = []
-            
-            for root, dirs, files in os.walk(temp_dir):
-                if '.git' in dirs:
-                    dirs.remove('.git')
+            for line in lines:
+                line_stripped = line.strip()
+                if not line_stripped:
+                    continue
+                    
+                # Prioritize lines that look important
+                is_important = (
+                    line_stripped.isupper() or  # Headers
+                    line_stripped.startswith(('•', '-', '*', '1.', '2.')) or  # Lists
+                    any(keyword in line_stripped.lower() for keyword in ['summary', 'conclusion', 'important', 'key', 'main']) or
+                    len(line_stripped) < 100  # Short lines often important
+                )
                 
-                for file in files:
-                    file_path = os.path.join(root, file)
-                    relative_path = os.path.relpath(file_path, temp_dir)
-                    
-                    if not self._should_include_file(relative_path, include_patterns, exclude_patterns):
-                        continue
-                    
-                    try:
-                        with open(file_path, 'rb') as f:
-                            file_content = f.read()
-                        
-                        if len(file_content) > self.MAX_FILE_SIZE:
-                            continue
-                        
-                        mime_type, _ = mimetypes.guess_type(file)
-                        if not mime_type:
-                            mime_type = 'application/octet-stream'
-                        
-                        content = await self._extract_file_content(file_content, file, mime_type)
-                        
-                        if content and content.strip():
-                            file_entry_data = {
-                                'agent_id': agent_id,
-                                'account_id': account_id,
-                                'name': f"📄 {file}",
-                                'description': f"From {repo_name}: {relative_path}",
-                                'content': content[:self.MAX_CONTENT_LENGTH],
-                                'source_type': 'git_repo',
-                                'source_metadata': {
-                                    'filename': file,
-                                    'relative_path': relative_path,
-                                    'git_url': git_url,
-                                    'branch': branch,
-                                    'repo_name': repo_name,
-                                    'mime_type': mime_type,
-                                    'file_size': len(file_content),
-                                    'extraction_method': self._get_extraction_method(Path(file).suffix.lower(), mime_type)
-                                },
-                                'file_size': len(file_content),
-                                'file_mime_type': mime_type,
-                                'extracted_from_zip_id': repo_entry_id,
-                                'usage_context': 'always',
-                                'is_active': True
-                            }
-                            
-                            file_result = await client.table('agent_knowledge_base_entries').insert(file_entry_data).execute()
-                            
-                            processed_files.append({
-                                'filename': file,
-                                'relative_path': relative_path,
-                                'entry_id': file_result.data[0]['entry_id'],
-                                'content_length': len(content)
-                            })
-                    
-                    except Exception as e:
-                        logger.error(f"Error processing {relative_path} from git repo: {str(e)}")
-                        failed_files.append({
-                            'filename': file,
-                            'relative_path': relative_path,
-                            'error': str(e)
-                        })
+                if is_important and current_length + len(line) < remaining_chars:
+                    important_lines.append(line)
+                    current_length += len(line)
             
-            return {
-                'success': True,
-                'repo_entry_id': repo_entry_id,
-                'repo_name': repo_name,
-                'git_url': git_url,
-                'branch': branch,
-                'processed_files': processed_files,
-                'failed_files': failed_files,
-                'total_processed': len(processed_files),
-                'total_failed': len(failed_files)
-            }
-            
-        except Exception as e:
-            logger.error(f"Error processing git repository {git_url}: {str(e)}")
-            return {
-                'success': False,
-                'git_url': git_url,
-                'error': str(e)
-            }
+            if important_lines:
+                middle_section = '\n'.join(important_lines)
         
-        finally:
-            if temp_dir and os.path.exists(temp_dir):
-                shutil.rmtree(temp_dir, ignore_errors=True)
+        # Combine sections
+        if middle_section:
+            return f"{beginning}\n\n[KEY SECTIONS]\n{middle_section}\n\n[ENDING]\n{ending}"
+        else:
+            return f"{beginning}\n\n[...content truncated...]\n\n{ending}"
     
-    async def _extract_file_content(self, file_content: bytes, filename: str, mime_type: str) -> str:
+    def _create_fallback_summary(self, content: str, filename: str) -> str:
+        """Create intelligent fallback summary when LLM fails."""
+        # Extract first meaningful portion
+        preview = content[:2000].strip()
+        
+        # Basic content analysis
+        lines = content.split('\n')
+        non_empty_lines = [line.strip() for line in lines if line.strip()]
+        
+        # Try to identify content type
+        content_type = "document"
+        if filename.endswith('.py'):
+            content_type = "Python code"
+        elif filename.endswith('.js'):
+            content_type = "JavaScript code"
+        elif filename.endswith('.md'):
+            content_type = "Markdown document"
+        elif filename.endswith('.txt'):
+            content_type = "text document"
+        elif filename.endswith('.csv'):
+            content_type = "CSV data file"
+        
+        # Generate intelligent fallback
+        return f"This {content_type} '{filename}' contains {len(content):,} characters across {len(non_empty_lines)} lines. Preview: {preview[:200]}{'...' if len(preview) > 200 else ''} This file would be useful for understanding the specific content and context it provides."
+    
+    def _extract_content(self, file_content: bytes, filename: str, mime_type: str) -> str:
+        """Extract text content from file bytes."""
         file_extension = Path(filename).suffix.lower()
         
         try:
-            if file_extension in self.SUPPORTED_TEXT_EXTENSIONS or mime_type.startswith('text/'):
-                return self._extract_text_content(file_content)
+            # Handle text-based files (including JSON, XML, CSV, etc.)
+            if (file_extension in ['.txt', '.json', '.xml', '.csv', '.yml', '.yaml', '.md', '.log', '.ini', '.cfg', '.conf'] 
+                or mime_type.startswith('text/') 
+                or mime_type in ['application/json', 'application/xml', 'text/xml']):
+                
+                detected = chardet.detect(file_content)
+                encoding = detected.get('encoding', 'utf-8')
+                try:
+                    return file_content.decode(encoding)
+                except UnicodeDecodeError:
+                    return file_content.decode('utf-8', errors='replace')
             
             elif file_extension == '.pdf':
-                return self._extract_pdf_content(file_content)
+                pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_content))
+                return '\n\n'.join(page.extract_text() for page in pdf_reader.pages)
             
             elif file_extension == '.docx':
-                return self._extract_docx_content(file_content)
+                doc = docx.Document(io.BytesIO(file_content))
+                return '\n'.join(paragraph.text for paragraph in doc.paragraphs)
             
+            # For any other file type, try to decode as text (fallback)
             else:
-                raise ValueError(f"Unsupported file format: {file_extension}. Only .txt, .pdf, and .docx files are supported.")
-        
+                try:
+                    detected = chardet.detect(file_content)
+                    encoding = detected.get('encoding', 'utf-8')
+                    content = file_content.decode(encoding)
+                    # Only return if it seems to be mostly text content
+                    if len([c for c in content[:1000] if c.isprintable() or c.isspace()]) > 800:
+                        return content
+                except:
+                    pass
+                
+                # If we can't extract text content, return a placeholder
+                return f"[Binary file: {filename}] - Content cannot be extracted as text, but file is stored and available for download."
+            
         except Exception as e:
             logger.error(f"Error extracting content from {filename}: {str(e)}")
-            return f"Error extracting content: {str(e)}"
-    
-    def _extract_text_content(self, file_content: bytes) -> str:
-        detected = chardet.detect(file_content)
-        encoding = detected.get('encoding', 'utf-8')
-        
-        try:
-            raw_text = file_content.decode(encoding)
-        except UnicodeDecodeError:
-            raw_text = file_content.decode('utf-8', errors='replace')
-        
-        return self._sanitize_content(raw_text)
-    
-    def _extract_pdf_content(self, file_content: bytes) -> str:
-        pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_content))
-        text_content = []
-        
-        for page in pdf_reader.pages:
-            text_content.append(page.extract_text())
-        
-        raw_text = '\n\n'.join(text_content)
-        return self._sanitize_content(raw_text)
-    
-    def _extract_docx_content(self, file_content: bytes) -> str:
-        doc = docx.Document(io.BytesIO(file_content))
-        text_content = []
-        
-        for paragraph in doc.paragraphs:
-            text_content.append(paragraph.text)
-        
-        raw_text = '\n'.join(text_content)
-        return self._sanitize_content(raw_text)
-    
-    
-    def _sanitize_content(self, content: str) -> str:
-        if not content:
-            return content
-
-        sanitized = ''.join(char for char in content if ord(char) >= 32 or char in '\n\r\t')
-
-        sanitized = sanitized.replace('\x00', '')
-        sanitized = sanitized.replace('\u0000', '')
-        
-        sanitized = sanitized.replace('\ufeff', '')
-        
-        sanitized = sanitized.replace('\r\n', '\n').replace('\r', '\n')
-
-        sanitized = re.sub(r'\n{4,}', '\n\n\n', sanitized)
-
-        return sanitized.strip()
-
-    def _get_extraction_method(self, file_extension: str, mime_type: str) -> str:
-        if file_extension == '.pdf':
-            return 'PyPDF2'
-        elif file_extension == '.docx':
-            return 'python-docx'
-        elif file_extension == '.txt':
-            return 'text encoding detection'
-        else:
-            return 'text encoding detection'
-    
-    def _should_include_file(self, file_path: str, include_patterns: List[str], exclude_patterns: List[str]) -> bool:
-        import fnmatch
-        
-        for pattern in exclude_patterns:
-            if fnmatch.fnmatch(file_path, pattern):
-                return False
-        
-        for pattern in include_patterns:
-            if fnmatch.fnmatch(file_path, pattern):
-                return True
-        
-        return False 
+            return f"[Error extracting content from {filename}] - File is stored but content extraction failed: {str(e)}" 
