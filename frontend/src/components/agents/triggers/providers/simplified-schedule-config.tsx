@@ -332,7 +332,7 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
   const [selectedMonthDays, setSelectedMonthDays] = useState<string[]>(['1']);
 
   // One-time schedule state
-  const [oneTimeDate, setOneTimeDate] = useState<Date | undefined>(new Date());
+  const [oneTimeDate, setOneTimeDate] = useState<Date | undefined>(undefined);
   const [oneTimeHour, setOneTimeHour] = useState<string>('9');
   const [oneTimeMinute, setOneTimeMinute] = useState<string>('0');
 
@@ -346,11 +346,7 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
   }, [config.cron_expression]);
 
   // Update cron when recurring settings change
-  useEffect(() => {
-    if (!selectedPreset) { // Only auto-generate if no preset is selected
-      handleRecurringScheduleChange();
-    }
-  }, [scheduleType, selectedHour, selectedMinute, selectedWeekdays, selectedMonthDays]);
+  // Removed auto-generation to prevent interference with preset selections
 
   // Update cron when one-time settings change
   useEffect(() => {
@@ -410,7 +406,10 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
       cron_expression: cronExpression,
       timezone: timezone
     });
-    setSelectedPreset(''); // Clear preset selection when using custom recurring
+    // Only clear preset if we're generating a different cron than what's currently set
+    if (cronExpression !== config.cron_expression) {
+      setSelectedPreset(''); // Clear preset selection when using custom recurring
+    }
   };
 
   const handleWeekdayToggle = (weekday: string) => {

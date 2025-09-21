@@ -34,8 +34,6 @@ class JsonImportService:
         agent_info = {
             'name': json_data.get('name', 'Imported Agent'),
             'description': json_data.get('description', ''),
-            'avatar': json_data.get('avatar'),
-            'avatar_color': json_data.get('avatar_color'),
             'profile_image_url': json_data.get('profile_image_url') or json_data.get('metadata', {}).get('profile_image_url'),
             'icon_name': json_data.get('icon_name', 'brain'),
             'icon_color': json_data.get('icon_color', '#000000'),
@@ -74,8 +72,6 @@ class JsonImportService:
                 agent_info={
                     'name': json_data.get('name', 'Imported Agent'),
                     'description': json_data.get('description', ''),
-                    'avatar': json_data.get('avatar'),
-                    'avatar_color': json_data.get('avatar_color'),
                     'profile_image_url': json_data.get('profile_image_url') or json_data.get('metadata', {}).get('profile_image_url'),
                     'icon_name': json_data.get('icon_name', 'brain'),
                     'icon_color': json_data.get('icon_color', '#000000'),
@@ -375,9 +371,6 @@ async def export_agent(agent_id: str, user_id: str = Depends(verify_and_get_user
                 'custom_mcp': config.get('custom_mcps', [])
             },
             'metadata': {
-                # keep backward compat metadata
-                'avatar': config.get('avatar'),
-                'avatar_color': config.get('avatar_color'),
                 # include profile image url in metadata for completeness
                 'profile_image_url': agent.get('profile_image_url')
             }

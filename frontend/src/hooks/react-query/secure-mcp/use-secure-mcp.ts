@@ -39,8 +39,6 @@ export interface AgentTemplate {
   marketplace_published_at?: string;
   created_at: string;
   creator_name?: string;
-  avatar?: string;
-  avatar_color?: string;
   profile_image_url?: string;
   icon_name?: string;
   icon_color?: string;

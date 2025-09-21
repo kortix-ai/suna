@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { Search } from 'lucide-react';
 import { AGENTPRESS_TOOL_DEFINITIONS, getToolDisplayName } from './tools';
 import { toast } from 'sonner';
@@ -66,9 +67,8 @@ export const AgentToolsConfiguration = ({ tools, onToolsChange, disabled = false
   };
 
   return (
-    <div className="space-y-4">
-      {/* Search Input */}
-      <div className="relative">
+    <div className="flex flex-col h-full space-y-4">
+      <div className="relative flex-shrink-0">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
         <Input
           placeholder="Search tools..."
@@ -77,9 +77,8 @@ export const AgentToolsConfiguration = ({ tools, onToolsChange, disabled = false
           className="pl-9"
         />
       </div>
-
-      {/* Tools List with Scrolling */}
-      <div className="space-y-3 max-h-96 overflow-y-auto pr-2">
+      <ScrollArea className="flex-1 pr-1">
+        <div className="space-y-3">
           {getFilteredTools().map(([toolName, toolInfo]) => (
             <div 
               key={toolName} 
@@ -122,7 +121,8 @@ export const AgentToolsConfiguration = ({ tools, onToolsChange, disabled = false
               </p>
             </div>
           )}
-      </div>
+        </div>
+      </ScrollArea>
     </div>
   );
 }; 

@@ -298,7 +298,7 @@ class ResponseProcessor:
                 streaming_metadata["last_chunk_time"] = current_time
                 
                 # Log info about chunks periodically for debugging
-                if chunk_count == 1 or (chunk_count % 100 == 0) or hasattr(chunk, 'usage'):
+                if chunk_count == 1 or (chunk_count % 500 == 0) or hasattr(chunk, 'usage'):
                     logger.debug(f"Processing chunk #{chunk_count}, type={type(chunk).__name__}")
                 
                 if hasattr(chunk, 'created') and chunk.created:

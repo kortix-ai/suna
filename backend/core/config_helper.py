@@ -37,8 +37,6 @@ def _extract_suna_agent_config(agent_data: Dict[str, Any], version_data: Optiona
         'system_prompt': SUNA_CONFIG['system_prompt'],
         'model': SUNA_CONFIG['model'],
         'agentpress_tools': _extract_agentpress_tools_for_run(SUNA_CONFIG['agentpress_tools']),
-        'avatar': SUNA_CONFIG['avatar'],
-        'avatar_color': SUNA_CONFIG['avatar_color'],
         'is_default': True,
         'is_suna_default': True,
         'centrally_managed': True,
@@ -117,8 +115,6 @@ def _extract_custom_agent_config(agent_data: Dict[str, Any], version_data: Optio
             'custom_mcps': custom_mcps,
             'workflows': workflows,
             'triggers': triggers,
-            'avatar': agent_data.get('avatar'),
-            'avatar_color': agent_data.get('avatar_color'),
             'profile_image_url': agent_data.get('profile_image_url'),
             'icon_name': agent_data.get('icon_name'),
             'icon_color': agent_data.get('icon_color'),
@@ -153,8 +149,6 @@ def _extract_custom_agent_config(agent_data: Dict[str, Any], version_data: Optio
         'custom_mcps': [],
         'workflows': [],
         'triggers': [],
-        'avatar': agent_data.get('avatar'),
-        'avatar_color': agent_data.get('avatar_color'),
         'profile_image_url': agent_data.get('profile_image_url'),
         'icon_name': agent_data.get('icon_name'),
         'icon_color': agent_data.get('icon_color'),
@@ -180,8 +174,6 @@ def build_unified_config(
     agentpress_tools: Dict[str, Any],
     configured_mcps: List[Dict[str, Any]],
     custom_mcps: Optional[List[Dict[str, Any]]] = None,
-    avatar: Optional[str] = None,
-    avatar_color: Optional[str] = None,
     suna_metadata: Optional[Dict[str, Any]] = None,
     workflows: Optional[List[Dict[str, Any]]] = None,
     triggers: Optional[List[Dict[str, Any]]] = None
@@ -202,10 +194,7 @@ def build_unified_config(
         },
         'workflows': workflows or [],
         'triggers': triggers or [],
-        'metadata': {
-            'avatar': avatar,
-            'avatar_color': avatar_color
-        }
+        'metadata': {}
     }
     
     if suna_metadata:

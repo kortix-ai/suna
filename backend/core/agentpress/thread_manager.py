@@ -15,8 +15,8 @@ from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from langfuse.client import StatefulGenerationClient, StatefulTraceClient
 from core.services.langfuse import langfuse
-from billing.billing_integration import billing_integration
 from datetime import datetime, timezone
+from core.billing.billing_integration import billing_integration
 
 ToolChoice = Literal["auto", "required", "none"]
 
@@ -199,7 +199,6 @@ class ThreadManager:
             logger.error(f"Failed to get messages for thread {thread_id}: {str(e)}", exc_info=True)
             return []
     
-
     async def run_thread(
         self,
         thread_id: str,

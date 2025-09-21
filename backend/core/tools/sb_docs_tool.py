@@ -5,6 +5,7 @@ from core.agentpress.tool import openapi_schema, usage_example
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
+from core.utils.config import config
 import uuid
 from datetime import datetime
 import re
@@ -273,14 +274,14 @@ IMPORTANT: All content must be wrapped in proper HTML tags. Do not use unsupport
             if hasattr(self, '_sandbox_url') and self._sandbox_url:
                 preview_url = f"{self._sandbox_url}/docs/{filename}"
             
-            # Include sandbox_id for proper file access
+            
             await self._ensure_sandbox()
             
             return self.success_response({
                 "success": True,
                 "document": doc_info,
                 "content": content,
-                "sandbox_id": self.sandbox_id,  # Include the sandbox ID for file viewer
+                "sandbox_id": self.sandbox_id,  
                 "preview_url": preview_url,
                 "message": f"Document '{title}' created successfully"
             })
@@ -288,107 +289,6 @@ IMPORTANT: All content must be wrapped in proper HTML tags. Do not use unsupport
         except Exception as e:
             logger.error(f"Error creating document: {str(e)}")
             return self.fail_response(f"Error creating document: {str(e)}")
-            
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "update_document",
-            "description": "Update an existing document's content or metadata",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "doc_id": {
-                        "type": "string",
-                        "description": "ID of the document to update"
-                    },
-                    "title": {
-                        "type": "string",
-                        "description": "New title for the document (optional)"
-                    },
-                    "content": {
-                        "type": "string",
-                        "description": """New HTML content for the document (optional). For HTML documents, use TipTap-compatible format:
-- Paragraphs: <p>text</p>
-- Headings: <h1>, <h2>, <h3> (levels 1-3 only)
-- Lists: <ul><li>item</li></ul> or <ol><li>item</li></ol>
-- Formatting: <strong>bold</strong>, <em>italic</em>, <u>underline</u>, <s>strikethrough</s>
-- Links: <a href="url">text</a>
-- Code: <code>inline code</code> or <pre><code>block code</code></pre>
-- Blockquotes: <blockquote>quote</blockquote>
-- Images: <img src="url" alt="description" />
-- Tables: <table><tr><th>Header</th></tr><tr><td>Cell</td></tr></table>
-
-All content must use proper HTML tags without custom styles or classes."""
-                    },
-                    "metadata": {
-                        "type": "object",
-                        "description": "Updated metadata (optional)"
-                    }
-                },
-                "required": ["doc_id"]
-            }
-        }
-    })
-    async def update_document(self, doc_id: str, title: Optional[str] = None, 
-                            content: Optional[str] = None, metadata: Optional[Dict] = None) -> ToolResult:
-        try:
-            await self._ensure_sandbox()
-            
-            all_metadata = await self._load_metadata()
-            
-            if doc_id not in all_metadata["documents"]:
-                return self.fail_response(f"Document with ID '{doc_id}' not found")
-            
-            doc_info = all_metadata["documents"][doc_id]
-
-            if content is not None:
-                if doc_info.get("format") in ["html", "tiptap", "doc"] or doc_info.get("is_tiptap_doc") or doc_info.get("doc_type") == "tiptap_document":
-                    content = self._validate_and_clean_tiptap_html(content)
-                    logger.debug(f"Cleaned HTML content for TipTap update: {content[:200]}...")
-
-                    document_wrapper = {
-                        "type": "tiptap_document",
-                        "version": "1.0",
-                        "title": title or doc_info["title"],
-                        "content": content,
-                        "metadata": doc_info.get("metadata", {}) if metadata is None else {**doc_info.get("metadata", {}), **metadata},
-                        "created_at": doc_info.get("created_at", datetime.now().isoformat()),
-                        "updated_at": datetime.now().isoformat(),
-                        "doc_id": doc_id
-                    }
-                    content_to_save = json.dumps(document_wrapper, indent=2)
-                else:
-                    content_to_save = content
-                
-                await self.sandbox.fs.upload_file(content_to_save.encode(), doc_info["path"])
-            
-            if title is not None:
-                doc_info["title"] = title
-            if metadata is not None:
-                doc_info["metadata"].update(metadata)
-            doc_info["updated_at"] = datetime.now().isoformat()
-            
-            all_metadata["documents"][doc_id] = doc_info
-            await self._save_metadata(all_metadata)
-            
-            preview_url = None
-            if hasattr(self, '_sandbox_url') and self._sandbox_url:
-                preview_url = f"{self._sandbox_url}/docs/{doc_info['filename']}"
-            
-            await self._ensure_sandbox()
-            
-            return self.success_response({
-                "success": True,
-                "document": doc_info,
-                "content": content if content is not None else None,
-                "sandbox_id": self.sandbox_id,
-                "preview_url": preview_url,
-                "message": f"Document '{doc_info['title']}' updated successfully"
-            })
-            
-        except Exception as e:
-            logger.error(f"Error updating document: {str(e)}")
-            return self.fail_response(f"Error updating document: {str(e)}")
             
     @openapi_schema({
         "type": "function",

@@ -14,6 +14,7 @@ import {
   Check,
   History
 } from "lucide-react"
+import { ThreadIcon } from "./thread-icon"
 import { toast } from "sonner"
 import { usePathname, useRouter } from "next/navigation"
 
@@ -108,7 +109,13 @@ const ThreadItem: React.FC<{
           >
             {isThreadLoading ? (
               <Loader2 className="h-4 w-4 animate-spin mr-2 flex-shrink-0" />
-            ) : null}
+            ) : (
+              <ThreadIcon 
+                iconName={thread.iconName} 
+                className="mr-2" 
+                size={16} 
+              />
+            )}
             <span className="truncate">{thread.projectName}</span>
           </Link>
           

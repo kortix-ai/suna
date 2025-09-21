@@ -10,6 +10,8 @@ import { toast } from 'sonner';
 import { AgentCard } from './custom-agents-page/agent-card';
 import { KortixLogo } from '../sidebar/kortix-logo';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { AgentConfigurationDialog } from './agent-configuration-dialog';
+import { isStagingMode } from '@/lib/config';
 
 interface Agent {
   agent_id: string;
@@ -164,7 +166,7 @@ const AgentModal: React.FC<AgentModalProps> = ({
                 Chat
               </Button>
             </div>
-            {!isSunaAgent && (
+            {!isSunaAgent && isStagingMode && (
               <div className="pt-2">
                 {agent.is_public ? (
                   <div className="space-y-2">
@@ -235,6 +237,8 @@ export const AgentsGrid: React.FC<AgentsGridProps> = ({
 }) => {
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
   const [unpublishingId, setUnpublishingId] = useState<string | null>(null);
+  const [showConfigDialog, setShowConfigDialog] = useState(false);
+  const [configAgentId, setConfigAgentId] = useState<string | null>(null);
   const router = useRouter();
   
   const unpublishAgentMutation = useUnpublishTemplate();
@@ -244,8 +248,9 @@ export const AgentsGrid: React.FC<AgentsGridProps> = ({
   };
 
   const handleCustomize = (agentId: string) => {
-    router.push(`/agents/config/${agentId}`);
     setSelectedAgent(null);
+    setConfigAgentId(agentId);
+    setShowConfigDialog(true);
   };
 
   const handleChat = (agentId: string) => {
@@ -379,6 +384,14 @@ export const AgentsGrid: React.FC<AgentsGridProps> = ({
         isPublishing={externalPublishingId === selectedAgent?.agent_id}
         isUnpublishing={unpublishingId === selectedAgent?.agent_id}
       />
+      
+      {configAgentId && (
+        <AgentConfigurationDialog
+          open={showConfigDialog}
+          onOpenChange={setShowConfigDialog}
+          agentId={configAgentId}
+        />
+      )}
     </>
   );
 };
