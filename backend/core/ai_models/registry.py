@@ -158,7 +158,7 @@ class ModelRegistry:
         # Grok 4 Fast (Free)
         self.register(Model(
             id="xai/grok-4-fast",
-            name="Grok 4 Fast (Free)",
+            name="Grok 4 Fast",
             provider=ModelProvider.XAI,
             aliases=[
                 "grok-4-fast",
