@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
 import stripe
@@ -599,5 +599,92 @@ class SubscriptionService:
             'next_credit_grant': next_grant_date.isoformat()
         }).eq('account_id', account_id).execute()
 
+    async def get_user_subscription_tier(self, account_id: str) -> Dict:
+        """
+        Get the subscription tier information for a user.
+        
+        Args:
+            account_id: The user's account ID
+            
+        Returns:
+            Dictionary containing tier information
+        """
+        cache_key = f"subscription_tier:{account_id}"
+        cached = await Cache.get(cache_key)
+        if cached:
+            return cached
+        
+        db = DBConnection()
+        client = await db.client
 
-subscription_service = SubscriptionService() 
+        credit_result = await client.from_('credit_accounts')\
+            .select('tier, trial_status')\
+            .eq('account_id', account_id)\
+            .execute()
+        
+        tier_name = 'none'
+        trial_status = None
+        
+        if credit_result.data and len(credit_result.data) > 0:
+            tier_name = credit_result.data[0].get('tier', 'none')
+            trial_status = credit_result.data[0].get('trial_status')
+        
+        tier_obj = TIERS.get(tier_name, TIERS['none'])
+        tier_info = {
+            'name': tier_obj.name,
+            'display_name': tier_obj.display_name,
+            'credits': float(tier_obj.monthly_credits),
+            'can_purchase_credits': tier_obj.can_purchase_credits,
+            'models': tier_obj.models,
+            'project_limit': tier_obj.project_limit,
+            'is_trial': trial_status == 'active'
+        }
+        
+        await Cache.set(cache_key, tier_info, ttl=60)
+        return tier_info
+
+    async def get_allowed_models_for_user(self, user_id: str, client=None) -> List[str]:
+        """
+        Get the list of model IDs allowed for a user based on their subscription tier.
+        
+        Args:
+            user_id: The user's account ID
+            client: Optional Supabase client (for compatibility with old API)
+            
+        Returns:
+            List of model IDs allowed for the user's subscription tier.
+        """
+        try:
+            from core.ai_models import model_manager
+            
+            # Get user's subscription tier
+            tier_info = await self.get_user_subscription_tier(user_id)
+            tier_name = tier_info['name']
+            
+            logger.debug(f"[ALLOWED_MODELS] User {user_id} tier: {tier_name}")
+            
+            # If user has 'all' models access
+            if 'all' in tier_info.get('models', []):
+                # Get all available models from the model manager
+                all_models = model_manager.list_available_models(include_disabled=False)
+                allowed_model_ids = [model_data["id"] for model_data in all_models]
+                logger.debug(f"[ALLOWED_MODELS] User {user_id} has access to all {len(allowed_model_ids)} models")
+                return allowed_model_ids
+            
+            # If user has specific models listed
+            elif tier_info.get('models'):
+                logger.debug(f"[ALLOWED_MODELS] User {user_id} has specific models: {tier_info['models']}")
+                return tier_info['models']
+            
+            # If user has no access (free/none tier)
+            else:
+                logger.debug(f"[ALLOWED_MODELS] User {user_id} has no model access (tier: {tier_name})")
+                return []
+                
+        except Exception as e:
+            logger.error(f"[ALLOWED_MODELS] Error getting allowed models for user {user_id}: {e}")
+            return []
+
+
+subscription_service = SubscriptionService()
+

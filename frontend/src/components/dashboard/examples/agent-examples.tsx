@@ -75,6 +75,7 @@ export function AgentExamples({
       );
     }
   }
+  
   return (
     <DefaultExamples 
       onSelectPrompt={onSelectPrompt} 

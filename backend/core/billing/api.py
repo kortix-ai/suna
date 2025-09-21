@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends, Request, Query
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel
@@ -78,40 +78,6 @@ def calculate_token_cost(prompt_tokens: int, completion_tokens: int, model: str)
         logger.error(f"[COST_CALC] Error calculating token cost for model '{model}': {e}")
         return Decimal('0.01')
 
-async def get_user_subscription_tier(account_id: str) -> Dict:
-    cache_key = f"subscription_tier:{account_id}"
-    cached = await Cache.get(cache_key)
-    if cached:
-        return cached
-    
-    db = DBConnection()
-    client = await db.client
-
-    credit_result = await client.from_('credit_accounts')\
-        .select('tier, trial_status')\
-        .eq('account_id', account_id)\
-        .execute()
-    
-    tier_name = 'none'
-    trial_status = None
-    
-    if credit_result.data and len(credit_result.data) > 0:
-        tier_name = credit_result.data[0].get('tier', 'none')
-        trial_status = credit_result.data[0].get('trial_status')
-    
-    tier_obj = TIERS.get(tier_name, TIERS['none'])
-    tier_info = {
-        'name': tier_obj.name,
-        'display_name': tier_obj.display_name,
-        'credits': float(tier_obj.monthly_credits),
-        'can_purchase_credits': tier_obj.can_purchase_credits,
-        'models': tier_obj.models,
-        'project_limit': tier_obj.project_limit,
-        'is_trial': trial_status == 'active'
-    }
-    
-    await Cache.set(cache_key, tier_info, ttl=60)
-    return tier_info
 
 
 async def calculate_credit_breakdown(account_id: str, client) -> Dict:
@@ -150,8 +116,9 @@ async def check_billing_status(
     if config.ENV_MODE == EnvMode.LOCAL:
         return {'can_run': True, 'message': 'Local mode', 'balance': 999999}
     
+    from .subscription_service import subscription_service
     balance = await credit_service.get_balance(account_id)
-    tier = await get_user_subscription_tier(account_id)
+    tier = await subscription_service.get_user_subscription_tier(account_id)
     
     return {
         'can_run': balance > 0,
@@ -177,9 +144,10 @@ async def check_status(
                 "can_purchase_credits": False
             }
         
+        from .subscription_service import subscription_service
         balance = await credit_service.get_balance(account_id)
         summary = await credit_service.get_account_summary(account_id)
-        tier = await get_user_subscription_tier(account_id)
+        tier = await subscription_service.get_user_subscription_tier(account_id)
         
         # Check trial status
         db = DBConnection()
@@ -367,7 +335,7 @@ async def purchase_credits_checkout(
         amount=request.amount,
         success_url=request.success_url,
         cancel_url=request.cancel_url,
-        get_user_subscription_tier_func=get_user_subscription_tier
+        get_user_subscription_tier_func=None  # Will be imported in payment service
     )
     return result
 
@@ -770,7 +738,7 @@ async def get_available_models(
     try:
         from core.ai_models import model_manager
         from core.services.supabase import DBConnection
-        from core.services.billing import get_allowed_models_for_user
+        # Use the implemented get_allowed_models_for_user function
         
         if config.ENV_MODE == EnvMode.LOCAL:
             logger.debug("Running in local development mode - all models available")
@@ -805,14 +773,17 @@ async def get_available_models(
         if account_result.data and len(account_result.data) > 0:
             tier_name = account_result.data[0].get('tier', 'none')
         
-        tier = await get_user_subscription_tier(account_id)
+        from .subscription_service import subscription_service
+        tier = await subscription_service.get_user_subscription_tier(account_id)
         
         all_models = model_manager.list_available_models(tier=None, include_disabled=False)
         logger.debug(f"Found {len(all_models)} total models available")
         
-        allowed_models = await get_allowed_models_for_user(client, account_id)
+        # Get allowed models using the service method
+        allowed_models = await subscription_service.get_allowed_models_for_user(account_id, client)
+            
         logger.debug(f"User {account_id} allowed models: {allowed_models}")
-        logger.debug(f"User tier: {tier_name}")
+        logger.debug(f"User tier: {tier['name']}")
         
         model_info = []
         for model_data in all_models:

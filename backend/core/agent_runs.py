@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_user_id_from_stream_auth, verify_and_authorize_thread_access
 from core.utils.logger import logger, structlog
-from core.services.billing import can_use_model
+from core.billing import is_model_allowed, subscription_service
 from core.billing.billing_integration import billing_integration
 from core.utils.config import config
 from core.services import redis
@@ -44,6 +44,7 @@ async def check_billing_status(client, user_id: str) -> Tuple[bool, str, Optiona
     }
     
     return can_run, message, subscription_info
+
 
 @router.post("/thread/{thread_id}/agent/start")
 async def start_agent(
@@ -180,8 +181,23 @@ async def start_agent(
         logger.debug(f"[AGENT LOAD] Agent config keys: {list(agent_config.keys())}")
         logger.debug(f"Using agent {agent_config['agent_id']} for this agent run (thread remains agent-agnostic)")
 
+    # Check model access
+    async def check_model_access():
+        try:
+            tier_info = await subscription_service.get_user_subscription_tier(account_id)
+            tier_name = tier_info['name']
+            
+            if is_model_allowed(tier_name, model_name):
+                return True, "Model access allowed", tier_info.get('models', [])
+            else:
+                available_models = tier_info.get('models', [])
+                return False, f"Your current subscription plan does not include access to {model_name}. Please upgrade your subscription.", available_models
+        except Exception as e:
+            logger.error(f"Error checking model access: {e}")
+            return False, "Error checking model access", []
+
     # Run all checks concurrently
-    model_check_task = asyncio.create_task(can_use_model(client, account_id, model_name))
+    model_check_task = asyncio.create_task(check_model_access())
     billing_check_task = asyncio.create_task(check_billing_status(client, account_id))
     limit_check_task = asyncio.create_task(check_agent_run_limit(client, account_id))
 
@@ -747,8 +763,23 @@ async def initiate_agent_with_files(
     if agent_config:
         logger.debug(f"[AGENT INITIATE] Agent config keys: {list(agent_config.keys())}")
 
+    # Check model access
+    async def check_model_access():
+        try:
+            tier_info = await subscription_service.get_user_subscription_tier(account_id)
+            tier_name = tier_info['name']
+            
+            if is_model_allowed(tier_name, model_name):
+                return True, "Model access allowed", tier_info.get('models', [])
+            else:
+                available_models = tier_info.get('models', [])
+                return False, f"Your current subscription plan does not include access to {model_name}. Please upgrade your subscription.", available_models
+        except Exception as e:
+            logger.error(f"Error checking model access: {e}")
+            return False, "Error checking model access", []
+
     # Run all checks concurrently
-    model_check_task = asyncio.create_task(can_use_model(client, account_id, model_name))
+    model_check_task = asyncio.create_task(check_model_access())
     billing_check_task = asyncio.create_task(check_billing_status(client, account_id))
     limit_check_task = asyncio.create_task(check_agent_run_limit(client, account_id))
     project_limit_check_task = asyncio.create_task(check_project_count_limit(client, account_id))

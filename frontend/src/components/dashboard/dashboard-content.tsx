@@ -382,15 +382,23 @@ export function DashboardContent() {
                     }}
                   />
                 </div>
-              </div>
-            </div>
-            <div className="w-full" data-tour="examples">
-              <div className="max-w-7xl mx-auto">
-                <AgentExamples 
-                  selectedAgentId={selectedAgentId}
-                  onSelectPrompt={setInputValue} 
-                  count={isMobile ? 4 : 8} 
-                />
+                
+                {/* Examples section - right after chat input */}
+                <div className="w-full pt-2" data-tour="examples">
+                  <Examples 
+                    onSelectPrompt={setInputValue} 
+                    count={isMobile ? 2 : 4} 
+                  />
+                </div>
+                
+                {/* AgentExamples section - commented out */}
+                {/* <div className="w-full pt-2" data-tour="examples">
+                  <AgentExamples 
+                    selectedAgentId={selectedAgentId}
+                    onSelectPrompt={setInputValue} 
+                    count={isMobile ? 4 : 8} 
+                  />
+                </div> */}
               </div>
             </div>
             {enabledEnvironment && (
