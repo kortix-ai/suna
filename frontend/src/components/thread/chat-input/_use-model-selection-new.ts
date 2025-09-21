@@ -64,14 +64,14 @@ export const useModelSelection = () => {
     if (!modelsData?.models || isLoadingModels) {
       models = [
         { 
-          id: 'moonshotai/kimi-k2', 
+          id: 'Kimi K2', 
           label: 'Kimi K2', 
           requiresSubscription: false,
           priority: 100,
           recommended: true
         },
         { 
-          id: 'claude-sonnet-4', 
+          id: 'Claude Sonnet 4', 
           label: 'Claude Sonnet 4', 
           requiresSubscription: true, 
           priority: 100,

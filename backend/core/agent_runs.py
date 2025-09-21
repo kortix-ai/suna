@@ -11,7 +11,7 @@ from fastapi.responses import StreamingResponse
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_user_id_from_stream_auth, verify_and_authorize_thread_access
 from core.utils.logger import logger, structlog
 from core.services.billing import can_use_model
-from billing.billing_integration import billing_integration
+from core.billing.billing_integration import billing_integration
 from core.utils.config import config
 from core.services import redis
 from core.sandbox.sandbox import create_sandbox, delete_sandbox
@@ -251,6 +251,7 @@ async def start_agent(
         model_name=model_name,  # Already resolved above
         enable_thinking=body.enable_thinking, reasoning_effort=body.reasoning_effort,
         stream=body.stream, enable_context_manager=body.enable_context_manager,
+        enable_prompt_caching=body.enable_prompt_caching,
         agent_config=agent_config,  # Pass agent configuration
         request_id=request_id,
     )
@@ -427,8 +428,6 @@ async def get_thread_agent(thread_id: str, user_id: str = Depends(verify_and_get
                 is_default=agent_data.get('is_default', False),
                 is_public=agent_data.get('is_public', False),
                 tags=agent_data.get('tags', []),
-                avatar=agent_config.get('avatar'),
-                avatar_color=agent_config.get('avatar_color'),
                 profile_image_url=agent_config.get('profile_image_url'),
                 created_at=agent_data['created_at'],
                 updated_at=agent_data.get('updated_at', agent_data['created_at']),
@@ -636,6 +635,7 @@ async def initiate_agent_with_files(
     reasoning_effort: Optional[str] = Form("low"),
     stream: Optional[bool] = Form(True),
     enable_context_manager: Optional[bool] = Form(False),
+    enable_prompt_caching: Optional[bool] = Form(True),
     agent_id: Optional[str] = Form(None),  # Add agent_id parameter
     files: List[UploadFile] = File(default=[]),
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
@@ -663,7 +663,7 @@ async def initiate_agent_with_files(
     # Update model_name to use the resolved version
     model_name = resolved_model
 
-    logger.debug(f"[\033[91mDEBUG\033[0m] Initiating new agent with prompt and {len(files)} files (Instance: {utils.instance_id}), model: {model_name}, enable_thinking: {enable_thinking}")
+    logger.debug(f"Initiating new agent with prompt and {len(files)} files (Instance: {utils.instance_id}), model: {model_name}, enable_thinking: {enable_thinking}")
     client = await utils.db.client
     account_id = user_id # In Basejump, personal account_id is the same as user_id
     
@@ -987,6 +987,7 @@ async def initiate_agent_with_files(
             model_name=model_name,  # Already resolved above
             enable_thinking=enable_thinking, reasoning_effort=reasoning_effort,
             stream=stream, enable_context_manager=enable_context_manager,
+            enable_prompt_caching=enable_prompt_caching,
             agent_config=agent_config,  # Pass agent configuration
             request_id=request_id,
         )

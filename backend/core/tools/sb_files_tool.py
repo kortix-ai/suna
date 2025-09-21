@@ -132,11 +132,11 @@ class SandboxFilesTool(SandboxToolsBase):
             parent_dir = '/'.join(full_path.split('/')[:-1])
             if parent_dir:
                 await self.sandbox.fs.create_folder(parent_dir, "755")
-            
+
             # convert to json string if file_contents is a dict
             if isinstance(file_contents, dict):
                 file_contents = json.dumps(file_contents, indent=4)
-            
+
             # Write the file content
             await self.sandbox.fs.upload_file(file_contents.encode(), full_path)
             await self.sandbox.fs.set_file_permissions(full_path, permissions)
@@ -281,7 +281,7 @@ class SandboxFilesTool(SandboxToolsBase):
             full_path = f"{self.workspace_path}/{file_path}"
             if not await self._file_exists(full_path):
                 return self.fail_response(f"File '{file_path}' does not exist. Use create_file to create a new file.")
-            
+
             await self.sandbox.fs.upload_file(file_contents.encode(), full_path)
             await self.sandbox.fs.set_file_permissions(full_path, permissions)
             
@@ -481,9 +481,7 @@ def authenticate_user(username, password):
         </function_calls>
         ''')
     async def edit_file(self, target_file: str, instructions: str, code_edit: str) -> ToolResult:
-        """Edit a file using AI-powered intelligent editing with fallback to string replacement"""
         try:
-            # Ensure sandbox is initialized
             await self._ensure_sandbox()
             
             target_file = self.clean_path(target_file)
@@ -491,20 +489,61 @@ def authenticate_user(username, password):
             if not await self._file_exists(full_path):
                 return self.fail_response(f"File '{target_file}' does not exist")
             
-            # Read current content
             original_content = (await self.sandbox.fs.download_file(full_path)).decode()
             
-            # Try Morph AI editing first
+            is_tiptap_doc = False
+            original_wrapper = None
+            if target_file.startswith("docs/") and target_file.endswith(".doc"):
+                try:
+                    original_wrapper = json.loads(original_content)
+                    if original_wrapper.get("type") == "tiptap_document":
+                        is_tiptap_doc = True
+                except json.JSONDecodeError:
+                    pass
+            
             logger.debug(f"Attempting AI-powered edit for file '{target_file}' with instructions: {instructions[:100]}...")
             new_content, error_message = await self._call_morph_api(original_content, code_edit, instructions, target_file)
 
             if error_message:
-                return ToolResult(success=False, output=json.dumps({
-                    "message": f"AI editing failed: {error_message}",
-                    "file_path": target_file,
-                    "original_content": original_content,
-                    "updated_content": None
-                }))
+                if is_tiptap_doc and original_wrapper:
+                    logger.debug(f"Morph AI edit failed for TipTap doc: {error_message}, attempting fallback manual update")
+                    
+                    if "title" in instructions:
+                        import re
+                        title_match = re.search(r'"title"\s*field\s*to\s*"([^"]+)"', instructions)
+                        if title_match:
+                            original_wrapper["title"] = title_match.group(1)
+                    
+                    if "content" in instructions and "content" in code_edit:
+                        content_match = re.search(r'"content":\s*([^,}]+)', code_edit)
+                        if content_match:
+                            try:
+                                new_html_content = json.loads(content_match.group(1).strip())
+                                original_wrapper["content"] = new_html_content
+                            except:
+                                pass
+                    
+                    if "metadata" in instructions:
+                        metadata_match = re.search(r'"metadata":\s*({[^}]+})', code_edit)
+                        if metadata_match:
+                            try:
+                                new_metadata = json.loads(metadata_match.group(1))
+                                original_wrapper["metadata"] = new_metadata
+                            except:
+                                pass
+                    
+                    if "updated_at" in instructions:
+                        from datetime import datetime
+                        original_wrapper["updated_at"] = datetime.now().isoformat()
+                    
+                    new_content = json.dumps(original_wrapper, indent=2)
+                else:
+                    return ToolResult(success=False, output=json.dumps({
+                        "message": f"AI editing failed: {error_message}",
+                        "file_path": target_file,
+                        "original_content": original_content,
+                        "updated_content": None
+                    }))
 
             if new_content is None:
                 return ToolResult(success=False, output=json.dumps({
@@ -522,10 +561,8 @@ def authenticate_user(username, password):
                     "updated_content": original_content
                 }))
 
-            # AI editing successful
             await self.sandbox.fs.upload_file(new_content.encode(), full_path)
             
-            # Return rich data for frontend diff view
             return ToolResult(success=True, output=json.dumps({
                 "message": f"File '{target_file}' edited successfully.",
                 "file_path": target_file,

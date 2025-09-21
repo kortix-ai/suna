@@ -36,11 +36,11 @@ class ToolRegistry:
             - If function_names is None, all functions are registered
             - Handles OpenAPI schema registration
         """
-        logger.debug(f"Registering tool class: {tool_class.__name__}")
+        # logger.debug(f"Registering tool class: {tool_class.__name__}")
         tool_instance = tool_class(**kwargs)
         schemas = tool_instance.get_schemas()
         
-        logger.debug(f"Available schemas for {tool_class.__name__}: {list(schemas.keys())}")
+        # logger.debug(f"Available schemas for {tool_class.__name__}: {list(schemas.keys())}")
         
         registered_openapi = 0
         
@@ -53,7 +53,7 @@ class ToolRegistry:
                             "schema": schema
                         }
                         registered_openapi += 1
-                        logger.debug(f"Registered OpenAPI function {func_name} from {tool_class.__name__}")
+                        # logger.debug(f"Registered OpenAPI function {func_name} from {tool_class.__name__}")
         
         logger.debug(f"Tool registration complete for {tool_class.__name__}: {registered_openapi} OpenAPI functions")
 
@@ -72,7 +72,7 @@ class ToolRegistry:
             function = getattr(tool_instance, function_name)
             available_functions[function_name] = function
             
-        logger.debug(f"Retrieved {len(available_functions)} available functions")
+        # logger.debug(f"Retrieved {len(available_functions)} available functions")
         return available_functions
 
     def get_tool(self, tool_name: str) -> Dict[str, Any]:
@@ -100,7 +100,7 @@ class ToolRegistry:
             for tool_info in self.tools.values()
             if tool_info['schema'].schema_type == SchemaType.OPENAPI
         ]
-        logger.debug(f"Retrieved {len(schemas)} OpenAPI schemas")
+        # logger.debug(f"Retrieved {len(schemas)} OpenAPI schemas")
         return schemas
 
     def get_usage_examples(self) -> Dict[str, str]:
@@ -121,9 +121,9 @@ class ToolRegistry:
                 for schema in all_schemas[tool_name]:
                     if schema.schema_type == SchemaType.USAGE_EXAMPLE:
                         examples[tool_name] = schema.schema.get('example', '')
-                        logger.debug(f"Found usage example for {tool_name}")
+                        # logger.debug(f"Found usage example for {tool_name}")
                         break
         
-        logger.debug(f"Retrieved {len(examples)} usage examples")
+        # logger.debug(f"Retrieved {len(examples)} usage examples")
         return examples
 

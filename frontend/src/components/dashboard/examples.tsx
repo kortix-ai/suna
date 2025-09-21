@@ -5,25 +5,21 @@ import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import {
   BarChart3,
-  Bot,
   Briefcase,
   Settings,
-  Sparkles,
-  RefreshCw,
   TrendingUp,
   Users,
   Shield,
-  Zap,
   Target,
   Brain,
   Globe,
   Heart,
   PenTool,
-  Code,
   Camera,
   Calendar,
   DollarSign,
   Rocket,
+  RefreshCw,
 } from 'lucide-react';
 
 type PromptExample = {
@@ -130,7 +126,6 @@ const allPrompts: PromptExample[] = [
   },
 ];
 
-// Function to get random prompts
 const getRandomPrompts = (count: number = 3): PromptExample[] => {
   const shuffled = [...allPrompts].sort(() => 0.5 - Math.random());
   return shuffled.slice(0, count);
@@ -146,7 +141,6 @@ export const Examples = ({
   const [displayedPrompts, setDisplayedPrompts] = useState<PromptExample[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Initialize with random prompts on mount
   useEffect(() => {
     setDisplayedPrompts(getRandomPrompts(count));
   }, [count]);
@@ -158,7 +152,7 @@ export const Examples = ({
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto px-4">
+    <div className="w-full max-w-2xl mx-auto px-4">
       <div className="group relative">
         <div className="flex gap-2 justify-center py-2 flex-wrap">
           {displayedPrompts.map((prompt, index) => (
@@ -187,8 +181,6 @@ export const Examples = ({
             </motion.div>
           ))}
         </div>
-
-        {/* Refresh button that appears on hover */}
         <Button
           variant="ghost"
           size="sm"

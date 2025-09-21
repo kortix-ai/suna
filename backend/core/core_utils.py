@@ -13,6 +13,63 @@ from core.services.supabase import DBConnection
 from core.services.llm import make_llm_api_call
 from run_agent_background import update_agent_run_status, _cleanup_redis_response_list
 
+# Load Lucide React icons once at module level for performance
+try:
+    from pathlib import Path
+    icons_file_path = Path(__file__).parent.parent / 'lucide_icons_cleaned.json'
+    with open(icons_file_path, 'r') as f:
+        RELEVANT_ICONS = json.load(f)
+    logger.info(f"Loaded {len(RELEVANT_ICONS)} Lucide React icons from file")
+except Exception as e:
+    logger.warning(f"Failed to load icons file: {e}. Using fallback icons.")
+    # Fallback to essential icons if file loading fails
+    RELEVANT_ICONS = [
+        # Core AI/Agent icons
+        "message-circle", "code", "brain", "sparkles", "zap", "rocket", "bot",
+        "cpu", "microchip", "terminal", "workflow", "target", "lightbulb",
+        
+        # Data & Storage
+        "database", "file", "files", "folder", "folders", "hard-drive", "cloud",
+        "download", "upload", "save", "copy", "trash", "archive",
+        
+        # User & Communication
+        "user", "users", "mail", "phone", "send", "reply", "bell", 
+        "headphones", "mic", "video", "camera",
+        
+        # Navigation & UI
+        "house", "globe", "map", "map-pin", "search", "filter", "settings",
+        "menu", "grid2x2", "list", "layout-grid", "panel-left", "panel-right",
+        
+        # Actions & Tools
+        "play", "pause", "refresh-cw", "rotate-cw", "wrench", "pen", "pencil", 
+        "brush", "scissors", "hammer",
+        
+        # Status & Feedback
+        "check", "x", "plus", "minus", "info", "thumbs-up", "thumbs-down", 
+        "heart", "star", "flag", "bookmark",
+        
+        # Time & Calendar
+        "clock", "calendar", "timer", "hourglass", "history",
+        
+        # Security & Privacy
+        "shield", "lock", "key", "fingerprint", "eye",
+        
+        # Business & Productivity
+        "briefcase", "building", "store", "shopping-cart", "credit-card",
+        "chart-bar", "chart-pie", "trending-up", "trending-down",
+        
+        # Creative & Media
+        "music", "image", "images", "film", "palette", "paintbrush",
+        "speaker", "volume",
+        
+        # System & Technical
+        "cog", "monitor", "laptop", "smartphone", "wifi", "bluetooth", 
+        "usb", "plug", "battery", "power",
+        
+        # Nature & Environment
+        "sun", "moon", "leaf", "flower", "mountain", "earth"
+    ]
+
 # Global variables (will be set by initialize function)
 db = None
 instance_id = None
@@ -125,38 +182,90 @@ async def get_agent_run_with_access_check(client, agent_run_id: str, user_id: st
     return agent_run_data
 
 async def generate_and_update_project_name(project_id: str, prompt: str):
-    """Generates a project name using an LLM and updates the database."""
-    logger.debug(f"Starting background task to generate name for project: {project_id}")
+    """Generates a project name and icon using an LLM and updates the database."""
+    logger.debug(f"Starting background task to generate name and icon for project: {project_id}")
     try:
         db_conn = DBConnection()
         client = await db_conn.client
 
         model_name = "openai/gpt-5-nano"
-        system_prompt = "You are a helpful assistant that generates extremely concise titles (2-4 words maximum) for chat threads based on the user's message. Respond with only the title, no other text or punctuation."
-        user_message = f"Generate an extremely brief title (2-4 words only) for a chat thread that starts with this message: \"{prompt}\""
+        
+        # Use pre-loaded Lucide React icons (loaded once at module level)
+        relevant_icons = RELEVANT_ICONS
+        system_prompt = f"""You are a helpful assistant that generates extremely concise titles (2-4 words maximum) and selects appropriate icons for chat threads based on the user's message.
+
+        Available Lucide React icons to choose from:
+        {', '.join(relevant_icons)}
+
+        Respond with a JSON object containing:
+        - "title": A concise 2-4 word title for the thread
+        - "icon": The most appropriate icon name from the list above
+
+        Example response:
+        {{"title": "Code Review Help", "icon": "code"}}"""
+
+        user_message = f"Generate an extremely brief title (2-4 words only) and select the most appropriate icon for a chat thread that starts with this message: \"{prompt}\""
         messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_message}]
 
-        logger.debug(f"Calling LLM ({model_name}) for project {project_id} naming.")
-        response = await make_llm_api_call(messages=messages, model_name=model_name, max_tokens=20, temperature=0.7)
+        logger.debug(f"Calling LLM ({model_name}) for project {project_id} naming and icon selection.")
+        response = await make_llm_api_call(
+            messages=messages, 
+            model_name=model_name, 
+            max_tokens=1000, 
+            temperature=0.7,
+            response_format={"type": "json_object"}
+        )
 
         generated_name = None
+        selected_icon = None
+        
         if response and response.get('choices') and response['choices'][0].get('message'):
-            raw_name = response['choices'][0]['message'].get('content', '').strip()
-            cleaned_name = raw_name.strip('\'" \n\t')
-            if cleaned_name:
-                generated_name = cleaned_name
-                logger.debug(f"LLM generated name for project {project_id}: '{generated_name}'")
-            else:
-                logger.warning(f"LLM returned an empty name for project {project_id}.")
+            raw_content = response['choices'][0]['message'].get('content', '').strip()
+            try:
+                parsed_response = json.loads(raw_content)
+                
+                if isinstance(parsed_response, dict):
+                    # Extract title
+                    title = parsed_response.get('title', '').strip()
+                    if title:
+                        generated_name = title.strip('\'" \n\t')
+                        logger.debug(f"LLM generated name for project {project_id}: '{generated_name}'")
+                    
+                    # Extract icon
+                    icon = parsed_response.get('icon', '').strip()
+                    if icon and icon in relevant_icons:
+                        selected_icon = icon
+                        logger.debug(f"LLM selected icon for project {project_id}: '{selected_icon}'")
+                    else:
+                        logger.warning(f"LLM selected invalid icon '{icon}' for project {project_id}, using default 'message-circle'")
+                        selected_icon = "message-circle"
+                else:
+                    logger.warning(f"LLM returned non-dict JSON for project {project_id}: {parsed_response}")
+                    
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse LLM JSON response for project {project_id}: {e}. Raw content: {raw_content}")
+                # Fallback to extracting title from raw content
+                cleaned_content = raw_content.strip('\'" \n\t{}')
+                if cleaned_content:
+                    generated_name = cleaned_content[:50]  # Limit fallback title length
+                    selected_icon = "message-circle"  # Default icon
         else:
             logger.warning(f"Failed to get valid response from LLM for project {project_id} naming. Response: {response}")
 
         if generated_name:
-            update_result = await client.table('projects').update({"name": generated_name}).eq("project_id", project_id).execute()
-            if hasattr(update_result, 'data') and update_result.data:
-                logger.debug(f"Successfully updated project {project_id} name to '{generated_name}'")
+            # Store title and icon in dedicated fields
+            update_data = {"name": generated_name}
+            if selected_icon:
+                update_data["icon_name"] = selected_icon
+                logger.debug(f"Storing project {project_id} with title: '{generated_name}' and icon: '{selected_icon}'")
             else:
-                logger.error(f"Failed to update project {project_id} name in database. Update result: {update_result}")
+                logger.debug(f"Storing project {project_id} with title: '{generated_name}' (no icon)")
+            
+            update_result = await client.table('projects').update(update_data).eq("project_id", project_id).execute()
+            if hasattr(update_result, 'data') and update_result.data:
+                logger.debug(f"Successfully updated project {project_id} with clean title and dedicated icon field")
+            else:
+                logger.error(f"Failed to update project {project_id} in database. Update result: {update_result}")
         else:
             logger.warning(f"No generated name, skipping database update for project {project_id}.")
 
@@ -164,7 +273,7 @@ async def generate_and_update_project_name(project_id: str, prompt: str):
         logger.error(f"Error in background naming task for project {project_id}: {str(e)}\n{traceback.format_exc()}")
     finally:
         # No need to disconnect DBConnection singleton instance here
-        logger.debug(f"Finished background naming task for project: {project_id}")
+        logger.debug(f"Finished background naming and icon selection task for project: {project_id}")
 
 def merge_custom_mcps(existing_mcps: List[Dict[str, Any]], new_mcps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     if not new_mcps:
@@ -479,7 +588,7 @@ async def check_project_count_limit(client, account_id: str) -> Dict[str, Any]:
                 logger.debug(f"No credit account for {account_id}, defaulting to free tier")
                 tier_name = 'free'
         
-        from billing.config import get_project_limit
+        from core.billing.config import get_project_limit
         project_limit = get_project_limit(tier_name)
         can_create = current_count < project_limit
         

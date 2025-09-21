@@ -99,7 +99,7 @@ class SandboxToolsBase(Tool):
                     self._sandbox = await get_or_start_sandbox(self._sandbox_id)
 
             except Exception as e:
-                logger.error(f"Error retrieving/creating sandbox for project {self.project_id}: {str(e)}", exc_info=True)
+                logger.error(f"Error retrieving/creating sandbox for project {self.project_id}: {str(e)}")
                 raise e
 
         return self._sandbox

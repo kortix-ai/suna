@@ -735,9 +735,12 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                         const messageContent = (() => {
                                             try {
                                                 const parsed = safeJsonParse<ParsedContent>(message.content, { content: message.content });
-                                                return parsed.content || message.content;
+                                                const content = parsed.content || message.content;
+                                                // Ensure we always return a string
+                                                return typeof content === 'string' ? content : String(content || '');
                                             } catch {
-                                                return message.content;
+                                                // Ensure message.content is a string
+                                                return typeof message.content === 'string' ? message.content : String(message.content || '');
                                             }
                                         })();
 

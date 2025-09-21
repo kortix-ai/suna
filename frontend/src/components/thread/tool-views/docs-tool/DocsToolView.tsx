@@ -8,6 +8,8 @@ import {
   Pen,
   Download,
   ChevronDown,
+  Loader2,
+  Share,
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,11 +26,15 @@ import { cn } from '@/lib/utils';
 import { FileViewerModal } from '@/components/thread/file-viewer-modal';
 import { TipTapDocumentModal } from '@/components/thread/tiptap-document-modal';
 import { exportDocument, type ExportFormat } from '@/lib/utils/document-export';
+import { createClient } from '@/lib/supabase/client';
+import { handleGoogleDocsUpload, checkPendingGoogleDocsUpload } from '@/lib/utils/google-docs-utils';
+import { useEffect } from 'react';
 import { 
   DocumentInfo, 
   extractDocsData, 
   extractToolName, 
   extractParametersFromAssistant,
+  extractStreamingDocumentContent,
   getActionTitle,
   LiveDocumentViewer,
   DocumentViewer
@@ -49,41 +55,44 @@ export function DocsToolView({
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorDocumentData, setEditorDocumentData] = useState<any>(null);
   const [editorFilePath, setEditorFilePath] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
   
-  const toolName = extractToolName(toolContent) || name || 'docs';
-  const data = extractDocsData(toolContent);
-
-  const handleExport = useCallback(async (format: ExportFormat) => {
-    const content = data?.content || data?.document?.content || '';
-    const fileName = data?.document?.title || 'document';
-
-    await exportDocument({ content, fileName, format });
-  }, [data]);
+  // Check for pending Google Docs upload after OAuth callback
+  useEffect(() => {
+    checkPendingGoogleDocsUpload();
+  }, []);
   
-  const assistantParams = extractParametersFromAssistant(assistantContent);
-  
-  if (data && assistantParams && (toolName.includes('create') || toolName.includes('update'))) {
-    if (!data.content && assistantParams.content) {
-      data.content = assistantParams.content;
-    }
-    if (data.document && !data.document.content && assistantParams.content) {
-      data.document.content = assistantParams.content;
-    }
-  }
-
-  if (isStreaming || !data) {
-    return <LoadingState title="Processing Document..." />;
-  }
-  
-  const getStatusIcon = () => {
-    if (!data || !data.success || data.error) {
-      return <AlertTriangle className="w-2 h-2 text-rose-500" />;
-    }
-    return <CheckCircle className="w-2 h-2 text-emerald-500" />;
-  };
-  
-  const handleOpenInEditor = (doc: DocumentInfo, content?: string) => {
+  const handleOpenInEditor = useCallback(async (doc: DocumentInfo, content?: string, data?: any) => {
     let actualContent = content || doc.content || '';
+    if (data?.sandbox_id && doc.path) {
+      try {
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session?.access_token) {
+          const response = await fetch(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${data.sandbox_id}/files?path=${encodeURIComponent(doc.path)}`,
+            {
+              headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+              },
+            }
+          );
+
+          if (response.ok) {
+            const fileContent = await response.text();
+            try {
+              const parsedDocument = JSON.parse(fileContent);
+              if (parsedDocument.type === 'tiptap_document' && parsedDocument.content) {
+                actualContent = parsedDocument.content;
+              }
+            } catch {}
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch latest content:', error);
+      }
+    }
     if (actualContent === '<p></p>' || actualContent === '<p><br></p>' || actualContent.trim() === '') {
       if (data && data.content) {
         actualContent = data.content;
@@ -97,13 +106,94 @@ export function DocsToolView({
       content: actualContent,
       metadata: doc.metadata || {},
       created_at: doc.created_at,
-      updated_at: doc.updated_at,
+      updated_at: doc.updated_at || new Date().toISOString(),
       doc_id: doc.id
     };
     
     setEditorDocumentData(documentData);
     setEditorFilePath(doc.path);
     setEditorOpen(true);
+  }, []);
+  
+  const toolName = extractToolName(toolContent) || name || 'docs';
+  let data = extractDocsData(toolContent);
+  
+  if (!data?.sandbox_id && project?.id) {
+    data = { ...data, sandbox_id: project.id };
+  }
+  
+  let streamingContent: { content?: string; title?: string; metadata?: any } | null = null;
+  if (isStreaming && !data) {
+    streamingContent = extractStreamingDocumentContent(assistantContent, toolName);
+  }
+
+  const handleExport = useCallback(async (format: ExportFormat | 'google-docs') => {
+    if (format === 'google-docs') {
+      if (!project?.sandbox?.sandbox_url || !data?.document?.path) {
+        console.error('Missing sandbox URL or document path for Google Docs export');
+        return;
+      }
+      
+      setIsExporting(true);
+      try {
+        const result = await handleGoogleDocsUpload(
+          project.sandbox.sandbox_url,
+          data.document.path
+        );
+        if (result?.redirected_to_auth) {
+          return;
+        }
+      } catch (error) {
+        console.error('Error exporting to Google Docs:', error);
+      } finally {
+        setIsExporting(false);
+      }
+    } else {
+      const content = data?.content || data?.document?.content || streamingContent?.content || '';
+      const fileName = data?.document?.title || streamingContent?.title || 'document';
+
+      await exportDocument({ content, fileName, format });
+    }
+  }, [data, streamingContent, project]);
+  
+  const assistantParams = extractParametersFromAssistant(assistantContent);
+  
+  if (data && assistantParams && (toolName.includes('create') || toolName.includes('update'))) {
+    if (!data.content && assistantParams.content) {
+      data.content = assistantParams.content;
+    }
+    if (data.document && !data.document.content && assistantParams.content) {
+      data.document.content = assistantParams.content;
+    }
+  }
+
+  // Show streaming content if available
+  if (isStreaming && streamingContent) {
+    // Create a temporary data structure for streaming display
+    data = {
+      success: true,
+      document: {
+        id: 'streaming',
+        title: streamingContent.title || 'Creating document...',
+        filename: 'streaming',
+        format: 'doc',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        metadata: streamingContent.metadata || {},
+        path: '',
+        content: streamingContent.content || ''
+      },
+      content: streamingContent.content
+    };
+  } else if (isStreaming || !data) {
+    return <LoadingState title="Processing Document..." />;
+  }
+  
+  const getStatusIcon = () => {
+    if (!data || !data.success || data.error) {
+      return <AlertTriangle className="w-2 h-2 text-rose-500" />;
+    }
+    return <CheckCircle className="w-2 h-2 text-emerald-500" />;
   };
   
   return (
@@ -116,14 +206,18 @@ export function DocsToolView({
               <FileText className="w-5 h-5 text-blue-500 dark:text-blue-400" />
             </div>
             <div>
-              <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
-                {getActionTitle(toolName)}
-              </CardTitle>
+              {getActionTitle(toolName)}
             </div>
           </div>
           
           <div className="flex items-center gap-2">
-            {data.document?.format === 'doc' && (
+            {isStreaming && (
+              <div className="flex items-center gap-1.5 px-2 py-1 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
+                <Loader2 className="h-3 w-3 animate-spin text-blue-600 dark:text-blue-400" />
+                <span className="text-xs font-medium text-blue-700 dark:text-blue-300">Streaming</span>
+              </div>
+            )}
+            {!isStreaming && data.document?.format === 'doc' && (
               <>
                 <Button
                   size="sm"
@@ -138,7 +232,7 @@ export function DocsToolView({
                         }
                       } catch {}
                     }
-                    handleOpenInEditor(data.document, content);
+                    handleOpenInEditor(data.document, content, data);
                   }}
                 >
                   <Pen className="h-3 w-3" />
@@ -147,16 +241,33 @@ export function DocsToolView({
                 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button size="sm" variant="outline">
-                      <Download className="h-3 w-3" />
+                    <Button size="sm" variant="outline" disabled={isExporting}>
+                      {isExporting ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Download className="h-3 w-3" />
+                      )}
                       Export
                       <ChevronDown className="h-3 w-3" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => handleExport('docx')}>
-                      Export as DOCX
-                    </DropdownMenuItem>
+                    {project?.sandbox?.sandbox_url && data?.document?.path && (
+                      <>
+                        <DropdownMenuItem onClick={() => handleExport('google-docs')}>
+                          <Share/>
+                          Upload to Google Docs
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleExport('docx')}>
+                          Export as DOCX
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                    {!project?.sandbox?.sandbox_url && (
+                      <DropdownMenuItem onClick={() => handleExport('docx')}>
+                        Export as DOCX
+                      </DropdownMenuItem>
+                    )}
                     <DropdownMenuItem onClick={() => handleExport('txt')}>
                       Export as Text
                     </DropdownMenuItem>
@@ -164,17 +275,19 @@ export function DocsToolView({
                 </DropdownMenu>
               </>
             )}
-            <Badge
-              variant="secondary"
-              className={cn(
-                data && data.success && !data.error
-                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                  : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-              )}
-            >
-              {getStatusIcon()}
-              {data && data.success && !data.error ? 'Success' : 'Failed'}
-            </Badge>
+            {!isStreaming && (
+              <Badge
+                variant="secondary"
+                className={cn(
+                  data && data.success && !data.error
+                    ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
+                    : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
+                )}
+              >
+                {getStatusIcon()}
+                {data && data.success && !data.error ? 'Success' : 'Failed'}
+              </Badge>
+            )}
           </div>
         </div>
       </CardHeader>
@@ -199,34 +312,42 @@ export function DocsToolView({
           </div>
         ) : (
           <div className="flex-1 flex flex-col min-h-0">
-            {data.document && !data.documents && (
+            {data.document && !data.documents ? (
               <div className="flex-1 min-h-0">
                 {(data.document.path || data.content || data.document.content) && (
                   <div className="h-full overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-zinc-200 dark:scrollbar-thumb-zinc-800 scrollbar-track-transparent">
-                    {data.document.path && data.sandbox_id ? (
-                      <LiveDocumentViewer 
-                        path={data.document.path}
-                        sandboxId={data.sandbox_id}
-                        format={data.document.format || 'doc'}
-                        fallbackContent={data.content || data.document.content || ''}
-                      />
-                    ) : (
-                      <DocumentViewer 
-                        content={data.content || data.document.content || ''} 
-                        format={data.document.format || 'doc'} 
-                      />
+                    {isStreaming && (
+                      <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        <span>Content is streaming...</span>
+                      </div>
                     )}
+                    <div className="w-full max-w-none">
+                      {data.document.path && data.sandbox_id && !isStreaming ? (
+                        <LiveDocumentViewer 
+                          path={data.document.path}
+                          sandboxId={data.sandbox_id}
+                          format={data.document.format || 'doc'}
+                          fallbackContent={data.content || data.document.content || ''}
+                        />
+                      ) : (
+                        <DocumentViewer 
+                          content={data.content || data.document.content || ''} 
+                          format={data.document.format || 'doc'} 
+                        />
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
-            )}
+            ) : null}
             {data.documents && data.documents.length === 0 && (
               <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
                 <FileText className="h-12 w-12 mb-4 opacity-50" />
                 <p className="text-sm">No documents found</p>
               </div>
             )}
-            {data.message && !data.document && !data.documents && (
+            {data.message && !data.document && !data.documents && !data.sandbox_id && (
               <div className="flex items-center gap-2 p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg mx-4">
                 <CheckCircle className="h-5 w-5 text-emerald-500" />
                 <span className="text-sm text-emerald-700 dark:text-emerald-300">
@@ -254,6 +375,7 @@ export function DocsToolView({
         filePath={editorFilePath}
         documentData={editorDocumentData}
         sandboxId={data?.sandbox_id || project?.id || ''}
+        onSave={() => {}}
       />
     )}
     </>
