@@ -54,18 +54,18 @@ class ModelRegistry:
         ))
 
         self.register(Model(
-            id="xai/grok-4",
-            name="Grok 4",
+            id="xai/grok-4-fast-non-reasoning",
+            name="Grok 4 Fast",
             provider=ModelProvider.XAI,
-            aliases=["grok-4", "x-ai/grok-4", "openrouter/x-ai/grok-4", "Grok 4"],
-            context_window=128_000,
+            aliases=["grok-4-fast-non-reasoning", "x-ai/grok-4-fast-non-reasoning", "openrouter/x-ai/grok-4-fast-non-reasoning", "Grok 4 Fast Non Reasoning"],
+            context_window=2_000_000,
             capabilities=[
                 ModelCapability.CHAT,
                 ModelCapability.FUNCTION_CALLING,
             ],
             pricing=ModelPricing(
-                input_cost_per_million_tokens=5.00,
-                output_cost_per_million_tokens=15.00
+                input_cost_per_million_tokens=0.20,
+                output_cost_per_million_tokens=0.50
             ),
             tier_availability=["paid"],
             priority=98,

@@ -6,7 +6,7 @@ from typing import Dict, Any, Tuple, Optional
 from core.services.supabase import DBConnection
 from core.services import redis
 from core.utils.logger import logger, structlog
-from core.utils.config import config
+from core.utils.config import config, EnvMode
 from run_agent_background import run_agent_background
 from .trigger_service import TriggerEvent, TriggerResult
 from .utils import format_workflow_for_llm
@@ -379,23 +379,29 @@ class AgentExecutor:
         if not account_id:
             raise ValueError("Account ID not found in agent configuration")
         
-        from core.billing import is_model_allowed, subscription_service
-        from billing.billing_integration import billing_integration
+        from core.utils.config import config, EnvMode
         
-        # Check model access
-        try:
-            tier_info = await subscription_service.get_user_subscription_tier(account_id)
-            tier_name = tier_info['name']
+        # Skip billing checks in local development mode
+        if config.ENV_MODE == EnvMode.LOCAL:
+            logger.debug("Running in local development mode - skipping billing and model access checks")
+        else:
+            from core.billing import is_model_allowed, subscription_service
+            from billing.billing_integration import billing_integration
             
-            if not is_model_allowed(tier_name, model_name):
-                raise ValueError(f"Your current subscription plan does not include access to {model_name}. Please upgrade your subscription.")
-        except Exception as e:
-            logger.error(f"Error checking model access: {e}")
-            raise ValueError(f"Model not available: {str(e)}")
-        
-        can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(account_id)
-        if not can_run:
-            raise ValueError(f"Billing check failed: {message}")
+            # Check model access
+            try:
+                tier_info = await subscription_service.get_user_subscription_tier(account_id)
+                tier_name = tier_info['name']
+                
+                if not is_model_allowed(tier_name, model_name):
+                    raise ValueError(f"Your current subscription plan does not include access to {model_name}. Please upgrade your subscription.")
+            except Exception as e:
+                logger.error(f"Error checking model access: {e}")
+                raise ValueError(f"Model not available: {str(e)}")
+            
+            can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(account_id)
+            if not can_run:
+                raise ValueError(f"Billing check failed: {message}")
         
         agent_run = await client.table('agent_runs').insert({
             "thread_id": thread_id,
@@ -623,21 +629,25 @@ class WorkflowExecutor:
         from core.ai_models import model_manager
         model_name = await model_manager.get_default_model_for_user(client, account_id)
         
-        # Check model access
-        from core.billing import is_model_allowed, subscription_service
-        try:
-            tier_info = await subscription_service.get_user_subscription_tier(account_id)
-            tier_name = tier_info['name']
+        # Skip billing checks in local development mode
+        if config.ENV_MODE == EnvMode.LOCAL:
+            logger.debug("Running in local development mode - skipping billing and model access checks")
+        else:
+            # Check model access
+            from core.billing import is_model_allowed, subscription_service
+            try:
+                tier_info = await subscription_service.get_user_subscription_tier(account_id)
+                tier_name = tier_info['name']
+                
+                if not is_model_allowed(tier_name, model_name):
+                    raise Exception(f"Your current subscription plan does not include access to {model_name}. Please upgrade your subscription.")
+            except Exception as e:
+                logger.error(f"Error checking model access: {e}")
+                raise Exception(f"Model access denied: {str(e)}")
             
-            if not is_model_allowed(tier_name, model_name):
-                raise Exception(f"Your current subscription plan does not include access to {model_name}. Please upgrade your subscription.")
-        except Exception as e:
-            logger.error(f"Error checking model access: {e}")
-            raise Exception(f"Model access denied: {str(e)}")
-            
-        can_run, billing_message, _ = await billing_integration.check_and_reserve_credits(account_id)
-        if not can_run:
-            raise Exception(f"Billing check failed: {billing_message}")
+            can_run, billing_message, _ = await billing_integration.check_and_reserve_credits(account_id)
+            if not can_run:
+                raise Exception(f"Billing check failed: {billing_message}")
     
     async def _create_workflow_message(
         self,
@@ -704,23 +714,27 @@ class WorkflowExecutor:
             else:
                 raise ValueError("Cannot determine account ID for workflow execution")
         
-        from core.billing import is_model_allowed, subscription_service
-        from billing.billing_integration import billing_integration
-        
-        # Check model access
-        try:
-            tier_info = await subscription_service.get_user_subscription_tier(account_id)
-            tier_name = tier_info['name']
+        # Skip billing checks in local development mode
+        if config.ENV_MODE == EnvMode.LOCAL:
+            logger.debug("Running in local development mode - skipping billing and model access checks")
+        else:
+            from core.billing import is_model_allowed, subscription_service
+            from billing.billing_integration import billing_integration
             
-            if not is_model_allowed(tier_name, model_name):
-                raise ValueError(f"Your current subscription plan does not include access to {model_name}. Please upgrade your subscription.")
-        except Exception as e:
-            logger.error(f"Error checking model access: {e}")
-            raise ValueError(f"Model not available for workflow: {str(e)}")
-        
-        can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(account_id)
-        if not can_run:
-            raise ValueError(f"Billing check failed for workflow: {message}")
+            # Check model access
+            try:
+                tier_info = await subscription_service.get_user_subscription_tier(account_id)
+                tier_name = tier_info['name']
+                
+                if not is_model_allowed(tier_name, model_name):
+                    raise ValueError(f"Your current subscription plan does not include access to {model_name}. Please upgrade your subscription.")
+            except Exception as e:
+                logger.error(f"Error checking model access: {e}")
+                raise ValueError(f"Model not available for workflow: {str(e)}")
+            
+            can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(account_id)
+            if not can_run:
+                raise ValueError(f"Billing check failed for workflow: {message}")
         
         agent_run = await client.table('agent_runs').insert({
             "thread_id": thread_id,

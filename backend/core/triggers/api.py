@@ -857,29 +857,34 @@ async def execute_agent_workflow(
         model_name = await model_manager.get_default_model_for_user(client, account_id)
         print("DEBUG: Using tier-based default model:", model_name)
     
-    # Check model access
-    try:
-        tier_info = await subscription_service.get_user_subscription_tier(account_id)
-        tier_name = tier_info['name']
-        
-        if not is_model_allowed(tier_name, model_name):
-            available_models = tier_info.get('models', [])
-            raise HTTPException(
-                status_code=403, 
-                detail={
-                    "message": f"Your current subscription plan does not include access to {model_name}. Please upgrade your subscription.", 
-                    "allowed_models": available_models
-                }
-            )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error checking model access: {e}")
-        raise HTTPException(status_code=500, detail={"message": "Error checking model access"})
+    # Skip billing checks in local development mode
+    from core.utils.config import config, EnvMode
+    if config.ENV_MODE == EnvMode.LOCAL:
+        logger.debug("Running in local development mode - skipping billing and model access checks")
+    else:
+        # Check model access
+        try:
+            tier_info = await subscription_service.get_user_subscription_tier(account_id)
+            tier_name = tier_info['name']
+            
+            if not is_model_allowed(tier_name, model_name):
+                available_models = tier_info.get('models', [])
+                raise HTTPException(
+                    status_code=403, 
+                    detail={
+                        "message": f"Your current subscription plan does not include access to {model_name}. Please upgrade your subscription.", 
+                        "allowed_models": available_models
+                    }
+                )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error checking model access: {e}")
+            raise HTTPException(status_code=500, detail={"message": "Error checking model access"})
 
-    can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(account_id)
-    if not can_run:
-        raise HTTPException(status_code=402, detail={"message": message, "error": "insufficient_credits"})
+        can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(account_id)
+        if not can_run:
+            raise HTTPException(status_code=402, detail={"message": message, "error": "insufficient_credits"})
     
     from .trigger_service import TriggerResult, TriggerEvent, TriggerType
     
