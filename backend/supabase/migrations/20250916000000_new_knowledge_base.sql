@@ -93,6 +93,10 @@ DO $$ BEGIN
 END $$;
 
 -- Functions
+-- Drop the old version of the function first to avoid signature conflicts
+DROP FUNCTION IF EXISTS get_agent_knowledge_base_context(UUID);
+DROP FUNCTION IF EXISTS get_agent_knowledge_base_context(UUID, INTEGER);
+
 CREATE OR REPLACE FUNCTION get_agent_knowledge_base_context(
     p_agent_id UUID,
     p_max_tokens INTEGER DEFAULT 4000
@@ -170,6 +174,6 @@ END $$;
 GRANT ALL ON knowledge_base_folders TO authenticated, service_role;
 GRANT ALL ON knowledge_base_entries TO authenticated, service_role;
 GRANT ALL ON agent_knowledge_entry_assignments TO authenticated, service_role;
-GRANT EXECUTE ON FUNCTION get_agent_knowledge_base_context TO authenticated, service_role;
+GRANT EXECUTE ON FUNCTION get_agent_knowledge_base_context(UUID, INTEGER) TO authenticated, service_role;
 
 COMMIT;
