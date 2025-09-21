@@ -215,7 +215,7 @@ class ThreadManager:
         enable_thinking: Optional[bool] = False,
         reasoning_effort: Optional[str] = 'low',
         generation: Optional[StatefulGenerationClient] = None,
-        enable_prompt_caching: bool = True,
+        enable_prompt_caching: bool = False,
         enable_context_manager: Optional[bool] = None,
     ) -> Union[Dict[str, Any], AsyncGenerator]:
         """Run a conversation thread with LLM integration and tool execution."""
@@ -271,7 +271,7 @@ class ThreadManager:
         config: ProcessorConfig, stream: bool, enable_thinking: Optional[bool],
         reasoning_effort: Optional[str], generation: Optional[StatefulGenerationClient],
         auto_continue_state: Dict[str, Any], temporary_message: Optional[Dict[str, Any]] = None,
-        enable_prompt_caching: bool = True, use_context_manager: bool = True
+        enable_prompt_caching: bool = False, use_context_manager: bool = True
     ) -> Union[Dict[str, Any], AsyncGenerator]:
         """Execute a single LLM run."""
         logger.debug(f"_execute_run called with config type: {type(config)}")
@@ -379,7 +379,7 @@ class ThreadManager:
         config: ProcessorConfig, stream: bool, enable_thinking: Optional[bool],
         reasoning_effort: Optional[str], generation: Optional[StatefulGenerationClient],
         auto_continue_state: Dict[str, Any], temporary_message: Optional[Dict[str, Any]],
-        native_max_auto_continues: int, enable_prompt_caching: bool = True,
+        native_max_auto_continues: int, enable_prompt_caching: bool = False,
         use_context_manager: bool = True
     ) -> AsyncGenerator:
         """Generator that handles auto-continue logic."""
