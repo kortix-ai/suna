@@ -18,6 +18,8 @@ from .agents import (
     ThreadAgentResponse,
     AgentExportData,
     AgentImportRequest,
+    AgentIconGenerationRequest,
+    AgentIconGenerationResponse,
 )
 
 from .threads import (
@@ -46,6 +48,8 @@ __all__ = [
     "ThreadAgentResponse",
     "AgentExportData",
     "AgentImportRequest",
+    "AgentIconGenerationRequest",
+    "AgentIconGenerationResponse",
     
     # Thread models
     "AgentStartRequest",
