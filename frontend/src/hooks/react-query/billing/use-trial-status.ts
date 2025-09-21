@@ -3,12 +3,13 @@ import { getTrialStatus, startTrial } from '@/lib/api/billing-v2';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-export function useTrialStatus() {
+export function useTrialStatus(enabled = true) {
   return useQuery({
     queryKey: ['trial-status'],
     queryFn: getTrialStatus,
     staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
+    enabled,
   });
 }
 

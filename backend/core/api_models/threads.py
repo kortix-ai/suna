@@ -11,7 +11,7 @@ class AgentStartRequest(BaseModel):
     reasoning_effort: Optional[str] = 'low'
     stream: Optional[bool] = True
     enable_context_manager: Optional[bool] = False
-    enable_prompt_caching: Optional[bool] = True
+    enable_prompt_caching: Optional[bool] = False
     agent_id: Optional[str] = None  # Custom agent to use
 
 

@@ -108,7 +108,7 @@ export function HeroSection() {
   const { user, isLoading } = useAuth();
   const { billingError, handleBillingError, clearBillingError } =
     useBillingError();
-  const { data: accounts } = useAccounts();
+  const { data: accounts } = useAccounts({ enabled: !!user });
   const personalAccount = accounts?.find((account) => account.personal_account);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const initiateAgentMutation = useInitiateAgentMutation();

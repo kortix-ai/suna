@@ -37,7 +37,7 @@ from typing import List, Optional, Dict, Set
 from core.utils.config import config
 from core.utils.logger import logger
 from core.services.supabase import DBConnection
-from core.services.billing import get_user_subscription, get_subscription_tier
+from core.billing.subscription_service import subscription_service
 
 try:
     from daytona import Daytona
@@ -111,7 +111,8 @@ async def is_user_free_tier(user_id: str) -> tuple[bool, str]:
     """
     try:
         # Get user's subscription
-        subscription = await get_user_subscription(user_id)
+        subscription_info = await subscription_service.get_subscription(user_id)
+        subscription = subscription_info.get('subscription')
         
         if not subscription:
             # No subscription = free tier

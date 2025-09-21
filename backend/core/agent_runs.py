@@ -10,9 +10,9 @@ from fastapi.responses import StreamingResponse
 
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_user_id_from_stream_auth, verify_and_authorize_thread_access
 from core.utils.logger import logger, structlog
-from core.services.billing import can_use_model
+from core.billing import is_model_allowed, subscription_service
 from core.billing.billing_integration import billing_integration
-from core.utils.config import config
+from core.utils.config import config, EnvMode
 from core.services import redis
 from core.sandbox.sandbox import create_sandbox, delete_sandbox
 from run_agent_background import run_agent_background
@@ -44,6 +44,7 @@ async def check_billing_status(client, user_id: str) -> Tuple[bool, str, Optiona
     }
     
     return can_run, message, subscription_info
+
 
 @router.post("/thread/{thread_id}/agent/start")
 async def start_agent(
@@ -180,32 +181,54 @@ async def start_agent(
         logger.debug(f"[AGENT LOAD] Agent config keys: {list(agent_config.keys())}")
         logger.debug(f"Using agent {agent_config['agent_id']} for this agent run (thread remains agent-agnostic)")
 
-    # Run all checks concurrently
-    model_check_task = asyncio.create_task(can_use_model(client, account_id, model_name))
-    billing_check_task = asyncio.create_task(check_billing_status(client, account_id))
-    limit_check_task = asyncio.create_task(check_agent_run_limit(client, account_id))
+    # Skip billing checks in local development mode
+    from core.utils.config import config, EnvMode
+    if config.ENV_MODE == EnvMode.LOCAL:
+        logger.debug("Running in local development mode - skipping billing and model access checks")
+        # Skip all checks and proceed directly
+    else:
+        # Check model access
+        async def check_model_access():
+            try:
+                tier_info = await subscription_service.get_user_subscription_tier(account_id)
+                tier_name = tier_info['name']
+                
+                if is_model_allowed(tier_name, model_name):
+                    return True, "Model access allowed", tier_info.get('models', [])
+                else:
+                    available_models = tier_info.get('models', [])
+                    return False, f"Your current subscription plan does not include access to {model_name}. Please upgrade your subscription.", available_models
+            except Exception as e:
+                logger.error(f"Error checking model access: {e}")
+                return False, "Error checking model access", []
 
-    # Wait for all checks to complete
-    (can_use, model_message, allowed_models), (can_run, message, subscription), limit_check = await asyncio.gather(
-        model_check_task, billing_check_task, limit_check_task
-    )
+        # Run all checks concurrently
+        model_check_task = asyncio.create_task(check_model_access())
+        billing_check_task = asyncio.create_task(check_billing_status(client, account_id))
+        limit_check_task = asyncio.create_task(check_agent_run_limit(client, account_id))
 
-    # Check results and raise appropriate errors
-    if not can_use:
-        raise HTTPException(status_code=403, detail={"message": model_message, "allowed_models": allowed_models})
+        # Wait for all checks to complete
+        (can_use, model_message, allowed_models), (can_run, message, subscription), limit_check = await asyncio.gather(
+            model_check_task, billing_check_task, limit_check_task
+        )
 
-    if not can_run:
-        raise HTTPException(status_code=402, detail={"message": message, "subscription": subscription})
+        # Check results and raise appropriate errors
+        if not can_use:
+            raise HTTPException(status_code=403, detail={"message": model_message, "allowed_models": allowed_models})
 
-    if not limit_check['can_start']:
-        error_detail = {
-            "message": f"Maximum of {config.MAX_PARALLEL_AGENT_RUNS} parallel agent runs allowed within 24 hours. You currently have {limit_check['running_count']} running.",
-            "running_thread_ids": limit_check['running_thread_ids'],
-            "running_count": limit_check['running_count'],
-            "limit": config.MAX_PARALLEL_AGENT_RUNS
-        }
-        logger.warning(f"Agent run limit exceeded for account {account_id}: {limit_check['running_count']} running agents")
-        raise HTTPException(status_code=429, detail=error_detail)
+    if config.ENV_MODE != EnvMode.LOCAL:
+        if not can_run:
+            raise HTTPException(status_code=402, detail={"message": message, "subscription": subscription})
+
+        if not limit_check['can_start']:
+            error_detail = {
+                "message": f"Maximum of {config.MAX_PARALLEL_AGENT_RUNS} parallel agent runs allowed within 24 hours. You currently have {limit_check['running_count']} running.",
+                "running_thread_ids": limit_check['running_thread_ids'],
+                "running_count": limit_check['running_count'],
+                "limit": config.MAX_PARALLEL_AGENT_RUNS
+            }
+            logger.warning(f"Agent run limit exceeded for account {account_id}: {limit_check['running_count']} running agents")
+            raise HTTPException(status_code=429, detail=error_detail)
 
     effective_model = model_name
     if not model_name and agent_config and agent_config.get('model'):
@@ -635,7 +658,7 @@ async def initiate_agent_with_files(
     reasoning_effort: Optional[str] = Form("low"),
     stream: Optional[bool] = Form(True),
     enable_context_manager: Optional[bool] = Form(False),
-    enable_prompt_caching: Optional[bool] = Form(True),
+    enable_prompt_caching: Optional[bool] = Form(False),
     agent_id: Optional[str] = Form(None),  # Add agent_id parameter
     files: List[UploadFile] = File(default=[]),
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
@@ -747,47 +770,66 @@ async def initiate_agent_with_files(
     if agent_config:
         logger.debug(f"[AGENT INITIATE] Agent config keys: {list(agent_config.keys())}")
 
-    # Run all checks concurrently
-    model_check_task = asyncio.create_task(can_use_model(client, account_id, model_name))
-    billing_check_task = asyncio.create_task(check_billing_status(client, account_id))
-    limit_check_task = asyncio.create_task(check_agent_run_limit(client, account_id))
-    project_limit_check_task = asyncio.create_task(check_project_count_limit(client, account_id))
+    # Skip billing checks in local development mode
+    if config.ENV_MODE == EnvMode.LOCAL:
+        logger.debug("Running in local development mode - skipping billing and model access checks")
+        # Skip all checks and proceed directly
+    else:
+        # Check model access
+        async def check_model_access():
+            try:
+                tier_info = await subscription_service.get_user_subscription_tier(account_id)
+                tier_name = tier_info['name']
+                
+                if is_model_allowed(tier_name, model_name):
+                    return True, "Model access allowed", tier_info.get('models', [])
+                else:
+                    available_models = tier_info.get('models', [])
+                    return False, f"Your current subscription plan does not include access to {model_name}. Please upgrade your subscription.", available_models
+            except Exception as e:
+                logger.error(f"Error checking model access: {e}")
+                return False, "Error checking model access", []
 
-    # Wait for all checks to complete
-    (can_use, model_message, allowed_models), (can_run, message, subscription), limit_check, project_limit_check = await asyncio.gather(
-        model_check_task, billing_check_task, limit_check_task, project_limit_check_task
-    )
+        # Run all checks concurrently
+        model_check_task = asyncio.create_task(check_model_access())
+        billing_check_task = asyncio.create_task(check_billing_status(client, account_id))
+        limit_check_task = asyncio.create_task(check_agent_run_limit(client, account_id))
+        project_limit_check_task = asyncio.create_task(check_project_count_limit(client, account_id))
 
-    # Check results and raise appropriate errors
-    if not can_use:
-        raise HTTPException(status_code=403, detail={"message": model_message, "allowed_models": allowed_models})
+    if config.ENV_MODE != EnvMode.LOCAL:
+        # Wait for all checks to complete
+        (can_use, model_message, allowed_models), (can_run, message, subscription), limit_check, project_limit_check = await asyncio.gather(
+            model_check_task, billing_check_task, limit_check_task, project_limit_check_task
+        )
 
-    can_run, message, subscription = await check_billing_status(client, account_id)
-    if not can_run:
-        raise HTTPException(status_code=402, detail={"message": message, "subscription": subscription})
+        # Check results and raise appropriate errors
+        if not can_use:
+            raise HTTPException(status_code=403, detail={"message": model_message, "allowed_models": allowed_models})
 
-    # Check agent run limit (maximum parallel runs in past 24 hours)
-    limit_check = await check_agent_run_limit(client, account_id)
-    if not limit_check['can_start']:
-        error_detail = {
-            "message": f"Maximum of {config.MAX_PARALLEL_AGENT_RUNS} parallel agent runs allowed within 24 hours. You currently have {limit_check['running_count']} running.",
-            "running_thread_ids": limit_check['running_thread_ids'],
-            "running_count": limit_check['running_count'],
-            "limit": config.MAX_PARALLEL_AGENT_RUNS
-        }
-        logger.warning(f"Agent run limit exceeded for account {account_id}: {limit_check['running_count']} running agents")
-        raise HTTPException(status_code=429, detail=error_detail)
+        if not can_run:
+            raise HTTPException(status_code=402, detail={"message": message, "subscription": subscription})
 
-    if not project_limit_check['can_create']:
-        error_detail = {
-            "message": f"Maximum of {project_limit_check['limit']} projects allowed for your current plan. You have {project_limit_check['current_count']} projects.",
-            "current_count": project_limit_check['current_count'],
-            "limit": project_limit_check['limit'],
-            "tier_name": project_limit_check['tier_name'],
-            "error_code": "PROJECT_LIMIT_EXCEEDED"
-        }
-        logger.warning(f"Project limit exceeded for account {account_id}: {project_limit_check['current_count']}/{project_limit_check['limit']} projects")
-        raise HTTPException(status_code=402, detail=error_detail)
+        # Check agent run limit (maximum parallel runs in past 24 hours)
+        if not limit_check['can_start']:
+            error_detail = {
+                "message": f"Maximum of {config.MAX_PARALLEL_AGENT_RUNS} parallel agent runs allowed within 24 hours. You currently have {limit_check['running_count']} running.",
+                "running_thread_ids": limit_check['running_thread_ids'],
+                "running_count": limit_check['running_count'],
+                "limit": config.MAX_PARALLEL_AGENT_RUNS
+            }
+            logger.warning(f"Agent run limit exceeded for account {account_id}: {limit_check['running_count']} running agents")
+            raise HTTPException(status_code=429, detail=error_detail)
+
+        if not project_limit_check['can_create']:
+            error_detail = {
+                "message": f"Maximum of {project_limit_check['limit']} projects allowed for your current plan. You have {project_limit_check['current_count']} projects.",
+                "current_count": project_limit_check['current_count'],
+                "limit": project_limit_check['limit'],
+                "tier_name": project_limit_check['tier_name'],
+                "error_code": "PROJECT_LIMIT_EXCEEDED"
+            }
+            logger.warning(f"Project limit exceeded for account {account_id}: {project_limit_check['current_count']}/{project_limit_check['limit']} projects")
+            raise HTTPException(status_code=402, detail=error_detail)
 
     try:
         # 1. Create Project

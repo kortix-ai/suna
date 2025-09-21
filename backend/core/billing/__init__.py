@@ -18,6 +18,7 @@ from .billing_integration import billing_integration
 from .subscription_service import subscription_service
 from .trial_service import trial_service
 from .payment_service import payment_service
+# Import service instances for direct usage
 
 __all__ = [
     'TOKEN_PRICE_MULTIPLIER',

@@ -190,9 +190,10 @@ class ModelManager:
             if config.ENV_MODE == EnvMode.LOCAL:
                 return DEFAULT_PREMIUM_MODEL
                 
-            from core.services.billing import get_user_subscription, SUBSCRIPTION_TIERS
+            from core.billing.subscription_service import subscription_service
             
-            subscription = await get_user_subscription(user_id)
+            subscription_info = await subscription_service.get_subscription(user_id)
+            subscription = subscription_info.get('subscription')
             
             is_paid_tier = False
             if subscription:
@@ -202,8 +203,9 @@ class ModelManager:
                 else:
                     price_id = subscription.get('price_id')
                 
-                tier_info = SUBSCRIPTION_TIERS.get(price_id)
-                if tier_info and tier_info['name'] != 'free':
+                # Check if this is a paid tier by looking at the tier info
+                tier_info = subscription_info.get('tier', {})
+                if tier_info and tier_info.get('name') != 'free' and tier_info.get('name') != 'none':
                     is_paid_tier = True
             
             if is_paid_tier:
