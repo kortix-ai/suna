@@ -77,10 +77,11 @@ class SandboxImageEditTool(SandboxToolsBase):
         """Generate or edit images using OpenAI GPT Image 1 via OpenAI SDK (no mask support)."""
         try:
             await self._ensure_sandbox()
+            model="gpt-image-1"
 
             if mode == "generate":
                 response = await aimage_generation(
-                    model="gpt-image-1",
+                    model=model,
                     prompt=prompt,
                     n=1,
                     size="1024x1024",
@@ -88,7 +89,7 @@ class SandboxImageEditTool(SandboxToolsBase):
             elif mode == "edit":
                 if not image_path:
                     return self.fail_response("'image_path' is required for edit mode.")
-
+ 
                 image_bytes = await self._get_image_bytes(image_path)
                 if isinstance(image_bytes, ToolResult):  # Error occurred
                     return image_bytes
@@ -102,7 +103,7 @@ class SandboxImageEditTool(SandboxToolsBase):
                 response = await aimage_edit(
                     image=[image_io],  # Type in the LiteLLM SDK is wrong
                     prompt=prompt,
-                    model="gpt-image-1",
+                    model=model,
                     n=1,
                     size="1024x1024",
                 )

@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { BillingModal } from '@/components/billing/billing-modal';
 import { useAgentSelection } from '@/lib/stores/agent-selection-store';
 import { Examples } from './examples';
+import { AgentExamples } from './examples/agent-examples';
 import { useThreadQuery } from '@/hooks/react-query/threads/use-threads';
 import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
 import { KortixLogo } from '../sidebar/kortix-logo';
@@ -35,6 +36,7 @@ import { ReleaseBadge } from '../auth/release-badge';
 import { useDashboardTour } from '@/hooks/use-dashboard-tour';
 import { TourConfirmationDialog } from '@/components/tour/TourConfirmationDialog';
 import { Calendar, MessageSquare, Plus, Sparkles, Zap } from 'lucide-react';
+import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
 
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 
@@ -65,6 +67,8 @@ const dashboardTourSteps: Step[] = [
 export function DashboardContent() {
   const [inputValue, setInputValue] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showConfigDialog, setShowConfigDialog] = useState(false);
+  const [configAgentId, setConfigAgentId] = useState<string | null>(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [autoSubmit, setAutoSubmit] = useState(false);
   const { 
@@ -370,12 +374,21 @@ export function DashboardContent() {
                     selectedAgentId={selectedAgentId}
                     onAgentSelect={setSelectedAgent}
                     enableAdvancedConfig={true}
-                    onConfigureAgent={(agentId) => router.push(`/agents/config/${agentId}`)}
+                    onConfigureAgent={(agentId) => {
+                      setConfigAgentId(agentId);
+                      setShowConfigDialog(true);
+                    }}
                   />
                 </div>
-                <div className="w-full" data-tour="examples">
-                  <Examples onSelectPrompt={setInputValue} count={isMobile ? 3 : 4} />
-                </div>
+              </div>
+            </div>
+            <div className="w-full" data-tour="examples">
+              <div className="max-w-7xl mx-auto">
+                <AgentExamples 
+                  selectedAgentId={selectedAgentId}
+                  onSelectPrompt={setInputValue} 
+                  count={isMobile ? 4 : 8} 
+                />
               </div>
             </div>
             {enabledEnvironment && (
@@ -407,6 +420,14 @@ export function DashboardContent() {
           runningCount={agentLimitData.runningCount}
           runningThreadIds={agentLimitData.runningThreadIds}
           projectId={undefined}
+        />
+      )}
+      
+      {configAgentId && (
+        <AgentConfigurationDialog
+          open={showConfigDialog}
+          onOpenChange={setShowConfigDialog}
+          agentId={configAgentId}
         />
       )}
     </>

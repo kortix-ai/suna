@@ -47,7 +47,10 @@ export const EditableMarkdown: React.FC<EditableMarkdownProps> = ({
 
   if (isEditing) {
     return (
-      <div className="space-y-1">
+      <div className={cn(
+        'space-y-1',
+        className?.includes('flex-1') ? 'flex flex-col h-full' : ''
+      )}>
         <Textarea
           value={editValue}
           onChange={(e) => setEditValue(e.target.value)}
@@ -56,16 +59,17 @@ export const EditableMarkdown: React.FC<EditableMarkdownProps> = ({
           autoFocus
           className={cn(
             'border-none shadow-none px-0 focus-visible:ring-0 bg-transparent resize-none',
+            className?.includes('flex-1') ? 'flex-1' : '',
             className
           )}
           style={{
             fontSize: 'inherit',
             fontWeight: 'inherit',
             lineHeight: 'inherit',
-            minHeight
+            minHeight: className?.includes('flex-1') ? undefined : minHeight
           }}
         />
-        <div className="text-xs text-muted-foreground/50 px-0">
+        <div className="text-xs text-muted-foreground/50 px-0 flex-shrink-0">
           Markdown supported • Cmd+Enter to save • Esc to cancel
         </div>
       </div>
@@ -76,6 +80,7 @@ export const EditableMarkdown: React.FC<EditableMarkdownProps> = ({
     <div 
       className={cn(
         'group bg-transparent cursor-pointer relative rounded px-2 py-1 -mx-2 -my-1 transition-colors hover:bg-muted/50',
+        className?.includes('flex-1') ? 'flex flex-col h-full' : '',
         className
       )}
       onClick={() => setIsEditing(true)}
@@ -83,9 +88,10 @@ export const EditableMarkdown: React.FC<EditableMarkdownProps> = ({
       <div 
         className={cn(
           value ? '' : 'text-muted-foreground italic',
-          'prose prose-sm dark:prose-invert max-w-none'
+          'prose prose-sm dark:prose-invert max-w-none',
+          className?.includes('flex-1') ? 'flex-1 min-h-0' : ''
         )}
-        style={{ minHeight }}
+        style={{ minHeight: className?.includes('flex-1') ? undefined : minHeight }}
       >
         {value ? (
           <ReactMarkdown 
