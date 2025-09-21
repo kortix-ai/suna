@@ -3,6 +3,7 @@
 import React, { createContext, useContext, ReactNode } from 'react';
 import { useSubscription, useCreditBalance } from '@/hooks/react-query/use-billing-v2';
 import { SubscriptionInfo, CreditBalance } from '@/lib/api/billing-v2';
+import { useAuth } from '@/components/AuthProvider';
 
 interface SubscriptionContextType {
   subscriptionData: SubscriptionInfo | null;
@@ -20,19 +21,22 @@ interface SubscriptionProviderProps {
 }
 
 export function SubscriptionProvider({ children }: SubscriptionProviderProps) {
+  const { user } = useAuth();
+  const isAuthenticated = !!user;
+
   const { 
     data: subscriptionData, 
     isLoading: subscriptionLoading, 
     error: subscriptionError, 
     refetch 
-  } = useSubscription();
+  } = useSubscription(isAuthenticated);
 
   const {
     data: creditBalance,
     isLoading: balanceLoading,
     error: balanceError,
     refetch: refetchBalance
-  } = useCreditBalance();
+  } = useCreditBalance(isAuthenticated);
 
   const value: SubscriptionContextType = {
     subscriptionData: subscriptionData || null,
@@ -93,9 +97,10 @@ export function useSharedSubscription() {
 
 export function useSubscriptionData() {
   const context = useContext(SubscriptionContext);
+  const { user } = useAuth();
   
-  const directSubscription = useSubscription();
-  const directCreditBalance = useCreditBalance();
+  const directSubscription = useSubscription(!!user);
+  const directCreditBalance = useCreditBalance(!!user);
   
   if (context) {
     return {
