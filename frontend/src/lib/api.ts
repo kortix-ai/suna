@@ -327,7 +327,8 @@ export const getProjects = async (): Promise<Project[]> => {
     const { data, error } = await supabase
       .from('projects')
       .select('*')
-      .eq('account_id', userData.user.id);
+      .eq('account_id', userData.user.id)
+      .order('created_at', { ascending: false });
 
     if (error) {
       // Handle permission errors specifically
