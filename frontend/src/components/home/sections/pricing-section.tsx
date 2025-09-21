@@ -615,7 +615,7 @@ export function PricingSection({
   const { user } = useAuth();
   const isUserAuthenticated = !!user;
 
-  const { data: subscriptionData, isLoading: isFetchingPlan, error: subscriptionQueryError, refetch: refetchSubscription } = useSubscription(isUserAuthenticated);
+  const { data: subscriptionData, isLoading: isFetchingPlan, error: subscriptionQueryError, refetch: refetchSubscription } = useSubscription({ enabled: isUserAuthenticated });
   const subCommitmentQuery = useSubscriptionCommitment(subscriptionData?.subscription_id, isUserAuthenticated);
 
   const isAuthenticated = isUserAuthenticated && !!subscriptionData && subscriptionQueryError === null;
