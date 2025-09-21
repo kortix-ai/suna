@@ -14,7 +14,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { handleFiles } from './file-upload-handler';
 import { MessageInput } from './message-input';
 import { AttachmentGroup } from '../attachment-group';
-import { useModelSelection } from './_use-model-selection-new';
+import { useModelSelection } from '@/hooks/use-model-selection';
 import { useFileDelete } from '@/hooks/react-query/files';
 import { useQueryClient } from '@tanstack/react-query';
 import { ToolCallInput } from './floating-tool-preview';
@@ -239,12 +239,8 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
         message = message ? `${message}\n\n${fileInfo}` : fileInfo;
       }
 
-      let baseModelName = getActualModelId(selectedModel);
-      let thinkingEnabled = false;
-      if (selectedModel.endsWith('-thinking')) {
-        baseModelName = getActualModelId(selectedModel.replace(/-thinking$/, ''));
-        thinkingEnabled = true;
-      }
+      const baseModelName = getActualModelId(selectedModel);
+      const thinkingEnabled = false; // Thinking mode removed - use API models directly
 
       posthog.capture("task_prompt_submitted", { message });
 

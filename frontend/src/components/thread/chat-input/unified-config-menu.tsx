@@ -17,8 +17,10 @@ import { cn } from '@/lib/utils';
 import { Cpu, Search, Check, ChevronDown, Plus, ExternalLink } from 'lucide-react';
 import { useAgents } from '@/hooks/react-query/agents/use-agents';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import type { ModelOption, SubscriptionStatus } from './_use-model-selection';
-import { MODELS } from './_use-model-selection';
+import type { ModelOption } from '@/hooks/use-model-selection';
+
+export type SubscriptionStatus = 'no_subscription' | 'active';
+
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { IntegrationsRegistry } from '@/components/agents/integrations-registry';

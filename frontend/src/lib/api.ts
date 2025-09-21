@@ -1841,9 +1841,7 @@ export interface UsageLogEntry {
 export interface UsageLogsResponse {
   logs: UsageLogEntry[];
   has_more: boolean;
-  message?: string;
-  subscription_limit?: number;
-  cumulative_cost?: number;
+  total_count?: number;
 }
 
 export interface BillingStatusResponse {
@@ -2184,7 +2182,6 @@ export const getAvailableModels = async (): Promise<AvailableModelsResponse> => 
     throw error;
   }
 };
-
 
 export const checkBillingStatus = async (): Promise<BillingStatusResponse> => {
   try {

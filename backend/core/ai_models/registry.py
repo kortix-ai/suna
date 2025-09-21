@@ -57,7 +57,7 @@ class ModelRegistry:
             id="xai/grok-4-fast-non-reasoning",
             name="Grok 4 Fast",
             provider=ModelProvider.XAI,
-            aliases=["grok-4-fast-non-reasoning", "x-ai/grok-4-fast-non-reasoning", "openrouter/x-ai/grok-4-fast-non-reasoning", "Grok 4 Fast Non Reasoning"],
+            aliases=["grok-4-fast-non-reasoning", "x-ai/grok-4-fast-non-reasoning", "openrouter/x-ai/grok-4-fast-non-reasoning", "Grok 4 Fast"],
             context_window=2_000_000,
             capabilities=[
                 ModelCapability.CHAT,

@@ -16,11 +16,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useAvailableModels } from '@/hooks/react-query/subscriptions/use-billing';
+// Models now fetched via useModelSelection hook
 import type { Model } from '@/lib/api';
 import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { useModelSelection } from '@/components/thread/chat-input/_use-model-selection';
+import { useModelSelection } from '@/hooks/use-model-selection';
 
 // Example task data with token usage
 const exampleTasks = [
@@ -137,14 +137,11 @@ const exampleTasks = [
 const DISABLE_EXAMPLES = true;
 
 export default function PricingPage() {
-  const {
-    data: modelsResponse,
-    isLoading: loading,
-    error,
-    refetch,
-  } = useAvailableModels();
-
-  const { allModels } = useModelSelection();
+  const { 
+    allModels, 
+    modelsData: modelsResponse, 
+    isLoading: loading 
+  } = useModelSelection();
 
   const [selectedModelId, setSelectedModelId] = useState<string>(
     'anthropic/claude-sonnet-4-20250514',
@@ -223,7 +220,7 @@ export default function PricingPage() {
     );
   }
 
-  if (error) {
+  if (!modelsResponse && !loading) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="max-w-md text-center space-y-4">
@@ -233,14 +230,9 @@ export default function PricingPage() {
               Pricing Unavailable
             </h3>
             <p className="text-sm text-muted-foreground">
-              {error instanceof Error
-                ? error.message
-                : 'Failed to fetch model pricing'}
+              Failed to fetch model pricing. Please refresh the page.
             </p>
           </div>
-          <Button onClick={() => refetch()} size="sm">
-            Try Again
-          </Button>
         </div>
       </div>
     );

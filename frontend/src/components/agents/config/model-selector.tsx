@@ -16,14 +16,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
-import { 
-  useModelSelection, 
-  MODELS,
-  DEFAULT_FREE_MODEL_ID,
-  DEFAULT_PREMIUM_MODEL_ID
-} from '@/components/thread/chat-input/_use-model-selection';
-import { formatModelName, getPrefixedModelId } from '@/lib/stores/model-store';
-import { useAvailableModels } from '@/hooks/react-query/subscriptions/use-billing';
+import { useModelSelection } from '@/hooks/use-model-selection';
+import { formatModelName } from '@/lib/stores/model-store';
 import { isLocalMode } from '@/lib/config';
 import { CustomModelDialog, CustomModelFormData } from '@/components/thread/chat-input/custom-model-dialog';
 import { PaywallDialog } from '@/components/payment/paywall-dialog';
@@ -59,9 +53,9 @@ export function AgentModelSelector({
     customModels: storeCustomModels,
     addCustomModel: storeAddCustomModel,
     updateCustomModel: storeUpdateCustomModel,
-    removeCustomModel: storeRemoveCustomModel 
+    removeCustomModel: storeRemoveCustomModel,
+    modelsData // Now available directly from the hook
   } = useModelSelection();
-  const { data: modelsData } = useAvailableModels();
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
@@ -78,30 +72,8 @@ export function AgentModelSelector({
 
   const customModels = storeCustomModels;
   
-  const normalizeModelId = (modelId?: string): string => {
-    if (!modelId) return subscriptionStatus === 'active' ? DEFAULT_PREMIUM_MODEL_ID : DEFAULT_FREE_MODEL_ID;
-    
-    if (modelsData?.models) {
-      const exactMatch = modelsData.models.find(m => m.short_name === modelId);
-      if (exactMatch) return exactMatch.short_name;
-
-      const fullMatch = modelsData.models.find(m => m.id === modelId);
-      if (fullMatch) return fullMatch.short_name || fullMatch.id;
-      
-      if (modelId.startsWith('openrouter/')) {
-        const shortName = modelId.replace('openrouter/', '');
-        const shortMatch = modelsData.models.find(m => m.short_name === shortName);
-        if (shortMatch) return shortMatch.short_name;
-      }
-    }
-    
-    return modelId;
-  };
-  
-  const normalizedValue = normalizeModelId(value);
-  
   // Use the prop value if provided, otherwise fall back to store value
-  const selectedModel = normalizedValue || storeSelectedModel;
+  const selectedModel = value || storeSelectedModel;
 
   const enhancedModelOptions = useMemo(() => {
     const modelMap = new Map();
@@ -261,14 +233,12 @@ export function AgentModelSelector({
 
   const handleSaveCustomModel = (formData: CustomModelFormData) => {
     const modelId = formData.id.trim();
-    const displayId = modelId.startsWith('openrouter/') ? modelId.replace('openrouter/', '') : modelId;
-    const modelLabel = formData.label.trim() || formatModelName(displayId);
+    const modelLabel = formData.label.trim() || formatModelName(modelId);
 
     if (!modelId) return;
     
-    const checkId = modelId;
     if (customModels.some(model =>
-      model.id === checkId && (dialogMode === 'add' || model.id !== editingModelId))) {
+      model.id === modelId && (dialogMode === 'add' || model.id !== editingModelId))) {
       console.error('A model with this ID already exists');
       return;
     }
@@ -302,8 +272,11 @@ export function AgentModelSelector({
     storeRemoveCustomModel(modelId);
     
     if (selectedModel === modelId) {
-      const defaultModel = subscriptionStatus === 'active' ? DEFAULT_PREMIUM_MODEL_ID : DEFAULT_FREE_MODEL_ID;
-      onChange(defaultModel);
+      // When deleting the currently selected custom model, let the hook determine the new default
+      const firstAvailableModel = allModels.find(m => canAccessModel(m.id));
+      if (firstAvailableModel) {
+        onChange(firstAvailableModel.id);
+      }
     }
   };
 
@@ -313,8 +286,8 @@ export function AgentModelSelector({
     const accessible = isCustom ? true : (isLocalMode() || canAccessModel(model.id));
     const isHighlighted = index === highlightedIndex;
     const isPremium = model.requiresSubscription;
-    const isLowQuality = MODELS[model.id]?.lowQuality || false;
-    const isRecommended = MODELS[model.id]?.recommended || false;
+    const isLowQuality = false; // API models are quality controlled
+    const isRecommended = model.recommended || false;
 
     return (
       <Tooltip key={`model-${model.id}-${index}`}>
@@ -411,14 +384,12 @@ export function AgentModelSelector({
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="relative flex items-center justify-center">
                         <Cpu className="h-4 w-4" />
-                        {MODELS[selectedModel]?.lowQuality && (
-                          <AlertTriangle className="h-2.5 w-2.5 text-amber-500 absolute -top-1 -right-1" />
-                        )}
+                        {/* API models are quality controlled - no low quality warning needed */}
                       </div>
                       <span className="truncate">{selectedModelDisplay}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      {MODELS[selectedModel]?.recommended && (
+                      {allModels.find(m => m.id === selectedModel)?.recommended && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 font-medium">
                           Recommended
                         </span>
@@ -438,9 +409,7 @@ export function AgentModelSelector({
                   >
                     <div className="relative flex items-center justify-center">
                       <Cpu className="h-4 w-4" />
-                      {MODELS[selectedModel]?.lowQuality && (
-                        <AlertTriangle className="h-2.5 w-2.5 text-amber-500 absolute -top-1 -right-1" />
-                      )}
+                      {/* API models are quality controlled - no low quality warning needed */}
                     </div>
                     <span className="text-sm">{selectedModelDisplay}</span>
                   </Button>
