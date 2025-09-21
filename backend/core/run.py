@@ -55,10 +55,10 @@ class AgentConfig:
     model_name: str = "openai/gpt-5-mini"
     enable_thinking: Optional[bool] = False
     reasoning_effort: Optional[str] = 'low'
-    enable_context_manager: bool = True
+    enable_context_manager: bool = False
     agent_config: Optional[dict] = None
     trace: Optional[StatefulTraceClient] = None
-    enable_prompt_caching: bool = True
+    enable_prompt_caching: bool = False
 
 
 class ToolManager:
@@ -814,8 +814,8 @@ async def run_agent(
     model_name: str = "openai/gpt-5-mini",
     enable_thinking: Optional[bool] = False,
     reasoning_effort: Optional[str] = 'low',
-    enable_context_manager: bool = True,
-    enable_prompt_caching: bool = True,
+    enable_context_manager: bool = False,
+    enable_prompt_caching: bool = False,
     agent_config: Optional[dict] = None,    
     trace: Optional[StatefulTraceClient] = None
 ):

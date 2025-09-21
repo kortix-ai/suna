@@ -62,7 +62,7 @@ async def run_agent_background(
     enable_thinking: Optional[bool] = False,
     reasoning_effort: Optional[str] = 'low',
     stream: bool = True,
-    enable_context_manager: bool = False,
+    enable_context_manager: bool = True,
     enable_prompt_caching: bool = False,
     agent_config: Optional[dict] = None,
     request_id: Optional[str] = None
