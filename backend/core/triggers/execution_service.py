@@ -420,6 +420,7 @@ class AgentExecutor:
             reasoning_effort="low",
             stream=False,
             enable_context_manager=True,
+            enable_prompt_caching=True,
             agent_config=agent_config,
             request_id=structlog.contextvars.get_contextvars().get('request_id'),
         )
@@ -728,6 +729,7 @@ class WorkflowExecutor:
             reasoning_effort='medium',
             stream=False,
             enable_context_manager=True,
+            enable_prompt_caching=True,
             agent_config=agent_config,
             request_id=None,
         )

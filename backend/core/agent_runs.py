@@ -251,6 +251,7 @@ async def start_agent(
         model_name=model_name,  # Already resolved above
         enable_thinking=body.enable_thinking, reasoning_effort=body.reasoning_effort,
         stream=body.stream, enable_context_manager=body.enable_context_manager,
+        enable_prompt_caching=body.enable_prompt_caching,
         agent_config=agent_config,  # Pass agent configuration
         request_id=request_id,
     )
@@ -634,6 +635,7 @@ async def initiate_agent_with_files(
     reasoning_effort: Optional[str] = Form("low"),
     stream: Optional[bool] = Form(True),
     enable_context_manager: Optional[bool] = Form(False),
+    enable_prompt_caching: Optional[bool] = Form(True),
     agent_id: Optional[str] = Form(None),  # Add agent_id parameter
     files: List[UploadFile] = File(default=[]),
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
@@ -985,6 +987,7 @@ async def initiate_agent_with_files(
             model_name=model_name,  # Already resolved above
             enable_thinking=enable_thinking, reasoning_effort=reasoning_effort,
             stream=stream, enable_context_manager=enable_context_manager,
+            enable_prompt_caching=enable_prompt_caching,
             agent_config=agent_config,  # Pass agent configuration
             request_id=request_id,
         )

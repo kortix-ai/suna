@@ -687,7 +687,8 @@ class AgentRunner:
                     enable_thinking=self.config.enable_thinking,
                     reasoning_effort=self.config.reasoning_effort,
                     generation=generation,
-                    enable_prompt_caching=self.config.enable_prompt_caching
+                    enable_prompt_caching=self.config.enable_prompt_caching,
+                    enable_context_manager=self.config.enable_context_manager
                 )
 
                 last_tool_call = None
@@ -814,6 +815,7 @@ async def run_agent(
     enable_thinking: Optional[bool] = False,
     reasoning_effort: Optional[str] = 'low',
     enable_context_manager: bool = True,
+    enable_prompt_caching: bool = True,
     agent_config: Optional[dict] = None,    
     trace: Optional[StatefulTraceClient] = None
 ):
@@ -839,6 +841,7 @@ async def run_agent(
         enable_thinking=enable_thinking,
         reasoning_effort=reasoning_effort,
         enable_context_manager=enable_context_manager,
+        enable_prompt_caching=enable_prompt_caching,
         agent_config=agent_config,
         trace=trace
     )

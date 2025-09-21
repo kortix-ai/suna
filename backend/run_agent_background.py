@@ -63,6 +63,7 @@ async def run_agent_background(
     reasoning_effort: Optional[str] = 'low',
     stream: bool = True,
     enable_context_manager: bool = False,
+    enable_prompt_caching: bool = False,
     agent_config: Optional[dict] = None,
     request_id: Optional[str] = None
 ):
@@ -193,6 +194,7 @@ async def run_agent_background(
             model_name=effective_model,
             enable_thinking=enable_thinking, reasoning_effort=reasoning_effort,
             enable_context_manager=enable_context_manager,
+            enable_prompt_caching=enable_prompt_caching,
             agent_config=agent_config,
             trace=trace,
         )
