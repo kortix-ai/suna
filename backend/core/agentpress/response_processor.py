@@ -728,7 +728,6 @@ class ResponseProcessor:
                     try:
                         results_list = await self._execute_tools(final_tool_calls_to_process, config.tool_execution_strategy)
                         logger.debug(f"✅ STREAMING: Tool execution after stream completed, got {len(results_list)} results")
-                        logger.debug(f"📊 Results: {[f'{tc[0].get('function_name', 'unknown')}->{tc[1].success if hasattr(tc[1], 'success') else 'N/A'}' for tc in results_list]}")
                     except Exception as stream_exec_error:
                         logger.error(f"❌ STREAMING: Tool execution after stream failed: {str(stream_exec_error)}")
                         logger.error(f"❌ Error type: {type(stream_exec_error).__name__}")
@@ -1081,7 +1080,6 @@ class ResponseProcessor:
                 try:
                     tool_results = await self._execute_tools(tool_calls_to_execute, config.tool_execution_strategy)
                     logger.debug(f"✅ NON-STREAMING: Tool execution completed, got {len(tool_results)} results")
-                    logger.debug(f"📊 Tool results: {[f'{tc[0].get('function_name', 'unknown')}->{tc[1].success if hasattr(tc[1], 'success') else 'N/A'}' for tc in tool_results]}")
                 except Exception as exec_error:
                     logger.error(f"❌ NON-STREAMING: Tool execution failed: {str(exec_error)}")
                     logger.error(f"❌ Error type: {type(exec_error).__name__}")
