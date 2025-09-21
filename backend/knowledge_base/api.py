@@ -83,6 +83,9 @@ class EntryResponse(BaseModel):
     file_size: int
     created_at: str
 
+class UpdateEntryRequest(BaseModel):
+    summary: str = Field(..., min_length=1, max_length=1000)
+
 class AgentAssignmentRequest(BaseModel):
     folder_ids: List[str]
 
@@ -429,6 +432,49 @@ async def delete_entry(
         logger.error(f"Error deleting entry: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to delete entry")
 
+@router.patch("/entries/{entry_id}", response_model=EntryResponse)
+async def update_entry(
+    entry_id: str,
+    request: UpdateEntryRequest,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    """Update a knowledge base entry summary."""
+    try:
+        client = await db.client
+        account_id = user_id
+        
+        # Verify ownership and get current entry
+        entry_result = await client.table('knowledge_base_entries').select(
+            'entry_id, filename, summary, file_size, created_at, account_id'
+        ).eq('entry_id', entry_id).eq('account_id', account_id).execute()
+        
+        if not entry_result.data:
+            raise HTTPException(status_code=404, detail="Entry not found")
+        
+        # Update the summary
+        update_result = await client.table('knowledge_base_entries').update({
+            'summary': request.summary
+        }).eq('entry_id', entry_id).execute()
+        
+        if not update_result.data:
+            raise HTTPException(status_code=500, detail="Failed to update entry")
+        
+        # Return the updated entry
+        updated_entry = update_result.data[0]
+        return EntryResponse(
+            entry_id=updated_entry['entry_id'],
+            filename=updated_entry['filename'],
+            summary=updated_entry['summary'],
+            file_size=updated_entry['file_size'],
+            created_at=updated_entry['created_at']
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating entry: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update entry")
+
 # Agent assignments
 @router.get("/agents/{agent_id}/assignments")
 async def get_agent_assignments(
@@ -495,14 +541,24 @@ async def move_file(
         client = await db.client
         account_id = user_id
         
-        # Verify both entry and target folder belong to user
+        # Get current entry details including file path and filename
         entry_result = await client.table('knowledge_base_entries').select(
-            'entry_id, folder_id'
+            'entry_id, folder_id, file_path, filename'
         ).eq('entry_id', entry_id).execute()
         
         if not entry_result.data:
             raise HTTPException(status_code=404, detail="File not found")
         
+        entry = entry_result.data[0]
+        current_folder_id = entry['folder_id']
+        current_file_path = entry['file_path']
+        filename = entry['filename']
+        
+        # If already in the target folder, no need to move
+        if current_folder_id == request.folder_id:
+            return {"success": True, "message": "File is already in the target folder"}
+        
+        # Verify target folder belongs to user
         folder_result = await client.table('knowledge_base_folders').select(
             'folder_id'
         ).eq('folder_id', request.folder_id).eq('account_id', account_id).execute()
@@ -510,9 +566,30 @@ async def move_file(
         if not folder_result.data:
             raise HTTPException(status_code=404, detail="Target folder not found")
         
-        # Update the file's folder
+        # Sanitize filename for storage (same logic as file processor)
+        sanitized_filename = file_processor.sanitize_filename(filename)
+        
+        # Create new file path
+        new_file_path = f"knowledge-base/{request.folder_id}/{entry_id}/{sanitized_filename}"
+        
+        # Move file in storage
+        try:
+            # Copy file to new location
+            copy_result = await client.storage.from_('file-uploads').copy(
+                current_file_path, new_file_path
+            )
+            
+            # Remove old file
+            await client.storage.from_('file-uploads').remove([current_file_path])
+            
+        except Exception as storage_error:
+            logger.error(f"Error moving file in storage: {str(storage_error)}")
+            raise HTTPException(status_code=500, detail="Failed to move file in storage")
+        
+        # Update the database with new folder and file path
         await client.table('knowledge_base_entries').update({
-            'folder_id': request.folder_id
+            'folder_id': request.folder_id,
+            'file_path': new_file_path
         }).eq('entry_id', entry_id).execute()
         
         return {"success": True, "message": "File moved successfully"}

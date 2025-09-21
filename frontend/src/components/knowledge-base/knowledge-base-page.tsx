@@ -4,6 +4,7 @@ import React, { useState, useRef } from 'react';
 import { toast } from 'sonner';
 import { KBDeleteConfirmDialog } from './kb-delete-confirm-dialog';
 import { FileUploadModal } from './file-upload-modal';
+import { EditSummaryModal } from './edit-summary-modal';
 import { createClient } from '@/lib/supabase/client';
 import { getSandboxFileContent } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -229,6 +230,19 @@ export function KnowledgeBasePage() {
         };
     }>({});
 
+    // Edit summary modal state
+    const [editSummaryModal, setEditSummaryModal] = useState<{
+        isOpen: boolean;
+        fileId: string;
+        fileName: string;
+        currentSummary: string;
+    }>({
+        isOpen: false,
+        fileId: '',
+        fileName: '',
+        currentSummary: '',
+    });
+
     const { folders, recentFiles, loading: foldersLoading, refetch: refetchFolders } = useKnowledgeFolders();
 
     // DND Sensors
@@ -388,6 +402,53 @@ export function KnowledgeBasePage() {
         setEditingFolder(null);
         setEditingName('');
         setValidationError(null);
+    };
+
+    const handleEditSummary = (fileId: string, fileName: string, currentSummary: string) => {
+        setEditSummaryModal({
+            isOpen: true,
+            fileId,
+            fileName,
+            currentSummary,
+        });
+    };
+
+    const handleSaveSummary = async (newSummary: string) => {
+        try {
+            const supabase = createClient();
+            const { data: { session } } = await supabase.auth.getSession();
+
+            if (!session?.access_token) {
+                throw new Error('No session found');
+            }
+
+            const response = await fetch(`${API_URL}/knowledge-base/entries/${editSummaryModal.fileId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Authorization': `Bearer ${session.access_token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    summary: newSummary
+                })
+            });
+
+            if (response.ok) {
+                toast.success('Summary updated successfully');
+                // Refresh the folder entries to show updated summary
+                const fileItem = treeData.flatMap(folder => folder.children || []).find(file => file.id === editSummaryModal.fileId);
+                if (fileItem?.parentId) {
+                    await fetchFolderEntries(fileItem.parentId);
+                }
+                refetchFolders();
+            } else {
+                const errorData = await response.json().catch(() => null);
+                toast.error(errorData?.detail || 'Failed to update summary');
+            }
+        } catch (error) {
+            console.error('Error updating summary:', error);
+            toast.error('Failed to update summary');
+        }
     };
 
     const handleMoveFile = async (fileId: string, targetFolderId: string) => {
@@ -902,6 +963,7 @@ export function KnowledgeBasePage() {
                                                             enableActions={true}
                                                             enableEdit={true}
                                                             onDelete={handleDelete}
+                                                            onEditSummary={handleEditSummary}
                                                             editingFolder={editingFolder}
                                                             editingName={editingName}
                                                             onStartEdit={handleStartEdit}
@@ -965,6 +1027,14 @@ export function KnowledgeBasePage() {
                 itemName={deleteConfirm.item?.name || ''}
                 itemType={deleteConfirm.item?.type || 'file'}
                 isDeleting={deleteConfirm.isDeleting}
+            />
+
+            <EditSummaryModal
+                isOpen={editSummaryModal.isOpen}
+                onClose={() => setEditSummaryModal({ isOpen: false, fileId: '', fileName: '', currentSummary: '' })}
+                fileName={editSummaryModal.fileName}
+                currentSummary={editSummaryModal.currentSummary}
+                onSave={handleSaveSummary}
             />
         </div>
     );

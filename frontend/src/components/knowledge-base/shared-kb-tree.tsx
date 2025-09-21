@@ -13,7 +13,8 @@ import {
     TrashIcon,
     Pen,
     GripVerticalIcon,
-    Loader2
+    Loader2,
+    FileTextIcon
 } from 'lucide-react';
 import {
     DropdownMenu,
@@ -55,6 +56,7 @@ interface SharedTreeItemProps {
     onFinishEdit?: () => void;
     onEditChange?: (name: string) => void;
     onEditKeyPress?: (e: React.KeyboardEvent) => void;
+    onEditSummary?: (id: string, name: string, summary: string) => void;
     editInputRef?: React.RefObject<HTMLInputElement>;
     onNativeFileDrop?: (files: FileList, folderId: string) => void;
 
@@ -94,6 +96,7 @@ export function SharedTreeItem({
     onFinishEdit,
     onEditChange,
     onEditKeyPress,
+    onEditSummary,
     editInputRef,
     onNativeFileDrop,
     editingFolder,
@@ -348,6 +351,7 @@ export function SharedTreeItem({
                                     onFinishEdit={onFinishEdit}
                                     onEditChange={onEditChange}
                                     onEditKeyPress={onEditKeyPress}
+                                    onEditSummary={onEditSummary}
                                     editInputRef={editInputRef}
                                     editingFolder={editingFolder}
                                     editingName={editingName}
@@ -419,6 +423,15 @@ export function SharedTreeItem({
                                 </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
+                                <DropdownMenuItem
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        onEditSummary?.(item.id, item.name, item.data?.summary || '');
+                                    }}
+                                >
+                                    <FileTextIcon className="h-3 w-3 mr-2" />
+                                    Edit Summary
+                                </DropdownMenuItem>
                                 <DropdownMenuItem
                                     onClick={(e) => {
                                         e.stopPropagation();
