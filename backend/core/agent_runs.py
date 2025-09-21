@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_user_id_from_stream_auth, verify_and_authorize_thread_access
 from core.utils.logger import logger, structlog
-from core.billing import is_model_allowed, subscription_service
+# Billing checks now handled by billing_integration.check_model_and_billing_access
 from core.billing.billing_integration import billing_integration
 from core.utils.config import config, EnvMode
 from core.services import redis
@@ -181,45 +181,25 @@ async def start_agent(
         logger.debug(f"[AGENT LOAD] Agent config keys: {list(agent_config.keys())}")
         logger.debug(f"Using agent {agent_config['agent_id']} for this agent run (thread remains agent-agnostic)")
 
-    # Skip billing checks in local development mode
-    from core.utils.config import config, EnvMode
-    if config.ENV_MODE == EnvMode.LOCAL:
-        logger.debug("Running in local development mode - skipping billing and model access checks")
-        # Skip all checks and proceed directly
-    else:
-        # Check model access
-        async def check_model_access():
-            try:
-                tier_info = await subscription_service.get_user_subscription_tier(account_id)
-                tier_name = tier_info['name']
-                
-                if is_model_allowed(tier_name, model_name):
-                    return True, "Model access allowed", tier_info.get('models', [])
-                else:
-                    available_models = tier_info.get('models', [])
-                    return False, f"Your current subscription plan does not include access to {model_name}. Please upgrade your subscription.", available_models
-            except Exception as e:
-                logger.error(f"Error checking model access: {e}")
-                return False, "Error checking model access", []
-
-        # Run all checks concurrently
-        model_check_task = asyncio.create_task(check_model_access())
-        billing_check_task = asyncio.create_task(check_billing_status(client, account_id))
-        limit_check_task = asyncio.create_task(check_agent_run_limit(client, account_id))
-
-        # Wait for all checks to complete
-        (can_use, model_message, allowed_models), (can_run, message, subscription), limit_check = await asyncio.gather(
-            model_check_task, billing_check_task, limit_check_task
-        )
-
-        # Check results and raise appropriate errors
-        if not can_use:
-            raise HTTPException(status_code=403, detail={"message": model_message, "allowed_models": allowed_models})
-
+    # Unified billing and model access check
+    can_proceed, error_message, context = await billing_integration.check_model_and_billing_access(
+        account_id, model_name, client
+    )
+    
+    if not can_proceed:
+        if context.get("error_type") == "model_access_denied":
+            raise HTTPException(status_code=403, detail={
+                "message": error_message, 
+                "allowed_models": context.get("allowed_models", [])
+            })
+        elif context.get("error_type") == "insufficient_credits":
+            raise HTTPException(status_code=402, detail={"message": error_message})
+        else:
+            raise HTTPException(status_code=500, detail={"message": error_message})
+    
+    # Check agent run limits (only if not in local mode)
     if config.ENV_MODE != EnvMode.LOCAL:
-        if not can_run:
-            raise HTTPException(status_code=402, detail={"message": message, "subscription": subscription})
-
+        limit_check = await check_agent_run_limit(client, account_id)
         if not limit_check['can_start']:
             error_detail = {
                 "message": f"Maximum of {config.MAX_PARALLEL_AGENT_RUNS} parallel agent runs allowed within 24 hours. You currently have {limit_check['running_count']} running.",
@@ -770,45 +750,32 @@ async def initiate_agent_with_files(
     if agent_config:
         logger.debug(f"[AGENT INITIATE] Agent config keys: {list(agent_config.keys())}")
 
-    # Skip billing checks in local development mode
-    if config.ENV_MODE == EnvMode.LOCAL:
-        logger.debug("Running in local development mode - skipping billing and model access checks")
-        # Skip all checks and proceed directly
-    else:
-        # Check model access
-        async def check_model_access():
-            try:
-                tier_info = await subscription_service.get_user_subscription_tier(account_id)
-                tier_name = tier_info['name']
-                
-                if is_model_allowed(tier_name, model_name):
-                    return True, "Model access allowed", tier_info.get('models', [])
-                else:
-                    available_models = tier_info.get('models', [])
-                    return False, f"Your current subscription plan does not include access to {model_name}. Please upgrade your subscription.", available_models
-            except Exception as e:
-                logger.error(f"Error checking model access: {e}")
-                return False, "Error checking model access", []
-
-        # Run all checks concurrently
-        model_check_task = asyncio.create_task(check_model_access())
-        billing_check_task = asyncio.create_task(check_billing_status(client, account_id))
+    # Unified billing and model access check
+    can_proceed, error_message, context = await billing_integration.check_model_and_billing_access(
+        account_id, model_name, client
+    )
+    
+    if not can_proceed:
+        if context.get("error_type") == "model_access_denied":
+            raise HTTPException(status_code=403, detail={
+                "message": error_message, 
+                "allowed_models": context.get("allowed_models", [])
+            })
+        elif context.get("error_type") == "insufficient_credits":
+            raise HTTPException(status_code=402, detail={"message": error_message})
+        else:
+            raise HTTPException(status_code=500, detail={"message": error_message})
+    
+    # Check additional limits (only if not in local mode)
+    if config.ENV_MODE != EnvMode.LOCAL:
+        # Check agent run limit and project limit concurrently
         limit_check_task = asyncio.create_task(check_agent_run_limit(client, account_id))
         project_limit_check_task = asyncio.create_task(check_project_count_limit(client, account_id))
-
-    if config.ENV_MODE != EnvMode.LOCAL:
-        # Wait for all checks to complete
-        (can_use, model_message, allowed_models), (can_run, message, subscription), limit_check, project_limit_check = await asyncio.gather(
-            model_check_task, billing_check_task, limit_check_task, project_limit_check_task
+        
+        limit_check, project_limit_check = await asyncio.gather(
+            limit_check_task, project_limit_check_task
         )
-
-        # Check results and raise appropriate errors
-        if not can_use:
-            raise HTTPException(status_code=403, detail={"message": model_message, "allowed_models": allowed_models})
-
-        if not can_run:
-            raise HTTPException(status_code=402, detail={"message": message, "subscription": subscription})
-
+        
         # Check agent run limit (maximum parallel runs in past 24 hours)
         if not limit_check['can_start']:
             error_detail = {

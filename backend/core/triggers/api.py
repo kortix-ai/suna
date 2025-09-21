@@ -12,7 +12,7 @@ from core.services.supabase import DBConnection
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
 from core.utils.config import config
-from core.billing import is_model_allowed, subscription_service
+# Billing checks now handled by billing_integration.check_model_and_billing_access
 from core.billing.billing_integration import billing_integration
 
 from .trigger_service import get_trigger_service, TriggerType
@@ -857,34 +857,21 @@ async def execute_agent_workflow(
         model_name = await model_manager.get_default_model_for_user(client, account_id)
         print("DEBUG: Using tier-based default model:", model_name)
     
-    # Skip billing checks in local development mode
-    from core.utils.config import config, EnvMode
-    if config.ENV_MODE == EnvMode.LOCAL:
-        logger.debug("Running in local development mode - skipping billing and model access checks")
-    else:
-        # Check model access
-        try:
-            tier_info = await subscription_service.get_user_subscription_tier(account_id)
-            tier_name = tier_info['name']
-            
-            if not is_model_allowed(tier_name, model_name):
-                available_models = tier_info.get('models', [])
-                raise HTTPException(
-                    status_code=403, 
-                    detail={
-                        "message": f"Your current subscription plan does not include access to {model_name}. Please upgrade your subscription.", 
-                        "allowed_models": available_models
-                    }
-                )
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Error checking model access: {e}")
-            raise HTTPException(status_code=500, detail={"message": "Error checking model access"})
-
-        can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(account_id)
-        if not can_run:
-            raise HTTPException(status_code=402, detail={"message": message, "error": "insufficient_credits"})
+    # Unified billing and model access check
+    can_proceed, error_message, context = await billing_integration.check_model_and_billing_access(
+        account_id, model_name
+    )
+    
+    if not can_proceed:
+        if context.get("error_type") == "model_access_denied":
+            raise HTTPException(status_code=403, detail={
+                "message": error_message, 
+                "allowed_models": context.get("allowed_models", [])
+            })
+        elif context.get("error_type") == "insufficient_credits":
+            raise HTTPException(status_code=402, detail={"message": error_message, "error": "insufficient_credits"})
+        else:
+            raise HTTPException(status_code=500, detail={"message": error_message})
     
     from .trigger_service import TriggerResult, TriggerEvent, TriggerType
     
