@@ -34,7 +34,7 @@ def initialize():
     connect_timeout = 10.0           # 10 seconds connection timeout
     retry_on_timeout = not (os.getenv("REDIS_RETRY_ON_TIMEOUT", "True").lower() != "true")
 
-    logger.debug(f"Initializing Redis connection pool to {redis_host}:{redis_port} with max {max_connections} connections")
+    logger.info(f"Initializing Redis connection pool to {redis_host}:{redis_port} with max {max_connections} connections")
 
     # Create connection pool with production-optimized settings
     pool = redis.ConnectionPool(
@@ -62,13 +62,13 @@ async def initialize_async():
 
     async with _init_lock:
         if not _initialized:
-            logger.debug("Initializing Redis connection")
+            # logger.debug("Initializing Redis connection")
             initialize()
 
         try:
             # Test connection with timeout
             await asyncio.wait_for(client.ping(), timeout=5.0)
-            logger.debug("Successfully connected to Redis")
+            logger.info("Successfully connected to Redis")
             _initialized = True
         except asyncio.TimeoutError:
             logger.error("Redis connection timeout during initialization")
@@ -88,7 +88,7 @@ async def close():
     """Close Redis connection and connection pool."""
     global client, pool, _initialized
     if client:
-        logger.debug("Closing Redis connection")
+        # logger.debug("Closing Redis connection")
         try:
             await asyncio.wait_for(client.aclose(), timeout=5.0)
         except asyncio.TimeoutError:
@@ -99,7 +99,7 @@ async def close():
             client = None
     
     if pool:
-        logger.debug("Closing Redis connection pool")
+        # logger.debug("Closing Redis connection pool")
         try:
             await asyncio.wait_for(pool.aclose(), timeout=5.0)
         except asyncio.TimeoutError:
@@ -110,7 +110,7 @@ async def close():
             pool = None
     
     _initialized = False
-    logger.debug("Redis connection and pool closed")
+    logger.info("Redis connection and pool closed")
 
 
 async def get_client():

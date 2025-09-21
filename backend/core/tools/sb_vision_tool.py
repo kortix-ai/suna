@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from core.agentpress.tool import ToolResult, openapi_schema, usage_example
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
+from core.tools.image_context_manager import ImageContextManager
 import json
 import requests
 
@@ -36,6 +37,7 @@ class SandboxVisionTool(SandboxToolsBase):
         self.thread_id = thread_id
         # Make thread_manager accessible within the tool instance
         self.thread_manager = thread_manager
+        self.image_context_manager = ImageContextManager(thread_manager)
 
     def compress_image(self, image_bytes: bytes, mime_type: str, file_path: str) -> Tuple[bytes, str]:
         """Compress an image to reduce its size while maintaining reasonable quality.
@@ -233,23 +235,18 @@ class SandboxVisionTool(SandboxToolsBase):
             # Convert to base64
             base64_image = base64.b64encode(compressed_bytes).decode('utf-8')
 
-            # Prepare the temporary message content
-            image_context_data = {
-                "mime_type": compressed_mime_type,
-                "base64": base64_image,
-                "file_path": cleaned_path, # Include path for context
-                "original_size": original_size,
-                "compressed_size": len(compressed_bytes)
-            }
-
-            # Add the image context message to the database
-            # Use a distinct type like 'image_context'
-            await self.thread_manager.add_message(
+            # Add the image to context using the dedicated manager
+            result = await self.image_context_manager.add_image_to_context(
                 thread_id=self.thread_id,
-                type="image_context", # Use a specific type for this
-                content=image_context_data, # Store the dict directly
-                is_llm_message=True # ✅ Include in LLM conversations
+                base64_data=base64_image,
+                mime_type=compressed_mime_type,
+                file_path=cleaned_path,
+                original_size=original_size,
+                compressed_size=len(compressed_bytes)
             )
+            
+            if not result:
+                return self.fail_response(f"Failed to add image '{cleaned_path}' to conversation context.")
 
             # Inform the agent the image will be available next turn
             return self.success_response(f"Successfully loaded and compressed the image '{cleaned_path}' (reduced from {original_size / 1024:.1f}KB to {len(compressed_bytes) / 1024:.1f}KB).")
@@ -281,13 +278,8 @@ class SandboxVisionTool(SandboxToolsBase):
         try:
             await self._ensure_sandbox()
             
-            # Get database client
-            client = await self.thread_manager.db.client
-            
-            # Delete all image_context messages from this thread
-            result = await client.table('messages').delete().eq('thread_id', self.thread_id).eq('type', 'image_context').execute()
-            
-            deleted_count = len(result.data) if result.data else 0
+            # Use the dedicated image context manager
+            deleted_count = await self.image_context_manager.clear_images_from_context(self.thread_id)
             
             if deleted_count > 0:
                 return self.success_response(f"Successfully cleared {deleted_count} image(s) from conversation context. Visual memory has been reset.")
@@ -295,4 +287,48 @@ class SandboxVisionTool(SandboxToolsBase):
                 return self.success_response("No images found in conversation context to clear.")
                 
         except Exception as e:
-            return self.fail_response(f"Failed to clear images from context: {str(e)}") 
+            return self.fail_response(f"Failed to clear images from context: {str(e)}")
+
+    # @openapi_schema({
+    #     "type": "function",
+    #     "function": {
+    #         "name": "list_images_in_context",
+    #         "description": "Lists all images currently loaded in the conversation context, showing file paths and sizes.",
+    #         "parameters": {
+    #             "type": "object",
+    #             "properties": {},
+    #             "required": []
+    #         }
+    #     }
+    # })
+    # @usage_example('''
+    #     <!-- Example: List all images currently in conversation context -->
+    #     <function_calls>
+    #     <invoke name="list_images_in_context">
+    #     </invoke>
+    #     </function_calls>
+    #     ''')
+    # async def list_images_in_context(self) -> ToolResult:
+    #     """Lists all images currently in the conversation context."""
+    #     try:
+    #         await self._ensure_sandbox()
+            
+    #         # Get list of images using the image context manager
+    #         images = await self.image_context_manager.list_images_in_context(self.thread_id)
+            
+    #         if not images:
+    #             return self.success_response("No images currently in conversation context.")
+            
+    #         # Format the response
+    #         image_list = []
+    #         for img in images:
+    #             image_list.append(
+    #                 f"• {img['file_path']} ({img['compressed_size'] / 1024:.1f}KB, "
+    #                 f"compressed from {img['original_size'] / 1024:.1f}KB)"
+    #             )
+            
+    #         response = f"Found {len(images)} image(s) in conversation context:\n" + "\n".join(image_list)
+    #         return self.success_response(response)
+                
+    #     except Exception as e:
+    #         return self.fail_response(f"Failed to list images in context: {str(e)}") 
