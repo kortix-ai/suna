@@ -248,7 +248,6 @@ export function ShareModal({ isOpen, onClose, threadId, projectId }: ShareModalP
           ) : (
             <div className="text-center space-y-4">
               <div className="space-y-2">
-                <h3 className="text-xl font-semibold">Share this chat</h3>
                 <p className="text-sm text-muted-foreground">
                   Create a shareable link that allows others to view this conversation publicly.
                 </p>

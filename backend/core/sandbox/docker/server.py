@@ -275,7 +275,9 @@ async def serve_html_file(file_name: str):
     
     return HTMLResponse(content=content)
 
-app.mount('/', StaticFiles(directory=workspace_dir, html=True), name='site')
+# Mount static files but exclude them from the specific HTML route above
+# This ensures only the HTML route handles .html files, while StaticFiles handles everything else
+app.mount('/', StaticFiles(directory=workspace_dir), name='site')
 
 # This is needed for the import string approach with uvicorn
 if __name__ == '__main__':

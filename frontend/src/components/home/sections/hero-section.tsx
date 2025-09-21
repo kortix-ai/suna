@@ -41,6 +41,7 @@ import { agentKeys } from '@/hooks/react-query/agents/keys';
 import { getAgents } from '@/hooks/react-query/agents/utils';
 import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog';
 import { Examples } from '@/components/dashboard/examples';
+import { useAgentSelection } from '@/lib/stores/agent-selection-store';
 
 // Custom dialog overlay with blur effect
 const BlurredDialogOverlay = () => (
@@ -96,8 +97,14 @@ export function HeroSection() {
   const scrollTimeout = useRef<NodeJS.Timeout | null>(null);
   const { scrollY } = useScroll();
   const [inputValue, setInputValue] = useState('');
-  const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>();
   const router = useRouter();
+  
+  // Use the agent selection store for localStorage persistence
+  const { 
+    selectedAgentId, 
+    setSelectedAgent, 
+    initializeFromAgents 
+  } = useAgentSelection();
   const { user, isLoading } = useAuth();
   const { billingError, handleBillingError, clearBillingError } =
     useBillingError();
@@ -134,6 +141,13 @@ export function HeroSection() {
   )();
 
   const agents = agentsResponse?.agents || [];
+
+  // Initialize agent selection from localStorage when agents are loaded
+  useEffect(() => {
+    if (agents.length > 0) {
+      initializeFromAgents(agents);
+    }
+  }, [agents, initializeFromAgents]);
 
   // Auth dialog state
   const [authDialogOpen, setAuthDialogOpen] = useState(false);
@@ -387,7 +401,7 @@ export function HeroSection() {
                   onChange={setInputValue}
                   isLoggedIn={!!user}
                   selectedAgentId={selectedAgentId}
-                  onAgentSelect={setSelectedAgentId}
+                  onAgentSelect={setSelectedAgent}
                   autoFocus={false}
                   enableAdvancedConfig={false}
                 />

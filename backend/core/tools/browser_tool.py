@@ -139,14 +139,14 @@ class BrowserTool(SandboxToolsBase):
             # Simple health check curl command
             curl_cmd = "curl -s -X GET 'http://localhost:8004/api' -H 'Content-Type: application/json'"
             
-            logger.debug(f"Checking Stagehand API health with: {curl_cmd}")
+            # logger.debug(f"Checking Stagehand API health with: {curl_cmd}")
             
             response = await self.sandbox.process.exec(curl_cmd, timeout=10)
             if response.exit_code == 0:
                 try:
                     result = json.loads(response.result)
                     if result.get("status") == "healthy":
-                        logger.debug("✅ Stagehand API server is running and healthy")
+                        logger.info("✅ Stagehand API server is running and healthy")
                         return True
                     else:
                         # If the browser api is not healthy, we need to restart the browser api
@@ -159,7 +159,7 @@ class BrowserTool(SandboxToolsBase):
                             env=env_vars
                         )
                         if response.exit_code == 0:
-                            logger.debug("Stagehand API server restarted successfully")
+                            logger.info("Stagehand API server restarted successfully")
                             return True
                         else:
                             logger.warning(f"Stagehand API server restart failed: {response.result}")
@@ -208,7 +208,7 @@ class BrowserTool(SandboxToolsBase):
                     json_data = json.dumps(params)
                     curl_cmd += f" -d '{json_data}'"
             
-            logger.debug(f"\033[95mExecuting curl command:\033[0m\n{curl_cmd}")
+            # logger.debug(f"\033[95mExecuting curl command:\033[0m\n{curl_cmd}")
             
             response = await self.sandbox.process.exec(curl_cmd, timeout=30)  # Execute curl inside sandbox
             
@@ -226,7 +226,7 @@ class BrowserTool(SandboxToolsBase):
                             
                             if is_valid:
                                 logger.debug(f"Screenshot validation passed: {validation_message}")
-                                image_url = await upload_base64_image(screenshot_data)
+                                image_url = await upload_base64_image(screenshot_data, "browser-screenshots")
                                 result["image_url"] = image_url
                                 logger.debug(f"Uploaded screenshot to {image_url}")
                             else:
