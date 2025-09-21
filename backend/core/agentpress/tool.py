@@ -60,7 +60,7 @@ class Tool(ABC):
     def __init__(self):
         """Initialize tool with empty schema registry."""
         self._schemas: Dict[str, List[ToolSchema]] = {}
-        logger.debug(f"Initializing tool class: {self.__class__.__name__}")
+        # logger.debug(f"Initializing tool class: {self.__class__.__name__}")
         self._register_schemas()
 
     def _register_schemas(self):
@@ -68,7 +68,7 @@ class Tool(ABC):
         for name, method in inspect.getmembers(self, predicate=inspect.ismethod):
             if hasattr(method, 'tool_schemas'):
                 self._schemas[name] = method.tool_schemas
-                logger.debug(f"Registered schemas for method '{name}' in {self.__class__.__name__}")
+                # logger.debug(f"Registered schemas for method '{name}' in {self.__class__.__name__}")
 
     def get_schemas(self) -> Dict[str, List[ToolSchema]]:
         """Get all registered tool schemas.
@@ -91,7 +91,7 @@ class Tool(ABC):
             text = data
         else:
             text = json.dumps(data, indent=2)
-        logger.debug(f"Created success response for {self.__class__.__name__}")
+        # logger.debug(f"Created success response for {self.__class__.__name__}")
         return ToolResult(success=True, output=text)
 
     def fail_response(self, msg: str) -> ToolResult:
@@ -103,7 +103,7 @@ class Tool(ABC):
         Returns:
             ToolResult with success=False and error message
         """
-        logger.debug(f"Tool {self.__class__.__name__} returned failed result: {msg}")
+        # logger.debug(f"Tool {self.__class__.__name__} returned failed result: {msg}")
         return ToolResult(success=False, output=msg)
 
 def _add_schema(func, schema: ToolSchema):
@@ -111,13 +111,13 @@ def _add_schema(func, schema: ToolSchema):
     if not hasattr(func, 'tool_schemas'):
         func.tool_schemas = []
     func.tool_schemas.append(schema)
-    logger.debug(f"Added {schema.schema_type.value} schema to function {func.__name__}")
+    # logger.debug(f"Added {schema.schema_type.value} schema to function {func.__name__}")
     return func
 
 def openapi_schema(schema: Dict[str, Any]):
     """Decorator for OpenAPI schema tools."""
     def decorator(func):
-        logger.debug(f"Applying OpenAPI schema to function {func.__name__}")
+        # logger.debug(f"Applying OpenAPI schema to function {func.__name__}")
         return _add_schema(func, ToolSchema(
             schema_type=SchemaType.OPENAPI,
             schema=schema
@@ -127,7 +127,7 @@ def openapi_schema(schema: Dict[str, Any]):
 def usage_example(example: str):
     """Decorator for providing usage examples for tools in prompts."""
     def decorator(func):
-        logger.debug(f"Adding usage example to function {func.__name__}")
+        # logger.debug(f"Adding usage example to function {func.__name__}")
         return _add_schema(func, ToolSchema(
             schema_type=SchemaType.USAGE_EXAMPLE,
             schema={"example": example}

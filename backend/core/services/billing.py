@@ -118,13 +118,13 @@ def get_model_pricing(model: str) -> tuple[float, float] | None:
     """
     # First try to resolve the model ID to handle aliases
     resolved_model = model_manager.resolve_model_id(model)
-    logger.debug(f"Resolving model '{model}' -> '{resolved_model}'")
+    # logger.debug(f"Resolving model '{model}' -> '{resolved_model}'")
     
     # Try the resolved model first, then fallback to original
     for model_to_try in [resolved_model, model]:
         model_obj = model_manager.get_model(model_to_try)
         if model_obj and model_obj.pricing:
-            logger.debug(f"Found pricing for model {model_to_try}: input=${model_obj.pricing.input_cost_per_million_tokens}/M, output=${model_obj.pricing.output_cost_per_million_tokens}/M")
+            # logger.debug(f"Found pricing for model {model_to_try}: input=${model_obj.pricing.input_cost_per_million_tokens}/M, output=${model_obj.pricing.output_cost_per_million_tokens}/M")
             return model_obj.pricing.input_cost_per_million_tokens, model_obj.pricing.output_cost_per_million_tokens
         else:
             logger.debug(f"No pricing for model_to_try='{model_to_try}' (model_obj: {model_obj is not None}, has_pricing: {model_obj.pricing is not None if model_obj else False})")
