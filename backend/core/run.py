@@ -56,10 +56,10 @@ class AgentConfig:
     model_name: str = "openai/gpt-5-mini"
     enable_thinking: Optional[bool] = False
     reasoning_effort: Optional[str] = 'low'
-    enable_context_manager: bool = False
+    enable_context_manager: bool = True
     agent_config: Optional[dict] = None
     trace: Optional[StatefulTraceClient] = None
-    enable_prompt_caching: bool = False
+    enable_prompt_caching: bool = True
 
 
 class ToolManager:
@@ -95,7 +95,7 @@ class ToolManager:
         # Browser tool
         self._register_browser_tool(disabled_tools)
         
-        logger.debug(f"Tool registration complete. Registered {len(self.thread_manager.tool_registry.tools)} tools")
+        # logger.debug(f"Tool registration complete. Registered {len(self.thread_manager.tool_registry.tools)} tools")
     
     def _register_core_tools(self):
         """Register core tools that are always available."""
@@ -760,7 +760,7 @@ class AgentRunner:
                             yield chunk
                     else:
                         # Non-streaming response or error dict
-                        logger.debug(f"Response is not async iterable: {type(response)}")
+                        # logger.debug(f"Response is not async iterable: {type(response)}")
                         
                         # Check if it's an error dict
                         if isinstance(response, dict) and response.get('type') == 'status' and response.get('status') == 'error':

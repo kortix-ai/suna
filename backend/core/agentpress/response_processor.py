@@ -26,7 +26,6 @@ from core.utils.json_helpers import (
     ensure_dict, ensure_list, safe_json_parse, 
     to_json_string, format_for_yield
 )
-from litellm.utils import token_counter
 
 # Type alias for XML result adding strategy
 XmlAddingStrategy = Literal["user_message", "assistant_message", "inline_edit"]
@@ -247,6 +246,7 @@ class ResponseProcessor:
                 "completion_tokens": 0,
                 "total_tokens": 0,
                 "cache_creation_input_tokens": 0,
+                "cache_read_input_tokens": 0,
                 "prompt_tokens_details": {"cached_tokens": 0}
             },
             "response_ms": None,
@@ -298,37 +298,45 @@ class ResponseProcessor:
                 streaming_metadata["last_chunk_time"] = current_time
                 
                 # Log info about chunks periodically for debugging
-                if chunk_count == 1 or (chunk_count % 500 == 0) or hasattr(chunk, 'usage'):
+                if chunk_count == 1 or (chunk_count % 1000 == 0) or hasattr(chunk, 'usage'):
                     logger.debug(f"Processing chunk #{chunk_count}, type={type(chunk).__name__}")
                 
                 if hasattr(chunk, 'created') and chunk.created:
                     streaming_metadata["created"] = chunk.created
                 if hasattr(chunk, 'model') and chunk.model:
                     streaming_metadata["model"] = chunk.model
+                # DEBUG: Always log chunk info to see what's available
+                # logger.info(f"🔍 CHUNK #{chunk_count}: type={type(chunk)}, has_usage={hasattr(chunk, 'usage')}, usage_value={getattr(chunk, 'usage', 'NO_ATTR')}")
+                if hasattr(chunk, 'usage'):
+                    logger.info(f"🔍 USAGE OBJECT: {chunk.usage}")
+
                 if hasattr(chunk, 'usage') and chunk.usage:
-                    # Extract basic usage tokens
+                    # DEBUG: Log the complete usage object to see what data we have
+                    logger.info(f"🔍 RAW USAGE OBJECT: {chunk.usage}")
+                    if hasattr(chunk.usage, '__dict__'):
+                        logger.info(f"🔍 USAGE ATTRS: {chunk.usage.__dict__}")
+
+                    # Save the usage object EXACTLY as received - don't modify cache data
                     if hasattr(chunk.usage, 'prompt_tokens') and chunk.usage.prompt_tokens is not None:
                         streaming_metadata["usage"]["prompt_tokens"] = chunk.usage.prompt_tokens
                     if hasattr(chunk.usage, 'completion_tokens') and chunk.usage.completion_tokens is not None:
                         streaming_metadata["usage"]["completion_tokens"] = chunk.usage.completion_tokens
                     if hasattr(chunk.usage, 'total_tokens') and chunk.usage.total_tokens is not None:
                         streaming_metadata["usage"]["total_tokens"] = chunk.usage.total_tokens
-                    
-                    # Extract cache metrics (LiteLLM standardized format)
-                    cache_creation = getattr(chunk.usage, 'cache_creation_input_tokens', 0)
-                    cache_read = 0
-                    
-                    # LiteLLM puts cached tokens in prompt_tokens_details.cached_tokens for ALL providers
-                    if hasattr(chunk.usage, 'prompt_tokens_details'):
+
+                    # Cache metrics - save EXACTLY as received
+                    if hasattr(chunk.usage, 'cache_creation_input_tokens') and chunk.usage.cache_creation_input_tokens is not None:
+                        streaming_metadata["usage"]["cache_creation_input_tokens"] = chunk.usage.cache_creation_input_tokens
+                    if hasattr(chunk.usage, 'cache_read_input_tokens') and chunk.usage.cache_read_input_tokens is not None:
+                        streaming_metadata["usage"]["cache_read_input_tokens"] = chunk.usage.cache_read_input_tokens
+
+                    # prompt_tokens_details - save EXACTLY as received
+                    if hasattr(chunk.usage, 'prompt_tokens_details') and chunk.usage.prompt_tokens_details is not None:
                         details = chunk.usage.prompt_tokens_details
-                        if details and hasattr(details, 'cached_tokens'):
-                            cache_read = details.cached_tokens or 0
-                    
-                    # Update cache metrics in streaming metadata
-                    streaming_metadata["usage"]["cache_creation_input_tokens"] = cache_creation
-                    if "prompt_tokens_details" not in streaming_metadata["usage"]:
-                        streaming_metadata["usage"]["prompt_tokens_details"] = {}
-                    streaming_metadata["usage"]["prompt_tokens_details"]["cached_tokens"] = cache_read
+                        if "prompt_tokens_details" not in streaming_metadata["usage"]:
+                            streaming_metadata["usage"]["prompt_tokens_details"] = {}
+                        if hasattr(details, 'cached_tokens') and details.cached_tokens is not None:
+                            streaming_metadata["usage"]["prompt_tokens_details"]["cached_tokens"] = details.cached_tokens
 
                 if hasattr(chunk, 'choices') and chunk.choices and hasattr(chunk.choices[0], 'finish_reason') and chunk.choices[0].finish_reason:
                     finish_reason = chunk.choices[0].finish_reason
@@ -486,18 +494,17 @@ class ResponseProcessor:
             
             # Extract final cache metrics
             final_cache_creation = streaming_metadata['usage'].get('cache_creation_input_tokens', 0)
-            final_cache_read = streaming_metadata['usage'].get('prompt_tokens_details', {}).get('cached_tokens', 0)
-            final_prompt_tokens = streaming_metadata['usage']['prompt_tokens']
-            final_completion_tokens = streaming_metadata['usage']['completion_tokens']
+            # Try cache_read_input_tokens first (Anthropic standard), then fallback to prompt_tokens_details.cached_tokens
+            final_cache_read = streaming_metadata['usage'].get('cache_read_input_tokens', 0)
+            if final_cache_read == 0:
+                final_cache_read = streaming_metadata['usage'].get('prompt_tokens_details', {}).get('cached_tokens', 0)
+
+            final_prompt_tokens = streaming_metadata['usage'].get('prompt_tokens', 0)
+            final_completion_tokens = streaming_metadata['usage'].get('completion_tokens', 0)
             
             logger.info(f"Final usage: prompt={final_prompt_tokens}, completion={final_completion_tokens}")
             
-            if final_cache_read > 0 or final_cache_creation > 0:
-                cache_percentage = (final_cache_read / final_prompt_tokens * 100) if final_prompt_tokens > 0 else 0
-                logger.info(f"Cache hit: {final_cache_read}/{final_prompt_tokens} tokens ({cache_percentage:.1f}%)")
-            else:
-                # logger.debug(f"No cache activity")
-                pass
+            # Cache info will be logged by thread_manager during billing
 
             # Note: cache_metrics is now None since we removed the probe
             # All cache data should be captured directly from streaming chunks above
@@ -848,6 +855,9 @@ class ResponseProcessor:
                             "streaming": True,  # Add flag to indicate this was reconstructed from streaming
                         }
                         
+                        # DEBUG: Log the streaming metadata usage before saving assistant_end_content
+                        logger.info(f"🔍 RESPONSE PROCESSOR STREAMING USAGE (before termination): {streaming_metadata['usage']}")
+                        
                         # Only include response_ms if we have timing data
                         if streaming_metadata.get("response_ms"):
                             assistant_end_content["response_ms"] = streaming_metadata["response_ms"]
@@ -901,6 +911,9 @@ class ResponseProcessor:
                             "usage": streaming_metadata["usage"],  # Always include usage like LiteLLM does
                             "streaming": True,  # Add flag to indicate this was reconstructed from streaming
                         }
+                        
+                        # DEBUG: Log the streaming metadata usage before saving assistant_end_content
+                        logger.info(f"🔍 RESPONSE PROCESSOR STREAMING USAGE (normal): {streaming_metadata['usage']}")
                         
                         # Only include response_ms if we have timing data
                         if streaming_metadata.get("response_ms"):
@@ -1370,25 +1383,25 @@ class ResponseProcessor:
             arguments = tool_call["arguments"]
 
             logger.debug(f"🔧 EXECUTING TOOL: {function_name}")
-            logger.debug(f"📝 RAW ARGUMENTS TYPE: {type(arguments)}")
+            # logger.debug(f"📝 RAW ARGUMENTS TYPE: {type(arguments)}")
             logger.debug(f"📝 RAW ARGUMENTS VALUE: {arguments}")
             self.trace.event(name="executing_tool", level="DEFAULT", status_message=(f"Executing tool: {function_name} with arguments: {arguments}"))
 
             # Get available functions from tool registry
             logger.debug(f"🔍 Looking up tool function: {function_name}")
             available_functions = self.tool_registry.get_available_functions()
-            logger.debug(f"📋 Available functions: {list(available_functions.keys())}")
+            # logger.debug(f"📋 Available functions: {list(available_functions.keys())}")
 
             # Look up the function by name
             tool_fn = available_functions.get(function_name)
             if not tool_fn:
                 logger.error(f"❌ Tool function '{function_name}' not found in registry")
-                logger.error(f"❌ Available functions: {list(available_functions.keys())}")
+                # logger.error(f"❌ Available functions: {list(available_functions.keys())}")
                 span.end(status_message="tool_not_found", level="ERROR")
                 return ToolResult(success=False, output=f"Tool function '{function_name}' not found. Available: {list(available_functions.keys())}")
 
             logger.debug(f"✅ Found tool function for '{function_name}'")
-            logger.debug(f"🔧 Tool function type: {type(tool_fn)}")
+            # logger.debug(f"🔧 Tool function type: {type(tool_fn)}")
 
             # Handle arguments - if it's a string, try to parse it, otherwise pass as-is
             if isinstance(arguments, str):
@@ -1396,7 +1409,7 @@ class ResponseProcessor:
                 try:
                     parsed_args = safe_json_parse(arguments)
                     if isinstance(parsed_args, dict):
-                        logger.debug(f"✅ Parsed arguments as dict: {parsed_args}")
+                        # logger.debug(f"✅ Parsed arguments as dict: {parsed_args}")
                         result = await tool_fn(**parsed_args)
                     else:
                         logger.debug(f"🔄 Arguments parsed as non-dict, passing as single argument")
@@ -1406,24 +1419,24 @@ class ResponseProcessor:
                     result = await tool_fn(arguments)
                 except Exception as parse_error:
                     logger.error(f"❌ Error parsing arguments: {str(parse_error)}")
-                    logger.debug(f"🔄 Falling back to raw arguments")
+                    # logger.debug(f"🔄 Falling back to raw arguments")
                     if isinstance(arguments, dict):
-                        logger.debug(f"🔄 Fallback: unpacking dict arguments")
+                        # logger.debug(f"🔄 Fallback: unpacking dict arguments")
                         result = await tool_fn(**arguments)
                     else:
-                        logger.debug(f"🔄 Fallback: passing as single argument")
+                        # logger.debug(f"🔄 Fallback: passing as single argument")
                         result = await tool_fn(arguments)
             else:
-                logger.debug(f"✅ Arguments are not string, unpacking dict: {type(arguments)}")
+                # logger.debug(f"✅ Arguments are not string, unpacking dict: {type(arguments)}")
                 if isinstance(arguments, dict):
-                    logger.debug(f"🔄 Unpacking dict arguments for tool call")
+                    # logger.debug(f"🔄 Unpacking dict arguments for tool call")
                     result = await tool_fn(**arguments)
                 else:
-                    logger.debug(f"🔄 Passing non-dict arguments as single parameter")
+                    # logger.debug(f"🔄 Passing non-dict arguments as single parameter")
                     result = await tool_fn(arguments)
 
             logger.debug(f"✅ Tool execution completed successfully")
-            logger.debug(f"📤 Result type: {type(result)}")
+            # logger.debug(f"📤 Result type: {type(result)}")
             logger.debug(f"📤 Result: {result}")
 
             # Validate result is a ToolResult object
@@ -1655,7 +1668,7 @@ class ResponseProcessor:
                         processed_results.append((tool_call, error_result))
                 else:
                     logger.debug(f"✅ Tool {tool_name} executed successfully in parallel")
-                    logger.debug(f"📤 Result type: {type(result)}")
+                    # logger.debug(f"📤 Result type: {type(result)}")
 
                     # Validate result
                     if not isinstance(result, ToolResult):

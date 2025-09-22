@@ -55,12 +55,12 @@ Where:
 ## Cache Block Strategy
 
 ### 4-Block Distribution
-1. **Block 1**: System prompt (1h TTL if ≥1024 tokens)
-2. **Blocks 2-4**: Conversation chunks (mixed TTL strategy)
+1. **Block 1**: System prompt (cached if ≥1024 tokens)
+2. **Blocks 2-4**: Conversation chunks (automatic management)
 
-### TTL Strategy
-- **Early blocks**: 1h TTL (stable, reused longest)
-- **Recent blocks**: 5m TTL (dynamic, lower write cost)
+### Cache Management
+- **Early blocks**: Stable, reused longest
+- **Recent blocks**: Dynamic, optimized for conversation flow
 
 ## Token Counting
 
@@ -78,7 +78,7 @@ tokens = token_counter(model=model_name, text=content)
 ## Cost Benefits
 
 ### Pricing Structure
-- **Cache Writes**: 1.25x base cost (5m TTL) / 2.0x base cost (1h TTL)
+- **Cache Writes**: 1.25x base cost for write operations
 - **Cache Hits**: 0.1x base cost (90% savings)
 - **Break-even**: 2-3 reuses for most chunks
 

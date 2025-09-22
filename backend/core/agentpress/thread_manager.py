@@ -122,22 +122,39 @@ class ThreadManager:
         """Handle billing for LLM usage."""
         try:
             usage = content.get("usage", {})
+            
+            # DEBUG: Log the complete usage object to see what data we have
+            logger.info(f"🔍 THREAD MANAGER USAGE: {usage}")
+            logger.info(f"🔍 THREAD MANAGER CONTENT: {content}")
+            
             prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
             completion_tokens = int(usage.get("completion_tokens", 0) or 0)
+            
+            # Try cache_read_input_tokens first (Anthropic standard), then fallback to prompt_tokens_details.cached_tokens
             cache_read_tokens = int(usage.get("cache_read_input_tokens", 0) or 0)
+            if cache_read_tokens == 0:
+                cache_read_tokens = int(usage.get("prompt_tokens_details", {}).get("cached_tokens", 0) or 0)
+            
             cache_creation_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
             model = content.get("model")
             
-            # logger.debug(f"Processing billing: model='{model}', tokens={prompt_tokens}+{completion_tokens}")
+            # DEBUG: Log what we detected
+            logger.info(f"🔍 CACHE DETECTION: cache_read={cache_read_tokens}, cache_creation={cache_creation_tokens}, prompt={prompt_tokens}")
             
             client = await self.db.client
             thread_row = await client.table('threads').select('account_id').eq('thread_id', thread_id).limit(1).execute()
             user_id = thread_row.data[0]['account_id'] if thread_row.data and len(thread_row.data) > 0 else None
             
             if user_id and (prompt_tokens > 0 or completion_tokens > 0):
+
                 if cache_read_tokens > 0:
-                    logger.info(f"🎯 Using cached tokens! cache_read={cache_read_tokens} of {prompt_tokens} total")
-                
+                    cache_hit_percentage = (cache_read_tokens / prompt_tokens * 100) if prompt_tokens > 0 else 0
+                    logger.info(f"🎯 CACHE HIT: {cache_read_tokens}/{prompt_tokens} tokens ({cache_hit_percentage:.1f}%)")
+                elif cache_creation_tokens > 0:
+                    logger.info(f"💾 CACHE WRITE: {cache_creation_tokens} tokens stored for future use")
+                else:
+                    logger.debug(f"❌ NO CACHE: All {prompt_tokens} tokens processed fresh")
+
                 deduct_result = await billing_integration.deduct_usage(
                     account_id=user_id,
                     prompt_tokens=prompt_tokens,
@@ -215,7 +232,7 @@ class ThreadManager:
         enable_thinking: Optional[bool] = False,
         reasoning_effort: Optional[str] = 'low',
         generation: Optional[StatefulGenerationClient] = None,
-        enable_prompt_caching: bool = False,
+        enable_prompt_caching: bool = True,
         enable_context_manager: Optional[bool] = None,
     ) -> Union[Dict[str, Any], AsyncGenerator]:
         """Run a conversation thread with LLM integration and tool execution."""
@@ -274,7 +291,6 @@ class ThreadManager:
         enable_prompt_caching: bool = False, use_context_manager: bool = True
     ) -> Union[Dict[str, Any], AsyncGenerator]:
         """Execute a single LLM run."""
-        logger.debug(f"_execute_run called with config type: {type(config)}")
         
         # CRITICAL: Ensure config is always a ProcessorConfig object
         if not isinstance(config, ProcessorConfig):
@@ -351,10 +367,10 @@ class ThreadManager:
                 return llm_response
 
             # Process response - ensure config is ProcessorConfig object
-            logger.debug(f"Config type before response processing: {type(config)}")
-            if not isinstance(config, ProcessorConfig):
-                logger.error(f"Config is not ProcessorConfig! Type: {type(config)}, Value: {config}")
-                config = ProcessorConfig()  # Fallback
+            # logger.debug(f"Config type before response processing: {type(config)}")
+            # if not isinstance(config, ProcessorConfig):
+            #     logger.error(f"Config is not ProcessorConfig! Type: {type(config)}, Value: {config}")
+            #     config = ProcessorConfig()  # Fallback
                 
             if stream and hasattr(llm_response, '__aiter__'):
                 return self.response_processor.process_streaming_response(
@@ -384,7 +400,7 @@ class ThreadManager:
     ) -> AsyncGenerator:
         """Generator that handles auto-continue logic."""
         logger.debug(f"Starting auto-continue generator, max: {native_max_auto_continues}")
-        logger.debug(f"Config type in auto-continue generator: {type(config)}")
+        # logger.debug(f"Config type in auto-continue generator: {type(config)}")
         
         # Ensure config is valid ProcessorConfig
         if not isinstance(config, ProcessorConfig):

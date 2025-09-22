@@ -45,7 +45,7 @@ class CustomMCPHandler:
         enabled_tools = config.get('enabledTools', config.get('enabled_tools', []))
         server_name = config.get('name', 'Unknown')
         
-        logger.debug(f"Initializing custom MCP: {server_name} (type: {custom_type})")
+        # logger.debug(f"Initializing custom MCP: {server_name} (type: {custom_type})")
         
         if custom_type == 'composio':
             await self._initialize_composio_mcp(server_name, server_config, enabled_tools)

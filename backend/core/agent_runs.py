@@ -130,7 +130,7 @@ async def start_agent(
                     logger.warning(f"[AGENT LOAD] Failed to get version data: {e}")
             
             logger.debug(f"[AGENT LOAD] About to call extract_agent_config with agent_data keys: {list(agent_data.keys())}")
-            logger.debug(f"[AGENT LOAD] version_data type: {type(version_data)}, has data: {version_data is not None}")
+            # logger.debug(f"[AGENT LOAD] version_data type: {type(version_data)}, has data: {version_data is not None}")
             
             agent_config = extract_agent_config(agent_data, version_data)
             

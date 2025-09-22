@@ -301,6 +301,17 @@ async def make_llm_api_call(
     """Make an API call to a language model using LiteLLM."""
     logger.info(f"Making LLM API call to model: {model_name} with {len(messages)} messages")
     
+    # DEBUG: Log if any messages have cache_control
+    cache_messages = [i for i, msg in enumerate(messages) if 
+                     isinstance(msg.get('content'), list) and 
+                     msg['content'] and 
+                     isinstance(msg['content'][0], dict) and 
+                     'cache_control' in msg['content'][0]]
+    if cache_messages:
+        logger.info(f"🔥 CACHE CONTROL: Found cache_control in messages at positions: {cache_messages}")
+    else:
+        logger.info(f"❌ NO CACHE CONTROL: No cache_control found in any messages")
+    
     # Check token count for context window issues
     # try:
     #     from litellm import token_counter

@@ -18,13 +18,13 @@ Dynamic Thresholds (scales with conversation length):
 
 Technical Features:
 - Accurate token counting using LiteLLM's model-specific tokenizers
-- Strategic 4-block distribution with TTL optimization
+- Strategic 4-block distribution with automatic cache management
 - Fixed-size chunks prevent cache invalidation
-- Cost-benefit analysis: 1.25x write cost vs 0.1x read savings
+- Cost-benefit analysis for optimal caching strategy
 
 Cache Strategy:
-1. Block 1: System prompt (1h TTL if ≥1024 tokens)
-2. Blocks 2-4: Adaptive conversation chunks with mixed TTL
+1. Block 1: System prompt (cached if ≥1024 tokens)
+2. Blocks 2-4: Adaptive conversation chunks with automatic management
 3. Early aggressive caching for quick wins
 4. Late conservative caching to preserve blocks
 
@@ -56,12 +56,10 @@ def get_resolved_model_id(model_name: str) -> str:
         logger.warning(f"Error resolving model name: {e}")
         return model_name
 
-
 def is_anthropic_model(model_name: str) -> bool:
     """Check if model supports Anthropic prompt caching."""
     resolved_model = get_resolved_model_id(model_name).lower()
     return any(provider in resolved_model for provider in ['anthropic', 'claude', 'sonnet', 'haiku', 'opus'])
-
 
 def estimate_token_count(text: str, model: str = "claude-3-5-sonnet-20240620") -> int:
     """
@@ -96,7 +94,6 @@ def get_messages_token_count(messages: List[Dict[str, Any]], model: str = "claud
     """Get total token count for a list of messages."""
     return sum(get_message_token_count(msg, model) for msg in messages)
 
-
 def calculate_optimal_cache_threshold(
     context_window: int, 
     message_count: int, 
@@ -106,8 +103,8 @@ def calculate_optimal_cache_threshold(
     Calculate mathematically optimized cache threshold based on:
     1. Context window size (larger windows = larger thresholds)
     2. Conversation stage (early vs late)
-    3. TTL considerations (5min vs 1h)
-    4. Cost-benefit analysis
+    3. Cost-benefit analysis
+    4. Token density optimization
     
     Formula considerations:
     - Early conversation: Lower thresholds for quick cache benefits
@@ -177,12 +174,11 @@ def calculate_optimal_cache_threshold(
     
     return final_threshold
 
-
 def add_cache_control(message: Dict[str, Any]) -> Dict[str, Any]:
     """Add cache_control to a message."""
     content = message.get('content', '')
     role = message.get('role', '')
-    
+
     # If already in list format with cache_control, return as-is
     if isinstance(content, list):
         if content and isinstance(content[0], dict) and 'cache_control' in content[0]:
@@ -193,7 +189,7 @@ def add_cache_control(message: Dict[str, Any]) -> Dict[str, Any]:
             if isinstance(item, dict) and item.get('type') == 'text':
                 text_content += item.get('text', '')
         content = text_content
-    
+
     return {
         "role": role,
         "content": [
@@ -204,7 +200,6 @@ def add_cache_control(message: Dict[str, Any]) -> Dict[str, Any]:
             }
         ]
     }
-
 
 def apply_anthropic_caching_strategy(
     working_system_prompt: Dict[str, Any], 
@@ -278,7 +273,7 @@ def apply_anthropic_caching_strategy(
     if system_tokens >= 1024:  # Anthropic's minimum cacheable size
         cached_system = add_cache_control(working_system_prompt)
         prepared_messages.append(cached_system)
-        logger.info(f"🔥 Block 1: Cached system prompt ({system_tokens} tokens, 1h TTL)")
+        logger.info(f"🔥 Block 1: Cached system prompt ({system_tokens} tokens)")
         blocks_used = 1
     else:
         prepared_messages.append(working_system_prompt)
@@ -338,7 +333,6 @@ def apply_anthropic_caching_strategy(
     logger.info(f"✅ Final structure: {cache_count} cache breakpoints, {len(prepared_messages)} total blocks")
     return prepared_messages
 
-
 def create_conversation_chunks(
     messages: List[Dict[str, Any]], 
     chunk_threshold_tokens: int,
@@ -348,6 +342,7 @@ def create_conversation_chunks(
 ) -> int:
     """
     Create conversation cache chunks based on token thresholds.
+    Final messages are NEVER cached to prevent cache invalidation.
     Returns number of cache blocks created.
     """
     if not messages or max_blocks <= 0:
@@ -363,7 +358,7 @@ def create_conversation_chunks(
         # Check if adding this message would exceed threshold
         if current_chunk_tokens + message_tokens > chunk_threshold_tokens and current_chunk:
             # Create cache block for current chunk
-            if chunks_created < max_blocks - 1:  # Reserve last block for final message
+            if chunks_created < max_blocks:  # No need to reserve blocks since final messages are never cached
                 chunk_text = format_conversation_for_cache(current_chunk)
                 cache_block = {
                     "role": "user",
@@ -371,7 +366,7 @@ def create_conversation_chunks(
                         {
                             "type": "text",
                             "text": f"[Conversation Chunk {chunks_created + 1}]\n{chunk_text}",
-                            "cache_control": {"type": "ephemeral", "ttl": "1h" if chunks_created == 0 else "5m"}
+                            "cache_control": {"type": "ephemeral"}
                         }
                     ]
                 }
@@ -392,22 +387,10 @@ def create_conversation_chunks(
         current_chunk.append(message)
         current_chunk_tokens += message_tokens
     
-    # Handle final chunk
+    # Handle final chunk - NEVER cache the final messages as it breaks caching logic
     if current_chunk:
-        if chunks_created < max_blocks and current_chunk_tokens >= 1024:
-            # Cache the final chunk
-            final_message = current_chunk[-1]
-            if len(current_chunk) > 1:
-                prepared_messages.extend(current_chunk[:-1])
-            
-            cached_final = add_cache_control(final_message)
-            prepared_messages.append(cached_final)
-            chunks_created += 1
-            logger.info(f"🎯 Block {chunks_created + 1}: Cached final message ({get_message_token_count(final_message, model)} tokens)")
-        else:
-            # Add final chunk uncached
-            prepared_messages.extend(current_chunk)
-            logger.debug(f"Added final chunk uncached ({current_chunk_tokens} tokens, {len(current_chunk)} messages)")
+        # Always add final chunk uncached to prevent cache invalidation
+        prepared_messages.extend(current_chunk)
     
     return chunks_created
 
@@ -457,7 +440,6 @@ def format_conversation_for_cache(messages: List[Dict[str, Any]]) -> str:
             formatted_parts.append(f"{role_indicator}: {text_content}")
     
     return "\n\n".join(formatted_parts)
-
 
 def validate_cache_blocks(messages: List[Dict[str, Any]], model_name: str, max_blocks: int = 4) -> List[Dict[str, Any]]:
     """

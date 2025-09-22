@@ -55,7 +55,7 @@ class ToolRegistry:
                         registered_openapi += 1
                         # logger.debug(f"Registered OpenAPI function {func_name} from {tool_class.__name__}")
         
-        logger.debug(f"Tool registration complete for {tool_class.__name__}: {registered_openapi} OpenAPI functions")
+        # logger.debug(f"Tool registration complete for {tool_class.__name__}: {registered_openapi} OpenAPI functions")
 
     def get_available_functions(self) -> Dict[str, Callable]:
         """Get all available tool functions.

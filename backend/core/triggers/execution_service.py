@@ -368,7 +368,7 @@ class AgentExecutor:
         logger.debug(f"Agent config for trigger execution: model='{agent_config.get('model')}', keys={list(agent_config.keys())}")
         
         model_name = agent_config.get('model')
-        logger.debug(f"Model from agent config: '{model_name}' (type: {type(model_name)})")
+        # logger.debug(f"Model from agent config: '{model_name}' (type: {type(model_name)})")
         
         if not model_name:
             account_id = agent_config.get('account_id')
@@ -418,7 +418,7 @@ class AgentExecutor:
             reasoning_effort="low",
             stream=False,
             enable_context_manager=True,
-            enable_prompt_caching=False,
+            enable_prompt_caching=True,
             agent_config=agent_config,
             request_id=structlog.contextvars.get_contextvars().get('request_id'),
         )
@@ -664,7 +664,7 @@ class WorkflowExecutor:
         logger.debug(f"Agent config for workflow execution: model='{agent_config.get('model')}', keys={list(agent_config.keys())}")
         
         model_name = agent_config.get('model')
-        logger.debug(f"Model from agent config: '{model_name}' (type: {type(model_name)})")
+        # logger.debug(f"Model from agent config: '{model_name}' (type: {type(model_name)})")
         
         if not model_name:
             account_id = agent_config.get('account_id')
@@ -724,7 +724,7 @@ class WorkflowExecutor:
             reasoning_effort='medium',
             stream=False,
             enable_context_manager=True,
-            enable_prompt_caching=False,
+            enable_prompt_caching=True,
             agent_config=agent_config,
             request_id=None,
         )
