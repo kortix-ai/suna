@@ -7,7 +7,7 @@ import {
 import { cn } from '@/lib/utils';
 import { AttachmentGroup } from './attachment-group';
 import { HtmlRenderer } from './preview-renderers/html-renderer';
-import { MarkdownRenderer } from './preview-renderers/markdown-renderer';
+import { MarkdownRenderer } from './preview-renderers/file-preview-markdown-renderer';
 import { CsvRenderer } from './preview-renderers/csv-renderer';
 import { XlsxRenderer } from './preview-renderers/xlsx-renderer';
 import { PdfRenderer as PdfPreviewRenderer } from './preview-renderers/pdf-renderer';

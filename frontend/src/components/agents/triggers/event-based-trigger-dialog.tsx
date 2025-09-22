@@ -19,7 +19,7 @@ import { toast } from 'sonner';
 import { cn, truncateString } from '@/lib/utils';
 import { useAgentWorkflows } from '@/hooks/react-query/agents/use-agent-workflows';
 import { ComposioConnector } from '@/components/agents/composio/composio-connector';
-import { MarkdownRenderer } from '@/components/ui/markdown-renderer';
+import { Markdown } from '@/components/ui/markdown';
 
 interface EventBasedTriggerDialogProps {
     open: boolean;
@@ -620,8 +620,8 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
                                     >
                                         <div className="max-w-2xl mx-auto space-y-6">
                                             {selectedTrigger.instructions && (
-                                                <MarkdownRenderer
-                                                    content={selectedTrigger.instructions}
+                                                <Markdown
+                                                    children={selectedTrigger.instructions}
                                                     className="text-sm w-full text-muted-foreground"
                                                 />
                                             )}

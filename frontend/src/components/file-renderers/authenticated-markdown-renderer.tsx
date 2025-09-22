@@ -9,6 +9,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { CodeRenderer } from './code-renderer';
 import { useImageContent } from '@/hooks/use-image-content';
+import { MermaidRenderer } from '@/components/ui/mermaid-renderer';
+import { isMermaidCode } from '@/lib/mermaid-utils';
 import type { FileRendererProject } from './index';
 
 // Process Unicode escape sequences in content
@@ -172,6 +174,8 @@ export const MarkdownRenderer = forwardRef<
             code(props) {
               const { className, children, ...rest } = props;
               const match = /language-(\w+)/.exec(className || '');
+              const language = match ? match[1] : '';
+              const code = String(children).replace(/\n$/, '');
 
               // Check if it's an inline code block by examining the node type
               const isInline = !className || !match;
@@ -184,10 +188,15 @@ export const MarkdownRenderer = forwardRef<
                 );
               }
 
+              // Check if this is a Mermaid diagram
+              if (isMermaidCode(language, code)) {
+                return <MermaidRenderer chart={code} className="my-4" />;
+              }
+
               return (
                 <CodeRenderer
-                  content={String(children).replace(/\n$/, '')}
-                  language={match ? match[1] : ''}
+                  content={code}
+                  language={language}
                 />
               );
             },
