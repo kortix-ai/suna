@@ -10,6 +10,26 @@ import { Maximize2, X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 const mermaidCache = new Map<string, string>();
 let mermaidInstance: any = null;
 
+// Global cleanup function to remove any Mermaid error messages from the DOM
+const cleanupMermaidErrors = () => {
+  const allElements = document.querySelectorAll('div, span, p, text, tspan');
+  let cleaned = 0;
+  allElements.forEach(el => {
+    const textContent = el.textContent || '';
+    if (textContent.includes('Syntax error in text') || 
+        textContent.includes('mermaid version 11.12.0') ||
+        textContent.trim() === 'Syntax error in text') {
+      console.log('🧹 Global cleanup of Mermaid error element:', textContent);
+      el.remove();
+      cleaned++;
+    }
+  });
+  
+  if (cleaned > 0) {
+    console.log(`🧹 Cleaned up ${cleaned} Mermaid error elements`);
+  }
+};
+
 
 interface MermaidRendererProps {
   chart: string;
@@ -48,6 +68,20 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
+
+  // Set up periodic cleanup of Mermaid error messages
+  useEffect(() => {
+    const cleanupInterval = setInterval(cleanupMermaidErrors, 5000); // Clean up every 5 seconds
+    
+    // Initial cleanup on mount
+    cleanupMermaidErrors();
+    
+    return () => {
+      clearInterval(cleanupInterval);
+      // Final cleanup on unmount
+      cleanupMermaidErrors();
+    };
+  }, []);
 
   // Canvas event handlers
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -329,6 +363,30 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
 
         console.log('🎯 Starting Mermaid rendering for chart:', chart.substring(0, 50) + '...');
 
+        // Basic syntax validation before attempting to render
+        const trimmedChart = chart.trim();
+        if (!trimmedChart) {
+          throw new Error('Empty chart content');
+        }
+
+        // Check for basic Mermaid syntax
+        const firstLine = trimmedChart.split('\n')[0].toLowerCase().trim();
+        const validStarters = [
+          'graph', 'flowchart', 'sequencediagram', 'sequence', 'classdiagram', 'class',
+          'statediagram', 'state', 'erdiagram', 'journey', 'gantt', 'pie',
+          'gitgraph', 'mindmap', 'timeline', 'sankey', 'block',
+          'quadrant', 'requirement', 'c4context', 'c4container',
+          'c4component', 'c4dynamic'
+        ];
+        
+        const hasValidStarter = validStarters.some(starter => 
+          firstLine.startsWith(starter) || firstLine.includes(starter)
+        );
+
+        if (!hasValidStarter) {
+          throw new Error(`Invalid diagram type. Chart must start with a valid Mermaid diagram type (e.g., graph, flowchart, sequenceDiagram, etc.). Found: "${firstLine}"`);
+        }
+
         // Use cached Mermaid instance or initialize new one
         if (!mermaidInstance) {
           const mermaid = (await import('mermaid')).default;
@@ -354,8 +412,30 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
 
         console.log('🎯 Rendering chart with ID:', chartId);
 
-        // Use Mermaid's render method
-        const result = await mermaidInstance.render(chartId, chart);
+        // Wrap Mermaid render in additional error handling to catch parsing errors
+        let result;
+        try {
+          result = await mermaidInstance.render(chartId, trimmedChart);
+        } catch (renderError) {
+          // Handle specific Mermaid parsing errors
+          const errorMessage = renderError instanceof Error ? renderError.message : String(renderError);
+          console.error('🚨 Mermaid parsing error:', errorMessage);
+          
+          // Remove any error elements that Mermaid might have added to the DOM
+          const errorElement = document.getElementById(chartId);
+          if (errorElement) {
+            errorElement.remove();
+          }
+          
+          // Throw a more user-friendly error
+          if (errorMessage.includes('Parse error') || errorMessage.includes('Syntax error')) {
+            throw new Error(`Diagram syntax error: ${errorMessage}`);
+          } else if (errorMessage.includes('UnknownDiagramError')) {
+            throw new Error('unsupported_diagram_type');
+          } else {
+            throw new Error(`Failed to render diagram: ${errorMessage}`);
+          }
+        }
 
         if (!mounted) return;
 
@@ -367,8 +447,15 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
         // Set the rendered content
         setRenderedContent(result.svg);
 
+        // Clean up any potential error text or elements that might have been added to the DOM
+        setTimeout(cleanupMermaidErrors, 100);
+
       } catch (err) {
         console.error('❌ Mermaid rendering error:', err);
+        
+        // Clean up any error elements that might have been added to the DOM
+        setTimeout(cleanupMermaidErrors, 50);
+        
         if (mounted) {
           const errorMessage = err instanceof Error ? err.message : 'Failed to render diagram';
           
