@@ -77,3 +77,5 @@ export const Markdown: React.FC<MarkdownProps> = React.memo(({
     </div>
   );
 });
+
+Markdown.displayName = 'Markdown';

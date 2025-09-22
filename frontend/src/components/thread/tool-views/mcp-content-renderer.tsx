@@ -361,7 +361,7 @@ export function MCPContentRenderer({ detectionResult, rawContent }: MCPContentRe
               Markdown Content
             </span>
           </div>
-          <Markdown children={contentStr} />
+          <Markdown>{contentStr}</Markdown>
         </div>
       );
 

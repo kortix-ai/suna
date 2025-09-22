@@ -10,12 +10,6 @@ import { Maximize2, X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 const mermaidCache = new Map<string, string>();
 let mermaidInstance: any = null;
 
-// Clear cache and instance when configuration changes
-const resetMermaidInstance = () => {
-  mermaidInstance = null;
-  mermaidCache.clear();
-  console.log('🔄 Mermaid instance and cache reset');
-};
 
 interface MermaidRendererProps {
   chart: string;
@@ -653,3 +647,5 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
     </>
   );
 });
+
+MermaidRenderer.displayName = 'MermaidRenderer';

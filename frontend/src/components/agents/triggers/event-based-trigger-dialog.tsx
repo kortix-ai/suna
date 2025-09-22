@@ -620,10 +620,9 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
                                     >
                                         <div className="max-w-2xl mx-auto space-y-6">
                                             {selectedTrigger.instructions && (
-                                                <Markdown
-                                                    children={selectedTrigger.instructions}
-                                                    className="text-sm w-full text-muted-foreground"
-                                                />
+                                                <Markdown className="text-sm w-full text-muted-foreground">
+                                                    {selectedTrigger.instructions}
+                                                </Markdown>
                                             )}
 
                                             {(!loadingProfiles && (profiles || []).filter(p => p.is_connected).length === 0) ? (

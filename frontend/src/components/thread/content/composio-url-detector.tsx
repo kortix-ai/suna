@@ -302,7 +302,7 @@ export const ComposioUrlDetector: React.FC<ComposioUrlDetectorProps> = ({
 
   if (composioUrls.length === 0) {
     return (
-      <Markdown children={content} className={className} />
+      <Markdown className={className}>{content}</Markdown>
     );
   }
 
@@ -324,7 +324,7 @@ export const ComposioUrlDetector: React.FC<ComposioUrlDetectorProps> = ({
 
       if (cleanedTextBefore.trim()) {
         contentParts.push(
-          <Markdown key={`text-${index}`} children={cleanedTextBefore} className={className} />
+          <Markdown key={`text-${index}`} className={className}>{cleanedTextBefore}</Markdown>
         );
       }
     }
@@ -345,7 +345,7 @@ export const ComposioUrlDetector: React.FC<ComposioUrlDetectorProps> = ({
     const remainingText = content.substring(lastIndex);
     if (remainingText.trim()) {
       contentParts.push(
-        <Markdown key="text-final" children={remainingText} className={className} />
+        <Markdown key="text-final" className={className}>{remainingText}</Markdown>
       );
     }
   }
