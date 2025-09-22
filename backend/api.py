@@ -130,7 +130,7 @@ async def log_requests_middleware(request: Request, call_next):
         raise
 
 # Define allowed origins based on environment
-allowed_origins = ["https://www.suna.so", "https://suna.so", "https://operator.becomeomni.net", "https://coldchain.becomeommi.ai", "https://sundar-dev.operator.becomeomni.net","https://varnica.operator.becomeomni.net","https://mssc.becomeomni.net", "https://mssc.becomeomni.ai","https://coppermoon.becomeomni.ai","https://huston.becomeomni.ai"]
+allowed_origins = ["https://www.suna.so", "https://suna.so", "https://operator.becomeomni.net", "https://coldchain.becomeomni.ai", "https://sundar-dev.operator.becomeomni.net","https://varnica.operator.becomeomni.net","https://mssc.becomeomni.net", "https://mssc.becomeomni.ai","https://coppermoon.becomeomni.ai","https://huston.becomeomni.ai"]
 allow_origin_regex = None
 
 # Add staging-specific origins
