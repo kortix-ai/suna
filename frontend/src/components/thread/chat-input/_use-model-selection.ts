@@ -8,7 +8,7 @@ import { useAvailableModels } from '@/hooks/react-query/subscriptions/use-model'
 export const STORAGE_KEY_MODEL = 'omni-preferred-model-v3';
 export const STORAGE_KEY_CUSTOM_MODELS = 'customModels';
 export const DEFAULT_PREMIUM_MODEL_ID = 'claude-sonnet-4';
-export const DEFAULT_FREE_MODEL_ID = 'openai/gpt-5';
+export const DEFAULT_FREE_MODEL_ID = 'claude-sonnet-4';
 
 export const testLocalStorage = (): boolean => {
   if (typeof window === 'undefined') return false;

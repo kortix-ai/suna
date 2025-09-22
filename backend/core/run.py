@@ -60,7 +60,7 @@ class AgentConfig:
     stream: bool
     native_max_auto_continues: int = 25
     max_iterations: int = 100
-    model_name: str = "openai/gpt-5-mini"
+    model_name: str = "Claude Sonnet 4"
     enable_thinking: Optional[bool] = False
     reasoning_effort: Optional[str] = 'low'
     enable_context_manager: bool = True
@@ -858,7 +858,7 @@ async def run_agent(
     thread_manager: Optional[ThreadManager] = None,
     native_max_auto_continues: int = 25,
     max_iterations: int = 100,
-    model_name: str = "openai/gpt-5-mini",
+    model_name: str = "Claude Sonnet 4",
     enable_thinking: Optional[bool] = False,
     reasoning_effort: Optional[str] = 'low',
     enable_context_manager: bool = True,
@@ -868,7 +868,7 @@ async def run_agent(
     target_agent_id: Optional[str] = None
 ):
     effective_model = model_name
-    is_tier_default = model_name in ["Kimi K2", "Claude Sonnet 4", "openai/gpt-5-mini"]
+    is_tier_default = model_name in ["Kimi K2", "Claude Sonnet 4"]
     
     if is_tier_default and agent_config and agent_config.get('model'):
         effective_model = agent_config['model']

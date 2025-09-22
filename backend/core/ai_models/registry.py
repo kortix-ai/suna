@@ -1,7 +1,7 @@
 from typing import Dict, List, Optional, Set
 from .ai_models import Model, ModelProvider, ModelCapability, ModelPricing
 
-DEFAULT_FREE_MODEL = "GPT-5"
+DEFAULT_FREE_MODEL = "Claude Sonnet 4"
 DEFAULT_PREMIUM_MODEL = "Claude Sonnet 4"
 
 class ModelRegistry:

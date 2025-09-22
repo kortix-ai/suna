@@ -653,7 +653,7 @@ async def initiate_agent_with_files(
     logger.debug(f"Original model_name from request: {model_name}")
 
     if model_name is None:
-        model_name = "openai/gpt-5-mini"
+        model_name = "Claude Sonnet 4"
         logger.debug(f"Using default model: {model_name}")
 
     from core.ai_models import model_manager

@@ -365,7 +365,7 @@ class ThreadManager:
         system_prompt: Dict[str, Any],
         stream: bool = True,
         temporary_message: Optional[Dict[str, Any]] = None,
-        llm_model: str = "gpt-5",
+        llm_model: str = "Claude Sonnet 4",
         llm_temperature: float = 0,
         llm_max_tokens: Optional[int] = None,
         processor_config: Optional[ProcessorConfig] = None,
