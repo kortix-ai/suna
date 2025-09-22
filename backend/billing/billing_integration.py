@@ -54,26 +54,40 @@ class BillingIntegration:
         if config.ENV_MODE == EnvMode.LOCAL:
             return {'success': True, 'cost': 0, 'new_balance': 999999}
 
+        from decimal import Decimal
+        
+        # Calculate cache creation cost at full input rate (no discount)
+        cache_creation_cost = Decimal('0')
+        if cache_creation_tokens > 0:
+            cache_creation_cost = calculate_token_cost(cache_creation_tokens, 0, model)
+        
         if cache_read_tokens > 0:
-            from decimal import Decimal
+            # Calculate discounted cache read cost 
             non_cached_prompt_tokens = prompt_tokens - cache_read_tokens
             
             model_lower = model.lower()
             if any(provider in model_lower for provider in ['anthropic', 'claude', 'sonnet']):
-                cache_discount = Decimal('0.1')
+                cache_discount = Decimal('0.1')  # 90% discount for Claude
             elif any(provider in model_lower for provider in ['gpt', 'openai', 'gpt-4o']):
-                cache_discount = Decimal('0.5')
+                cache_discount = Decimal('0.5')  # 50% discount for OpenAI
             else:
                 cache_discount = Decimal('0.5')
             
             cached_cost = calculate_token_cost(cache_read_tokens, 0, model)
             cached_cost = cached_cost * cache_discount
             non_cached_cost = calculate_token_cost(non_cached_prompt_tokens, completion_tokens, model)
-            cost = cached_cost + non_cached_cost
+            cost = cached_cost + non_cached_cost + cache_creation_cost
             
-            logger.info(f"[BILLING] Cost breakdown: cached=${cached_cost:.6f} + regular=${non_cached_cost:.6f} = total=${cost:.6f}")
+            logger.info(f"[BILLING] Cost breakdown: cached=${cached_cost:.6f} + regular=${non_cached_cost:.6f} + cache_creation=${cache_creation_cost:.6f} = total=${cost:.6f}")
         else:
-            cost = calculate_token_cost(prompt_tokens, completion_tokens, model)
+            # No cache read, but may have cache creation
+            regular_cost = calculate_token_cost(prompt_tokens, completion_tokens, model)
+            cost = regular_cost + cache_creation_cost
+            
+            if cache_creation_tokens > 0:
+                logger.info(f"[BILLING] Cost breakdown: regular=${regular_cost:.6f} + cache_creation=${cache_creation_cost:.6f} = total=${cost:.6f}")
+            else:
+                logger.info(f"[BILLING] Cost: regular=${regular_cost:.6f}")
         
         if cost <= 0:
             logger.warning(f"Zero cost calculated for {model} with {prompt_tokens}+{completion_tokens} tokens")

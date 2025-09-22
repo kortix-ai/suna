@@ -26,7 +26,7 @@ import json
 stripe.api_key = config.STRIPE_SECRET_KEY
 
 # Token price multiplier
-TOKEN_PRICE_MULTIPLIER = 1.5
+TOKEN_PRICE_MULTIPLIER = 1.2
 
 # Minimum credits required to allow a new request when over subscription limit
 CREDIT_MIN_START_DOLLARS = 0.20
