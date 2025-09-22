@@ -335,28 +335,25 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
 
         console.log('🎯 Starting Mermaid rendering for chart:', chart.substring(0, 50) + '...');
 
-        // Force reinitialize Mermaid with gitgraph support (temporary for testing)
-        const mermaid = (await import('mermaid')).default;
-        
-        // Initialize with gitgraph configuration
-        await mermaid.initialize({
-          startOnLoad: false,
-          securityLevel: 'loose',
-          theme: 'base',
-          fontFamily: 'ui-sans-serif, system-ui, sans-serif',
-          // Enable experimental diagram types
-          experimental: {
-            gitGraph: true
-          },
-          gitGraph: {
-            showBranches: true,
-            showCommitLabel: true,
-            mainBranchName: 'main',
-            rotateCommitLabel: true
-          }
-        });
-        
-        console.log('✅ Mermaid re-initialized with gitgraph support');
+        // Use cached Mermaid instance or initialize new one
+        if (!mermaidInstance) {
+          const mermaid = (await import('mermaid')).default;
+          await mermaid.initialize({
+            startOnLoad: false,
+            securityLevel: 'loose',
+            theme: 'base',
+            fontFamily: 'ui-sans-serif, system-ui, sans-serif',
+            // Enable experimental features including gitgraph
+            gitGraph: {
+              showBranches: true,
+              showCommitLabel: true,
+              mainBranchName: 'main',
+              rotateCommitLabel: true
+            }
+          });
+          mermaidInstance = mermaid;
+          console.log('✅ Mermaid initialized and cached');
+        }
 
         // Create a unique ID for this chart
         const chartId = `mermaid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
@@ -364,7 +361,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
         console.log('🎯 Rendering chart with ID:', chartId);
 
         // Use Mermaid's render method
-        const result = await mermaid.render(chartId, chart);
+        const result = await mermaidInstance.render(chartId, chart);
 
         if (!mounted) return;
 
