@@ -31,6 +31,7 @@ import {
 import { cn } from '@/lib/utils';
 import { TriggerCreationDialog } from './trigger-creation-dialog';
 import { SimplifiedTriggerDetailPanel } from './simplified-trigger-detail-panel';
+import { TriggersPageHeader } from './triggers-page-header';
 
 const getTriggerIcon = (triggerType: string) => {
   switch (triggerType.toLowerCase()) {
@@ -143,9 +144,9 @@ const EmptyState = () => (
     <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center mb-4">
       <Zap className="h-6 w-6 text-muted-foreground" />
     </div>
-    <h3 className="text-base font-semibold text-foreground mb-2">Get started by adding a task</h3>
+    <h3 className="text-base font-semibold text-foreground mb-2">Get started by adding a trigger</h3>
     <p className="text-sm text-muted-foreground text-center max-w-sm mb-6">
-      Schedule a task to automate actions and get reminders when they complete.
+      Schedule a trigger to automate actions and get reminders when they complete.
     </p>
   </div>
 );
@@ -167,7 +168,7 @@ const LoadingSkeleton = () => (
   </div>
 );
 
-export function TasksPage() {
+export function TriggersPage() {
   const { data: triggers = [], isLoading, error } = useAllTriggers();
   const [selectedTrigger, setSelectedTrigger] = useState<TriggerWithAgent | null>(null);
   const [triggerDialogType, setTriggerDialogType] = useState<'schedule' | 'event' | null>(null);
@@ -219,7 +220,7 @@ export function TasksPage() {
           <Alert variant="destructive">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription>
-              Failed to load tasks. Please try refreshing the page.
+              Failed to load triggers. Please try refreshing the page.
             </AlertDescription>
           </Alert>
         </div>
@@ -228,38 +229,42 @@ export function TasksPage() {
   }
 
   return (
-    <div className="h-screen flex overflow-hidden">
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <div className="flex justify-center">
-          <div className={cn(
-            "w-full px-4 transition-all duration-300 ease-in-out",
-            selectedTrigger ? "max-w-2xl" : "max-w-4xl"
-          )}>
-            <div className="flex items-center justify-between py-10">
-              <h1 className="text-xl font-semibold">Tasks</h1>
+    <div className="min-h-screen">
+      <div className="container mx-auto max-w-7xl px-4 py-8">
+        <TriggersPageHeader />
+      </div>
+      <div className="h-screen flex overflow-hidden">
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex justify-center">
+            <div className={cn(
+              "w-full px-4 transition-all duration-300 ease-in-out",
+              selectedTrigger ? "max-w-2xl" : "max-w-4xl"
+            )}>
+              <div className="flex items-center justify-between py-10">
+                <h1 className="text-xl font-semibold">Triggers</h1>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="outline" size="sm">
                     <Plus className="h-4 w-4" />
-                    New task
+                    New trigger
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-72">
                   <DropdownMenuItem onClick={() => setTriggerDialogType('schedule')} className='rounded-lg'>
                     <Clock className="h-4 w-4 text-muted-foreground" />
                     <div className="flex flex-col">
-                      <span>Scheduled Task</span>
+                      <span>Scheduled Trigger</span>
                       <span className="text-xs text-muted-foreground">
-                        Schedule a task to run at a specific time
+                        Schedule a trigger to run at a specific time
                       </span>
                     </div>
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setTriggerDialogType('event')} className='rounded-lg'>
                     <PlugZap className="h-4 w-4 text-muted-foreground" />
                     <div className="flex flex-col">
-                      <span>Event-based Task</span>
+                      <span>Event-based Trigger</span>
                       <span className="text-xs text-muted-foreground">
-                        Make a task to run when an event occurs
+                        Make a trigger to run when an event occurs
                       </span>
                     </div>
                   </DropdownMenuItem>
@@ -313,19 +318,20 @@ export function TasksPage() {
           />
         )}
       </div>
-      {/* Trigger Creation Dialog */}
-      {triggerDialogType && (
-        <TriggerCreationDialog
-          open={!!triggerDialogType}
-          onOpenChange={(open) => {
-            if (!open) {
-              setTriggerDialogType(null);
-            }
-          }}
-          type={triggerDialogType}
-          onTriggerCreated={handleTriggerCreated}
-        />
-      )}
+        {/* Trigger Creation Dialog */}
+        {triggerDialogType && (
+          <TriggerCreationDialog
+            open={!!triggerDialogType}
+            onOpenChange={(open) => {
+              if (!open) {
+                setTriggerDialogType(null);
+              }
+            }}
+            type={triggerDialogType}
+            onTriggerCreated={handleTriggerCreated}
+          />
+        )}
+      </div>
     </div>
   );
 } 

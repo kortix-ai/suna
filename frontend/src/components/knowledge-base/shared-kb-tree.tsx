@@ -80,6 +80,13 @@ interface SharedTreeItemProps {
         totalFiles?: number;
         completedFiles?: number;
     };
+
+    // Loading state for folder expansion
+    isLoadingEntries?: boolean;
+    
+    // Moving state for files
+    isMoving?: boolean;
+    movingFiles?: { [fileId: string]: boolean };
 }
 
 export function SharedTreeItem({
@@ -105,8 +112,14 @@ export function SharedTreeItem({
     onToggleAssignment,
     assignmentIndeterminate,
     uploadStatus,
-    validationError
+    validationError,
+    isLoadingEntries,
+    isMoving,
+    movingFiles
 }: SharedTreeItemProps) {
+
+    // Determine if this specific item is moving
+    const itemIsMoving = isMoving || (movingFiles && movingFiles[item.id]);
 
     const isEditingJustStarted = useRef(false);
 
@@ -196,16 +209,16 @@ export function SharedTreeItem({
     };
 
     return (
-        <div ref={combinedRef} style={style} className="select-none my-1">
+        <div ref={combinedRef} style={style} className="select-none my-2">
             {item.type === 'folder' ? (
                 <div>
                     {/* Folder Row - Using div instead of button to avoid nesting */}
                     <div
-                        className={`group flex items-center w-full text-sm h-8 px-3 py-5 rounded-md hover:bg-accent hover:text-accent-foreground cursor-pointer ${(isOver && enableDnd) || isDragOverNative
-                            ? 'bg-blue-100 border-2 border-blue-300 border-dashed'
-                            : ''
+                        className={`group flex items-center w-full text-sm h-auto px-4 py-4 rounded-lg transition-all duration-200 cursor-pointer border border-transparent ${(isOver && enableDnd) || isDragOverNative
+                            ? 'bg-primary/5 border-primary/20 border-dashed'
+                            : 'hover:bg-muted/30 hover:border-border/50'
                             }`}
-                        style={{ paddingLeft: `${level * 16 + 8}px` }}
+                        
                         onClick={() => onExpand(item.id)}
                         onDragOver={handleNativeDragOver}
                         onDragLeave={handleNativeDragLeave}
@@ -218,8 +231,8 @@ export function SharedTreeItem({
                         }
 
                         {/* Folder Icon */}
-                        <div className="w-8 h-8 mr-3 bg-muted border border-border rounded-md flex items-center justify-center shrink-0">
-                            <FolderIcon className="h-4 w-4 text-muted-foreground" />
+                        <div className="w-10 h-10 mr-4 bg-muted border border-border/50 rounded-lg flex items-center justify-center shrink-0 group-hover:bg-muted/80 transition-all duration-200">
+                            <FolderIcon className="h-5 w-5 text-foreground/70" />
                         </div>
 
                         {/* Folder Name */}
@@ -252,19 +265,26 @@ export function SharedTreeItem({
                                     )}
                                 </div>
                             ) : (
-                                <div>
-                                    <div className="font-medium truncate">{item.name}</div>
-                                    <div className="text-xs text-muted-foreground">
+                                <div className="space-y-1">
+                                    <div className="font-semibold text-foreground truncate text-sm">{item.name}</div>
+                                    <div className="flex items-center gap-2">
                                         {uploadStatus?.isUploading ? (
-                                            <div className="flex items-center gap-1">
-                                                <Loader2 className="h-3 w-3 animate-spin" />
-                                                <span>
-                                                    Uploading {uploadStatus.currentFile}...
-                                                    ({uploadStatus.completedFiles || 0}/{uploadStatus.totalFiles || 0})
+                                            <div className="flex items-center gap-1.5">
+                                                <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                                                <span className="text-xs text-muted-foreground">
+                                                    Uploading {uploadStatus.currentFile}... ({uploadStatus.completedFiles || 0}/{uploadStatus.totalFiles || 0})
                                                 </span>
                                             </div>
                                         ) : (
-                                            `${item.data?.entry_count || 0} files`
+                                            <>
+                                                <span className="text-xs text-muted-foreground">
+                                                    {item.data?.entry_count || 0} files
+                                                </span>
+                                                <span className="text-xs text-muted-foreground/50">•</span>
+                                                <span className="text-xs text-muted-foreground">
+                                                    Click to {item.expanded ? 'collapse' : 'expand'}
+                                                </span>
+                                            </>
                                         )}
                                     </div>
                                 </div>
@@ -333,33 +353,45 @@ export function SharedTreeItem({
                     </div>
 
                     {/* Files (when expanded) */}
-                    {item.expanded && item.children && (
+                    {item.expanded && (
                         <div className="flex flex-col">
-                            {item.children.map((file) => (
-                                <SharedTreeItem
-                                    key={file.id}
-                                    item={file}
-                                    onExpand={onExpand}
-                                    onSelect={onSelect}
-                                    level={level + 1}
-                                    enableDnd={enableDnd}
-                                    enableActions={enableActions}
-                                    enableEdit={enableEdit}
-                                    enableAssignment={enableAssignment}
-                                    onDelete={onDelete}
-                                    onStartEdit={onStartEdit}
-                                    onFinishEdit={onFinishEdit}
-                                    onEditChange={onEditChange}
-                                    onEditKeyPress={onEditKeyPress}
-                                    onEditSummary={onEditSummary}
-                                    editInputRef={editInputRef}
-                                    editingFolder={editingFolder}
-                                    editingName={editingName}
-                                    assignments={assignments}
-                                    onToggleAssignment={onToggleAssignment}
-                                    assignmentIndeterminate={assignmentIndeterminate}
-                                />
-                            ))}
+                            {isLoadingEntries ? (
+                                <div className="flex items-center gap-3 px-4 py-4 text-sm text-muted-foreground bg-muted/20 rounded-lg mx-4 mb-2" style={{ paddingLeft: `${level * 20 + 32}px` }}>
+                                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                                    <span>Loading files...</span>
+                                </div>
+                            ) : item.children && item.children.length > 0 ? (
+                                item.children.map((file) => (
+                                    <SharedTreeItem
+                                        key={file.id}
+                                        item={file}
+                                        onExpand={onExpand}
+                                        onSelect={onSelect}
+                                        level={level + 1}
+                                        enableDnd={enableDnd}
+                                        enableActions={enableActions}
+                                        enableEdit={enableEdit}
+                                        enableAssignment={enableAssignment}
+                                        onDelete={onDelete}
+                                        onStartEdit={onStartEdit}
+                                        onFinishEdit={onFinishEdit}
+                                        onEditChange={onEditChange}
+                                        onEditKeyPress={onEditKeyPress}
+                                        onEditSummary={onEditSummary}
+                                        editInputRef={editInputRef}
+                                        editingFolder={editingFolder}
+                                        editingName={editingName}
+                                        assignments={assignments}
+                                        onToggleAssignment={onToggleAssignment}
+                                        assignmentIndeterminate={assignmentIndeterminate}
+                                        movingFiles={movingFiles}
+                                    />
+                                ))
+                            ) : (
+                                <div className="flex items-center gap-2 px-4 py-4 text-sm text-muted-foreground bg-muted/10 rounded-lg mx-4 mb-2" style={{ paddingLeft: `${level * 20 + 32}px` }}>
+                                    <span>No files in this folder</span>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -367,16 +399,29 @@ export function SharedTreeItem({
                 /* File Row - Using div instead of button to avoid nesting */
                 <div
                     ref={combinedRef}
-                    className={`group flex items-center w-full text-sm h-8 px-3 py-5 rounded-md hover:bg-accent hover:text-accent-foreground ${isDragging ? 'opacity-50' : ''
-                        }`}
+                    className={`group flex items-center w-full text-sm h-auto px-4 py-3 rounded-lg transition-all duration-200 border border-transparent ${
+                        itemIsMoving 
+                            ? 'opacity-60 cursor-not-allowed bg-muted/30' 
+                            : 'hover:bg-muted/30 hover:border-border/50 cursor-pointer'
+                    } ${isDragging ? 'opacity-50' : ''}`}
                     style={{
-                        paddingLeft: `${level * 16 + 20}px`,
+                        paddingLeft: ``,
                         ...style
                     }}
-                    onClick={() => onSelect(item)}
+                    onClick={() => {
+                        // Don't allow clicks when moving
+                        if (itemIsMoving) return;
+                        
+                        // Trigger summary editing on file click
+                        if (onEditSummary) {
+                            onEditSummary(item.id, item.name, item.data?.summary || '');
+                        } else {
+                            onSelect(item);
+                        }
+                    }}
                 >
                     {/* Drag Handle - Only visible on hover and only when DND is enabled for files */}
-                    {enableDnd && item.type === 'file' && (
+                    {enableDnd && item.type === 'file' && !itemIsMoving && (
                         <div
                             className="opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1 ml-1"
                             {...attributes}
@@ -386,16 +431,31 @@ export function SharedTreeItem({
                         </div>
                     )}
                     {/* File Icon */}
-                    <div className="w-8 h-8 mr-3 bg-background border border-border rounded-md flex items-center justify-center shrink-0">
-                        <FileIcon className="h-4 w-4 text-foreground/60" />
+                    <div className="w-9 h-9 mr-3 bg-muted/50 border border-border/50 rounded-lg flex items-center justify-center shrink-0 group-hover:bg-muted transition-all duration-200">
+                        <FileIcon className="h-4 w-4 text-foreground/70" />
                     </div>
 
 
                     {/* File Details */}
-                    <div className="flex-1 text-left min-w-0">
-                        <div className="font-medium truncate">{item.name}</div>
-                        <div className="text-xs text-muted-foreground">
-                            {formatFileSize(item.data?.file_size || 0)}
+                    <div className="flex-1 text-left min-w-0 space-y-1">
+                        <div className="font-semibold text-foreground truncate text-sm">{item.name}</div>
+                        <div className="flex items-center gap-2">
+                            {itemIsMoving ? (
+                                <div className="flex items-center gap-1.5">
+                                    <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                                    <span className="text-xs text-muted-foreground">Moving...</span>
+                                </div>
+                            ) : (
+                                <>
+                                    <span className="text-xs text-muted-foreground">
+                                        {formatFileSize(item.data?.file_size || 0)}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground/50">•</span>
+                                    <span className="text-xs text-muted-foreground">
+                                        Click to edit summary
+                                    </span>
+                                </>
+                            )}
                         </div>
                     </div>
 
@@ -412,7 +472,7 @@ export function SharedTreeItem({
 
 
                     {/* File Actions */}
-                    {enableActions && (
+                    {enableActions && !itemIsMoving && (
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                                 <button

@@ -9,7 +9,6 @@ import { createClient } from '@/lib/supabase/client';
 import { getSandboxFileContent } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { FileNameValidator } from '@/lib/validation';
 import {
     FolderIcon,
@@ -22,6 +21,7 @@ import {
     ChevronRightIcon,
     MoreVerticalIcon
 } from 'lucide-react';
+import { KnowledgeBasePageHeader } from './knowledge-base-header';
 import {
     DndContext,
     closestCenter,
@@ -201,6 +201,8 @@ const useKnowledgeFolders = () => {
 export function KnowledgeBasePage() {
     const [treeData, setTreeData] = useState<TreeItem[]>([]);
     const [folderEntries, setFolderEntries] = useState<{ [folderId: string]: Entry[] }>({});
+    const [loadingFolders, setLoadingFolders] = useState<{ [folderId: string]: boolean }>({});
+    const [movingFiles, setMovingFiles] = useState<{ [fileId: string]: boolean }>({});
     const [selectedItem, setSelectedItem] = useState<TreeItem | null>(null);
     const [editingFolder, setEditingFolder] = useState<string | null>(null);
     const [editingName, setEditingName] = useState('');
@@ -452,6 +454,9 @@ export function KnowledgeBasePage() {
     };
 
     const handleMoveFile = async (fileId: string, targetFolderId: string) => {
+        // Set moving state
+        setMovingFiles(prev => ({ ...prev, [fileId]: true }));
+        
         try {
             const supabase = createClient();
             const { data: { session } } = await supabase.auth.getSession();
@@ -485,6 +490,9 @@ export function KnowledgeBasePage() {
             }
         } catch (error) {
             toast.error('Failed to move file');
+        } finally {
+            // Clear moving state
+            setMovingFiles(prev => ({ ...prev, [fileId]: false }));
         }
     };
 
@@ -499,6 +507,9 @@ export function KnowledgeBasePage() {
     };
 
     const fetchFolderEntries = async (folderId: string) => {
+        // Set loading state
+        setLoadingFolders(prev => ({ ...prev, [folderId]: true }));
+        
         try {
             const supabase = createClient();
             const { data: { session } } = await supabase.auth.getSession();
@@ -520,10 +531,16 @@ export function KnowledgeBasePage() {
             }
         } catch (error) {
             console.error('Failed to fetch entries:', error);
+        } finally {
+            // Clear loading state
+            setLoadingFolders(prev => ({ ...prev, [folderId]: false }));
         }
     };
 
     const handleExpand = async (folderId: string) => {
+        const folder = treeData.find(item => item.id === folderId);
+        const isCurrentlyExpanded = folder?.expanded;
+
         setTreeData(prev =>
             prev.map(item =>
                 item.id === folderId
@@ -533,9 +550,13 @@ export function KnowledgeBasePage() {
         );
 
         // Fetch entries if expanding and not already loaded
-        const folder = treeData.find(item => item.id === folderId);
-        if (folder && !folder.expanded && !folderEntries[folderId]) {
+        if (folder && !isCurrentlyExpanded && !folderEntries[folderId]) {
             await fetchFolderEntries(folderId);
+        }
+
+        // Clear loading state if collapsing
+        if (isCurrentlyExpanded) {
+            setLoadingFolders(prev => ({ ...prev, [folderId]: false }));
         }
     };
 
@@ -837,16 +858,14 @@ export function KnowledgeBasePage() {
                         </div>
 
                         {/* Content Skeleton */}
-                        <Card className="border-border/50">
-                            <CardContent className="p-6">
-                                <div className="space-y-3">
-                                    <Skeleton className="h-6 w-24" />
-                                    <Skeleton className="h-12 w-full" />
-                                    <Skeleton className="h-12 w-full" />
-                                    <Skeleton className="h-12 w-full" />
-                                </div>
-                            </CardContent>
-                        </Card>
+                        <div className="space-y-6">
+                            <Skeleton className="h-6 w-32" />
+                            <div className="space-y-4">
+                                <Skeleton className="h-16 w-full" />
+                                <Skeleton className="h-16 w-full" />
+                                <Skeleton className="h-16 w-full" />
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -854,91 +873,139 @@ export function KnowledgeBasePage() {
     }
 
     return (
-        <div
-            className="h-screen flex flex-col overflow-hidden bg-background"
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-                e.preventDefault();
-                // Only prevent default - don't show any message since folders handle their own drops
-            }}
-        >
-            <div className="flex-1 flex flex-col overflow-hidden">
-                {/* Main Content Area */}
-                <div className="flex-1 overflow-y-auto">
-                    <div className="max-w-7xl mx-auto p-6">
-                        {/* Header Section */}
-                        <div className="mb-8">
-                            <div className="flex items-center justify-between mb-6">
-                                <div>
-                                    <h1 className="text-3xl font-bold tracking-tight text-foreground">Knowledge Base</h1>
-                                    <p className="text-muted-foreground mt-1">Global knowledge base for agent resources</p>
-                                </div>
-                                <div className="flex gap-3">
-                                    <Button variant="outline" onClick={handleCreateFolder}>
-                                        <FolderPlusIcon className="h-4 w-4 mr-2" />
-                                        New Folder
-                                    </Button>
-                                    <FileUploadModal
-                                        folders={folders}
-                                        onUploadComplete={refetchFolders}
-                                    />
-                                </div>
-                            </div>
-                        </div>                        {/* Files and Folders Card */}
-                        <Card className="border-border/50">
-                            <CardHeader className="pb-0">
-                                <CardTitle className="text-lg">
-                                    Folders & Files
-                                </CardTitle>
-                            </CardHeader>
-                            <CardContent className="pt-0 px-6 pb-0">
+<div> 
+        <div className="min-h-screen">
+            <div className="container mx-auto max-w-7xl px-4 py-8">
+                <KnowledgeBasePageHeader />
+            </div>
+            <div className="container mx-auto max-w-7xl px-4 py-2">
+                <div className="w-full min-h-[calc(100vh-300px)]">
+                    {/* Header Section */}
+                    <div className="flex justify-between items-start mb-8">
+                        <div className="space-y-1">
+                            <h2 className="text-xl font-semibold text-foreground">Knowledge Base</h2>
+                            <p className="text-sm text-muted-foreground">
+                                Organize documents and files for AI agents to search and reference
+                            </p>
+                        </div>
+                        <div className="flex gap-3">
+                            <Button variant="outline" onClick={handleCreateFolder}>
+                                <FolderPlusIcon className="h-4 w-4 mr-2" />
+                                New Folder
+                            </Button>
+                            <FileUploadModal
+                                folders={folders}
+                                onUploadComplete={refetchFolders}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Main Content */}
+                    <div 
+                        className="space-y-8"
+                        onDragOver={(e) => e.preventDefault()}
+                        onDrop={(e) => {
+                            e.preventDefault();
+                            // Only prevent default - don't show any message since folders handle their own drops
+                        }}
+                    >
                                 {/* Recent Creations Section */}
                                 {recentFiles.length > 0 && (
-                                    <div className="mb-6">
-                                        <h3 className="text-sm font-medium text-muted-foreground mb-3">
-                                            Recently Added Files
-                                        </h3>
-                                        <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
+                                    <div className="mb-8">
+                                        <div className="flex items-center justify-between mb-6">
+                                            <h3 className="text-lg font-medium text-foreground">
+                                                Recently Added
+                                            </h3>
+                                            <span className="text-xs text-muted-foreground">
+                                                {recentFiles.length} files
+                                            </span>
+                                        </div>
+                                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4 mb-8">
                                             {recentFiles.slice(0, 6).map((file) => {
                                                 const fileInfo = getFileTypeInfo(file.filename);
                                                 return (
-                                                    <div key={file.entry_id} className="group cursor-pointer">
-                                                        <div className="bg-muted/70 rounded-xl h-22 mb-2 transition-colors flex items-center justify-center">
-                                                            <div className='relative flex flex-col items-center justify-center'>
-                                                                <FileIcon className="h-12 w-12 opacity-55" />
-                                                                <span className="text-[10px] font-bold absolute top-7 left-4">{fileInfo.extension.slice(0, 4)}</span>
-
+                                                    <div 
+                                                        key={file.entry_id} 
+                                                        className="group cursor-pointer"
+                                                        onClick={() => handleEditSummary(file.entry_id, file.filename, file.summary)}
+                                                    >
+                                                        <div className="relative bg-muted/20 border border-border/50 rounded-lg p-4 transition-all duration-200 hover:bg-muted/30 hover:border-border">
+                                                            <div className="flex flex-col items-center space-y-3">
+                                                                <div className="relative">
+                                                                    <div className="w-12 h-12 bg-muted/80 rounded-lg flex items-center justify-center">
+                                                                        <FileIcon className="h-6 w-6 text-foreground/60" />
+                                                                    </div>
+                                                                    <div className="absolute -bottom-1 -right-1 bg-background border border-border rounded px-1 py-0.5">
+                                                                        <span className="text-[8px] font-medium text-muted-foreground uppercase">
+                                                                            {fileInfo.extension.slice(0, 3)}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="text-center space-y-1 w-full">
+                                                                    <p className="text-xs font-medium text-foreground truncate" title={file.filename}>
+                                                                        {file.filename.length > 12 ? `${file.filename.slice(0, 12)}...` : file.filename}
+                                                                    </p>
+                                                                    <p className="text-xs text-muted-foreground">
+                                                                        {formatDate(file.created_at)}
+                                                                    </p>
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                        <div className="text-center">
-                                                            <p className="text-xs font-medium text-foreground truncate mb-1" title={file.filename}>
-                                                                {file.filename}
-                                                            </p>
-                                                            <p className="text-xs text-muted-foreground">
-                                                                {formatDate(file.created_at)}
-                                                            </p>
                                                         </div>
                                                     </div>
                                                 );
                                             })}
                                         </div>
-                                        <div className="border-t border-border/30 pt-4" />
+                                        <div className="flex items-center justify-between mb-6 mt-8">
+                                            <h3 className="text-lg font-medium text-foreground">
+                                                All Folders
+                                            </h3>
+                                        </div>
                                     </div>
                                 )}
 
                                 {treeData.length === 0 ? (
-                                    <div className="text-center py-16">
-                                        <div className="mx-auto w-16 h-16 bg-muted/50 rounded-full flex items-center justify-center mb-4">
-                                            <FolderIcon className="h-8 w-8 text-muted-foreground" />
+                                    <div className="text-center py-20">
+                                        <div className="mx-auto max-w-md">
+                                            <div className="relative mb-8">
+                                                <div className="mx-auto w-20 h-20 bg-muted rounded-xl flex items-center justify-center border border-border/50">
+                                                    <FolderIcon className="h-10 w-10 text-muted-foreground" />
+                                                </div>
+                                                <div className="absolute -top-2 -right-2 w-8 h-8 bg-background border border-border rounded-full flex items-center justify-center">
+                                                    <PlusIcon className="h-4 w-4 text-foreground" />
+                                                </div>
+                                            </div>
+                                            <h3 className="text-xl font-semibold mb-3 text-foreground">Start Building Your Knowledge Base</h3>
+                                            <p className="text-muted-foreground mb-8 leading-relaxed">
+                                                Create folders to organize documents, PDFs, and files that your AI agents can search and reference during conversations.
+                                            </p>
+                                            
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8 text-left">
+                                                <div className="bg-muted/20 border border-border/50 rounded-lg p-4">
+                                                    <div className="flex items-center gap-3 mb-2">
+                                                        <div className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center">
+                                                            <FileIcon className="h-4 w-4 text-foreground/70" />
+                                                        </div>
+                                                        <h4 className="text-sm font-semibold">Smart Search</h4>
+                                                    </div>
+                                                    <p className="text-xs text-muted-foreground">Agents can intelligently search across all your documents</p>
+                                                </div>
+                                                
+                                                <div className="bg-muted/20 border border-border/50 rounded-lg p-4">
+                                                    <div className="flex items-center gap-3 mb-2">
+                                                        <div className="w-8 h-8 bg-muted rounded-lg flex items-center justify-center">
+                                                            <FolderIcon className="h-4 w-4 text-foreground/70" />
+                                                        </div>
+                                                        <h4 className="text-sm font-semibold">Organized</h4>
+                                                    </div>
+                                                    <p className="text-xs text-muted-foreground">Keep files organized by topic, project, or purpose</p>
+                                                </div>
+                                            </div>
+                                            
+                                            <Button onClick={handleCreateFolder} size="lg">
+                                                <FolderPlusIcon className="h-4 w-4 mr-2" />
+                                                Create Your First Folder
+                                            </Button>
                                         </div>
-                                        <h3 className="text-lg font-semibold mb-2">No folders yet</h3>
-                                        <p className="text-muted-foreground mb-6 max-w-sm mx-auto">
-                                            Create your first folder to start organizing your files.
-                                        </p>
-                                        <Button onClick={handleCreateFolder} size="lg">
-                                            <FolderPlusIcon className="h-4 w-4 mr-2" />
-                                            Create First Folder
-                                        </Button>
                                     </div>
                                 ) : (
                                     <div className="space-y-4">
@@ -952,7 +1019,7 @@ export function KnowledgeBasePage() {
                                                 items={[]} // No sorting - only drag files to folders
                                                 strategy={verticalListSortingStrategy}
                                             >
-                                                <div className="space-y-1">
+                                                <div className="space-y-3">
                                                     {treeData.map((item) => (
                                                         <SharedTreeItem
                                                             key={item.id}
@@ -974,6 +1041,8 @@ export function KnowledgeBasePage() {
                                                             onNativeFileDrop={handleNativeFileDrop}
                                                             uploadStatus={uploadStatus[item.id]}
                                                             validationError={editingFolder === item.id ? validationError : null}
+                                                            isLoadingEntries={loadingFolders[item.id]}
+                                                            movingFiles={movingFiles}
                                                         />
                                                     ))}
                                                 </div>
@@ -1014,12 +1083,12 @@ export function KnowledgeBasePage() {
                                         </DndContext>
                                     </div>
                                 )}
-                            </CardContent>
-                        </Card>
+                            </div>
+                        </div>
                     </div>
-                </div>
-            </div>
-
+        </div>
+    <div>
+            {/* Modals */}
             <KBDeleteConfirmDialog
                 isOpen={deleteConfirm.isOpen}
                 onClose={() => setDeleteConfirm({ isOpen: false, item: null, isDeleting: false })}
@@ -1037,5 +1106,6 @@ export function KnowledgeBasePage() {
                 onSave={handleSaveSummary}
             />
         </div>
+</div>
     );
 }
