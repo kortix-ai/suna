@@ -9,6 +9,7 @@ from core.tools.message_tool import MessageTool
 from core.tools.sb_deploy_tool import SandboxDeployTool
 from core.tools.sb_expose_tool import SandboxExposeTool
 from core.tools.web_search_tool import SandboxWebSearchTool
+from core.tools.image_search_tool import SandboxImageSearchTool
 from dotenv import load_dotenv
 from core.utils.config import config
 from core.prompts.agent_builder_prompt import get_agent_builder_prompt
@@ -591,7 +592,7 @@ class AgentRunner:
         
         all_tools = [
             'sb_shell_tool', 'sb_files_tool', 'sb_deploy_tool', 'sb_expose_tool',
-            'web_search_tool', 'sb_vision_tool', 'sb_presentation_tool', 'sb_image_edit_tool',
+            'web_search_tool', 'image_search_tool', 'sb_vision_tool', 'sb_presentation_tool', 'sb_image_edit_tool',
             'sb_sheets_tool', 'sb_web_dev_tool', 'data_providers_tool', 'browser_tool',
             'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 
             'workflow_tool', 'trigger_tool'
