@@ -499,7 +499,7 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
                 await updateTrigger.mutateAsync({
                     triggerId: existingTrigger.trigger_id,
                     name: name || `${selectedTrigger.toolkit.name} → ${executionType === 'agent' ? 'Agent' : 'Workflow'}`,
-                    description: `Event trigger for ${selectedTrigger.toolkit.name}`,
+                    description: existingTrigger.description || `Event trigger for ${selectedTrigger.toolkit.name}`,
                     config: updatedConfig,
                     is_active: true,
                 });
