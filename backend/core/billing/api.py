@@ -822,13 +822,22 @@ async def get_subscription_commitment(
     subscription_id: str,
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
-    return {
-        'has_commitment': False,
-        'can_cancel': True,
-        'commitment_type': None,
-        'months_remaining': None,
-        'commitment_end_date': None
-    }
+    try:
+        commitment_status = await subscription_service.get_commitment_status(account_id)
+        if commitment_status['has_commitment']:
+            logger.info(f"[COMMITMENT] Account {account_id} has active commitment, {commitment_status['months_remaining']} months remaining")
+        
+        return commitment_status
+        
+    except Exception as e:
+        logger.error(f"Error checking commitment status for account {account_id}: {e}")
+        return {
+            'has_commitment': False,
+            'can_cancel': True,
+            'commitment_type': None,
+            'months_remaining': None,
+            'commitment_end_date': None
+        }
 
 @router.get("/trial/status")
 async def get_trial_status(
