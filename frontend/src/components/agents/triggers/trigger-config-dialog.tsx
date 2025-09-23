@@ -134,6 +134,7 @@ export const TriggerConfigDialog: React.FC<TriggerConfigDialogProps> = ({
         open={open}
         onOpenChange={onOpenChange || onCancel}
         onSave={onSave}
+        isEditMode={!!existingConfig}
       />
     );
   }
@@ -159,6 +160,7 @@ export const TriggerConfigDialog: React.FC<TriggerConfigDialogProps> = ({
             open={open}
             onOpenChange={onOpenChange || onCancel}
             onSave={onSave}
+            isEditMode={!!existingConfig}
           />
         );
       case 'composio':
