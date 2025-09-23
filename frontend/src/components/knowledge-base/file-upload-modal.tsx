@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Upload, FileIcon, X, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
+import { Upload, FileIcon, X, CheckCircle, AlertCircle, Loader2, FolderIcon, CloudUpload, Plus, Info } from 'lucide-react';
 import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 
@@ -56,18 +56,45 @@ export function FileUploadModal({
     const [isUploading, setIsUploading] = useState(false);
     const [uploadStatuses, setUploadStatuses] = useState<FileUploadStatus[]>([]);
     const [overallProgress, setOverallProgress] = useState(0);
+    const [isDragOver, setIsDragOver] = useState(false);
 
     const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = event.target.files;
         if (files) {
             const fileArray = Array.from(files);
-            setSelectedFiles(fileArray);
-            // Initialize upload statuses
-            setUploadStatuses(fileArray.map(file => ({
+            addFiles(fileArray);
+        }
+    };
+
+    const addFiles = (newFiles: File[]) => {
+        setSelectedFiles(prev => [...prev, ...newFiles]);
+        setUploadStatuses(prev => [
+            ...prev,
+            ...newFiles.map(file => ({
                 file,
-                status: 'queued',
+                status: 'queued' as const,
                 progress: 0
-            })));
+            }))
+        ]);
+    };
+
+    const handleDragOver = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragOver(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragOver(false);
+    };
+
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragOver(false);
+        
+        const files = Array.from(e.dataTransfer.files);
+        if (files.length > 0) {
+            addFiles(files);
         }
     };
 
@@ -206,33 +233,67 @@ export function FileUploadModal({
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
             <DialogTrigger asChild>
                 {trigger || (
-                    <Button variant="outline" className="gap-2">
-                        <Upload className="h-4 w-4" />
+                    <Button className="gap-2">
+                        <CloudUpload className="h-4 w-4" />
                         Upload Files
                     </Button>
                 )}
             </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                    <DialogTitle>Upload Files to Knowledge Base</DialogTitle>
+            <DialogContent className="sm:max-w-2xl">
+                <DialogHeader className="pb-4">
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                            <CloudUpload className="h-5 w-5 text-foreground" />
+                        </div>
+                        <div>
+                            <DialogTitle className="text-xl font-semibold">Upload Files to Knowledge Base</DialogTitle>
+                            <p className="text-sm text-muted-foreground mt-1">
+                                Add documents, PDFs, and text files that your AI agents can query and reference
+                            </p>
+                        </div>
+                    </div>
                 </DialogHeader>
 
-                <div className="space-y-4">
+                <div className="space-y-6">
+                    {/* Information Section */}
+                    <div className="bg-muted/30 rounded-lg p-4 border border-border/50">
+                        <div className="flex items-start gap-3">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-muted mt-0.5">
+                                <Info className="h-4 w-4 text-muted-foreground" />
+                            </div>
+                            <div className="flex-1">
+                                <h4 className="text-sm font-medium mb-2">How Knowledge Base Works</h4>
+                                <ul className="text-xs text-muted-foreground space-y-1">
+                                    <li>• Organize files into folders by topic or purpose</li>
+                                    <li>• Agents can search and query content from these files</li>
+                                    <li>• Supports PDFs, documents, text files, and more</li>
+                                    <li>• Files are processed to enable semantic search capabilities</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Folder Selection */}
-                    <div className="space-y-2">
-                        <Label htmlFor="folder-select">Select Folder</Label>
+                    <div className="space-y-3">
+                        <Label htmlFor="folder-select" className="text-sm font-medium flex items-center gap-2">
+                            <FolderIcon className="h-4 w-4" />
+                            Destination Folder
+                        </Label>
                         <Select value={selectedFolder} onValueChange={setSelectedFolder}>
-                            <SelectTrigger>
+                            <SelectTrigger className="h-11">
                                 <SelectValue placeholder="Choose a folder..." />
                             </SelectTrigger>
                             <SelectContent>
                                 {folders.map((folder) => (
                                     <SelectItem key={folder.folder_id} value={folder.folder_id}>
-                                        <div className="flex items-center justify-between w-full">
-                                            <span>{folder.name}</span>
-                                            <span className="text-xs text-muted-foreground ml-2">
-                                                {folder.entry_count} files
-                                            </span>
+                                        <div className="flex items-center gap-3 py-1">
+                                            <FolderIcon className="h-4 w-4 text-muted-foreground" />
+                                            <div className="flex-1">
+                                                <div className="font-medium">{folder.name}</div>
+                                                <div className="text-xs text-muted-foreground">
+                                                    {folder.entry_count} files
+                                                </div>
+                                            </div>
                                         </div>
                                     </SelectItem>
                                 ))}
@@ -240,60 +301,117 @@ export function FileUploadModal({
                         </Select>
                     </div>
 
-                    {/* File Selection */}
-                    <div className="space-y-2">
-                        <Label htmlFor="file-input">Select Files</Label>
-                        <div className="relative">
-                            <Input
+                    {/* Drag & Drop Area */}
+                    <div className="space-y-3">
+                        <Label className="text-sm font-medium flex items-center gap-2">
+                            <Upload className="h-4 w-4" />
+                            Upload Files
+                        </Label>
+                        <div
+                            className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 ${
+                                isDragOver 
+                                    ? 'border-foreground bg-muted/50' 
+                                    : 'border-border hover:border-muted-foreground hover:bg-muted/30'
+                            }`}
+                            onDragOver={handleDragOver}
+                            onDragLeave={handleDragLeave}
+                            onDrop={handleDrop}
+                        >
+                            <input
                                 id="file-input"
                                 type="file"
                                 multiple
                                 onChange={handleFileSelect}
-                                className="file:mr-4 file:py-1 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-primary file:text-primary-foreground hover:file:bg-primary/90"
+                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                disabled={isUploading}
                             />
+                            <div className="flex flex-col items-center gap-3">
+                                <div className={`p-3 rounded-full transition-colors ${
+                                    isDragOver ? 'bg-muted' : 'bg-muted/50'
+                                }`}>
+                                    <CloudUpload className={`h-8 w-8 transition-colors ${
+                                        isDragOver ? 'text-foreground' : 'text-muted-foreground'
+                                    }`} />
+                                </div>
+                                <div>
+                                    <p className={`font-medium transition-colors ${
+                                        isDragOver ? 'text-foreground' : 'text-foreground'
+                                    }`}>
+                                        {isDragOver ? 'Drop files here' : 'Drag & drop files here'}
+                                    </p>
+                                    <p className="text-sm text-muted-foreground mt-1">
+                                        or <span className="text-foreground font-medium">browse files</span> to upload
+                                    </p>
+                                </div>
+                                <p className="text-xs text-muted-foreground">
+                                    Supports PDF, DOC, TXT, MD, CSV, and more • Max 50MB total
+                                </p>
+                            </div>
                         </div>
                     </div>
 
                     {/* Selected Files List with Upload Progress */}
                     {selectedFiles.length > 0 && (
-                        <div className="space-y-2">
-                            <Label>Selected Files</Label>
-                            <div className="border rounded-md p-2 max-h-40 overflow-y-auto space-y-2">
+                        <div className="space-y-3">
+                            <Label className="text-sm font-medium flex items-center gap-2">
+                                <FileIcon className="h-4 w-4" />
+                                Selected Files ({selectedFiles.length})
+                            </Label>
+                            <div className="border rounded-lg p-4 max-h-48 overflow-y-auto space-y-3 bg-muted/20">
                                 {uploadStatuses.map((status, index) => (
-                                    <div key={index} className="space-y-1">
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                                                <FileIcon className="h-4 w-4 flex-shrink-0" />
-                                                <span className="text-sm truncate">{status.file.name}</span>
-                                                <span className="text-xs text-muted-foreground flex-shrink-0">
-                                                    {formatFileSize(status.file.size)}
-                                                </span>
+                                    <div key={index} className="space-y-2">
+                                        <div className="flex items-center gap-3 p-3 bg-background rounded-lg border">
+                                            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted">
+                                                <FileIcon className="h-5 w-5 text-foreground" />
                                             </div>
-                                            <div className="flex items-center gap-2">
-                                                {status.status === 'uploading' && (
-                                                    <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-                                                )}
-                                                {status.status === 'success' && (
-                                                    <CheckCircle className="h-4 w-4 text-green-500" />
-                                                )}
-                                                {status.status === 'error' && (
-                                                    <AlertCircle className="h-4 w-4 text-red-500" />
-                                                )}
-                                                {status.status === 'queued' && !isUploading && (
-                                                    <Button
-                                                        variant="ghost"
-                                                        size="sm"
-                                                        onClick={() => removeFile(index)}
-                                                        className="h-6 w-6 p-0 hover:bg-destructive hover:text-destructive-foreground"
-                                                    >
-                                                        <X className="h-3 w-3" />
-                                                    </Button>
-                                                )}
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center justify-between">
+                                                    <p className="text-sm font-medium truncate">{status.file.name}</p>
+                                                    <div className="flex items-center gap-2 ml-2">
+                                                        {status.status === 'uploading' && (
+                                                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                                        )}
+                                                        {status.status === 'success' && (
+                                                            <CheckCircle className="h-4 w-4 text-foreground" />
+                                                        )}
+                                                        {status.status === 'error' && (
+                                                            <AlertCircle className="h-4 w-4 text-foreground" />
+                                                        )}
+                                                        {status.status === 'queued' && !isUploading && (
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                onClick={() => removeFile(index)}
+                                                                className="h-7 w-7 p-0 hover:bg-destructive hover:text-destructive-foreground"
+                                                            >
+                                                                <X className="h-4 w-4" />
+                                                            </Button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center justify-between mt-1">
+                                                    <span className="text-xs text-muted-foreground">
+                                                        {formatFileSize(status.file.size)}
+                                                    </span>
+                                                    <span className={`text-xs font-medium ${
+                                                        status.status === 'success' ? 'text-foreground' :
+                                                        status.status === 'error' ? 'text-foreground' :
+                                                        status.status === 'uploading' ? 'text-foreground' :
+                                                        'text-muted-foreground'
+                                                    }`}>
+                                                        {status.status === 'success' ? 'Uploaded' :
+                                                         status.status === 'error' ? 'Failed' :
+                                                         status.status === 'uploading' ? 'Uploading...' :
+                                                         'Ready'}
+                                                    </span>
+                                                </div>
                                             </div>
                                         </div>
                                         {/* Error message */}
                                         {status.status === 'error' && status.error && (
-                                            <p className="text-xs text-red-500 mt-1">{status.error}</p>
+                                            <div className="ml-13 bg-muted/30 border border-border rounded-lg p-3">
+                                                <p className="text-xs text-muted-foreground">{status.error}</p>
+                                            </div>
                                         )}
                                     </div>
                                 ))}

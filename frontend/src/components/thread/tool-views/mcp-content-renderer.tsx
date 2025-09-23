@@ -1,6 +1,6 @@
 import React from 'react';
 import { ContentFormat, FormatDetectionResult } from './mcp-format-detector';
-import { MarkdownRenderer } from '@/components/file-renderers/markdown-renderer';
+import { Markdown } from '@/components/ui/markdown';
 import { CsvRenderer } from '@/components/thread/preview-renderers/csv-renderer';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
@@ -361,7 +361,7 @@ export function MCPContentRenderer({ detectionResult, rawContent }: MCPContentRe
               Markdown Content
             </span>
           </div>
-          <MarkdownRenderer content={contentStr} />
+          <Markdown>{contentStr}</Markdown>
         </div>
       );
 
