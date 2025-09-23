@@ -14,6 +14,8 @@ from .config import (
     get_monthly_credits,
     TRIAL_DURATION_DAYS,
     TRIAL_CREDITS,
+    is_commitment_price_id,
+    get_commitment_duration_months
 )
 from .credit_manager import credit_manager
 
@@ -264,6 +266,15 @@ class WebhookService:
                    f"has_payment={bool(subscription.get('default_payment_method'))}")
         logger.info(f"[WEBHOOK] Previous attributes: {previous_attributes}")
         logger.info(f"[WEBHOOK] Account ID from metadata: {subscription.metadata.get('account_id')}")
+        
+        # Track commitment if price changed to a commitment plan
+        price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
+        prev_price_id = previous_attributes.get('items', {}).get('data', [{}])[0].get('price', {}).get('id') if previous_attributes.get('items') else None
+        
+        if price_id and price_id != prev_price_id and is_commitment_price_id(price_id):
+            account_id = subscription.metadata.get('account_id')
+            if account_id:
+                await self._track_commitment(account_id, price_id, subscription, client)
         
         if subscription.status == 'trialing' and subscription.get('default_payment_method') and not prev_default_payment:
             account_id = subscription.metadata.get('account_id')
@@ -738,6 +749,34 @@ class WebhookService:
         
         except Exception as e:
             logger.error(f"Error handling subscription renewal: {e}")
+
+
+    async def _track_commitment(self, account_id: str, price_id: str, subscription: Dict, client):
+        commitment_duration = get_commitment_duration_months(price_id)
+        if commitment_duration == 0:
+            return
+        
+        start_date = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
+        end_date = start_date + timedelta(days=365)
+        
+        await client.from_('credit_accounts').update({
+            'commitment_type': 'yearly_commitment',
+            'commitment_start_date': start_date.isoformat(),
+            'commitment_end_date': end_date.isoformat(),
+            'commitment_price_id': price_id,
+            'can_cancel_after': end_date.isoformat()
+        }).eq('account_id', account_id).execute()
+        
+        await client.from_('commitment_history').upsert({
+            'account_id': account_id,
+            'commitment_type': 'yearly_commitment',
+            'price_id': price_id,
+            'start_date': start_date.isoformat(),
+            'end_date': end_date.isoformat(),
+            'stripe_subscription_id': subscription['id']
+        }, on_conflict='account_id,stripe_subscription_id').execute()
+        
+        logger.info(f"[WEBHOOK COMMITMENT] Tracked yearly commitment for account {account_id}, ends {end_date.date()}")
 
 
 webhook_service = WebhookService() 
