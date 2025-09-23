@@ -58,6 +58,16 @@ class FolderResponse(BaseModel):
     entry_count: int
     created_at: str
 
+async def get_user_account_id(client, user_id: str) -> str:
+    """Get account_id for a user from the account_user table"""
+    account_user_result = await client.schema('basejump').from_('account_user').select('account_id').eq('user_id', user_id).execute()
+    
+    if not account_user_result.data or len(account_user_result.data) == 0:
+        raise HTTPException(status_code=404, detail="User account not found")
+    
+    return account_user_result.data[0]['account_id']
+
+
 @router.get("/folders", response_model=List[FolderResponse])
 async def get_folders(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
@@ -67,11 +77,7 @@ async def get_folders(
         client = await db.client
         
         # Get current account_id from user
-        user_result = await client.from_("profiles").select("account_id").eq("id", user_id).single().execute()
-        if not user_result.data:
-            raise HTTPException(status_code=404, detail="User profile not found")
-        
-        account_id = user_result.data["account_id"]
+        account_id = await get_user_account_id(client, user_id)
         
         # Get folders for this account
         result = await client.from_("knowledge_base_folders").select("*").eq("account_id", account_id).order("created_at", desc=True).execute()
@@ -104,11 +110,7 @@ async def create_folder(
         client = await db.client
         
         # Get current account_id from user
-        user_result = await client.from_("profiles").select("account_id").eq("id", user_id).single().execute()
-        if not user_result.data:
-            raise HTTPException(status_code=404, detail="User profile not found")
-        
-        account_id = user_result.data["account_id"]
+        account_id = await get_user_account_id(client, user_id)
         
         # Create folder
         result = await client.from_("knowledge_base_folders").insert({
@@ -155,8 +157,8 @@ async def update_folder(
             raise HTTPException(status_code=404, detail="Folder not found")
         
         # Get current account_id from user
-        user_result = await client.from_("profiles").select("account_id").eq("id", user_id).single().execute()
-        if not user_result.data or user_result.data["account_id"] != folder_result.data["account_id"]:
+        user_account_id = await get_user_account_id(client, user_id)
+        if user_account_id != folder_result.data["account_id"]:
             raise HTTPException(status_code=403, detail="Access denied")
         
         # Update folder
@@ -198,8 +200,8 @@ async def get_folder_entries(
             raise HTTPException(status_code=404, detail="Folder not found")
         
         # Get current account_id from user
-        user_result = await client.from_("profiles").select("account_id").eq("id", user_id).single().execute()
-        if not user_result.data or user_result.data["account_id"] != folder_result.data["account_id"]:
+        user_account_id = await get_user_account_id(client, user_id)
+        if user_account_id != folder_result.data["account_id"]:
             raise HTTPException(status_code=403, detail="Access denied")
         
         # Get entries
@@ -774,4 +776,47 @@ async def update_agent_assignments(
     except Exception as e:
         logger.error(f"Error updating agent assignments for {agent_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to update agent assignments")
+
+
+@router.get("/entries/{entry_id}/download")
+async def download_file(
+    entry_id: str,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    """Download the actual file content from S3"""
+    try:
+        client = await db.client
+        
+        # Get the entry from knowledge_base_entries table
+        result = await client.from_("knowledge_base_entries").select("file_path, filename, mime_type, account_id").eq("entry_id", entry_id).single().execute()
+        
+        if not result.data:
+            raise HTTPException(status_code=404, detail="File not found")
+        
+        entry = result.data
+        
+        # Verify user has access to this entry (check account_id)
+        user_account_id = await get_user_account_id(client, user_id)
+        if user_account_id != entry['account_id']:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Get file content from S3
+        file_response = await client.storage.from_('file-uploads').download(entry['file_path'])
+        
+        if not file_response:
+            raise HTTPException(status_code=404, detail="File content not found in storage")
+        
+        # For text files, return as text
+        if entry['mime_type'] and entry['mime_type'].startswith('text/'):
+            return {"content": file_response.decode('utf-8'), "is_binary": False}
+        else:
+            # For binary files (including PDFs), return base64 encoded content
+            import base64
+            return {"content": base64.b64encode(file_response).decode('utf-8'), "is_binary": True}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error downloading file {entry_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to download file")
 
