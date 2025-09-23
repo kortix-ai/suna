@@ -812,6 +812,8 @@ async def create_composio_trigger(req: CreateComposioTriggerRequest, current_use
             "qualified_name": qualified_name,  # Store the qualified_name for template export
             "execution_type": req.route if req.route in ("agent", "workflow") else "agent",
             "profile_id": req.profile_id,
+            # Include the actual trigger configuration (interval, etc.)
+            **coerced_config,
         }
         if suna_config["execution_type"] == "agent":
             if req.agent_prompt:
