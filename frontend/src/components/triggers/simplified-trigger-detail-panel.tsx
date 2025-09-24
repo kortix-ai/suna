@@ -26,7 +26,7 @@ import {
 import Link from 'next/link';
 import { TriggerWithAgent } from '@/hooks/react-query/triggers/use-all-triggers';
 import { useDeleteTrigger, useToggleTrigger, useUpdateTrigger } from '@/hooks/react-query/triggers';
-import { TriggerConfigDialog } from '@/components/agents/triggers/trigger-config-dialog';
+import { TriggerCreationDialog } from './trigger-creation-dialog';
 import { useAgentWorkflows } from '@/hooks/react-query/agents/use-agent-workflows';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -334,16 +334,14 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
 
       {/* Edit Dialog */}
       {showEditDialog && (
-        <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-          <TriggerConfigDialog
-            provider={provider}
-            existingConfig={triggerConfig}
-            onSave={handleEditSave}
-            onCancel={() => setShowEditDialog(false)}
-            isLoading={updateMutation.isPending}
-            agentId={trigger.agent_id}
-          />
-        </Dialog>
+        <TriggerCreationDialog
+          open={showEditDialog}
+          onOpenChange={setShowEditDialog}
+          type={isScheduled ? 'schedule' : 'event'}
+          isEditMode={true}
+          existingTrigger={triggerConfig}
+          onTriggerUpdated={handleEditSave}
+        />
       )}
 
       {/* Delete Dialog */}

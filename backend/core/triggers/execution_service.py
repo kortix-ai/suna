@@ -583,7 +583,8 @@ class WorkflowExecutor:
             'sb_expose_tool': ['expose_port'],
             'web_search_tool': ['web_search'],
             'data_providers_tool': ['get_data_provider_endpoints', 'execute_data_provider_call'],
-            'people_search_tool': ['people_search']
+            'people_search_tool': ['people_search'],
+            'image_search_tool': ['image_search'],
         }
         
         for tool_key, tool_names in tool_mapping.items():
