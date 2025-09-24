@@ -231,7 +231,7 @@ export const MarkdownRenderer = forwardRef<
             ),
             img: ({ node, ...props }) => (
               <AuthenticatedImage
-                src={props.src || ''}
+                src={typeof props.src === 'string' ? props.src : ''}
                 alt={props.alt || ''}
                 className="max-w-full h-auto rounded-md my-2"
                 project={project}

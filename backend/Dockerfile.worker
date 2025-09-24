@@ -1,0 +1,19 @@
+FROM ghcr.io/astral-sh/uv:python3.11-alpine
+
+ENV ENV_MODE production
+WORKDIR /app
+
+RUN apk add --no-cache curl git
+
+# Install Python dependencies
+COPY pyproject.toml ./
+ENV UV_LINK_MODE=copy
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --quiet
+
+# Copy application code
+COPY . .
+
+ENV PYTHONPATH=/app
+
+# Default command for worker
+CMD ["uv", "run", "dramatiq", "--skip-logging", "--processes", "2", "--threads", "2", "run_agent_background"]

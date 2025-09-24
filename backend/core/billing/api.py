@@ -282,8 +282,8 @@ async def get_credit_balance(
     
     if result.data and len(result.data) > 0:
         account = result.data[0]
-        tier_name = account.get('tier', 'none')
-        trial_status = account.get('trial_status')
+        tier_name = account.get('tier', 'free')
+        trial_status = account.get('trial_status', 'none')
         trial_ends_at = account.get('trial_ends_at')
         tier_info = get_tier_by_name(tier_name)
         
@@ -294,11 +294,11 @@ async def get_credit_balance(
             'expiring_credits': float(account.get('expiring_credits', 0)),
             'non_expiring_credits': float(account.get('non_expiring_credits', 0)),
             'tier': tier_name,
-            'tier_display_name': tier_info.display_name if tier_info else 'No Plan',
+            'tier_display_name': tier_info.display_name if tier_info else 'Free Plan',
             'is_trial': is_trial,
             'trial_status': trial_status,
             'trial_ends_at': trial_ends_at,
-            'can_purchase_credits': tier_info.can_purchase_credits if tier_info else False,
+            'can_purchase_credits': tier_info.can_purchase_credits if tier_info else True,
             'next_credit_grant': account.get('next_credit_grant'),
             'breakdown': {
                 'expiring': float(account.get('expiring_credits', 0)),
@@ -311,12 +311,12 @@ async def get_credit_balance(
         'balance': 0.0,
         'expiring_credits': 0.0,
         'non_expiring_credits': 0.0,
-        'tier': 'none',
-        'tier_display_name': 'No Plan',
+        'tier': 'free',
+        'tier_display_name': 'Free Plan',
         'is_trial': False,
-        'trial_status': None,
+        'trial_status': 'none',
         'trial_ends_at': None,
-        'can_purchase_credits': False,
+        'can_purchase_credits': True,
         'next_credit_grant': None,
         'breakdown': {
             'expiring': 0.0,

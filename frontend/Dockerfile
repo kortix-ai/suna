@@ -25,7 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN \
   if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
-  elif [ -f package-lock.json ]; then npm ci; \
+  elif [ -f package-lock.json ]; then npm install --legacy-peer-deps; \
   elif [ -f pnpm-lock.yaml ]; then corepack enable pnpm && pnpm i --frozen-lockfile; \
   else echo "Lockfile not found." && exit 1; \
   fi
@@ -34,6 +34,25 @@ RUN \
 # ---- Builder Stage ----
 FROM base AS builder
 WORKDIR /app
+
+# Accept build arguments for environment variables
+ARG NEXT_PUBLIC_BACKEND_URL
+ARG NEXT_PUBLIC_URL
+ARG NEXT_PUBLIC_ENV_MODE
+ARG NEXT_PUBLIC_SUPABASE_URL
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+ARG NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+ARG KORTIX_ADMIN_API_KEY
+
+# Set environment variables from build args
+ENV NEXT_PUBLIC_BACKEND_URL=$NEXT_PUBLIC_BACKEND_URL
+ENV NEXT_PUBLIC_URL=$NEXT_PUBLIC_URL
+ENV NEXT_PUBLIC_ENV_MODE=$NEXT_PUBLIC_ENV_MODE
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=$NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+ENV KORTIX_ADMIN_API_KEY=$KORTIX_ADMIN_API_KEY
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
@@ -60,7 +79,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-COPY --from=builder /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
 # Automatically leverage output traces to reduce image size
 # https://nextjs.org/docs/advanced-features/output-file-tracing

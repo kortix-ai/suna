@@ -27,7 +27,7 @@ export function LoadingState({
   progressText,
   autoProgress = true,
   initialProgress = 0,
-}: LoadingStateProps): JSX.Element {
+}: LoadingStateProps): React.ReactElement {
   const [progress, setProgress] = useState(initialProgress);
 
   useEffect(() => {

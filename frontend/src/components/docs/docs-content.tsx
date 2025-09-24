@@ -55,7 +55,7 @@ export const DocsContent = () => {
               </div>
               
               <h1 className="text-3xl lg:text-5xl font-bold mb-4 bg-gradient-to-r from-foreground to-foreground/60 bg-clip-text text-transparent">
-                Welcome to Suna
+                Welcome to Kusor
               </h1>
               
               <p className="text-lg lg:text-xl text-muted-foreground leading-relaxed max-w-3xl">

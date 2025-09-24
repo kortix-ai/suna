@@ -130,6 +130,24 @@ TIERS: Dict[str, Tier] = {
         models=['all'],
         project_limit=25000
     ),
+    'admin': Tier(
+        name='admin',
+        price_ids=[],
+        monthly_credits=Decimal('999999.00'),  # Unlimited credits
+        display_name='Admin',
+        can_purchase_credits=True,
+        models=['all'],
+        project_limit=999999  # Unlimited projects
+    ),
+    'owner': Tier(
+        name='owner',
+        price_ids=[],
+        monthly_credits=Decimal('999999.00'),  # Unlimited credits
+        display_name='Owner',
+        can_purchase_credits=True,
+        models=['all'],
+        project_limit=999999  # Unlimited projects
+    ),
 }
 
 CREDIT_PACKAGES = [
@@ -171,6 +189,9 @@ def is_model_allowed(tier_name: str, model: str) -> bool:
     return model in tier.models
 
 def get_project_limit(tier_name: str) -> int:
+    # Admin and owner tiers have unlimited access
+    if tier_name in {"admin", "owner"}:
+        return 999999  # Unlimited projects
     tier = TIERS.get(tier_name)
     return tier.project_limit if tier else 3
 

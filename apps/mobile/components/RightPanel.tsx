@@ -301,7 +301,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({ isVisible, onClose, mess
                 <View style={styles.header}>
                     <View style={styles.headerLeft}>
                         <Computer size={16} color={styles.title.color} />
-                        <H4 style={styles.title}>Suna&apos;s Computer</H4>
+                        <H4 style={styles.title}>Kusor&apos;s Computer</H4>
                     </View>
                     <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
                         <X size={16} color={styles.title.color} />
@@ -327,7 +327,7 @@ export const RightPanel: React.FC<RightPanelProps> = ({ isVisible, onClose, mess
         <View style={styles.panel}>
             <View style={styles.header}>
                 <View style={styles.headerLeft}>
-                    <H4 style={styles.title}>Suna&apos;s Computer</H4>
+                    <H4 style={styles.title}>Kusor&apos;s Computer</H4>
                 </View>
 
                 <View style={styles.headerActions}>

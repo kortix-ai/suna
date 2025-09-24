@@ -1,0 +1,37 @@
+{
+  "name": "suna",
+  "version": "1.0.0",
+  "description": "Suna - Open Source Generalist AI Agent",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "apps/mobile",
+    "backend",
+    "sdk"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && python -m uvicorn api:app --reload --host 0.0.0.0 --port 8000",
+    "dev:mobile": "cd apps/mobile && npx expo start",
+    "install:all": "npm install && cd frontend && npm install && cd ../apps/mobile && npm install && cd ../../backend && pip install -e .",
+    "build": "cd frontend && npm run build",
+    "start": "python start.py"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "dependencies": {
+    "react-native-svg": "15.12.1"
+  },
+  "overrides": {
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "@types/react": "19.1.13",
+    "@types/react-dom": "19.1.5"
+  }
+}

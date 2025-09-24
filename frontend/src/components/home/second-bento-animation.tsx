@@ -7,11 +7,11 @@ export function SecondBentoAnimation() {
       <div className="pointer-events-none absolute bottom-0 left-0 h-20 w-full bg-gradient-to-t from-background to-transparent z-20"></div>
       <div className="pointer-events-none absolute top-0 left-0 h-20 w-full bg-gradient-to-b from-background to-transparent z-20"></div>
 
-      <div className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 flex items-center justify-center gap-2 size-16 bg-black p-2 rounded-full z-30 md:bottom-0 md:top-auto">
+      <div className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 flex items-center justify-center gap-2 size-20 bg-white p-3 rounded-full z-30 md:bottom-0 md:top-auto shadow-lg border border-border">
         <img 
-          src="/kortix-symbol.svg" 
-          alt="Kortix Symbol" 
-          className="size-10 filter brightness-0 invert"
+          src="/kusor-2.png" 
+          alt="Kusor Logo" 
+          className="size-12"
         />
       </div>
       <div className="relative flex h-full w-full items-center justify-center overflow-hidden">
@@ -48,10 +48,10 @@ export function SecondBentoAnimation() {
               <img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" alt="WhatsApp" className="size-8" />
             </div>
             <div className="size-12 bg-white rounded-full flex items-center justify-center shadow-lg border border-gray-100">
-              <img src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Logo_TV_2015.svg" alt="Trello" className="size-8" />
+              <div className="size-8 bg-blue-500 rounded flex items-center justify-center text-white font-bold text-xs">T</div>
             </div>
             <div className="size-12 bg-white rounded-full flex items-center justify-center shadow-lg border border-gray-100">
-              <img src="https://upload.wikimedia.org/wikipedia/commons/0/05/Google_Sheets_icon_%282020%29.svg" alt="Google Sheets" className="size-8" />
+              <div className="size-8 bg-green-500 rounded flex items-center justify-center text-white font-bold text-xs">G</div>
             </div>
           </OrbitingCircles>
 
@@ -93,7 +93,7 @@ export function SecondBentoAnimation() {
               <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e1/Google_Chrome_icon_%28February_2022%29.svg/480px-Google_Chrome_icon_%28February_2022%29.svg.png" alt="Chrome" className="size-6" />
             </div>
             <div className="size-10 bg-white rounded-full flex items-center justify-center shadow-md border border-gray-100 opacity-75">
-              <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/5/5f/Twitter_bird_logo_2012.svg/512px-Twitter_bird_logo_2012.svg.png" alt="Twitter" className="size-6" />
+              <div className="size-6 bg-blue-400 rounded flex items-center justify-center text-white font-bold text-xs">T</div>
             </div>
             <div className="size-10 bg-white rounded-full flex items-center justify-center shadow-md border border-gray-100 opacity-75">
               <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Instagram_icon.png/600px-Instagram_icon.png" alt="Instagram" className="size-6" />
@@ -102,7 +102,7 @@ export function SecondBentoAnimation() {
               <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/0/05/Facebook_Logo_%282019%29.png/600px-Facebook_Logo_%282019%29.png" alt="Facebook" className="size-6" />
             </div>
             <div className="size-10 bg-white rounded-full flex items-center justify-center shadow-md border border-gray-100 opacity-75">
-              <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/9/95/Zoom_Icon.png/600px-Zoom_Icon.png" alt="Zoom" className="size-6" />
+              <div className="size-6 bg-blue-600 rounded flex items-center justify-center text-white font-bold text-xs">Z</div>
             </div>
             <div className="size-10 bg-white rounded-full flex items-center justify-center shadow-md border border-gray-100 opacity-75">
               <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/Dropbox_Icon.svg/480px-Dropbox_Icon.svg.png" alt="Dropbox" className="size-6" />

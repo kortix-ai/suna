@@ -16,6 +16,7 @@ import {
 } from '@/api/chat-api';
 import { projectKeys } from '@/api/project-api';
 import { createSupabaseClient } from '@/constants/SupabaseConfig';
+import { useAgentSettingsStore } from '@/stores/agent-settings-store';
 import { useNewChatSessionKey, useSetIsGenerating, useUpdateNewChatProject } from '@/stores/ui-store';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -442,6 +443,8 @@ export const useChatSession = (projectId: string) => {
     const stopAgentMutation = useStopAgent();
     const setIsGenerating = useSetIsGenerating();
     const updateNewChatProject = useUpdateNewChatProject();
+    const selectedModel = useAgentSettingsStore((state) => state.selectedModel);
+    const selectedAgentId = useAgentSettingsStore((state) => state.selectedAgentId);
 
     // EXACT FRONTEND PATTERN - Stream message handler
     const handleNewMessageFromStream = useCallback((message: Message) => {
@@ -575,7 +578,9 @@ export const useChatSession = (projectId: string) => {
                 const result = await initiateAgent(content.trim(), {
                     stream: true,
                     enable_context_manager: true,
-                    files: files
+                    files: files,
+                    model_name: selectedModel,
+                    agent_id: selectedAgentId ?? undefined,
                 });
 
                 setThreadId(result.thread_id);
@@ -591,6 +596,10 @@ export const useChatSession = (projectId: string) => {
                     });
                     const result = await startAgentMutation.mutateAsync({
                         threadId: newThread.thread_id,
+                        options: {
+                            model_name: selectedModel,
+                            agent_id: selectedAgentId ?? undefined,
+                        },
                     });
                     agentStream.startStreaming(result.agent_run_id);
                 } else {
@@ -600,6 +609,10 @@ export const useChatSession = (projectId: string) => {
                     });
                     const agentPromise = startAgentMutation.mutateAsync({
                         threadId: currentThreadId,
+                        options: {
+                            model_name: selectedModel,
+                            agent_id: selectedAgentId ?? undefined,
+                        },
                     });
                     const results = await Promise.allSettled([messagePromise, agentPromise]);
 

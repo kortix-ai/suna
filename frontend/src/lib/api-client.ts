@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/client';
 import { handleApiError, handleNetworkError, ErrorContext, ApiError } from './error-handler';
+import { authErrorHandler } from './auth-error-handler';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
@@ -96,6 +97,17 @@ export const apiClient = {
         } catch {
         }
 
+        // Handle authentication errors specifically
+        if (response.status === 401) {
+          // Check if session is still valid
+          const { data: { session: currentSession } } = await supabase.auth.getSession();
+          if (!currentSession) {
+            errorMessage = 'Session expired. Please sign in again.';
+          } else {
+            errorMessage = 'Authentication failed. Please refresh the page.';
+          }
+        }
+
         // Create a custom error object to avoid read-only property issues
         const error: ApiError = Object.assign(Object.create(Error.prototype), {
           message: errorMessage,
@@ -105,6 +117,11 @@ export const apiClient = {
           details: errorData || undefined,
           code: errorData?.code || response.status.toString()
         });
+
+        // Handle authentication errors specifically
+        if (authErrorHandler.isAuthError(error)) {
+          await authErrorHandler.handleAuthError(error);
+        }
 
         if (showErrors) {
           handleApiError(error, errorContext);

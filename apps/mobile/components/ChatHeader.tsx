@@ -30,7 +30,7 @@ export const ChatHeader: React.FC<ChatHeaderProps> = ({
             </TouchableOpacity>
 
             <H6 style={{ color: theme.foreground }}>
-                {selectedProject?.name || 'Suna'}
+                {selectedProject?.name || 'Kusor'}
             </H6>
 
             <TouchableOpacity style={styles.button} onPress={onSettingsPress}>

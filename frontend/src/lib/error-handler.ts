@@ -14,7 +14,12 @@ export interface ErrorContext {
   silent?: boolean;
 }
 
-const getStatusMessage = (status: number): string => {
+const getStatusMessage = (status: number, errorMessage?: string): string => {
+  // Check for specific API key related errors
+  if (errorMessage?.toLowerCase().includes('api key') || errorMessage?.toLowerCase().includes('invalid key')) {
+    return 'Authentication issue detected. Please refresh the page or sign in again.';
+  }
+
   switch (status) {
     case 400:
       return 'Invalid request. Please check your input and try again.';
@@ -64,11 +69,11 @@ const extractErrorMessage = (error: any): string => {
 
   if (error?.response) {
     const status = error.response.status;
-    return getStatusMessage(status);
+    return getStatusMessage(status, error.message);
   }
 
   if (error?.status) {
-    return getStatusMessage(error.status);
+    return getStatusMessage(error.status, error.message);
   }
 
   if (typeof error === 'string') {
@@ -139,7 +144,17 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   const rawMessage = extractErrorMessage(error);
   const formattedMessage = formatErrorMessage(rawMessage, context);
 
-  if (error?.status >= 500) {
+  // Handle authentication errors with specific guidance
+  if (error?.status === 401 || rawMessage.toLowerCase().includes('api key') || rawMessage.toLowerCase().includes('invalid key')) {
+    toast.error(formattedMessage, {
+      description: 'Please refresh the page or sign in again to continue.',
+      duration: 6000,
+      action: {
+        label: 'Refresh',
+        onClick: () => window.location.reload(),
+      },
+    });
+  } else if (error?.status >= 500) {
     toast.error(formattedMessage, {
       description: 'Our team has been notified and is working on a fix.',
       duration: 6000,

@@ -406,7 +406,7 @@ export const LeftPanel: React.FC<LeftPanelProps> = ({ isVisible, onClose }) => {
     return (
         <View style={styles.panel}>
             <View style={styles.header}>
-                <H3 style={styles.title}>Suna</H3>
+                <H3 style={styles.title}>Kusor</H3>
                 <TouchableOpacity
                     onPress={() => {
                         console.log('[LeftPanel] Starting new chat from pen button');

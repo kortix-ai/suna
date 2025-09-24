@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kusor-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kusor-worker
+  template:
+    metadata:
+      labels:
+        app: kusor-worker
+    spec:
+      containers:
+      - name: worker
+        image: kusorregistry.azurecr.io/kusor-backend:latest
+        command: ["uv", "run", "dramatiq", "--skip-logging", "--processes", "2", "--threads", "2", "run_agent_background"]
+        env:
+        - name: REDIS_URL
+          value: "redis://:zQt3YUbKtXltsXOwPv65Ydt7wvRr2HI7IAzCaA8fGEs=@kusor-redis.redis.cache.windows.net:6379"
+        - name: SUPABASE_URL
+          value: "https://bzimzrdxrbdhvovahhtc.supabase.co"
+        - name: SUPABASE_SERVICE_KEY
+          value: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6aW16cmR4cmJkaHZvdmFoaHRjIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc1NTc2MjY4NCwiZXhwIjoyMDcxMzM4Njg0fQ.a1y-C3-ak12Hyu3w9E8QJVMWZSq1SZ73eI2oRGcxz2U"
+        - name: ENV_MODE
+          value: "production"
+        - name: OPENAI_API_KEY
+          value: "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"
+        resources:
+          requests:
+            cpu: 1
+            memory: 2Gi
+          limits:
+            cpu: 1
+            memory: 2Gi

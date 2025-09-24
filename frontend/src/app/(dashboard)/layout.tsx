@@ -1,4 +1,5 @@
 import DashboardLayoutContent from '@/components/dashboard/layout-content';
+import ErrorBoundary from '@/components/ErrorBoundary';
 
 interface DashboardLayoutProps {
   children: React.ReactNode;
@@ -7,5 +8,9 @@ interface DashboardLayoutProps {
 export default function DashboardLayout({
   children,
 }: DashboardLayoutProps) {
-  return <DashboardLayoutContent>{children}</DashboardLayoutContent>;
+  return (
+    <ErrorBoundary>
+      <DashboardLayoutContent>{children}</DashboardLayoutContent>
+    </ErrorBoundary>
+  );
 }

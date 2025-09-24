@@ -76,6 +76,7 @@ export function SidebarLeft({
 }: React.ComponentProps<typeof Sidebar>) {
   const { state, setOpen, setOpenMobile } = useSidebar();
   const isMobile = useIsMobile();
+  const isExpanded = state !== 'collapsed';
   const [user, setUser] = useState<{
     name: string;
     email: string;
@@ -156,24 +157,29 @@ export function SidebarLeft({
       {...props}
     >
       <SidebarHeader className="px-2 py-2">
-        <div className="flex h-[40px] items-center px-1 relative">
-          <Link href="/dashboard" className="flex-shrink-0" onClick={() => isMobile && setOpenMobile(false)}>
-            <KortixLogo size={24} />
-          </Link>
-          {state !== 'collapsed' && (
-            <div className="ml-2 transition-all duration-200 ease-in-out whitespace-nowrap">
-            </div>
+        <div
+          className={cn(
+            'relative flex items-center justify-center px-2 transition-all duration-200 ease-in-out',
+            isExpanded ? 'h-[96px] w-full' : 'h-12',
           )}
-          <div className="ml-auto flex items-center gap-2">
-            {state !== 'collapsed' && !isMobile && (
+        >
+          <Link
+            href="/dashboard"
+            className="flex-shrink-0"
+            onClick={() => isMobile && setOpenMobile(false)}
+          >
+            <KortixLogo size={isExpanded ? 96 : 64} />
+          </Link>
+          {isExpanded && !isMobile && (
+            <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-2">
               <Tooltip>
                 <TooltipTrigger asChild>
                   <SidebarTrigger className="h-8 w-8" />
                 </TooltipTrigger>
                 <TooltipContent>Toggle sidebar (CMD+B)</TooltipContent>
               </Tooltip>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </SidebarHeader>
       <SidebarContent className="[&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">

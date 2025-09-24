@@ -6,8 +6,8 @@ import { siteConfig } from '@/lib/home';
 import { cn } from '@/lib/utils';
 import { Menu, X } from 'lucide-react';
 import { AnimatePresence, motion, useScroll } from 'motion/react';
-import Link from 'next/link';
 import Image from 'next/image';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
 import { useAuth } from '@/components/AuthProvider';
@@ -29,7 +29,7 @@ const drawerVariants = {
     y: 0,
     rotate: 0,
     transition: {
-      type: 'spring',
+      type: 'spring' as const,
       damping: 15,
       stiffness: 200,
       staggerChildren: 0.03,
@@ -131,7 +131,14 @@ export function Navbar() {
             {/* Left Section - Logo */}
             <div className="flex items-center justify-start flex-shrink-0 w-auto md:w-[200px]">
               <Link href="/" className="flex items-center gap-3">
-                <span className="text-xl font-bold text-primary">Kusor</span>
+                <Image
+                  src="/kusor.png"
+                  alt="Kusor Logo"
+                  width={500}
+                  height={200}
+                  className="h-30 w-auto"
+                  priority
+                />
               </Link>
             </div>
 
@@ -202,7 +209,14 @@ export function Navbar() {
               <div className="flex flex-col gap-4">
                 <div className="flex items-center justify-between">
                   <Link href="/" className="flex items-center gap-3">
-                    <span className="text-xl font-bold text-primary">Kusor</span>
+                    <Image
+                      src="/kusor.png"
+                      alt="Kusor Logo"
+                      width={500}
+                      height={200}
+                      className="h-20 w-auto"
+                      priority
+                    />
                   </Link>
                   <button
                     onClick={toggleDrawer}

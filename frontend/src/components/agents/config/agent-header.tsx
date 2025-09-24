@@ -97,7 +97,7 @@ export function AgentHeader({
     if (editName !== displayData.name) {
       if (!isNameEditable && isSunaAgent) {
         toast.error("Name cannot be edited", {
-          description: "Suna's name is managed centrally and cannot be changed.",
+          description: "Kusor's name is managed centrally and cannot be changed.",
         });
         setEditName(displayData.name);
         setIsEditing(false);

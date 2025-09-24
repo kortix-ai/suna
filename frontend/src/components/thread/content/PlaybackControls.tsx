@@ -36,9 +36,9 @@ export interface PlaybackState {
 export interface PlaybackController {
   playbackState: PlaybackState;
   updatePlaybackState: (updates: Partial<PlaybackState>) => void;
-  renderHeader: () => JSX.Element;
-  renderFloatingControls: () => JSX.Element;
-  renderWelcomeOverlay: () => JSX.Element;
+  renderHeader: () => React.ReactElement;
+  renderFloatingControls: () => React.ReactElement;
+  renderWelcomeOverlay: () => React.ReactElement;
   togglePlayback: () => void;
   resetPlayback: () => void;
   skipToEnd: () => void;

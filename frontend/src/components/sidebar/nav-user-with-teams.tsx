@@ -338,14 +338,15 @@ export function NavUserWithTeams({
                     </Link>
                   </DropdownMenuItem>
                 )}
-                {(
+                {/* API Admin section hidden */}
+                {/* {(
                   <DropdownMenuItem asChild>
                     <Link href="/settings/api-keys">
                       <Key className="h-4 w-4" />
                       API Keys (Admin)
                     </Link>
                   </DropdownMenuItem>
-                )}
+                )} */}
                 {isLocalMode() && <DropdownMenuItem asChild>
                   <Link href="/settings/env-manager">
                     <KeyRound className="h-4 w-4" />

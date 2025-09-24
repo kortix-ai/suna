@@ -33,7 +33,7 @@ export const metadata: Metadata = {
     template: `%s - ${siteConfig.name}`,
   },
   description:
-    'Kortix is a fully open source AI assistant that helps you accomplish real-world tasks with ease. Through natural conversation, Kortix becomes your digital companion for research, data analysis, and everyday challenges.',
+    'Kusor is an enterprise-grade AI assistant that helps you accomplish real-world tasks with ease. Through natural conversation, Kusor becomes your digital companion for research, data analysis, and everyday challenges.',
   keywords: [
     'AI',
     'artificial intelligence',
@@ -41,17 +41,18 @@ export const metadata: Metadata = {
     'web scraping',
     'file management',
     'AI assistant',
-    'open source',
+    'enterprise AI',
     'research',
     'data analysis',
+    'secure AI',
   ],
-  authors: [{ name: 'Kortix Team', url: 'https://suna.so' }],
+  authors: [{ name: 'Bright Byte', url: 'https://suna.so' }],
   creator:
-    'Kortix Team',
+    'Bright Byte',
   publisher:
-    'Kortix Team',
+    'Bright Byte',
   category: 'Technology',
-  applicationName: 'Suna',
+  applicationName: 'Kusor',
   formatDetection: {
     telephone: false,
     email: false,
@@ -66,17 +67,17 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: 'Suna - Open Source Generalist AI Worker',
+    title: 'Kusor - Enterprise AI Assistant',
     description:
-      'Suna is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
+      'Kusor is an enterprise-grade AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
     url: siteConfig.url,
-    siteName: 'Suna',
+    siteName: 'Kusor',
     images: [
       {
         url: '/banner.png',
         width: 1200,
         height: 630,
-        alt: 'Suna - Open Source Generalist AI Worker',
+        alt: 'Kusor - Enterprise AI Assistant',
         type: 'image/png',
       },
     ],
@@ -85,9 +86,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Suna - Open Source Generalist AI Worker',
+    title: 'Kusor - Enterprise AI Assistant',
     description:
-      'Suna is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
+      'Kusor is an enterprise-grade AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
     creator: '@kortixai',
     site: '@kortixai',
     images: [
@@ -95,15 +96,31 @@ export const metadata: Metadata = {
         url: '/banner.png',
         width: 1200,
         height: 630,
-        alt: 'Suna - Open Source Generalist AI Worker',
+        alt: 'Kusor - Enterprise AI Assistant',
       },
     ],
   },
   icons: {
-    icon: [{ url: '/favicon.png', sizes: 'any' }],
-    shortcut: '/favicon.png',
+    icon: [
+      { url: '/fav-icon/favicon.ico', sizes: 'any' },
+      { url: '/fav-icon/favicon-16x16.png', sizes: '16x16', type: 'image/png' },
+      { url: '/fav-icon/favicon-32x32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/fav-icon/favicon-96x96.png', sizes: '96x96', type: 'image/png' },
+    ],
+    shortcut: '/fav-icon/favicon.ico',
+    apple: [
+      { url: '/fav-icon/apple-icon-57x57.png', sizes: '57x57', type: 'image/png' },
+      { url: '/fav-icon/apple-icon-60x60.png', sizes: '60x60', type: 'image/png' },
+      { url: '/fav-icon/apple-icon-72x72.png', sizes: '72x72', type: 'image/png' },
+      { url: '/fav-icon/apple-icon-76x76.png', sizes: '76x76', type: 'image/png' },
+      { url: '/fav-icon/apple-icon-114x114.png', sizes: '114x114', type: 'image/png' },
+      { url: '/fav-icon/apple-icon-120x120.png', sizes: '120x120', type: 'image/png' },
+      { url: '/fav-icon/apple-icon-144x144.png', sizes: '144x144', type: 'image/png' },
+      { url: '/fav-icon/apple-icon-152x152.png', sizes: '152x152', type: 'image/png' },
+      { url: '/fav-icon/apple-icon-180x180.png', sizes: '180x180', type: 'image/png' },
+    ],
   },
-  // manifest: "/manifest.json",
+  manifest: "/fav-icon/manifest.json",
   alternates: {
     canonical: siteConfig.url,
   },

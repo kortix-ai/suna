@@ -1,7 +1,7 @@
 export const siteConfig = {
-  name: "Suna",
+  name: "Kusor",
   url: "https://suna.so",
-  description: "Suna is a fully open source AI assistant that helps you accomplish real-world tasks with ease. Through natural conversation, Suna becomes your digital companion for research, data analysis, and everyday challenges.",
+  description: "Kusor is a fully open source AI assistant that helps you accomplish real-world tasks with ease. Through natural conversation, Kusor becomes your digital companion for research, data analysis, and everyday challenges.",
   keywords: [
     'AI',
     'artificial intelligence',
@@ -17,14 +17,14 @@ export const siteConfig = {
   creator: 'Kortix Team - Adam Cohen Hillel, Marko Kraemer, Domenico Gagliardi, and Quoc Dat Le',
   publisher: 'Kortix Team - Adam Cohen Hillel, Marko Kraemer, Domenico Gagliardi, and Quoc Dat Le',
   category: 'Technology',
-  applicationName: 'Suna',
+  applicationName: 'Kusor',
   twitterHandle: '@kortixai',
   githubUrl: 'https://github.com/kortix-ai/suna',
   
   // Mobile-specific configurations
   bundleId: {
-    ios: 'com.kortix.suna',
-    android: 'com.kortix.suna'
+    ios: 'com.kortix.kusor',
+    android: 'com.kortix.kusor'
   },
   
   // Theme colors
@@ -54,7 +54,7 @@ export const mobileMetadata = {
     address: false,
   },
   openGraph: {
-    title: 'Suna - Open Source Generalist AI Agent',
+    title: 'Kusor - Open Source Generalist AI Agent',
     description: siteConfig.description,
     url: siteConfig.url,
     siteName: siteConfig.name,
@@ -63,7 +63,7 @@ export const mobileMetadata = {
         url: '/banner.png',
         width: 1200,
         height: 630,
-        alt: 'Suna - Open Source Generalist AI Agent',
+        alt: 'Kusor - Open Source Generalist AI Agent',
         type: 'image/png',
       },
     ],
@@ -72,7 +72,7 @@ export const mobileMetadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Suna - Open Source Generalist AI Agent',
+    title: 'Kusor - Open Source Generalist AI Agent',
     description: siteConfig.description,
     creator: siteConfig.twitterHandle,
     site: siteConfig.twitterHandle,
@@ -81,8 +81,8 @@ export const mobileMetadata = {
         url: '/banner.png',
         width: 1200,
         height: 630,
-        alt: 'Suna - Open Source Generalist AI Agent',
-      },
+        alt: 'Kusor - Open Source Generalist AI Agent',
+  },
     ],
   },
   icons: {

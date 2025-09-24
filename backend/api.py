@@ -130,6 +130,9 @@ async def log_requests_middleware(request: Request, call_next):
 allowed_origins = ["https://www.suna.so", "https://suna.so"]
 allow_origin_regex = None
 
+# Add Azure Container Apps frontend URL
+allowed_origins.append("https://kusor-frontend.wittycoast-bacf4569.eastus.azurecontainerapps.io")
+
 # Add staging-specific origins
 if config.ENV_MODE == EnvMode.LOCAL:
     allowed_origins.append("http://localhost:3000")

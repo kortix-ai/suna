@@ -111,7 +111,7 @@ const IntegrationIcon: React.FC<{
   
   const firstLetter = displayName.charAt(0).toUpperCase();
   
-  const iconMap: Record<string, JSX.Element> = {
+  const iconMap: Record<string, React.ReactElement> = {
     'github': <GitBranch size={size} />,
     'browser': <Globe size={size} />,
     'terminal': <Terminal size={size} />,

@@ -120,7 +120,7 @@ export function FileEditToolView({
   isSuccess = true,
   isStreaming = false,
   project,
-}: ToolViewProps): JSX.Element {
+}: ToolViewProps): React.ReactElement {
   const { resolvedTheme } = useTheme();
   const isDarkTheme = resolvedTheme === 'dark';
   

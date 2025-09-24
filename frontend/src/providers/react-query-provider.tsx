@@ -13,10 +13,10 @@ import { BillingError, AgentRunLimitError } from '@/lib/api';
 
 export function ReactQueryProvider({
   children,
-  dehydratedState,
+  dehydratedState = { mutations: [], queries: [] },
 }: {
   children: React.ReactNode;
-  dehydratedState?: unknown;
+  dehydratedState?: any;
 }) {
   const [queryClient] = useState(
     () =>

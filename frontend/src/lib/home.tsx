@@ -58,17 +58,17 @@ export interface PricingTier {
 }
 
 export const siteConfig = {
-  name: 'Kortix Suna',
-  description: 'The Generalist AI Worker that can act on your behalf.',
+  name: 'Bright Byte',
+  description: 'Sparkling tomorrow byte by byte.',
   cta: 'Start Free',
   url: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
   keywords: ['AI Worker', 'Generalist AI', 'Secure AI', 'Autonomous Agent'],
   links: {
-    email: 'support@kortix.ai',
-    twitter: 'https://x.com/kortixai',
+    email: 'info@bright-byte.co',
+    // twitter: 'https://x.com/kortixai',
     // discord: 'https://discord.gg/kortixai',
-    github: 'https://github.com/Kortix-ai/Suna',
-    instagram: 'https://instagram.com/kortixai',
+    // github: 'https://github.com/Kortix-ai/Suna',
+    instagram: 'https://www.instagram.com/bright.byte.co?igsh=aGp3eW80bnR1NjI2',
   },
   nav: {
     links: [
@@ -108,11 +108,11 @@ export const siteConfig = {
       </svg>
     ),
     badge: '100% SECURE',
-    githubUrl: 'https://github.com/kortix-ai/suna',
-    title: 'Kortix – Build, manage and train your AI Workforce.',
+    githubUrl: 'https://github.com/hassoonsy2',
+    title: 'Bright Byte – Build, manage and train your AI Workforce.',
     description:
-      'Kortix – secure platform to build, manage and train your AI Workforce.',
-    inputPlaceholder: 'Ask Suna to...',
+      'Sparkling tomorrow byte by byte.',
+    inputPlaceholder: 'Give Kusor a task to complete...',
   },
   cloudPricingItems: [
     {
@@ -499,15 +499,15 @@ export const siteConfig = {
     ],
   },
   featureSection: {
-    title: 'How Kortix Suna Works',
+    title: 'How Kusor Works',
     description:
-      'Discover how Kortix Suna transforms your commands into action in four easy steps',
+      'Discover how Kusor transforms your commands into action in four easy steps',
     items: [
       {
         id: 1,
         title: 'Request an Action',
         content:
-          'Speak or type your command—let Kortix Suna capture your intent. Your request instantly sets the process in motion.',
+          'Speak or type your command—let Kusor capture your intent. Your request instantly sets the process in motion.',
         image:
           'https://images.unsplash.com/photo-1720371300677-ba4838fa0678?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D',
       },
@@ -515,7 +515,7 @@ export const siteConfig = {
         id: 2,
         title: 'AI Understanding & Planning',
         content:
-          'Suna analyzes your request, understands the context, and develops a structured plan to complete the task efficiently.',
+          'Kusor analyzes your request, understands the context, and develops a structured plan to complete the task efficiently.',
         image:
           'https://images.unsplash.com/photo-1686170287433-c95faf6d3608?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxmZWF0dXJlZC1waG90b3MtZmVlZHwzfHx8ZW58MHx8fHx8fA%3D%3D',
       },
@@ -523,7 +523,7 @@ export const siteConfig = {
         id: 3,
         title: 'Autonomous Execution',
         content:
-          'Using its capabilities and integrations, Suna executes the task independently, handling any complexities along the way.',
+          'Using its capabilities and integrations, Kusor executes the task independently, handling any complexities along the way.',
         image:
           'https://images.unsplash.com/photo-1720378042271-60aff1e1c538?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxmZWF0dXJlZC1waG90b3MtZmVlZHwxMHx8fGVufDB8fHx8fA%3D%3D',
       },
@@ -531,30 +531,30 @@ export const siteConfig = {
         id: 4,
         title: 'Results & Learning',
         content:
-          'Suna delivers results and learns from each interaction, continuously improving its performance to better serve your needs.',
+          'Kusor delivers results and learns from each interaction, continuously improving its performance to better serve your needs.',
         image:
           'https://images.unsplash.com/photo-1666882990322-e7f3b8df4f75?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1yZWxhdGVkfDF8fHxlbnwwfHx8fHw%3D',
       },
     ],
   },
   bentoSection: {
-    title: 'Empower Your Workflow with Kortix Suna',
+    title: 'Empower Your Workflow with Kusor',
     description:
-      'Let Kortix Suna act on your behalf with advanced AI capabilities, seamless integrations, and autonomous task execution.',
+      'Let Kusor act on your behalf with advanced AI capabilities, seamless integrations, and autonomous task execution.',
     items: [
       {
         id: 1,
         content: <FirstBentoAnimation />,
         title: 'Autonomous Task Execution',
         description:
-          'Experience true automation with Suna. Ask your AI Worker to complete tasks, research information, and handle complex workflows with minimal supervision.',
+          'Experience true automation with Kusor. Ask your AI Worker to complete tasks, research information, and handle complex workflows with minimal supervision.',
       },
       {
         id: 2,
         content: <SecondBentoAnimation />,
         title: 'Seamless Integrations',
         description:
-          'Connect Suna to your existing tools for a unified workflow. Boost productivity through AI-powered interconnected systems.',
+          'Connect Kusor to your existing tools for a unified workflow. Boost productivity through AI-powered interconnected systems.',
       },
       {
         id: 3,
@@ -568,21 +568,21 @@ export const siteConfig = {
         ),
         title: 'Intelligent Data Analysis',
         description:
-          "Transform raw data into actionable insights in seconds. Make better decisions with Suna's real-time, adaptive intelligence.",
+          "Transform raw data into actionable insights in seconds. Make better decisions with Kusor's real-time, adaptive intelligence.",
       },
       {
         id: 4,
         content: <FourthBentoAnimation once={false} />,
         title: 'Complete Customization',
         description:
-          'Tailor Suna to your specific needs. As an open source solution, you have full control over its capabilities, integrations, and implementation.',
+          'Tailor Kusor to your specific needs. As an open source solution, you have full control over its capabilities, integrations, and implementation.',
       },
     ],
   },
   benefits: [
     {
       id: 1,
-      text: "Automate everyday tasks with Suna's powerful AI capabilities.",
+      text: "Automate everyday tasks with Kusor's powerful AI capabilities.",
       image: '/Device-6.png',
     },
     {
@@ -592,7 +592,7 @@ export const siteConfig = {
     },
     {
       id: 3,
-      text: 'Improve focus on high-value work as Suna handles the routine.',
+      text: 'Improve focus on high-value work as Kusor handles the routine.',
       image: '/Device-8.png',
     },
     {
@@ -896,15 +896,15 @@ export const siteConfig = {
           </div>
         ),
 
-        title: 'Community Powered',
+        title: 'Enterprise Ready',
         description:
-          "Join a thriving community of developers and users continuously enhancing and expanding Suna's capabilities.",
+          "Built with enterprise-grade security and reliability, designed for professional teams and organizations.",
       },
     ],
   },
   quoteSection: {
     quote:
-      'Kortix Suna has transformed how we approach everyday tasks. The level of automation it provides, combined with its open source nature, makes it an invaluable tool for our entire organization.',
+      'Bright Byte has transformed how we approach everyday tasks. The level of automation it provides, combined with its enterprise-grade security, makes it an invaluable tool for our entire organization.',
     author: {
       name: 'Alex Johnson',
       role: 'CTO, Innovatech',
@@ -912,45 +912,45 @@ export const siteConfig = {
     },
   },
   pricing: {
-    title: 'Secure & Free Forever',
+    title: 'Enterprise Security & Pricing',
     description:
-      'Kortix Suna is 100% open source and free to use. No hidden fees, no premium features locked behind paywalls.',
+      'Bright Byte Kusor offers enterprise-grade security and reliability with flexible pricing options for teams of all sizes.',
     pricingItems: [
       {
-        name: 'Community',
+        name: 'Starter',
         href: '#',
         price: 'Free',
         period: 'forever',
         yearlyPrice: 'Free',
         features: [
-          'Full agent capabilities',
-          'Unlimited usage',
-          'Full source code access',
-          // 'Community support',
+          'Basic agent capabilities',
+          'Limited usage per month',
+          'Standard security features',
+          // 'Email support',
         ],
-        description: 'Perfect for individual users and developers',
-        buttonText: 'Hire Suna',
+        description: 'Perfect for individual users and small teams',
+        buttonText: 'Get Started',
         buttonColor: 'bg-accent text-primary',
         isPopular: false,
       },
       {
-        name: 'Self-Hosted',
+        name: 'Professional',
         href: '#',
-        price: 'Free',
-        period: 'forever',
-        yearlyPrice: 'Free',
+        price: '$49',
+        period: '/month',
+        yearlyPrice: '$490',
         features: [
-          'Full agent capabilities',
-          'Unlimited usage',
-          'Full source code access',
-          'Custom deployment',
-          'Local data storage',
-          'Integration with your tools',
-          'Full customization',
-          // 'Community support',
+          'Advanced agent capabilities',
+          'Increased usage limits',
+          'Priority support',
+          'Advanced security features',
+          'Team collaboration tools',
+          'API access',
+          'Custom integrations',
+          // 'Email & chat support',
         ],
-        description: 'Ideal for organizations with specific requirements',
-        buttonText: 'View Docs',
+        description: 'Ideal for growing teams and businesses',
+        buttonText: 'Start Trial',
         buttonColor: 'bg-secondary text-white',
         isPopular: true,
       },
@@ -961,14 +961,16 @@ export const siteConfig = {
         period: '',
         yearlyPrice: 'Custom',
         features: [
-          'Everything in Self-Hosted',
-          'Priority support',
+          'Everything in Professional',
+          'Unlimited usage',
+          'Dedicated support',
           'Custom development',
-          'Dedicated hosting',
+          'On-premise deployment',
           'SLA guarantees',
+          'Advanced compliance',
         ],
-        description: 'For large teams needing custom implementations',
-        buttonText: 'Contact Us',
+        description: 'For large organizations with custom needs',
+        buttonText: 'Contact Sales',
         buttonColor: 'bg-primary text-primary-foreground',
         isPopular: false,
       },
@@ -1179,7 +1181,7 @@ export const siteConfig = {
   faqSection: {
     title: 'Frequently Asked Questions',
     description:
-      "Answers to common questions about Kortix Suna and its capabilities. If you have any other questions, please don't hesitate to contact us.",
+      "Answers to common questions about Kusor and its capabilities. If you have any other questions, please don't hesitate to contact us.",
     faQitems: [
       {
         id: 1,
@@ -1189,13 +1191,13 @@ export const siteConfig = {
       },
       {
         id: 2,
-        question: 'How does Kortix Suna work?',
+        question: 'How does Kusor work?',
         answer:
-          'Kortix Suna works by analyzing your requirements, leveraging advanced AI algorithms to understand context, and executing tasks based on your instructions. It can integrate with your workflow, learn from feedback, and continuously improve its performance.',
+          'Kusor works by analyzing your requirements, leveraging advanced AI algorithms to understand context, and executing tasks based on your instructions. It can integrate with your workflow, learn from feedback, and continuously improve its performance.',
       },
       {
         id: 3,
-        question: 'Is Kortix Suna really free?',
+        question: 'Is Kusor really free?',
         answer:
           'Yes, Kortix Suna is completely free and open source. We believe in democratizing AI technology and making it accessible to everyone. You can use it, modify it, and contribute to its development without any cost.',
       },
@@ -1231,42 +1233,30 @@ export const siteConfig = {
   },
   footerLinks: [
     {
-      title: 'Kortix',
+      title: 'Platform',
       links: [
-        { id: 1, title: 'About', url: 'https://kortix.ai' },
-        { id: 3, title: 'Contact', url: 'mailto:hey@kortix.ai' },
-        { id: 4, title: 'Careers', url: 'https://kortix.ai/careers' },
-      ],
-    },
-    {
-      title: 'Resources',
-      links: [
-        {
-          id: 5,
-          title: 'Documentation',
-          url: 'https://github.com/Kortix-ai/Suna',
-        },
-        { id: 7, title: 'Discord', url: 'https://discord.gg/Py6pCBUUPw' },
-        { id: 8, title: 'GitHub', url: 'https://github.com/Kortix-ai/Suna' },
+        { id: 1, title: 'Dashboard', url: '/dashboard' },
+        { id: 2, title: 'Enterprise', url: '/enterprise' },
+        { id: 3, title: 'Contact', url: 'mailto:info@bright-byte.co' },
       ],
     },
     {
       title: 'Legal',
       links: [
         {
-          id: 9,
+          id: 4,
           title: 'Privacy Policy',
-          url: 'https://suna.so/legal?tab=privacy',
+          url: '/legal?tab=privacy',
         },
         {
-          id: 10,
+          id: 5,
           title: 'Terms of Service',
-          url: 'https://suna.so/legal?tab=terms',
+          url: '/legal?tab=terms',
         },
         {
-          id: 11,
-          title: 'License Apache 2.0',
-          url: 'https://github.com/Kortix-ai/Suna/blob/main/LICENSE',
+          id: 6,
+          title: 'Security',
+          url: '/security',
         },
       ],
     },

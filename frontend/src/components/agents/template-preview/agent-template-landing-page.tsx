@@ -60,7 +60,7 @@ const IntegrationIcon: React.FC<{
     return colors[index];
   };
 
-  const iconMap: Record<string, JSX.Element> = {
+  const iconMap: Record<string, React.ReactElement> = {
     'github': <GitBranch size={size} />,
     'browser': <Globe size={size} />,
     'terminal': <Terminal size={size} />,

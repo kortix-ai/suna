@@ -31,7 +31,7 @@ export const ChatInput: React.FC<ChatInputProps> = ({
     onAttachPress,
     onMicPress,
     onCancelStream,
-    placeholder = 'Ask Suna anything...',
+    placeholder = 'Ask Kusor anything...',
     isAtBottomOfChat = true,
     isGenerating = false,
     isSending = false,
