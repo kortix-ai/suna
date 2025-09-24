@@ -51,6 +51,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { SharedTreeItem, FileDragOverlay } from '@/components/knowledge-base/shared-kb-tree';
 import { KBFilePreviewModal } from './kb-file-preview-modal';
+import { TextEntryModal } from './text-entry-modal';
 
 // Get backend URL from environment variables
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
@@ -914,6 +915,10 @@ export function KnowledgeBasePage() {
                                     <FolderPlusIcon className="h-4 w-4 mr-2" />
                                     New Folder
                                 </Button>
+                                <TextEntryModal
+                                    folders={folders}
+                                    onUploadComplete={refetchFolders}
+                                />
                                 <FileUploadModal
                                     folders={folders}
                                     onUploadComplete={refetchFolders}

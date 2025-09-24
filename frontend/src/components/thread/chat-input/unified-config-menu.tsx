@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Cpu, Search, Check, ChevronDown, Plus, ExternalLink } from 'lucide-react';
+import { Cpu, Search, Check, ChevronDown, Plus, ExternalLink, Loader2 } from 'lucide-react';
 import { useAgents } from '@/hooks/react-query/agents/use-agents';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import type { ModelOption } from '@/hooks/use-model-selection';
@@ -63,6 +63,9 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = ({
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [allAgents, setAllAgents] = useState<any[]>([]);
     const searchContainerRef = useRef<HTMLDivElement>(null);
     const [integrationsOpen, setIntegrationsOpen] = useState(false);
     const [showNewAgentDialog, setShowNewAgentDialog] = useState(false);
@@ -70,8 +73,38 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = ({
     const [execDialog, setExecDialog] = useState<{ open: boolean; playbook: any | null; agentId: string | null }>({ open: false, playbook: null, agentId: null });
     const [agentConfigDialog, setAgentConfigDialog] = useState<{ open: boolean; tab: 'general' | 'instructions' | 'knowledge' | 'triggers' | 'playbooks' | 'tools' | 'integrations' }>({ open: false, tab: 'general' });
 
-    const { data: agentsResponse } = useAgents({}, { enabled: isLoggedIn });
-    const agents: any[] = agentsResponse?.agents || [];
+    // Debounce search query
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearchQuery(searchQuery);
+            setCurrentPage(1); // Reset to first page when searching
+        }, 300);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
+
+    // Fetch agents with proper pagination and search
+    const agentsParams = useMemo(() => ({
+        page: currentPage,
+        limit: 50,
+        search: debouncedSearchQuery || undefined,
+    }), [currentPage, debouncedSearchQuery]);
+
+    const { data: agentsResponse, isLoading, isFetching } = useAgents(agentsParams, { enabled: isLoggedIn });
+
+    // Update agents list when data changes
+    useEffect(() => {
+        if (agentsResponse?.agents) {
+            if (currentPage === 1 || debouncedSearchQuery) {
+                // First page or new search - replace all agents
+                setAllAgents(agentsResponse.agents);
+            } else {
+                // Subsequent pages - append to existing agents
+                setAllAgents(prev => [...prev, ...agentsResponse.agents]);
+            }
+        }
+    }, [agentsResponse, currentPage, debouncedSearchQuery]);
+
+    const agents: any[] = allAgents;
 
 
 
@@ -86,6 +119,8 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = ({
             setTimeout(() => searchInputRef.current?.focus(), 30);
         } else {
             setSearchQuery('');
+            setDebouncedSearchQuery('');
+            setCurrentPage(1);
         }
     }, [isOpen]);
 
@@ -104,20 +139,25 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = ({
         }
     };
 
-    // Filtered agents with selected first
-    const filteredAgents = useMemo(() => {
+    // Order agents with selected first (server-side search already handles filtering)
+    const orderedAgents = useMemo(() => {
         const list = [...agents];
         const selected = selectedAgentId ? list.find(a => a.agent_id === selectedAgentId) : undefined;
         const rest = selected ? list.filter(a => a.agent_id !== selectedAgentId) : list;
-        const ordered = selected ? [selected, ...rest] : rest;
-        return ordered.filter(a => (
-            a?.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            a?.description?.toLowerCase().includes(searchQuery.toLowerCase())
-        ));
-    }, [agents, selectedAgentId, searchQuery]);
+        return selected ? [selected, ...rest] : rest;
+    }, [agents, selectedAgentId]);
 
-    // Top 3 slice
-    const topAgents = useMemo(() => filteredAgents.slice(0, 3), [filteredAgents]);
+    // Check if we can load more
+    const canLoadMore = useMemo(() => {
+        if (!agentsResponse?.pagination) return false;
+        return agentsResponse.pagination.current_page < agentsResponse.pagination.total_pages;
+    }, [agentsResponse?.pagination]);
+
+    const handleLoadMore = useCallback(() => {
+        if (canLoadMore && !isFetching) {
+            setCurrentPage(prev => prev + 1);
+        }
+    }, [canLoadMore, isFetching]);
 
 
 
@@ -210,26 +250,52 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = ({
                                     <Plus className="h-3.5 w-3.5" />
                                 </Button>
                             </div>
-                            {topAgents.length === 0 ? (
-                                <div className="px-3 py-2 text-xs text-muted-foreground">No agents</div>
-                            ) : (
-                                <div className="max-h-[132px] overflow-y-auto">
-                                    {filteredAgents.map((agent) => (
-                                        <DropdownMenuItem
-                                            key={agent.agent_id}
-                                            className="text-sm px-3 py-2 mx-0 my-0.5 flex items-center justify-between cursor-pointer rounded-lg"
-                                            onClick={() => handleAgentClick(agent.agent_id)}
-                                        >
-                                            <div className="flex items-center gap-3 min-w-0 flex-1">
-                                                {renderAgentIcon(agent)}
-                                                <span className="truncate font-medium">{agent.name}</span>
-                                            </div>
-                                            {selectedAgentId === agent.agent_id && (
-                                                <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
-                                            )}
-                                        </DropdownMenuItem>
-                                    ))}
+                            {isLoading && orderedAgents.length === 0 ? (
+                                <div className="px-3 py-2 text-xs text-muted-foreground">Loading agents...</div>
+                            ) : orderedAgents.length === 0 ? (
+                                <div className="px-3 py-2 text-xs text-muted-foreground">
+                                    {debouncedSearchQuery ? 'No agents found' : 'No agents'}
                                 </div>
+                            ) : (
+                                <>
+                                    <div className="max-h-[200px] overflow-y-auto">
+                                        {orderedAgents.map((agent) => (
+                                            <DropdownMenuItem
+                                                key={agent.agent_id}
+                                                className="text-sm px-3 py-2 mx-0 my-0.5 flex items-center justify-between cursor-pointer rounded-lg"
+                                                onClick={() => handleAgentClick(agent.agent_id)}
+                                            >
+                                                <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                    {renderAgentIcon(agent)}
+                                                    <span className="truncate font-medium">{agent.name}</span>
+                                                </div>
+                                                {selectedAgentId === agent.agent_id && (
+                                                    <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                                                )}
+                                            </DropdownMenuItem>
+                                        ))}
+                                    </div>
+                                    {canLoadMore && (
+                                        <div className="px-1.5 pb-1">
+                                            <Button
+                                                size="sm"
+                                                variant="ghost"
+                                                className="w-full h-8 text-xs text-muted-foreground hover:text-foreground"
+                                                onClick={handleLoadMore}
+                                                disabled={isFetching}
+                                            >
+                                                {isFetching ? (
+                                                    <>
+                                                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                                        Loading...
+                                                    </>
+                                                ) : (
+                                                    'Load More'
+                                                )}
+                                            </Button>
+                                        </div>
+                                    )}
+                                </>
                             )}
 
                             {/* Agents "see all" removed; scroll container shows all */}
