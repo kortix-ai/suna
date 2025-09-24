@@ -8,7 +8,7 @@ from datetime import datetime
 from core.utils.logger import logger
 from core.services.supabase import DBConnection
 
-async def upload_base64_image(base64_data: str, bucket_name: str = "browser-screenshots") -> str:
+async def upload_base64_image(base64_data: str, bucket_name: str = "image-uploads") -> str:
     """Upload a base64 encoded image to Supabase storage and return the URL.
     
     Args:

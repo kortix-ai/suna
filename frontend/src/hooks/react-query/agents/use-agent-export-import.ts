@@ -19,8 +19,6 @@ export interface AgentExportData {
     config: Record<string, any>;
     enabledTools: string[];
   }>;
-  avatar?: string;
-  avatar_color?: string;
   tags?: string[];
   metadata?: Record<string, any>;
   export_version: string;

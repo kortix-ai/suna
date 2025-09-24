@@ -231,7 +231,9 @@ export const Editor = ({
           inline: true,
           allowBase64: true,
           HTMLAttributes: {
-            class: 'max-w-full h-auto rounded-lg',
+            class: 'w-full h-auto rounded-lg object-contain',
+            loading: 'lazy',
+            decoding: 'async',
           },
         }),
         Underline,
@@ -383,7 +385,7 @@ export const Editor = ({
         attributes: {
           style: readOnly ? `min-height: ${minHeight};` : `padding-left: 56px; padding-right: 56px; min-height: ${minHeight};`,
           class: readOnly 
-            ? editorClassName || 'focus:outline-none bg-transparent w-full'
+            ? editorClassName || 'focus:outline-none bg-transparent w-full [&_img]:w-full [&_img]:h-auto [&_img]:object-contain'
             : 'focus:outline-none bg-white dark:bg-neutral-900/0 print:border-0 bg-white flex flex-col min-h-[1054px] w-[816px] pt-10 pr-14 pb-10 cursor-text',
           spellcheck: 'true',
         },

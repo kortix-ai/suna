@@ -21,7 +21,7 @@ interface CustomAgentsSectionProps {
 }
 
 const TitleSection = () => (
-  <div className="mb-6 text-center">
+  <div className="mb-6 mt-6 text-center">
     <h3 className="text-lg font-medium text-foreground/90 mb-1">
       Choose specialised agent
     </h3>
@@ -56,8 +56,6 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
       creator_name: template.creator_name,
       created_at: template.created_at,
       profile_image_url: template.profile_image_url,
-      avatar: template.avatar,
-      avatar_color: template.avatar_color,
       icon_name: template.icon_name,
       icon_color: template.icon_color,
       icon_background: template.icon_background,
@@ -99,7 +97,10 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
       if (result.status === 'installed' && result.instance_id) {
         toast.success(`Agent "${instanceName}" installed successfully!`);
         setShowInstallDialog(false);
-        router.push(`/agents/config/${result.instance_id}`);
+        
+        if (onAgentSelect) {
+          onAgentSelect(result.instance_id);
+        }
       } else if (result.status === 'configs_required') {
         toast.error('Please provide all required configurations');
         return;

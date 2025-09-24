@@ -40,9 +40,7 @@ def build_unified_config(
     system_prompt: str,
     agentpress_tools: ConfigType,
     configured_mcps: List[ConfigType],
-    custom_mcps: List[ConfigType],
-    avatar: Optional[str] = None,
-    avatar_color: Optional[str] = None
+    custom_mcps: List[ConfigType]
 ) -> ConfigType:
     try:
         from core.config_helper import build_unified_config as build_config
@@ -50,9 +48,7 @@ def build_unified_config(
             system_prompt=system_prompt,
             agentpress_tools=agentpress_tools,
             configured_mcps=configured_mcps,
-            custom_mcps=custom_mcps,
-            avatar=avatar,
-            avatar_color=avatar_color
+            custom_mcps=custom_mcps
         )
     except ImportError:
         return {
@@ -62,10 +58,7 @@ def build_unified_config(
                 'mcp': configured_mcps,
                 'custom_mcp': custom_mcps
             },
-            'metadata': {
-                'avatar': avatar,
-                'avatar_color': avatar_color
-            }
+            'metadata': {}
         }
 
 
@@ -133,8 +126,6 @@ def format_template_for_response(template: AgentTemplate) -> Dict[str, Any]:
         'download_count': template.download_count,
         'created_at': template.created_at.isoformat(),
         'updated_at': template.updated_at.isoformat(),
-        'avatar': template.avatar,
-        'avatar_color': template.avatar_color,
         'profile_image_url': template.profile_image_url,
         'icon_name': template.icon_name,
         'icon_color': template.icon_color,
@@ -204,10 +195,7 @@ def sanitize_config_for_security(config: Dict[str, Any]) -> Dict[str, Any]:
             'mcp': config.get('tools', {}).get('mcp', []),
             'custom_mcp': []
         },
-        'metadata': {
-            'avatar': config.get('metadata', {}).get('avatar'),
-            'avatar_color': config.get('metadata', {}).get('avatar_color')
-        }
+        'metadata': {}
     }
     
     custom_mcps = config.get('tools', {}).get('custom_mcp', [])

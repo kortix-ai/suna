@@ -248,7 +248,7 @@ async def generate_and_update_project_name(project_id: str, prompt: str):
                 cleaned_content = raw_content.strip('\'" \n\t{}')
                 if cleaned_content:
                     generated_name = cleaned_content[:50]  # Limit fallback title length
-                    selected_icon = "message-circle"  # Default icon
+                selected_icon = "message-circle"  # Default icon
         else:
             logger.warning(f"Failed to get valid response from LLM for project {project_id} naming. Response: {response}")
 
@@ -274,6 +274,111 @@ async def generate_and_update_project_name(project_id: str, prompt: str):
     finally:
         # No need to disconnect DBConnection singleton instance here
         logger.debug(f"Finished background naming and icon selection task for project: {project_id}")
+
+async def generate_agent_icon_and_colors(name: str, description: str = None) -> dict:
+    """Generates an agent icon and colors using an LLM based on agent name and description."""
+    logger.debug(f"Generating icon and colors for agent: {name}")
+    try:
+        model_name = "openai/gpt-5-nano"
+        
+        # Use pre-loaded Lucide React icons (loaded once at module level)
+        relevant_icons = RELEVANT_ICONS
+        
+        # Use exact colors from frontend presetColors array
+        frontend_colors = [
+            "#000000", "#FFFFFF", "#6366F1", "#10B981", "#F59E0B", 
+            "#EF4444", "#8B5CF6", "#EC4899", "#14B8A6", "#F97316",
+            "#06B6D4", "#84CC16", "#F43F5E", "#A855F7", "#3B82F6"
+        ]
+        
+        agent_context = f"Agent name: {name}"
+        if description:
+            agent_context += f"\nAgent description: {description}"
+            
+        system_prompt = f"""You are a helpful assistant that selects appropriate icons and colors for AI agents based on their name and description.
+
+        Available Lucide React icons to choose from:
+        {', '.join(relevant_icons)}
+
+        Available colors (hex codes):
+        {', '.join(frontend_colors)}
+
+        Respond with a JSON object containing:
+        - "icon": The most appropriate icon name from the available icons
+        - "background_color": A background color hex code from the available colors
+        - "text_color": A text color hex code from the available colors (choose one that contrasts well with the background)
+
+        Example response:
+        {{"icon": "youtube", "background_color": "#EF4444", "text_color": "#FFFFFF"}}"""
+
+        user_message = f"Select the most appropriate icon and color scheme for this AI agent:\n{agent_context}"
+        messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_message}]
+
+        logger.debug(f"Calling LLM ({model_name}) for agent icon and color generation.")
+        response = await make_llm_api_call(
+            messages=messages, 
+            model_name=model_name, 
+            max_tokens=4000, 
+            temperature=0.7,
+            response_format={"type": "json_object"}
+        )
+
+        # Default fallback values
+        result = {
+            "icon_name": "bot",
+            "icon_color": "#FFFFFF", 
+            "icon_background": "#6366F1"
+        }
+        
+        if response and response.get('choices') and response['choices'][0].get('message'):
+            raw_content = response['choices'][0]['message'].get('content', '').strip()
+            try:
+                parsed_response = json.loads(raw_content)
+                
+                if isinstance(parsed_response, dict):
+                    # Extract and validate icon
+                    icon = parsed_response.get('icon', '').strip()
+                    if icon and icon in relevant_icons:
+                        result["icon_name"] = icon
+                        logger.debug(f"LLM selected icon: '{icon}'")
+                    else:
+                        logger.warning(f"LLM selected invalid icon '{icon}', using default 'bot'")
+                    
+                    # Extract and validate colors
+                    bg_color = parsed_response.get('background_color', '').strip()
+                    text_color = parsed_response.get('text_color', '').strip()
+                    
+                    if bg_color in frontend_colors:
+                        result["icon_background"] = bg_color
+                        logger.debug(f"LLM selected background color: '{bg_color}'")
+                    else:
+                        logger.warning(f"LLM selected invalid background color '{bg_color}', using default")
+                    
+                    if text_color in frontend_colors:
+                        result["icon_color"] = text_color
+                        logger.debug(f"LLM selected text color: '{text_color}'")
+                    else:
+                        logger.warning(f"LLM selected invalid text color '{text_color}', using default")
+                        
+                else:
+                    logger.warning(f"LLM returned non-dict JSON: {parsed_response}")
+                    
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse LLM JSON response: {e}. Raw content: {raw_content}")
+        else:
+            logger.warning(f"Failed to get valid response from LLM for agent icon generation. Response: {response}")
+
+        logger.debug(f"Generated agent styling: icon={result['icon_name']}, bg={result['icon_background']}, color={result['icon_color']}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Error in agent icon generation: {str(e)}\n{traceback.format_exc()}")
+        # Return safe defaults on error (using Indigo theme)
+        return {
+            "icon_name": "bot",
+            "icon_color": "#FFFFFF", 
+            "icon_background": "#6366F1"
+        }
 
 def merge_custom_mcps(existing_mcps: List[Dict[str, Any]], new_mcps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     if not new_mcps:
@@ -506,8 +611,9 @@ async def check_agent_count_limit(client, account_id: str) -> Dict[str, Any]:
         logger.debug(f"Account {account_id} has {current_count} custom agents (excluding Suna defaults)")
         
         try:
-            from core.services.billing import get_subscription_tier
-            tier_name = await get_subscription_tier(client, account_id)
+            from core.billing import subscription_service
+            tier_info = await subscription_service.get_user_subscription_tier(account_id)
+            tier_name = tier_info['name']
             logger.debug(f"Account {account_id} subscription tier: {tier_name}")
         except Exception as billing_error:
             logger.warning(f"Could not get subscription tier for {account_id}: {str(billing_error)}, defaulting to free")
@@ -588,7 +694,7 @@ async def check_project_count_limit(client, account_id: str) -> Dict[str, Any]:
                 logger.debug(f"No credit account for {account_id}, defaulting to free tier")
                 tier_name = 'free'
         
-        from billing.config import get_project_limit
+        from core.billing.config import get_project_limit
         project_limit = get_project_limit(tier_name)
         can_create = current_count < project_limit
         
@@ -691,7 +797,8 @@ if __name__ == "__main__":
         print("\n💰 Testing billing integration...")
         
         try:
-            from core.services.billing import calculate_monthly_usage, get_usage_logs
+            # Note: These functions may need to be implemented in new billing system
+            # from core.services.billing import calculate_monthly_usage, get_usage_logs
             
             db = DBConnection()
             client = await db.client
@@ -700,24 +807,26 @@ if __name__ == "__main__":
             
             print(f"📊 Testing billing functions with user: {test_user_id}")
             
-            # Test calculate_monthly_usage (which uses get_usage_logs internally)
-            print("\n1️⃣ Testing calculate_monthly_usage...")
-            try:
-                usage = await calculate_monthly_usage(client, test_user_id)
-                print(f"✅ calculate_monthly_usage succeeded: ${usage:.4f}")
-            except Exception as e:
-                print(f"❌ calculate_monthly_usage failed: {str(e)}")
-            
-            # Test get_usage_logs directly with pagination
-            print("\n2️⃣ Testing get_usage_logs with pagination...")
-            try:
-                logs = await get_usage_logs(client, test_user_id, page=0, items_per_page=10)
-                print(f"✅ get_usage_logs succeeded:")
-                print(f"   - Found {len(logs.get('logs', []))} log entries")
-                print(f"   - Has more: {logs.get('has_more', False)}")
-                print(f"   - Subscription limit: ${logs.get('subscription_limit', 0)}")
-            except Exception as e:
-                print(f"❌ get_usage_logs failed: {str(e)}")
+            # TODO: Update these tests to use new billing system
+            print("\n⚠️  Billing tests disabled - need to update for new billing system")
+            # # Test calculate_monthly_usage (which uses get_usage_logs internally)
+            # print("\n1️⃣ Testing calculate_monthly_usage...")
+            # try:
+            #     usage = await calculate_monthly_usage(client, test_user_id)
+            #     print(f"✅ calculate_monthly_usage succeeded: ${usage:.4f}")
+            # except Exception as e:
+            #     print(f"❌ calculate_monthly_usage failed: {str(e)}")
+            # 
+            # # Test get_usage_logs directly with pagination
+            # print("\n2️⃣ Testing get_usage_logs with pagination...")
+            # try:
+            #     logs = await get_usage_logs(client, test_user_id, page=0, items_per_page=10)
+            #     print(f"✅ get_usage_logs succeeded:")
+            #     print(f"   - Found {len(logs.get('logs', []))} log entries")
+            #     print(f"   - Has more: {logs.get('has_more', False)}")
+            #     print(f"   - Subscription limit: ${logs.get('subscription_limit', 0)}")
+            # except Exception as e:
+            #     print(f"❌ get_usage_logs failed: {str(e)}")
                 
         except ImportError as e:
             print(f"⚠️  Could not import billing functions: {str(e)}")

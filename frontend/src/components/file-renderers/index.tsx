@@ -2,7 +2,7 @@
 
 import React, { forwardRef } from 'react';
 import { cn } from '@/lib/utils';
-import { MarkdownRenderer } from './markdown-renderer';
+import { MarkdownRenderer } from './authenticated-markdown-renderer';
 import { CodeRenderer } from './code-renderer';
 import { PdfRenderer } from './pdf-renderer';
 import { ImageRenderer } from './image-renderer';

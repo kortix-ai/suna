@@ -12,16 +12,12 @@ class ModelManager:
         return self.registry.get(model_id)
     
     def resolve_model_id(self, model_id: str) -> str:
-        logger.debug(f"resolve_model_id called with: '{model_id}' (type: {type(model_id)})")
+        # logger.debug(f"resolve_model_id called with: '{model_id}' (type: {type(model_id)})")
         
         resolved = self.registry.resolve_model_id(model_id)
         if resolved:
-            logger.debug(f"Resolved model '{model_id}' to '{resolved}'")
             return resolved
-        
-        # Silently return the original model_id if we can't resolve it
-        # This avoids spamming logs with warnings for unknown models
-        logger.debug(f"Could not resolve model ID: '{model_id}', returning as-is")
+            
         return model_id
     
     def validate_model(self, model_id: str) -> Tuple[bool, str]:
@@ -50,12 +46,12 @@ class ModelManager:
         output_cost = output_tokens * model.pricing.output_cost_per_token
         total_cost = input_cost + output_cost
         
-        logger.debug(
-            f"Cost calculation for {model.name}: "
-            f"{input_tokens} input tokens (${input_cost:.6f}) + "
-            f"{output_tokens} output tokens (${output_cost:.6f}) = "
-            f"${total_cost:.6f}"
-        )
+        # logger.debug(
+        #     f"Cost calculation for {model.name}: "
+        #     f"{input_tokens} input tokens (${input_cost:.6f}) + "
+        #     f"{output_tokens} output tokens (${output_cost:.6f}) = "
+        #     f"${total_cost:.6f}"
+        # )
         
         return total_cost
     
@@ -163,18 +159,18 @@ class ModelManager:
         tier: Optional[str] = None,
         include_disabled: bool = False
     ) -> List[Dict[str, Any]]:
-        logger.debug(f"list_available_models called with tier='{tier}', include_disabled={include_disabled}")
+        # logger.debug(f"list_available_models called with tier='{tier}', include_disabled={include_disabled}")
         
         if tier:
             models = self.registry.get_by_tier(tier, enabled_only=not include_disabled)
-            logger.debug(f"Found {len(models)} models for tier '{tier}'")
+            # logger.debug(f"Found {len(models)} models for tier '{tier}'")
         else:
             models = self.registry.get_all(enabled_only=not include_disabled)
-            logger.debug(f"Found {len(models)} total models")
+            # logger.debug(f"Found {len(models)} total models")
         
         if models:
             model_names = [m.name for m in models]
-            logger.debug(f"Models: {model_names}")
+            # logger.debug(f"Models: {model_names}")
         else:
             logger.warning(f"No models found for tier '{tier}' - this might indicate a configuration issue")
         
@@ -194,9 +190,10 @@ class ModelManager:
             if config.ENV_MODE == EnvMode.LOCAL:
                 return DEFAULT_PREMIUM_MODEL
                 
-            from core.services.billing import get_user_subscription, SUBSCRIPTION_TIERS
+            from core.billing.subscription_service import subscription_service
             
-            subscription = await get_user_subscription(user_id)
+            subscription_info = await subscription_service.get_subscription(user_id)
+            subscription = subscription_info.get('subscription')
             
             is_paid_tier = False
             if subscription:
@@ -206,15 +203,16 @@ class ModelManager:
                 else:
                     price_id = subscription.get('price_id')
                 
-                tier_info = SUBSCRIPTION_TIERS.get(price_id)
-                if tier_info and tier_info['name'] != 'free':
+                # Check if this is a paid tier by looking at the tier info
+                tier_info = subscription_info.get('tier', {})
+                if tier_info and tier_info.get('name') != 'free' and tier_info.get('name') != 'none':
                     is_paid_tier = True
             
             if is_paid_tier:
-                logger.debug(f"Setting Claude Sonnet 4 as default for paid user {user_id}")
+                # logger.debug(f"Setting Default Premium Model for paid user {user_id}")
                 return DEFAULT_PREMIUM_MODEL
             else:
-                logger.debug(f"Setting Kimi K2 as default for free user {user_id}")
+                # logger.debug(f"Setting Default Free Model for free user {user_id}")
                 return DEFAULT_FREE_MODEL
                 
         except Exception as e:

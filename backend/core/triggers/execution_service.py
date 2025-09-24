@@ -6,10 +6,13 @@ from typing import Dict, Any, Tuple, Optional
 from core.services.supabase import DBConnection
 from core.services import redis
 from core.utils.logger import logger, structlog
-from core.utils.config import config
+from core.utils.config import config, EnvMode
 from run_agent_background import run_agent_background
+from core.billing.billing_integration import billing_integration
 from .trigger_service import TriggerEvent, TriggerResult
 from .utils import format_workflow_for_llm
+
+
 
 
 class ExecutionService:
@@ -365,30 +368,25 @@ class AgentExecutor:
         logger.debug(f"Agent config for trigger execution: model='{agent_config.get('model')}', keys={list(agent_config.keys())}")
         
         model_name = agent_config.get('model')
-        logger.debug(f"Model from agent config: '{model_name}' (type: {type(model_name)})")
+        # logger.debug(f"Model from agent config: '{model_name}' (type: {type(model_name)})")
         
         if not model_name:
             account_id = agent_config.get('account_id')
             if account_id:
                 from core.ai_models import model_manager
                 model_name = await model_manager.get_default_model_for_user(client, account_id)
-            else:
-                model_name = "Kimi K2"
         
         account_id = agent_config.get('account_id')
         if not account_id:
             raise ValueError("Account ID not found in agent configuration")
         
-        from core.services.billing import can_use_model
-        from billing.billing_integration import billing_integration
+        # Unified billing and model access check
+        can_proceed, error_message, context = await billing_integration.check_model_and_billing_access(
+            account_id, model_name
+        )
         
-        can_use, model_message, allowed_models = await can_use_model(client, account_id, model_name)
-        if not can_use:
-            raise ValueError(f"Model not available: {model_message}")
-        
-        can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(account_id)
-        if not can_run:
-            raise ValueError(f"Billing check failed: {message}")
+        if not can_proceed:
+            raise ValueError(f"Access denied: {error_message}")
         
         agent_run = await client.table('agent_runs').insert({
             "thread_id": thread_id,
@@ -420,6 +418,7 @@ class AgentExecutor:
             reasoning_effort="low",
             stream=False,
             enable_context_manager=True,
+            enable_prompt_caching=True,
             agent_config=agent_config,
             request_id=structlog.contextvars.get_contextvars().get('request_id'),
         )
@@ -583,6 +582,7 @@ class WorkflowExecutor:
             'sb_deploy_tool': ['deploy'],
             'sb_expose_tool': ['expose_port'],
             'web_search_tool': ['web_search'],
+            'image_search_tool': ['image_search'],
             'data_providers_tool': ['get_data_provider_endpoints', 'execute_data_provider_call']
         }
         
@@ -608,20 +608,20 @@ class WorkflowExecutor:
         return available_tools
     
     async def _validate_workflow_execution(self, account_id: str) -> None:
-        from core.services.billing import can_use_model
+        from core.billing import is_model_allowed, get_user_subscription_tier
         from billing.billing_integration import billing_integration
         
         client = await self._db.client
         from core.ai_models import model_manager
         model_name = await model_manager.get_default_model_for_user(client, account_id)
         
-        can_use, model_message, _ = await can_use_model(client, account_id, model_name)
-        if not can_use:
-            raise Exception(f"Model access denied: {model_message}")
-            
-        can_run, billing_message, _ = await billing_integration.check_and_reserve_credits(account_id)
-        if not can_run:
-            raise Exception(f"Billing check failed: {billing_message}")
+        # Unified billing and model access check
+        can_proceed, error_message, context = await billing_integration.check_model_and_billing_access(
+            account_id, model_name
+        )
+        
+        if not can_proceed:
+            raise Exception(f"Access denied: {error_message}")
     
     async def _create_workflow_message(
         self,
@@ -665,7 +665,7 @@ class WorkflowExecutor:
         logger.debug(f"Agent config for workflow execution: model='{agent_config.get('model')}', keys={list(agent_config.keys())}")
         
         model_name = agent_config.get('model')
-        logger.debug(f"Model from agent config: '{model_name}' (type: {type(model_name)})")
+        # logger.debug(f"Model from agent config: '{model_name}' (type: {type(model_name)})")
         
         if not model_name:
             account_id = agent_config.get('account_id')
@@ -688,16 +688,13 @@ class WorkflowExecutor:
             else:
                 raise ValueError("Cannot determine account ID for workflow execution")
         
-        from core.services.billing import can_use_model
-        from billing.billing_integration import billing_integration
+        # Unified billing and model access check
+        can_proceed, error_message, context = await billing_integration.check_model_and_billing_access(
+            account_id, model_name
+        )
         
-        can_use, model_message, allowed_models = await can_use_model(client, account_id, model_name)
-        if not can_use:
-            raise ValueError(f"Model not available for workflow: {model_message}")
-        
-        can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(account_id)
-        if not can_run:
-            raise ValueError(f"Billing check failed for workflow: {message}")
+        if not can_proceed:
+            raise ValueError(f"Access denied for workflow: {error_message}")
         
         agent_run = await client.table('agent_runs').insert({
             "thread_id": thread_id,
@@ -728,6 +725,7 @@ class WorkflowExecutor:
             reasoning_effort='medium',
             stream=False,
             enable_context_manager=True,
+            enable_prompt_caching=True,
             agent_config=agent_config,
             request_id=None,
         )

@@ -7,7 +7,8 @@ import { UploadedFile } from './chat-input';
 import { FileUploadHandler } from './file-upload-handler';
 import { VoiceRecorder } from './voice-recorder';
 import { UnifiedConfigMenu } from './unified-config-menu';
-import { canAccessModel, SubscriptionStatus } from './_use-model-selection';
+// Note: canAccessModel is now part of useModelSelection hook
+export type SubscriptionStatus = 'no_subscription' | 'active';
 import { isLocalMode } from '@/lib/config';
 import { TooltipContent } from '@/components/ui/tooltip';
 import { Tooltip } from '@/components/ui/tooltip';

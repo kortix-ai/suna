@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/tooltip';
 import { useAgents } from '@/hooks/react-query/agents/use-agents';
 import { NewAgentDialog } from '@/components/agents/new-agent-dialog';
+import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
 
 import { useRouter } from 'next/navigation';
 import { cn, truncateString } from '@/lib/utils';
@@ -42,6 +43,8 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [highlightedIndex, setHighlightedIndex] = useState<number>(-1);
   const [showNewAgentDialog, setShowNewAgentDialog] = useState(false);
+  const [showConfigDialog, setShowConfigDialog] = useState(false);
+  const [configAgentId, setConfigAgentId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
@@ -119,7 +122,8 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
   const handleAgentSettings = (agentId: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setIsOpen(false);
-    router.push(`/agents/config/${agentId}`);
+    setConfigAgentId(agentId);
+    setShowConfigDialog(true);
   };
 
   const handleSearchInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -339,7 +343,18 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
       <NewAgentDialog 
         open={showNewAgentDialog} 
         onOpenChange={setShowNewAgentDialog}
+        onSuccess={(agentId) => {
+          setShowNewAgentDialog(false);
+          handleAgentSelect(agentId);
+        }}
       />
+      {configAgentId && (
+        <AgentConfigurationDialog
+          open={showConfigDialog}
+          onOpenChange={setShowConfigDialog}
+          agentId={configAgentId}
+        />
+      )}
     </>
   );
 }; 

@@ -63,11 +63,11 @@ export const useCreatePortalSession = createMutationHook(
   },
 );
 
-export const useSubscriptionCommitment = (subscriptionId?: string) => {
+export const useSubscriptionCommitment = (subscriptionId?: string, enabled = true) => {
   return useQuery({
     queryKey: subscriptionKeys.commitment(subscriptionId || ''),
     queryFn: () => getSubscriptionCommitment(subscriptionId!),
-    enabled: !!subscriptionId,
+    enabled: enabled && !!subscriptionId,
     staleTime: 1000 * 60 * 15,
     gcTime: 1000 * 60 * 30,
     refetchOnWindowFocus: false,

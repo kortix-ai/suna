@@ -156,7 +156,7 @@ class SandboxBrowserTool(SandboxToolsBase):
                             
                             if is_valid:
                                 logger.debug(f"Screenshot validation passed: {validation_message}")
-                                image_url = await upload_base64_image(screenshot_data)
+                                image_url = await upload_base64_image(screenshot_data, "browser-screenshots")
                                 result["image_url"] = image_url
                                 logger.debug(f"Uploaded screenshot to {image_url}")
                             else:

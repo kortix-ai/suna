@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, Request, Body, Query
 from fastapi.responses import JSONResponse
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from pydantic import BaseModel
 import os
 import uuid
@@ -12,12 +12,14 @@ from core.services.supabase import DBConnection
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
 from core.utils.config import config
-from core.services.billing import can_use_model
-from billing.billing_integration import billing_integration
+# Billing checks now handled by billing_integration.check_model_and_billing_access
+from core.billing.billing_integration import billing_integration
 
 from .trigger_service import get_trigger_service, TriggerType
 from .provider_service import get_provider_service
 from .execution_service import get_execution_service
+
+
 from .utils import get_next_run_time, get_human_readable_schedule
 
 
@@ -855,13 +857,21 @@ async def execute_agent_workflow(
         model_name = await model_manager.get_default_model_for_user(client, account_id)
         print("DEBUG: Using tier-based default model:", model_name)
     
-    can_use, model_message, allowed_models = await can_use_model(client, account_id, model_name)
-    if not can_use:
-        raise HTTPException(status_code=403, detail={"message": model_message, "allowed_models": allowed_models})
-
-    can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(account_id)
-    if not can_run:
-        raise HTTPException(status_code=402, detail={"message": message, "error": "insufficient_credits"})
+    # Unified billing and model access check
+    can_proceed, error_message, context = await billing_integration.check_model_and_billing_access(
+        account_id, model_name
+    )
+    
+    if not can_proceed:
+        if context.get("error_type") == "model_access_denied":
+            raise HTTPException(status_code=403, detail={
+                "message": error_message, 
+                "allowed_models": context.get("allowed_models", [])
+            })
+        elif context.get("error_type") == "insufficient_credits":
+            raise HTTPException(status_code=402, detail={"message": error_message, "error": "insufficient_credits"})
+        else:
+            raise HTTPException(status_code=500, detail={"message": error_message})
     
     from .trigger_service import TriggerResult, TriggerEvent, TriggerType
     

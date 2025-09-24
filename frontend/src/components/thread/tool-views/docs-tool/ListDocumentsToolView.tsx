@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { createClient } from '@/lib/supabase/client';
 import {
   FileText,
   CheckCircle,
@@ -63,15 +64,48 @@ export function ListDocumentsToolView({
     }
   };
   
-  const handleEditDocument = (doc: DocumentInfo) => {
+  const handleEditDocument = async (doc: DocumentInfo) => {
+    let content = doc.content || '';
+    
+    // Try to fetch the latest content from the sandbox first
+    if (data?.sandbox_id && doc.path) {
+      try {
+        const supabase = createClient();
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session?.access_token) {
+          const response = await fetch(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${data.sandbox_id}/files?path=${encodeURIComponent(doc.path)}`,
+            {
+              headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+              },
+            }
+          );
+
+          if (response.ok) {
+            const fileContent = await response.text();
+            try {
+              const parsedDocument = JSON.parse(fileContent);
+              if (parsedDocument.type === 'tiptap_document' && parsedDocument.content) {
+                content = parsedDocument.content;
+              }
+            } catch {}
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch latest content:', error);
+      }
+    }
+    
     const documentData = {
       type: 'tiptap_document',
       version: '1.0',
       title: doc.title,
-      content: doc.content || '',
+      content: content,
       metadata: doc.metadata || {},
       created_at: doc.created_at,
-      updated_at: doc.updated_at,
+      updated_at: doc.updated_at || new Date().toISOString(),
       doc_id: doc.id
     };
     
@@ -236,6 +270,7 @@ export function ListDocumentsToolView({
         filePath={editorFilePath}
         documentData={editorDocumentData}
         sandboxId={data?.sandbox_id || project?.id || ''}
+        onSave={() => {}}
       />
     )}
     </>

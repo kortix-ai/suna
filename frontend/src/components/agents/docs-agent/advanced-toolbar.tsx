@@ -215,10 +215,6 @@ export function AdvancedToolbar({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start">
-              <DropdownMenuItem onClick={() => window.print()}>
-                <Printer className="mr-2 h-4 w-4" />
-                Print
-              </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuSub>
                 <DropdownMenuSubTrigger>
@@ -226,9 +222,6 @@ export function AdvancedToolbar({
                   Export as
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent>
-                  {/* <DropdownMenuItem onClick={() => onExport?.('pdf')}>
-                    PDF
-                  </DropdownMenuItem> */}
                   <DropdownMenuItem onClick={() => onExport?.('docx')}>
                     Word Document
                   </DropdownMenuItem>

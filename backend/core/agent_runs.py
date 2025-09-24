@@ -10,9 +10,9 @@ from fastapi.responses import StreamingResponse
 
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_user_id_from_stream_auth, verify_and_authorize_thread_access
 from core.utils.logger import logger, structlog
-from core.services.billing import can_use_model
-from billing.billing_integration import billing_integration
-from core.utils.config import config
+# Billing checks now handled by billing_integration.check_model_and_billing_access
+from core.billing.billing_integration import billing_integration
+from core.utils.config import config, EnvMode
 from core.services import redis
 from core.sandbox.sandbox import create_sandbox, delete_sandbox
 from run_agent_background import run_agent_background
@@ -44,6 +44,7 @@ async def check_billing_status(client, user_id: str) -> Tuple[bool, str, Optiona
     }
     
     return can_run, message, subscription_info
+
 
 @router.post("/thread/{thread_id}/agent/start")
 async def start_agent(
@@ -129,7 +130,7 @@ async def start_agent(
                     logger.warning(f"[AGENT LOAD] Failed to get version data: {e}")
             
             logger.debug(f"[AGENT LOAD] About to call extract_agent_config with agent_data keys: {list(agent_data.keys())}")
-            logger.debug(f"[AGENT LOAD] version_data type: {type(version_data)}, has data: {version_data is not None}")
+            # logger.debug(f"[AGENT LOAD] version_data type: {type(version_data)}, has data: {version_data is not None}")
             
             agent_config = extract_agent_config(agent_data, version_data)
             
@@ -180,32 +181,34 @@ async def start_agent(
         logger.debug(f"[AGENT LOAD] Agent config keys: {list(agent_config.keys())}")
         logger.debug(f"Using agent {agent_config['agent_id']} for this agent run (thread remains agent-agnostic)")
 
-    # Run all checks concurrently
-    model_check_task = asyncio.create_task(can_use_model(client, account_id, model_name))
-    billing_check_task = asyncio.create_task(check_billing_status(client, account_id))
-    limit_check_task = asyncio.create_task(check_agent_run_limit(client, account_id))
-
-    # Wait for all checks to complete
-    (can_use, model_message, allowed_models), (can_run, message, subscription), limit_check = await asyncio.gather(
-        model_check_task, billing_check_task, limit_check_task
+    # Unified billing and model access check
+    can_proceed, error_message, context = await billing_integration.check_model_and_billing_access(
+        account_id, model_name, client
     )
-
-    # Check results and raise appropriate errors
-    if not can_use:
-        raise HTTPException(status_code=403, detail={"message": model_message, "allowed_models": allowed_models})
-
-    if not can_run:
-        raise HTTPException(status_code=402, detail={"message": message, "subscription": subscription})
-
-    if not limit_check['can_start']:
-        error_detail = {
-            "message": f"Maximum of {config.MAX_PARALLEL_AGENT_RUNS} parallel agent runs allowed within 24 hours. You currently have {limit_check['running_count']} running.",
-            "running_thread_ids": limit_check['running_thread_ids'],
-            "running_count": limit_check['running_count'],
-            "limit": config.MAX_PARALLEL_AGENT_RUNS
-        }
-        logger.warning(f"Agent run limit exceeded for account {account_id}: {limit_check['running_count']} running agents")
-        raise HTTPException(status_code=429, detail=error_detail)
+    
+    if not can_proceed:
+        if context.get("error_type") == "model_access_denied":
+            raise HTTPException(status_code=403, detail={
+                "message": error_message, 
+                "allowed_models": context.get("allowed_models", [])
+            })
+        elif context.get("error_type") == "insufficient_credits":
+            raise HTTPException(status_code=402, detail={"message": error_message})
+        else:
+            raise HTTPException(status_code=500, detail={"message": error_message})
+    
+    # Check agent run limits (only if not in local mode)
+    if config.ENV_MODE != EnvMode.LOCAL:
+        limit_check = await check_agent_run_limit(client, account_id)
+        if not limit_check['can_start']:
+            error_detail = {
+                "message": f"Maximum of {config.MAX_PARALLEL_AGENT_RUNS} parallel agent runs allowed within 24 hours. You currently have {limit_check['running_count']} running.",
+                "running_thread_ids": limit_check['running_thread_ids'],
+                "running_count": limit_check['running_count'],
+                "limit": config.MAX_PARALLEL_AGENT_RUNS
+            }
+            logger.warning(f"Agent run limit exceeded for account {account_id}: {limit_check['running_count']} running agents")
+            raise HTTPException(status_code=429, detail=error_detail)
 
     effective_model = model_name
     if not model_name and agent_config and agent_config.get('model'):
@@ -251,6 +254,7 @@ async def start_agent(
         model_name=model_name,  # Already resolved above
         enable_thinking=body.enable_thinking, reasoning_effort=body.reasoning_effort,
         stream=body.stream, enable_context_manager=body.enable_context_manager,
+        enable_prompt_caching=body.enable_prompt_caching,
         agent_config=agent_config,  # Pass agent configuration
         request_id=request_id,
     )
@@ -427,8 +431,6 @@ async def get_thread_agent(thread_id: str, user_id: str = Depends(verify_and_get
                 is_default=agent_data.get('is_default', False),
                 is_public=agent_data.get('is_public', False),
                 tags=agent_data.get('tags', []),
-                avatar=agent_config.get('avatar'),
-                avatar_color=agent_config.get('avatar_color'),
                 profile_image_url=agent_config.get('profile_image_url'),
                 created_at=agent_data['created_at'],
                 updated_at=agent_data.get('updated_at', agent_data['created_at']),
@@ -636,6 +638,7 @@ async def initiate_agent_with_files(
     reasoning_effort: Optional[str] = Form("low"),
     stream: Optional[bool] = Form(True),
     enable_context_manager: Optional[bool] = Form(False),
+    enable_prompt_caching: Optional[bool] = Form(False),
     agent_id: Optional[str] = Form(None),  # Add agent_id parameter
     files: List[UploadFile] = File(default=[]),
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
@@ -663,7 +666,7 @@ async def initiate_agent_with_files(
     # Update model_name to use the resolved version
     model_name = resolved_model
 
-    logger.debug(f"[\033[91mDEBUG\033[0m] Initiating new agent with prompt and {len(files)} files (Instance: {utils.instance_id}), model: {model_name}, enable_thinking: {enable_thinking}")
+    logger.debug(f"Initiating new agent with prompt and {len(files)} files (Instance: {utils.instance_id}), model: {model_name}, enable_thinking: {enable_thinking}")
     client = await utils.db.client
     account_id = user_id # In Basejump, personal account_id is the same as user_id
     
@@ -747,47 +750,53 @@ async def initiate_agent_with_files(
     if agent_config:
         logger.debug(f"[AGENT INITIATE] Agent config keys: {list(agent_config.keys())}")
 
-    # Run all checks concurrently
-    model_check_task = asyncio.create_task(can_use_model(client, account_id, model_name))
-    billing_check_task = asyncio.create_task(check_billing_status(client, account_id))
-    limit_check_task = asyncio.create_task(check_agent_run_limit(client, account_id))
-    project_limit_check_task = asyncio.create_task(check_project_count_limit(client, account_id))
-
-    # Wait for all checks to complete
-    (can_use, model_message, allowed_models), (can_run, message, subscription), limit_check, project_limit_check = await asyncio.gather(
-        model_check_task, billing_check_task, limit_check_task, project_limit_check_task
+    # Unified billing and model access check
+    can_proceed, error_message, context = await billing_integration.check_model_and_billing_access(
+        account_id, model_name, client
     )
+    
+    if not can_proceed:
+        if context.get("error_type") == "model_access_denied":
+            raise HTTPException(status_code=403, detail={
+                "message": error_message, 
+                "allowed_models": context.get("allowed_models", [])
+            })
+        elif context.get("error_type") == "insufficient_credits":
+            raise HTTPException(status_code=402, detail={"message": error_message})
+        else:
+            raise HTTPException(status_code=500, detail={"message": error_message})
+    
+    # Check additional limits (only if not in local mode)
+    if config.ENV_MODE != EnvMode.LOCAL:
+        # Check agent run limit and project limit concurrently
+        limit_check_task = asyncio.create_task(check_agent_run_limit(client, account_id))
+        project_limit_check_task = asyncio.create_task(check_project_count_limit(client, account_id))
+        
+        limit_check, project_limit_check = await asyncio.gather(
+            limit_check_task, project_limit_check_task
+        )
+        
+        # Check agent run limit (maximum parallel runs in past 24 hours)
+        if not limit_check['can_start']:
+            error_detail = {
+                "message": f"Maximum of {config.MAX_PARALLEL_AGENT_RUNS} parallel agent runs allowed within 24 hours. You currently have {limit_check['running_count']} running.",
+                "running_thread_ids": limit_check['running_thread_ids'],
+                "running_count": limit_check['running_count'],
+                "limit": config.MAX_PARALLEL_AGENT_RUNS
+            }
+            logger.warning(f"Agent run limit exceeded for account {account_id}: {limit_check['running_count']} running agents")
+            raise HTTPException(status_code=429, detail=error_detail)
 
-    # Check results and raise appropriate errors
-    if not can_use:
-        raise HTTPException(status_code=403, detail={"message": model_message, "allowed_models": allowed_models})
-
-    can_run, message, subscription = await check_billing_status(client, account_id)
-    if not can_run:
-        raise HTTPException(status_code=402, detail={"message": message, "subscription": subscription})
-
-    # Check agent run limit (maximum parallel runs in past 24 hours)
-    limit_check = await check_agent_run_limit(client, account_id)
-    if not limit_check['can_start']:
-        error_detail = {
-            "message": f"Maximum of {config.MAX_PARALLEL_AGENT_RUNS} parallel agent runs allowed within 24 hours. You currently have {limit_check['running_count']} running.",
-            "running_thread_ids": limit_check['running_thread_ids'],
-            "running_count": limit_check['running_count'],
-            "limit": config.MAX_PARALLEL_AGENT_RUNS
-        }
-        logger.warning(f"Agent run limit exceeded for account {account_id}: {limit_check['running_count']} running agents")
-        raise HTTPException(status_code=429, detail=error_detail)
-
-    if not project_limit_check['can_create']:
-        error_detail = {
-            "message": f"Maximum of {project_limit_check['limit']} projects allowed for your current plan. You have {project_limit_check['current_count']} projects.",
-            "current_count": project_limit_check['current_count'],
-            "limit": project_limit_check['limit'],
-            "tier_name": project_limit_check['tier_name'],
-            "error_code": "PROJECT_LIMIT_EXCEEDED"
-        }
-        logger.warning(f"Project limit exceeded for account {account_id}: {project_limit_check['current_count']}/{project_limit_check['limit']} projects")
-        raise HTTPException(status_code=402, detail=error_detail)
+        if not project_limit_check['can_create']:
+            error_detail = {
+                "message": f"Maximum of {project_limit_check['limit']} projects allowed for your current plan. You have {project_limit_check['current_count']} projects.",
+                "current_count": project_limit_check['current_count'],
+                "limit": project_limit_check['limit'],
+                "tier_name": project_limit_check['tier_name'],
+                "error_code": "PROJECT_LIMIT_EXCEEDED"
+            }
+            logger.warning(f"Project limit exceeded for account {account_id}: {project_limit_check['current_count']}/{project_limit_check['limit']} projects")
+            raise HTTPException(status_code=402, detail=error_detail)
 
     try:
         # 1. Create Project
@@ -987,6 +996,7 @@ async def initiate_agent_with_files(
             model_name=model_name,  # Already resolved above
             enable_thinking=enable_thinking, reasoning_effort=reasoning_effort,
             stream=stream, enable_context_manager=enable_context_manager,
+            enable_prompt_caching=enable_prompt_caching,
             agent_config=agent_config,  # Pass agent configuration
             request_id=request_id,
         )

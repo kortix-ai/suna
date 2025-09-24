@@ -29,6 +29,8 @@ interface TipTapDocumentModalProps {
     content: string;
     metadata?: any;
     doc_id?: string;
+    created_at?: string;
+    updated_at?: string;
   };
   sandboxId: string;
   onSave?: () => void;
@@ -197,6 +199,7 @@ export function TipTapDocumentModal({
         
         <div className="flex-1 -mt-4 overflow-auto bg-background">
           <Editor
+            key={`${filePath}-${documentData?.updated_at}`}
             content={documentData.content || '<p></p>'}
             onChange={handleEditorChange}
             onEditorReady={handleEditorReady}

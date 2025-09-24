@@ -54,8 +54,6 @@ class AgentConfigTool(AgentBuilderBaseTool):
                             }
                         }
                     },
-
-                    # Removed avatar and avatar_color - using icon system instead
                 },
                 "required": []
             }
@@ -77,9 +75,7 @@ class AgentConfigTool(AgentBuilderBaseTool):
         description: Optional[str] = None,
         system_prompt: Optional[str] = None,
         agentpress_tools: Optional[Dict[str, Dict[str, Any]]] = None,
-        configured_mcps: Optional[list] = None,
-        avatar: Optional[str] = None,
-        avatar_color: Optional[str] = None
+        configured_mcps: Optional[list] = None
     ) -> ToolResult:
         try:
             account_id = await self._get_current_account_id()
@@ -116,10 +112,6 @@ class AgentConfigTool(AgentBuilderBaseTool):
                 agent_update_fields["name"] = name
             if description is not None:
                 agent_update_fields["description"] = description
-            if avatar is not None:
-                agent_update_fields["avatar"] = avatar
-            if avatar_color is not None:
-                agent_update_fields["avatar_color"] = avatar_color
                 
             config_changed = (system_prompt is not None or agentpress_tools is not None or configured_mcps is not None)
             

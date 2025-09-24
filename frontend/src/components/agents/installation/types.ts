@@ -9,8 +9,6 @@ export interface MarketplaceTemplate {
   created_at: string;
   marketplace_published_at?: string;
   profile_image_url?: string;
-  avatar?: string;
-  avatar_color?: string;
   icon_name?: string;
   icon_color?: string;
   icon_background?: string;

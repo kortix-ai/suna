@@ -35,7 +35,6 @@ You now have special tools available that allow you to modify and configure your
 ### Agent Configuration (`update_agent` tool)
 You can modify your own identity and capabilities:
 - **Personality & Expertise**: Update your system prompt, name, and description
-- **Visual Identity**: Choose avatars and colors that match your purpose
 - **Tool Selection**: Enable/disable capabilities like web search, file management, code execution
 - **External Integrations**: Connect to thousands of external services via MCP servers
 - **IMPORTANT**: When adding new MCP servers, they are automatically merged with existing ones - all previously configured integrations are preserved

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useCreditBalance, usePurchaseCredits } from '@/hooks/react-query/use-billing-v2';
 import { useState } from 'react';
+import { useAuth } from '@/components/AuthProvider';
 import {
   Dialog,
   DialogContent,
@@ -37,7 +38,8 @@ export function CreditBalanceCard({
   compact = false,
   tierCredits 
 }: CreditBalanceCardProps) {
-  const { data: balance, isLoading, error } = useCreditBalance();
+  const { user } = useAuth();
+  const { data: balance, isLoading, error } = useCreditBalance(!!user);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [purchaseAmount, setPurchaseAmount] = useState('10');
   

@@ -4,20 +4,10 @@ import { createMutationHook, createQueryHook } from '@/hooks/use-query';
 import {
   createCheckoutSession,
   checkBillingStatus,
-  getAvailableModels,
   CreateCheckoutSessionRequest
 } from '@/lib/api';
-import { billingApi } from '@/lib/api-enhanced';
-import { modelKeys, usageKeys } from './keys';
 
-export const useAvailableModels = createQueryHook(
-  modelKeys.available,
-  getAvailableModels,
-  {
-    staleTime: 10 * 60 * 1000,
-    refetchOnWindowFocus: false,
-  }
-);
+// useAvailableModels has been moved to use-model-selection.ts for better consolidation
 
 export const useBillingStatus = createQueryHook(
   ['billing', 'status'],
@@ -46,13 +36,3 @@ export const useCreateCheckoutSession = createMutationHook(
   }
 );
 
-export const useUsageLogs = (page: number = 0, itemsPerPage: number = 1000) => 
-  createQueryHook(
-    usageKeys.logs(page, itemsPerPage),
-    () => billingApi.getUsageLogs(page, itemsPerPage),
-    {
-      staleTime: 30 * 1000, // 30 seconds
-      refetchOnMount: true,
-      refetchOnWindowFocus: false,
-    }
-  )(); 

@@ -66,12 +66,12 @@ export default function CreditTransactions({ accountId }: Props) {
 
   const formatAmount = (amount: number) => {
     const absAmount = Math.abs(amount);
-    const formatted = `$${absAmount.toFixed(4)}`;
+    const formatted = `$${absAmount.toFixed(2)}`;
     return amount >= 0 ? `+${formatted}` : `-${formatted}`;
   };
 
   const formatBalance = (balance: number) => {
-    return `$${balance.toFixed(4)}`;
+    return `$${balance.toFixed(2)}`;
   };
 
   const getTransactionIcon = (type: string, amount: number) => {
@@ -111,11 +111,6 @@ export default function CreditTransactions({ accountId }: Props) {
     if (data?.pagination.has_more) {
       setOffset(offset + limit);
     }
-  };
-
-  const handleTypeFilterChange = (value: string) => {
-    setTypeFilter(value === 'all' ? undefined : value);
-    setOffset(0); // Reset pagination when filter changes
   };
 
   if (isLoading && offset === 0) {
@@ -162,7 +157,6 @@ export default function CreditTransactions({ accountId }: Props) {
 
   return (
     <div className="space-y-6">
-      {/* Balance Summary Card */}
       {currentBalance && (
         <Card>
           <CardHeader>
@@ -273,8 +267,6 @@ export default function CreditTransactions({ accountId }: Props) {
                   </TableBody>
                 </Table>
               </div>
-
-              {/* Pagination */}
               {data?.pagination && (
                 <div className="flex items-center justify-between mt-4">
                   <p className="text-sm text-muted-foreground">

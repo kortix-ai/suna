@@ -17,8 +17,10 @@ import { cn } from '@/lib/utils';
 import { Cpu, Search, Check, ChevronDown, Plus, ExternalLink } from 'lucide-react';
 import { useAgents } from '@/hooks/react-query/agents/use-agents';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import type { ModelOption, SubscriptionStatus } from './_use-model-selection';
-import { MODELS } from './_use-model-selection';
+import type { ModelOption } from '@/hooks/use-model-selection';
+
+export type SubscriptionStatus = 'no_subscription' | 'active';
+
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { IntegrationsRegistry } from '@/components/agents/integrations-registry';
@@ -29,7 +31,7 @@ import { useAgentWorkflows } from '@/hooks/react-query/agents/use-agent-workflow
 import { PlaybookExecuteDialog } from '@/components/playbooks/playbook-execute-dialog';
 import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 import { AgentModelSelector } from '@/components/agents/config/model-selector';
-import { useRouter } from 'next/navigation';
+import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
 
 type UnifiedConfigMenuProps = {
     isLoggedIn?: boolean;
@@ -59,7 +61,6 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = ({
     subscriptionStatus,
     onUpgradeRequest,
 }) => {
-    const router = useRouter();
     const [isOpen, setIsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const searchContainerRef = useRef<HTMLDivElement>(null);
@@ -67,6 +68,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = ({
     const [showNewAgentDialog, setShowNewAgentDialog] = useState(false);
     const searchInputRef = useRef<HTMLInputElement>(null);
     const [execDialog, setExecDialog] = useState<{ open: boolean; playbook: any | null; agentId: string | null }>({ open: false, playbook: null, agentId: null });
+    const [agentConfigDialog, setAgentConfigDialog] = useState<{ open: boolean; tab: 'general' | 'instructions' | 'knowledge' | 'triggers' | 'playbooks' | 'tools' | 'integrations' }>({ open: false, tab: 'general' });
 
     const { data: agentsResponse } = useAgents({}, { enabled: isLoggedIn });
     const agents: any[] = agentsResponse?.agents || [];
@@ -126,12 +128,11 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = ({
         setIsOpen(false);
     };
 
-    const handleQuickAction = (action: 'instructions' | 'knowledge' | 'triggers') => {
+    const handleQuickAction = (action: 'instructions' | 'knowledge' | 'triggers' | 'playbooks') => {
         if (!selectedAgentId && !displayAgent?.agent_id) {
             return;
         }
-        const agentId = selectedAgentId || displayAgent?.agent_id;
-        router.push(`/agents/config/${agentId}?tab=configuration&accordion=${action}`);
+        setAgentConfigDialog({ open: true, tab: action });
         setIsOpen(false);
     };
 
@@ -248,10 +249,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = ({
                             variant="menu-item"
                         />
                     </div>
-
                     <DropdownMenuSeparator />
-
-                    {/* Quick Actions */}
                     {onAgentSelect && (selectedAgentId || displayAgent?.agent_id) && (
                         <div className="px-1.5">
                             <DropdownMenuItem
@@ -272,30 +270,12 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = ({
                             >
                                 <span className="font-medium">Triggers</span>
                             </DropdownMenuItem>
-                            <DropdownMenuSub>
-                                <DropdownMenuSubTrigger className="flex items-center rounded-lg gap-2 px-3 py-2 mx-0 my-0.5">
-                                    <span className="font-medium">Playbooks</span>
-                                </DropdownMenuSubTrigger>
-                                <DropdownMenuPortal>
-                                    <DropdownMenuSubContent className="w-72 rounded-xl max-h-80 overflow-y-auto">
-                                        {playbooksLoading ? (
-                                            <div className="px-3 py-2 text-xs text-muted-foreground">Loading…</div>
-                                        ) : playbooks && playbooks.length > 0 ? (
-                                            playbooks.map((wf: any) => (
-                                                <DropdownMenuItem
-                                                    key={`pb-${wf.id}`}
-                                                    className="text-sm px-3 py-2 mx-0 my-0.5 flex items-center justify-between cursor-pointer rounded-lg"
-                                                    onClick={(e) => { e.stopPropagation(); setExecDialog({ open: true, playbook: wf, agentId: currentAgentIdForPlaybooks }); setIsOpen(false); }}
-                                                >
-                                                    <span className="truncate">{wf.name}</span>
-                                                </DropdownMenuItem>
-                                            ))
-                                        ) : (
-                                            <div className="px-3 py-2 text-xs text-muted-foreground">No playbooks</div>
-                                        )}
-                                    </DropdownMenuSubContent>
-                                </DropdownMenuPortal>
-                            </DropdownMenuSub>
+                            <DropdownMenuItem
+                                className="text-sm px-3 py-2 mx-0 my-0.5 flex items-center gap-2 cursor-pointer rounded-lg"
+                                onClick={() => handleQuickAction('playbooks')}
+                            >
+                                <span className="font-medium">Playbooks</span>
+                            </DropdownMenuItem>
                             <TooltipProvider>
                                 <Tooltip>
                                     <TooltipTrigger asChild>
@@ -334,8 +314,6 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = ({
                     )}
                 </DropdownMenuContent>
             </DropdownMenu>
-
-            {/* Integrations manager */}
             <Dialog open={integrationsOpen} onOpenChange={setIntegrationsOpen}>
                 <DialogContent className="p-0 max-w-6xl h-[90vh] overflow-hidden">
                     <DialogHeader className="sr-only">
@@ -349,18 +327,28 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = ({
                     />
                 </DialogContent>
             </Dialog>
-
-            {/* Create Agent */}
-            <NewAgentDialog open={showNewAgentDialog} onOpenChange={setShowNewAgentDialog} />
-
-            {/* Execute Playbook */}
+            <NewAgentDialog 
+                open={showNewAgentDialog} 
+                onOpenChange={setShowNewAgentDialog}
+                onSuccess={(agentId) => {
+                    setShowNewAgentDialog(false);
+                    onAgentSelect?.(agentId);
+                }}
+            />
             <PlaybookExecuteDialog
                 open={execDialog.open}
                 onOpenChange={(open) => setExecDialog((s) => ({ ...s, open }))}
                 playbook={execDialog.playbook as any}
                 agentId={execDialog.agentId || ''}
             />
-
+            {(selectedAgentId || displayAgent?.agent_id) && (
+                <AgentConfigurationDialog
+                    open={agentConfigDialog.open}
+                    onOpenChange={(open) => setAgentConfigDialog({ ...agentConfigDialog, open })}
+                    agentId={selectedAgentId || displayAgent?.agent_id}
+                    initialTab={agentConfigDialog.tab}
+                />
+            )}
 
         </>
     );

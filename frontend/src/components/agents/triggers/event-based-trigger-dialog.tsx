@@ -13,19 +13,23 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Loader2, Search, ArrowLeft, Info, Zap, ChevronRight, Plus, Sparkles, CheckCircle2, Link2 } from 'lucide-react';
 import { useComposioAppsWithTriggers, useComposioAppTriggers, useCreateComposioEventTrigger, ComposioTriggerType } from '@/hooks/react-query/composio/use-composio-triggers';
+import { useUpdateTrigger } from '@/hooks/react-query/triggers';
 import { useComposioProfiles } from '@/hooks/react-query/composio/use-composio-profiles';
 import { useComposioToolkitDetails } from '@/hooks/react-query/composio/use-composio';
 import { toast } from 'sonner';
 import { cn, truncateString } from '@/lib/utils';
 import { useAgentWorkflows } from '@/hooks/react-query/agents/use-agent-workflows';
 import { ComposioConnector } from '@/components/agents/composio/composio-connector';
-import { MarkdownRenderer } from '@/components/ui/markdown-renderer';
+import { Markdown } from '@/components/ui/markdown';
 
 interface EventBasedTriggerDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     agentId: string;
     onTriggerCreated?: (triggerId: string) => void;
+    isEditMode?: boolean;
+    existingTrigger?: any; // TriggerConfiguration for edit mode
+    onTriggerUpdated?: (triggerId: string) => void;
 }
 
 type JSONSchema = {
@@ -296,8 +300,16 @@ const DynamicConfigForm: React.FC<{
     );
 };
 
-export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = ({ open, onOpenChange, agentId, onTriggerCreated }) => {
-    const [step, setStep] = useState<'apps' | 'triggers' | 'config'>('apps');
+export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = ({ 
+    open, 
+    onOpenChange, 
+    agentId, 
+    onTriggerCreated, 
+    isEditMode = false, 
+    existingTrigger,
+    onTriggerUpdated 
+}) => {
+    const [step, setStep] = useState<'apps' | 'triggers' | 'config'>(isEditMode ? 'config' : 'apps');
     const [search, setSearch] = useState('');
     const [selectedApp, setSelectedApp] = useState<{ slug: string; name: string; logo?: string } | null>(null);
     const [selectedTrigger, setSelectedTrigger] = useState<ComposioTriggerType | null>(null);
@@ -333,10 +345,11 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
     }, [allProfiles]);
 
     const createTrigger = useCreateComposioEventTrigger();
+    const updateTrigger = useUpdateTrigger();
 
     useEffect(() => {
         if (!open) {
-            setStep('apps');
+            setStep(isEditMode ? 'config' : 'apps');
             setSelectedApp(null);
             setSelectedTrigger(null);
             setConfig({});
@@ -348,7 +361,7 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
             setWorkflowInput({});
             setShowComposioConnector(false);
         }
-    }, [open]);
+    }, [open, isEditMode]);
 
     useEffect(() => {
         if (selectedTrigger) {
@@ -368,6 +381,65 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
             }
         }
     }, [profiles, profileId]);
+
+    // Initialize form for edit mode
+    useEffect(() => {
+        if (isEditMode && existingTrigger && open) {
+            console.log('Edit mode - existingTrigger:', existingTrigger);
+            const triggerConfig = existingTrigger.config || {};
+            console.log('Edit mode - triggerConfig:', triggerConfig);
+            
+            // Set basic info
+            setName(existingTrigger.name || '');
+            setPrompt(triggerConfig.agent_prompt || '');
+            setProfileId(triggerConfig.profile_id || '');
+            setExecutionType(triggerConfig.execution_type || 'agent');
+            setSelectedWorkflowId(triggerConfig.workflow_id || '');
+            setWorkflowInput(triggerConfig.workflow_input || {});
+            
+            // Set trigger config (excluding execution-specific fields)
+            const { agent_prompt, workflow_id, workflow_input, execution_type, profile_id, ...triggerSpecificConfig } = triggerConfig;
+            setConfig(triggerSpecificConfig);
+            
+            // For composio triggers, we need to reconstruct the app and trigger selection
+            if (triggerConfig.provider_id === 'composio' && triggerConfig.trigger_slug) {
+                console.log('Edit mode - setting up composio trigger for:', triggerConfig.qualified_name, triggerConfig.trigger_slug);
+                
+                // Extract toolkit slug from qualified_name (e.g., "composio.googledocs" -> "googledocs")
+                const toolkitSlug = triggerConfig.qualified_name?.replace('composio.', '') || '';
+                
+                if (toolkitSlug) {
+                    // Create app object to trigger the API call
+                    const app = {
+                        slug: toolkitSlug,
+                        name: toolkitSlug,
+                        logo: undefined
+                    };
+                    setSelectedApp(app);
+                }
+            }
+        }
+    }, [isEditMode, existingTrigger, open]);
+
+    // Find the matching trigger for edit mode once triggers are fetched
+    useEffect(() => {
+        if (isEditMode && existingTrigger && selectedApp && triggersData?.items) {
+            const triggerConfig = existingTrigger.config || {};
+            console.log('Edit mode - looking for trigger with slug:', triggerConfig.trigger_slug);
+            console.log('Edit mode - available triggers:', triggersData.items.map(t => t.slug));
+            
+            if (triggerConfig.trigger_slug) {
+                // Find the matching trigger from the fetched data
+                const matchingTrigger = triggersData.items.find(t => t.slug === triggerConfig.trigger_slug);
+                if (matchingTrigger) {
+                    console.log('Edit mode - found matching trigger:', matchingTrigger);
+                    setSelectedTrigger(matchingTrigger);
+                } else {
+                    console.log('Edit mode - no matching trigger found for slug:', triggerConfig.trigger_slug);
+                }
+            }
+        }
+    }, [isEditMode, existingTrigger, selectedApp, triggersData]);
 
     const selectedWorkflow = useMemo(() => {
         return (workflows || []).find((w: any) => w.id === selectedWorkflowId);
@@ -409,30 +481,61 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
     const handleCreate = async () => {
         if (!agentId || !profileId || !selectedTrigger) return;
         try {
-            const selectedProfile = profiles?.find(p => p.profile_id === profileId);
-            const base: any = {
-                agent_id: agentId,
-                profile_id: profileId,
-                slug: selectedTrigger.slug,
-                trigger_config: config,
-                name: name || `${selectedTrigger.toolkit.name} → ${executionType === 'agent' ? 'Agent' : 'Workflow'}`,
-                connected_account_id: selectedProfile?.connected_account_id,
-                toolkit_slug: selectedApp?.slug,
-            };
-            const payload = executionType === 'agent'
-                ? { ...base, route: 'agent' as const, agent_prompt: (prompt || 'Read this') }
-                : { ...base, route: 'workflow' as const, workflow_id: selectedWorkflowId, workflow_input: workflowInput };
-            const result = await createTrigger.mutateAsync(payload);
-            toast.success('Task created');
+            if (isEditMode && existingTrigger) {
+                // Update existing trigger using the general update API
+                const updatedConfig = {
+                    ...config,
+                    profile_id: profileId,
+                    trigger_slug: selectedTrigger.slug,
+                    qualified_name: `composio.${selectedApp?.slug}`,
+                    provider_id: 'composio',
+                    execution_type: executionType,
+                    ...(executionType === 'agent' ? { agent_prompt: prompt || 'Read this' } : {
+                        workflow_id: selectedWorkflowId,
+                        workflow_input: workflowInput
+                    })
+                };
 
-            if (onTriggerCreated && result?.trigger_id) {
-                onTriggerCreated(result.trigger_id);
+                await updateTrigger.mutateAsync({
+                    triggerId: existingTrigger.trigger_id,
+                    name: name || `${selectedTrigger.toolkit.name} → ${executionType === 'agent' ? 'Agent' : 'Workflow'}`,
+                    description: existingTrigger.description || `Event trigger for ${selectedTrigger.toolkit.name}`,
+                    config: updatedConfig,
+                    is_active: true,
+                });
+                toast.success('Task updated');
+
+                if (onTriggerUpdated && existingTrigger.trigger_id) {
+                    onTriggerUpdated(existingTrigger.trigger_id);
+                }
+            } else {
+                // Create new trigger using Composio-specific API
+                const selectedProfile = profiles?.find(p => p.profile_id === profileId);
+                const base: any = {
+                    agent_id: agentId,
+                    profile_id: profileId,
+                    slug: selectedTrigger.slug,
+                    trigger_config: config,
+                    name: name || `${selectedTrigger.toolkit.name} → ${executionType === 'agent' ? 'Agent' : 'Workflow'}`,
+                    connected_account_id: selectedProfile?.connected_account_id,
+                    toolkit_slug: selectedApp?.slug,
+                };
+                const payload = executionType === 'agent'
+                    ? { ...base, route: 'agent' as const, agent_prompt: (prompt || 'Read this') }
+                    : { ...base, route: 'workflow' as const, workflow_id: selectedWorkflowId, workflow_input: workflowInput };
+                
+                const result = await createTrigger.mutateAsync(payload);
+                toast.success('Task created');
+
+                if (onTriggerCreated && result?.trigger_id) {
+                    onTriggerCreated(result.trigger_id);
+                }
             }
 
             onOpenChange(false);
         } catch (e: any) {
             // Handle nested error structure from API
-            let errorMessage = 'Failed to create trigger';
+            let errorMessage = isEditMode ? 'Failed to update trigger' : 'Failed to create trigger';
             console.error('Error creating trigger:', e);
             console.error('Error details:', e?.details);
             console.error('Error keys:', Object.keys(e || {}));
@@ -486,7 +589,9 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
                                         <ArrowLeft className="h-4 w-4" />
                                     </Button>
                                 )}
-                                <DialogTitle className="text-lg font-semibold">Create Event Trigger</DialogTitle>
+                                <DialogTitle className="text-lg font-semibold">
+                                    {isEditMode ? 'Edit Event Trigger' : 'Create Event Trigger'}
+                                </DialogTitle>
                             </div>
                         </DialogHeader>
                         <ProgressStepper currentStep={step} />
@@ -612,18 +717,27 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
                                 </div>
                             )}
 
-                            {step === 'config' && selectedTrigger && (
+                            {step === 'config' && (
                                 <div className="h-full flex flex-col">
-                                    <div
-                                        className="flex-1 overflow-y-auto p-6"
-                                        style={{ maxHeight: 'calc(90vh - 250px)' }}
-                                    >
+                                    {/* Loading state for edit mode while waiting for trigger data */}
+                                    {isEditMode && !selectedTrigger ? (
+                                        <div className="flex-1 flex items-center justify-center p-6">
+                                            <div className="text-center space-y-3">
+                                                <Loader2 className="h-8 w-8 animate-spin mx-auto text-muted-foreground" />
+                                                <p className="text-sm text-muted-foreground">Loading trigger configuration...</p>
+                                            </div>
+                                        </div>
+                                    ) : selectedTrigger ? (
+                                        <>
+                                            <div
+                                                className="flex-1 overflow-y-auto p-6"
+                                                style={{ maxHeight: 'calc(90vh - 250px)' }}
+                                            >
                                         <div className="max-w-2xl mx-auto space-y-6">
                                             {selectedTrigger.instructions && (
-                                                <MarkdownRenderer
-                                                    content={selectedTrigger.instructions}
-                                                    className="text-sm w-full text-muted-foreground"
-                                                />
+                                                <Markdown className="text-sm w-full text-muted-foreground">
+                                                    {selectedTrigger.instructions}
+                                                </Markdown>
                                             )}
 
                                             {(!loadingProfiles && (profiles || []).filter(p => p.is_connected).length === 0) ? (
@@ -801,27 +915,29 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
                                         </div>
                                     </div>
 
-                                    {/* Fixed Footer */}
-                                    {(!loadingProfiles && (profiles || []).filter(p => p.is_connected).length > 0) && (
-                                        <div className="shrink-0 border-t p-4 bg-background">
-                                            <div className="flex justify-end">
-                                                <Button
-                                                    onClick={handleCreate}
-                                                    disabled={createTrigger.isPending || !name.trim() || !profileId || !isConfigValid || (executionType === 'agent' ? !prompt.trim() : !selectedWorkflowId)}
-                                                    size="sm"
-                                                >
-                                                    {createTrigger.isPending ? (
-                                                        <>
-                                                            <Loader2 className="h-3 w-3 animate-spin mr-2" />
-                                                            Creating...
-                                                        </>
-                                                    ) : (
-                                                        'Create Trigger'
-                                                    )}
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    )}
+                                            {/* Fixed Footer */}
+                                            {(!loadingProfiles && (profiles || []).filter(p => p.is_connected).length > 0) && (
+                                                <div className="shrink-0 border-t p-4 bg-background">
+                                                    <div className="flex justify-end">
+                                                        <Button
+                                                            onClick={handleCreate}
+                                                            disabled={(isEditMode ? updateTrigger.isPending : createTrigger.isPending) || !name.trim() || !profileId || !isConfigValid || (executionType === 'agent' ? !prompt.trim() : !selectedWorkflowId)}
+                                                            size="sm"
+                                                        >
+                                                            {(isEditMode ? updateTrigger.isPending : createTrigger.isPending) ? (
+                                                                <>
+                                                                    <Loader2 className="h-3 w-3 animate-spin mr-2" />
+                                                                    {isEditMode ? 'Updating...' : 'Creating...'}
+                                                                </>
+                                                            ) : (
+                                                                isEditMode ? 'Update Trigger' : 'Create Trigger'
+                                                            )}
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </>
+                                    ) : null}
                                 </div>
                             )}
                         </div>

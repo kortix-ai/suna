@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { Zap } from 'lucide-react';
 import { Dialog } from '@/components/ui/dialog';
 import { ConfiguredTriggersList } from './configured-triggers-list';
-import { TriggerConfigDialog } from './trigger-config-dialog';
+import { TriggerCreationDialog } from '../../triggers/trigger-creation-dialog';
 import { TriggerConfiguration, TriggerProvider } from './types';
 import { 
   useAgentTriggers, 
@@ -155,16 +155,15 @@ export const AgentTriggersConfiguration: React.FC<AgentTriggersConfigurationProp
       )}
       
       {configuringProvider && (
-        <Dialog open={!!configuringProvider} onOpenChange={() => setConfiguringProvider(null)}>
-          <TriggerConfigDialog
-            provider={configuringProvider}
-            existingConfig={editingTrigger}
-            onSave={handleSaveTrigger}
-            onCancel={() => setConfiguringProvider(null)}
-            isLoading={createTriggerMutation.isPending || updateTriggerMutation.isPending}
-            agentId={agentId}
-          />
-        </Dialog>
+        <TriggerCreationDialog
+          open={!!configuringProvider}
+          onOpenChange={() => setConfiguringProvider(null)}
+          type={configuringProvider.provider_id === 'schedule' ? 'schedule' : 'event'}
+          isEditMode={!!editingTrigger}
+          existingTrigger={editingTrigger}
+          onTriggerCreated={handleSaveTrigger}
+          onTriggerUpdated={handleSaveTrigger}
+        />
       )}
     </div>
   );

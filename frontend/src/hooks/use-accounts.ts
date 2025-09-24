@@ -2,7 +2,7 @@ import { useQuery, UseQueryOptions } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 import { GetAccountsResponse } from '@usebasejump/shared';
 
-export const useAccounts = (options?: UseQueryOptions<GetAccountsResponse>) => {
+export const useAccounts = (options?: Partial<UseQueryOptions<GetAccountsResponse>> & { enabled?: boolean }) => {
   const supabaseClient = createClient();
   return useQuery<GetAccountsResponse>({
     queryKey: ['accounts'],
@@ -13,6 +13,7 @@ export const useAccounts = (options?: UseQueryOptions<GetAccountsResponse>) => {
       }
       return data;
     },
+    enabled: options?.enabled !== false,
     ...options,
   });
 };

@@ -39,6 +39,7 @@ import { PresentPresentationToolView } from '../presentation-tools/PresentPresen
 import { SheetsToolView } from '../sheets-tools/sheets-tool-view';
 import { GetProjectStructureView } from '../web-dev/GetProjectStructureView';
 import { ImageEditGenerateToolView } from '../image-edit-generate-tool/ImageEditGenerateToolView';
+import { DesignerToolView } from '../designer-tool/DesignerToolView';
 import { UploadFileToolView } from '../UploadFileToolView';
 import { DocsToolView, ListDocumentsToolView, DeleteDocumentToolView } from '../docs-tool';
 import { CreateNewAgentToolView } from '../create-new-agent/create-new-agent';
@@ -52,6 +53,7 @@ import CreateAgentScheduledTriggerToolView from '../create-agent-scheduled-trigg
 import ListAgentWorkflowsToolView from '../list-agent-workflows/list-agent-workflows';
 import { createPresentationViewerToolContent, parsePresentationSlidePath } from '../utils/presentation-utils';
 import { extractToolData } from '../utils';
+import { KbToolView } from '../KbToolView';
 
 
 export type ToolViewComponent = React.ComponentType<ToolViewProps>;
@@ -105,6 +107,8 @@ const defaultRegistry: ToolViewRegistryType = {
   'load-image': SeeImageToolView,
   'clear-images-from-context': SeeImageToolView,
   'image-edit-or-generate': ImageEditGenerateToolView,
+  'designer-create-or-edit': DesignerToolView,
+  'designer_create_or_edit': DesignerToolView,
 
   'ask': AskToolView,
   'complete': CompleteToolView,
@@ -114,7 +118,7 @@ const defaultRegistry: ToolViewRegistryType = {
 
   'create-presentation-outline': PresentationOutlineToolView,
   'list-presentation-templates': ListPresentationTemplatesToolView,
-  
+
   // New per-slide presentation tools
   'create-slide': PresentationViewer,
   'list-slides': PresentationViewer,
@@ -123,7 +127,7 @@ const defaultRegistry: ToolViewRegistryType = {
   'delete-presentation': DeletePresentationToolView,
   'presentation-styles': PresentationStylesToolView,
   'present-presentation': PresentPresentationToolView,
-  
+
   'create-sheet': SheetsToolView,
   'update-sheet': SheetsToolView,
   'view-sheet': SheetsToolView,
@@ -135,6 +139,28 @@ const defaultRegistry: ToolViewRegistryType = {
   'list-web-projects': GenericToolView,
 
   'upload-file': UploadFileToolView,
+
+  // Knowledge Base tools
+  'init_kb': KbToolView,
+  'init-kb': KbToolView,
+  'search_files': KbToolView,
+  'search-files': KbToolView,
+  'ls_kb': KbToolView,
+  'ls-kb': KbToolView,
+  'cleanup_kb': KbToolView,
+  'cleanup-kb': KbToolView,
+  'global_kb_sync': KbToolView,
+  'global-kb-sync': KbToolView,
+  'global_kb_create_folder': KbToolView,
+  'global-kb-create-folder': KbToolView,
+  'global_kb_upload_file': KbToolView,
+  'global-kb-upload-file': KbToolView,
+  'global_kb_list_contents': KbToolView,
+  'global-kb-list-contents': KbToolView,
+  'global_kb_delete_item': KbToolView,
+  'global-kb-delete-item': KbToolView,
+  'global_kb_enable_item': KbToolView,
+  'global-kb-enable-item': KbToolView,
 
   // Document operations - using specific views for different operations
   'create-document': DocsToolView,
@@ -237,7 +263,7 @@ export function ToolView({ name = 'default', assistantContent, toolContent, ...p
   if (isPresentationSlide && filePath && presentationName && slideNumber && !isAlreadyPresentationTool) {
     modifiedToolContent = createPresentationViewerToolContent(presentationName, filePath, slideNumber);
   }
-  
+
   // determine the effective tool name
   const effectiveToolName = (isPresentationSlide && !isAlreadyPresentationTool) ? 'create-slide' : name;
 

@@ -22,7 +22,7 @@ import {
 import {
   MarkdownRenderer,
   processUnicodeContent,
-} from '@/components/file-renderers/markdown-renderer';
+} from '@/components/file-renderers/authenticated-markdown-renderer';
 import { CsvRenderer } from '@/components/file-renderers/csv-renderer';
 import { XlsxRenderer } from '@/components/file-renderers/xlsx-renderer';
 import { cn } from '@/lib/utils';
@@ -341,7 +341,6 @@ export function FileOperationToolView({
                   </a>
                 </Button>
               )}
-              {/* Copy button - only show when there's file content */}
               {fileContent && !isStreaming && (
                 <Button
                   variant="outline"

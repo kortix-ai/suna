@@ -24,6 +24,53 @@ import {
   type FileInfo,
 } from '@/lib/api';
 import { toast } from 'sonner';
+import { useDraggable } from '@dnd-kit/core';
+
+// Draggable file item component
+function DraggableFileItem({
+  file,
+  selectedFile,
+  onClick
+}: {
+  file: FileInfo;
+  selectedFile: string | null;
+  onClick: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    isDragging,
+  } = useDraggable({
+    id: `file-browser-${file.path}`,
+    data: {
+      type: 'external-file',
+      file: file,
+      source: 'file-browser'
+    }
+  });
+
+  const style = transform ? {
+    transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+    opacity: isDragging ? 0.5 : 1,
+  } : undefined;
+
+  return (
+    <Button
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      variant={selectedFile === file.path ? 'secondary' : 'ghost'}
+      className="w-full justify-start text-sm mb-1 cursor-grab active:cursor-grabbing"
+      onClick={onClick}
+    >
+      <FileText className="h-4 w-4 mr-2" />
+      {file.name}
+    </Button>
+  );
+}
 
 interface FileBrowserProps {
   sandboxId: string;
@@ -126,6 +173,25 @@ export function FileBrowser({
     }
   };
 
+  const handleAddToKnowledgeBase = () => {
+    if (selectedFile && fileContent) {
+      // Create a blob and download the file so user can upload it to knowledge base
+      const blob = new Blob([fileContent], { type: 'text/plain' });
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = selectedFile.split('/').pop() || 'file.txt';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast.success('File downloaded - you can now upload it to knowledge base using the Upload Files button');
+      setIsOpen(false);
+    }
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>
@@ -195,19 +261,24 @@ export function FileBrowser({
                   </Button>
                 )}
                 {files.map((file) => (
-                  <Button
-                    key={file.path}
-                    variant={selectedFile === file.path ? 'secondary' : 'ghost'}
-                    className="w-full justify-start text-sm mb-1"
-                    onClick={() => handleItemClick(file)}
-                  >
-                    {file.is_dir ? (
+                  file.is_dir ? (
+                    <Button
+                      key={file.path}
+                      variant="ghost"
+                      className="w-full justify-start text-sm mb-1"
+                      onClick={() => handleItemClick(file)}
+                    >
                       <Folder className="h-4 w-4 mr-2" />
-                    ) : (
-                      <FileText className="h-4 w-4 mr-2" />
-                    )}
-                    {file.name}
-                  </Button>
+                      {file.name}
+                    </Button>
+                  ) : (
+                    <DraggableFileItem
+                      key={file.path}
+                      file={file}
+                      selectedFile={selectedFile}
+                      onClick={() => handleItemClick(file)}
+                    />
+                  )
                 ))}
               </div>
             )}
@@ -238,7 +309,10 @@ export function FileBrowser({
         </div>
 
         {selectedFile && fileContent && onSelectFile && (
-          <div className="flex justify-end pt-2">
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={handleAddToKnowledgeBase}>
+              Add to Knowledge Base
+            </Button>
             <Button onClick={handleSelectFile}>Select File</Button>
           </div>
         )}

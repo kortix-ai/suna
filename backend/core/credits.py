@@ -5,7 +5,7 @@ from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.utils.cache import Cache
 from core.utils.config import config, EnvMode
-from billing.config import FREE_TIER_INITIAL_CREDITS, TRIAL_ENABLED
+from core.billing.config import FREE_TIER_INITIAL_CREDITS, TRIAL_ENABLED
 
 class CreditService:
     def __init__(self):

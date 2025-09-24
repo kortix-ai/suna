@@ -33,8 +33,6 @@ class AgentCreateRequest:
     custom_mcps: Optional[List[CustomMCP]] = None
     agentpress_tools: Optional[Dict[AgentPressTools, AgentPress_ToolConfig]] = None
     is_default: bool = False
-    avatar: Optional[str] = None
-    avatar_color: Optional[str] = None
     profile_image_url: Optional[str] = None
     icon_name: Optional[str] = None
     icon_color: Optional[str] = None
@@ -49,8 +47,6 @@ class AgentUpdateRequest:
     custom_mcps: Optional[List[CustomMCP]] = None
     agentpress_tools: Optional[Dict[AgentPressTools, AgentPress_ToolConfig]] = None
     is_default: Optional[bool] = None
-    avatar: Optional[str] = None
-    avatar_color: Optional[str] = None
     profile_image_url: Optional[str] = None
     icon_name: Optional[str] = None
     icon_color: Optional[str] = None
@@ -96,8 +92,6 @@ class AgentResponse:
     is_default: bool
     created_at: str
     description: Optional[str] = None
-    avatar: Optional[str] = None
-    avatar_color: Optional[str] = None
     updated_at: Optional[str] = None
     is_public: Optional[bool] = False
     marketplace_published_at: Optional[str] = None

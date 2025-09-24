@@ -5,10 +5,11 @@ import uvicorn
 import os
 from pathlib import Path
 
-# Import PDF router, PPTX router, and Visual HTML Editor router
+# Import PDF router, PPTX router, DOCX router, and Visual HTML Editor router
 from html_to_pdf_router import router as pdf_router
 from visual_html_editor_router import router as editor_router
 from html_to_pptx_router import router as pptx_router
+from html_to_docx_router import router as docx_router
 
 # Ensure we're serving from the /workspace directory
 workspace_dir = "/workspace"
@@ -28,6 +29,7 @@ app.add_middleware(WorkspaceDirMiddleware)
 app.include_router(pdf_router)
 app.include_router(editor_router)
 app.include_router(pptx_router)
+app.include_router(docx_router)
 
 # Create output directory for generated PDFs (needed by PDF router)
 output_dir = Path("generated_pdfs")
@@ -273,7 +275,9 @@ async def serve_html_file(file_name: str):
     
     return HTMLResponse(content=content)
 
-app.mount('/', StaticFiles(directory=workspace_dir, html=True), name='site')
+# Mount static files but exclude them from the specific HTML route above
+# This ensures only the HTML route handles .html files, while StaticFiles handles everything else
+app.mount('/', StaticFiles(directory=workspace_dir), name='site')
 
 # This is needed for the import string approach with uvicorn
 if __name__ == '__main__':

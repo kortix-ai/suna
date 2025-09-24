@@ -19,19 +19,21 @@ export const billingKeys = {
     [...billingKeys.all, 'usage-history', { days }] as const,
 };
 
-export const useSubscription = () => {
+export const useSubscription = (enabled = true) => {
   return useQuery({
     queryKey: billingKeys.subscription(),
     queryFn: () => billingApiV2.getSubscription(),
     staleTime: 1000 * 60,
+    enabled,
   });
 };
 
-export const useCreditBalance = () => {
+export const useCreditBalance = (enabled = true) => {
   return useQuery({
     queryKey: billingKeys.balance(),
     queryFn: () => billingApiV2.getCreditBalance(),
     staleTime: 1000 * 30,
+    enabled,
   });
 };
 

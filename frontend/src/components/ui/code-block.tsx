@@ -78,10 +78,8 @@ function CodeBlockCode({
   if (language === 'mermaid' && !mermaidFailed) {
     return (
       <MermaidRenderer 
-        code={code}
+        chart={code}
         className={className}
-        onRenderFailed={() => setMermaidFailed(true)}
-        {...props}
       />
     );
   }

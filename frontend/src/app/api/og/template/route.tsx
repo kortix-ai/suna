@@ -78,8 +78,6 @@ export async function GET(request: NextRequest) {
                 width: '120px',
                 height: '120px',
                 borderRadius: '24px',
-                backgroundColor: (template.avatar_color || '#6366f1') + '30',
-                border: `3px solid ${template.avatar_color || '#6366f1'}50`,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',

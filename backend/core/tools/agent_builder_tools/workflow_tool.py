@@ -92,6 +92,7 @@ class WorkflowTool(AgentBuilderBaseTool):
                 'sb_deploy_tool': ['deploy'],
                 'sb_expose_tool': ['expose_port'],
                 'web_search_tool': ['web_search'],
+                'image_search_tool': ['image_search'],
                 'data_providers_tool': ['get_data_provider_endpoints', 'execute_data_provider_call']
             }
             

@@ -253,7 +253,8 @@ async def read_file(
         
         # Ensure proper encoding by explicitly using UTF-8 for the filename in Content-Disposition header
         # This applies RFC 5987 encoding for the filename to support non-ASCII characters
-        encoded_filename = filename.encode('utf-8').decode('latin-1')
+        import urllib.parse
+        encoded_filename = urllib.parse.quote(filename, safe='')
         content_disposition = f"attachment; filename*=UTF-8''{encoded_filename}"
         
         return Response(

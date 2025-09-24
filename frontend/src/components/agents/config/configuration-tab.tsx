@@ -3,7 +3,7 @@ import { Settings, Wrench, Server, BookOpen, Workflow, Zap, ChevronDown, Brain }
 import { ExpandableMarkdownEditor } from '@/components/ui/expandable-markdown-editor';
 import { AgentToolsConfiguration } from '../agent-tools-configuration';
 import { AgentMCPConfiguration } from '../agent-mcp-configuration';
-import { AgentKnowledgeBaseManager } from '../knowledge-base/agent-knowledge-base-manager';
+import { AgentKnowledgeBaseManager } from '../knowledge-base/agent-kb-tree';
 import { AgentPlaybooksConfiguration } from '../playbooks/agent-playbooks-configuration';
 import { AgentTriggersConfiguration } from '../triggers/agent-triggers-configuration';
 import { AgentModelSelector } from './model-selector';
@@ -65,7 +65,7 @@ export function ConfigurationTab({
   agentMetadata,
   isLoading = false,
 }: ConfigurationTabProps) {
-  
+
   const isSunaAgent = agentMetadata?.is_suna_default || false;
 
   const mapAccordion = (val?: string) => {
@@ -112,7 +112,7 @@ export function ConfigurationTab({
       });
       return;
     }
-    
+
     if (onToolsSave) {
       onToolsSave(tools);
     } else {
@@ -237,13 +237,13 @@ export function ConfigurationTab({
               {openAccordion === 'tools' && (
                 <div className="border-t border-border bg-muted/10">
                   <div className="p-4">
-                                         <AgentToolsConfiguration
-                       tools={displayData.agentpress_tools}
-                       onToolsChange={areToolsEditable ? handleToolsChange : () => { }}
-                       disabled={!areToolsEditable}
-                       isSunaAgent={isSunaAgent}
-                       isLoading={isLoading}
-                     />
+                    <AgentToolsConfiguration
+                      tools={displayData.agentpress_tools}
+                      onToolsChange={areToolsEditable ? handleToolsChange : () => { }}
+                      disabled={!areToolsEditable}
+                      isSunaAgent={isSunaAgent}
+                      isLoading={isLoading}
+                    />
                   </div>
                 </div>
               )}
@@ -272,25 +272,25 @@ export function ConfigurationTab({
                 <div className="border-t border-border bg-muted/10">
                   <div className="p-4">
                     <AgentMCPConfiguration
-                       configuredMCPs={displayData.configured_mcps}
-                       customMCPs={displayData.custom_mcps}
-                       onMCPChange={onMCPChange}
-                       agentId={agentId}
-                       versionData={{
-                         configured_mcps: displayData.configured_mcps,
-                         custom_mcps: displayData.custom_mcps,
-                         system_prompt: displayData.system_prompt,
-                         agentpress_tools: displayData.agentpress_tools
-                       }}
-                       saveMode="callback"
-                       versionId={versionData?.version_id}
-                       isLoading={isLoading}
-                     />
+                      configuredMCPs={displayData.configured_mcps}
+                      customMCPs={displayData.custom_mcps}
+                      onMCPChange={onMCPChange}
+                      agentId={agentId}
+                      versionData={{
+                        configured_mcps: displayData.configured_mcps,
+                        custom_mcps: displayData.custom_mcps,
+                        system_prompt: displayData.system_prompt,
+                        agentpress_tools: displayData.agentpress_tools
+                      }}
+                      saveMode="callback"
+                      versionId={versionData?.version_id}
+                      isLoading={isLoading}
+                    />
                   </div>
                 </div>
               )}
             </div>
-            
+
             <div className="group overflow-hidden rounded-2xl border border-border bg-card transition-all duration-300 hover:border-primary/10" data-tour="knowledge-section">
               <button
                 className="w-full p-4 text-left group-hover:bg-muted/30 transition-all duration-300"
@@ -326,7 +326,7 @@ export function ConfigurationTab({
                 </div>
               </div>
             </div>
-            
+
             <div className="group overflow-hidden rounded-2xl border border-border bg-card transition-all duration-300 hover:border-primary/10" data-tour="playbooks-section">
               <button
                 className="w-full p-4 text-left group-hover:bg-muted/30 transition-all duration-300"

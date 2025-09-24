@@ -56,26 +56,6 @@ class ContextManager:
                 return msg_content[:max_length] + "... (truncated)" + f"\n\nmessage_id \"{message_id}\"\nUse expand-message tool to see contents"
             else:
                 return msg_content
-        elif isinstance(msg_content, dict):
-            if len(json.dumps(msg_content)) > max_length:
-                # Special handling for edit_file tool result to preserve JSON structure
-                tool_execution = msg_content.get("tool_execution", {})
-                if tool_execution.get("function_name") == "edit_file":
-                    output = tool_execution.get("result", {}).get("output", {})
-                    if isinstance(output, dict):
-                        # Truncate file contents within the JSON
-                        for key in ["original_content", "updated_content"]:
-                            if isinstance(output.get(key), str) and len(output[key]) > max_length // 4:
-                                output[key] = output[key][:max_length // 4] + "\n... (truncated)"
-                
-                # After potential truncation, check size again
-                if len(json.dumps(msg_content)) > max_length:
-                    # If still too large, fall back to string truncation
-                    return json.dumps(msg_content)[:max_length] + "... (truncated)" + f"\n\nmessage_id \"{message_id}\"\nUse expand-message tool to see contents"
-                else:
-                    return msg_content
-            else:
-                return msg_content
         
     def safe_truncate(self, msg_content: Union[str, dict], max_length: int = 100000) -> Union[str, dict]:
         """Truncate the message content safely by removing the middle portion."""
@@ -233,7 +213,7 @@ class ContextManager:
         else:  # Smaller context models
             max_tokens = context_window - 8_000   # Reserve for output + margin
         
-        logger.debug(f"Model {llm_model}: context_window={context_window}, effective_limit={max_tokens}")
+        # logger.debug(f"Model {llm_model}: context_window={context_window}, effective_limit={max_tokens}")
 
         result = messages
         result = self.remove_meta_messages(result)
@@ -246,7 +226,7 @@ class ContextManager:
 
         compressed_token_count = token_counter(model=llm_model, messages=result)
 
-        logger.debug(f"compress_messages: {uncompressed_total_token_count} -> {compressed_token_count}")  # Log the token compression for debugging later
+        logger.info(f"Context compression: {uncompressed_total_token_count} -> {compressed_token_count} tokens")
 
         if max_iterations <= 0:
             logger.warning(f"compress_messages: Max iterations reached, omitting messages")
@@ -326,7 +306,7 @@ class ContextManager:
         final_messages = ([system_message] + conversation_messages) if system_message else conversation_messages
         final_token_count = token_counter(model=llm_model, messages=final_messages)
         
-        logger.debug(f"compress_messages_by_omitting_messages: {initial_token_count} -> {final_token_count} tokens ({len(messages)} -> {len(final_messages)} messages)")
+        logger.info(f"Context compression (omit): {initial_token_count} -> {final_token_count} tokens ({len(messages)} -> {len(final_messages)} messages)")
             
         return final_messages
     

@@ -17,6 +17,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useBillingError } from '@/hooks/useBillingError';
 import { BillingErrorAlert } from '@/components/billing/usage-limit-alert';
 import { useAccounts } from '@/hooks/use-accounts';
+import { useAuth } from '@/components/AuthProvider';
 import { config, isLocalMode, isStagingMode } from '@/lib/config';
 import { useInitiateAgentWithInvalidation } from '@/hooks/react-query/dashboard/use-initiate-agent';
 
@@ -25,6 +26,7 @@ import { cn } from '@/lib/utils';
 import { BillingModal } from '@/components/billing/billing-modal';
 import { useAgentSelection } from '@/lib/stores/agent-selection-store';
 import { Examples } from './examples';
+import { AgentExamples } from './examples/agent-examples';
 import { useThreadQuery } from '@/hooks/react-query/threads/use-threads';
 import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
 import { KortixLogo } from '../sidebar/kortix-logo';
@@ -35,6 +37,7 @@ import { ReleaseBadge } from '../auth/release-badge';
 import { useDashboardTour } from '@/hooks/use-dashboard-tour';
 import { TourConfirmationDialog } from '@/components/tour/TourConfirmationDialog';
 import { Calendar, MessageSquare, Plus, Sparkles, Zap } from 'lucide-react';
+import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
 
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 
@@ -65,6 +68,8 @@ const dashboardTourSteps: Step[] = [
 export function DashboardContent() {
   const [inputValue, setInputValue] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showConfigDialog, setShowConfigDialog] = useState(false);
+  const [configAgentId, setConfigAgentId] = useState<string | null>(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [autoSubmit, setAutoSubmit] = useState(false);
   const { 
@@ -84,7 +89,8 @@ export function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const isMobile = useIsMobile();
-  const { data: accounts } = useAccounts();
+  const { user } = useAuth();
+  const { data: accounts } = useAccounts({ enabled: !!user });
   const personalAccount = accounts?.find((account) => account.personal_account);
   const chatInputRef = React.useRef<ChatInputHandles>(null);
   const initiateAgentMutation = useInitiateAgentWithInvalidation();
@@ -343,11 +349,11 @@ export function DashboardContent() {
       <div className="flex flex-col h-screen w-full overflow-hidden">
         <div className="flex-1 overflow-y-auto">
           <div className="min-h-full flex flex-col">
-            {(
+            {/* {(
               <div className="flex justify-center px-4 pt-4 md:pt-8">
                 <ReleaseBadge className='hover:cursor-pointer' text="Custom Agents, Playbooks, and more!" link="/agents?tab=my-agents" />
               </div>
-            )}
+            )} */}
             <div className="flex-1 flex items-center justify-center px-4 py-8">
               <div className="w-full max-w-[650px] flex flex-col items-center justify-center space-y-4 md:space-y-6">
                 <div className="flex flex-col items-center text-center w-full">
@@ -370,12 +376,29 @@ export function DashboardContent() {
                     selectedAgentId={selectedAgentId}
                     onAgentSelect={setSelectedAgent}
                     enableAdvancedConfig={true}
-                    onConfigureAgent={(agentId) => router.push(`/agents/config/${agentId}`)}
+                    onConfigureAgent={(agentId) => {
+                      setConfigAgentId(agentId);
+                      setShowConfigDialog(true);
+                    }}
                   />
                 </div>
-                <div className="w-full" data-tour="examples">
-                  <Examples onSelectPrompt={setInputValue} count={isMobile ? 3 : 4} />
+                
+                {/* Examples section - right after chat input */}
+                <div className="w-full pt-2" data-tour="examples">
+                  <Examples 
+                    onSelectPrompt={setInputValue} 
+                    count={isMobile ? 2 : 4} 
+                  />
                 </div>
+                
+                {/* AgentExamples section - commented out */}
+                {/* <div className="w-full pt-2" data-tour="examples">
+                  <AgentExamples 
+                    selectedAgentId={selectedAgentId}
+                    onSelectPrompt={setInputValue} 
+                    count={isMobile ? 4 : 8} 
+                  />
+                </div> */}
               </div>
             </div>
             {enabledEnvironment && (
@@ -407,6 +430,14 @@ export function DashboardContent() {
           runningCount={agentLimitData.runningCount}
           runningThreadIds={agentLimitData.runningThreadIds}
           projectId={undefined}
+        />
+      )}
+      
+      {configAgentId && (
+        <AgentConfigurationDialog
+          open={showConfigDialog}
+          onOpenChange={setShowConfigDialog}
+          agentId={configAgentId}
         />
       )}
     </>

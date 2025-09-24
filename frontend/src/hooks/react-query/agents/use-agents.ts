@@ -81,7 +81,6 @@ export const useCreateNewAgent = () => {
     },
     {
       onSuccess: (newAgent) => {
-        router.push(`/agents/config/${newAgent.agent_id}`);
       },
       onError: (error) => {
         console.error('Error creating agent:', error);
@@ -99,9 +98,7 @@ export const useUpdateAgent = () => {
       updateAgent(agentId, data),
     {
       onSuccess: (data, variables) => {
-        // Update the cache directly 
         queryClient.setQueryData(agentKeys.detail(variables.agentId), data);
-        // Invalidate lists view to update agent lists
         queryClient.invalidateQueries({ queryKey: agentKeys.lists() });
       },
     }

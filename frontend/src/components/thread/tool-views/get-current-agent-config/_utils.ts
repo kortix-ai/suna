@@ -20,8 +20,6 @@ export interface AgentConfiguration {
   agent_id: string;
   name: string;
   description: string;
-  avatar?: string;
-  avatar_color?: string;
   agentpress_tools: Record<string, AgentpressTool>;
   configured_mcps: any[];
   custom_mcps: CustomMcp[];

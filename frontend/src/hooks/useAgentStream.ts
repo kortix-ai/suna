@@ -18,6 +18,7 @@ import { agentKeys } from '@/hooks/react-query/agents/keys';
 import { composioKeys } from '@/hooks/react-query/composio/keys';
 import { workflowKeys } from '@/hooks/react-query/agents/workflow-keys';
 import { knowledgeBaseKeys } from '@/hooks/react-query/knowledge-base/keys';
+import { fileQueryKeys } from '@/hooks/react-query/files/use-file-queries';
 
 interface ApiMessageType {
   message_id?: string;
@@ -31,8 +32,6 @@ interface ApiMessageType {
   agent_id?: string;
   agents?: {
     name: string;
-    avatar?: string;
-    avatar_color?: string;
   };
 }
 
@@ -260,7 +259,10 @@ export function useAgentStream(
       setAgentRunId(null);
       currentRunIdRef.current = null;
 
-      // Invalidate relevant queries to refresh data after agent run completes
+      queryClient.invalidateQueries({ 
+        queryKey: fileQueryKeys.all,
+      });
+
       if (agentId) {
         queryClient.invalidateQueries({ queryKey: agentKeys.detail(agentId) });
         queryClient.invalidateQueries({ queryKey: agentKeys.lists() });

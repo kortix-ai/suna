@@ -45,7 +45,7 @@ class DBConnection:
                 logger.error("Missing required environment variables for Supabase connection")
                 raise RuntimeError("SUPABASE_URL and a key (SERVICE_ROLE_KEY or ANON_KEY) environment variables must be set.")
 
-            logger.debug("Initializing Supabase connection")
+            # logger.debug("Initializing Supabase connection")
             
             # Create Supabase client with timeout configuration
             self._client = await create_async_client(
@@ -55,7 +55,7 @@ class DBConnection:
             
             self._initialized = True
             key_type = "SERVICE_ROLE_KEY" if config.SUPABASE_SERVICE_ROLE_KEY else "ANON_KEY"
-            logger.debug(f"Database connection initialized with Supabase using {key_type}")
+            logger.info(f"Database connection initialized with Supabase using {key_type}")
             
         except Exception as e:
             logger.error(f"Database initialization error: {e}")
@@ -65,7 +65,7 @@ class DBConnection:
     async def disconnect(cls):
         """Disconnect from the database."""
         if cls._instance and cls._instance._client:
-            logger.debug("Disconnecting from Supabase database")
+            # logger.debug("Disconnecting from Supabase database")
             try:
                 # Close Supabase client
                 if hasattr(cls._instance._client, 'close'):
@@ -76,13 +76,13 @@ class DBConnection:
             finally:
                 cls._instance._initialized = False
                 cls._instance._client = None
-                logger.debug("Database disconnected successfully")
+                logger.info("Database disconnected successfully")
 
     @property
     async def client(self) -> AsyncClient:
         """Get the Supabase client instance."""
         if not self._initialized:
-            logger.debug("Supabase client not initialized, initializing now")
+            # logger.debug("Supabase client not initialized, initializing now")
             await self.initialize()
         if not self._client:
             logger.error("Database client is None after initialization")
