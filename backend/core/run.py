@@ -130,10 +130,13 @@ class ToolManager:
                 # logger.debug(f"Registered {tool_name}")
     
     def _register_utility_tools(self, disabled_tools: List[str]):
-        """Register utility and data provider tools."""
         if config.RAPID_API_KEY and 'data_providers_tool' not in disabled_tools:
             self.thread_manager.add_tool(DataProvidersTool)
-            # logger.debug("Registered data_providers_tool")
+        
+        if config.EXA_API_KEY and 'people_search_tool' not in disabled_tools:
+            from core.tools.people_search_tool import PeopleSearchTool
+            self.thread_manager.add_tool(PeopleSearchTool, thread_manager=self.thread_manager)
+            logger.debug("Registered people_search_tool")
     
     def _register_agent_builder_tools(self, agent_id: str, disabled_tools: List[str]):
         """Register agent builder tools."""
@@ -593,7 +596,7 @@ class AgentRunner:
             'sb_shell_tool', 'sb_files_tool', 'sb_deploy_tool', 'sb_expose_tool',
             'web_search_tool', 'sb_vision_tool', 'sb_presentation_tool', 'sb_image_edit_tool',
             'sb_sheets_tool', 'sb_web_dev_tool', 'data_providers_tool', 'browser_tool',
-            'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 
+            'people_search_tool', 'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 
             'workflow_tool', 'trigger_tool'
         ]
         
