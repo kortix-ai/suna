@@ -113,22 +113,22 @@ export const deleteThread = async (threadId: string, sandboxId?: string): Promis
     try {
       const supabase = createClient();
 
+      // Get the thread data first to access project_id later
+      const { data: thread, error: threadError } = await supabase
+        .from('threads')
+        .select('project_id')
+        .eq('thread_id', threadId)
+        .single();
+
+      if (threadError) {
+        console.error('Error fetching thread:', threadError);
+        throw new Error(`Error fetching thread: ${threadError.message}`);
+      }
+
       // If sandbox ID is provided, delete it directly
       if (sandboxId) {
         await deleteSandbox(sandboxId);
       } else {
-        // Otherwise, get the thread to find its project and sandbox
-        const { data: thread, error: threadError } = await supabase
-          .from('threads')
-          .select('project_id')
-          .eq('thread_id', threadId)
-          .single();
-
-        if (threadError) {
-          console.error('Error fetching thread:', threadError);
-          throw new Error(`Error fetching thread: ${threadError.message}`);
-        }
-
         // If thread has a project, get sandbox ID and delete it
         if (thread?.project_id) {
           const { data: project } = await supabase
@@ -168,6 +168,32 @@ export const deleteThread = async (threadId: string, sandboxId?: string): Promis
       if (threadError2) {
         console.error('Error deleting thread:', threadError2);
         throw new Error(`Error deleting thread: ${threadError2.message}`);
+      }
+
+      // Check if this was the last thread in the project, and if so, delete the project
+      if (thread?.project_id) {
+        const { data: remainingThreads, error: remainingThreadsError } = await supabase
+          .from('threads')
+          .select('thread_id')
+          .eq('project_id', thread.project_id);
+
+        if (remainingThreadsError) {
+          console.error('Error checking remaining threads:', remainingThreadsError);
+        } else if (!remainingThreads || remainingThreads.length === 0) {
+          // No remaining threads in this project, delete the project
+          console.log(`Deleting orphaned project: ${thread.project_id}`);
+          const { error: projectDeleteError } = await supabase
+            .from('projects')
+            .delete()
+            .eq('project_id', thread.project_id);
+
+          if (projectDeleteError) {
+            console.error('Error deleting orphaned project:', projectDeleteError);
+            // Don't throw here as the thread deletion was successful
+          } else {
+            console.log(`Successfully deleted orphaned project: ${thread.project_id}`);
+          }
+        }
       }
     } catch (error) {
       console.error('Error deleting thread and related items:', error);
