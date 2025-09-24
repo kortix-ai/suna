@@ -75,8 +75,8 @@ export function PeopleSearchToolView({
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-xl bg-violet-50 dark:bg-violet-950/50 border border-violet-200 dark:border-violet-800">
-              <Users className="w-5 h-5 text-violet-500 dark:text-violet-400" />
+            <div className="relative p-2 rounded-xl bg-purple-500/20 border border-purple-500/20">
+              <Users className="w-5 h-5 text-purple-500 dark:text-purple-400" />
             </div>
             <div>
               <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
@@ -116,8 +116,8 @@ export function PeopleSearchToolView({
         {isStreaming && results.length === 0 ? (
           <LoadingState
             icon={Users}
-            iconColor="text-violet-500 dark:text-violet-400"
-            bgColor="bg-violet-50 dark:bg-violet-950/50"
+            iconColor="text-primary"
+            bgColor="bg-primary/10"
             title="Searching for people"
             filePath={query}
             showProgress={true}
@@ -139,7 +139,7 @@ export function PeopleSearchToolView({
                     return (
                       <div
                         key={result.id || idx}
-                        className="group bg-card border rounded-lg hover:shadow-sm transition-all duration-200 hover:border-violet-200 dark:hover:border-violet-800"
+                        className="group bg-card border rounded-lg hover:border-primary/30"
                       >
                         <div className="p-3">
                           <div className="flex items-center gap-3">
@@ -156,8 +156,8 @@ export function PeopleSearchToolView({
                                   }}
                                 />
                               ) : (
-                              <div className="w-10 h-10 rounded-full bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center border border-violet-200 dark:border-violet-700">
-                                <User className="w-5 h-5 text-violet-500 dark:text-violet-400" />
+                              <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center border">
+                                <User className="w-5 h-5 text-muted-foreground" />
                               </div>
                               )}
                             </div>
@@ -221,7 +221,7 @@ export function PeopleSearchToolView({
                                   {result.description && (
                                     <Tooltip>
                                       <TooltipTrigger>
-                                        <Info className="w-4 h-4 text-zinc-400 hover:text-violet-500 transition-colors" />
+                                        <Info className="w-4 h-4 text-muted-foreground hover:text-primary transition-colors" />
                                       </TooltipTrigger>
                                       <TooltipContent className="max-w-sm">
                                         <p className="text-xs whitespace-pre-wrap">{truncateString(result.description, 300)}</p>
@@ -278,8 +278,8 @@ export function PeopleSearchToolView({
           </ScrollArea>
         ) : (
           <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-zinc-50/50 dark:bg-zinc-900/50">
-            <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-violet-50 dark:bg-violet-950/50">
-              <Users className="h-10 w-10 text-violet-400 dark:text-violet-600" />
+            <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-muted">
+              <Users className="h-10 w-10 text-muted-foreground" />
             </div>
             <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
               No People Found
