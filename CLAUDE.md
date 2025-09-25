@@ -102,3 +102,16 @@ Agents use an extensible tool system to interact with external services:
 - `backend/api.py`: Main FastAPI application
 - `backend/run_agent_background.py`: Background job processor
 - `frontend/src/app/(dashboard)/dashboard/page.tsx`: Main dashboard
+
+## Workflow Automation
+
+The repository includes workflow automation tools in `context2/.claude/commands/`:
+- `/specify`: Create feature specifications from natural language descriptions
+- `/clarify`: Interactive clarification workflow for ambiguous requirements
+- `/plan`: Generate implementation plans and technical design artifacts
+- `/implement`: Execute implementation based on task specifications
+- `/tasks`: Break down features into executable task lists
+- `/analyze`: Analyze existing features and codebase structure
+- `/constitution`: Review and update project standards and guidelines
+
+These commands integrate with the `.specify/` directory structure for artifact management.
