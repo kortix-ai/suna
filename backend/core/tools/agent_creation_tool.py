@@ -4,6 +4,7 @@ from uuid import uuid4
 from core.agentpress.tool import Tool, ToolResult, openapi_schema, usage_example
 from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
+from core.utils.core_tools_helper import ensure_core_tools_enabled
 from core.utils.config import config
 
 
@@ -221,6 +222,8 @@ Approach each research task methodically, starting with broad searches and then 
                 for tool_name, enabled in agent_builder_tools.items():
                     if tool_name not in agentpress_tools:
                         agentpress_tools[tool_name] = enabled
+            
+            agentpress_tools = ensure_core_tools_enabled(agentpress_tools)
             
             if configured_mcps is None:
                 configured_mcps = []
