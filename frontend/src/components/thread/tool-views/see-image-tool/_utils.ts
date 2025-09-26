@@ -45,8 +45,32 @@ const extractFromNewFormat = (content: any): {
       }
     }
 
+    // Extract display file path from structured output, fall back to args
+    let filePath = args.file_path || null;
+    const rawOutput = toolExecution.result?.output;
+    
+    // Check if output has display_file_path (handles both object and string formats)
+    if (rawOutput) {
+      let outputData = rawOutput;
+      console.log('outputData', outputData);
+      
+      // Parse string output if needed
+      if (typeof rawOutput === 'string') {
+        try {
+          outputData = JSON.parse(rawOutput);
+        } catch (e) {
+          // Not JSON, keep original
+        }
+      }
+      
+      // Use display_file_path if available
+      if (outputData && typeof outputData === 'object' && outputData.file_path) {
+        filePath = outputData.file_path;
+      }
+    }
+
     const extractedData = {
-      filePath: args.file_path || null,
+      filePath,
       description: parsedContent.summary || null,
       success: toolExecution.result?.success,
       timestamp: toolExecution.execution_details?.timestamp,
