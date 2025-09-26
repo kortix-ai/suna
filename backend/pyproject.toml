@@ -84,6 +84,8 @@ dependencies = [
   "google-auth-oauthlib>=1.2.0",
   "google-auth-httplib2>=0.2.0",
   "typing-extensions==4.15.0",
+  "svglib>=1.6.0",
+  "reportlab>=4.4.4",
 ]
 
 [project.urls]
