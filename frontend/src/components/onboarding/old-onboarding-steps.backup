@@ -1,0 +1,1480 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { useOnboarding } from '@/hooks/use-onboarding';
+import { 
+  Bot, 
+  Sparkles, 
+  Zap, 
+  Shield, 
+  MessageSquare, 
+  Workflow,
+  Users,
+  ArrowRight,
+  CheckCircle2,
+  Brain,
+  Globe,
+  FileText,
+  Settings,
+  Play,
+  Star,
+  Target,
+  TrendingUp,
+  PenTool,
+  BarChart3,
+  Calendar,
+  Code,
+  Smartphone,
+  Search,
+  Building2,
+  User,
+  Briefcase,
+  ChevronDown,
+  Filter,
+  Link,
+  ExternalLink,
+  Lightbulb,
+  ArrowLeft
+} from 'lucide-react';
+import { motion } from 'framer-motion';
+import type { OnboardingStep } from '@/hooks/use-onboarding';
+
+interface UserContext {
+  userType: 'individual' | 'company' | null;
+  name: string;
+  email?: string;
+  websiteUrl?: string;
+  companyName?: string;
+  industry?: string;
+  role?: string;
+  teamSize?: string;
+  primaryGoals: string[];
+  extractedContext?: {
+    description?: string;
+    industry?: string;
+    services?: string[];
+    size?: string;
+  };
+  invitedTeammates?: string[];
+  selectedAgents?: string[];
+}
+
+// Global state for user context (in a real app, this would be in a proper state management solution)
+let userContext: UserContext = {
+  userType: null,
+  name: '',
+  primaryGoals: []
+};
+
+interface AIAgentCardProps {
+  name: string;
+  role: string;
+  icon: string;
+  description: string;
+  features: string[];
+  integrations?: string[];
+  isSelected?: boolean;
+  onSelect?: () => void;
+  onSetup?: () => void;
+}
+
+const AIAgentCard: React.FC<AIAgentCardProps> = ({ 
+  name, 
+  role, 
+  icon, 
+  description, 
+  features, 
+  isSelected, 
+  onSelect, 
+  onSetup 
+}) => (
+  <motion.div
+    initial={{ y: 20, opacity: 0 }}
+    animate={{ y: 0, opacity: 1 }}
+    transition={{ duration: 0.3 }}
+    className={`relative p-6 rounded-xl border-2 cursor-pointer transition-all duration-300 ${
+      isSelected 
+        ? 'border-primary bg-primary/5 shadow-lg' 
+        : 'border-border hover:border-primary/50 hover:shadow-md'
+    }`}
+    onClick={onSelect}
+  >
+    <div className="space-y-4">
+      <div className="flex items-center gap-4">
+        <div className="text-4xl">{icon}</div>
+        <div>
+          <h3 className="text-lg font-semibold">{name}</h3>
+          <p className="text-sm text-muted-foreground">{role}</p>
+        </div>
+      </div>
+      
+      <p className="text-sm text-foreground">{description}</p>
+      
+      <div className="flex flex-wrap gap-1">
+        {features.slice(0, 3).map((feature, index) => (
+          <Badge key={index} variant="secondary" className="text-xs">
+            {feature}
+          </Badge>
+        ))}
+        {features.length > 3 && (
+          <Badge variant="secondary" className="text-xs">
+            +{features.length - 3} more
+          </Badge>
+        )}
+      </div>
+      
+      {isSelected && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="pt-2"
+        >
+          <Button onClick={onSetup} className="w-full" size="sm">
+            <Play className="h-4 w-4 mr-2" />
+            Set Up {name}
+          </Button>
+        </motion.div>
+      )}
+    </div>
+  </motion.div>
+);
+
+// CEO Introduction Step
+export const CEOIntroStep = () => (
+  <div className="text-center space-y-8 max-w-2xl mx-auto">
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.6 }}
+      className="space-y-6"
+    >
+      {/* Video placeholder - replace with actual video */}
+      <div className="relative rounded-2xl overflow-hidden bg-gradient-to-br from-primary/10 to-purple-500/10 aspect-video">
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="text-center space-y-4">
+            <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center mx-auto mb-4">
+              <User className="h-10 w-10 text-primary" />
+            </div>
+            <h3 className="text-lg font-semibold">Hi, I'm Marko</h3>
+            <p className="text-sm text-muted-foreground max-w-sm">
+              CEO & Founder of AgentPress. Welcome to the future of AI workforce automation.
+            </p>
+            <Button size="sm" className="mt-4">
+              <Play className="h-4 w-4 mr-2" />
+              Play Video (30s)
+            </Button>
+          </div>
+        </div>
+      </div>
+      
+      <div className="text-left space-y-3 bg-muted/30 p-6 rounded-xl">
+        <h4 className="font-semibold text-sm">What you'll get in the next 2 minutes:</h4>
+        <div className="space-y-2 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-green-500" />
+            <span>AI agents configured specifically for your business</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-green-500" />
+            <span>Instant productivity boost from day one</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-green-500" />
+            <span>Your team ready to collaborate with AI</span>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  </div>
+);
+
+// Smart Context Step - Ultra minimalist with smart automation
+export const SmartContextStep = () => {
+  const [localContext, setLocalContext] = useState<UserContext>(userContext);
+  const [isExtracting, setIsExtracting] = useState(false);
+
+  const updateContext = (updates: Partial<UserContext>) => {
+    const newContext = { ...localContext, ...updates };
+    setLocalContext(newContext);
+    userContext = newContext;
+  };
+
+  // Simulate website content extraction
+  const extractWebsiteContext = async (url: string) => {
+    setIsExtracting(true);
+    // Simulate API call
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Mock extracted data
+    const mockExtracted = {
+      description: "Digital marketing agency specializing in AI-powered growth strategies",
+      industry: "Digital Marketing",
+      services: ["SEO", "Content Marketing", "Social Media", "Analytics"],
+      size: "Small Agency (10-25 people)"
+    };
+    
+    updateContext({ 
+      extractedContext: mockExtracted,
+      industry: "marketing",
+      companyName: "Smart Growth Agency", // Auto-extracted
+      primaryGoals: ["Boost marketing efforts", "Improve content creation", "Better data analysis"]
+    });
+    setIsExtracting(false);
+  };
+
+  return (
+    <div className="max-w-lg mx-auto space-y-6">
+      <div className="text-center space-y-3">
+        <h3 className="text-2xl font-semibold">Let's get you started</h3>
+        <p className="text-muted-foreground">
+          We'll automatically configure your AI workforce
+        </p>
+      </div>
+
+      <Card className="p-6 space-y-5">
+        {/* Quick user type detection */}
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={() => updateContext({ userType: 'individual' })}
+            className={`p-4 rounded-lg border-2 transition-all text-left ${
+              localContext.userType === 'individual'
+                ? 'border-primary bg-primary/5'
+                : 'border-border hover:border-primary/50'
+            }`}
+          >
+            <User className="h-5 w-5 text-primary mb-2" />
+            <div className="text-sm font-medium">Individual</div>
+          </button>
+          <button
+            onClick={() => updateContext({ userType: 'company' })}
+            className={`p-4 rounded-lg border-2 transition-all text-left ${
+              localContext.userType === 'company'
+                ? 'border-primary bg-primary/5'
+                : 'border-border hover:border-primary/50'
+            }`}
+          >
+            <Building2 className="h-5 w-5 text-primary mb-2" />
+            <div className="text-sm font-medium">Company</div>
+          </button>
+        </div>
+
+        {/* Smart inputs */}
+        <div className="space-y-4">
+          <div>
+            <input
+              type="text"
+              value={localContext.name}
+              onChange={(e) => updateContext({ name: e.target.value })}
+              placeholder="Your name (optional)"
+              className="w-full p-3 border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+          </div>
+
+          {localContext.userType === 'company' && (
+            <div className="space-y-3">
+              <div className="relative">
+                <input
+                  type="url"
+                  value={localContext.websiteUrl || ''}
+                  onChange={(e) => updateContext({ websiteUrl: e.target.value })}
+                  placeholder="Your website URL (we'll extract context automatically)"
+                  className="w-full p-3 border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+                />
+                {localContext.websiteUrl && !localContext.extractedContext && (
+                  <Button
+                    size="sm"
+                    onClick={() => extractWebsiteContext(localContext.websiteUrl!)}
+                    disabled={isExtracting}
+                    className="absolute right-2 top-2 h-8"
+                  >
+                    {isExtracting ? (
+                      <>
+                        <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full mr-2" />
+                        Analyzing...
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="h-3 w-3 mr-1" />
+                        Analyze
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
+
+              {localContext.extractedContext && (
+                <motion.div
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg"
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <CheckCircle2 className="h-4 w-4 text-green-500" />
+                    <span className="text-sm font-medium text-green-700 dark:text-green-300">
+                      Got it! Here's what we found:
+                    </span>
+                  </div>
+                  <div className="text-xs text-green-600 dark:text-green-400 space-y-1">
+                    <div>{localContext.extractedContext.description}</div>
+                    <div className="flex gap-2 flex-wrap">
+                      {localContext.extractedContext.services?.map(service => (
+                        <Badge key={service} variant="secondary" className="text-xs">
+                          {service}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      {/* Auto-progress indicator */}
+      {(localContext.userType && (localContext.userType === 'individual' || localContext.extractedContext)) && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center p-4 bg-primary/5 rounded-lg border border-primary/20"
+        >
+          <div className="flex items-center justify-center gap-2 text-sm">
+            <Sparkles className="h-4 w-4 text-primary" />
+            <span className="text-primary font-medium">
+              Perfect! We're ready to build your AI workforce
+            </span>
+          </div>
+        </motion.div>
+      )}
+    </div>
+  );
+};
+
+// Welcome Step
+export const WelcomeStep = () => (
+  <div className="text-center space-y-8">
+    <motion.div
+      initial={{ scale: 0.8, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ duration: 0.5 }}
+      className="relative mx-auto w-32 h-32 mb-8"
+    >
+      <div className="absolute inset-0 bg-gradient-to-r from-primary/20 to-purple-500/20 rounded-full animate-pulse" />
+      <div className="absolute inset-2 bg-background rounded-full flex items-center justify-center">
+        <Users className="h-16 w-16 text-primary" />
+      </div>
+    </motion.div>
+    
+    <div className="space-y-4 max-w-2xl mx-auto">
+      <h3 className="text-2xl font-semibold text-foreground">
+        Welcome to Your AI Workforce! 🚀
+      </h3>
+      <p className="text-lg text-muted-foreground">
+        Let's build your personalized team of AI agents to automate your work and boost productivity. Each agent specializes in different areas to help you achieve your goals.
+      </p>
+      <div className="flex flex-wrap justify-center gap-2 mt-6">
+        <Badge variant="secondary" className="flex items-center gap-1">
+          <Bot className="h-3 w-3" />
+          Specialized Agents
+        </Badge>
+        <Badge variant="secondary" className="flex items-center gap-1">
+          <Zap className="h-3 w-3" />
+          Instant Setup
+        </Badge>
+        <Badge variant="secondary" className="flex items-center gap-1">
+          <Workflow className="h-3 w-3" />
+          Smart Automation
+        </Badge>
+        <Badge variant="secondary" className="flex items-center gap-1">
+          <Shield className="h-3 w-3" />
+          Always Learning
+        </Badge>
+      </div>
+    </div>
+  </div>
+);
+
+// Team Invitation Step
+export const TeamInvitationStep = () => {
+  const [inviteEmails, setInviteEmails] = useState<string[]>(['']);
+  const [isSkipping, setIsSkipping] = useState(false);
+
+  const addEmailField = () => {
+    setInviteEmails([...inviteEmails, '']);
+  };
+
+  const updateEmail = (index: number, email: string) => {
+    const updated = [...inviteEmails];
+    updated[index] = email;
+    setInviteEmails(updated);
+  };
+
+  const removeEmail = (index: number) => {
+    if (inviteEmails.length > 1) {
+      const updated = inviteEmails.filter((_, i) => i !== index);
+      setInviteEmails(updated);
+    }
+  };
+
+  const sendInvites = () => {
+    const validEmails = inviteEmails.filter(email => email.trim() && email.includes('@'));
+    userContext.invitedTeammates = validEmails;
+    console.log('Sending invites to:', validEmails);
+  };
+
+  return (
+    <div className="max-w-lg mx-auto space-y-6">
+      <div className="text-center space-y-3">
+        <Users className="h-12 w-12 text-primary mx-auto" />
+        <h3 className="text-2xl font-semibold">Invite your team</h3>
+        <p className="text-muted-foreground">
+          {userContext.userType === 'company' 
+            ? 'Get your team started with AI agents from day one' 
+            : 'Collaborate with others on your AI projects'
+          }
+        </p>
+      </div>
+
+      <Card className="p-6">
+        <div className="space-y-4">
+          <label className="text-sm font-medium">Team member emails</label>
+          
+          {inviteEmails.map((email, index) => (
+            <div key={index} className="flex gap-2">
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => updateEmail(index, e.target.value)}
+                placeholder={`teammate${index + 1}@company.com`}
+                className="flex-1 p-3 border rounded-lg bg-background focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              {inviteEmails.length > 1 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => removeEmail(index)}
+                  className="px-3"
+                >
+                  ×
+                </Button>
+              )}
+              </div>
+          ))}
+          
+          <Button
+            variant="outline"
+            onClick={addEmailField}
+            className="w-full text-sm"
+            disabled={inviteEmails.length >= 10}
+          >
+            + Add another team member
+          </Button>
+            </div>
+        
+        {inviteEmails.some(email => email.trim()) && (
+      <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg"
+          >
+            <div className="text-xs text-blue-600 dark:text-blue-400">
+              💡 Your team will get instant access to the same AI agents you configure
+              </div>
+      </motion.div>
+        )}
+        </Card>
+
+      <div className="flex justify-between items-center">
+        <Button 
+          variant="ghost" 
+          onClick={() => setIsSkipping(true)}
+          className="text-muted-foreground"
+        >
+          Skip for now
+        </Button>
+        <Button onClick={sendInvites}>
+          {inviteEmails.some(email => email.trim()) ? 'Send Invites' : 'Continue'}
+          <ArrowRight className="h-4 w-4 ml-2" />
+        </Button>
+              </div>
+            </div>
+  );
+};
+
+// Streamlined AI Workforce Selection Step
+export const AIWorkforceSelectionStep = () => {
+  const [selectedAgents, setSelectedAgents] = useState<string[]>([]);
+  const [filter, setFilter] = useState<'recommended' | 'all' | string>('recommended');
+  const { setSteps } = useOnboarding();
+
+  // Get recommendations based on user context
+  const getRecommendedAgents = () => {
+    const goals = userContext.primaryGoals || [];
+    const userType = userContext.userType;
+    const recommended = new Set<string>();
+
+    // Goal-based recommendations
+    if (goals.includes('Improve content creation')) recommended.add('maya');
+    if (goals.includes('Better data analysis')) recommended.add('sage');
+    if (goals.includes('Code assistance')) recommended.add('byte');
+    if (goals.includes('Boost marketing efforts')) {
+      recommended.add('pixel');
+      recommended.add('nova');
+    }
+    if (goals.includes('Streamline project management')) recommended.add('echo');
+    if (goals.includes('Enhance customer service')) recommended.add('hunter');
+    
+    // User type based recommendations
+    if (userType === 'company') {
+      recommended.add('apex'); // Business strategist for companies
+      recommended.add('echo'); // Project manager for teams
+    }
+
+    // Industry-based recommendations
+    if (userContext.industry === 'technology' || userContext.industry === 'marketing') {
+      recommended.add('byte');
+      recommended.add('nova');
+    }
+
+    // If extracted context suggests marketing/content business
+    if (userContext.extractedContext?.services?.some(service => 
+      ['SEO', 'Content Marketing', 'Social Media', 'Analytics'].includes(service)
+    )) {
+      recommended.add('maya');
+      recommended.add('nova');
+      recommended.add('pixel');
+      recommended.add('sage');
+    }
+
+    // Role-based recommendations
+    if (userContext.role?.toLowerCase().includes('founder') || userContext.role?.toLowerCase().includes('ceo')) {
+      recommended.add('apex'); // Strategic advisor for leaders
+      recommended.add('sage'); // Business intelligence
+      recommended.add('echo'); // Operations management
+    }
+
+    // Default recommendations if nothing specific found
+    if (recommended.size === 0) {
+      recommended.add('maya'); // Content creation is universally useful
+      recommended.add('sage'); // Data analysis is universally useful
+      recommended.add('pixel'); // Social media is universally useful
+    }
+
+    return Array.from(recommended);
+  };
+
+  // AI Agent categories and definitions
+  const agentCategories = [
+    { id: 'recommended', label: 'Recommended', icon: Lightbulb, description: 'Personalized for you' },
+    { id: 'all', label: 'All Agents', icon: Filter, description: 'Complete collection' },
+    { id: 'leadership', label: 'Leadership', icon: Building2, description: 'Strategy & direction' },
+    { id: 'growth', label: 'Growth', icon: TrendingUp, description: 'Marketing & sales' },
+    { id: 'product', label: 'Product', icon: Target, description: 'Development & design' },
+    { id: 'operations', label: 'Operations', icon: Settings, description: 'Efficiency & process' },
+    { id: 'analytics', label: 'Analytics', icon: BarChart3, description: 'Data & insights' },
+    { id: 'support', label: 'Support', icon: Users, description: 'Customer & team success' }
+  ];
+
+  const agents = [
+    {
+      id: 'maya',
+      name: 'Maya',
+      role: 'Content Creator & Copywriter',
+      icon: '✍️',
+      category: 'growth',
+      description: 'Creates compelling copy for ads, blogs, marketing campaigns, and social media content that converts readers into customers.',
+      features: ['Blog Writing', 'Ad Copy', 'Social Media', 'Email Marketing', 'SEO Content']
+    },
+    {
+      id: 'hunter',
+      name: 'Hunter',
+      role: 'Talent Acquisition Specialist',
+      icon: '🎯',
+      category: 'support',
+      description: 'Streamlines hiring with magnetic job posts, candidate screening, interview scheduling, and smooth onboarding processes.',
+      features: ['Job Posting', 'Resume Screening', 'Interview Prep', 'Candidate Outreach', 'Onboarding']
+    },
+    {
+      id: 'nova',
+      name: 'Nova',
+      role: 'Growth Marketing Analyst',
+      icon: '📈',
+      category: 'growth',
+      description: 'Boosts website rankings with proven SEO strategies, keyword research, competitor analysis, and performance tracking.',
+      features: ['Keyword Research', 'Site Audit', 'Competitor Analysis', 'Content Optimization', 'Ranking Tracking']
+    },
+    {
+      id: 'pixel',
+      name: 'Pixel',
+      role: 'Brand & Social Media Manager',
+      icon: '📱',
+      category: 'growth',
+      description: 'Manages social media presence with content planning, post scheduling, engagement tracking, and community management.',
+      features: ['Content Planning', 'Post Scheduling', 'Analytics', 'Community Management', 'Trend Analysis']
+    },
+    {
+      id: 'sage',
+      name: 'Sage',
+      role: 'Business Intelligence Analyst',
+      icon: '📊',
+      category: 'analytics',
+      description: 'Transforms raw data into actionable insights with comprehensive analysis, reporting, and data visualization.',
+      features: ['Data Analysis', 'Report Generation', 'Visualization', 'KPI Tracking', 'Forecasting']
+    },
+    {
+      id: 'echo',
+      name: 'Echo',
+      role: 'Operations Manager',
+      icon: '📋',
+      category: 'operations',
+      description: 'Streamlines workflows, coordinates tasks, manages timelines, and ensures timely project delivery across teams.',
+      features: ['Task Management', 'Timeline Planning', 'Team Coordination', 'Progress Tracking', 'Resource Planning']
+    },
+    {
+      id: 'byte',
+      name: 'Byte',
+      role: 'Engineering Assistant',
+      icon: '💻',
+      category: 'product',
+      description: 'Provides expert programming support with code review, debugging, architecture design, and deployment automation.',
+      features: ['Code Review', 'Bug Fixing', 'Architecture Design', 'Testing', 'CI/CD Automation']
+    },
+    {
+      id: 'apex',
+      name: 'Apex',
+      role: 'Strategic Business Advisor',
+      icon: '🏢',
+      category: 'leadership',
+      description: 'Develops business strategies, market analysis, competitive intelligence, and growth planning for sustainable success.',
+      features: ['Market Research', 'Strategy Planning', 'Competitor Analysis', 'Growth Hacking', 'Business Intelligence']
+    },
+    {
+      id: 'zen',
+      name: 'Zen',
+      role: 'Customer Success Manager',
+      icon: '💬',
+      category: 'support',
+      description: 'Enhances customer experience with support automation, feedback analysis, and relationship management.',
+      features: ['Customer Support', 'Feedback Analysis', 'Onboarding', 'Retention', 'Satisfaction Tracking']
+    },
+    {
+      id: 'flux',
+      name: 'Flux',
+      role: 'Product Design Specialist',
+      icon: '🎨',
+      category: 'product',
+      description: 'Creates stunning user experiences with design systems, prototyping, and user research insights.',
+      features: ['UI/UX Design', 'Prototyping', 'User Research', 'Design Systems', 'A/B Testing']
+    }
+  ];
+
+  const toggleAgent = (agentId: string) => {
+    setSelectedAgents(prev => 
+      prev.includes(agentId) 
+        ? prev.filter(id => id !== agentId)
+        : [...prev, agentId]
+    );
+  };
+
+  const setupAgent = (agentId: string) => {
+    // Simulate agent setup process
+    const agent = agents.find(a => a.id === agentId);
+    if (agent) {
+      // Show a brief setup animation/feedback
+      console.log(`🚀 Setting up ${agent.name} - ${agent.role}`);
+      
+      // In a real implementation, this would:
+      // 1. Create the agent with the configuration
+      // 2. Set up initial workflows
+      // 3. Configure integrations
+      // 4. Add to user's agent list
+      
+      // For demo purposes, we'll show it's been set up
+      alert(`✅ ${agent.name} has been configured and is ready to help with ${agent.role.toLowerCase()} tasks!`);
+    }
+  };
+
+  const recommendedIds = getRecommendedAgents();
+
+  const getFilteredAgents = () => {
+    switch (filter) {
+      case 'recommended':
+        return agents.filter(agent => recommendedIds.includes(agent.id));
+      case 'all':
+        return agents;
+      default:
+        // Filter by category
+        return agents.filter(agent => agent.category === filter);
+    }
+  };
+
+  const filteredAgents = getFilteredAgents();
+
+  // Auto-select recommended agents if user hasn't selected any yet
+  useEffect(() => {
+    if (selectedAgents.length === 0 && recommendedIds.length > 0) {
+      const autoSelected = recommendedIds.slice(0, 3);
+      setSelectedAgents(autoSelected); // Auto-select top 3 recommendations
+      userContext.selectedAgents = autoSelected; // Save to global context
+    }
+  }, [recommendedIds, selectedAgents.length]);
+
+  // Update global context when agents are selected/deselected
+  useEffect(() => {
+    userContext.selectedAgents = selectedAgents;
+    // Don't regenerate steps - we'll handle agent config differently
+    console.log('🔄 Selected agents updated:', selectedAgents);
+  }, [selectedAgents]);
+
+  return (
+    <div className="space-y-8">
+      <div className="text-center space-y-4">
+        <h3 className="text-2xl font-semibold">
+          {userContext.name ? `Perfect! ${userContext.name}, meet your AI workforce` : 'Choose Your AI Workforce'}
+        </h3>
+        <p className="text-muted-foreground max-w-2xl mx-auto">
+          {userContext.extractedContext 
+            ? `Based on your business context, we've recommended these specialized AI agents. You can customize the selection.`
+            : `Select the AI agents that match your needs. We've pre-selected our top recommendations for you.`
+          }
+        </p>
+        
+        {/* Filter tabs */}
+        <div className="flex justify-center">
+          <div className="flex flex-wrap justify-center gap-2 max-w-4xl">
+            {agentCategories.map((category) => {
+              const agentCount = category.id === 'recommended' 
+                ? recommendedIds.length 
+                : category.id === 'all' 
+                ? agents.length 
+                : agents.filter(agent => agent.category === category.id).length;
+              
+              const Icon = category.icon;
+              
+              return (
+                <button
+                  key={category.id}
+                  onClick={() => setFilter(category.id)}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                    filter === category.id
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'bg-muted/50 text-muted-foreground hover:text-foreground hover:bg-muted'
+                  }`}
+                >
+                  <Icon className="h-4 w-4" />
+                  <span>{category.label}</span>
+                  {agentCount > 0 && (
+                    <Badge 
+                      variant={filter === category.id ? "secondary" : "outline"} 
+                      className="ml-1 h-5 text-xs"
+                    >
+                      {agentCount}
+                    </Badge>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex justify-center items-center gap-4">
+          <Badge variant="outline" className="text-sm">
+            {selectedAgents.length} agent{selectedAgents.length !== 1 ? 's' : ''} selected
+          </Badge>
+          {selectedAgents.length > 0 && (
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={() => setSelectedAgents([])}
+              className="text-xs"
+            >
+              Clear all
+            </Button>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {filteredAgents.map((agent, index) => (
+      <motion.div
+            key={agent.id}
+        initial={{ y: 20, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: index * 0.1 }}
+            className="relative"
+          >
+            {recommendedIds.includes(agent.id) && (
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="absolute -top-2 -right-2 z-10"
+              >
+                <Badge className="bg-gradient-to-r from-primary to-purple-500 text-white border-0 shadow-lg">
+                  <Lightbulb className="h-3 w-3 mr-1" />
+                  Recommended
+                </Badge>
+              </motion.div>
+            )}
+            <AIAgentCard
+              {...agent}
+              isSelected={selectedAgents.includes(agent.id)}
+              onSelect={() => toggleAgent(agent.id)}
+              onSetup={() => setupAgent(agent.id)}
+            />
+          </motion.div>
+        ))}
+              </div>
+
+      {selectedAgents.length > 0 && (
+      <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="text-center"
+        >
+          <Card className="p-6 bg-primary/5 border-primary/20">
+            <div className="space-y-4">
+              <div className="flex items-center justify-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-green-500" />
+                <span className="font-medium">Great choices! Your AI workforce is ready to be configured.</span>
+            </div>
+              <p className="text-sm text-muted-foreground">
+                In the next steps, we'll help you set up each selected agent with your specific requirements and preferences.
+              </p>
+            </div>
+        </Card>
+      </motion.div>
+      )}
+    </div>
+  );
+};
+
+// Agent Configuration Step - Now handles individual agents
+export const AgentConfigurationStep = ({ 
+  agentId, 
+  agentIndex = 0, 
+  totalAgents = 1,
+  hideHeader = false,
+  showAsContent = false
+}: { 
+  agentId?: string; 
+  agentIndex?: number; 
+  totalAgents?: number;
+  hideHeader?: boolean;
+  showAsContent?: boolean;
+}) => {
+  const [configuration, setConfiguration] = useState<{[key: string]: any}>({});
+
+  // Get the specific agent being configured
+  const selectedAgentIds = userContext.selectedAgents || ['maya', 'sage', 'byte'];
+  const currentAgentId = agentId || selectedAgentIds[0];
+
+  // Get agent details based on selected IDs
+  const allAgents = [
+    { id: 'maya', name: 'Maya', role: 'Content Creator & Copywriter', icon: '✍️' },
+    { id: 'hunter', name: 'Hunter', role: 'Talent Acquisition Specialist', icon: '🎯' },
+    { id: 'nova', name: 'Nova', role: 'Growth Marketing Analyst', icon: '📈' },
+    { id: 'pixel', name: 'Pixel', role: 'Brand & Social Media Manager', icon: '📱' },
+    { id: 'sage', name: 'Sage', role: 'Business Intelligence Analyst', icon: '📊' },
+    { id: 'echo', name: 'Echo', role: 'Operations Manager', icon: '📋' },
+    { id: 'byte', name: 'Byte', role: 'Engineering Assistant', icon: '💻' },
+    { id: 'apex', name: 'Apex', role: 'Strategic Business Advisor', icon: '🏢' },
+    { id: 'zen', name: 'Zen', role: 'Customer Success Manager', icon: '💬' },
+    { id: 'flux', name: 'Flux', role: 'Product Design Specialist', icon: '🎨' }
+  ];
+
+  const currentAgent = allAgents.find(agent => agent.id === currentAgentId);
+
+  // Debug info - log the current context
+  console.log('🔧 AgentConfigurationStep - Current context:', {
+    currentAgentId,
+    agentIndex,
+    totalAgents,
+    currentAgent,
+    userContext: userContext.selectedAgents
+  });
+
+  // Safety check - if no current agent
+  if (!currentAgent) {
+    return (
+      <div className="text-center space-y-4">
+        <h3 className="text-xl font-semibold">Agent Not Found</h3>
+        <p className="text-muted-foreground">Could not find agent with ID: {currentAgentId}</p>
+        <div className="text-sm text-muted-foreground mt-4">
+          Debug: Available agents: {JSON.stringify(allAgents.map(a => a.id))}
+    </div>
+  </div>
+);
+  }
+
+  const getConfigurationFields = (agentId: string) => {
+    const configs: {[key: string]: any} = {
+      maya: [
+        { key: 'tone', label: 'Writing Tone', type: 'select', options: ['Professional', 'Casual', 'Creative', 'Technical', 'Persuasive'], default: 'Professional' },
+        { key: 'industry', label: 'Industry Focus', type: 'select', options: ['Technology', 'Healthcare', 'Finance', 'Retail', 'Education', 'Marketing', 'General'], default: 'General' },
+        { key: 'contentTypes', label: 'Content Types', type: 'multiselect', options: ['Blog Posts', 'Social Media', 'Email Marketing', 'Ad Copy', 'Product Descriptions', 'Press Releases'] },
+        { key: 'seoFocus', label: 'SEO Optimization', type: 'select', options: ['High Priority', 'Medium Priority', 'Low Priority'], default: 'Medium Priority' }
+      ],
+      hunter: [
+        { key: 'industries', label: 'Target Industries', type: 'multiselect', options: ['Technology', 'Healthcare', 'Finance', 'Marketing', 'Sales', 'Engineering', 'Design'] },
+        { key: 'roleTypes', label: 'Role Types', type: 'multiselect', options: ['Entry Level', 'Mid Level', 'Senior Level', 'Executive', 'Freelance', 'Contract'] },
+        { key: 'screeningCriteria', label: 'Screening Focus', type: 'multiselect', options: ['Skills Assessment', 'Experience Match', 'Culture Fit', 'Salary Range', 'Location'] },
+        { key: 'communicationStyle', label: 'Communication Style', type: 'select', options: ['Formal', 'Professional', 'Friendly', 'Direct'], default: 'Professional' }
+      ],
+      nova: [
+        { key: 'seoTasks', label: 'SEO Focus Areas', type: 'multiselect', options: ['Keyword Research', 'Content Optimization', 'Technical SEO', 'Link Building', 'Local SEO', 'Analytics'] },
+        { key: 'competitorTracking', label: 'Competitor Analysis', type: 'select', options: ['Comprehensive', 'Basic', 'None'], default: 'Basic' },
+        { key: 'reportingDetail', label: 'Report Detail Level', type: 'select', options: ['Executive Summary', 'Detailed Analysis', 'Technical Deep Dive'], default: 'Detailed Analysis' },
+        { key: 'tools', label: 'Preferred Tools', type: 'multiselect', options: ['Google Analytics', 'SEMrush', 'Ahrefs', 'Search Console', 'Screaming Frog'] }
+      ],
+      pixel: [
+        { key: 'platforms', label: 'Social Platforms', type: 'multiselect', options: ['Instagram', 'Twitter', 'LinkedIn', 'Facebook', 'TikTok', 'YouTube', 'Pinterest'] },
+        { key: 'contentStyle', label: 'Content Style', type: 'select', options: ['Corporate', 'Casual', 'Creative', 'Educational', 'Entertainment'], default: 'Professional' },
+        { key: 'postingFrequency', label: 'Posting Frequency', type: 'select', options: ['Multiple Daily', 'Daily', 'Every Other Day', 'Weekly'], default: 'Daily' },
+        { key: 'engagement', label: 'Engagement Strategy', type: 'multiselect', options: ['Community Management', 'Influencer Outreach', 'User-Generated Content', 'Contests', 'Live Streaming'] }
+      ],
+      sage: [
+        { key: 'dataSource', label: 'Primary Data Sources', type: 'multiselect', options: ['Google Analytics', 'Database Queries', 'CSV Files', 'APIs', 'Spreadsheets', 'CRM Systems'] },
+        { key: 'analysisType', label: 'Analysis Focus', type: 'multiselect', options: ['Sales Performance', 'Customer Behavior', 'Marketing ROI', 'Operational Metrics', 'Financial KPIs'] },
+        { key: 'reportingFrequency', label: 'Reporting Frequency', type: 'select', options: ['Real-time', 'Daily', 'Weekly', 'Monthly', 'Quarterly'], default: 'Weekly' },
+        { key: 'visualizationType', label: 'Preferred Charts', type: 'multiselect', options: ['Bar Charts', 'Line Graphs', 'Pie Charts', 'Heatmaps', 'Dashboards', 'Interactive Reports'] }
+      ],
+      echo: [
+        { key: 'methodology', label: 'Project Methodology', type: 'select', options: ['Agile', 'Scrum', 'Kanban', 'Waterfall', 'Hybrid'], default: 'Agile' },
+        { key: 'teamSize', label: 'Typical Team Size', type: 'select', options: ['Small (2-5)', 'Medium (6-15)', 'Large (16+)', 'Variable'], default: 'Medium (6-15)' },
+        { key: 'projectTypes', label: 'Project Types', type: 'multiselect', options: ['Software Development', 'Marketing Campaigns', 'Product Launches', 'Process Improvement', 'Research Projects'] },
+        { key: 'communicationFrequency', label: 'Update Frequency', type: 'select', options: ['Daily Standups', 'Weekly Updates', 'Bi-weekly', 'Monthly'], default: 'Daily Standups' }
+      ],
+      byte: [
+        { key: 'languages', label: 'Programming Languages', type: 'multiselect', options: ['JavaScript', 'Python', 'TypeScript', 'Java', 'Go', 'Rust', 'C#', 'PHP'] },
+        { key: 'frameworks', label: 'Frameworks & Libraries', type: 'multiselect', options: ['React', 'Node.js', 'Django', 'FastAPI', 'Next.js', 'Express', 'Vue.js', 'Angular'] },
+        { key: 'devOpsTools', label: 'DevOps Tools', type: 'multiselect', options: ['Docker', 'Kubernetes', 'AWS', 'Azure', 'GitHub Actions', 'Jenkins', 'Terraform'] },
+        { key: 'codeStyle', label: 'Code Review Style', type: 'select', options: ['Comprehensive', 'Security Focused', 'Performance Focused', 'Style Focused'], default: 'Comprehensive' }
+      ],
+      apex: [
+        { key: 'businessAreas', label: 'Business Focus Areas', type: 'multiselect', options: ['Strategy Planning', 'Market Analysis', 'Growth Hacking', 'Competitive Intelligence', 'Financial Planning'] },
+        { key: 'industryExpertise', label: 'Industry Expertise', type: 'multiselect', options: ['SaaS', 'E-commerce', 'Healthcare', 'Finance', 'Manufacturing', 'Consulting'] },
+        { key: 'analysisDepth', label: 'Analysis Depth', type: 'select', options: ['High-level Overview', 'Detailed Analysis', 'Strategic Deep Dive'], default: 'Detailed Analysis' },
+        { key: 'reportingStyle', label: 'Reporting Style', type: 'select', options: ['Executive Summary', 'Detailed Reports', 'Visual Presentations', 'Data-Driven'], default: 'Executive Summary' }
+      ]
+    };
+    return configs[agentId] || [];
+  };
+
+  // Get available integrations for each agent
+  const getAgentIntegrations = (agentId: string) => {
+    const integrations: {[key: string]: { name: string; icon: string; description: string }[]} = {
+      maya: [
+        { name: 'Google Docs', icon: '📄', description: 'Write and collaborate on documents' },
+        { name: 'WordPress', icon: '📝', description: 'Publish content directly to WordPress' },
+        { name: 'Mailchimp', icon: '📧', description: 'Create email marketing campaigns' },
+        { name: 'Buffer', icon: '📱', description: 'Schedule social media posts' },
+        { name: 'Grammarly', icon: '✍️', description: 'AI-powered writing assistant' }
+      ],
+      hunter: [
+        { name: 'LinkedIn', icon: '💼', description: 'Source and contact candidates' },
+        { name: 'Indeed', icon: '🔍', description: 'Post jobs and search candidates' },
+        { name: 'Calendly', icon: '📅', description: 'Schedule interviews automatically' },
+        { name: 'Greenhouse', icon: '🌱', description: 'Applicant tracking system' },
+        { name: 'Slack', icon: '💬', description: 'Team communication and updates' }
+      ],
+      nova: [
+        { name: 'Google Analytics', icon: '📊', description: 'Website traffic analysis' },
+        { name: 'Search Console', icon: '🔍', description: 'Monitor search performance' },
+        { name: 'SEMrush', icon: '📈', description: 'Keyword research and tracking' },
+        { name: 'Ahrefs', icon: '🔗', description: 'Backlink analysis and monitoring' },
+        { name: 'Google Ads', icon: '🎯', description: 'Paid search advertising' }
+      ],
+      pixel: [
+        { name: 'Instagram', icon: '📸', description: 'Post and manage Instagram content' },
+        { name: 'Twitter/X', icon: '🐦', description: 'Tweet scheduling and engagement' },
+        { name: 'Facebook', icon: '👥', description: 'Manage Facebook pages and ads' },
+        { name: 'LinkedIn', icon: '💼', description: 'Professional networking content' },
+        { name: 'Canva', icon: '🎨', description: 'Create social media graphics' }
+      ],
+      sage: [
+        { name: 'Google Sheets', icon: '📊', description: 'Spreadsheet data analysis' },
+        { name: 'Tableau', icon: '📈', description: 'Advanced data visualization' },
+        { name: 'Salesforce', icon: '☁️', description: 'CRM data and analytics' },
+        { name: 'HubSpot', icon: '🎯', description: 'Marketing and sales analytics' },
+        { name: 'Power BI', icon: '📊', description: 'Business intelligence reports' }
+      ],
+      echo: [
+        { name: 'Asana', icon: '✅', description: 'Project and task management' },
+        { name: 'Trello', icon: '📋', description: 'Kanban-style project boards' },
+        { name: 'Jira', icon: '🎫', description: 'Software development tracking' },
+        { name: 'Monday.com', icon: '📅', description: 'Work management platform' },
+        { name: 'Slack', icon: '💬', description: 'Team communication' }
+      ],
+      byte: [
+        { name: 'GitHub', icon: '🐙', description: 'Code repository management' },
+        { name: 'GitLab', icon: '🦊', description: 'DevOps platform integration' },
+        { name: 'Docker', icon: '🐳', description: 'Container management' },
+        { name: 'AWS', icon: '☁️', description: 'Cloud infrastructure' },
+        { name: 'VS Code', icon: '💻', description: 'Code editor integration' }
+      ],
+      apex: [
+        { name: 'Google Analytics', icon: '📊', description: 'Business intelligence data' },
+        { name: 'Salesforce', icon: '☁️', description: 'Customer relationship data' },
+        { name: 'HubSpot', icon: '🎯', description: 'Marketing and sales metrics' },
+        { name: 'QuickBooks', icon: '💰', description: 'Financial data analysis' },
+        { name: 'Zoom', icon: '📹', description: 'Meeting and presentation tools' }
+      ]
+    };
+    return integrations[agentId] || [];
+  };
+
+  const getIntegrationFields = (agentId: string) => {
+    return [
+      { 
+        key: 'integrations', 
+        label: 'Connect Your Tools', 
+        type: 'integrations', 
+        options: getAgentIntegrations(agentId)
+      }
+    ];
+  };
+
+  const handleConfigurationChange = (field: string, value: any) => {
+    setConfiguration(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const getConfigurationCompleteness = () => {
+    const fields = getConfigurationFields(currentAgent.id);
+    const configuredFields = fields.filter(field => configuration[field.key]);
+    return { configured: configuredFields.length, total: fields.length };
+  };
+
+  const getConfigurationContent = () => (
+    <>
+      {/* Configuration progress */}
+      <div className="mb-4">
+        <div className="flex justify-between text-sm text-muted-foreground mb-2">
+          <span>Configuration Progress</span>
+          <span>{getConfigurationCompleteness().configured} of {getConfigurationCompleteness().total} completed</span>
+        </div>
+        <div className="w-full bg-muted rounded-full h-2">
+          <div 
+            className="bg-primary h-2 rounded-full transition-all duration-300" 
+            style={{ width: `${(getConfigurationCompleteness().configured / getConfigurationCompleteness().total) * 100}%` }}
+          />
+        </div>
+      </div>
+
+      {[...getConfigurationFields(currentAgent.id), ...getIntegrationFields(currentAgent.id)].map((field, index) => (
+        <motion.div
+          key={field.key}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: index * 0.1 }}
+          className="space-y-4"
+        >
+          <label className="text-sm font-medium">{field.label}</label>
+          {field.type === 'select' ? (
+            <select
+              className="w-full p-2 border rounded-md bg-background"
+              value={configuration[field.key] || field.default || ''}
+              onChange={(e) => handleConfigurationChange(field.key, e.target.value)}
+            >
+              {field.options.map((option: string) => (
+                <option key={option} value={option}>{option}</option>
+              ))}
+            </select>
+          ) : field.type === 'multiselect' ? (
+            <div className="grid grid-cols-2 gap-2">
+              {field.options.map((option: string) => (
+                <label key={option} className="flex items-center space-x-2 p-2 border rounded-md cursor-pointer hover:bg-muted">
+                  <input
+                    type="checkbox"
+                    checked={configuration[field.key]?.includes(option) || false}
+                    onChange={(e) => {
+                      const current = configuration[field.key] || [];
+                      const updated = e.target.checked
+                        ? [...current, option]
+                        : current.filter((item: string) => item !== option);
+                      handleConfigurationChange(field.key, updated);
+                    }}
+                  />
+                  <span className="text-sm">{option}</span>
+                </label>
+              ))}
+            </div>
+          ) : field.type === 'integrations' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {field.options.map((integration: any) => (
+                <label
+                  key={integration.name} 
+                  className="flex items-center space-x-3 p-3 border rounded-lg cursor-pointer hover:bg-muted transition-colors"
+                >
+                  <input
+                    type="checkbox"
+                    checked={configuration[field.key]?.includes(integration.name) || false}
+                    onChange={(e) => {
+                      const current = configuration[field.key] || [];
+                      const updated = e.target.checked
+                        ? [...current, integration.name]
+                        : current.filter((item: string) => item !== integration.name);
+                      handleConfigurationChange(field.key, updated);
+                    }}
+                  />
+                  <div className="flex items-center space-x-2">
+                    <span className="text-lg">{integration.icon}</span>
+                    <div>
+                      <div className="font-medium text-sm">{integration.name}</div>
+                      <div className="text-xs text-muted-foreground">{integration.description}</div>
+                    </div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          ) : null}
+        </motion.div>
+      ))}
+
+      {/* Navigation hint for non-content mode */}
+      {!showAsContent && (
+        <div className="pt-4 text-center">
+          <p className="text-sm text-muted-foreground">
+            Use the navigation buttons below to continue to the next step.
+          </p>
+        </div>
+      )}
+    </>
+  );
+
+  return (
+  <div className="space-y-8">
+      {!hideHeader && (
+        <div className="text-center space-y-4">
+          <div className="flex items-center justify-center gap-3">
+            <div className="p-3 rounded-xl bg-primary/10">
+              <div className="text-2xl">{currentAgent.icon}</div>
+            </div>
+            <div>
+              <h3 className="text-2xl font-semibold">Setup {currentAgent.name}</h3>
+      <p className="text-muted-foreground">
+                Customize {currentAgent.name} for your {currentAgent.role.toLowerCase()} needs.
+      </p>
+            </div>
+    </div>
+    
+          {/* Progress now handled by main stepper */}
+          {totalAgents > 1 && (
+            <div className="flex items-center justify-center gap-2">
+              <Badge variant="outline" className="px-3 py-1">
+                Agent {agentIndex + 1} of {totalAgents}
+              </Badge>
+            </div>
+          )}
+        </div>
+      )}
+    
+      {/* Current agent configuration */}
+      {showAsContent ? (
+        <div className="space-y-6">
+          {/* Configuration fields directly */}
+          {getConfigurationContent()}
+        </div>
+      ) : (
+        <Card className="max-w-2xl mx-auto">
+          <CardHeader>
+            <div className="flex items-center gap-4">
+              <div className="text-3xl">{currentAgent.icon}</div>
+              <div>
+                <CardTitle className="text-xl">{currentAgent.name}</CardTitle>
+                <CardDescription>{currentAgent.role}</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {getConfigurationContent()}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+};
+// Completion Step
+export const CompletionStep = () => {
+  // Get the configured agents from global context
+  const selectedAgentIds = userContext.selectedAgents || [];
+  
+  // Agent details for completion display
+  const allAgents = [
+    { id: 'maya', name: 'Maya', role: 'Content Creator', icon: '✍️' },
+    { id: 'hunter', name: 'Hunter', role: 'Talent Acquisition', icon: '🎯' },
+    { id: 'nova', name: 'Nova', role: 'Growth Marketing', icon: '📈' },
+    { id: 'pixel', name: 'Pixel', role: 'Social Media', icon: '📱' },
+    { id: 'sage', name: 'Sage', role: 'Data Analyst', icon: '📊' },
+    { id: 'echo', name: 'Echo', role: 'Operations', icon: '📋' },
+    { id: 'byte', name: 'Byte', role: 'Code Assistant', icon: '💻' },
+    { id: 'apex', name: 'Apex', role: 'Business Strategy', icon: '🏢' },
+    { id: 'zen', name: 'Zen', role: 'Customer Success', icon: '💬' },
+    { id: 'flux', name: 'Flux', role: 'Product Design', icon: '🎨' }
+  ];
+
+  const completedAgents = allAgents.filter(agent => selectedAgentIds.includes(agent.id));
+
+  console.log('🎉 CompletionStep - Configured agents:', {
+    selectedAgentIds,
+    completedAgents,
+    userName: userContext.name
+  });
+
+  return (
+  <div className="text-center space-y-8">
+    <motion.div
+      initial={{ scale: 0.8, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ duration: 0.5 }}
+        className="relative mx-auto w-32 h-32 mb-8"
+    >
+      <div className="absolute inset-0 bg-gradient-to-r from-green-500/20 to-emerald-500/20 rounded-full animate-pulse" />
+      <div className="absolute inset-2 bg-background rounded-full flex items-center justify-center">
+          <Users className="h-16 w-16 text-green-500" />
+      </div>
+    </motion.div>
+    
+    <div className="space-y-4 max-w-2xl mx-auto">
+      <h3 className="text-2xl font-semibold text-foreground">
+          Your AI Workforce is Ready! 🎉
+      </h3>
+      <p className="text-lg text-muted-foreground">
+          Congratulations! You've successfully onboarded your AI agents. They're now configured and ready to help you achieve your goals.
+        </p>
+        
+        {/* Show configured agents */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-8">
+          {completedAgents.map((agent, index) => (
+            <motion.div
+              key={agent.name}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.1 }}
+              className="p-4 border rounded-lg bg-card"
+            >
+          <div className="flex items-center gap-3">
+                <div className="text-2xl">{agent.icon}</div>
+                <div className="text-left">
+                  <div className="font-medium">{agent.name}</div>
+                  <div className="text-sm text-muted-foreground">{agent.role}</div>
+          </div>
+                <CheckCircle2 className="h-5 w-5 text-green-500 ml-auto" />
+              </div>
+            </motion.div>
+          ))}
+        </div>
+        
+        <div className="bg-primary/5 border border-primary/20 rounded-lg p-6 mt-8">
+          <h4 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-primary" />
+            Ready to Get Started?
+          </h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
+            <div className="space-y-2">
+          <div className="flex items-center gap-3">
+                <MessageSquare className="h-4 w-4 text-primary flex-shrink-0" />
+                <span className="text-sm">Start conversations with your agents</span>
+          </div>
+          <div className="flex items-center gap-3">
+                <Settings className="h-4 w-4 text-primary flex-shrink-0" />
+                <span className="text-sm">Customize agent behaviors anytime</span>
+          </div>
+          </div>
+            <div className="space-y-2">
+          <div className="flex items-center gap-3">
+                <Workflow className="h-4 w-4 text-primary flex-shrink-0" />
+                <span className="text-sm">Create automated workflows</span>
+          </div>
+          <div className="flex items-center gap-3">
+                <Bot className="h-4 w-4 text-primary flex-shrink-0" />
+                <span className="text-sm">Add more agents as you grow</span>
+              </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+};
+
+// Multi-Agent Configuration Step - handles all agents with internal progress
+export const MultiAgentConfigurationStep = () => {
+  const [currentAgentIndex, setCurrentAgentIndex] = useState(0);
+  const [configurations, setConfigurations] = useState<{[key: string]: any}>({});
+
+  // Get selected agents from global context
+  const selectedAgentIds = userContext.selectedAgents || ['maya', 'sage', 'byte'];
+
+  // Get agent details based on selected IDs
+  const allAgents = [
+    { id: 'maya', name: 'Maya', role: 'Content Creator & Copywriter', icon: '✍️' },
+    { id: 'hunter', name: 'Hunter', role: 'Talent Acquisition Specialist', icon: '🎯' },
+    { id: 'nova', name: 'Nova', role: 'Growth Marketing Analyst', icon: '📈' },
+    { id: 'pixel', name: 'Pixel', role: 'Brand & Social Media Manager', icon: '📱' },
+    { id: 'sage', name: 'Sage', role: 'Business Intelligence Analyst', icon: '📊' },
+    { id: 'echo', name: 'Echo', role: 'Operations Manager', icon: '📋' },
+    { id: 'byte', name: 'Byte', role: 'Engineering Assistant', icon: '💻' },
+    { id: 'apex', name: 'Apex', role: 'Strategic Business Advisor', icon: '🏢' },
+    { id: 'zen', name: 'Zen', role: 'Customer Success Manager', icon: '💬' },
+    { id: 'flux', name: 'Flux', role: 'Product Design Specialist', icon: '🎨' }
+  ];
+
+  const selectedAgents = allAgents.filter(agent => selectedAgentIds.includes(agent.id));
+  const currentAgent = selectedAgents[currentAgentIndex];
+
+  // Safety check
+  if (!selectedAgents.length || !currentAgent) {
+    return (
+      <div className="text-center space-y-4">
+        <h3 className="text-xl font-semibold">No Agents Selected</h3>
+        <p className="text-muted-foreground">Please go back and select at least one AI agent to configure.</p>
+      </div>
+    );
+  }
+
+  const nextAgent = () => {
+    if (currentAgentIndex < selectedAgents.length - 1) {
+      setCurrentAgentIndex(prev => prev + 1);
+    }
+  };
+
+  const previousAgent = () => {
+    if (currentAgentIndex > 0) {
+      setCurrentAgentIndex(prev => prev - 1);
+    }
+  };
+
+  return (
+    <div className="space-y-8 max-w-4xl mx-auto">
+      {/* Header with agent progress */}
+      <div className="text-center space-y-4">
+        <div className="flex items-center justify-center gap-3">
+          <div className="p-3 rounded-xl bg-primary/10">
+            <div className="text-2xl">{currentAgent.icon}</div>
+          </div>
+          <div>
+            <h3 className="text-2xl font-semibold">Setup {currentAgent.name}</h3>
+            <p className="text-muted-foreground">
+              Customize {currentAgent.name} for your {currentAgent.role.toLowerCase()} needs.
+            </p>
+          </div>
+        </div>
+        
+        {/* Internal agent progress */}
+        <div className="flex justify-center space-x-2">
+          {selectedAgents.map((agent, index) => (
+            <div
+              key={agent.id}
+              className={`flex items-center space-x-2 px-3 py-1 rounded-full text-sm ${
+                index === currentAgentIndex
+                  ? 'bg-primary text-primary-foreground'
+                  : index < currentAgentIndex
+                  ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
+                  : 'bg-muted text-muted-foreground'
+              }`}
+            >
+              <span>{agent.icon}</span>
+              <span>{agent.name}</span>
+              {index < currentAgentIndex && <CheckCircle2 className="h-4 w-4" />}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Clean agent configuration without nested cards */}
+      <div className="max-w-4xl mx-auto space-y-6">
+        {/* Configuration fields directly */}
+        <AgentConfigurationStep 
+          agentId={currentAgent.id} 
+          agentIndex={currentAgentIndex} 
+          totalAgents={selectedAgents.length}
+          hideHeader={true}
+          showAsContent={true}
+        />
+      </div>
+
+      {/* Internal navigation */}
+      <div className="flex justify-between pt-4">
+        <Button
+          variant="outline"
+          onClick={previousAgent}
+          disabled={currentAgentIndex === 0}
+        >
+          <ArrowLeft className="h-4 w-4 mr-2" />
+          Previous Agent
+        </Button>
+        
+        <Badge variant="outline" className="px-4 py-2">
+          {currentAgentIndex + 1} of {selectedAgents.length}
+        </Badge>
+        
+        <Button
+          onClick={nextAgent}
+          disabled={currentAgentIndex === selectedAgents.length - 1}
+        >
+          Next Agent
+          <ArrowRight className="h-4 w-4 ml-2" />
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+// Fixed onboarding steps - no dynamic growing
+export const defaultOnboardingSteps: OnboardingStep[] = [
+  {
+    id: 'ceo-intro',
+    title: 'Welcome to AgentPress',
+    description: 'A personal message from our founder',
+    content: <CEOIntroStep />,
+    canSkip: true,
+    actionLabel: 'Get Started'
+  },
+  {
+    id: 'smart-context',
+    title: 'Quick Setup',
+    description: 'Tell us about your business',
+    content: <SmartContextStep />,
+    canSkip: false,
+    actionLabel: 'Build My Workforce'
+  },
+  {
+    id: 'workforce-selection',
+    title: 'Your AI Team',
+    description: 'Select your specialized agents',
+    content: <AIWorkforceSelectionStep />,
+    canSkip: false,
+    actionLabel: 'Configure Agents'
+  },
+  {
+    id: 'agent-configuration',
+    title: 'Configure Agents',
+    description: 'Set up your selected agents',
+    content: <MultiAgentConfigurationStep />,
+    canSkip: false,
+    actionLabel: 'Continue Configuration'
+  },
+  {
+    id: 'team-invitation',
+    title: 'Invite Your Team',
+    description: 'Get your team started with AI',
+    content: <TeamInvitationStep />,
+    canSkip: true,
+    actionLabel: 'Finish Setup'
+  },
+  {
+    id: 'completion',
+    title: 'You\'re All Set!',
+    description: 'Your AI workforce is ready',
+    content: <CompletionStep />,
+    canSkip: false,
+    actionLabel: 'Enter Dashboard'
+  }
+];
+
