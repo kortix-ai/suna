@@ -55,7 +55,9 @@ def format_message_with_cache(message: Dict[str, Any], model_name: str, min_char
                 {
                     "type": "text",
                     "text": content,
-                    "cache_control": {"type": "ephemeral", "ttl": "1h"}
+                    "cache_control": {"type": "ephemeral",
+                                      "max_tokens": 10000,
+                             "ttl": "1h"}
                 }
             ]
         }
