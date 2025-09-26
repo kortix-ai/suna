@@ -186,8 +186,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="sb_presentation_tool",
         display_name="Presentations",
         description="Create and manage presentations",
-        icon="Presentation",
-        color="bg-emerald-100 dark:bg-emerald-800/50",
         tool_class="SandboxPresentationTool",
         methods=[
             ToolMethod(
@@ -233,8 +231,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="sb_sheets_tool",
         display_name="Spreadsheets",
         description="Create and manipulate spreadsheet data",
-        icon="Table",
-        color="bg-green-100 dark:bg-green-800/50",
         tool_class="SandboxSheetsTool",
         methods=[
             ToolMethod(
@@ -281,8 +277,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="task_list_tool",
         display_name="Task Management",
         description="Create and manage task lists",
-        icon="ListTodo",
-        color="bg-green-100 dark:bg-green-800/50",
         tool_class="TaskListTool",
         is_core=True,
         methods=[
@@ -300,8 +294,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="expand_message_tool",
         display_name="Message Expansion",
         description="Expand truncated messages from conversations",
-        icon="Expand",
-        color="bg-purple-100 dark:bg-purple-800/50",
         tool_class="ExpandMessageTool",
         is_core=True,
         methods=[
@@ -319,8 +311,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="sb_deploy_tool",
         display_name="Deployment",
         description="Deploy applications and services",
-        icon="Rocket",
-        color="bg-green-100 dark:bg-green-800/50",
         tool_class="SandboxDeployTool",
         methods=[
             ToolMethod(
@@ -336,8 +326,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="sb_expose_tool",
         display_name="Port Management",
         description="Expose services and manage ports",
-        icon="Plug",
-        color="bg-orange-100 dark:bg-orange-800/20",
         tool_class="SandboxExposeTool",
         methods=[
             ToolMethod(
@@ -353,8 +341,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="image_search_tool",
         display_name="Image Search",
         description="Search for images using SERPER API",
-        icon="Image",
-        color="bg-indigo-100 dark:bg-indigo-800/50",
         tool_class="SandboxImageSearchTool",
         methods=[
             ToolMethod(
@@ -370,8 +356,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="data_providers_tool",
         display_name="Data Providers",
         description="Access to data providers and external APIs",
-        icon="Link",
-        color="bg-cyan-100 dark:bg-cyan-800/50",
         tool_class="DataProvidersTool",
         methods=[
             ToolMethod(
@@ -393,8 +377,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="agent_config_tool",
         display_name="Agent Configuration",
         description="Configure agent settings, tools, and integrations",
-        icon="Settings",
-        color="bg-gray-100 dark:bg-gray-800/50",
         tool_class="AgentConfigTool",
         methods=[
             ToolMethod(
@@ -416,8 +398,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="mcp_search_tool",
         display_name="MCP Search",
         description="Search and discover MCP servers and integrations",
-        icon="Search",
-        color="bg-teal-100 dark:bg-teal-800/50",
         tool_class="MCPSearchTool",
         methods=[
             ToolMethod(
@@ -445,8 +425,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="credential_profile_tool",
         display_name="Credential Management",
         description="Manage credential profiles for secure authentication",
-        icon="KeyRound",
-        color="bg-red-100 dark:bg-red-800/50",
         tool_class="CredentialProfileTool",
         methods=[
             ToolMethod(
@@ -480,8 +458,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="workflow_tool",
         display_name="Workflows",
         description="Create and manage automated workflows",
-        icon="Workflow",
-        color="bg-emerald-100 dark:bg-emerald-800/50",
         tool_class="WorkflowTool",
         methods=[
             ToolMethod(
@@ -521,8 +497,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="trigger_tool",
         display_name="Triggers",
         description="Create and manage automated triggers",
-        icon="Zap",
-        color="bg-yellow-100 dark:bg-yellow-800/50",
         tool_class="TriggerTool",
         methods=[
             ToolMethod(
@@ -574,8 +548,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="sb_kb_tool",
         display_name="Knowledge Base",
         description="Manage knowledge base content",
-        icon="Database",
-        color="bg-blue-100 dark:bg-blue-800/50",
         tool_class="SandboxKbTool",
         methods=[
             ToolMethod(
@@ -591,8 +563,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="sb_design_tool",
         display_name="Design Tool",
         description="Create and edit design elements",
-        icon="Paintbrush",
-        color="bg-purple-100 dark:bg-purple-800/50",
         tool_class="SandboxDesignerTool",
         methods=[
             ToolMethod(
@@ -608,8 +578,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="sb_presentation_outline_tool",
         display_name="Presentation Outline",
         description="Create structured presentation outlines",
-        icon="ClipboardList",
-        color="bg-purple-100 dark:bg-purple-800/50",
         tool_class="SandboxPresentationOutlineTool",
         methods=[
             ToolMethod(
@@ -625,8 +593,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="sb_upload_file_tool",
         display_name="File Upload",
         description="Upload files to the workspace",
-        icon="Upload",
-        color="bg-green-100 dark:bg-green-800/50",
         tool_class="SandboxUploadFileTool",
         methods=[
             ToolMethod(
@@ -642,8 +608,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="sb_docs_tool",
         display_name="Document Editor",
         description="Create and edit documents with TipTap",
-        icon="FileText",
-        color="bg-gray-100 dark:bg-gray-800/50",
         tool_class="SandboxDocsTool",
         methods=[
             ToolMethod(
@@ -659,8 +623,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="agent_creation_tool",
         display_name="Agent Creation",
         description="Create new agents (Suna only)",
-        icon="Plus",
-        color="bg-indigo-100 dark:bg-indigo-800/50",
         tool_class="AgentCreationTool",
         methods=[
             ToolMethod(
@@ -760,8 +722,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="sb_browser_tool",
         display_name="Browser Automation (Advanced)",
         description="Advanced browser automation with full UI interaction capabilities",
-        icon="Globe",
-        color="bg-cyan-100 dark:bg-cyan-800/50",
         tool_class="SandboxBrowserTool",
         methods=[
             ToolMethod(
@@ -861,8 +821,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="sb_web_dev_tool",
         display_name="Web Development",
         description="Create and manage web development projects with Vite and React",
-        icon="Code",
-        color="bg-emerald-100 dark:bg-emerald-800/50",
         tool_class="SandboxWebDevTool",
         methods=[
             ToolMethod(
@@ -902,8 +860,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="sb_templates_tool",
         display_name="Project Templates",
         description="Discover and scaffold web project templates",
-        icon="Layout",
-        color="bg-violet-100 dark:bg-violet-800/50",
         tool_class="SandboxTemplatesTool",
         methods=[
             ToolMethod(
@@ -925,8 +881,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="computer_use_tool",
         display_name="Computer Automation",
         description="Automate computer interactions including GUI control",
-        icon="Monitor",
-        color="bg-red-100 dark:bg-red-800/50",
         tool_class="ComputerUseTool",
         methods=[
             ToolMethod(
@@ -966,8 +920,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         name="message_tool",
         display_name="User Communication",
         description="Enhanced communication tools for user interaction",
-        icon="MessageSquare",
-        color="bg-blue-100 dark:bg-blue-800/50",
         tool_class="MessageTool",
         is_core=True,
         methods=[
