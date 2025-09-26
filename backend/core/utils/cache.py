@@ -12,7 +12,7 @@ class _cache:
             return json.loads(result)
         return None
 
-    async def set(self, key: str, value: Any, ttl: int = 60 * 60):
+    async def set(self, key: str, value: Any, ttl: int = 15 * 60):
         redis = await get_client()
         key = f"cache:{key}"
         await redis.set(key, json.dumps(value), ex=ttl)
