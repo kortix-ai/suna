@@ -4,6 +4,8 @@ from core.agentpress.tool import ToolResult, openapi_schema, usage_example
 from core.agentpress.thread_manager import ThreadManager
 from .base_tool import AgentBuilderBaseTool
 from core.utils.logger import logger
+from core.utils.core_tools_helper import ensure_core_tools_enabled, is_core_tool
+from core.utils.tool_groups import validate_tool_config
 
 
 
@@ -149,18 +151,11 @@ class AgentConfigTool(AgentBuilderBaseTool):
                         current_system_prompt = current_version.get('system_prompt', '')
                     
                     if agentpress_tools is not None:
-                        formatted_tools = {}
-                        for tool_name, tool_config in agentpress_tools.items():
-                            if isinstance(tool_config, dict):
-                                if tool_config == {}:
-                                    formatted_tools[tool_name] = True
-                                else:
-                                    formatted_tools[tool_name] = tool_config.get("enabled", False)
-                            else:
-                                formatted_tools[tool_name] = bool(tool_config)
-                        current_agentpress_tools = formatted_tools
+                        # Validate and normalize the tool configuration
+                        validated_tools = validate_tool_config(agentpress_tools)
+                        current_agentpress_tools = ensure_core_tools_enabled(validated_tools)
                     else:
-                        current_agentpress_tools = current_version.get('agentpress_tools', {})
+                        current_agentpress_tools = ensure_core_tools_enabled(current_version.get('agentpress_tools', {}))
                     
                     current_configured_mcps = current_version.get('configured_mcps', [])
                     if configured_mcps is not None:
