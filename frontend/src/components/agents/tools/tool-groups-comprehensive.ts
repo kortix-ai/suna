@@ -43,7 +43,6 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
     ],
   },
 
-  // === SHELL OPERATIONS ===
   sb_shell_tool: {
     name: 'sb_shell_tool',
     displayName: 'Shell Operations',
@@ -80,7 +79,6 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
     ],
   },
 
-  // === WEB SEARCH ===
   web_search_tool: {
     name: 'web_search_tool',
     displayName: 'Web Search',
@@ -105,7 +103,24 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
     ],
   },
 
-  // === VISION & IMAGE ANALYSIS ===
+  people_search_tool: {
+    name: 'people_search_tool',
+    displayName: 'Web Search',
+    description: 'Search for people using LinkedIn',
+    icon: 'Globe',
+    color: 'bg-indigo-100 dark:bg-indigo-800/50',
+    toolClass: 'PeopleSearchTool',
+    enabled: true,
+    methods: [
+      {
+        name: 'people_search',
+        displayName: 'People Search',
+        description: 'Search for people using LinkedIn',
+        enabled: true,
+      },
+    ],
+  },
+
   sb_vision_tool: {
     name: 'sb_vision_tool',
     displayName: 'Vision & Image Analysis',
@@ -130,7 +145,6 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
     ],
   },
 
-  // === IMAGE EDITING ===
   sb_image_edit_tool: {
     name: 'sb_image_edit_tool',
     displayName: 'Image Editing',
@@ -149,7 +163,6 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
     ],
   },
 
-  // === BROWSER AUTOMATION ===
   browser_tool: {
     name: 'browser_tool',
     displayName: 'Browser Automation',
