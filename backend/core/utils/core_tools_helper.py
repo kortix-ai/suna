@@ -14,7 +14,13 @@ def ensure_core_tools_enabled(agentpress_tools: Dict[str, Any]) -> Dict[str, Any
     updated_tools = dict(agentpress_tools)
     
     for tool_name, enabled in CORE_TOOLS.items():
-        updated_tools[tool_name] = enabled
+        if isinstance(updated_tools.get(tool_name), dict):
+            updated_tools[tool_name] = {
+                **updated_tools[tool_name],
+                'enabled': enabled
+            }
+        else:
+            updated_tools[tool_name] = enabled
         
     logger.debug(f"Ensured core tools are enabled: {list(CORE_TOOLS.keys())}")
     

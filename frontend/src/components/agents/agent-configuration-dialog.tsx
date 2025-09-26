@@ -47,6 +47,7 @@ import { useExportAgent } from '@/hooks/react-query/agents/use-agent-export-impo
 import { ExpandableMarkdownEditor } from '@/components/ui/expandable-markdown-editor';
 import { AgentModelSelector } from './config/model-selector';
 import { AgentToolsConfiguration } from './agent-tools-configuration';
+import { GranularToolConfiguration } from './tools/granular-tool-configuration';
 import { AgentMCPConfiguration } from './agent-mcp-configuration';
 import { AgentKnowledgeBaseManager } from './knowledge-base/agent-kb-tree';
 import { AgentPlaybooksConfiguration } from './playbooks/agent-playbooks-configuration';
@@ -502,10 +503,12 @@ export function AgentConfigurationDialog({
                 </TabsContent>
 
                 <TabsContent value="tools" className="p-6 mt-0 h-[calc(100vh-16rem)]">
-                  <AgentToolsConfiguration
+                  <GranularToolConfiguration
                     tools={formData.agentpress_tools}
                     onToolsChange={handleToolsChange}
                     disabled={!areToolsEditable}
+                    isSunaAgent={isSunaAgent}
+                    isLoading={isLoading}
                   />
                 </TabsContent>
                 <TabsContent value="integrations" className="p-6 mt-0 h-[calc(100vh-16rem)]">

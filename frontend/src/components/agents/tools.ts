@@ -50,7 +50,14 @@ export const ensureCoreToolsEnabled = (tools: Record<string, any>): Record<strin
   const updatedTools = { ...tools };
   
   coreTools.forEach(toolName => {
-    updatedTools[toolName] = true;
+    if (typeof updatedTools[toolName] === 'object' && updatedTools[toolName] !== null) {
+      updatedTools[toolName] = {
+        ...updatedTools[toolName],
+        enabled: true
+      };
+    } else {
+      updatedTools[toolName] = true;
+    }
   });
   
   return updatedTools;
