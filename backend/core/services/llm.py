@@ -115,9 +115,9 @@ def _configure_anthropic(params: Dict[str, Any], model_name: str, messages: List
     
     # Include prompt caching and context-1m beta features
     params["extra_headers"] = {
-        "anthropic-beta": "prompt-caching-2024-07-31" #context-1m-2025-08-07
+        "anthropic-beta": "prompt-caching-2024-07-31,context-1m-2025-08-07"
     }
-    # logger.debug(f"Added Anthropic-specific headers for prompt caching and context-1m")
+    logger.debug(f"Added Anthropic-specific headers for prompt caching and 1M context window")
 
 def _configure_openrouter(params: Dict[str, Any], model_name: str) -> None:
     """Configure OpenRouter-specific parameters."""

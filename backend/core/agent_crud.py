@@ -5,6 +5,7 @@ from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
 from core.utils.config import config, EnvMode
 from core.utils.pagination import PaginationParams
+from core.utils.core_tools_helper import ensure_core_tools_enabled
 from core.ai_models import model_manager
 
 from .api_models import (
@@ -261,6 +262,7 @@ async def update_agent(
             current_custom_mcps = current_version_data.get('custom_mcps', [])
 
         current_agentpress_tools = agent_data.agentpress_tools if agent_data.agentpress_tools is not None else current_version_data.get('agentpress_tools', {})
+        current_agentpress_tools = ensure_core_tools_enabled(current_agentpress_tools)
         new_version_id = None
         if needs_new_version:
             try:
@@ -736,6 +738,7 @@ async def create_agent(
             system_prompt = SUNA_CONFIG["system_prompt"]
             
             agentpress_tools = agent_data.agentpress_tools if agent_data.agentpress_tools else _get_default_agentpress_tools()
+            agentpress_tools = ensure_core_tools_enabled(agentpress_tools)
             
             default_model = await model_manager.get_default_model_for_user(client, user_id)
             

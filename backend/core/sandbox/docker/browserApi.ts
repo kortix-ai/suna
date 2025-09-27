@@ -31,6 +31,7 @@ class BrowserAutomation {
         this.router.post('/screenshot', this.screenshot.bind(this));
         this.router.post('/act', this.act.bind(this));
         this.router.post('/extract', this.extract.bind(this));
+        this.router.post('/convert-svg', this.convertSvg.bind(this));
 
     }
 
@@ -303,6 +304,91 @@ class BrowserAutomation {
                 screenshot_base64: page_info.screenshot_base64,
                 error
             })
+        }
+    }
+
+    async convertSvg(req: express.Request, res: express.Response) {
+        console.log(`Converting SVG to PNG: ${JSON.stringify(req.body)}`);
+        
+        try {
+            if (!this.browserInitialized || !this.page) {
+                res.status(500).json({
+                    success: false,
+                    message: "Browser not initialized",
+                    error: "Browser must be initialized before converting SVG",
+                    url: "",
+                    title: ""
+                } as BrowserActionResult);
+                return;
+            }
+
+            const { svg_file_path } = req.body;
+            
+            if (!svg_file_path) {
+                res.status(400).json({
+                    success: false,
+                    message: "SVG file path is required",
+                    error: "svg_file_path parameter is missing",
+                    url: "",
+                    title: ""
+                } as BrowserActionResult);
+                return;
+            }
+
+            // Navigate to the SVG file
+            const fileUrl = `file://${svg_file_path}`;
+            await this.page.goto(fileUrl, { waitUntil: 'domcontentloaded', timeout: 10000 });
+            
+            // Wait for any potential loading/animations
+            await this.page.waitForTimeout(500);
+
+            let screenshot_base64: string;
+            
+            // Try to get the SVG element and take a screenshot of just that element
+            const svgElement = await this.page.locator('svg').first();
+            const svgCount = await this.page.locator('svg').count();
+            
+            if (svgCount > 0) {
+                // Get bounding box to check if element is visible
+                const bbox = await svgElement.boundingBox();
+                
+                if (bbox && bbox.width > 0 && bbox.height > 0) {
+                    // Take screenshot of just the SVG element
+                    const screenshotBuffer = await svgElement.screenshot({ type: 'png' });
+                    screenshot_base64 = screenshotBuffer.toString('base64');
+                } else {
+                    // Fallback to full page screenshot
+                    const screenshotBuffer = await this.page.screenshot({ fullPage: true, type: 'png' });
+                    screenshot_base64 = screenshotBuffer.toString('base64');
+                }
+            } else {
+                // No SVG found, take full page screenshot anyway
+                const screenshotBuffer = await this.page.screenshot({ fullPage: true, type: 'png' });
+                screenshot_base64 = screenshotBuffer.toString('base64');
+            }
+
+            const page_info = await this.get_stagehand_state();
+            
+            res.json({
+                success: true,
+                message: `Successfully converted SVG to PNG: ${svg_file_path}`,
+                url: page_info.url,
+                title: page_info.title,
+                screenshot_base64: screenshot_base64
+            } as BrowserActionResult);
+
+        } catch (error) {
+            console.error("Error converting SVG:", error);
+            const page_info = await this.get_stagehand_state();
+            
+            res.status(500).json({
+                success: false,
+                message: "Failed to convert SVG",
+                url: page_info.url,
+                title: page_info.title,
+                screenshot_base64: page_info.screenshot_base64,
+                error: String(error)
+            } as BrowserActionResult);
         }
     }
 

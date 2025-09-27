@@ -47,6 +47,7 @@ import { useExportAgent } from '@/hooks/react-query/agents/use-agent-export-impo
 import { ExpandableMarkdownEditor } from '@/components/ui/expandable-markdown-editor';
 import { AgentModelSelector } from './config/model-selector';
 import { AgentToolsConfiguration } from './agent-tools-configuration';
+import { GranularToolConfiguration } from './tools/granular-tool-configuration';
 import { AgentMCPConfiguration } from './agent-mcp-configuration';
 import { AgentKnowledgeBaseManager } from './knowledge-base/agent-kb-tree';
 import { AgentPlaybooksConfiguration } from './playbooks/agent-playbooks-configuration';
@@ -54,7 +55,7 @@ import { AgentTriggersConfiguration } from './triggers/agent-triggers-configurat
 import { ProfilePictureDialog } from './config/profile-picture-dialog';
 import { AgentIconAvatar } from './config/agent-icon-avatar';
 import { AgentVersionSwitcher } from './agent-version-switcher';
-import { DEFAULT_AGENTPRESS_TOOLS } from './tools';
+import { DEFAULT_AGENTPRESS_TOOLS, ensureCoreToolsEnabled } from './tools';
 
 interface AgentConfigurationDialogProps {
   open: boolean;
@@ -129,7 +130,7 @@ export function AgentConfigurationDialog({
       description: configSource.description || '',
       system_prompt: configSource.system_prompt || '',
       model: configSource.model,
-      agentpress_tools: configSource.agentpress_tools || DEFAULT_AGENTPRESS_TOOLS,
+      agentpress_tools: ensureCoreToolsEnabled(configSource.agentpress_tools || DEFAULT_AGENTPRESS_TOOLS),
       configured_mcps: configSource.configured_mcps || [],
       custom_mcps: configSource.custom_mcps || [],
       is_default: configSource.is_default || false,
@@ -258,7 +259,8 @@ export function AgentConfigurationDialog({
       return;
     }
 
-    setFormData(prev => ({ ...prev, agentpress_tools: tools }));
+    const toolsWithCoreEnabled = ensureCoreToolsEnabled(tools);
+    setFormData(prev => ({ ...prev, agentpress_tools: toolsWithCoreEnabled }));
   };
 
   const handleMCPChange = (updates: { configured_mcps: any[]; custom_mcps: any[] }) => {
@@ -501,10 +503,12 @@ export function AgentConfigurationDialog({
                 </TabsContent>
 
                 <TabsContent value="tools" className="p-6 mt-0 h-[calc(100vh-16rem)]">
-                  <AgentToolsConfiguration
+                  <GranularToolConfiguration
                     tools={formData.agentpress_tools}
                     onToolsChange={handleToolsChange}
                     disabled={!areToolsEditable}
+                    isSunaAgent={isSunaAgent}
+                    isLoading={isLoading}
                   />
                 </TabsContent>
                 <TabsContent value="integrations" className="p-6 mt-0 h-[calc(100vh-16rem)]">

@@ -80,13 +80,18 @@ def estimate_token_count(text: str, model: str = "claude-3-5-sonnet-20240620") -
         return int(word_count * 1.3)
 
 def get_message_token_count(message: Dict[str, Any], model: str = "claude-3-5-sonnet-20240620") -> int:
-    """Get estimated token count for a message."""
+    """Get estimated token count for a message, including base64 image data."""
     content = message.get('content', '')
     if isinstance(content, list):
         total_tokens = 0
         for item in content:
-            if isinstance(item, dict) and item.get('type') == 'text':
-                total_tokens += estimate_token_count(item.get('text', ''), model)
+            if isinstance(item, dict):
+                if item.get('type') == 'text':
+                    total_tokens += estimate_token_count(item.get('text', ''), model)
+                elif item.get('type') == 'image_url':
+                    # Count image_url tokens - base64 data is very token-heavy
+                    image_url = item.get('image_url', {}).get('url', '')
+                    total_tokens += estimate_token_count(image_url, model)
         return total_tokens
     return estimate_token_count(str(content), model)
 
