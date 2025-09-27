@@ -191,9 +191,6 @@ export const MarketplaceAgentPreviewDialog: React.FC<MarketplaceAgentPreviewDial
                 </div>
               </div>
             </div>
-            <p className="text-muted-foreground leading-relaxed mb-4">
-              {agent.description || 'No description available'}
-            </p>
             {agent.tags && agent.tags.length > 0 && (
               <div className="flex items-center gap-2 mb-4">
                 <Tag className="h-4 w-4 text-muted-foreground" />

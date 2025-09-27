@@ -57,14 +57,6 @@ async def update_agent(
                     detail="Suna's name cannot be modified. This restriction is managed centrally."
                 )
             
-            if (agent_data.description is not None and
-                agent_data.description != existing_data.get('description') and 
-                restrictions.get('description_editable') == False):
-                logger.error(f"User {user_id} attempted to modify restricted description of Suna agent {agent_id}")
-                raise HTTPException(
-                    status_code=403, 
-                    detail="Suna's description cannot be modified."
-                )
             
             if (agent_data.system_prompt is not None and 
                 restrictions.get('system_prompt_editable') == False):
@@ -216,8 +208,6 @@ async def update_agent(
         update_data = {}
         if agent_data.name is not None:
             update_data["name"] = agent_data.name
-        if agent_data.description is not None:
-            update_data["description"] = agent_data.description
         if agent_data.is_default is not None:
             update_data["is_default"] = agent_data.is_default
             if agent_data.is_default:
@@ -391,7 +381,6 @@ async def update_agent(
         response = AgentResponse(
             agent_id=agent['agent_id'],
             name=agent['name'],
-            description=agent.get('description'),
             system_prompt=system_prompt,
             configured_mcps=configured_mcps,
             custom_mcps=custom_mcps,
@@ -495,7 +484,7 @@ async def get_agents(
     user_id: str = Depends(verify_and_get_user_id_from_jwt),
     page: Optional[int] = Query(1, ge=1, description="Page number (1-based)"),
     limit: Optional[int] = Query(20, ge=1, le=100, description="Number of items per page"),
-    search: Optional[str] = Query(None, description="Search in name and description"),
+    search: Optional[str] = Query(None, description="Search in name"),
     sort_by: Optional[str] = Query("created_at", description="Sort field: name, created_at, updated_at, tools_count"),
     sort_order: Optional[str] = Query("desc", description="Sort order: asc, desc"),
     has_default: Optional[bool] = Query(None, description="Filter by default agents"),
@@ -711,7 +700,6 @@ async def create_agent(
         insert_data = {
             "account_id": user_id,
             "name": agent_data.name,
-            "description": agent_data.description,
             "icon_name": agent_data.icon_name or "bot",
             "icon_color": agent_data.icon_color or "#000000",
             "icon_background": agent_data.icon_background or "#F3F4F6",
@@ -785,7 +773,6 @@ async def create_agent(
         response = AgentResponse(
             agent_id=agent['agent_id'],
             name=agent['name'],
-            description=agent.get('description'),
             system_prompt=version.system_prompt,
             model=version.model,
             configured_mcps=version.configured_mcps,
@@ -824,15 +811,14 @@ async def generate_agent_icon(
     request: AgentIconGenerationRequest,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    """Generate an appropriate icon and colors for an agent based on its name and description."""
+    """Generate an appropriate icon and colors for an agent based on its name."""
     logger.debug(f"Generating icon and colors for agent: {request.name}")
     
     try:
         from .core_utils import generate_agent_icon_and_colors
         
         result = await generate_agent_icon_and_colors(
-            name=request.name,
-            description=request.description
+            name=request.name
         )
         
         response = AgentIconGenerationResponse(

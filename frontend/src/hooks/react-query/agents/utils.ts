@@ -5,7 +5,6 @@ const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 export type Agent = {
   agent_id: string;
   name: string;
-  description?: string;
   system_prompt: string;
   configured_mcps: Array<{
     name: string;
@@ -43,7 +42,6 @@ export type Agent = {
       system_prompt_editable?: boolean;
       tools_editable?: boolean;
       name_editable?: boolean;
-      description_editable?: boolean;
       mcps_editable?: boolean;
     };
     installation_date?: string;

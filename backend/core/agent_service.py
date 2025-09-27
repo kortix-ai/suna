@@ -342,7 +342,6 @@ class AgentService:
         return {
             "agent_id": agent_data['agent_id'],
             "name": agent_data['name'],
-            "description": agent_data.get('description'),
             "system_prompt": system_prompt,
             "configured_mcps": configured_mcps,
             "custom_mcps": custom_mcps,
@@ -375,7 +374,6 @@ class AgentService:
             return {
                 "agent_id": template_data.get('template_id', ''),
                 "name": template_data.get('name', ''),
-                "description": template_data.get('description', ''),
                 "system_prompt": template_data.get('system_prompt', ''),
                 "configured_mcps": template_data.get('mcp_requirements', []),
                 "custom_mcps": [],
@@ -411,7 +409,6 @@ class AgentService:
             return {
                 "agent_id": template_data.get('template_id', 'unknown'),
                 "name": template_data.get('name', 'Unknown Template'),
-                "description": template_data.get('description', ''),
                 "system_prompt": template_data.get('system_prompt', ''),
                 "configured_mcps": [],
                 "custom_mcps": [],

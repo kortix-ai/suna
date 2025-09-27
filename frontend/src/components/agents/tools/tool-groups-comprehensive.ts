@@ -55,7 +55,7 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
       {
         name: 'execute_command',
         displayName: 'Execute Command',
-        description: 'Execute shell commands in tmux sessions',
+        description: 'Execute shell commands in terminal',
         enabled: true,
       },
       {
@@ -91,13 +91,13 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
       {
         name: 'web_search',
         displayName: 'Web Search',
-        description: 'Search the web using Tavily API',
+        description: 'Search the web for information',
         enabled: true,
       },
       {
         name: 'scrape_webpage',
         displayName: 'Scrape Webpage',
-        description: 'Scrape webpage content using Firecrawl',
+        description: 'Extract content from web pages',
         enabled: true,
       },
     ],
@@ -105,9 +105,9 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
 
   people_search_tool: {
     name: 'people_search_tool',
-    displayName: 'Web Search',
-    description: 'Search for people using LinkedIn',
-    icon: 'Globe',
+    displayName: 'People Search',
+    description: 'Search for people and their professional profiles',
+    icon: 'Users',
     color: 'bg-indigo-100 dark:bg-indigo-800/50',
     toolClass: 'PeopleSearchTool',
     enabled: true,
@@ -115,7 +115,25 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
       {
         name: 'people_search',
         displayName: 'People Search',
-        description: 'Search for people using LinkedIn',
+        description: 'Search for people and their professional profiles',
+        enabled: true,
+      },
+    ],
+  },
+
+  company_search_tool: {
+    name: 'company_search_tool',
+    displayName: 'Company Search',
+    description: 'Search for companies and business information',
+    icon: 'Building2',
+    color: 'bg-blue-100 dark:bg-blue-800/50',
+    toolClass: 'CompanySearchTool',
+    enabled: true,
+    methods: [
+      {
+        name: 'company_search',
+        displayName: 'Company Search',
+        description: 'Search for companies and business information',
         enabled: true,
       },
     ],
@@ -304,7 +322,7 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
   sb_web_dev_tool: {
     name: 'sb_web_dev_tool',
     displayName: 'Web Development',
-    description: 'Create and manage web development projects with Vite and React',
+    description: 'Create and manage web development projects',
     icon: 'Code',
     color: 'bg-emerald-100 dark:bg-emerald-800/50',
     toolClass: 'SandboxWebDevTool',
@@ -312,8 +330,8 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
     methods: [
       {
         name: 'create_vite_react_project',
-        displayName: 'Create Vite React Project',
-        description: 'Create a new Vite React project',
+        displayName: 'Create React Project',
+        description: 'Create a new React web application',
         enabled: true,
       },
       {
@@ -593,7 +611,7 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
   data_providers_tool: {
     name: 'data_providers_tool',
     displayName: 'Data Providers',
-    description: 'Access to data providers and external APIs',
+    description: 'Access external data sources and services',
     icon: 'Link',
     color: 'bg-cyan-100 dark:bg-cyan-800/50',
     toolClass: 'DataProvidersTool',
@@ -941,7 +959,7 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
   image_search_tool: {
     name: 'image_search_tool',
     displayName: 'Image Search',
-    description: 'Search for images using SERPER API',
+    description: 'Search for images on the web',
     icon: 'Image',
     color: 'bg-indigo-100 dark:bg-indigo-800/50',
     toolClass: 'SandboxImageSearchTool',
@@ -1031,7 +1049,7 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
   sb_docs_tool: {
     name: 'sb_docs_tool',
     displayName: 'Document Editor',
-    description: 'Create and edit documents with TipTap',
+    description: 'Create and edit rich text documents',
     icon: 'FileText',
     color: 'bg-gray-100 dark:bg-gray-800/50',
     toolClass: 'SandboxDocsTool',

@@ -94,7 +94,6 @@ export function AgentConfigurationDialog({
 
   const [formData, setFormData] = useState({
     name: '',
-    description: '',
     system_prompt: '',
     model: undefined as string | undefined,
     agentpress_tools: DEFAULT_AGENTPRESS_TOOLS as Record<string, any>,
@@ -127,7 +126,6 @@ export function AgentConfigurationDialog({
 
     const newFormData = {
       name: configSource.name || '',
-      description: configSource.description || '',
       system_prompt: configSource.system_prompt || '',
       model: configSource.model,
       agentpress_tools: ensureCoreToolsEnabled(configSource.agentpress_tools || DEFAULT_AGENTPRESS_TOOLS),
@@ -163,7 +161,6 @@ export function AgentConfigurationDialog({
       const updateData: any = {
         agentId,
         name: formData.name,
-        description: formData.description,
         system_prompt: formData.system_prompt,
         agentpress_tools: formData.agentpress_tools,
       };
@@ -476,16 +473,6 @@ export function AgentConfigurationDialog({
                       />
                     </div>
 
-                    <div className="flex flex-col flex-1 min-h-0">
-                      <Label className="text-base font-semibold mb-3 block">Description</Label>
-                      <Textarea
-                        value={formData.description}
-                        onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
-                        placeholder="Describe what this agent does..."
-                        className="flex-1 resize-none bg-muted/50"
-                        disabled={isViewingOldVersion}
-                      />
-                    </div>
                   </div>
                 </TabsContent>
 

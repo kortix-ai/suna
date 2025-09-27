@@ -28,7 +28,6 @@ export type AgentCardMode = 'marketplace' | 'template' | 'agent';
 interface BaseAgentData {
   id: string;
   name: string;
-  description?: string;
   tags?: string[];
   created_at: string;
 }
@@ -363,7 +362,7 @@ const CardAvatar: React.FC<{
   if (iconName) {
     return (
       <div 
-        className="h-14 w-14 flex items-center justify-center rounded-2xl"
+        className="h-14 w-14 flex border items-center justify-center rounded-2xl"
         style={{ backgroundColor: iconBackground }}
       >
         <DynamicIcon 
@@ -382,7 +381,7 @@ const CardAvatar: React.FC<{
   }
   
   return (
-    <div className="h-14 w-14 bg-muted border flex items-center justify-center rounded-2xl">
+    <div className="h-14 w-14 border bg-muted flex items-center justify-center rounded-2xl">
       <span className="text-lg font-semibold">{agentName?.charAt(0).toUpperCase() || '?'}</span>
     </div>
   )
@@ -424,7 +423,7 @@ export const AgentCard: React.FC<AgentCardProps> = ({
   const isSunaAgent = mode === 'agent' && (data as AgentData).metadata?.is_suna_default === true;
   const isOwner = currentUserId && mode === 'marketplace' && (data as MarketplaceData).creator_id === currentUserId;
   
-  const cardClassName = `group relative bg-card rounded-2xl overflow-hidden shadow-sm transition-all duration-300 border cursor-pointer flex flex-col min-h-[280px] max-h-[320px] border-border/50 hover:border-primary/20`;
+  const cardClassName = `group relative bg-card rounded-2xl overflow-hidden shadow-sm transition-all duration-300 border cursor-pointer flex flex-col border-border/50 hover:border-primary/20`;
   
   const renderBadge = () => {
     switch (mode) {
@@ -500,9 +499,6 @@ export const AgentCard: React.FC<AgentCardProps> = ({
         <h3 className="text-lg font-semibold text-foreground mb-2 line-clamp-1">
           {data.name}
         </h3>
-        <p className="text-sm text-muted-foreground mb-4 line-clamp-2 min-h-[2.5rem]">
-          {data.description || 'No description available'}
-        </p>
         
         <div className="flex-1 flex flex-col">
           <div className="min-h-[1.25rem] mb-3">
