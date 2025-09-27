@@ -50,7 +50,6 @@ class TemplateResponse(BaseModel):
     template_id: str
     creator_id: str
     name: str
-    description: Optional[str] = None
     system_prompt: str
     mcp_requirements: List[Dict[str, Any]]
     agentpress_tools: Dict[str, Any]
@@ -330,7 +329,7 @@ class MarketplaceTemplatesResponse(BaseModel):
 async def get_marketplace_templates(
     page: Optional[int] = Query(1, ge=1, description="Page number (1-based)"),
     limit: Optional[int] = Query(20, ge=1, le=100, description="Number of items per page"),
-    search: Optional[str] = Query(None, description="Search term for name and description"),
+    search: Optional[str] = Query(None, description="Search term for name"),
     tags: Optional[str] = Query(None, description="Comma-separated list of tags to filter by"),
     is_kortix_team: Optional[bool] = Query(None, description="Filter for Kortix team templates"),
     mine: Optional[bool] = Query(None, description="Filter to show only user's own templates"),
@@ -401,7 +400,7 @@ async def get_marketplace_templates(
 async def get_my_templates(
     page: Optional[int] = Query(1, ge=1, description="Page number (1-based)"),
     limit: Optional[int] = Query(20, ge=1, le=100, description="Number of items per page"),
-    search: Optional[str] = Query(None, description="Search term for name and description"),
+    search: Optional[str] = Query(None, description="Search term for name"),
     sort_by: Optional[str] = Query("created_at", description="Sort field: created_at, name, download_count"),
     sort_order: Optional[str] = Query("desc", description="Sort order: asc, desc"),
     user_id: str = Depends(verify_and_get_user_id_from_jwt)

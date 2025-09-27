@@ -38,7 +38,6 @@ class AgentTemplate:
     creator_id: str
     name: str
     config: ConfigType
-    description: Optional[str] = None
     tags: List[str] = field(default_factory=list)
     is_public: bool = False
     is_kortix_team: bool = False
@@ -312,7 +311,7 @@ class TemplateService:
             query = query.eq('is_kortix_team', is_kortix_team)
         
         if search:
-            query = query.or_(f"name.ilike.%{search}%,description.ilike.%{search}%")
+            query = query.ilike("name", f"%{search}%")
         
         if tags:
             for tag in tags:
@@ -635,7 +634,6 @@ class TemplateService:
             'template_id': template.template_id,
             'creator_id': template.creator_id,
             'name': template.name,
-            'description': template.description,
             'config': template.config,
             'tags': template.tags,
             'is_public': template.is_public,
@@ -659,7 +657,6 @@ class TemplateService:
             template_id=data['template_id'],
             creator_id=data['creator_id'],
             name=data['name'],
-            description=data.get('description'),
             config=data.get('config', {}),
             tags=data.get('tags', []),
             is_public=data.get('is_public', False),
