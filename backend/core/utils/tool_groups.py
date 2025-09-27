@@ -832,6 +832,21 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         ]
     ),
 
+    "company_search_tool": ToolGroup(
+        name="company_search_tool",
+        display_name="Company Search",
+        description="Search for companies using natural language queries",
+        tool_class="CompanySearchTool",
+        methods=[
+            ToolMethod(
+                name="company_search",
+                display_name="Company Search",
+                description="Search for companies using natural language queries",
+                enabled=True
+            ),
+        ]
+    ),
+
     "sb_web_dev_tool": ToolGroup(
         name="sb_web_dev_tool",
         display_name="Web Development",

@@ -14,7 +14,7 @@ from core.billing.config import TOKEN_PRICE_MULTIPLIER
 from core.services.supabase import DBConnection
 
 
-class PeopleSearchTool(Tool):
+class CompanySearchTool(Tool):
     def __init__(self, thread_manager: ThreadManager):
         super().__init__()
         self.thread_manager = thread_manager
@@ -25,9 +25,9 @@ class PeopleSearchTool(Tool):
         
         if self.api_key:
             self.exa_client = Exa(self.api_key)
-            logger.info("People Search Tool initialized. Note: This requires an Exa Pro plan for Websets API access.")
+            logger.info("Company Search Tool initialized. Note: This requires an Exa Pro plan for Websets API access.")
         else:
-            logger.warning("EXA_API_KEY not configured - People Search Tool will not be available")
+            logger.warning("EXA_API_KEY not configured - Company Search Tool will not be available")
     
     async def _get_current_thread_and_user(self) -> tuple[Optional[str], Optional[str]]:
         try:
@@ -55,12 +55,12 @@ class PeopleSearchTool(Tool):
             result = await self.credit_manager.use_credits(
                 account_id=user_id,
                 amount=total_cost,
-                description=f"People search: {num_results} results",
+                description=f"Company search: {num_results} results",
                 thread_id=thread_id
             )
             
             if result.get('success'):
-                logger.info(f"Deducted ${total_cost:.2f} for people search ({num_results} results)")
+                logger.info(f"Deducted ${total_cost:.2f} for company search ({num_results} results)")
                 return True
             else:
                 logger.warning(f"Failed to deduct credits: {result.get('error')}")
@@ -73,19 +73,19 @@ class PeopleSearchTool(Tool):
     @openapi_schema({
         "type": "function",
         "function": {
-            "name": "people_search",
-            "description": "Search for people using natural language queries and enrich with LinkedIn profiles. IMPORTANT: Requires Exa Pro plan and costs $0.54 per search (10 results).",
+            "name": "company_search",
+            "description": "Search for companies using natural language queries and enrich with company profiles. IMPORTANT: Requires Exa Pro plan and costs $0.54 per search (10 results).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Natural language search query describing the people you want to find. Examples: 'CTOs at AI startups in San Francisco', 'Senior Python developers with machine learning experience at Google', 'Marketing managers at Fortune 500 companies in New York'"
+                        "description": "Natural language search query describing the companies you want to find. Examples: 'AI startups in San Francisco with recent funding', 'Fortune 500 companies in healthcare sector', 'B2B SaaS companies with over 100 employees in New York'"
                     },
                     "enrichment_description": {
                         "type": "string",
-                        "description": "What specific information to find about each person. Default: 'LinkedIn profile URL'",
-                        "default": "LinkedIn profile URL"
+                        "description": "What specific information to find about each company. Default: 'Company website, funding information, and key details'",
+                        "default": "Company website, funding information, and key details"
                     }
                 },
                 "required": ["query"]
@@ -94,26 +94,26 @@ class PeopleSearchTool(Tool):
     })
     @usage_example('''
         <function_calls>
-        <invoke name="people_search">
-        <parameter name="query">Chief Technology Officers at B2B SaaS companies in Silicon Valley</parameter>
+        <invoke name="company_search">
+        <parameter name="query">B2B SaaS companies in Silicon Valley with over $10M funding</parameter>
         </invoke>
         </function_calls>
         
         <function_calls>
-        <invoke name="people_search">
-        <parameter name="query">Senior Python developers with AI experience at FAANG companies</parameter>
-        <parameter name="enrichment_description">LinkedIn profile and current job title</parameter>
+        <invoke name="company_search">
+        <parameter name="query">Healthcare technology startups in Boston</parameter>
+        <parameter name="enrichment_description">Company website, recent news, and leadership team</parameter>
         </invoke>
         </function_calls>
         ''')
-    async def people_search(
+    async def company_search(
         self,
         query: str,
-        enrichment_description: str = "LinkedIn profile URL"
+        enrichment_description: str = "Company website, funding information, and key details"
     ) -> ToolResult:
         if not self.exa_client:
             return self.fail_response(
-                "People Search is not available. EXA_API_KEY is not configured. "
+                "Company Search is not available. EXA_API_KEY is not configured. "
                 "Please contact your administrator to enable this feature."
             )
         
@@ -207,7 +207,7 @@ class PeopleSearchTool(Tool):
                     item_dict = vars(item) if hasattr(item, '__dict__') else {}
                 
                 properties = item_dict.get('properties', {})
-                person_info = properties.get('person', {})
+                company_info = properties.get('company', {})
                 
                 evaluations_text = ""
                 evaluations = item_dict.get('evaluations', [])
@@ -236,9 +236,9 @@ class PeopleSearchTool(Tool):
                                 else:
                                     enrichment_text = str(enrich_result) if enrich_result else ""
                 
-                picture_url = person_info.get('picture_url', '')
-                if picture_url is None:
-                    picture_url = ''
+                logo_url = company_info.get('logo_url', '')
+                if logo_url is None:
+                    logo_url = ''
                 
                 result_entry = {
                     "rank": idx,
@@ -249,10 +249,10 @@ class PeopleSearchTool(Tool):
                     "url": properties.get('url', ''),
                     "type": properties.get('type', ''),
                     "description": properties.get('description', ''),
-                    "person_name": person_info.get('name', ''),
-                    "person_location": person_info.get('location', ''),
-                    "person_position": person_info.get('position', ''),
-                    "person_picture_url": str(picture_url) if picture_url else '',
+                    "company_name": company_info.get('name', ''),
+                    "company_location": company_info.get('location', ''),
+                    "company_industry": company_info.get('industry', ''),
+                    "company_logo_url": str(logo_url) if logo_url else '',
                     "evaluations": evaluations_text,
                     "enrichment_data": enrichment_text,
                     "created_at": str(item_dict.get('created_at', '')),
@@ -265,13 +265,13 @@ class PeopleSearchTool(Tool):
             total_cost = base_cost * TOKEN_PRICE_MULTIPLIER
             
             if config.ENV_MODE == EnvMode.LOCAL:
-                logger.info("Running in LOCAL mode - skipping billing for people search")
+                logger.info("Running in LOCAL mode - skipping billing for company search")
                 cost_deducted_str = f"${total_cost:.2f} (LOCAL - not charged)"
             else:
                 credits_deducted = await self._deduct_credits(user_id, len(formatted_results), thread_id)
                 if not credits_deducted:
                     return self.fail_response(
-                        "Insufficient credits for people search. "
+                        "Insufficient credits for company search. "
                         f"This search costs ${total_cost:.2f} ({len(formatted_results)} results). "
                         "Please add credits to continue."
                     )
@@ -285,7 +285,7 @@ class PeopleSearchTool(Tool):
                 "enrichment_type": enrichment_description
             }
             
-            logger.info(f"Successfully completed people search with {len(formatted_results)} results")
+            logger.info(f"Successfully completed company search with {len(formatted_results)} results")
             
             try:
                 json_output = json.dumps(output, indent=2, default=str)
@@ -294,11 +294,11 @@ class PeopleSearchTool(Tool):
                 logger.error(f"Failed to serialize output: {json_error}")
                 summary = f"Found {len(formatted_results)} results for query: {query}"
                 if formatted_results:
-                    summary += f"\n\nTop result:\nName: {formatted_results[0].get('person_name', 'Unknown')}\nPosition: {formatted_results[0].get('person_position', 'Unknown')}\nLocation: {formatted_results[0].get('person_location', 'Unknown')}"
+                    summary += f"\n\nTop result:\nName: {formatted_results[0].get('company_name', 'Unknown')}\nIndustry: {formatted_results[0].get('company_industry', 'Unknown')}\nLocation: {formatted_results[0].get('company_location', 'Unknown')}"
                 return self.success_response(summary)
                 
         except asyncio.TimeoutError:
             return self.fail_response("Search timed out. Please try again with a simpler query.")
         except Exception as e:
-            logger.error(f"People search failed: {repr(e)}", exc_info=True)
+            logger.error(f"Company search failed: {repr(e)}", exc_info=True)
             return self.fail_response("An error occurred during the search. Please try again.")

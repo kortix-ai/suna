@@ -1,6 +1,6 @@
 import { extractToolData } from '../utils';
 
-export interface PeopleSearchResult {
+export interface CompanySearchResult {
   rank: number;
   id: string;
   webset_id: string;
@@ -9,22 +9,22 @@ export interface PeopleSearchResult {
   url: string;
   type: string;
   description: string;
-  person_name: string;
-  person_location: string;
-  person_position: string;
-  person_picture_url: string;
+  company_name: string;
+  company_location: string;
+  company_industry: string;
+  company_logo_url: string;
   evaluations: string;
   enrichment_data: string;
   created_at: string;
   updated_at: string;
 }
 
-export interface PeopleSearchData {
+export interface CompanySearchData {
   query: string | null;
   total_results: number;
   cost_deducted: string;
   enrichment_type: string;
-  results: PeopleSearchResult[];
+  results: CompanySearchResult[];
   success?: boolean;
   timestamp?: string;
 }
@@ -40,7 +40,7 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-const extractFromNewFormat = (content: any): PeopleSearchData => {
+const extractFromNewFormat = (content: any): CompanySearchData => {
   const parsedContent = parseContent(content);
   
   if (!parsedContent || typeof parsedContent !== 'object') {
@@ -80,12 +80,12 @@ const extractFromNewFormat = (content: any): PeopleSearchData => {
         source: result.source || '',
         source_id: result.source_id || '',
         url: result.url || '',
-        type: result.type || 'person',
+        type: result.type || 'company',
         description: result.description || '',
-        person_name: result.person_name || '',
-        person_location: result.person_location || '',
-        person_position: result.person_position || '',
-        person_picture_url: result.person_picture_url || '',
+        company_name: result.company_name || '',
+        company_location: result.company_location || '',
+        company_industry: result.company_industry || '',
+        company_logo_url: result.company_logo_url || '',
         evaluations: result.evaluations || '',
         enrichment_data: result.enrichment_data || '',
         created_at: result.created_at || '',
@@ -110,12 +110,12 @@ const extractFromNewFormat = (content: any): PeopleSearchData => {
         source: result.source || '',
         source_id: result.source_id || '',
         url: result.url || '',
-        type: result.type || 'person',
+        type: result.type || 'company',
         description: result.description || '',
-        person_name: result.person_name || '',
-        person_location: result.person_location || '',
-        person_position: result.person_position || '',
-        person_picture_url: result.person_picture_url || '',
+        company_name: result.company_name || '',
+        company_location: result.company_location || '',
+        company_industry: result.company_industry || '',
+        company_logo_url: result.company_logo_url || '',
         evaluations: result.evaluations || '',
         enrichment_data: result.enrichment_data || '',
         created_at: result.created_at || '',
@@ -141,7 +141,7 @@ const extractFromNewFormat = (content: any): PeopleSearchData => {
   };
 };
 
-const extractFromLegacyFormat = (content: any): Omit<PeopleSearchData, 'success' | 'timestamp'> => {
+const extractFromLegacyFormat = (content: any): Omit<CompanySearchData, 'success' | 'timestamp'> => {
   const toolData = extractToolData(content);
   
   if (toolData.toolResult) {
@@ -164,7 +164,7 @@ const extractFromLegacyFormat = (content: any): Omit<PeopleSearchData, 'success'
   };
 };
 
-export function extractPeopleSearchData(
+export function extractCompanySearchData(
   assistantContent: any,
   toolContent: any,
   isSuccess: boolean,
@@ -175,12 +175,12 @@ export function extractPeopleSearchData(
   total_results: number;
   cost_deducted: string;
   enrichment_type: string;
-  results: PeopleSearchResult[];
+  results: CompanySearchResult[];
   actualIsSuccess: boolean;
   actualToolTimestamp?: string;
   actualAssistantTimestamp?: string;
 } {
-  let data: PeopleSearchData = {
+  let data: CompanySearchData = {
     query: null,
     total_results: 0,
     cost_deducted: '$0.54',
