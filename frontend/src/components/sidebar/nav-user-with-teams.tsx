@@ -74,6 +74,8 @@ export function NavUserWithTeams({
     email: string;
     avatar: string;
     isAdmin?: boolean;
+    planName?: string;
+    planIcon?: string;
   };
 }) {
   const router = useRouter();
@@ -187,23 +189,42 @@ export function NavUserWithTeams({
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
                 size="lg"
-                className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+                className="bg-transparent hover:bg-transparent data-[state=open]:bg-transparent border-[1.5px] border-border rounded-2xl h-[72px] p-3"
               >
-                <Avatar className="h-8 w-8 rounded-lg">
+                <Avatar className="h-12 w-12 rounded-full flex-shrink-0">
                   <AvatarImage src={user.avatar} alt={user.name} />
-                  <AvatarFallback className="rounded-lg">
+                  <AvatarFallback className="rounded-full">
                     {getInitials(user.name)}
                   </AvatarFallback>
                 </Avatar>
-                <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">{user.name}</span>
-                  <span className="truncate text-xs">{user.email}</span>
+                <div className="flex flex-col justify-center flex-1 min-w-0 py-2">
+                  <span className="truncate font-medium text-base">{user.name}</span>
+                  {user.planName && user.planIcon ? (
+                    <div className="flex items-center mt-1">
+                      <>
+                        <div className="bg-black dark:hidden rounded-full px-2 py-1 flex items-center justify-center w-fit">
+                          <img
+                            src={user.planIcon}
+                            alt={user.planName}
+                            className="flex-shrink-0 h-[14px] w-auto"
+                          />
+                        </div>
+                        <img
+                          src={user.planIcon}
+                          alt={user.planName}
+                          className="flex-shrink-0 h-[14px] w-auto hidden dark:block"
+                        />
+                      </>
+                    </div>
+                  ) : (
+                    <span className="truncate text-sm text-muted-foreground mt-1">{user.email}</span>
+                  )}
                 </div>
-                <ChevronsUpDown className="ml-auto size-4" />
+                <ChevronsUpDown className="ml-auto size-4 flex-shrink-0" />
               </SidebarMenuButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent
-              className="w-(--radix-dropdown-menu-trigger-width) min-w-56"
+              className="w-(--radix-dropdown-menu-trigger-width) min-w-56 p-3"
               side={isMobile ? 'bottom' : 'top'}
               align="start"
               sideOffset={4}
@@ -319,7 +340,7 @@ export function NavUserWithTeams({
                     </DropdownMenuPortal>
                   </DropdownMenuSub>
                 )}
-                
+
                 <DropdownMenuItem onClick={() => setShowBillingModal(true)}>
                   <Zap className="h-4 w-4" />
                   Upgrade

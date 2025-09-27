@@ -72,9 +72,9 @@ export function DashboardContent() {
   const [configAgentId, setConfigAgentId] = useState<string | null>(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [autoSubmit, setAutoSubmit] = useState(false);
-  const { 
-    selectedAgentId, 
-    setSelectedAgent, 
+  const {
+    selectedAgentId,
+    setSelectedAgent,
     initializeFromAgents,
     getCurrentAgent
   } = useAgentSelection();
@@ -159,7 +159,7 @@ export function DashboardContent() {
 
   const handleTourCallback = useCallback((data: CallBackProps) => {
     const { status, type, index } = data;
-    
+
     if (status === STATUS.FINISHED || status === STATUS.SKIPPED) {
       stopTour();
     } else if (type === 'step:after') {
@@ -333,19 +333,19 @@ export function DashboardContent() {
           },
         }}
       />
-      
+
       <TourConfirmationDialog
         open={showWelcome}
         onAccept={handleWelcomeAccept}
         onDecline={handleWelcomeDecline}
       />
 
-      <BillingModal 
-        open={showPaymentModal} 
+      <BillingModal
+        open={showPaymentModal}
         onOpenChange={setShowPaymentModal}
         showUsageLimitAlert={true}
       />
-      
+
       <div className="flex flex-col h-screen w-full overflow-hidden">
         <div className="flex-1 overflow-y-auto">
           <div className="min-h-full flex flex-col">
@@ -357,8 +357,8 @@ export function DashboardContent() {
             <div className="flex-1 flex items-center justify-center px-4 py-8">
               <div className="w-full max-w-[650px] flex flex-col items-center justify-center space-y-4 md:space-y-6">
                 <div className="flex flex-col items-center text-center w-full">
-                  <p 
-                    className="tracking-tight text-2xl md:text-3xl font-normal text-foreground/90"
+                  <p
+                    className="tracking-tight text-2xl md:text-3xl font-medium text-foreground/90"
                     data-tour="dashboard-title"
                   >
                     What would you like to do today?
@@ -382,15 +382,15 @@ export function DashboardContent() {
                     }}
                   />
                 </div>
-                
+
                 {/* Examples section - right after chat input */}
-                <div className="w-full pt-2" data-tour="examples">
-                  <Examples 
-                    onSelectPrompt={setInputValue} 
-                    count={isMobile ? 2 : 4} 
+                {/* <div className="w-full pt-2" data-tour="examples">
+                  <Examples
+                    onSelectPrompt={setInputValue}
+                    count={isMobile ? 2 : 4}
                   />
-                </div>
-                
+                </div> */}
+
                 {/* AgentExamples section - commented out */}
                 {/* <div className="w-full pt-2" data-tour="examples">
                   <AgentExamples 
@@ -401,18 +401,18 @@ export function DashboardContent() {
                 </div> */}
               </div>
             </div>
-            {enabledEnvironment && (
+            {/* {enabledEnvironment && (
               <div className="w-full px-4 pb-8" data-tour="custom-agents">
                 <div className="max-w-7xl mx-auto">
-                  <CustomAgentsSection 
+                  <CustomAgentsSection
                     onAgentSelect={setSelectedAgent}
                   />
                 </div>
               </div>
-            )}
+            )} */}
           </div>
         </div>
-        
+
         <BillingErrorAlert
           message={billingError?.message}
           currentUsage={billingError?.currentUsage}
@@ -432,7 +432,7 @@ export function DashboardContent() {
           projectId={undefined}
         />
       )}
-      
+
       {configAgentId && (
         <AgentConfigurationDialog
           open={showConfigDialog}

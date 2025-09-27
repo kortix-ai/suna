@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Bot, Menu, Plus, Zap, ChevronRight, BookOpen } from 'lucide-react';
+import { Bot, Menu, Plus, Zap, ChevronRight, BookOpen, Code, Star, Package, Sparkle, Sparkles, X, AlarmClock, Check, Clipboard, ClipboardCheck } from 'lucide-react';
 
 import { NavAgents } from '@/components/sidebar/nav-agents';
 import { NavUserWithTeams } from '@/components/sidebar/nav-user-with-teams';
@@ -43,6 +43,52 @@ import { cn } from '@/lib/utils';
 import { usePathname, useSearchParams } from 'next/navigation';
 import posthog from 'posthog-js';
 import { useDocumentModalStore } from '@/lib/stores/use-document-modal-store';
+import { useSubscriptionData } from '@/contexts/SubscriptionContext';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import Image from 'next/image';
+import { isLocalMode } from '@/lib/config';
+
+// Helper function to get plan icon
+function getPlanIcon(planName: string, isLocal: boolean = false) {
+  if (isLocal) return '/plan-icons/ultra.svg';
+
+  const plan = planName?.toLowerCase();
+  if (plan?.includes('ultra')) return '/plan-icons/ultra.svg';
+  if (plan?.includes('pro')) return '/plan-icons/pro.svg';
+  if (plan?.includes('plus')) return '/plan-icons/plus.svg';
+  return '/plan-icons/plus.svg'; // default
+}
+
+// Helper function to get plan name
+function getPlanName(subscriptionData: any, isLocal: boolean = false): string {
+  if (isLocal) return 'Ultra';
+  return subscriptionData?.plan_name || subscriptionData?.tier?.name || 'Free';
+}
+
+// Helper function to get user initials
+function getInitials(name: string) {
+  return name
+    .split(' ')
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+}
+
+function UserProfileSection({ user }: { user: any }) {
+  const { data: subscriptionData } = useSubscriptionData();
+  const isLocal = isLocalMode();
+  const planName = getPlanName(subscriptionData, isLocal);
+
+  // Return the enhanced user object with plan info for NavUserWithTeams
+  const enhancedUser = {
+    ...user,
+    planName,
+    planIcon: getPlanIcon(planName, isLocal)
+  };
+
+  return <NavUserWithTeams user={enhancedUser} />;
+}
 
 function FloatingMobileMenuButton() {
   const { setOpenMobile, openMobile } = useSidebar();
@@ -76,6 +122,7 @@ export function SidebarLeft({
 }: React.ComponentProps<typeof Sidebar>) {
   const { state, setOpen, setOpenMobile } = useSidebar();
   const isMobile = useIsMobile();
+  const [activeView, setActiveView] = useState<'chats' | 'tasks' | 'agents' | 'starred'>('chats');
   const [user, setUser] = useState<{
     name: string;
     email: string;
@@ -152,145 +199,138 @@ export function SidebarLeft({
   return (
     <Sidebar
       collapsible="icon"
-      className="border-r-0 bg-background/95 backdrop-blur-sm [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']"
+      className="border-r border-border/50 bg-background [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] [&[data-state=expanded]]:w-80 w-80"
       {...props}
     >
-      <SidebarHeader className="px-2 py-2">
-        <div className="flex h-[40px] items-center px-1 relative">
+      <SidebarHeader className="px-6 py-3">
+        <div className="flex h-[32px] items-center justify-between">
           <Link href="/dashboard" className="flex-shrink-0" onClick={() => isMobile && setOpenMobile(false)}>
             <KortixLogo size={24} />
           </Link>
-          {state !== 'collapsed' && (
-            <div className="ml-2 transition-all duration-200 ease-in-out whitespace-nowrap">
-            </div>
+          {state !== 'collapsed' && !isMobile && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <SidebarTrigger className="h-8 w-8" />
+              </TooltipTrigger>
+              <TooltipContent>Toggle sidebar (CMD+B)</TooltipContent>
+            </Tooltip>
           )}
-          <div className="ml-auto flex items-center gap-2">
-            {state !== 'collapsed' && !isMobile && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <SidebarTrigger className="h-8 w-8" />
-                </TooltipTrigger>
-                <TooltipContent>Toggle sidebar (CMD+B)</TooltipContent>
-              </Tooltip>
-            )}
-          </div>
         </div>
       </SidebarHeader>
       <SidebarContent className="[&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
-        <SidebarGroup>
-          <Link href="/dashboard">
-            <SidebarMenuButton
-              className={cn('touch-manipulation', {
-                'bg-accent text-accent-foreground font-medium': pathname === '/dashboard',
-              })}
+        <div className="px-[34px] pt-4 space-y-4">
+          {/* New Chat button with shortcuts inside */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full shadow-none justify-between h-12 rounded-2xl px-4"
+            asChild
+          >
+            <Link
+              href="/dashboard"
               onClick={() => {
                 posthog.capture('new_task_clicked');
                 if (isMobile) setOpenMobile(false);
               }}
             >
-              <Plus className="h-4 w-4 mr-1" />
-              <span className="flex items-center justify-between w-full">
-                New Task
-              </span>
-            </SidebarMenuButton>
-          </Link>
-          <Link href="/triggers">
-            <SidebarMenuButton
-              className={cn('touch-manipulation mt-1', {
-                'bg-accent text-accent-foreground font-medium': pathname === '/triggers',
-              })}
-              onClick={() => {
-                if (isMobile) setOpenMobile(false);
-              }}
-            >
-              <Zap className="h-4 w-4 mr-1" />
-              <span className="flex items-center justify-between w-full">
-                Triggers
-              </span>
-            </SidebarMenuButton>
-          </Link>
-          <Link href="/knowledge">
-            <SidebarMenuButton
-              className={cn('touch-manipulation mt-1', {
-                'bg-accent text-accent-foreground font-medium': pathname === '/knowledge',
-              })}
-              onClick={() => {
-                if (isMobile) setOpenMobile(false);
-              }}
-            >
-              <BookOpen className="h-4 w-4 mr-1" />
-              <span className="flex items-center justify-between w-full">
-                Knowledge Base
-              </span>
-            </SidebarMenuButton>
-          </Link>
-          {(
-            <SidebarMenu>
-              <Collapsible
-                defaultOpen={true}
-                className="group/collapsible"
+              <div className="flex items-center gap-2">
+                <Plus className="h-4 w-4" />
+                New Chat
+              </div>
+              <div className="flex items-center gap-1">
+                <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-base leading-0 cursor-pointer">⌘</kbd>
+                <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-xs cursor-pointer">K</kbd>
+              </div>
+            </Link>
+          </Button>
+
+          {/* Four 48x48 icon buttons with 16px radius */}
+          <div className="grid grid-cols-4 gap-3">
+            {[
+              { view: 'chats' as const, icon: AlarmClock },
+              { view: 'tasks' as const, icon: ClipboardCheck },
+              { view: 'agents' as const, icon: Bot },
+              { view: 'starred' as const, icon: Star }
+            ].map(({ view, icon: Icon }) => (
+              <Button
+                key={view}
+                variant="ghost"
+                size="icon"
+                className={`h-12 w-12 p-0 rounded-2xl cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border ${activeView === view ? 'bg-muted/60 border-[1.5px] border-border' : ''
+                  }`}
+                onClick={() => setActiveView(view)}
               >
-                <SidebarMenuItem>
-                  <CollapsibleTrigger asChild>
-                    <SidebarMenuButton
-                      tooltip="Agents"
-                      onClick={() => {
-                        if (state === 'collapsed') {
-                          setOpen(true);
-                        }
-                      }}
-                    >
-                      <Bot className="h-4 w-4 mr-1" />
-                      <span>Agents</span>
-                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                    </SidebarMenuButton>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <SidebarMenuSub>
-                      {/* <SidebarMenuSubItem>
-                        <SidebarMenuSubButton className={cn('pl-3 touch-manipulation', {
-                          'bg-accent text-accent-foreground font-medium': pathname === '/agents' && searchParams.get('tab') === 'marketplace',
-                        })} asChild>
-                          <Link href="/agents?tab=marketplace" onClick={() => isMobile && setOpenMobile(false)}>
-                            <span>Explore</span>
-                          </Link>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem> */}
-                      <SidebarMenuSubItem data-tour="my-agents">
-                        <SidebarMenuSubButton className={cn('pl-3 touch-manipulation', {
-                          'bg-accent text-accent-foreground font-medium': pathname === '/agents' && (searchParams.get('tab') === 'my-agents' || searchParams.get('tab') === null),
-                        })} asChild>
-                          <Link href="/agents?tab=my-agents" onClick={() => isMobile && setOpenMobile(false)}>
-                            <span>My Agents</span>
-                          </Link>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem data-tour="new-agent">
-                        <SidebarMenuSubButton
-                          onClick={() => {
-                            setShowNewAgentDialog(true);
-                            if (isMobile) setOpenMobile(false);
-                          }}
-                          className="cursor-pointer pl-3 touch-manipulation"
-                        >
-                          <span>New Agent</span>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                    </SidebarMenuSub>
-                  </CollapsibleContent>
-                </SidebarMenuItem>
-              </Collapsible>
-            </SidebarMenu>
+                <Icon className="h-5 w-5" />
+              </Button>
+            ))}
+          </div>          {/* My Workers / Community toggle - Only show for agents view */}
+          {activeView === 'agents' && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="default"
+                size="sm"
+                className="flex-1 justify-center gap-2 h-12 rounded-2xl"
+                asChild
+              >
+                <Link href="/agents">
+                  <Bot className="h-4 w-4" />
+                  My Workers
+                </Link>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 justify-center gap-2 h-12 rounded-2xl"
+                asChild
+              >
+                <Link href="/community">
+                  <Package className="h-4 w-4" />
+                  Community
+                </Link>
+              </Button>
+            </div>
           )}
-        </SidebarGroup>
-        <NavAgents />
-      </SidebarContent>
-      {state !== 'collapsed' && (
-        <div className="px-3 py-2">
-          <CTACard />
         </div>
-      )}
-      <SidebarFooter>
+
+        <div className="px-6">
+          {/* Conditional content based on active view */}
+          {activeView === 'chats' && <NavAgents />}
+          {activeView === 'tasks' && <NavAgents />}
+          {activeView === 'agents' && <NavAgents />}
+          {activeView === 'starred' && (
+            <div className="text-center py-8 text-muted-foreground">
+              <Star className="h-8 w-8 mx-auto mb-2" />
+              <p className="text-sm">No starred items yet</p>
+            </div>
+          )}
+        </div>
+
+      </SidebarContent>
+
+      {/* Enterprise Demo Card - Floating overlay above footer */}
+      <div className="absolute bottom-[96px] left-6 right-6 z-10">
+        <div className="rounded-2xl p-5 backdrop-blur-[12px] border-[1.5px] bg-gradient-to-br from-white/25 to-gray-300/25 dark:from-gray-600/25 dark:to-gray-800/25 border-gray-300/50 dark:border-gray-600/50">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="h-4 w-4" />
+            <span className="text-sm font-medium text-foreground">Enterprise Demo</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-auto h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground mb-4">
+            Request custom AI Workers implementation
+          </p>
+          <Button size="sm" className="w-full text-xs h-8">
+            Learn More
+          </Button>
+        </div>
+      </div>
+
+      <div className="px-6 pb-4">
         {state === 'collapsed' && (
           <div className="mt-2 flex justify-center">
             <Tooltip>
@@ -301,8 +341,8 @@ export function SidebarLeft({
             </Tooltip>
           </div>
         )}
-        <NavUserWithTeams user={user} />
-      </SidebarFooter>
+        <UserProfileSection user={user} />
+      </div>
       <SidebarRail />
       <NewAgentDialog
         open={showNewAgentDialog}

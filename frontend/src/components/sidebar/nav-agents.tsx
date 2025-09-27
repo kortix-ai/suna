@@ -52,9 +52,9 @@ import { projectKeys, threadKeys } from '@/hooks/react-query/sidebar/keys';
 // Component for date group headers
 const DateGroupHeader: React.FC<{ dateGroup: string; count: number }> = ({ dateGroup, count }) => {
   return (
-    <div className="px-2 py-1 mb-1 mt-3 first:mt-0">
-      <div className="text-xs font-medium text-muted-foreground/80 uppercase tracking-wider">
-        {dateGroup} ({count})
+    <div className="py-2 mt-4 first:mt-2">
+      <div className="text-xs font-medium text-muted-foreground pl-2.5">
+        {dateGroup}
       </div>
     </div>
   );
@@ -75,122 +75,62 @@ const ThreadItem: React.FC<{
   handleDeleteThread: (threadId: string, threadName: string) => void;
   setSelectedItem: (item: { threadId: string; projectId: string } | null) => void;
   setShowShareModal: (show: boolean) => void;
-}> = ({ 
-  thread, 
-  isActive, 
-  isThreadLoading, 
-  isSelected, 
-  handleThreadClick, 
-  toggleThreadSelection, 
-  handleDeleteThread, 
-  setSelectedItem, 
+}> = ({
+  thread,
+  isActive,
+  isThreadLoading,
+  isSelected,
+  handleThreadClick,
+  toggleThreadSelection,
+  handleDeleteThread,
+  setSelectedItem,
   setShowShareModal,
-  isMobile 
+  isMobile
 }) => {
-  return (
-    <SidebarMenuItem key={`thread-${thread.threadId}`} className="group/row">
-      <SidebarMenuButton
-        asChild
-        className={`relative ${isActive
-          ? 'bg-accent text-accent-foreground font-medium'
-          : isSelected
-            ? 'bg-primary/10'
-            : ''
-          }`}
-      >
-        <div className="flex items-center w-full">
-          <Link
-            href={thread.url}
-            onClick={(e) =>
-              handleThreadClick(e, thread.threadId, thread.url)
-            }
-            prefetch={false}
-            className="flex items-center flex-1 min-w-0 touch-manipulation"
-          >
-            {isThreadLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin mr-2 flex-shrink-0" />
-            ) : (
-              <ThreadIcon 
-                iconName={thread.iconName} 
-                className="mr-2" 
-                size={16} 
-              />
-            )}
-            <span className="truncate">{thread.projectName}</span>
-          </Link>
-          
-          {/* Checkbox - only visible on hover of this specific area */}
-          <div
-            className="mr-1 flex-shrink-0 w-4 h-4 flex items-center justify-center group/checkbox"
-            onClick={(e) => toggleThreadSelection(thread.threadId, e)}
-          >
-            <div
-              className={`h-4 w-4 border rounded cursor-pointer transition-all duration-150 flex items-center justify-center ${isSelected
-                ? 'opacity-100 bg-primary border-primary hover:bg-primary/90'
-                : 'opacity-0 group-hover/checkbox:opacity-100 border-muted-foreground/30 bg-background hover:bg-muted/50'
-                }`}
-            >
-              {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
-            </div>
-          </div>
+    // Format date for display
+    const formatDate = (dateString: string) => {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 3600 * 24));
 
-          {/* Dropdown Menu - inline with content */}
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="cursor-pointer flex-shrink-0 w-4 h-4 flex items-center justify-center hover:bg-muted/50 rounded transition-all duration-150 text-muted-foreground hover:text-foreground opacity-0 group-hover/row:opacity-100"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  // Ensure pointer events are enabled when dropdown opens
-                  document.body.style.pointerEvents = 'auto';
-                }}
-              >
-                <MoreHorizontal className="h-4 w-4" />
-                <span className="sr-only">More actions</span>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              className="w-56 rounded-lg"
-              side={isMobile ? 'bottom' : 'right'}
-              align={isMobile ? 'end' : 'start'}
-            >
-              <DropdownMenuItem onClick={() => {
-                setSelectedItem({ threadId: thread?.threadId, projectId: thread?.projectId })
-                setShowShareModal(true)
-              }}>
-                <ExternalLink className="text-muted-foreground" />
-                <span>Share</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <a
-                  href={thread.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <ArrowUpRight className="text-muted-foreground" />
-                  <span>Open in New Tab</span>
-                </a>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={() =>
-                  handleDeleteThread(
-                    thread.threadId,
-                    thread.projectName,
-                  )
-                }
-              >
-                <Trash2 className="text-muted-foreground" />
-                <span>Delete</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </SidebarMenuButton>
-    </SidebarMenuItem>
-  );
-};
+      if (diffDays === 0) return 'Today';
+      if (diffDays === 1) return 'Yesterday';
+      if (diffDays < 7) return `${diffDays}d`;
+      return date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
+    };
+
+    return (
+      <div className="py-1">
+        <Link
+          href={thread.url}
+          onClick={(e) => handleThreadClick(e, thread.threadId, thread.url)}
+          prefetch={false}
+          className="block"
+        >
+          <div
+            className={`flex items-center gap-3 p-2.5 rounded-2xl text-sm transition-colors hover:bg-accent/50 cursor-pointer ${isActive ? 'bg-accent text-accent-foreground' : ''
+              }`}
+          >
+            <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-muted/10 border-[1.5px] border-border flex-shrink-0">
+              {isThreadLoading ? (
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              ) : (
+                <ThreadIcon
+                  iconName={thread.iconName}
+                  className="text-muted-foreground"
+                  size={20}
+                />
+              )}
+            </div>
+            <span className="flex-1 truncate">{thread.projectName}</span>
+            <span className="text-xs text-muted-foreground flex-shrink-0">
+              {formatDate(thread.updatedAt)}
+            </span>
+          </div>
+        </Link>
+      </div>
+    );
+  };
 
 export function NavAgents() {
   const { isMobile, state, setOpenMobile } = useSidebar()
@@ -493,59 +433,22 @@ export function NavAgents() {
   }
 
   return (
-    <SidebarGroup>
-      <div className="flex justify-between items-center">
-        <SidebarGroupLabel>Tasks</SidebarGroupLabel>
-        {(state !== 'collapsed' || isMobile) ? (
-          <div className="flex items-center space-x-1">
-            {selectedThreads.size > 0 ? (
-              <>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={deselectAllThreads}
-                  className="h-7 w-7"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={selectAllThreads}
-                  disabled={selectedThreads.size === combinedThreads.length}
-                  className="h-7 w-7"
-                >
-                  <Check className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={handleMultiDelete}
-                  className="h-7 w-7 text-destructive"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
+    <div>
 
-      <SidebarMenu className="overflow-y-auto max-h-[calc(100vh-200px)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
-
-
+      <div className="overflow-y-auto max-h-[calc(100vh-200px)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
         {(state !== 'collapsed' || isMobile) && (
           <>
             {isLoading ? (
               // Show skeleton loaders while loading
-              Array.from({ length: 3 }).map((_, index) => (
-                <SidebarMenuItem key={`skeleton-${index}`}>
-                  <SidebarMenuButton>
-                    <div className="h-4 w-4 bg-sidebar-foreground/10 rounded-md animate-pulse"></div>
-                    <div className="h-3 bg-sidebar-foreground/10 rounded w-3/4 animate-pulse"></div>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))
+              <div className="space-y-1">
+                {Array.from({ length: 3 }).map((_, index) => (
+                  <div key={`skeleton-${index}`} className="flex items-center gap-3 px-2 py-2">
+                    <div className="h-12 w-12 bg-muted/10 border-[1.5px] border-border rounded-2xl animate-pulse"></div>
+                    <div className="h-4 bg-muted rounded flex-1 animate-pulse"></div>
+                    <div className="h-3 w-8 bg-muted rounded animate-pulse"></div>
+                  </div>
+                ))}
+              </div>
             ) : combinedThreads.length > 0 ? (
               // Show threads grouped by date
               <>
@@ -580,15 +483,13 @@ export function NavAgents() {
                 ))}
               </>
             ) : (
-              <SidebarMenuItem>
-                <SidebarMenuButton className="text-sidebar-foreground/70">
-                  <span>No triggers yet</span>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+              <div className="py-2 text-sm text-muted-foreground">
+                No conversations yet
+              </div>
             )}
           </>
         )}
-      </SidebarMenu>
+      </div>
 
       {(isDeletingSingle || isDeletingMultiple) && totalToDelete > 0 && (
         <div className="mt-2 px-2">
@@ -620,6 +521,6 @@ export function NavAgents() {
           isDeleting={isDeletingSingle || isDeletingMultiple}
         />
       )}
-    </SidebarGroup>
+    </div>
   );
 }
