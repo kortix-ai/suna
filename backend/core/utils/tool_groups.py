@@ -817,6 +817,36 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         ]
     ),
 
+    "people_search_tool": ToolGroup(
+        name="people_search_tool",
+        display_name="People Search",
+        description="Search for people using LinkedIn",
+        tool_class="PeopleSearchTool",
+        methods=[
+            ToolMethod(
+                name="people_search",
+                display_name="People Search",
+                description="Search for people using LinkedIn",
+                enabled=True
+            ),
+        ]
+    ),
+
+    "company_search_tool": ToolGroup(
+        name="company_search_tool",
+        display_name="Company Search",
+        description="Search for companies using natural language queries",
+        tool_class="CompanySearchTool",
+        methods=[
+            ToolMethod(
+                name="company_search",
+                display_name="Company Search",
+                description="Search for companies using natural language queries",
+                enabled=True
+            ),
+        ]
+    ),
+
     "sb_web_dev_tool": ToolGroup(
         name="sb_web_dev_tool",
         display_name="Web Development",

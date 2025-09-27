@@ -32,6 +32,10 @@ SUNA_CONFIG = {
         "sb_presentation_tool": True,
         "sb_sheets_tool": True,
         "sb_kb_tool": True,
+
+        # search tools
+        "people_search_tool": True,
+        "company_search_tool": True,
         
         # Browser automation (both variants)
         "browser_tool": True,

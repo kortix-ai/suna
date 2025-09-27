@@ -42,6 +42,8 @@ from core.tools.sb_sheets_tool import SandboxSheetsTool
 # from core.tools.sb_web_dev_tool import SandboxWebDevTool  # DEACTIVATED
 from core.tools.sb_upload_file_tool import SandboxUploadFileTool
 from core.tools.sb_docs_tool import SandboxDocsTool
+from core.tools.people_search_tool import PeopleSearchTool
+from core.tools.company_search_tool import CompanySearchTool
 from core.ai_models.manager import model_manager
 
 load_dotenv()
@@ -141,7 +143,6 @@ class ToolManager:
                     # logger.debug(f"Registered {tool_name} (all methods)")
     
     def _register_utility_tools(self, disabled_tools: List[str]):
-        """Register utility and data provider tools."""
         if config.RAPID_API_KEY and 'data_providers_tool' not in disabled_tools:
             # Check for granular method control
             enabled_methods = self._get_enabled_methods_for_tool('data_providers_tool')
@@ -153,6 +154,26 @@ class ToolManager:
                 # Register all methods (backward compatibility)
                 self.thread_manager.add_tool(DataProvidersTool)
                 # logger.debug("Registered data_providers_tool (all methods)")
+        
+        # Register search tools if EXA API key is available
+        if config.EXA_API_KEY:
+            if 'people_search_tool' not in disabled_tools:
+                enabled_methods = self._get_enabled_methods_for_tool('people_search_tool')
+                if enabled_methods is not None:
+                    self.thread_manager.add_tool(PeopleSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager)
+                    logger.debug(f"Registered people_search_tool with methods: {enabled_methods}")
+                else:
+                    self.thread_manager.add_tool(PeopleSearchTool, thread_manager=self.thread_manager)
+                    logger.debug("Registered people_search_tool (all methods)")
+            
+            if 'company_search_tool' not in disabled_tools:
+                enabled_methods = self._get_enabled_methods_for_tool('company_search_tool')
+                if enabled_methods is not None:
+                    self.thread_manager.add_tool(CompanySearchTool, function_names=enabled_methods, thread_manager=self.thread_manager)
+                    logger.debug(f"Registered company_search_tool with methods: {enabled_methods}")
+                else:
+                    self.thread_manager.add_tool(CompanySearchTool, thread_manager=self.thread_manager)
+                    logger.debug("Registered company_search_tool (all methods)")
     
     def _register_agent_builder_tools(self, agent_id: str, disabled_tools: List[str]):
         """Register agent builder tools."""
@@ -593,6 +614,22 @@ class AgentRunner:
         else:
             logger.debug("Not a Suna agent, skipping Suna-specific tool registration")
     
+    def _get_enabled_methods_for_tool(self, tool_name: str) -> Optional[List[str]]:
+        if not self.config.agent_config or 'agentpress_tools' not in self.config.agent_config:
+            return None
+        
+        from core.utils.tool_groups import get_enabled_methods_for_tool
+        from core.utils.tool_migration import migrate_legacy_tool_config
+        
+        raw_tools = self.config.agent_config['agentpress_tools']
+        
+        if not isinstance(raw_tools, dict):
+            return None
+        
+        migrated_tools = migrate_legacy_tool_config(raw_tools)
+        
+        return get_enabled_methods_for_tool(tool_name, migrated_tools)
+    
     def _register_suna_specific_tools(self, disabled_tools: List[str]):
         if 'agent_creation_tool' not in disabled_tools:
             from core.tools.agent_creation_tool import AgentCreationTool
@@ -644,7 +681,7 @@ class AgentRunner:
             'sb_shell_tool', 'sb_files_tool', 'sb_deploy_tool', 'sb_expose_tool',
             'web_search_tool', 'image_search_tool', 'sb_vision_tool', 'sb_presentation_tool', 'sb_image_edit_tool',
             'sb_sheets_tool', 'sb_web_dev_tool', 'data_providers_tool', 'browser_tool',
-            'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 
+            'people_search_tool', 'company_search_tool', 'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 
             'workflow_tool', 'trigger_tool'
         ]
         
