@@ -202,7 +202,7 @@ export function SidebarLeft({
       className="border-r border-border/50 bg-background [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] [&[data-state=expanded]]:w-80 w-80"
       {...props}
     >
-      <SidebarHeader className="px-6 py-3">
+      <SidebarHeader className="px-[34px] py-3">
         <div className="flex h-[32px] items-center justify-between">
           <Link href="/dashboard" className="flex-shrink-0" onClick={() => isMobile && setOpenMobile(false)}>
             <KortixLogo size={24} />
@@ -260,7 +260,7 @@ export function SidebarLeft({
                   }`}
                 onClick={() => setActiveView(view)}
               >
-                <Icon className="h-5 w-5" />
+                <Icon className="!h-5 !w-5" />
               </Button>
             ))}
           </div>          {/* My Workers / Community toggle - Only show for agents view */}
