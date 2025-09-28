@@ -878,8 +878,9 @@ class SetupWizard:
         )
         self.env_vars["search"]["EXA_API_KEY"] = self._get_input(
             "Enter your Exa API key (optional): ",
-            lambda x: x == "" or validate_api_key(x),
+            validate_api_key,
             "Invalid API key.",
+            allow_empty=True,
             default_value=self.env_vars["search"]["EXA_API_KEY"],
         )
 
