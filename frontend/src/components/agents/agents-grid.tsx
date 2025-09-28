@@ -16,7 +16,6 @@ import { isStagingMode } from '@/lib/config';
 interface Agent {
   agent_id: string;
   name: string;
-  description?: string;
   is_default: boolean;
   is_public?: boolean;
   marketplace_published_at?: string;
@@ -41,7 +40,6 @@ interface Agent {
       system_prompt_editable?: boolean;
       tools_editable?: boolean;
       name_editable?: boolean;
-      description_editable?: boolean;
       mcps_editable?: boolean;
     };
   };
@@ -144,9 +142,6 @@ const AgentModal: React.FC<AgentModalProps> = ({
                   </Badge>
                 )}
               </div>
-              <p className="text-muted-foreground text-sm leading-relaxed">
-                {truncateDescription(agent.description)}
-              </p>
             </div>
 
             <div className="flex gap-3 pt-2">

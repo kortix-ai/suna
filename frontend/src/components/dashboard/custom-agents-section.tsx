@@ -191,15 +191,14 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
             <div
               key={template.template_id}
               className={cn(
-                'group relative bg-muted/30 rounded-3xl overflow-hidden transition-all duration-300 border cursor-pointer flex flex-col h-[180px] w-full border-border/50',
+                'group relative bg-muted/30 rounded-3xl overflow-hidden transition-all duration-300 border cursor-pointer flex flex-col w-full border-border/50',
                 'hover:border-primary/20'
               )}
               onClick={() => handleCardClick(template)}
             >
               <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              
               <div className="h-full relative flex flex-col overflow-hidden w-full p-4">
-                <div className="flex items-center gap-3 mb-3">
+                <div className="flex items-center gap-3">
                   <div className="flex-shrink-0">
                     <AgentIconAvatar
                       profileImageUrl={template.profile_image_url}
@@ -215,9 +214,6 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
                     {template.name}
                   </h3>
                 </div>
-                <p className="text-sm text-muted-foreground line-clamp-4 leading-relaxed flex-1">
-                  {template.description || 'No description available'}
-                </p>
               </div>
             </div>
           ))}

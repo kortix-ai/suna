@@ -4,6 +4,8 @@ from core.agentpress.tool import ToolResult, openapi_schema, usage_example
 from core.agentpress.thread_manager import ThreadManager
 from .base_tool import AgentBuilderBaseTool
 from core.utils.logger import logger
+from core.utils.core_tools_helper import ensure_core_tools_enabled, is_core_tool
+from core.utils.tool_groups import validate_tool_config
 
 
 
@@ -15,17 +17,13 @@ class AgentConfigTool(AgentBuilderBaseTool):
         "type": "function",
         "function": {
             "name": "update_agent",
-            "description": "Update the agent's configuration including name, description, tools, and MCP servers. System prompt additions are appended to existing instructions with high priority markers. Call this whenever the user wants to modify any aspect of the agent.",
+            "description": "Update the agent's configuration including name, tools, and MCP servers. System prompt additions are appended to existing instructions with high priority markers. Call this whenever the user wants to modify any aspect of the agent.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "name": {
                         "type": "string",
                         "description": "The name of the agent. Should be descriptive and indicate the agent's purpose."
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "A brief description of what the agent does and its capabilities."
                     },
                     "system_prompt": {
                         "type": "string",
@@ -63,7 +61,6 @@ class AgentConfigTool(AgentBuilderBaseTool):
         <function_calls>
         <invoke name="update_agent">
         <parameter name="name">Research Assistant</parameter>
-        <parameter name="description">An AI assistant specialized in conducting research and providing comprehensive analysis</parameter>
         <parameter name="system_prompt">Act as a research analyst. Always verify sources</parameter>
         <parameter name="agentpress_tools">{"web_search_tool": true, "sb_files_tool": true, "sb_shell_tool": false}</parameter>
         </invoke>
@@ -72,7 +69,6 @@ class AgentConfigTool(AgentBuilderBaseTool):
     async def update_agent(
         self,
         name: Optional[str] = None,
-        description: Optional[str] = None,
         system_prompt: Optional[str] = None,
         agentpress_tools: Optional[Dict[str, Dict[str, Any]]] = None,
         configured_mcps: Optional[list] = None
@@ -110,8 +106,6 @@ class AgentConfigTool(AgentBuilderBaseTool):
             agent_update_fields = {}
             if name is not None:
                 agent_update_fields["name"] = name
-            if description is not None:
-                agent_update_fields["description"] = description
                 
             config_changed = (system_prompt is not None or agentpress_tools is not None or configured_mcps is not None)
             
@@ -149,18 +143,11 @@ class AgentConfigTool(AgentBuilderBaseTool):
                         current_system_prompt = current_version.get('system_prompt', '')
                     
                     if agentpress_tools is not None:
-                        formatted_tools = {}
-                        for tool_name, tool_config in agentpress_tools.items():
-                            if isinstance(tool_config, dict):
-                                if tool_config == {}:
-                                    formatted_tools[tool_name] = True
-                                else:
-                                    formatted_tools[tool_name] = tool_config.get("enabled", False)
-                            else:
-                                formatted_tools[tool_name] = bool(tool_config)
-                        current_agentpress_tools = formatted_tools
+                        # Validate and normalize the tool configuration
+                        validated_tools = validate_tool_config(agentpress_tools)
+                        current_agentpress_tools = ensure_core_tools_enabled(validated_tools)
                     else:
-                        current_agentpress_tools = current_version.get('agentpress_tools', {})
+                        current_agentpress_tools = ensure_core_tools_enabled(current_version.get('agentpress_tools', {}))
                     
                     current_configured_mcps = current_version.get('configured_mcps', [])
                     if configured_mcps is not None:

@@ -53,6 +53,7 @@ interface SimplifiedScheduleConfigProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSave?: (data: { name: string; description: string; config: ScheduleTriggerConfig; is_active: boolean }) => void;
+  isEditMode?: boolean;
 }
 
 interface SchedulePreset {
@@ -315,7 +316,8 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
   onAgentSelect,
   open,
   onOpenChange,
-  onSave
+  onSave,
+  isEditMode = false
 }) => {
   const [currentStep, setCurrentStep] = useState<'setup' | 'schedule' | 'execute'>('setup');
   const [selectedPreset, setSelectedPreset] = useState<string>('');
@@ -478,7 +480,7 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
     <div className="flex flex-col h-full max-h-[90vh]">
       <div className="shrink-0 px-6 py-4 border-b">
         <div className="flex items-center gap-2">
-          <h2 className="text-lg font-semibold">Create Scheduled Task</h2>
+          <h2 className="text-lg font-semibold">{isEditMode ? 'Edit Scheduled Task' : 'Create Scheduled Task'}</h2>
         </div>
       </div>
       <ProgressStepper currentStep={currentStep} />
@@ -1135,7 +1137,7 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
                     }
                     size="sm"
                   >
-                    Create Scheduled Task
+                    {isEditMode ? 'Update Scheduled Task' : 'Create Scheduled Task'}
                     <Sparkles className="h-3 w-3 ml-2" />
                   </Button>
                 </div>
@@ -1152,7 +1154,7 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] p-0 overflow-hidden">
         <VisuallyHidden>
-          <DialogTitle>Create Scheduled Task</DialogTitle>
+          <DialogTitle>{isEditMode ? 'Edit Scheduled Task' : 'Create Scheduled Task'}</DialogTitle>
         </VisuallyHidden>
         {renderContent()}
       </DialogContent>

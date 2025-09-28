@@ -83,7 +83,7 @@ interface SharedTreeItemProps {
 
     // Loading state for folder expansion
     isLoadingEntries?: boolean;
-    
+
     // Moving state for files
     isMoving?: boolean;
     movingFiles?: { [fileId: string]: boolean };
@@ -218,7 +218,7 @@ export function SharedTreeItem({
                             ? 'bg-primary/5 border-primary/20 border-dashed'
                             : 'hover:bg-muted/30 hover:border-border/50'
                             }`}
-                        
+
                         onClick={() => onExpand(item.id)}
                         onDragOver={handleNativeDragOver}
                         onDragLeave={handleNativeDragLeave}
@@ -399,11 +399,10 @@ export function SharedTreeItem({
                 /* File Row - Using div instead of button to avoid nesting */
                 <div
                     ref={combinedRef}
-                    className={`group flex items-center w-full text-sm h-auto px-4 py-3 rounded-lg transition-all duration-200 border border-transparent ${
-                        itemIsMoving 
-                            ? 'opacity-60 cursor-not-allowed bg-muted/30' 
+                    className={`group flex items-center w-full text-sm h-auto px-4 py-3 rounded-lg transition-all duration-200 border border-transparent ${itemIsMoving
+                            ? 'opacity-60 cursor-not-allowed bg-muted/30'
                             : 'hover:bg-muted/30 hover:border-border/50 cursor-pointer'
-                    } ${isDragging ? 'opacity-50' : ''}`}
+                        } ${isDragging ? 'opacity-50' : ''}`}
                     style={{
                         paddingLeft: ``,
                         ...style
@@ -411,13 +410,9 @@ export function SharedTreeItem({
                     onClick={() => {
                         // Don't allow clicks when moving
                         if (itemIsMoving) return;
-                        
-                        // Trigger summary editing on file click
-                        if (onEditSummary) {
-                            onEditSummary(item.id, item.name, item.data?.summary || '');
-                        } else {
-                            onSelect(item);
-                        }
+
+                        // Trigger file preview on file click
+                        onSelect(item);
                     }}
                 >
                     {/* Drag Handle - Only visible on hover and only when DND is enabled for files */}
@@ -452,7 +447,7 @@ export function SharedTreeItem({
                                     </span>
                                     <span className="text-xs text-muted-foreground/50">•</span>
                                     <span className="text-xs text-muted-foreground">
-                                        Click to edit summary
+                                        Click to preview file
                                     </span>
                                 </>
                             )}

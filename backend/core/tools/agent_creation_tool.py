@@ -4,6 +4,7 @@ from uuid import uuid4
 from core.agentpress.tool import Tool, ToolResult, openapi_schema, usage_example
 from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
+from core.utils.core_tools_helper import ensure_core_tools_enabled
 from core.utils.config import config
 
 
@@ -79,10 +80,6 @@ class AgentCreationTool(Tool):
                         "type": "string",
                         "description": "The name of the new agent. Should be descriptive and indicate the agent's purpose (e.g. 'Research Assistant', 'Code Reviewer', 'Marketing Manager')."
                     },
-                    "description": {
-                        "type": "string", 
-                        "description": "A comprehensive description of what the agent does, its capabilities, and its intended use cases."
-                    },
                     "system_prompt": {
                         "type": "string",
                         "description": "Detailed system prompt that defines the agent's behavior, expertise, and approach. Should include specific instructions, personality, and domain expertise. Use imperative verbs and include 'Act as [role]' statement."
@@ -129,7 +126,7 @@ class AgentCreationTool(Tool):
                         "default": False
                     }
                 },
-                "required": ["name", "description", "system_prompt", "icon_name", "icon_color", "icon_background"]
+                "required": ["name", "system_prompt", "icon_name", "icon_color", "icon_background"]
             }
         }
     })
@@ -155,7 +152,6 @@ Would you like me to proceed with creating this Research Assistant agent?</param
         <function_calls>
         <invoke name="create_new_agent">
         <parameter name="name">Research Assistant</parameter>
-        <parameter name="description">An AI assistant specialized in conducting thorough research, analyzing information from multiple sources, and providing comprehensive reports with verified sources</parameter>
         <parameter name="system_prompt">Act as a research analyst and information specialist. Your primary role is to conduct thorough research on any topic, analyze information from multiple sources, and provide comprehensive, well-structured reports.
 
 Key responsibilities:
@@ -179,7 +175,6 @@ Approach each research task methodically, starting with broad searches and then 
     async def create_new_agent(
         self,
         name: str,
-        description: str,
         system_prompt: str,
         icon_name: str,
         icon_color: str,
@@ -222,6 +217,8 @@ Approach each research task methodically, starting with broad searches and then 
                     if tool_name not in agentpress_tools:
                         agentpress_tools[tool_name] = enabled
             
+            agentpress_tools = ensure_core_tools_enabled(agentpress_tools)
+            
             if configured_mcps is None:
                 configured_mcps = []
 
@@ -231,7 +228,6 @@ Approach each research task methodically, starting with broad searches and then 
             insert_data = {
                 "account_id": account_id,
                 "name": name,
-                "description": description,
                 "icon_name": icon_name,
                 "icon_color": icon_color,
                 "icon_background": icon_background,
@@ -272,7 +268,6 @@ Approach each research task methodically, starting with broad searches and then 
                 }).eq("agent_id", agent_id).execute()
 
                 success_message = f"✅ Successfully created agent '{name}'!\n\n"
-                success_message += f"**Description**: {description}\n"
                 success_message += f"**Icon**: {icon_name} ({icon_color} on {icon_background})\n"
                 success_message += f"**Default Agent**: {'Yes' if is_default else 'No'}\n"
                 success_message += f"**Tools Enabled**: {len([k for k, v in agentpress_tools.items() if v])}\n"

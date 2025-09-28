@@ -172,4 +172,36 @@ def is_model_allowed(tier_name: str, model: str) -> bool:
 
 def get_project_limit(tier_name: str) -> int:
     tier = TIERS.get(tier_name)
-    return tier.project_limit if tier else 3 
+    return tier.project_limit if tier else 3
+
+def is_commitment_price_id(price_id: str) -> bool:
+    commitment_price_ids = [
+        config.STRIPE_TIER_2_17_YEARLY_COMMITMENT_ID,
+        config.STRIPE_TIER_6_42_YEARLY_COMMITMENT_ID,
+        config.STRIPE_TIER_25_170_YEARLY_COMMITMENT_ID
+    ]
+    return price_id in commitment_price_ids
+
+def get_commitment_duration_months(price_id: str) -> int:
+    if is_commitment_price_id(price_id):
+        return 12
+    return 0
+
+def get_price_type(price_id: str) -> str:
+    if is_commitment_price_id(price_id):
+        return 'yearly_commitment'
+    
+    yearly_price_ids = [
+        config.STRIPE_TIER_2_20_YEARLY_ID,
+        config.STRIPE_TIER_6_50_YEARLY_ID,
+        config.STRIPE_TIER_12_100_YEARLY_ID,
+        config.STRIPE_TIER_25_200_YEARLY_ID,
+        config.STRIPE_TIER_50_400_YEARLY_ID,
+        config.STRIPE_TIER_125_800_YEARLY_ID,
+        config.STRIPE_TIER_200_1000_YEARLY_ID
+    ]
+    
+    if price_id in yearly_price_ids:
+        return 'yearly'
+    
+    return 'monthly' 

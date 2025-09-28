@@ -11,6 +11,8 @@ import { StrReplaceToolView } from '../str-replace/StrReplaceToolView';
 import { WebCrawlToolView } from '../WebCrawlToolView';
 import { WebScrapeToolView } from '../web-scrape-tool/WebScrapeToolView';
 import { WebSearchToolView } from '../web-search-tool/WebSearchToolView';
+import { PeopleSearchToolView } from '../people-search-tool/PeopleSearchToolView';
+import { CompanySearchToolView } from '../company-search-tool/CompanySearchToolView';
 import { SeeImageToolView } from '../see-image-tool/SeeImageToolView';
 import { TerminateCommandToolView } from '../command-tool/TerminateCommandToolView';
 import { AskToolView } from '../ask-tool/AskToolView';
@@ -80,6 +82,8 @@ const defaultRegistry: ToolViewRegistryType = {
   'str-replace': StrReplaceToolView,
 
   'web-search': WebSearchToolView,
+  'people-search': PeopleSearchToolView,
+  'company-search': CompanySearchToolView,
   'crawl-webpage': WebCrawlToolView,
   'scrape-webpage': WebScrapeToolView,
   'image-search': WebSearchToolView,
