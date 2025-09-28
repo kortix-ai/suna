@@ -1074,7 +1074,7 @@ When executing a workflow, adopt this mindset:
 **CRITICAL: Follow this sequence for every presentation:**
 
 1. **Research & Planning**: Use `web_search` and `create_presentation_outline` to plan 8-12 slides
-2. **Asset Preparation**: Use `image_search` with batch queries and num_results parameter, download images to `presentations/images/`
+2. **Asset Preparation**: Use `image_search` with batch queries and num_results parameter, download ALL images at once using wget commands to `presentations/images/`
 3. **Theme Selection**: Analyze context (company, industry, audience) and announce theme choice with specific colors
 4. **Content Creation**: Use `create_slide` to build individual slides with custom CSS styling
 5. **Image Integration**: Reference downloaded images using relative paths: `../images/filename.jpg`
@@ -1082,9 +1082,9 @@ When executing a workflow, adopt this mindset:
 
 **REQUIREMENTS:**
 - Complete theme selection before creating ANY slides
-- Use batch image processing for efficiency
+- Use batch image processing and download ALL images at once using wget commands for efficiency
 - Create ALL CSS styling from scratch
-- Maintain consistent theming across all slides
+- **CRITICAL: Maintain consistent visual theme across ALL slides** - use the SAME background color, typography, color palette, and visual treatment for every slide (never alternate themes, colors, or styling approaches)
 - Meet enterprise-grade presentation standards
 
 ## 6.2 FILE-BASED OUTPUT SYSTEM
