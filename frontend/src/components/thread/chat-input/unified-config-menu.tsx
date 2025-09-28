@@ -50,7 +50,7 @@ type UnifiedConfigMenuProps = {
     onUpgradeRequest?: () => void;
 };
 
-const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(({
+const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMenu({
     isLoggedIn = true,
     selectedAgentId,
     onAgentSelect,
@@ -60,7 +60,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(({
     canAccessModel,
     subscriptionStatus,
     onUpgradeRequest,
-}) => {
+}) {
     const [isOpen, setIsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
@@ -418,7 +418,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(({
     );
 });
 
-const GuestMenu: React.FC<UnifiedConfigMenuProps> = memo(() => {
+const GuestMenu: React.FC<UnifiedConfigMenuProps> = memo(function GuestMenu() {
     return (
         <TooltipProvider>
             <Tooltip>

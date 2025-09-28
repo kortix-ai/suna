@@ -6,7 +6,7 @@ import React, { memo, useMemo, useCallback } from 'react';
 import { Slider } from '@/components/ui/slider';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiMessageType } from '@/components/thread/types';
-import { CircleDashed, X, ChevronLeft, ChevronRight, Computer, Radio, Maximize2, Minimize2, Copy, Check, Globe, Wrench } from 'lucide-react';
+import { CircleDashed, X, ChevronLeft, ChevronRight, Computer, Minimize2, Globe, Wrench } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { Button } from '@/components/ui/button';
@@ -79,7 +79,7 @@ interface ViewToggleProps {
   onViewChange: (view: 'tools' | 'browser') => void;
 }
 
-const ViewToggle: React.FC<ViewToggleProps> = memo(({ currentView, onViewChange }) => {
+const ViewToggle: React.FC<ViewToggleProps> = memo(function ViewToggle({ currentView, onViewChange }) {
   return (
     <div className="relative flex items-center gap-1 bg-muted rounded-3xl px-1 py-1">
       {/* Sliding background */}
@@ -138,19 +138,17 @@ interface PanelHeaderProps {
   isStreaming?: boolean;
   variant?: 'drawer' | 'desktop' | 'motion';
   showMinimize?: boolean;
-  hasToolResult?: boolean;
   layoutId?: string;
 }
 
-const PanelHeader: React.FC<PanelHeaderProps> = memo(({
+const PanelHeader: React.FC<PanelHeaderProps> = memo(function PanelHeader({
   agentName,
   onClose,
   isStreaming = false,
   variant = 'desktop',
   showMinimize = false,
-  hasToolResult = false,
   layoutId,
-}) => {
+}) {
   const title = getComputerTitle(agentName);
   
   if (variant === 'drawer') {
@@ -264,10 +262,8 @@ export function ToolCallSidePanel({
   const [navigationMode, setNavigationMode] = React.useState<'live' | 'manual'>('live');
   const [toolCallSnapshots, setToolCallSnapshots] = React.useState<ToolCallSnapshot[]>([]);
   const [isInitialized, setIsInitialized] = React.useState(false);
-  const [showViewToggle, setShowViewToggle] = React.useState(false);
 
   // Add copy functionality state
-  const [isCopyingContent, setIsCopyingContent] = React.useState(false);
   // Add view toggle state  
   const [currentView, setCurrentView] = React.useState<'tools' | 'browser'>('tools');
   const currentViewRef = React.useRef(currentView);
@@ -323,7 +319,6 @@ export function ToolCallSidePanel({
     const safeIndex = Math.min(internalIndex, Math.max(0, toolCallSnapshots.length - 1));
     const currentSnapshot = toolCallSnapshots[safeIndex];
     const isCurrentSnapshotBrowserTool = isBrowserTool(currentSnapshot?.toolCall.assistantCall?.name);
-    setShowViewToggle(isCurrentSnapshotBrowserTool);
     
     // Handle view switching based on agent status
     if (agentStatus === 'idle') {
@@ -454,8 +449,7 @@ export function ToolCallSidePanel({
   //   the last completed step while streaming so the user can still scrub.
   let displayToolCall = currentToolCall;
   let displayIndex = safeInternalIndex;
-  let displayTotalCalls = totalCalls;
-  const isAtTrueLatest = safeInternalIndex === latestIndex;
+  const displayTotalCalls = totalCalls;
 
   const isCurrentToolStreaming = currentToolCall?.toolResult?.content === 'STREAMING';
   if (isCurrentToolStreaming && totalCompletedCalls > 0) {
@@ -464,10 +458,6 @@ export function ToolCallSidePanel({
     displayIndex = completedToolCalls.length - 1;
   }
 
-  const currentToolName = displayToolCall?.assistantCall?.name || 'Tool Call';
-  const CurrentToolIcon = getToolIcon(
-    currentToolCall?.assistantCall?.name || 'unknown',
-  );
   const isStreaming = displayToolCall?.toolResult?.content === 'STREAMING';
 
   // Extract actual success value from tool content with fallbacks
@@ -536,14 +526,12 @@ export function ToolCallSidePanel({
       fileContent = typeof toolContent === 'string' ? toolContent : JSON.stringify(toolContent, null, 2);
     }
 
-    setIsCopyingContent(true);
     const success = await copyToClipboard(fileContent);
     if (success) {
       toast.success('File content copied to clipboard');
     } else {
       toast.error('Failed to copy file content');
     }
-    setTimeout(() => setIsCopyingContent(false), 500);
   }, [displayToolCall?.toolResult?.content, copyToClipboard]);
 
   const internalNavigate = useCallback((newIndex: number, source: string = 'internal') => {
@@ -882,7 +870,6 @@ export function ToolCallSidePanel({
             onClose={handleClose}
             isStreaming={isStreaming}
             variant="motion"
-            hasToolResult={!!displayToolCall.toolResult?.content}
             layoutId={CONTENT_LAYOUT_ID}
           />
         )}
