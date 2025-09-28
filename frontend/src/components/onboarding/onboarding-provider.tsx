@@ -16,7 +16,7 @@ export function OnboardingProvider({ children }: OnboardingProviderProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
-  const { data: subscription } = useSubscription(!!user);
+  const { data: subscription } = useSubscription({ enabled: !!user });
   const { shouldTriggerOnboarding, triggerPostSubscriptionOnboarding } = usePostSubscriptionOnboarding();
   const { isOpen, startOnboarding, completeOnboarding } = useOnboarding();
 
