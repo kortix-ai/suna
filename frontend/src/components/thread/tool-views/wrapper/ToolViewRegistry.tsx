@@ -36,7 +36,7 @@ import { PresentationViewer } from '../presentation-tools/PresentationViewer';
 import { ListPresentationsToolView } from '../presentation-tools/ListPresentationsToolView';
 import { DeleteSlideToolView } from '../presentation-tools/DeleteSlideToolView';
 import { DeletePresentationToolView } from '../presentation-tools/DeletePresentationToolView';
-import { PresentationStylesToolView } from '../presentation-tools/PresentationStylesToolView';
+// import { PresentationStylesToolView } from '../presentation-tools/PresentationStylesToolView';
 import { PresentPresentationToolView } from '../presentation-tools/PresentPresentationToolView';
 import { SheetsToolView } from '../sheets-tools/sheets-tool-view';
 import { GetProjectStructureView } from '../web-dev/GetProjectStructureView';
@@ -129,7 +129,7 @@ const defaultRegistry: ToolViewRegistryType = {
   'list-presentations': ListPresentationsToolView,
   'delete-slide': DeleteSlideToolView,
   'delete-presentation': DeletePresentationToolView,
-  'presentation-styles': PresentationStylesToolView,
+  // 'presentation-styles': PresentationStylesToolView,
   'present-presentation': PresentPresentationToolView,
 
   'create-sheet': SheetsToolView,
@@ -257,7 +257,7 @@ export function ToolView({ name = 'default', assistantContent, toolContent, ...p
     'list-slides',
     'delete-slide',
     'delete-presentation',
-    'presentation-styles',
+    // 'presentation-styles',
     'present-presentation',
   ]
 

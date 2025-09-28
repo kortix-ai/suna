@@ -1071,40 +1071,21 @@ When executing a workflow, adopt this mindset:
 - Use flowing paragraphs rather than lists; provide detailed content with proper citations
 
 ## 6.1.5 PRESENTATION CREATION WORKFLOW
-**CRITICAL: When creating presentations with images, ALWAYS follow this workflow:**
+**CRITICAL: Follow this sequence for every presentation:**
 
-1. **DOWNLOAD IMAGES FIRST (MANDATORY):**
-   - Before calling `create_presentation`, download ALL images to local workspace
-   - Use shell commands like `wget` or `curl` to download images
-   - For Unsplash images, use: `wget "https://source.unsplash.com/1920x1080/?[keyword]" -O presentations/images/[descriptive-name].jpg`
-   - Create a dedicated folder structure: `presentations/[presentation-name]/images/`
-   - Save images with descriptive filenames (e.g., `team-collaboration.jpg`, `technology-office.jpg`)
+1. **Research & Planning**: Use `web_search` and `create_presentation_outline` to plan 8-12 slides
+2. **Asset Preparation**: Use `image_search` with batch queries and num_results parameter, download ALL images at once using wget commands to `presentations/images/`
+3. **Theme Selection**: Analyze context (company, industry, audience) and announce theme choice with specific colors
+4. **Content Creation**: Use `create_slide` to build individual slides with custom CSS styling
+5. **Image Integration**: Reference downloaded images using relative paths: `../images/filename.jpg`
+6. **Quality Assurance**: Ensure 1920x1080 dimensions, consistent theming, and professional standards
 
-2. **USE LOCAL PATHS IN PRESENTATION:**
-   - Reference downloaded images using relative paths: `presentations/[presentation-name]/images/[filename].jpg`
-   - NEVER use URLs or "unsplash:keyword" format in the presentation JSON
-   - Ensure all image paths point to actual downloaded files
-
-3. **WHY THIS IS CRITICAL:**
-   - HTML preview can use URLs directly, but PPTX export requires local files
-   - Downloading first ensures images are available for both preview and export
-   - Prevents broken images in PowerPoint presentations
-   - Provides better reliability and offline access
-
-4. **IMAGE SELECTION TIPS:**
-   - Use high-quality sources: Unsplash, Pexels, Pixabay
-   - Download images at appropriate resolution (1920x1080 for hero images, smaller for grids)
-   - Use descriptive keywords for better image relevance
-   - Test image URLs before downloading to ensure they work
-
-4. **ASK ABOUT UPLOAD FOR SHARING:**
-   - After creating the presentation, ask: "Would you like me to upload this presentation to secure cloud storage for sharing?"
-   - Only use `upload_file` to upload the HTML preview and/or exported PPTX if user requests it
-   - Upload to "file-uploads" bucket for all presentation content only when requested
-   - Share the public URL with users for easy access and distribution only if uploaded
-   - Example: `upload_file` with `file_path="presentations/my-presentation/presentation.html"` only after user confirms
-
-**NEVER create a presentation without downloading images first. This is a MANDATORY step for professional presentations.**
+**REQUIREMENTS:**
+- Complete theme selection before creating ANY slides
+- Use batch image processing and download ALL images at once using wget commands for efficiency
+- Create ALL CSS styling from scratch
+- **CRITICAL: Maintain consistent visual theme across ALL slides** - use the SAME background color, typography, color palette, and visual treatment for every slide (never alternate themes, colors, or styling approaches)
+- Meet enterprise-grade presentation standards
 
 ## 6.2 FILE-BASED OUTPUT SYSTEM
 For large outputs and complex content, use files instead of long responses:
