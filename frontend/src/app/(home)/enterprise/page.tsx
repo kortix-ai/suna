@@ -20,8 +20,8 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { KortixEnterpriseModal } from '@/components/sidebar/kortix-enterprise-modal';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { AdenticEnterpriseModal } from '@/components/sidebar/adentic-enterprise-modal';
+import { AdenticLogo } from '@/components/sidebar/adentic-logo';
 
 // Hero Section Component
 const CustomHeroSection = () => {
@@ -30,9 +30,9 @@ const CustomHeroSection = () => {
       <div className="relative flex flex-col items-center w-full px-6">
         <div className="relative z-10 pt-32 mx-auto h-full w-full max-w-6xl flex flex-col items-center justify-center">
           <div className="flex flex-col items-center justify-center gap-6 pt-12 max-w-4xl mx-auto">
-            {/* Kortix Logo */}
+            {/* Adentic Logo */}
             <div className="mb-8">
-              <KortixLogo size={48} />
+              <AdenticLogo size={48} />
             </div>
             
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/20">
@@ -51,13 +51,13 @@ const CustomHeroSection = () => {
             </p>
             
             <div className="flex flex-col items-center gap-6 pt-6">
-              <KortixEnterpriseModal>
+              <AdenticEnterpriseModal>
                 <Button size="lg">
                   <Calendar className="w-4 h-4 mr-2" />
                   Schedule Strategy Call
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
-              </KortixEnterpriseModal>
+              </AdenticEnterpriseModal>
               <div className="flex flex-col sm:flex-row items-center gap-4 text-sm text-muted-foreground">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-primary"></div>
@@ -409,13 +409,13 @@ const FinalCTASection = () => {
             <div className="text-center space-y-6">
               <div className="space-y-4">
                 <div className="space-y-6">
-                  <KortixEnterpriseModal>
+                  <AdenticEnterpriseModal>
                     <Button size="lg">
                       <Calendar className="w-4 h-4 mr-2" />
                       Book Your Strategy Session
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
-                  </KortixEnterpriseModal>
+                  </AdenticEnterpriseModal>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center max-w-2xl mx-auto">
                     <div className="flex flex-col items-center gap-2 p-4 rounded-lg bg-accent/20">
                       <Shield className="w-6 h-6 text-primary" />

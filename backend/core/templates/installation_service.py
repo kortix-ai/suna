@@ -355,9 +355,9 @@ class InstallationService:
             'template_name': template.name
         }
         
-        if template.is_kortix_team:
-            metadata['is_kortix_team'] = True
-            metadata['kortix_template_id'] = template.template_id
+        if template.is_adentic_team:
+            metadata['is_adentic_team'] = True
+            metadata['adentic_template_id'] = template.template_id
         
         agent_data = {
             'agent_id': agent_id,
@@ -374,7 +374,7 @@ class InstallationService:
         
         await client.table('agents').insert(agent_data).execute()
         
-        logger.debug(f"Created agent {agent_id} from template {template.template_id}, is_kortix_team: {template.is_kortix_team}")
+        logger.debug(f"Created agent {agent_id} from template {template.template_id}, is_adentic_team: {template.is_adentic_team}")
         return agent_id
     
     async def _create_initial_version(

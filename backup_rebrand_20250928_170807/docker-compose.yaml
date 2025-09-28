@@ -1,0 +1,72 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./backend/services/docker/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: redis-server /usr/local/etc/redis/redis.conf --save 60 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  backend:
+    image: ghcr.io/suna-ai/suna-backend:latest
+    platform: linux/amd64
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/.env:/app/.env
+    env_file:
+      - ./backend/.env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - REDIS_SSL=False
+    depends_on:
+      redis:
+        condition: service_healthy
+      worker:
+        condition: service_started
+
+  worker:
+    image: ghcr.io/suna-ai/suna-backend:latest
+    platform: linux/amd64
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: uv run dramatiq --skip-logging --processes 4 --threads 4 run_agent_background
+    volumes:
+      - ./backend/.env:/app/.env:ro
+    env_file:
+      - ./backend/.env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - REDIS_SSL=False
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  frontend:
+    init: true
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend/.env.local:/app/.env.local:ro
+    depends_on:
+      - backend
+
+volumes:
+  redis_data:

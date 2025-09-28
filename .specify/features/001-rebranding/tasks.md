@@ -55,7 +55,7 @@
 ## Phase 3.3: Core Implementation (ONLY after tests are failing)
 - [ ] T011 Implement BrandConfiguration class with Adentic defaults in rebrand.py (lines 1-100)
 - [ ] T012 Implement Rebrander class with main logic in rebrand.py (lines 101-250)
-- [ ] T013 Implement text replacement with Kortix→Adentic mapping in rebrand.py (lines 251-350)
+- [ ] T013 Implement text replacement with Adentic→Adentic mapping in rebrand.py (lines 251-350)
 - [ ] T014 Implement image replacement logic in rebrand.py (lines 351-450)
 - [ ] T015 Implement file renaming logic in rebrand.py (lines 451-550)
 - [ ] T016 Implement backup creation and manifest in rebrand.py (lines 551-650)
@@ -66,8 +66,8 @@
 ## Phase 3.4: Integration
 - [ ] T020 Apply Adentic branding to frontend/src/lib/site.ts
 - [ ] T021 Apply Adentic branding to backend configuration files
-- [ ] T022 Update environment variables from KORTIX_ to ADENTIC_
-- [ ] T023 Replace all Kortix/Suna image assets with Adentic assets
+- [ ] T022 Update environment variables from ADENTIC_ to ADENTIC_
+- [ ] T023 Replace all Adentic/Adentic image assets with Adentic assets
 
 ## Phase 3.5: Polish
 - [ ] T024 [P] Add performance timing and progress indicators

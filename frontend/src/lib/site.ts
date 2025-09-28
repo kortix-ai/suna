@@ -1,11 +1,11 @@
 export const siteConfig = {
-  name: 'Kortix Suna',
-  url: 'https://suna.so/',
-  description: 'Kortix AI',
+  name: 'TryAdentic',
+  url: 'https://adentic.so/',
+  description: 'TryAdentic',
   links: {
-    twitter: 'https://x.com/kortixai',
-    github: 'https://github.com/kortix-ai/',
-    linkedin: 'https://www.linkedin.com/company/kortix/',
+    twitter: 'https://x.com/adenticai',
+    github: 'https://github.com/adentic-ai/',
+    linkedin: 'https://www.linkedin.com/company/adentic/',
   },
 };
 

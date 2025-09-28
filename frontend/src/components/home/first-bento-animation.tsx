@@ -85,8 +85,8 @@ export function FirstBentoAnimation() {
         <div className="flex items-start gap-2">
           <div className="flex items-center bg-background rounded-full size-10 flex-shrink-0 justify-center shadow-[0_0_10px_rgba(0,0,0,0.05)] border border-border">
             <img 
-              src="/kortix-symbol.svg" 
-              alt="Kortix Symbol" 
+              src="/adentic-symbol.svg" 
+              alt="Adentic Symbol" 
               className="size-4 dark:invert"
             />
           </div>

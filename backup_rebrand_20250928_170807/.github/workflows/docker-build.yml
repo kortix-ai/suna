@@ -1,0 +1,92 @@
+name: Build, push and deploy
+
+on:
+  push:
+    branches:
+      - main
+      - PRODUCTION
+  workflow_dispatch:
+  repository_dispatch:
+    types: [production-updated]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'repository_dispatch' && 'PRODUCTION' || github.ref }}
+
+      - name: Get tag name
+        shell: bash
+        run: |
+          echo "Event name: ${{ github.event_name }}"
+          echo "Current ref: ${{ github.ref }}"
+          echo "Branch: ${GITHUB_REF#refs/heads/}"
+          
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
+            echo "Triggered by repository dispatch - setting prod environment"
+            echo "branch=prod" >> $GITHUB_OUTPUT
+            echo "environment=prod" >> $GITHUB_OUTPUT
+          elif [[ "${GITHUB_REF#refs/heads/}" == "main" ]]; then
+            echo "branch=latest" >> $GITHUB_OUTPUT
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          elif [[ "${GITHUB_REF#refs/heads/}" == "PRODUCTION" ]]; then
+            echo "branch=prod" >> $GITHUB_OUTPUT
+            echo "environment=prod" >> $GITHUB_OUTPUT
+          else
+            echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          fi
+        id: get_tag_name
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ghcr.io/${{ github.repository }}/suna-backend:${{ steps.get_tag_name.outputs.branch }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy to staging
+        if: steps.get_tag_name.outputs.environment == 'staging'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_HOST }}
+          username: ${{ secrets.STAGING_USERNAME }}
+          key: ${{ secrets.STAGING_KEY }}
+          script: |
+            cd /home/suna/backend
+            git fetch origin main
+            git reset --hard origin/main
+            docker compose build
+            docker compose up -d
+
+      - name: Deploy to prod
+        if: steps.get_tag_name.outputs.environment == 'prod'
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.PROD_HOST }}
+          username: ${{ secrets.PROD_USERNAME }}
+          key: ${{ secrets.PROD_KEY }}
+          script: |
+            cd /mnt/gluster-shared/data/infra/suna
+            set -a; source .env; set +a
+            docker stack deploy -c docker-compose.yml suna

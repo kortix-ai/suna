@@ -57,7 +57,7 @@ export const queryClient = new QueryClient({
 // Async storage persister for file manifests and rehydratable data
 const asyncStoragePersister = createAsyncStoragePersister({
   storage: AsyncStorage,
-  key: 'SUNA_QUERY_CACHE',
+  key: 'ADENTIC_QUERY_CACHE',
   serialize: JSON.stringify,
   deserialize: JSON.parse,
 });

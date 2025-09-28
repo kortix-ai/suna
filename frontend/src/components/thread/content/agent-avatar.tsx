@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useAgent } from '@/hooks/react-query/agents/use-agents';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { AdenticLogo } from '@/components/sidebar/adentic-logo';
 import { DynamicIcon } from 'lucide-react/dynamic';
 
 interface AgentAvatarProps {
@@ -16,7 +16,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   agentId, 
   size = 16, 
   className = "", 
-  fallbackName = "Suna" 
+  fallbackName = "Adentic" 
 }) => {
   const { data: agent, isLoading } = useAgent(agentId || '');
 
@@ -30,12 +30,12 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   }
 
   if (!agent && !agentId) {
-    return <KortixLogo size={size} />;
+    return <AdenticLogo size={size} />;
   }
 
-  const isSuna = agent?.metadata?.is_suna_default;
-  if (isSuna) {
-    return <KortixLogo size={size} />;
+  const isAdentic = agent?.metadata?.is_adentic_default;
+  if (isAdentic) {
+    return <AdenticLogo size={size} />;
   }
 
   if (agent?.icon_name) {
@@ -68,7 +68,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
     );
   }
 
-  return <KortixLogo size={size} />;
+  return <AdenticLogo size={size} />;
 };
 
 interface AgentNameProps {
@@ -78,7 +78,7 @@ interface AgentNameProps {
 
 export const AgentName: React.FC<AgentNameProps> = ({ 
   agentId, 
-  fallback = "Suna" 
+  fallback = "Adentic" 
 }) => {
   const { data: agent, isLoading } = useAgent(agentId || '');
 

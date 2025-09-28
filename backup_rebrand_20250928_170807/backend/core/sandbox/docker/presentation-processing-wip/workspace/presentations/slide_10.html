@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elon Musk: Visionary Entrepreneur - Slide 10</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        /* Base styling and 1920x1080 slide container */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Roboto', Arial, sans-serif;
+            background: #000000;
+            color: #333333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        
+        .slide-container {
+            /* CRITICAL: Standard presentation dimensions */
+            width: 1920px;
+            height: 1080px;
+            max-width: 100vw;
+            max-height: 100vh;
+            position: relative;
+            background: #FFFFFF;
+            color: #333333;
+            overflow: hidden;
+            
+            /* Auto-scale to fit viewport while maintaining aspect ratio */
+            transform-origin: center center;
+            transform: scale(min(100vw / 1920px, 100vh / 1080px));
+        }
+        
+        /* Slide number indicator */
+        .slide-number {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            font-size: 18px;
+            color: #666666;
+            font-weight: 500;
+            z-index: 1000;
+        }
+        
+        /* Common presentation elements */
+        .slide-title {
+            font-size: 48px;
+            font-weight: bold;
+            margin-bottom: 30px;
+            color: #005A9C;
+        }
+        
+        .slide-subtitle {
+            font-size: 32px;
+            margin-bottom: 40px;
+            color: #333333;
+        }
+        
+        .slide-content {
+            font-size: 24px;
+            line-height: 1.6;
+            color: #333333;
+        }
+        
+        .accent-bar {
+            width: 100px;
+            height: 4px;
+            background-color: #FF6B00;
+            margin: 20px 0;
+        }
+        
+        /* Responsive images */
+        img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+        }
+        
+        /* List styling */
+        ul, ol {
+            margin: 20px 0;
+            padding-left: 30px;
+        }
+        
+        li {
+            margin: 10px 0;
+            font-size: 20px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="slide-container">
+        <div style='padding: 80px; height: 100%; display: flex; flex-direction: column; justify-content: center;'>
+    <h1 style='font-size: 48px; font-weight: bold; color: #005A9C; margin-bottom: 20px; text-align: center;'>Future Vision & Legacy</h1>
+    <div style='width: 150px; height: 4px; background: #FF6B00; margin: 0 auto 50px;'></div>
+    
+    <div style='display: grid; grid-template-columns: 1fr 1fr; gap: 60px;'>
+        <div>
+            <h2 style='font-size: 28px; color: #005A9C; margin-bottom: 30px; text-align: center;'>🚀 Future Goals</h2>
+            <div style='space-y: 25px;'>
+                <div style='padding: 25px; background: linear-gradient(135deg, #005A9C, #0066CC); color: white; border-radius: 12px; margin-bottom: 25px;'>
+                    <div style='display: flex; align-items: center; margin-bottom: 15px;'>
+                        <div style='font-size: 32px; margin-right: 15px;'>🔴</div>
+                        <h3 style='font-size: 22px; margin: 0;'>Mars Colony</h3>
+                    </div>
+                    <p style='font-size: 16px; line-height: 1.5; opacity: 0.9;'>Self-sustaining city on Mars by 2050</p>
+                </div>
+                
+                <div style='padding: 25px; background: linear-gradient(135deg, #FF6B00, #FF8533); color: white; border-radius: 12px; margin-bottom: 25px;'>
+                    <div style='display: flex; align-items: center; margin-bottom: 15px;'>
+                        <div style='font-size: 32px; margin-right: 15px;'>🧠</div>
+                        <h3 style='font-size: 22px; margin: 0;'>Neural Interfaces</h3>
+                    </div>
+                    <p style='font-size: 16px; line-height: 1.5; opacity: 0.9;'>Brain-computer symbiosis for humanity</p>
+                </div>
+                
+                <div style='padding: 25px; background: linear-gradient(135deg, #005A9C, #0066CC); color: white; border-radius: 12px; margin-bottom: 25px;'>
+                    <div style='display: flex; align-items: center; margin-bottom: 15px;'>
+                        <div style='font-size: 32px; margin-right: 15px;'>🤖</div>
+                        <h3 style='font-size: 22px; margin: 0;'>AI Safety</h3>
+                    </div>
+                    <p style='font-size: 16px; line-height: 1.5; opacity: 0.9;'>Ensuring beneficial artificial intelligence</p>
+                </div>
+                
+                <div style='padding: 25px; background: linear-gradient(135deg, #FF6B00, #FF8533); color: white; border-radius: 12px;'>
+                    <div style='display: flex; align-items: center; margin-bottom: 15px;'>
+                        <div style='font-size: 32px; margin-right: 15px;'>🌍</div>
+                        <h3 style='font-size: 22px; margin: 0;'>Sustainable Earth</h3>
+                    </div>
+                    <p style='font-size: 16px; line-height: 1.5; opacity: 0.9;'>Complete transition to renewable energy</p>
+                </div>
+            </div>
+        </div>
+        
+        <div>
+            <h2 style='font-size: 28px; color: #005A9C; margin-bottom: 30px; text-align: center;'>🏛️ Lasting Impact</h2>
+            <div style='space-y: 30px;'>
+                <div style='padding: 30px; background: #f8f9fa; border-left: 6px solid #FF6B00; border-radius: 8px; margin-bottom: 30px;'>
+                    <h4 style='font-size: 20px; color: #005A9C; margin-bottom: 15px;'>Industry Transformation</h4>
+                    <p style='font-size: 16px; color: #666; line-height: 1.6;'>Revolutionized automotive, space, and energy industries permanently</p>
+                </div>
+                
+                <div style='padding: 30px; background: #f8f9fa; border-left: 6px solid #FF6B00; border-radius: 8px; margin-bottom: 30px;'>
+                    <h4 style='font-size: 20px; color: #005A9C; margin-bottom: 15px;'>Entrepreneurial Inspiration</h4>
+                    <p style='font-size: 16px; color: #666; line-height: 1.6;'>Inspired a generation of entrepreneurs to tackle impossible problems</p>
+                </div>
+                
+                <div style='padding: 30px; background: #f8f9fa; border-left: 6px solid #FF6B00; border-radius: 8px; margin-bottom: 30px;'>
+                    <h4 style='font-size: 20px; color: #005A9C; margin-bottom: 15px;'>Scientific Progress</h4>
+                    <p style='font-size: 16px; color: #666; line-height: 1.6;'>Advanced human knowledge in space exploration and sustainable technology</p>
+                </div>
+                
+                <div style='text-align: center; padding: 25px; background: linear-gradient(135deg, #005A9C, #FF6B00); color: white; border-radius: 12px;'>
+                    <h3 style='font-size: 22px; margin-bottom: 15px;'>The Musk Effect</h3>
+                    <p style='font-size: 18px; font-style: italic; margin: 0;'>"Making the impossible seem inevitable"</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+        <div class="slide-number">10</div>
+    </div>
+</body>
+</html>

@@ -1,4 +1,4 @@
-# Suna Backend
+# Adentic Backend
 
 ## Quick Setup
 

@@ -804,8 +804,8 @@ async def create_composio_trigger(req: CreateComposioTriggerRequest, current_use
         if not composio_trigger_id:
             raise HTTPException(status_code=500, detail="Failed to get Composio trigger id from response")
 
-        # Build Suna trigger config
-        suna_config: Dict[str, Any] = {
+        # Build Adentic trigger config
+        adentic_config: Dict[str, Any] = {
             "provider_id": "composio",
             "composio_trigger_id": composio_trigger_id,
             "trigger_slug": req.slug,
@@ -815,23 +815,23 @@ async def create_composio_trigger(req: CreateComposioTriggerRequest, current_use
             # Include the actual trigger configuration (interval, etc.)
             **coerced_config,
         }
-        if suna_config["execution_type"] == "agent":
+        if adentic_config["execution_type"] == "agent":
             if req.agent_prompt:
-                suna_config["agent_prompt"] = req.agent_prompt
+                adentic_config["agent_prompt"] = req.agent_prompt
         else:
             if not req.workflow_id:
                 raise HTTPException(status_code=400, detail="workflow_id is required for workflow route")
-            suna_config["workflow_id"] = req.workflow_id
+            adentic_config["workflow_id"] = req.workflow_id
             if req.workflow_input:
-                suna_config["workflow_input"] = req.workflow_input
+                adentic_config["workflow_input"] = req.workflow_input
 
-        # Create Suna trigger
+        # Create Adentic trigger
         trigger_service = get_trigger_service(db)
         trigger = await trigger_service.create_trigger(
             agent_id=req.agent_id,
             provider_id="composio",
             name=req.name or f"{req.slug}",
-            config=suna_config,
+            config=adentic_config,
             description=f"Composio event: {req.slug}"
         )
 

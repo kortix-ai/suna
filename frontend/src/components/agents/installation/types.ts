@@ -13,7 +13,7 @@ export interface MarketplaceTemplate {
   icon_color?: string;
   icon_background?: string;
   template_id: string;
-  is_kortix_team?: boolean;
+  is_adentic_team?: boolean;
   model?: string;
   agentpress_tools?: Record<string, any>;
   mcp_requirements?: Array<{

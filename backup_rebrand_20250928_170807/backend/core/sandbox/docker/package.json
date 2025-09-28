@@ -1,0 +1,22 @@
+{
+  "name": "browserApi",
+  "version": "1.0.0",
+  "description": "Browser API server(Stagehand)",
+  "type": "module",
+  "scripts": {
+    "start": "tsx browserApi.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@browserbasehq/stagehand": "^2.4.3",
+    "express": "^5.1.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.9.2"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.2.0"
+  }
+}

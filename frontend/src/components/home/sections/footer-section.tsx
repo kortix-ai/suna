@@ -20,10 +20,10 @@ export function FooterSection() {
   }, []);
 
   const logoSrc = !mounted
-    ? '/kortix-logo.svg'
+    ? '/adentic-logo.svg'
     : resolvedTheme === 'dark'
-      ? '/kortix-logo-white.svg'
-      : '/kortix-logo.svg';
+      ? '/adentic-logo-white.svg'
+      : '/adentic-logo.svg';
 
   return (
     <footer id="footer" className="w-full pb-0 px-6">
@@ -34,7 +34,7 @@ export function FooterSection() {
               <Link href="/" className="flex items-center gap-2">
                 <Image
                   src={logoSrc}
-                  alt="Kortix Logo"
+                  alt="Adentic Logo"
                   width={122}
                   height={22}
                   priority
@@ -46,7 +46,7 @@ export function FooterSection() {
 
               <div className="flex items-center gap-4">
             <a
-              href="https://github.com/kortix-ai/suna"
+              href="https://github.com/adentic-ai/adentic"
               target="_blank"
               rel="noopener noreferrer"
               aria-label="GitHub"
@@ -63,7 +63,7 @@ export function FooterSection() {
               </svg>
             </a>
             <a
-              href="https://x.com/kortixai"
+              href="https://x.com/adenticai"
               target="_blank"
               rel="noopener noreferrer"
               aria-label="X (Twitter)"
@@ -80,7 +80,7 @@ export function FooterSection() {
               </svg>
             </a>
             <a
-              href="https://www.linkedin.com/company/kortix/"
+              href="https://www.linkedin.com/company/adentic/"
               target="_blank"
               rel="noopener noreferrer"
               aria-label="LinkedIn"

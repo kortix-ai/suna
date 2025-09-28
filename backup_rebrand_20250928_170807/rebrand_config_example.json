@@ -1,0 +1,11 @@
+{
+  "brand_name": "YourBrand",
+  "product_name": "YourProduct",
+  "company_name": "YourBrand AI",
+  "full_product_name": "YourBrand YourProduct",
+  "website_url": "https://yourbrand.com/",
+  "twitter_url": "https://x.com/yourbrand",
+  "github_url": "https://github.com/yourbrand/",
+  "linkedin_url": "https://www.linkedin.com/company/yourbrand/",
+  "new_assets_dir": "./new_brand_assets"
+}

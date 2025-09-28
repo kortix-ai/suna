@@ -21,7 +21,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { AdenticLogo } from '@/components/sidebar/adentic-logo';
 
 export type AgentCardMode = 'marketplace' | 'template' | 'agent';
 
@@ -35,7 +35,7 @@ interface BaseAgentData {
 
 interface MarketplaceData extends BaseAgentData {
   creator_id: string;
-  is_kortix_team?: boolean;
+  is_adentic_team?: boolean;
   download_count: number;
   creator_name?: string;
   marketplace_published_at?: string;
@@ -59,7 +59,7 @@ interface AgentData extends BaseAgentData {
     version_number: number;
   };
   metadata?: {
-    is_suna_default?: boolean;
+    is_adentic_default?: boolean;
     centrally_managed?: boolean;
     restrictions?: {
       system_prompt_editable?: boolean;
@@ -90,15 +90,15 @@ interface AgentCardProps {
 }
 
 const MarketplaceBadge: React.FC<{ 
-  isKortixTeam?: boolean; 
+  isAdenticTeam?: boolean; 
   isOwner?: boolean;
-}> = ({ isKortixTeam, isOwner }) => {
+}> = ({ isAdenticTeam, isOwner }) => {
   return (
     <div className="flex gap-1 flex-wrap">
-      {isKortixTeam && (
+      {isAdenticTeam && (
         <Badge variant="secondary" className="bg-blue-100 text-blue-700 border-0 dark:bg-blue-950 dark:text-blue-300">
           <CheckCircle className="h-3 w-3 mr-1" />
-          Kortix
+          Adentic
         </Badge>
       )}
       {isOwner && (
@@ -127,15 +127,15 @@ const TemplateBadge: React.FC<{ isPublic?: boolean }> = ({ isPublic }) => {
   );
 };
 
-const AgentBadges: React.FC<{ agent: AgentData, isSunaAgent: boolean }> = ({ agent, isSunaAgent }) => (
+const AgentBadges: React.FC<{ agent: AgentData, isAdenticAgent: boolean }> = ({ agent, isAdenticAgent }) => (
   <div className="flex gap-1">
-    {!isSunaAgent && agent.current_version && (
+    {!isAdenticAgent && agent.current_version && (
       <Badge variant="outline" className="text-xs">
         <GitBranch className="h-3 w-3 mr-1" />
         {agent.current_version.version_name}
       </Badge>
     )}
-    {!isSunaAgent && agent.is_public && (
+    {!isAdenticAgent && agent.is_public && (
       <Badge variant="default" className="bg-green-100 text-green-700 border-0 dark:bg-green-950 dark:text-green-300 text-xs">
         <Globe className="h-3 w-3 mr-1" />
         Published
@@ -338,24 +338,24 @@ const TemplateActions: React.FC<{
 );
 
 const CardAvatar: React.FC<{ 
-  isSunaAgent?: boolean; 
+  isAdenticAgent?: boolean; 
   profileImageUrl?: string; 
   agentName?: string;
   iconName?: string;
   iconColor?: string;
   iconBackground?: string;
 }> = ({ 
-  isSunaAgent = false, 
+  isAdenticAgent = false, 
   profileImageUrl, 
   agentName,
   iconName,
   iconColor = '#000000',
   iconBackground = '#F3F4F6'
 }) => {
-  if (isSunaAgent) {
+  if (isAdenticAgent) {
     return (
       <div className="h-14 w-14 bg-muted border flex items-center justify-center rounded-2xl">
-        <KortixLogo size={28} />
+        <AdenticLogo size={28} />
       </div>
     )
   }
@@ -421,7 +421,7 @@ export const AgentCard: React.FC<AgentCardProps> = ({
   currentUserId
 }) => {
   
-  const isSunaAgent = mode === 'agent' && (data as AgentData).metadata?.is_suna_default === true;
+  const isAdenticAgent = mode === 'agent' && (data as AgentData).metadata?.is_adentic_default === true;
   const isOwner = currentUserId && mode === 'marketplace' && (data as MarketplaceData).creator_id === currentUserId;
   
   const cardClassName = `group relative bg-card rounded-2xl overflow-hidden shadow-sm transition-all duration-300 border cursor-pointer flex flex-col min-h-[280px] max-h-[320px] border-border/50 hover:border-primary/20`;
@@ -430,13 +430,13 @@ export const AgentCard: React.FC<AgentCardProps> = ({
     switch (mode) {
       case 'marketplace':
         return <MarketplaceBadge 
-          isKortixTeam={(data as MarketplaceData).is_kortix_team} 
+          isAdenticTeam={(data as MarketplaceData).is_adentic_team} 
           isOwner={isOwner}
         />;
       case 'template':
         return <TemplateBadge isPublic={(data as TemplateData).is_public} />;
       case 'agent':
-        return <AgentBadges agent={data as AgentData} isSunaAgent={isSunaAgent} />;
+        return <AgentBadges agent={data as AgentData} isAdenticAgent={isAdenticAgent} />;
       default:
         return null;
     }
@@ -485,7 +485,7 @@ export const AgentCard: React.FC<AgentCardProps> = ({
       <div className="relative p-6 flex flex-col flex-1">
         <div className="flex items-start justify-between mb-4">
           <CardAvatar 
-            isSunaAgent={isSunaAgent} 
+            isAdenticAgent={isAdenticAgent} 
             profileImageUrl={(data as any)?.profile_image_url} 
             agentName={data.name}
             iconName={(data as any)?.icon_name}

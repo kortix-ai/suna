@@ -13,9 +13,9 @@ mkdir new_brand_assets
 ```
 
 Add the following files (matching existing filenames):
-- `kortix-logo.svg` → Your main logo
-- `kortix-logo-white.svg` → White version of logo
-- `kortix-symbol.svg` → Symbol/icon version
+- `adentic-logo.svg` → Your main logo
+- `adentic-logo-white.svg` → White version of logo
+- `adentic-symbol.svg` → Symbol/icon version
 - `favicon.png` → Browser favicon (32x32)
 - `banner.png` → Marketing banner
 - `icon.png` → Mobile app icon
@@ -85,10 +85,10 @@ npm run dev  # or your start command
 If using environment variables, update them:
 ```bash
 # In .env files
-KORTIX_ADMIN_API_KEY → ACMECORP_ADMIN_API_KEY
+ADENTIC_ADMIN_API_KEY → ACMECORP_ADMIN_API_KEY
 
 # In deployment configs
-sed -i 's/KORTIX_/ACMECORP_/g' docker-compose.yml
+sed -i 's/ADENTIC_/ACMECORP_/g' docker-compose.yml
 ```
 
 ## Common Options
@@ -146,8 +146,8 @@ Run these tests to confirm successful rebranding:
 ### Test 1: No Old Brand References
 ```bash
 # Should return no results
-grep -r "Kortix" --include="*.py" --include="*.ts" --include="*.tsx" .
-grep -r "Suna" --include="*.py" --include="*.ts" --include="*.tsx" .
+grep -r "Adentic" --include="*.py" --include="*.ts" --include="*.tsx" .
+grep -r "Adentic" --include="*.py" --include="*.ts" --include="*.tsx" .
 ```
 
 ### Test 2: New Brand Present

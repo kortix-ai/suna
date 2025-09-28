@@ -1,0 +1,195 @@
+openapi: 3.0.0
+info:
+  title: Rebranding CLI Interface
+  version: 1.0.0
+  description: Command-line interface contract for the automated rebranding system
+
+paths:
+  /rebrand:
+    post:
+      summary: Execute rebranding operation
+      description: Process files to replace brand references
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RebrandRequest'
+      responses:
+        '200':
+          description: Rebranding completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RebrandResponse'
+        '400':
+          description: Invalid configuration or parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal processing error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    RebrandRequest:
+      type: object
+      required:
+        - brand_name
+      properties:
+        config_file:
+          type: string
+          description: Path to configuration JSON file
+          example: "./rebrand_config.json"
+        brand_name:
+          type: string
+          pattern: ^[a-zA-Z][a-zA-Z0-9_-]{1,49}$
+          description: New brand name to replace Kortix
+          example: "AcmeCorp"
+        product_name:
+          type: string
+          pattern: ^[a-zA-Z][a-zA-Z0-9_-]{1,49}$
+          description: New product name to replace Suna
+          example: "WorkerAI"
+        company_name:
+          type: string
+          maxLength: 100
+          description: New company name
+          example: "AcmeCorp AI Solutions"
+        website_url:
+          type: string
+          format: uri
+          description: New website URL
+          example: "https://acmecorp.ai/"
+        new_assets_dir:
+          type: string
+          description: Directory containing new brand assets
+          example: "./new_brand_assets"
+        dry_run:
+          type: boolean
+          default: false
+          description: Preview changes without applying them
+        no_backup:
+          type: boolean
+          default: false
+          description: Skip creating backup files
+
+    RebrandResponse:
+      type: object
+      required:
+        - timestamp
+        - summary
+        - changes
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: When rebranding was executed
+        dry_run:
+          type: boolean
+          description: Whether this was a dry run
+        backup_directory:
+          type: string
+          description: Path to backup directory if created
+        configuration:
+          $ref: '#/components/schemas/BrandConfiguration'
+        summary:
+          $ref: '#/components/schemas/ChangeSummary'
+        changes:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChangeEntry'
+        report_file:
+          type: string
+          description: Path to detailed JSON report file
+          example: "rebrand_report_20250925_103000.json"
+
+    BrandConfiguration:
+      type: object
+      properties:
+        brand_name:
+          type: string
+        product_name:
+          type: string
+        company_name:
+          type: string
+        full_product_name:
+          type: string
+        website_url:
+          type: string
+        twitter_url:
+          type: string
+        github_url:
+          type: string
+        linkedin_url:
+          type: string
+        new_assets_dir:
+          type: string
+
+    ChangeSummary:
+      type: object
+      properties:
+        total_files_scanned:
+          type: integer
+          minimum: 0
+        total_files_modified:
+          type: integer
+          minimum: 0
+        text_changes:
+          type: integer
+          minimum: 0
+        image_replacements:
+          type: integer
+          minimum: 0
+        file_renames:
+          type: integer
+          minimum: 0
+        errors:
+          type: integer
+          minimum: 0
+        execution_time_seconds:
+          type: number
+          format: float
+          minimum: 0
+
+    ChangeEntry:
+      type: object
+      required:
+        - file_path
+        - change_type
+        - details
+      properties:
+        file_path:
+          type: string
+          description: Path to modified file
+        change_type:
+          type: string
+          enum: [TEXT, IMAGE, RENAME, ERROR]
+          description: Type of modification
+        details:
+          type: string
+          description: Human-readable change description
+        error:
+          type: string
+          description: Error message if change failed
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Human-readable error message
+        details:
+          type: object
+          description: Additional error context

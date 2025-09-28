@@ -49,7 +49,7 @@ interface MessageInputProps {
   onAgentSelect?: (agentId: string | undefined) => void;
   enableAdvancedConfig?: boolean;
   hideAgentSelection?: boolean;
-  isSunaAgent?: boolean;
+  isAdenticAgent?: boolean;
 }
 
 export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
@@ -88,7 +88,7 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
       onAgentSelect,
       enableAdvancedConfig = false,
       hideAgentSelection = false,
-      isSunaAgent,
+      isAdenticAgent,
     },
     ref,
   ) => {
@@ -228,7 +228,7 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
                   <p role='button' className='text-sm text-amber-500 hidden sm:block cursor-pointer' onClick={() => setBillingModalOpen(true)}>Upgrade for more usage</p>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>Your current plan has limited usage. Upgrade to experience the full power of Suna.</p>
+                  <p>Your current plan has limited usage. Upgrade to experience the full power of Adentic.</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>

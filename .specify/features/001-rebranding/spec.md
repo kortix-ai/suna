@@ -3,7 +3,7 @@
 **Feature Branch**: `001-rebranding`
 **Created**: 2025-09-25
 **Status**: Draft
-**Input**: User description: "Create an automated rebranding system to replace all Kortix/Suna branding elements with configurable new brand identities"
+**Input**: User description: "Create an automated rebranding system to replace all Adentic/Adentic branding elements with configurable new brand identities"
 
 ## Execution Flow (main)
 ```
@@ -29,7 +29,7 @@
 ## User Scenarios & Testing *(mandatory)*
 
 ### Primary User Story
-As a product administrator, I want to rebrand the entire application (currently Kortix/Suna) with new brand identity elements, so that I can deploy the platform with custom branding for different clients or white-label deployments.
+As a product administrator, I want to rebrand the entire application (currently Adentic/Adentic) with new brand identity elements, so that I can deploy the platform with custom branding for different clients or white-label deployments.
 
 ### Acceptance Scenarios
 1. **Given** a configuration file with new brand names and URLs, **When** I run the rebranding script in dry-run mode, **Then** I see a preview of all changes that would be made without modifying any files
@@ -48,7 +48,7 @@ As a product administrator, I want to rebrand the entire application (currently 
 - **FR-001**: System MUST accept a configuration file specifying new brand name, product name, company name, and URLs
 - **FR-002**: System MUST provide a dry-run mode to preview all changes before applying them
 - **FR-003**: System MUST create timestamped backups of all files before modification
-- **FR-004**: System MUST replace text references to "Kortix", "Suna" and related brands across all code files
+- **FR-004**: System MUST replace text references to "Adentic", "Adentic" and related brands across all code files
 - **FR-005**: System MUST replace image assets (logos, favicons, marketing materials) with new branded versions
 - **FR-006**: System MUST rename files containing brand names in their filename
 - **FR-007**: System MUST generate a detailed change report in JSON format

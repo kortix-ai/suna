@@ -3,7 +3,7 @@
 import React from 'react';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { AdenticLogo } from '@/components/sidebar/adentic-logo';
 import { cn } from '@/lib/utils';
 
 interface AgentIconAvatarProps {
@@ -14,7 +14,7 @@ interface AgentIconAvatarProps {
   agentName?: string;
   size?: number;
   className?: string;
-  isSunaDefault?: boolean;
+  isAdenticDefault?: boolean;
 }
 
 export function AgentIconAvatar({
@@ -25,9 +25,9 @@ export function AgentIconAvatar({
   agentName = 'Agent',
   size = 40,
   className,
-  isSunaDefault = false
+  isAdenticDefault = false
 }: AgentIconAvatarProps) {
-  if (isSunaDefault) {
+  if (isAdenticDefault) {
     return (
       <div 
         className={cn(
@@ -36,7 +36,7 @@ export function AgentIconAvatar({
         )}
         style={{ width: size, height: size }}
       >
-        <KortixLogo size={size * 0.6} />
+        <AdenticLogo size={size * 0.6} />
       </div>
     );
   }

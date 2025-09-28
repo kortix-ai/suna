@@ -116,8 +116,8 @@ export function AITaskExecution({
         >
           <div className="size-12 bg-black rounded-full flex items-center justify-center">
             <img 
-              src="/kortix-symbol.svg" 
-              alt="Kortix Symbol" 
+              src="/adentic-symbol.svg" 
+              alt="Adentic Symbol" 
               className="size-6 filter brightness-0 invert"
             />
           </div>

@@ -43,7 +43,7 @@ export interface AgentTemplate {
   icon_name?: string;
   icon_color?: string;
   icon_background?: string;
-  is_kortix_team?: boolean;
+  is_adentic_team?: boolean;
   metadata?: {
     source_agent_id?: string;
     source_version_id?: string;
@@ -209,7 +209,7 @@ export function useMarketplaceTemplates(params?: {
   limit?: number;
   search?: string;
   tags?: string;
-  is_kortix_team?: boolean;
+  is_adentic_team?: boolean;
   mine?: boolean;
   sort_by?: string;
   sort_order?: string;
@@ -229,7 +229,7 @@ export function useMarketplaceTemplates(params?: {
       if (params?.limit) searchParams.set('limit', params.limit.toString());
       if (params?.search) searchParams.set('search', params.search);
       if (params?.tags) searchParams.set('tags', params.tags);
-      if (params?.is_kortix_team !== undefined) searchParams.set('is_kortix_team', params.is_kortix_team.toString());
+      if (params?.is_adentic_team !== undefined) searchParams.set('is_adentic_team', params.is_adentic_team.toString());
       if (params?.mine !== undefined) searchParams.set('mine', params.mine.toString());
       if (params?.sort_by) searchParams.set('sort_by', params.sort_by);
       if (params?.sort_order) searchParams.set('sort_order', params.sort_order);
@@ -455,9 +455,9 @@ export function useDeleteTemplate() {
   });
 }
 
-export function useKortixTeamTemplates() {
+export function useAdenticTeamTemplates() {
   return useMarketplaceTemplates({
-    is_kortix_team: true,
+    is_adentic_team: true,
     limit: 10
   });
 }

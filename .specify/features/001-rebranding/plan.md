@@ -26,7 +26,7 @@
 ```
 
 ## Summary
-Create an automated rebranding system that replaces all Kortix/Suna branding elements throughout the codebase with configurable new brand identities, including text replacements, image assets, and file renaming, with safety features like dry-run mode and automatic backups.
+Create an automated rebranding system that replaces all Adentic/Adentic branding elements throughout the codebase with configurable new brand identities, including text replacements, image assets, and file renaming, with safety features like dry-run mode and automatic backups.
 
 ## Technical Context
 **Language/Version**: Python 3.11
@@ -85,7 +85,7 @@ tests/
 3. **Brand name validation**: Allow alphanumeric + dash/underscore, 2-50 chars, no reserved words
 
 ### Decisions Made:
-1. **Case handling**: Preserve original case patterns (Kortix→NewBrand, kortix→newbrand, KORTIX→NEWBRAND)
+1. **Case handling**: Preserve original case patterns (Adentic→NewBrand, adentic→newbrand, ADENTIC→NEWBRAND)
 2. **File patterns**: Process common code extensions (py, ts, tsx, js, jsx, json, md, yaml, yml, env, html)
 3. **Backup strategy**: Timestamp-based directories, full file copies before modification
 4. **Report format**: JSON with sections for text changes, image replacements, file renames

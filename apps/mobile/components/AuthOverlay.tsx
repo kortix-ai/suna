@@ -409,14 +409,14 @@ export const AuthOverlay: React.FC<AuthOverlayProps> = ({ visible, onClose }) =>
                                     By continuing, you agree to our{' '}
                                     <Text
                                         style={styles.legalLink}
-                                        onPress={() => Linking.openURL('https://www.suna.so/legal?tab=terms')}
+                                        onPress={() => Linking.openURL('https://www.adentic.so/legal?tab=terms')}
                                     >
                                         Terms of Service
                                     </Text>
                                     {' '}and{' '}
                                     <Text
                                         style={styles.legalLink}
-                                        onPress={() => Linking.openURL('https://www.suna.so/legal?tab=privacy')}
+                                        onPress={() => Linking.openURL('https://www.adentic.so/legal?tab=privacy')}
                                     >
                                         Privacy Policy
                                     </Text>

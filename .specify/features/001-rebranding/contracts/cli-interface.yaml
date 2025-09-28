@@ -49,12 +49,12 @@ components:
         brand_name:
           type: string
           pattern: ^[a-zA-Z][a-zA-Z0-9_-]{1,49}$
-          description: New brand name to replace Kortix
+          description: New brand name to replace Adentic
           example: "AcmeCorp"
         product_name:
           type: string
           pattern: ^[a-zA-Z][a-zA-Z0-9_-]{1,49}$
-          description: New product name to replace Suna
+          description: New product name to replace Adentic
           example: "WorkerAI"
         company_name:
           type: string

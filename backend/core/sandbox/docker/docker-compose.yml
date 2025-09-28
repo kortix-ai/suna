@@ -1,12 +1,12 @@
 services:
-  kortix-suna:
+  adentic-adentic:
     platform: linux/amd64
     build:
       context: .
       dockerfile: ${DOCKERFILE:-Dockerfile}
       args:
         TARGETPLATFORM: ${TARGETPLATFORM:-linux/amd64}
-    image: kortix/suna:0.1.3.20
+    image: adentic/adentic:0.1.3.20
     ports:
       - "6080:6080"  # noVNC web interface
       - "5901:5901"  # VNC port

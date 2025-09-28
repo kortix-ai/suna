@@ -7,23 +7,23 @@
 
 **Attributes**:
 - `brand_name`: str (2-50 chars, alphanumeric + dash/underscore)
-  - Replaces: "Kortix"
+  - Replaces: "Adentic"
   - Example: "AcmeCorp"
 
 - `product_name`: str (2-50 chars, alphanumeric + dash/underscore)
-  - Replaces: "Suna"
+  - Replaces: "Adentic"
   - Example: "WorkerAI"
 
 - `company_name`: str (2-100 chars)
-  - Replaces: "Kortix AI"
+  - Replaces: "TryAdentic"
   - Example: "AcmeCorp AI Solutions"
 
 - `full_product_name`: str (2-100 chars)
-  - Replaces: "Kortix Suna"
+  - Replaces: "TryAdentic"
   - Example: "AcmeCorp WorkerAI"
 
 - `website_url`: str (valid URL)
-  - Replaces: "https://suna.so/"
+  - Replaces: "https://adentic.so/"
   - Example: "https://acmecorp.ai/"
 
 - `social_urls`: dict
@@ -75,8 +75,8 @@
 - `details`: str
   - Human-readable description
   - Examples:
-    - "Replaced 'Kortix' with 'AcmeCorp' (5 occurrences)"
-    - "Renamed from 'kortix-logo.svg' to 'acmecorp-logo.svg'"
+    - "Replaced 'Adentic' with 'AcmeCorp' (5 occurrences)"
+    - "Renamed from 'adentic-logo.svg' to 'acmecorp-logo.svg'"
     - "Replaced image with './new_brand_assets/logo.svg'"
 
 - `error`: str (optional)
@@ -190,7 +190,7 @@ BrandConfiguration
     {
       "file_path": "frontend/src/lib/site.ts",
       "change_type": "TEXT",
-      "details": "Replaced 'Kortix' with 'AcmeCorp' (3 occurrences)"
+      "details": "Replaced 'Adentic' with 'AcmeCorp' (3 occurrences)"
     }
   ]
 }

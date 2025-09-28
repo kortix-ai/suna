@@ -1,0 +1,20 @@
+{
+  "brand_name": "Adentic",
+  "product_name": "Adentic",
+  "company_name": "TryAdentic",
+  "full_product_name": "TryAdentic",
+  "website_url": "https://tryadentic.com",
+  "twitter_url": "https://x.com/tryadentic",
+  "github_url": "https://github.com/tryadentic/",
+  "linkedin_url": "https://www.linkedin.com/company/tryadentic",
+  "primary_color": "#CC3A00",
+  "tagline": "AI-powered automation for marketing agencies",
+  "description": "Automated client reports that save over 1000 hours per month",
+  "new_assets_dir": "./adentic_brand_assets",
+  "legal_copyright": "© 2025 TryAdentic. All rights reserved.",
+  "seo_metadata": {
+    "title": "TryAdentic - AI-Powered Client Reports for Marketing Agencies",
+    "description": "Save over 1000 hours per month with automated, data-driven client reports. Transform performance data into polished reports instantly with AI automation.",
+    "keywords": "marketing automation, client reports, agency tools, AI reporting, data visualization, marketing agencies, automated reports"
+  }
+}

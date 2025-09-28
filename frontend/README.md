@@ -1,4 +1,4 @@
-# Kortix Frontend
+# Adentic Frontend
 
 ## Quick Setup
 

@@ -211,7 +211,7 @@ export default function APIKeysPage() {
             <h1 className="text-2xl font-bold">API Keys</h1>
           </div>
           <p className="text-muted-foreground">
-            Manage your API keys for programmatic access to Suna
+            Manage your API keys for programmatic access to Adentic
           </p>
         </div>
 
@@ -232,7 +232,7 @@ export default function APIKeysPage() {
               <div className="flex-1 space-y-3">
                 <div>
                   <h3 className="text-base font-semibold text-blue-900 dark:text-blue-100 mb-1">
-                    Suna SDK & API
+                    Adentic SDK & API
                   </h3>
                   <p className="text-sm text-blue-700 dark:text-blue-300 leading-relaxed">
                     Our SDK and API are currently in beta. Use these API keys to integrate with our 
@@ -241,7 +241,7 @@ export default function APIKeysPage() {
                 </div>
                 <div className="flex items-center gap-3">
                   <a 
-                    href="https://github.com/kortix-ai/suna/tree/main/sdk" 
+                    href="https://github.com/adentic-ai/adentic/tree/main/sdk" 
                     target="_blank" 
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
@@ -393,7 +393,7 @@ export default function APIKeysPage() {
               <Key className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-medium mb-2">No API keys yet</h3>
               <p className="text-muted-foreground mb-4">
-                Create your first API key pair to start using the Suna API
+                Create your first API key pair to start using the Adentic API
                 programmatically. Each key includes a public identifier and
                 secret for secure authentication.
               </p>

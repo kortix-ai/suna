@@ -1,15 +1,15 @@
 {
   "expo": {
-    "name": "Suna",
-    "slug": "suna-mobile",
+    "name": "Adentic",
+    "slug": "adentic-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "owner": "kortix",
-    "scheme": "sunamobile",
+    "owner": "adentic",
+    "scheme": "adenticmobile",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "description": "Suna is a fully open source AI assistant that helps you accomplish real-world tasks with ease. Through natural conversation, Suna becomes your digital companion for research, data analysis, and everyday challenges.",
+    "description": "Adentic is a fully open source AI assistant that helps you accomplish real-world tasks with ease. Through natural conversation, Adentic becomes your digital companion for research, data analysis, and everyday challenges.",
     "primaryColor": "#121215",
     "privacy": "public",
     "platforms": [
@@ -28,13 +28,13 @@
       "research",
       "data analysis"
     ],
-    "githubUrl": "https://github.com/kortix-ai/suna",
+    "githubUrl": "https://github.com/adentic-ai/adentic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.kortix.suna",
+      "bundleIdentifier": "com.adentic.adentic",
       "buildNumber": "1.0.0",
       "infoPlist": {
-        "CFBundleDisplayName": "Suna",
+        "CFBundleDisplayName": "Adentic",
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
         }
@@ -46,7 +46,7 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.kortix.suna",
+      "package": "com.adentic.adentic",
       "versionCode": 1,
       "permissions": [
         "INTERNET",
@@ -58,9 +58,9 @@
       "bundler": "metro",
       "output": "static",
       "favicon": "./assets/images/favicon.png",
-      "name": "Suna - Open Source Generalist AI Agent",
-      "shortName": "Suna",
-      "description": "Suna is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.",
+      "name": "Adentic - Open Source Generalist AI Agent",
+      "shortName": "Adentic",
+      "description": "Adentic is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.",
       "startUrl": "/",
       "display": "standalone",
       "orientation": "portrait",
@@ -75,7 +75,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/kortix-splash.png",
+          "image": "./assets/images/adentic-splash.png",
           "imageWidth": 400,
           "resizeMode": "contain",
           "backgroundColor": "#121215"
@@ -89,13 +89,13 @@
     },
     "extra": {
       "metadata": {
-        "applicationName": "Suna",
-        "authors": "Kortix Team",
-        "creator": "Kortix Team",
-        "publisher": "Kortix Team",
+        "applicationName": "Adentic",
+        "authors": "Adentic Team",
+        "creator": "Adentic Team",
+        "publisher": "Adentic Team",
         "category": "Technology",
-        "siteUrl": "https://suna.so",
-        "twitterHandle": "@kortixai"
+        "siteUrl": "https://adentic.so",
+        "twitterHandle": "@adenticai"
       }
     }
   }

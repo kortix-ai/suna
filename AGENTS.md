@@ -3,7 +3,7 @@
 ## Project Structure & Module Organization
 - `backend/` – Python FastAPI API and worker (Dramatiq). Tests live near code under `tests/` folders. Uses `uv` and `pytest`.
 - `frontend/` – Next.js/TypeScript app. Linting and formatting via ESLint/Prettier.
-- `sdk/` – Python client (`kortix/`) with examples.
+- `sdk/` – Python client (`adentic/`) with examples.
 - `apps/mobile/` – React Native/Expo prototype.
 - Root: `docker-compose.yaml`, `setup.py` (setup wizard), `start.py` (orchestrated start), `docs/`, `.github/`.
 

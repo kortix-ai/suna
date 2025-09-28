@@ -1,10 +1,10 @@
 import { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'App Profiles | Kortix Suna',
+  title: 'App Profiles | TryAdentic',
   description: 'Manage your connected app integrations',
   openGraph: {
-    title: 'App Profiles | Kortix Suna',
+    title: 'App Profiles | TryAdentic',
     description: 'Manage your connected app integrations',
     type: 'website',
   },

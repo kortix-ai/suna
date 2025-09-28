@@ -1,0 +1,31 @@
+name: Update PRODUCTION Branch
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-production:
+    name: Rebase PRODUCTION to main
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+      - name: Rebase PRODUCTION
+        run: |
+          git checkout PRODUCTION
+          git rebase origin/main
+          git push origin PRODUCTION --force
+      - name: Trigger Docker Build
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: production-updated
+          client-payload: '{"ref": "PRODUCTION"}'

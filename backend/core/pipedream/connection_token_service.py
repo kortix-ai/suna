@@ -47,7 +47,7 @@ class ConnectionTokenService:
         if self.session is None or self.session.is_closed:
             self.session = httpx.AsyncClient(
                 timeout=httpx.Timeout(30.0),
-                headers={"User-Agent": "Suna-Pipedream-Client/1.0"}
+                headers={"User-Agent": "Adentic-Pipedream-Client/1.0"}
             )
         return self.session
 

@@ -1,6 +1,6 @@
 services:
   api:
-    image: ghcr.io/suna-ai/suna-backend:latest
+    image: ghcr.io/adentic-ai/adentic-backend:latest
     platform: linux/amd64
     build:
       context: .
@@ -37,7 +37,7 @@ services:
       start_period: 40s
 
   worker:
-    image: ghcr.io/suna-ai/suna-backend:latest
+    image: ghcr.io/adentic-ai/adentic-backend:latest
     platform: linux/amd64
     build:
       context: .

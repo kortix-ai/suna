@@ -9,8 +9,8 @@ export function SecondBentoAnimation() {
 
       <div className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 flex items-center justify-center gap-2 size-16 bg-black p-2 rounded-full z-30 md:bottom-0 md:top-auto">
         <img 
-          src="/kortix-symbol.svg" 
-          alt="Kortix Symbol" 
+          src="/adentic-symbol.svg" 
+          alt="Adentic Symbol" 
           className="size-10 filter brightness-0 invert"
         />
       </div>

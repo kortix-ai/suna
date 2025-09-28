@@ -208,7 +208,7 @@ class ToolManager:
             else:
                 pass
     
-    def _register_suna_specific_tools(self, disabled_tools: List[str]):
+    def _register_adentic_specific_tools(self, disabled_tools: List[str]):
         if 'agent_creation_tool' not in disabled_tools:
             from core.tools.agent_creation_tool import AgentCreationTool
             from core.services.supabase import DBConnection
@@ -219,10 +219,10 @@ class ToolManager:
                 enabled_methods = self._get_enabled_methods_for_tool('agent_creation_tool')
                 if enabled_methods is not None:
                     self.thread_manager.add_tool(AgentCreationTool, function_names=enabled_methods, thread_manager=self.thread_manager, db_connection=db, account_id=self.account_id)
-                    logger.debug(f"Registered agent_creation_tool for Suna with methods: {enabled_methods}")
+                    logger.debug(f"Registered agent_creation_tool for Adentic with methods: {enabled_methods}")
                 else:
                     self.thread_manager.add_tool(AgentCreationTool, thread_manager=self.thread_manager, db_connection=db, account_id=self.account_id)
-                    logger.debug("Registered agent_creation_tool for Suna (all methods)")
+                    logger.debug("Registered agent_creation_tool for Adentic (all methods)")
             else:
                 logger.warning("Could not register agent_creation_tool: account_id not available")
     
@@ -605,14 +605,14 @@ class AgentRunner:
         
         tool_manager.register_all_tools(agent_id=agent_id, disabled_tools=disabled_tools)
         
-        is_suna_agent = (self.config.agent_config and self.config.agent_config.get('is_suna_default', False)) or (self.config.agent_config is None)
-        logger.debug(f"Agent config check: agent_config={self.config.agent_config is not None}, is_suna_default={is_suna_agent}")
+        is_adentic_agent = (self.config.agent_config and self.config.agent_config.get('is_adentic_default', False)) or (self.config.agent_config is None)
+        logger.debug(f"Agent config check: agent_config={self.config.agent_config is not None}, is_adentic_default={is_adentic_agent}")
         
-        if is_suna_agent:
-            logger.debug("Registering Suna-specific tools...")
-            self._register_suna_specific_tools(disabled_tools)
+        if is_adentic_agent:
+            logger.debug("Registering Adentic-specific tools...")
+            self._register_adentic_specific_tools(disabled_tools)
         else:
-            logger.debug("Not a Suna agent, skipping Suna-specific tool registration")
+            logger.debug("Not a Adentic agent, skipping Adentic-specific tool registration")
     
     def _get_enabled_methods_for_tool(self, tool_name: str) -> Optional[List[str]]:
         if not self.config.agent_config or 'agentpress_tools' not in self.config.agent_config:
@@ -630,7 +630,7 @@ class AgentRunner:
         
         return get_enabled_methods_for_tool(tool_name, migrated_tools)
     
-    def _register_suna_specific_tools(self, disabled_tools: List[str]):
+    def _register_adentic_specific_tools(self, disabled_tools: List[str]):
         if 'agent_creation_tool' not in disabled_tools:
             from core.tools.agent_creation_tool import AgentCreationTool
             from core.services.supabase import DBConnection
@@ -643,11 +643,11 @@ class AgentRunner:
                 if enabled_methods is not None:
                     # Register only enabled methods
                     self.thread_manager.add_tool(AgentCreationTool, function_names=enabled_methods, thread_manager=self.thread_manager, db_connection=db, account_id=self.account_id)
-                    logger.debug(f"Registered agent_creation_tool for Suna with methods: {enabled_methods}")
+                    logger.debug(f"Registered agent_creation_tool for Adentic with methods: {enabled_methods}")
                 else:
                     # Register all methods (backward compatibility)
                     self.thread_manager.add_tool(AgentCreationTool, thread_manager=self.thread_manager, db_connection=db, account_id=self.account_id)
-                    logger.debug("Registered agent_creation_tool for Suna (all methods)")
+                    logger.debug("Registered agent_creation_tool for Adentic (all methods)")
             else:
                 logger.warning("Could not register agent_creation_tool: account_id not available")
     
@@ -662,7 +662,7 @@ class AgentRunner:
         if not isinstance(raw_tools, dict):
             return disabled_tools
         
-        if self.config.agent_config.get('is_suna_default', False) and not raw_tools:
+        if self.config.agent_config.get('is_adentic_default', False) and not raw_tools:
             return disabled_tools
         
         def is_tool_enabled(tool_name: str) -> bool:

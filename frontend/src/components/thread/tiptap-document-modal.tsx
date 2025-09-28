@@ -15,7 +15,7 @@ import { createClient } from '@/lib/supabase/client';
 import { Editor } from '@/components/agents/docs-agent/editor';
 import { AdvancedToolbar } from '@/components/agents/docs-agent/advanced-toolbar';
 import { exportDocument, type ExportFormat } from '@/lib/utils/document-export';
-import { KortixLogo } from '../sidebar/kortix-logo';
+import { AdenticLogo } from '../sidebar/adentic-logo';
 import { useDocumentModalStore } from '@/lib/stores/use-document-modal-store';
 
 interface TipTapDocumentModalProps {
@@ -181,7 +181,7 @@ export function TipTapDocumentModal({
         <DialogHeader className="px-4 py-3 border-b">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <KortixLogo size={24} />
+              <AdenticLogo size={24} />
               <DialogTitle>{fileName}</DialogTitle>
               <SaveStateIndicator />
             </div>

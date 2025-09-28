@@ -52,7 +52,7 @@ const capabilities = [
   },
   {
     title: 'Work Around the Clock',
-    description: 'Kortix never sleeps. Schedule tasks to run overnight, on weekends, or whenever you need work done without being there.',
+    description: 'Adentic never sleeps. Schedule tasks to run overnight, on weekends, or whenever you need work done without being there.',
     icon: <Clock className="size-6" />,
   },
 ];
@@ -71,10 +71,10 @@ export function CapabilitiesSection() {
         <div className="max-w-6xl mx-auto border-l border-r border-border">
           <SectionHeader>
             <h2 className="text-3xl md:text-4xl font-medium tracking-tighter text-center text-balance pb-1">
-              What Can Kortix Do For You?
+              What Can Adentic Do For You?
             </h2>
             <p className="text-muted-foreground text-center text-balance font-medium">
-              From content creation to data analysis, Kortix handles the work that takes you hours in just minutes.
+              From content creation to data analysis, Adentic handles the work that takes you hours in just minutes.
             </p>
           </SectionHeader>
 

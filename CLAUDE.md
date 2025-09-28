@@ -40,7 +40,7 @@ uv run pytest -m "not slow" -v            # Skip slow tests
 ## Architecture
 
 ### Overall Structure
-Kortix is an open-source platform for building and managing AI agents, with Suna as the flagship generalist AI worker demonstrating platform capabilities.
+Adentic is an open-source platform for building and managing AI agents, with Adentic as the flagship generalist AI worker demonstrating platform capabilities.
 
 **Key Components:**
 - **Frontend**: Next.js 15 with React 18, Turbopack, TypeScript, Tailwind CSS v4, Supabase client
@@ -54,7 +54,7 @@ Kortix is an open-source platform for building and managing AI agents, with Suna
 - `agent_crud.py`: Agent CRUD operations and management
 - `auth.py`: Authentication and JWT handling  
 - `run.py`: Main agent execution logic
-- `suna_config.py`: Agent configuration management
+- `adentic_config.py`: Agent configuration management
 - `tools/`: Extensible tool system for agent capabilities
   - Browser automation, file management, API integrations
   - MCP (Model Context Protocol) tool wrapper support

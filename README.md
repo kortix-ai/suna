@@ -1,38 +1,38 @@
 <div align="center">
 
-# Kortix – Open Source Platform to Build, Manage and Train AI Agents
+# Adentic – Open Source Platform to Build, Manage and Train AI Agents
 
-![Kortix Screenshot](frontend/public/banner.png)
+![Adentic Screenshot](frontend/public/banner.png)
 
 **The complete platform for creating autonomous AI agents that work for you**
 
-Kortix is a comprehensive open source platform that empowers you to build, manage, and train sophisticated AI agents for any use case. Create powerful agents that act autonomously on your behalf, from general-purpose assistants to specialized automation tools.
+Adentic is a comprehensive open source platform that empowers you to build, manage, and train sophisticated AI agents for any use case. Create powerful agents that act autonomously on your behalf, from general-purpose assistants to specialized automation tools.
 
 [![License](https://img.shields.io/badge/License-Apache--2.0-blue)](./license)
 [![Discord Follow](https://dcbadge.limes.pink/api/server/Py6pCBUUPw?style=flat)](https://discord.gg/Py6pCBUUPw)
-[![Twitter Follow](https://img.shields.io/twitter/follow/kortixai)](https://x.com/kortixai)
-[![GitHub Repo stars](https://img.shields.io/github/stars/kortix-ai/suna)](https://github.com/kortix-ai/suna)
-[![Issues](https://img.shields.io/github/issues/kortix-ai/suna)](https://github.com/kortix-ai/suna/labels/bug)
+[![Twitter Follow](https://img.shields.io/twitter/follow/adenticai)](https://x.com/adenticai)
+[![GitHub Repo stars](https://img.shields.io/github/stars/adentic-ai/adentic)](https://github.com/adentic-ai/adentic)
+[![Issues](https://img.shields.io/github/issues/adentic-ai/adentic)](https://github.com/adentic-ai/adentic/labels/bug)
 
 <!-- Keep these links. Translations will automatically update with the README. -->
-[Deutsch](https://www.readme-i18n.com/kortix-ai/suna?lang=de) | 
-[Español](https://www.readme-i18n.com/kortix-ai/suna?lang=es) | 
-[français](https://www.readme-i18n.com/kortix-ai/suna?lang=fr) | 
-[日本語](https://www.readme-i18n.com/kortix-ai/suna?lang=ja) | 
-[한국어](https://www.readme-i18n.com/kortix-ai/suna?lang=ko) | 
-[Português](https://www.readme-i18n.com/kortix-ai/suna?lang=pt) | 
-[Русский](https://www.readme-i18n.com/kortix-ai/suna?lang=ru) | 
-[中文](https://www.readme-i18n.com/kortix-ai/suna?lang=zh)
+[Deutsch](https://www.readme-i18n.com/adentic-ai/adentic?lang=de) | 
+[Español](https://www.readme-i18n.com/adentic-ai/adentic?lang=es) | 
+[français](https://www.readme-i18n.com/adentic-ai/adentic?lang=fr) | 
+[日本語](https://www.readme-i18n.com/adentic-ai/adentic?lang=ja) | 
+[한국어](https://www.readme-i18n.com/adentic-ai/adentic?lang=ko) | 
+[Português](https://www.readme-i18n.com/adentic-ai/adentic?lang=pt) | 
+[Русский](https://www.readme-i18n.com/adentic-ai/adentic?lang=ru) | 
+[中文](https://www.readme-i18n.com/adentic-ai/adentic?lang=zh)
 
 </div>
 
-## 🌟 What Makes Kortix Special
+## 🌟 What Makes Adentic Special
 
-### 🤖 Includes Suna – Flagship Generalist AI Worker
-Meet Suna, our showcase agent that demonstrates the full power of the Kortix platform. Through natural conversation, Suna handles research, data analysis, browser automation, file management, and complex workflows – showing you what's possible when you build with Kortix.
+### 🤖 Includes Adentic – Flagship Generalist AI Worker
+Meet Adentic, our showcase agent that demonstrates the full power of the Adentic platform. Through natural conversation, Adentic handles research, data analysis, browser automation, file management, and complex workflows – showing you what's possible when you build with Adentic.
 
-### 🔧 Build Custom Suna-Type Agents
-Create your own specialized agents tailored to specific domains, workflows, or business needs. Whether you need agents for customer service, data processing, content creation, or industry-specific tasks, Kortix provides the infrastructure and tools to build, deploy, and scale them.
+### 🔧 Build Custom Adentic-Type Agents
+Create your own specialized agents tailored to specific domains, workflows, or business needs. Whether you need agents for customer service, data processing, content creation, or industry-specific tasks, Adentic provides the infrastructure and tools to build, deploy, and scale them.
 
 ### 🚀 Complete Platform Capabilities
 - **Browser Automation**: Navigate websites, extract data, fill forms, automate web workflows
@@ -44,7 +44,7 @@ Create your own specialized agents tailored to specific domains, workflows, or b
 
 ## 📋 Table of Contents
 
-- [🌟 What Makes Kortix Special](#-what-makes-kortix-special)
+- [🌟 What Makes Adentic Special](#-what-makes-adentic-special)
 - [🎯 Agent Examples & Use Cases](#-agent-examples--use-cases)
 - [🏗️ Platform Architecture](#️-platform-architecture)
 - [🚀 Quick Start](#-quick-start)
@@ -54,9 +54,9 @@ Create your own specialized agents tailored to specific domains, workflows, or b
 
 ## 🎯 Agent Examples & Use Cases
 
-### Suna - Your Generalist AI Worker
+### Adentic - Your Generalist AI Worker
 
-Suna demonstrates the full capabilities of the Kortix platform as a versatile AI worker that can:
+Adentic demonstrates the full capabilities of the Adentic platform as a versatile AI worker that can:
 
 **🔍 Research & Analysis**
 - Conduct comprehensive web research across multiple sources
@@ -90,7 +90,7 @@ Suna demonstrates the full capabilities of the Kortix platform as a versatile AI
 
 ### Build Your Own Specialized Agents
 
-The Kortix platform enables you to create agents tailored to specific needs:
+The Adentic platform enables you to create agents tailored to specific needs:
 
 **🎧 Customer Service Agents**
 - Handle support tickets and FAQ responses
@@ -128,7 +128,7 @@ Each agent can be configured with custom tools, workflows, knowledge bases, and 
 
 ![Architecture Diagram](docs/images/diagram.png)
 
-Kortix consists of four main components that work together to provide a complete AI agent development platform:
+Adentic consists of four main components that work together to provide a complete AI agent development platform:
 
 ### 🔧 Backend API
 Python/FastAPI service that powers the agent platform with REST endpoints, thread management, agent orchestration, and LLM integration with Anthropic, OpenAI, and others via LiteLLM. Includes agent builder tools, workflow management, and extensible tool system.
@@ -144,12 +144,12 @@ Supabase-powered data layer handling authentication, user management, agent conf
 
 ## 🚀 Quick Start
 
-Get your Kortix platform running in minutes with our automated setup wizard:
+Get your Adentic platform running in minutes with our automated setup wizard:
 
 ### 1️⃣ Clone the Repository
 ```bash
-git clone https://github.com/kortix-ai/suna.git
-cd suna
+git clone https://github.com/adentic-ai/adentic.git
+cd adentic
 ```
 
 ### 2️⃣ Run the Setup Wizard
@@ -163,11 +163,11 @@ The wizard will guide you through 14 steps with progress saving, so you can resu
 python start.py
 ```
 
-That's it! Your Kortix platform will be running with Suna ready to assist you.
+That's it! Your Adentic platform will be running with Adentic ready to assist you.
 
 ## 🏠 Self-Hosting
 
-Kortix can be self-hosted on your own infrastructure using our comprehensive setup wizard, giving you complete control over your AI agent platform. For a complete guide to self-hosting Kortix, please refer to our [Self-Hosting Guide](./docs/SELF-HOSTING.md).
+Adentic can be self-hosted on your own infrastructure using our comprehensive setup wizard, giving you complete control over your AI agent platform. For a complete guide to self-hosting Adentic, please refer to our [Self-Hosting Guide](./docs/SELF-HOSTING.md).
 
 ### 🔧 Setup Process Includes
 
@@ -184,11 +184,11 @@ Kortix can be self-hosted on your own infrastructure using our comprehensive set
 
 For advanced users who prefer manual configuration, see the [Self-Hosting Guide](./docs/SELF-HOSTING.md) for detailed manual setup instructions.
 
-The wizard will guide you through all necessary steps to get your Kortix platform up and running. For detailed instructions, troubleshooting tips, and advanced configuration options, see the [Self-Hosting Guide](./docs/SELF-HOSTING.md).
+The wizard will guide you through all necessary steps to get your Adentic platform up and running. For detailed instructions, troubleshooting tips, and advanced configuration options, see the [Self-Hosting Guide](./docs/SELF-HOSTING.md).
 
 ## 🤝 Contributing
 
-We welcome contributions from the community! Whether you're fixing bugs, adding features, or improving documentation, your help makes Kortix better for everyone.
+We welcome contributions from the community! Whether you're fixing bugs, adding features, or improving documentation, your help makes Adentic better for everyone.
 
 Please see our [Contributing Guide](./CONTRIBUTING.md) for more details on:
 - How to set up your development environment
@@ -198,7 +198,7 @@ Please see our [Contributing Guide](./CONTRIBUTING.md) for more details on:
 
 ## 📄 License
 
-Kortix is licensed under the Apache License, Version 2.0. See [LICENSE](./LICENSE) for the full license text.
+Adentic is licensed under the Apache License, Version 2.0. See [LICENSE](./LICENSE) for the full license text.
 
 ---
 
@@ -206,18 +206,18 @@ Kortix is licensed under the Apache License, Version 2.0. See [LICENSE](./LICENS
 
 **Ready to build your first AI agent?** 
 
-[Get Started](./docs/SELF-HOSTING.md) • [Join Discord](https://discord.gg/Py6pCBUUPw) • [Follow on Twitter](https://x.com/kortixai)
+[Get Started](./docs/SELF-HOSTING.md) • [Join Discord](https://discord.gg/Py6pCBUUPw) • [Follow on Twitter](https://x.com/adenticai)
 
 </div>
 
 una Setup Complete! ✨
 
-ℹ️  Suna is configured with your LLM API keys and ready to use.
+ℹ️  Adentic is configured with your LLM API keys and ready to use.
 ℹ️  Delete the .setup_progress file to reset the setup.
-ℹ️  Your Suna instance is ready to use!
+ℹ️  Your Adentic instance is ready to use!
 
 Useful Docker commands:
   docker compose ps         - Check service status
   docker compose logs -f    - Follow logs
-  docker compose down       - Stop Suna services
-  python start.py           - To start or stop Suna services
+  docker compose down       - Stop Adentic services
+  python start.py           - To start or stop Adentic services

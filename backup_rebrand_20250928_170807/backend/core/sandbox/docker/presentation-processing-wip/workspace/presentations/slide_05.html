@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Elon Musk: Visionary Entrepreneur - Slide 5</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        /* Base styling and 1920x1080 slide container */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Roboto', Arial, sans-serif;
+            background: #000000;
+            color: #333333;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        
+        .slide-container {
+            /* CRITICAL: Standard presentation dimensions */
+            width: 1920px;
+            height: 1080px;
+            max-width: 100vw;
+            max-height: 100vh;
+            position: relative;
+            background: #FFFFFF;
+            color: #333333;
+            overflow: hidden;
+            
+            /* Auto-scale to fit viewport while maintaining aspect ratio */
+            transform-origin: center center;
+            transform: scale(min(100vw / 1920px, 100vh / 1080px));
+        }
+        
+        /* Slide number indicator */
+        .slide-number {
+            position: absolute;
+            bottom: 30px;
+            right: 30px;
+            font-size: 18px;
+            color: #666666;
+            font-weight: 500;
+            z-index: 1000;
+        }
+        
+        /* Common presentation elements */
+        .slide-title {
+            font-size: 48px;
+            font-weight: bold;
+            margin-bottom: 30px;
+            color: #005A9C;
+        }
+        
+        .slide-subtitle {
+            font-size: 32px;
+            margin-bottom: 40px;
+            color: #333333;
+        }
+        
+        .slide-content {
+            font-size: 24px;
+            line-height: 1.6;
+            color: #333333;
+        }
+        
+        .accent-bar {
+            width: 100px;
+            height: 4px;
+            background-color: #FF6B00;
+            margin: 20px 0;
+        }
+        
+        /* Responsive images */
+        img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+        }
+        
+        /* List styling */
+        ul, ol {
+            margin: 20px 0;
+            padding-left: 30px;
+        }
+        
+        li {
+            margin: 10px 0;
+            font-size: 20px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="slide-container">
+        <div style='display: flex; height: 100%; padding: 0;'>
+    <div style='width: 60%; padding: 80px; display: flex; flex-direction: column; justify-content: center;'>
+        <h1 style='font-size: 48px; font-weight: bold; color: #005A9C; margin-bottom: 20px;'>SpaceX</h1>
+        <div style='width: 100px; height: 4px; background: #FF6B00; margin-bottom: 40px;'></div>
+        <div style='font-size: 22px; line-height: 1.8;'>
+            <div style='margin-bottom: 25px; display: flex; align-items: center;'>
+                <i class='fas fa-calendar' style='color: #FF6B00; font-size: 20px; margin-right: 15px;'></i>
+                <div><strong>Founded:</strong> 2002</div>
+            </div>
+            <div style='margin-bottom: 25px; display: flex; align-items: center;'>
+                <i class='fas fa-globe-americas' style='color: #FF6B00; font-size: 20px; margin-right: 15px;'></i>
+                <div><strong>Mission:</strong> Make life multiplanetary</div>
+            </div>
+            <div style='margin-bottom: 25px; display: flex; align-items: center;'>
+                <i class='fas fa-rocket' style='color: #FF6B00; font-size: 20px; margin-right: 15px;'></i>
+                <div><strong>Achievements:</strong> First private company to ISS</div>
+            </div>
+            <div style='margin-bottom: 25px; display: flex; align-items: center;'>
+                <i class='fas fa-recycle' style='color: #FF6B00; font-size: 20px; margin-right: 15px;'></i>
+                <div><strong>Innovation:</strong> Reusable rockets (Falcon 9)</div>
+            </div>
+            <div style='margin-bottom: 25px; display: flex; align-items: center;'>
+                <i class='fas fa-satellite' style='color: #FF6B00; font-size: 20px; margin-right: 15px;'></i>
+                <div><strong>Starlink:</strong> Global satellite internet</div>
+            </div>
+        </div>
+    </div>
+    <div style='width: 40%; background: #f8f9fa; display: flex; align-items: center; justify-content: center; padding: 40px;'>
+        <div style='text-align: center;'>
+            <div style='font-size: 120px; margin-bottom: 30px;'>🚀</div>
+            <h3 style='font-size: 28px; color: #005A9C; margin-bottom: 20px;'>Space Pioneer</h3>
+            <p style='font-size: 18px; color: #666; line-height: 1.6; margin-bottom: 25px;'>Revolutionizing space travel and reducing costs by 90%</p>
+            <div style='background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;'>
+                <p style='font-size: 16px; color: #005A9C; margin: 0;'><strong>Next Goal:</strong> Mars Colony</p>
+            </div>
+            <div style='background: white; padding: 20px; border-radius: 8px;'>
+                <p style='font-size: 16px; color: #005A9C; margin: 0;'><strong>Valuation:</strong> $180B+ (2024)</p>
+            </div>
+        </div>
+    </div>
+</div>
+        <div class="slide-number">5</div>
+    </div>
+</body>
+</html>

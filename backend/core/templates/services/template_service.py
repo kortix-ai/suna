@@ -9,14 +9,14 @@ class MarketplaceFilters:
         self,
         search: Optional[str] = None,
         tags: Optional[List[str]] = None,
-        is_kortix_team: Optional[bool] = None,
+        is_adentic_team: Optional[bool] = None,
         creator_id: Optional[str] = None,
         sort_by: str = "download_count",
         sort_order: str = "desc"
     ):
         self.search = search
         self.tags = tags or []
-        self.is_kortix_team = is_kortix_team
+        self.is_adentic_team = is_adentic_team
         self.creator_id = creator_id
         self.sort_by = sort_by
         self.sort_order = sort_order
@@ -45,7 +45,7 @@ class TemplateService:
             offset = (pagination_params.page - 1) * pagination_params.page_size
             
             templates = await template_service.get_public_templates(
-                is_kortix_team=filters.is_kortix_team,
+                is_adentic_team=filters.is_adentic_team,
                 limit=limit,
                 offset=offset,
                 search=filters.search,
@@ -61,7 +61,7 @@ class TemplateService:
                 templates = [t for t in templates if t.creator_id == filters.creator_id]
                 if filters.creator_id:
                     all_templates = await template_service.get_public_templates(
-                        is_kortix_team=filters.is_kortix_team,
+                        is_adentic_team=filters.is_adentic_team,
                         search=filters.search,
                         tags=filters.tags
                     )
@@ -176,8 +176,8 @@ class TemplateService:
             search_term = f"%{filters.search}%"
             query = query.or_(f"name.ilike.{search_term},description.ilike.{search_term}")
         
-        if filters.is_kortix_team is not None:
-            query = query.eq('is_kortix_team', filters.is_kortix_team)
+        if filters.is_adentic_team is not None:
+            query = query.eq('is_adentic_team', filters.is_adentic_team)
             
         if filters.creator_id is not None:
             query = query.eq('creator_id', filters.creator_id)
@@ -206,8 +206,8 @@ class TemplateService:
             search_term = f"%{filters.search}%"
             query = query.or_(f"name.ilike.{search_term},description.ilike.{search_term}")
         
-        if filters.is_kortix_team is not None:
-            query = query.eq('is_kortix_team', filters.is_kortix_team)
+        if filters.is_adentic_team is not None:
+            query = query.eq('is_adentic_team', filters.is_adentic_team)
             
         if filters.creator_id is not None:
             query = query.eq('creator_id', filters.creator_id)

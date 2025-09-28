@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Download } from 'lucide-react';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { AdenticLogo } from '@/components/sidebar/adentic-logo';
 import { ProfilePictureDialog } from './profile-picture-dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { AgentIconAvatar } from './agent-icon-avatar';
@@ -29,7 +29,7 @@ interface AgentHeaderProps {
   onExport?: () => void;
   isExporting?: boolean;
   agentMetadata?: {
-    is_suna_default?: boolean;
+    is_adentic_default?: boolean;
     centrally_managed?: boolean;
     restrictions?: {
       name_editable?: boolean;
@@ -69,7 +69,7 @@ export function AgentHeader({
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(displayData.name);
   const inputRef = useRef<HTMLInputElement>(null);
-  const isSunaAgent = agentMetadata?.is_suna_default || false;
+  const isAdenticAgent = agentMetadata?.is_adentic_default || false;
   const restrictions = agentMetadata?.restrictions || {};
   const isNameEditable = !isViewingOldVersion && (restrictions.name_editable !== false);
   
@@ -95,9 +95,9 @@ export function AgentHeader({
     }
 
     if (editName !== displayData.name) {
-      if (!isNameEditable && isSunaAgent) {
+      if (!isNameEditable && isAdenticAgent) {
         toast.error("Name cannot be edited", {
-          description: "Suna's name is managed centrally and cannot be changed.",
+          description: "Adentic's name is managed centrally and cannot be changed.",
         });
         setEditName(displayData.name);
         setIsEditing(false);
@@ -149,9 +149,9 @@ export function AgentHeader({
     <header className="bg-background sticky top-0 flex h-14 shrink-0 items-center gap-3 z-20 w-full px-8 mb-2">
       <div className="flex items-center gap-3 min-w-0">
         <div className="relative flex-shrink-0">
-          {isSunaAgent ? (
+          {isAdenticAgent ? (
             <div className="h-9 w-9 rounded-lg bg-muted border flex items-center justify-center">
-              <KortixLogo size={16} />
+              <AdenticLogo size={16} />
             </div>
           ) : (
             <button 
@@ -188,7 +188,7 @@ export function AgentHeader({
             <div
               className={cn(
                 "text-base font-medium text-muted-foreground hover:text-foreground cursor-pointer flex items-center truncate max-w-[400px]",
-                !isNameEditable && isSunaAgent && "cursor-not-allowed opacity-75"
+                !isNameEditable && isAdenticAgent && "cursor-not-allowed opacity-75"
               )}
               onClick={isNameEditable ? startEditing : undefined}
               title={isNameEditable ? `Click to rename agent: ${displayData.name}` : `Name cannot be edited: ${displayData.name}`}
@@ -203,7 +203,7 @@ export function AgentHeader({
       </div>
       <div className="flex items-center gap-2">
         <div className="flex items-center gap-1">
-          {!isSunaAgent && currentFormData && (
+          {!isAdenticAgent && currentFormData && (
             <AgentVersionSwitcher
               agentId={agentId}
               currentVersionId={currentVersionId}

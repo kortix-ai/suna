@@ -381,7 +381,7 @@ async def export_agent(agent_id: str, user_id: str = Depends(verify_and_get_user
         export_metadata = {}
         if agent.get('metadata'):
             export_metadata = {k: v for k, v in agent['metadata'].items() 
-                             if k not in ['is_suna_default', 'centrally_managed', 'installation_date', 'last_central_update']}
+                             if k not in ['is_adentic_default', 'centrally_managed', 'installation_date', 'last_central_update']}
         
         export_data = {
             "tools": sanitized_config['tools'],

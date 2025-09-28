@@ -38,7 +38,7 @@ class AgentRun:
         return stream
 
 
-class KortixThread:
+class AdenticThread:
     def __init__(self, client: ThreadsClient):
         self._client = client
 

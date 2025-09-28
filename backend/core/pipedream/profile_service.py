@@ -114,7 +114,7 @@ class ProfileService:
     def _generate_external_user_id(self, account_id: str, app_slug: str, profile_name: str) -> str:
         combined = f"{account_id}:{app_slug}:{profile_name}"
         hash_value = hashlib.sha256(combined.encode()).hexdigest()[:16]
-        return f"suna_{hash_value}"
+        return f"adentic_{hash_value}"
     
     def _generate_config_hash(self, config_json: str) -> str:
         return hashlib.sha256(config_json.encode()).hexdigest()

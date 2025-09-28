@@ -1,0 +1,4 @@
+{
+  "python.analysis.typeCheckingMode": "off",
+  "cursorpyright.analysis.typeCheckingMode": "off"
+}

@@ -1,4 +1,4 @@
-# Kortix/Suna Rebranding Plan
+# Adentic/Adentic Rebranding Plan
 
 ## Overview
 This document outlines all branding elements identified in the codebase and provides a comprehensive plan for rebranding.
@@ -6,9 +6,9 @@ This document outlines all branding elements identified in the codebase and prov
 ## 1. Image Assets to Replace
 
 ### Frontend Images (`frontend/public/`)
-- `kortix-logo.svg` - Main logo
-- `kortix-logo-white.svg` - White version of logo
-- `kortix-symbol.svg` - Symbol/icon version
+- `adentic-logo.svg` - Main logo
+- `adentic-logo-white.svg` - White version of logo
+- `adentic-symbol.svg` - Symbol/icon version
 - `favicon.png` - Browser favicon
 - `banner.png` - Marketing banner
 - `thumbnail-dark.png` - Dark theme thumbnail
@@ -21,37 +21,37 @@ This document outlines all branding elements identified in the codebase and prov
 - `icon.png` - Mobile app icon
 - `favicon.png` - Mobile favicon
 - `adaptive-icon.png` - Android adaptive icon
-- `kortix-logo-square.svg` - Square logo variant
+- `adentic-logo-square.svg` - Square logo variant
 
 ## 2. Text/String References
 
 ### Configuration Files
 1. **frontend/package.json**
-   - `"name": "Kortix"` (line 2)
+   - `"name": "Adentic"` (line 2)
 
 2. **frontend/src/lib/site.ts**
-   - `name: 'Kortix Suna'` (line 2)
-   - `description: 'Kortix AI'` (line 4)
-   - Social links referencing kortix domains
+   - `name: 'TryAdentic'` (line 2)
+   - `description: 'TryAdentic'` (line 4)
+   - Social links referencing adentic domains
 
 ### Python Files
 1. **setup.py**
-   - Multiple references to "Suna" in UI strings
-   - "Kortix" admin API key references
-   - Environment variable: `KORTIX_ADMIN_API_KEY`
+   - Multiple references to "Adentic" in UI strings
+   - "Adentic" admin API key references
+   - Environment variable: `ADENTIC_ADMIN_API_KEY`
 
 2. **start.py**
-   - "Suna" service management strings
-   - UI messages about starting/stopping Suna
+   - "Adentic" service management strings
+   - UI messages about starting/stopping Adentic
 
 ### React/TypeScript Components
 Multiple component files contain branding:
-- `frontend/src/components/sidebar/kortix-logo.tsx`
-- `frontend/src/components/sidebar/kortix-enterprise-modal.tsx`
-- Various UI components with "Kortix" or "Suna" text
+- `frontend/src/components/sidebar/adentic-logo.tsx`
+- `frontend/src/components/sidebar/adentic-enterprise-modal.tsx`
+- Various UI components with "Adentic" or "Adentic" text
 
 ### Environment Variables
-- `KORTIX_ADMIN_API_KEY` - Used in backend configuration
+- `ADENTIC_ADMIN_API_KEY` - Used in backend configuration
 
 ## 3. Rebranding Categories
 
@@ -67,22 +67,22 @@ Multiple component files contain branding:
 
 ### B. Text Content
 1. **Product Names**
-   - "Kortix" → [NEW_BRAND_NAME]
-   - "Suna" → [NEW_PRODUCT_NAME]
-   - "Kortix AI" → [NEW_COMPANY_NAME]
+   - "Adentic" → [NEW_BRAND_NAME]
+   - "Adentic" → [NEW_PRODUCT_NAME]
+   - "TryAdentic" → [NEW_COMPANY_NAME]
 
 2. **URLs & Links**
-   - GitHub: `github.com/kortix-ai/`
-   - Twitter: `x.com/kortixai`
-   - LinkedIn: `linkedin.com/company/kortix/`
-   - Website: `suna.so`
+   - GitHub: `github.com/adentic-ai/`
+   - Twitter: `x.com/adenticai`
+   - LinkedIn: `linkedin.com/company/adentic/`
+   - Website: `adentic.so`
 
 3. **Environment Variables**
-   - `KORTIX_*` prefixed variables
+   - `ADENTIC_*` prefixed variables
 
 4. **Component Names**
-   - Files with "kortix" in filename
-   - React components with Kortix branding
+   - Files with "adentic" in filename
+   - React components with Adentic branding
 
 ## 4. File Count Summary
 - **Image files to replace**: 12 files

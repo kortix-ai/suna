@@ -72,7 +72,7 @@ export interface ChatInputProps {
   defaultShowSnackbar?: 'tokens' | 'upgrade' | false;
   showToLowCreditUsers?: boolean;
   agentMetadata?: {
-    is_suna_default?: boolean;
+    is_adentic_default?: boolean;
   };
   showScrollToBottomIndicator?: boolean;
   onScrollToBottom?: () => void;
@@ -130,7 +130,7 @@ export const ChatInput = forwardRef<ChatInputHandles, ChatInputProps>(
     const [uncontrolledValue, setUncontrolledValue] = useState('');
     const value = isControlled ? controlledValue : uncontrolledValue;
 
-    const isSunaAgent = agentMetadata?.is_suna_default || false;
+    const isAdenticAgent = agentMetadata?.is_adentic_default || false;
 
     const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
     const [pendingFiles, setPendingFiles] = useState<File[]>([]);

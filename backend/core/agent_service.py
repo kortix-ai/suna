@@ -404,7 +404,7 @@ class AgentService:
                 "download_count": template_data.get('download_count', 0),
                 "creator_name": creator_name,
                 "creator_id": template_data.get('creator_id'),
-                "is_kortix_team": template_data.get('is_kortix_team', False)
+                "is_adentic_team": template_data.get('is_adentic_team', False)
             }
         except Exception as e:
             logger.error(f"Error transforming template data: {e}", exc_info=True)
@@ -436,5 +436,5 @@ class AgentService:
                 "download_count": 0,
                 "creator_name": None,
                 "creator_id": template_data.get('creator_id'),
-                "is_kortix_team": False
+                "is_adentic_team": False
             } 

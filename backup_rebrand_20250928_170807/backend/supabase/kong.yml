@@ -1,0 +1,40 @@
+_format_version: "2.1"
+
+_transform: true
+
+services:
+  - name: postgrest
+    url: http://supabase-db:5432
+    routes:
+      - name: postgrest-route
+        paths:
+          - /rest/v1
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: true
+  
+  - name: auth
+    url: http://supabase-db:5432
+    routes:
+      - name: auth-route
+        paths:
+          - /auth/v1
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: true
+
+  - name: storage
+    url: http://supabase-db:5432
+    routes:
+      - name: storage-route
+        paths:
+          - /storage/v1
+    plugins:
+      - name: cors
+      - name: key-auth
+        config:
+          hide_credentials: true
