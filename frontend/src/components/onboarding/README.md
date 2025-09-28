@@ -28,7 +28,7 @@ onboarding/
     ├── data.ts                 # Agent definitions & integrations
     ├── context.ts              # Global state management
     ├── step-wrapper.tsx        # Step layout wrapper
-    ├── agent-card.tsx          # Agent selection card
+    ├── (uses UnifiedAgentCard)  # Agent selection via unified component
     └── progress-indicator.tsx  # Progress visualization
 ```
 

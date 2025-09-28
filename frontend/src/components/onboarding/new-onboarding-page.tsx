@@ -79,8 +79,6 @@ export function NewOnboardingPage({ className, onComplete, onClose }: NewOnboard
     return null;
   }
 
-  const CurrentStepComponent = currentStepData.component;
-
   return (
     <div className={cn(
       "fixed inset-0 z-50 bg-background/95 backdrop-blur-sm",
@@ -89,33 +87,16 @@ export function NewOnboardingPage({ className, onComplete, onClose }: NewOnboard
       <div className="h-full flex flex-col">
         {/* Header */}
         <motion.div
-          className="flex items-center justify-between px-6 py-4 border-b border-border/30 bg-background/95 backdrop-blur-sm"
+          className="flex items-center justify-center px-6 py-4 border-b border-border/30 bg-background/95 backdrop-blur-sm"
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.3 }}
         >
-          <div className="flex items-center gap-3">
-            <Sparkles className="h-4 w-4 text-primary" />
-            <span className="text-sm font-medium text-foreground">Setup</span>
-            <span className="text-xs text-muted-foreground">
-              {currentStepIndex + 1}/{onboardingSteps.length}
-            </span>
-          </div>
-
-          {/* Progress indicator - centered and prominent */}
+          {/* Progress indicator - perfectly centered */}
           <ProgressIndicator 
             steps={onboardingSteps.map(step => ({ id: step.id, title: step.title }))}
             currentStep={currentStepIndex}
           />
-
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleClose}
-            className="text-muted-foreground hover:text-foreground h-8 w-8 p-0"
-          >
-            <X className="h-3 w-3" />
-          </Button>
         </motion.div>
 
         {/* Main content */}
@@ -130,7 +111,7 @@ export function NewOnboardingPage({ className, onComplete, onClose }: NewOnboard
                 transition={{ duration: 0.3 }}
                 className="h-full"
               >
-                <CurrentStepComponent />
+                {currentStepData.content}
               </motion.div>
             </AnimatePresence>
           </div>
@@ -138,64 +119,42 @@ export function NewOnboardingPage({ className, onComplete, onClose }: NewOnboard
 
         {/* Footer */}
         <motion.div
-          className="flex items-center justify-between px-6 py-4 border-t border-border/30 bg-background/95 backdrop-blur-sm"
+          className="flex items-center justify-center px-6 py-4 border-t border-border/30 bg-background/95 backdrop-blur-sm"
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.3, delay: 0.4 }}
         >
-          {isFirstStepFlag ? (
-            <div />
-          ) : (
-            <Button
-              variant="ghost"
-              onClick={handlePrevious}
-              size="sm"
-              className="text-muted-foreground hover:text-foreground h-9"
-            >
-              <ArrowLeft className="h-3 w-3 mr-2" />
-              Back
-            </Button>
-          )}
-
-          <div className="flex items-center gap-4">
-            {/* Keyboard shortcuts hint */}
-            <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground">
-              <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">←</kbd>
-              <kbd className="px-1.5 py-0.5 bg-muted rounded text-xs">→</kbd>
-              <span>navigate</span>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {canSkip && !isLastStepFlag && (
-                <Button
-                  variant="ghost"
-                  onClick={handleNext}
-                  size="sm"
-                  className="text-muted-foreground hover:text-foreground h-9"
-                >
-                  Skip
-                </Button>
-              )}
-
+          <div className="flex items-center gap-3">
+            {!isFirstStepFlag && (
               <Button
-                onClick={isLastStepFlag ? handleComplete : handleNext}
+                variant="outline"
+                onClick={handlePrevious}
                 size="sm"
                 className="h-9 px-6"
-                disabled={!canProceed && !canSkip}
               >
-                {isLastStepFlag ? (
-                  <>
-                    Complete Setup
-                    <CheckCircle2 className="h-3 w-3 ml-2" />
-                  </>
-                ) : (
-                  <>
-                    {currentStepData.actionLabel || 'Continue'}
-                    <ArrowRight className="h-3 w-3 ml-2" />
-                  </>
-                )}
+                <ArrowLeft className="h-3 w-3 mr-2" />
+                Back
               </Button>
-            </div>
+            )}
+
+            <Button
+              onClick={isLastStepFlag ? handleComplete : handleNext}
+              size="sm"
+              className="h-9 px-6"
+              disabled={!canProceed && !canSkip}
+            >
+              {isLastStepFlag ? (
+                <>
+                  Complete Setup
+                  <CheckCircle2 className="h-3 w-3 ml-2" />
+                </>
+              ) : (
+                <>
+                  Continue
+                  <ArrowRight className="h-3 w-3 ml-2" />
+                </>
+              )}
+            </Button>
           </div>
         </motion.div>
       </div>

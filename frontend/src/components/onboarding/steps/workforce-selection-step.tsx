@@ -6,10 +6,11 @@ import { Users, Sparkles, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { StepWrapper } from '../shared/step-wrapper';
-import { AgentCard } from '../shared/agent-card';
+import { UnifiedAgentCard, type BaseAgentData } from '@/components/ui/unified-agent-card';
 import { allAgents, agentCategories } from '../shared/data';
 import { userContext, updateUserContext } from '../shared/context';
 import { AIAgent } from '../shared/types';
+import { IconRenderer } from '../shared/icon-renderer';
 
 export const WorkforceSelectionStep = () => {
   const [selectedAgents, setSelectedAgents] = useState<string[]>(userContext.selectedAgents || []);
@@ -151,7 +152,7 @@ export const WorkforceSelectionStep = () => {
               {selectedAgents.length} agents selected
             </Badge>
             {selectedAgents.length > 0 && (
-              <span className="text-green-600 dark:text-green-400 flex items-center gap-1">
+              <span className="text-primary flex items-center gap-1">
                 <Sparkles className="h-4 w-4" />
                 Ready to configure
               </span>
@@ -203,16 +204,35 @@ export const WorkforceSelectionStep = () => {
           transition={{ duration: 0.5, delay: 0.2 }}
           className="grid gap-4 md:grid-cols-2"
         >
-          {filteredAgents.map((agent, index) => (
-            <AgentCard
-              key={agent.id}
-              agent={agent}
-              isSelected={selectedAgents.includes(agent.id)}
-              isRecommended={recommendedIds.includes(agent.id)}
-              onToggle={toggleAgent}
-              delay={index * 0.1}
-            />
-          ))}
+          {filteredAgents.map((agent, index) => {
+            // Convert AIAgent to BaseAgentData
+            const convertToBaseAgentData = (agent: AIAgent): BaseAgentData => ({
+              id: agent.id,
+              name: agent.name,
+              description: agent.description,
+              role: agent.role,
+              icon: agent.icon,
+              capabilities: agent.capabilities,
+              tags: agent.tags || [],
+              created_at: new Date().toISOString(),
+            });
+
+            return (
+              <UnifiedAgentCard
+                key={agent.id}
+                variant="onboarding"
+                data={convertToBaseAgentData(agent)}
+                actions={{
+                  onToggle: toggleAgent,
+                }}
+                state={{
+                  isSelected: selectedAgents.includes(agent.id),
+                  isRecommended: recommendedIds.includes(agent.id),
+                }}
+                delay={index * 0.1}
+              />
+            );
+          })}
         </motion.div>
 
         {/* Empty state */}
@@ -245,7 +265,7 @@ export const WorkforceSelectionStep = () => {
                 const agent = allAgents.find(a => a.id === agentId);
                 return agent ? (
                   <div key={agentId} className="flex items-center gap-2 bg-background rounded-md px-3 py-2 border">
-                    <span className="text-lg">{agent.icon}</span>
+                    <IconRenderer iconName={agent.icon} className="text-primary" size={20} />
                     <div>
                       <p className="font-medium text-sm">{agent.name}</p>
                       <p className="text-xs text-muted-foreground">{agent.role}</p>

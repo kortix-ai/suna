@@ -1,6 +1,6 @@
 'use client';
 
-import { OnboardingStep } from './shared/types';
+import { OnboardingStep } from '@/hooks/use-onboarding';
 import { CEOIntroStep } from './steps/ceo-intro-step';
 import { SmartContextStep } from './steps/smart-context-step';
 import { WorkforceSelectionStep } from './steps/workforce-selection-step';
@@ -14,7 +14,7 @@ export const onboardingSteps: OnboardingStep[] = [
     id: 'ceo-intro',
     title: 'Welcome',
     description: 'Introduction from our CEO',
-    component: CEOIntroStep,
+    content: <CEOIntroStep />,
     canSkip: false,
     actionLabel: 'Get Started'
   },
@@ -22,7 +22,7 @@ export const onboardingSteps: OnboardingStep[] = [
     id: 'smart-context',
     title: 'Smart Context',
     description: 'Tell us about your needs',
-    component: SmartContextStep,
+    content: <SmartContextStep />,
     canSkip: false,
     actionLabel: 'Continue'
   },
@@ -30,7 +30,7 @@ export const onboardingSteps: OnboardingStep[] = [
     id: 'workforce-selection',
     title: 'Choose Agents',
     description: 'Select your AI workforce',
-    component: WorkforceSelectionStep,
+    content: <WorkforceSelectionStep />,
     canSkip: false,
     actionLabel: 'Configure Agents'
   },
@@ -38,23 +38,23 @@ export const onboardingSteps: OnboardingStep[] = [
     id: 'agent-configuration',
     title: 'Configure Agents',
     description: 'Customize your AI team',
-    component: MultiAgentConfigurationStep,
+    content: <MultiAgentConfigurationStep />,
     canSkip: true,
     actionLabel: 'Continue Setup'
   },
-  {
-    id: 'team-invitation',
-    title: 'Invite Team',
-    description: 'Add your teammates',
-    component: TeamInvitationStep,
-    canSkip: true,
-    actionLabel: 'Finish Setup'
-  },
+  // {
+  //   id: 'team-invitation',
+  //   title: 'Invite Team',
+  //   description: 'Add your teammates',
+  //   content: <TeamInvitationStep />,
+  //   canSkip: true,
+  //   actionLabel: 'Finish Setup'
+  // },
   {
     id: 'completion',
     title: 'Complete',
     description: 'Your AI workforce is ready',
-    component: CompletionStep,
+    content: <CompletionStep />,
     canSkip: false,
     actionLabel: 'Start Working'
   }

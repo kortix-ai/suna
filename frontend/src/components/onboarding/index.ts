@@ -1,15 +1,9 @@
-// Original onboarding components
-export { OnboardingPage } from './onboarding-page';
+// Active onboarding components
 export { OnboardingProvider } from './onboarding-provider';
-export { defaultOnboardingSteps, WelcomeStep, FeaturesOverviewStep, QuickStartStep, CompletionStep } from './onboarding-steps';
-export { UserTypeStep } from './user-type-step';
 export { useOnboarding, usePostSubscriptionOnboarding } from '@/hooks/use-onboarding';
 export type { OnboardingStep } from '@/hooks/use-onboarding';
 
-// Legacy/alternative exports for backward compatibility
-export { defaultOnboardingSteps as onboardingSteps } from './onboarding-steps';
-
-// New onboarding components (if needed)
+// Main onboarding page
 export { NewOnboardingPage } from './new-onboarding-page';
 
 // Step components
@@ -25,7 +19,6 @@ export { AgentConfiguration } from './agent-config/agent-configuration';
 
 // Shared components
 export { StepWrapper } from './shared/step-wrapper';
-export { AgentCard } from './shared/agent-card';
 export { ProgressIndicator } from './shared/progress-indicator';
 
 // Types and data

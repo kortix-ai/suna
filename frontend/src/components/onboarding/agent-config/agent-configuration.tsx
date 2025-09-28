@@ -10,6 +10,7 @@ import { FieldRenderer } from './field-renderer';
 import { getConfigurationFields, getIntegrationFields, getConfigurationCompleteness } from './configuration-utils';
 import { allAgents } from '../shared/data';
 import { AIAgent } from '../shared/types';
+import { IconRenderer } from '../shared/icon-renderer';
 
 interface AgentConfigurationProps {
   agentId: string;
@@ -53,7 +54,7 @@ export const AgentConfiguration = ({
         >
           <div className="flex items-center justify-center gap-3">
             <div className="p-3 rounded-xl bg-primary/10">
-              <span className="text-2xl">{agent.icon}</span>
+              <IconRenderer iconName={agent.icon} className="text-primary" size={32} />
             </div>
             <div>
               <h3 className="text-2xl font-bold">Configure {agent.name}</h3>
@@ -159,7 +160,7 @@ export const AgentConfiguration = ({
         className="bg-primary/5 border border-primary/20 rounded-lg p-4"
       >
         <h4 className="font-semibold mb-2 flex items-center gap-2">
-          <span className="text-lg">{agent.icon}</span>
+          <IconRenderer iconName={agent.icon} className="text-primary" size={20} />
           {agent.name}'s Core Capabilities
         </h4>
         <div className="flex flex-wrap gap-2">

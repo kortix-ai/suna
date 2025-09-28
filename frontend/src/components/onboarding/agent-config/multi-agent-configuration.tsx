@@ -10,6 +10,7 @@ import { StepWrapper } from '../shared/step-wrapper';
 import { AgentConfiguration } from './agent-configuration';
 import { allAgents } from '../shared/data';
 import { userContext } from '../shared/context';
+import { IconRenderer } from '../shared/icon-renderer';
 
 export const MultiAgentConfigurationStep = () => {
   const [currentAgentIndex, setCurrentAgentIndex] = useState(0);
@@ -76,7 +77,7 @@ export const MultiAgentConfigurationStep = () => {
         >
           <div className="flex items-center justify-center gap-3">
             <div className="p-3 rounded-xl bg-primary/10">
-              <span className="text-2xl">{currentAgent.icon}</span>
+              <IconRenderer iconName={currentAgent.icon} className="text-primary" size={32} />
             </div>
             <div>
               <h2 className="text-2xl font-bold">Configure {currentAgent.name}</h2>
@@ -104,11 +105,11 @@ export const MultiAgentConfigurationStep = () => {
                           status === 'current'
                             ? 'bg-primary text-primary-foreground scale-105'
                             : status === 'completed'
-                            ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'
+                            ? 'bg-primary/10 text-primary'
                             : 'bg-muted text-muted-foreground'
                         }`}
                       >
-                        <span className="text-lg">{agent.icon}</span>
+                        <IconRenderer iconName={agent.icon} className="text-primary" size={20} />
                         <span>{agent.name}</span>
                         {status === 'completed' && configured && (
                           <CheckCircle2 className="h-4 w-4" />
@@ -216,15 +217,15 @@ export const MultiAgentConfigurationStep = () => {
                 key={agent.id}
                 className={`p-3 rounded-lg border ${
                   isConfigured(agent.id)
-                    ? 'bg-green-50 border-green-200 dark:bg-green-950/20 dark:border-green-800'
+                    ? 'bg-primary/5 border-primary/20'
                     : 'bg-muted border-border'
                 }`}
               >
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-sm">{agent.icon}</span>
+                  <IconRenderer iconName={agent.icon} className="text-primary" size={16} />
                   <span className="font-medium text-sm">{agent.name}</span>
                   {isConfigured(agent.id) && (
-                    <CheckCircle2 className="h-3 w-3 text-green-600" />
+                    <CheckCircle2 className="h-3 w-3 text-primary" />
                   )}
                 </div>
                 <p className="text-xs text-muted-foreground">

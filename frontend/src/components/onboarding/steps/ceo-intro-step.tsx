@@ -1,19 +1,16 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Play, Users, Zap, Target } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { StepWrapper } from '../shared/step-wrapper';
+import { Play } from 'lucide-react';
 
 export const CEOIntroStep = () => {
   return (
-    <StepWrapper className="text-center max-w-3xl">
+    <div className="flex items-center justify-center min-h-[calc(100vh-200px)]">
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ duration: 0.6 }}
-        className="space-y-8"
+        className="text-center max-w-3xl mx-auto space-y-8"
       >
         {/* Video placeholder */}
         <div className="relative">
@@ -42,39 +39,6 @@ export const CEOIntroStep = () => {
             </p>
           </div>
 
-          {/* Value propositions */}
-          <div className="grid md:grid-cols-3 gap-6 mt-8">
-            <Card className="border-0 shadow-none bg-primary/5">
-              <CardContent className="p-6 text-center">
-                <Users className="h-8 w-8 text-primary mx-auto mb-3" />
-                <h3 className="font-semibold mb-2">Build Your Team</h3>
-                <p className="text-sm text-muted-foreground">
-                  Choose from specialized AI agents tailored to your needs
-                </p>
-              </CardContent>
-            </Card>
-            
-            <Card className="border-0 shadow-none bg-primary/5">
-              <CardContent className="p-6 text-center">
-                <Zap className="h-8 w-8 text-primary mx-auto mb-3" />
-                <h3 className="font-semibold mb-2">Work Faster</h3>
-                <p className="text-sm text-muted-foreground">
-                  Automate tasks and get 10x more done with AI assistance
-                </p>
-              </CardContent>
-            </Card>
-            
-            <Card className="border-0 shadow-none bg-primary/5">
-              <CardContent className="p-6 text-center">
-                <Target className="h-8 w-8 text-primary mx-auto mb-3" />
-                <h3 className="font-semibold mb-2">Achieve Goals</h3>
-                <p className="text-sm text-muted-foreground">
-                  Focus on what matters while AI handles the rest
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-
           {/* CTA */}
           <div className="pt-4">
             <p className="text-muted-foreground mb-6">
@@ -83,7 +47,7 @@ export const CEOIntroStep = () => {
           </div>
         </div>
       </motion.div>
-    </StepWrapper>
+    </div>
   );
 };
 
