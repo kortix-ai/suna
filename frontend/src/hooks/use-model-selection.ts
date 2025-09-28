@@ -54,7 +54,7 @@ export const useModelSelection = () => {
     if (!modelsData?.models) return [];
     
     return modelsData.models.map(model => ({
-      id: model.short_name || model.id,
+      id: model.id, // Always use the actual model ID
       label: model.display_name || model.short_name || model.id,
       requiresSubscription: model.requires_subscription || false,
       priority: model.priority || 0,

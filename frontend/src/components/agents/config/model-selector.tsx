@@ -80,11 +80,10 @@ export function AgentModelSelector({
 
     if (modelsData?.models) {
       modelsData.models.forEach(model => {
-        const shortName = model.short_name || model.id;
-        const displayName = model.display_name || shortName;
+        const displayName = model.display_name || model.short_name || model.id;
         
-        modelMap.set(shortName, {
-          id: shortName,
+        modelMap.set(model.id, {
+          id: model.id, // Use the actual model ID
           label: displayName,
           requiresSubscription: model.requires_subscription || false,
           priority: model.priority || 0,

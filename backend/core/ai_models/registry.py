@@ -1,8 +1,16 @@
 from typing import Dict, List, Optional, Set
 from .ai_models import Model, ModelProvider, ModelCapability, ModelPricing
+from core.utils.config import config, EnvMode
 
-DEFAULT_FREE_MODEL = "Kimi K2"
-DEFAULT_PREMIUM_MODEL = "Claude Sonnet 4"
+FREE_MODEL_ID = "moonshotai/kimi-k2"
+
+# Set premium model ID based on environment
+if config.ENV_MODE == EnvMode.LOCAL:
+    PREMIUM_MODEL_ID = "anthropic/claude-sonnet-4-20250514"
+else:  # STAGING or PRODUCTION
+    PREMIUM_MODEL_ID = "bedrock/anthropic.claude-sonnet-4-20250514-v1:0"
+
+is_local = config.ENV_MODE == EnvMode.LOCAL
 
 class ModelRegistry:
     def __init__(self):
@@ -11,11 +19,12 @@ class ModelRegistry:
         self._initialize_models()
     
     def _initialize_models(self):
+        
         self.register(Model(
-            id="anthropic/claude-sonnet-4-20250514",
+            id="anthropic/claude-sonnet-4-20250514" if is_local else "bedrock/anthropic.claude-sonnet-4-20250514-v1:0",
             name="Claude Sonnet 4",
             provider=ModelProvider.ANTHROPIC,
-            aliases=["claude-sonnet-4", "anthropic/claude-sonnet-4", "Claude Sonnet 4", "claude-sonnet-4-20250514"],
+            aliases=["claude-sonnet-4", "anthropic/claude-sonnet-4", "Claude Sonnet 4", "claude-sonnet-4-20250514", "bedrock-claude-sonnet-4", "bedrock/claude-sonnet-4", "anthropic.claude-sonnet-4-20250514-v1:0"],
             context_window=1_000_000,
             capabilities=[
                 ModelCapability.CHAT,
@@ -34,10 +43,10 @@ class ModelRegistry:
         ))
         
         self.register(Model(
-            id="anthropic/claude-3-7-sonnet-latest",
+            id="anthropic/claude-3-7-sonnet-latest" if is_local else "bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0",
             name="Claude Sonnet 3.7",
             provider=ModelProvider.ANTHROPIC,
-            aliases=["sonnet-3.7", "claude-3.7", "Claude 3.7 Sonnet", "claude-3-7-sonnet-latest", "Claude 3.7 Sonnet"],
+            aliases=["sonnet-3.7", "claude-3.7", "Claude 3.7 Sonnet", "claude-3-7-sonnet-latest", "bedrock-claude-3.7", "bedrock/claude-3.7", "anthropic.claude-3-7-sonnet-20250219-v1:0"],
             context_window=200_000,
             capabilities=[
                 ModelCapability.CHAT,
@@ -174,47 +183,47 @@ class ModelRegistry:
             enabled=True
         ))
 
-        """
-        # DeepSeek Models
-        self.register(Model(
-            id="openrouter/deepseek/deepseek-chat",
-            name="DeepSeek Chat",
-            provider=ModelProvider.OPENROUTER,
-            aliases=["deepseek", "deepseek-chat"],
-            context_window=128_000,
-            capabilities=[
-                ModelCapability.CHAT, 
-                ModelCapability.FUNCTION_CALLING
-            ],
-            pricing=ModelPricing(
-                input_cost_per_million_tokens=0.38,
-                output_cost_per_million_tokens=0.89
-            ),
-            tier_availability=["free", "paid"],
-            priority=95,
-            enabled=False  # Currently disabled
-        ))
         
-        # Qwen Models
-        self.register(Model(
-            id="openrouter/qwen/qwen3-235b-a22b",
-            name="Qwen3 235B",
-            provider=ModelProvider.OPENROUTER,
-            aliases=["qwen3", "qwen-3"],
-            context_window=128_000,
-            capabilities=[
-                ModelCapability.CHAT, 
-                ModelCapability.FUNCTION_CALLING
-            ],
-            pricing=ModelPricing(
-                input_cost_per_million_tokens=0.13,
-                output_cost_per_million_tokens=0.60
-            ),
-            tier_availability=["free", "paid"],
-            priority=90,
-            enabled=False  # Currently disabled
-        ))
-        """
+        # # DeepSeek Models
+        # self.register(Model(
+        #     id="openrouter/deepseek/deepseek-chat",
+        #     name="DeepSeek Chat",
+        #     provider=ModelProvider.OPENROUTER,
+        #     aliases=["deepseek", "deepseek-chat"],
+        #     context_window=128_000,
+        #     capabilities=[
+        #         ModelCapability.CHAT, 
+        #         ModelCapability.FUNCTION_CALLING
+        #     ],
+        #     pricing=ModelPricing(
+        #         input_cost_per_million_tokens=0.38,
+        #         output_cost_per_million_tokens=0.89
+        #     ),
+        #     tier_availability=["free", "paid"],
+        #     priority=95,
+        #     enabled=False  # Currently disabled
+        # ))
+        
+        # # Qwen Models
+        # self.register(Model(
+        #     id="openrouter/qwen/qwen3-235b-a22b",
+        #     name="Qwen3 235B",
+        #     provider=ModelProvider.OPENROUTER,
+        #     aliases=["qwen3", "qwen-3"],
+        #     context_window=128_000,
+        #     capabilities=[
+        #         ModelCapability.CHAT, 
+        #         ModelCapability.FUNCTION_CALLING
+        #     ],
+        #     pricing=ModelPricing(
+        #         input_cost_per_million_tokens=0.13,
+        #         output_cost_per_million_tokens=0.60
+        #     ),
+        #     tier_availability=["free", "paid"],
+        #     priority=90,
+        #     enabled=False  # Currently disabled
+        # ))
+        
     
     def register(self, model: Model) -> None:
         self._models[model.id] = model
@@ -252,6 +261,7 @@ class ModelRegistry:
     def resolve_model_id(self, model_id: str) -> Optional[str]:
         model = self.get(model_id)
         return model.id if model else None
+    
     
     def get_aliases(self, model_id: str) -> List[str]:
         model = self.get(model_id)

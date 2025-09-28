@@ -396,8 +396,6 @@ class AgentExecutor:
             "agent_version_id": agent_config.get('current_version_id'),
             "metadata": {
                 "model_name": model_name,
-                "enable_thinking": False,
-                "reasoning_effort": "low",
                 "enable_context_manager": True,
                 "trigger_execution": True,
                 "trigger_variables": trigger_variables
@@ -414,9 +412,6 @@ class AgentExecutor:
             instance_id="trigger_executor",
             project_id=project_id,
             model_name=model_name,
-            enable_thinking=False,
-            reasoning_effort="low",
-            stream=False,
             enable_context_manager=True,
             enable_prompt_caching=True,
             agent_config=agent_config,
@@ -705,8 +700,6 @@ class WorkflowExecutor:
             "agent_version_id": agent_config.get('current_version_id'),
             "metadata": {
                 "model_name": model_name,
-                "enable_thinking": False,
-                "reasoning_effort": "medium",
                 "enable_context_manager": True,
                 "workflow_execution": True
             }
@@ -722,9 +715,6 @@ class WorkflowExecutor:
             instance_id=getattr(config, 'INSTANCE_ID', 'default'),
             project_id=project_id,
             model_name=model_name,
-            enable_thinking=False,
-            reasoning_effort='medium',
-            stream=False,
             enable_context_manager=True,
             enable_prompt_caching=True,
             agent_config=agent_config,

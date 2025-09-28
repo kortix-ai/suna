@@ -78,8 +78,6 @@ def calculate_token_cost(prompt_tokens: int, completion_tokens: int, model: str)
         logger.error(f"[COST_CALC] Error calculating token cost for model '{model}': {e}")
         return Decimal('0.01')
 
-
-
 async def calculate_credit_breakdown(account_id: str, client) -> Dict:
     current_balance = await credit_service.get_balance(account_id)
     current_balance = float(current_balance)

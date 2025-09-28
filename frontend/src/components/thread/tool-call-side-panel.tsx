@@ -2,7 +2,7 @@
 
 import { Project } from '@/lib/api';
 import { getToolIcon, getUserFriendlyToolName } from '@/components/thread/utils';
-import React from 'react';
+import React, { memo, useMemo, useCallback } from 'react';
 import { Slider } from '@/components/ui/slider';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ApiMessageType } from '@/components/thread/types';
@@ -79,7 +79,7 @@ interface ViewToggleProps {
   onViewChange: (view: 'tools' | 'browser') => void;
 }
 
-const ViewToggle: React.FC<ViewToggleProps> = ({ currentView, onViewChange }) => {
+const ViewToggle: React.FC<ViewToggleProps> = memo(({ currentView, onViewChange }) => {
   return (
     <div className="relative flex items-center gap-1 bg-muted rounded-3xl px-1 py-1">
       {/* Sliding background */}
@@ -124,7 +124,7 @@ const ViewToggle: React.FC<ViewToggleProps> = ({ currentView, onViewChange }) =>
       </Button>
     </div>
   );
-};
+});
 
 // Helper function to generate the computer title
 const getComputerTitle = (agentName?: string): string => {
@@ -142,7 +142,7 @@ interface PanelHeaderProps {
   layoutId?: string;
 }
 
-const PanelHeader: React.FC<PanelHeaderProps> = ({
+const PanelHeader: React.FC<PanelHeaderProps> = memo(({
   agentName,
   onClose,
   isStreaming = false,
@@ -241,7 +241,7 @@ const PanelHeader: React.FC<PanelHeaderProps> = ({
       </div>
     </div>
   );
-};
+});
 
 export function ToolCallSidePanel({
   isOpen,
@@ -285,11 +285,11 @@ export function ToolCallSidePanel({
   // Add refresh key state for VNC iframe
   const [vncRefreshKey, setVncRefreshKey] = React.useState(0);
   
-  const handleVncRefresh = React.useCallback(() => {
+  const handleVncRefresh = useCallback(() => {
     setVncRefreshKey(prev => prev + 1);
   }, []);
 
-  const persistentVncIframe = React.useMemo(() => {
+  const persistentVncIframe = useMemo(() => {
     if (!sandbox || !sandbox.vnc_preview || !sandbox.pass || !sandbox.id) return null;
     
     return (
@@ -307,7 +307,7 @@ export function ToolCallSidePanel({
   }, [sandbox, vncRefreshKey]);
 
   // Helper function to check if a tool is browser-related
-  const isBrowserTool = React.useCallback((toolName: string | undefined): boolean => {
+  const isBrowserTool = useCallback((toolName: string | undefined): boolean => {
     if (!toolName) return false;
     const lowerName = toolName.toLowerCase();
     return [
@@ -359,18 +359,21 @@ export function ToolCallSidePanel({
     }
   }, [toolCallSnapshots, internalIndex, isBrowserTool, agentStatus]);
 
-  const handleClose = React.useCallback(() => {
+  const handleClose = useCallback(() => {
     onClose();
   }, [onClose]);
 
-  React.useEffect(() => {
-    const newSnapshots = toolCalls.map((toolCall, index) => ({
+  // Memoize snapshot creation to prevent unnecessary recalculations
+  const newSnapshots = useMemo(() => {
+    return toolCalls.map((toolCall, index) => ({
       id: `${index}-${toolCall.assistantCall.timestamp || Date.now()}`,
       toolCall,
       index,
       timestamp: Date.now(),
     }));
+  }, [toolCalls]);
 
+  React.useEffect(() => {
     const hadSnapshots = toolCallSnapshots.length > 0;
     const hasNewSnapshots = newSnapshots.length > toolCallSnapshots.length;
     setToolCallSnapshots(newSnapshots);
@@ -420,17 +423,30 @@ export function ToolCallSidePanel({
     }
   }, [currentIndex, toolCallSnapshots.length, isInitialized, navigationMode]);
 
-  const safeInternalIndex = Math.min(internalIndex, Math.max(0, toolCallSnapshots.length - 1));
-  const currentSnapshot = toolCallSnapshots[safeInternalIndex];
-  const currentToolCall = currentSnapshot?.toolCall;
-  const totalCalls = toolCallSnapshots.length;
-  const latestIndex = Math.max(0, totalCalls - 1);
+  // Memoize expensive calculations
+  const { safeInternalIndex, currentSnapshot, currentToolCall, totalCalls, latestIndex, completedToolCalls, totalCompletedCalls } = useMemo(() => {
+    const safeIndex = Math.min(internalIndex, Math.max(0, toolCallSnapshots.length - 1));
+    const snapshot = toolCallSnapshots[safeIndex];
+    const toolCall = snapshot?.toolCall;
+    const total = toolCallSnapshots.length;
+    const latest = Math.max(0, total - 1);
 
-  const completedToolCalls = toolCallSnapshots.filter(snapshot =>
-    snapshot.toolCall.toolResult?.content &&
-    snapshot.toolCall.toolResult.content !== 'STREAMING'
-  );
-  const totalCompletedCalls = completedToolCalls.length;
+    const completed = toolCallSnapshots.filter(snapshot =>
+      snapshot.toolCall.toolResult?.content &&
+      snapshot.toolCall.toolResult.content !== 'STREAMING'
+    );
+    const completedCount = completed.length;
+
+    return {
+      safeInternalIndex: safeIndex,
+      currentSnapshot: snapshot,
+      currentToolCall: toolCall,
+      totalCalls: total,
+      latestIndex: latest,
+      completedToolCalls: completed,
+      totalCompletedCalls: completedCount
+    };
+  }, [internalIndex, toolCallSnapshots]);
 
   // Derive a user-facing timeline that is stable and easy to reason about:
   // - If the current tool is STREAMING, show the last completed result content;
@@ -530,7 +546,7 @@ export function ToolCallSidePanel({
     setTimeout(() => setIsCopyingContent(false), 500);
   }, [displayToolCall?.toolResult?.content, copyToClipboard]);
 
-  const internalNavigate = React.useCallback((newIndex: number, source: string = 'internal') => {
+  const internalNavigate = useCallback((newIndex: number, source: string = 'internal') => {
     if (newIndex < 0 || newIndex >= totalCalls) return;
 
     const isNavigatingToLatest = newIndex === totalCalls - 1;
@@ -550,14 +566,14 @@ export function ToolCallSidePanel({
   const isLiveMode = navigationMode === 'live';
   const pointerIndex = isLiveMode ? latestIndex : safeInternalIndex;
 
-  const navigateToPrevious = React.useCallback(() => {
+  const navigateToPrevious = useCallback(() => {
     if (pointerIndex > 0) {
       setNavigationMode('manual');
       internalNavigate(pointerIndex - 1, 'user_explicit');
     }
   }, [pointerIndex, internalNavigate]);
 
-  const navigateToNext = React.useCallback(() => {
+  const navigateToNext = useCallback(() => {
     if (pointerIndex < latestIndex) {
       const nextIndex = pointerIndex + 1;
       setNavigationMode(nextIndex === latestIndex ? 'live' : 'manual');
@@ -565,20 +581,20 @@ export function ToolCallSidePanel({
     }
   }, [pointerIndex, latestIndex, internalNavigate]);
 
-  const jumpToLive = React.useCallback(() => {
+  const jumpToLive = useCallback(() => {
     setNavigationMode('live');
     setInternalIndex(latestIndex);
     internalNavigate(latestIndex, 'user_explicit');
   }, [latestIndex, internalNavigate]);
 
-  const jumpToLatest = React.useCallback(() => {
+  const jumpToLatest = useCallback(() => {
     // For idle state: jump to the latest completed (same as latestIndex here)
     setNavigationMode('manual');
     setInternalIndex(latestIndex);
     internalNavigate(latestIndex, 'user_explicit');
   }, [latestIndex, internalNavigate]);
 
-  const renderStatusButton = React.useCallback(() => {
+  const renderStatusButton = useCallback(() => {
     const baseClasses = "flex items-center justify-center gap-1.5 px-2 py-0.5 rounded-full w-[116px]";
     const dotClasses = "w-1.5 h-1.5 rounded-full";
     const textClasses = "text-xs font-medium";
@@ -627,7 +643,7 @@ export function ToolCallSidePanel({
     }
   }, [isLiveMode, agentStatus, jumpToLive, jumpToLatest]);
 
-  const handleSliderChange = React.useCallback(([newValue]: [number]) => {
+  const handleSliderChange = useCallback(([newValue]: [number]) => {
     // Slider maps directly over all snapshots for simplicity and correctness
     const bounded = Math.max(0, Math.min(newValue, latestIndex));
     setNavigationMode(bounded === latestIndex ? 'live' : 'manual');
@@ -639,7 +655,7 @@ export function ToolCallSidePanel({
 
     const handleKeyDown = (event: KeyboardEvent) => {
       // Don't handle side panel shortcuts when document modal is open
-      console.log('Side panel handler - document modal open:', isDocumentModalOpen, 'key:', event.key);
+      // console.log('Side panel handler - document modal open:', isDocumentModalOpen, 'key:', event.key);
       if (isDocumentModalOpen) return;
       
       if ((event.metaKey || event.ctrlKey) && event.key === 'i') {

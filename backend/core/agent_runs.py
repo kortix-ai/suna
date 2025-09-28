@@ -71,7 +71,7 @@ async def start_agent(
     # Update model_name to use the resolved version
     model_name = resolved_model
 
-    logger.debug(f"Starting new agent for thread: {thread_id} with config: model={model_name}, thinking={body.enable_thinking}, effort={body.reasoning_effort}, stream={body.stream}, context_manager={body.enable_context_manager} (Instance: {utils.instance_id})")
+    logger.debug(f"Starting new agent for thread: {thread_id} with config: model={model_name}, context_manager={body.enable_context_manager} (Instance: {utils.instance_id})")
     client = await utils.db.client
 
 
@@ -228,8 +228,6 @@ async def start_agent(
         "metadata": {
             "model_name": effective_model,
             "requested_model": model_name,
-            "enable_thinking": body.enable_thinking,
-            "reasoning_effort": body.reasoning_effort,
             "enable_context_manager": body.enable_context_manager
         }
     }).execute()
@@ -252,8 +250,7 @@ async def start_agent(
         agent_run_id=agent_run_id, thread_id=thread_id, instance_id=utils.instance_id,
         project_id=project_id,
         model_name=model_name,  # Already resolved above
-        enable_thinking=body.enable_thinking, reasoning_effort=body.reasoning_effort,
-        stream=body.stream, enable_context_manager=body.enable_context_manager,
+        enable_context_manager=body.enable_context_manager,
         enable_prompt_caching=body.enable_prompt_caching,
         agent_config=agent_config,  # Pass agent configuration
         request_id=request_id,
@@ -634,9 +631,6 @@ async def stream_agent_run(
 async def initiate_agent_with_files(
     prompt: str = Form(...),
     model_name: Optional[str] = Form(None),  # Default to None to use default model
-    enable_thinking: Optional[bool] = Form(False),
-    reasoning_effort: Optional[str] = Form("low"),
-    stream: Optional[bool] = Form(True),
     enable_context_manager: Optional[bool] = Form(False),
     enable_prompt_caching: Optional[bool] = Form(False),
     agent_id: Optional[str] = Form(None),  # Add agent_id parameter
@@ -666,7 +660,7 @@ async def initiate_agent_with_files(
     # Update model_name to use the resolved version
     model_name = resolved_model
 
-    logger.debug(f"Initiating new agent with prompt and {len(files)} files (Instance: {utils.instance_id}), model: {model_name}, enable_thinking: {enable_thinking}")
+    logger.debug(f"Initiating new agent with prompt and {len(files)} files (Instance: {utils.instance_id}), model: {model_name}")
     client = await utils.db.client
     account_id = user_id # In Basejump, personal account_id is the same as user_id
     
@@ -969,8 +963,6 @@ async def initiate_agent_with_files(
             "metadata": {
                 "model_name": effective_model,
                 "requested_model": model_name,
-                "enable_thinking": enable_thinking,
-                "reasoning_effort": reasoning_effort,
                 "enable_context_manager": enable_context_manager
             }
         }).execute()
@@ -994,8 +986,7 @@ async def initiate_agent_with_files(
             agent_run_id=agent_run_id, thread_id=thread_id, instance_id=utils.instance_id,
             project_id=project_id,
             model_name=model_name,  # Already resolved above
-            enable_thinking=enable_thinking, reasoning_effort=reasoning_effort,
-            stream=stream, enable_context_manager=enable_context_manager,
+            enable_context_manager=enable_context_manager,
             enable_prompt_caching=enable_prompt_caching,
             agent_config=agent_config,  # Pass agent configuration
             request_id=request_id,

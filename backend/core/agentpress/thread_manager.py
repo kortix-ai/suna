@@ -229,8 +229,6 @@ class ThreadManager:
         tool_choice: ToolChoice = "auto",
         native_max_auto_continues: int = 25,
         max_xml_tool_calls: int = 0,
-        enable_thinking: Optional[bool] = False,
-        reasoning_effort: Optional[str] = 'low',
         generation: Optional[StatefulGenerationClient] = None,
         enable_prompt_caching: bool = True,
         enable_context_manager: Optional[bool] = None,
@@ -263,7 +261,7 @@ class ThreadManager:
         if native_max_auto_continues == 0:
             result = await self._execute_run(
                 thread_id, system_prompt, llm_model, llm_temperature, llm_max_tokens,
-                tool_choice, config, stream, enable_thinking, reasoning_effort,
+                tool_choice, config, stream,
                 generation, auto_continue_state, temporary_message, enable_prompt_caching,
                 use_context_manager
             )
@@ -277,7 +275,7 @@ class ThreadManager:
         # Auto-continue execution
         return self._auto_continue_generator(
             thread_id, system_prompt, llm_model, llm_temperature, llm_max_tokens,
-            tool_choice, config, stream, enable_thinking, reasoning_effort,
+            tool_choice, config, stream,
             generation, auto_continue_state, temporary_message,
             native_max_auto_continues, enable_prompt_caching, use_context_manager
         )
@@ -285,8 +283,7 @@ class ThreadManager:
     async def _execute_run(
         self, thread_id: str, system_prompt: Dict[str, Any], llm_model: str,
         llm_temperature: float, llm_max_tokens: Optional[int], tool_choice: ToolChoice,
-        config: ProcessorConfig, stream: bool, enable_thinking: Optional[bool],
-        reasoning_effort: Optional[str], generation: Optional[StatefulGenerationClient],
+        config: ProcessorConfig, stream: bool, generation: Optional[StatefulGenerationClient],
         auto_continue_state: Dict[str, Any], temporary_message: Optional[Dict[str, Any]] = None,
         enable_prompt_caching: bool = False, use_context_manager: bool = True
     ) -> Union[Dict[str, Any], AsyncGenerator]:
@@ -338,8 +335,6 @@ class ThreadManager:
                         model_parameters={
                             "max_tokens": llm_max_tokens,
                             "temperature": llm_temperature,
-                            "enable_thinking": enable_thinking,
-                            "reasoning_effort": reasoning_effort,
                             "tool_choice": tool_choice,
                             "tools": openapi_tool_schemas,
                         }
@@ -355,9 +350,7 @@ class ThreadManager:
                     max_tokens=llm_max_tokens,
                     tools=openapi_tool_schemas,
                     tool_choice=tool_choice if config.native_tool_calling else "none",
-                    stream=stream,
-                    enable_thinking=enable_thinking,
-                    reasoning_effort=reasoning_effort
+                    stream=stream
                 )
             except LLMError as e:
                 return {"type": "status", "status": "error", "message": str(e)}
@@ -392,8 +385,7 @@ class ThreadManager:
     async def _auto_continue_generator(
         self, thread_id: str, system_prompt: Dict[str, Any], llm_model: str,
         llm_temperature: float, llm_max_tokens: Optional[int], tool_choice: ToolChoice,
-        config: ProcessorConfig, stream: bool, enable_thinking: Optional[bool],
-        reasoning_effort: Optional[str], generation: Optional[StatefulGenerationClient],
+        config: ProcessorConfig, stream: bool, generation: Optional[StatefulGenerationClient],
         auto_continue_state: Dict[str, Any], temporary_message: Optional[Dict[str, Any]],
         native_max_auto_continues: int, enable_prompt_caching: bool = False,
         use_context_manager: bool = True
@@ -413,7 +405,7 @@ class ThreadManager:
             try:
                 response_gen = await self._execute_run(
                     thread_id, system_prompt, llm_model, llm_temperature, llm_max_tokens,
-                    tool_choice, config, stream, enable_thinking, reasoning_effort,
+                    tool_choice, config, stream,
                     generation, auto_continue_state,
                     temporary_message if auto_continue_state['count'] == 0 else None,
                     enable_prompt_caching, use_context_manager

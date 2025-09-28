@@ -291,9 +291,9 @@ class MCPToolWrapper(Tool):
         logger.debug(f"Registration complete for MCPToolWrapper - total schemas: {len(self._schemas)}")
     
     def get_schemas(self) -> Dict[str, List[ToolSchema]]:
-        logger.debug(f"get_schemas called - returning {len(self._schemas)} schemas")
-        for method_name in self._schemas:
-            logger.debug(f"  - Schema available for: {method_name}")
+        # logger.debug(f"get_schemas called - returning {len(self._schemas)} schemas")
+        # for method_name in self._schemas:
+        #     # logger.debug(f"  - Schema available for: {method_name}")
         return self._schemas
     
     def __getattr__(self, name: str):
