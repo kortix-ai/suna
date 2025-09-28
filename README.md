@@ -209,3 +209,15 @@ Kortix is licensed under the Apache License, Version 2.0. See [LICENSE](./LICENS
 [Get Started](./docs/SELF-HOSTING.md) • [Join Discord](https://discord.gg/Py6pCBUUPw) • [Follow on Twitter](https://x.com/kortixai)
 
 </div>
+
+una Setup Complete! ✨
+
+ℹ️  Suna is configured with your LLM API keys and ready to use.
+ℹ️  Delete the .setup_progress file to reset the setup.
+ℹ️  Your Suna instance is ready to use!
+
+Useful Docker commands:
+  docker compose ps         - Check service status
+  docker compose logs -f    - Follow logs
+  docker compose down       - Stop Suna services
+  python start.py           - To start or stop Suna services
