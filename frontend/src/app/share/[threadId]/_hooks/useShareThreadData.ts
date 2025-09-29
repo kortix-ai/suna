@@ -27,7 +27,6 @@ interface ApiMessageType extends BaseApiMessageType {
   agent_id?: string;
   agents?: {
     name: string;
-    profile_image_url?: string;
     icon_name?: string;
     icon_color?: string;
     icon_background?: string;

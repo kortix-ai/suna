@@ -59,7 +59,8 @@ import { AgentMCPConfiguration } from './agent-mcp-configuration';
 import { AgentKnowledgeBaseManager } from './knowledge-base/agent-kb-tree';
 import { AgentPlaybooksConfiguration } from './playbooks/agent-playbooks-configuration';
 import { AgentTriggersConfiguration } from './triggers/agent-triggers-configuration';
-import { AgentIconAvatar } from './config/agent-icon-avatar';
+import { AgentAvatar } from '../thread/content/agent-avatar';
+import { AgentIconEditorDialog } from './config/agent-icon-editor-dialog';
 import { AgentVersionSwitcher } from './agent-version-switcher';
 import { DEFAULT_AGENTPRESS_TOOLS, ensureCoreToolsEnabled } from './tools';
 
@@ -93,6 +94,12 @@ export function AgentConfigurationDialog({
   const [activeTab, setActiveTab] = useState(initialTab);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState('');
+  const [isIconEditorOpen, setIsIconEditorOpen] = useState(false);
+  
+  // Debug state changes
+  useEffect(() => {
+    console.log('Icon editor open state changed:', isIconEditorOpen);
+  }, [isIconEditorOpen]);
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -363,14 +370,31 @@ export function AgentConfigurationDialog({
                       <KortixLogo size={18} />
                     </div>
                   ) : (
-                    <AgentIconAvatar
-                      iconName={formData.icon_name}
-                      iconColor={formData.icon_color}
-                      backgroundColor={formData.icon_background}
-                      agentName={formData.name}
-                      size={40}
-                      className="ring-1 ring-border hover:ring-foreground/20 transition-all"
-                    />
+                    <button
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        console.log('🎯 Icon clicked in config dialog - opening editor');
+                        console.log('Current formData:', { 
+                          icon_name: formData.icon_name, 
+                          icon_color: formData.icon_color, 
+                          icon_background: formData.icon_background 
+                        });
+                        setIsIconEditorOpen(true);
+                      }}
+                      className="cursor-pointer transition-all hover:scale-105 hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-lg"
+                      type="button"
+                      title="Click to customize agent icon"
+                    >
+                      <AgentAvatar
+                        iconName={formData.icon_name}
+                        iconColor={formData.icon_color}
+                        backgroundColor={formData.icon_background}
+                        agentName={formData.name}
+                        size={40}
+                        className="ring-1 ring-border hover:ring-foreground/20 transition-all"
+                      />
+                    </button>
                   )}
                 </div>
 
@@ -449,7 +473,7 @@ export function AgentConfigurationDialog({
                                       <KortixLogo size={12} />
                                     </div>
                                   ) : (
-                                    <AgentIconAvatar
+                                    <AgentAvatar
                                       iconName={agent.icon_name}
                                       iconColor={agent.icon_color}
                                       backgroundColor={agent.icon_background}
@@ -680,6 +704,19 @@ export function AgentConfigurationDialog({
         </DialogContent>
       </Dialog>
 
+      <AgentIconEditorDialog
+        isOpen={isIconEditorOpen}
+        onClose={() => {
+          console.log('Icon editor dialog closing');
+          setIsIconEditorOpen(false);
+        }}
+        currentIconName={formData.icon_name}
+        currentIconColor={formData.icon_color}
+        currentBackgroundColor={formData.icon_background}
+        agentName={formData.name}
+        agentDescription={agent?.description}
+        onIconUpdate={handleIconChange}
+      />
     </>
   );
 }

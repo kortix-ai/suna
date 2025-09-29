@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { AgentIconAvatar } from '@/components/agents/config/agent-icon-avatar';
+import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 
 // Unified agent card variants
 export type AgentCardVariant = 
@@ -49,7 +49,6 @@ export interface BaseAgentData {
   capabilities?: string[];
   
   // Icon/avatar data
-  profile_image_url?: string;
   icon_name?: string;
   icon_color?: string;
   icon_background?: string;
@@ -146,10 +145,9 @@ const CardAvatar: React.FC<{
     );
   }
   
-  if (data.icon_name || data.profile_image_url) {
+  if (data.icon_name) {
     return (
-      <AgentIconAvatar
-        profileImageUrl={data.profile_image_url}
+      <AgentAvatar
         iconName={data.icon_name}
         iconColor={data.icon_color}
         backgroundColor={data.icon_background}

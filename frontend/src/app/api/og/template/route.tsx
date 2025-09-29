@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
                 marginBottom: '32px',
               }}
             >
-              {template.avatar || '🤖'}
+              🤖
             </div>
             <h1
               style={{

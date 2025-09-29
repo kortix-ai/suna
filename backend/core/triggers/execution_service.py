@@ -351,7 +351,7 @@ class AgentExecutor:
             "thread_id": thread_id,
             "type": "user",
             "is_llm_message": True,
-            "content": json.dumps(message_payload),
+            "content": message_payload,  # Store as JSONB object, not JSON string
             "created_at": datetime.now(timezone.utc).isoformat()
         }).execute()
     
@@ -642,7 +642,7 @@ class WorkflowExecutor:
             "thread_id": thread_id,
             "type": "user",
             "is_llm_message": True,
-            "content": json.dumps({"role": "user", "content": message_content}),
+            "content": {"role": "user", "content": message_content},  # Store as JSONB object, not JSON string
             "created_at": datetime.now(timezone.utc).isoformat()
         }).execute()
     

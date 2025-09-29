@@ -14,7 +14,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { IconPicker } from './icon-picker';
-import { AgentIconAvatar } from './agent-icon-avatar';
+import { AgentAvatar } from '../../thread/content/agent-avatar';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -23,34 +23,43 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { HexColorPicker } from 'react-colorful';
 import { useGenerateAgentIcon } from '@/hooks/react-query/agents/use-agent-icon-generation';
 
-interface ProfilePictureDialogProps {
+interface AgentIconEditorDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  currentImageUrl?: string;
   agentName?: string;
   agentDescription?: string;
-  onImageUpdate: (url: string | null) => void;
   currentIconName?: string;
   currentIconColor?: string;
   currentBackgroundColor?: string;
   onIconUpdate?: (iconName: string | null, iconColor: string, backgroundColor: string) => void;
 }
 
-export function ProfilePictureDialog({
+export function AgentIconEditorDialog({
   isOpen,
   onClose,
-  currentImageUrl,
   agentName,
   agentDescription,
-  onImageUpdate,
   currentIconName,
   currentIconColor = '#000000',
   currentBackgroundColor = '#F3F4F6',
   onIconUpdate,
-}: ProfilePictureDialogProps) {
+}: AgentIconEditorDialogProps) {
   const [selectedIcon, setSelectedIcon] = useState(currentIconName || 'bot');
   const [iconColor, setIconColor] = useState(currentIconColor || '#000000');
   const [backgroundColor, setBackgroundColor] = useState(currentBackgroundColor || '#e5e5e5');
+  
+  // Debug props when dialog opens
+  useEffect(() => {
+    if (isOpen) {
+      console.log('🔧 AgentIconEditorDialog opened with props:', {
+        agentName,
+        currentIconName,
+        currentIconColor,
+        currentBackgroundColor,
+        onIconUpdate: !!onIconUpdate
+      });
+    }
+  }, [isOpen, agentName, currentIconName, currentIconColor, currentBackgroundColor, onIconUpdate]);
   
   const generateIconMutation = useGenerateAgentIcon();
 
@@ -65,11 +74,10 @@ export function ProfilePictureDialog({
   const handleIconSave = useCallback(() => {
     if (onIconUpdate) {
       onIconUpdate(selectedIcon, iconColor, backgroundColor);
-      onImageUpdate(null);
       // Toast will be shown by parent component
       onClose();
     }
-  }, [selectedIcon, iconColor, backgroundColor, onIconUpdate, onImageUpdate, onClose]);
+  }, [selectedIcon, iconColor, backgroundColor, onIconUpdate, onClose]);
 
   const handleAutoGenerate = useCallback(() => {
     if (!agentName) {
@@ -243,7 +251,7 @@ export function ProfilePictureDialog({
   const ColorControls = () => (
     <div className="space-y-4">
       <div className="flex flex-col items-center space-y-2 py-3">
-        <AgentIconAvatar
+        <AgentAvatar
           iconName={selectedIcon}
           iconColor={iconColor}
           backgroundColor={backgroundColor}
@@ -309,7 +317,7 @@ export function ProfilePictureDialog({
         <DialogHeader className="px-4 pt-4 pb-3 shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5" />
-            Customize Agent Icon
+Customize Agent Icon
           </DialogTitle>
         </DialogHeader>
         <div className="hidden md:flex flex-1 min-h-0 px-4">

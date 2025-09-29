@@ -16,7 +16,7 @@ interface MyTemplatesTabProps {
   onUnpublish: (templateId: string, templateName: string) => void;
   onViewInMarketplace: () => void;
   onSwitchToMyAgents: () => void;
-  getTemplateStyling: (template: any) => { avatar: string; color: string };
+  getTemplateStyling: (template: any) => { color: string };
 }
 
 export const MyTemplatesTab = ({

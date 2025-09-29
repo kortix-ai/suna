@@ -45,7 +45,6 @@ class AgentTemplate:
     download_count: int = 0
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    profile_image_url: Optional[str] = None
     icon_name: Optional[str] = None
     icon_color: Optional[str] = None
     icon_background: Optional[str] = None
@@ -220,7 +219,6 @@ class TemplateService:
             tags=tags or [],
             is_public=make_public,
             marketplace_published_at=datetime.now(timezone.utc) if make_public else None,
-            profile_image_url=agent.get('profile_image_url'),
             icon_name=agent.get('icon_name'),
             icon_color=agent.get('icon_color'),
             icon_background=agent.get('icon_background'),
@@ -641,7 +639,6 @@ class TemplateService:
             'download_count': template.download_count,
             'created_at': template.created_at.isoformat(),
             'updated_at': template.updated_at.isoformat(),
-            'profile_image_url': template.profile_image_url,
             'icon_name': template.icon_name,
             'icon_color': template.icon_color,
             'icon_background': template.icon_background,
@@ -665,7 +662,6 @@ class TemplateService:
             download_count=data.get('download_count', 0),
             created_at=datetime.fromisoformat(data['created_at'].replace('Z', '+00:00')),
             updated_at=datetime.fromisoformat(data['updated_at'].replace('Z', '+00:00')),
-            profile_image_url=data.get('profile_image_url'),
             icon_name=data.get('icon_name'),
             icon_color=data.get('icon_color'),
             icon_background=data.get('icon_background'),

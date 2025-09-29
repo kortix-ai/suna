@@ -118,7 +118,7 @@ export function SidebarLeft({
             data.user.email?.split('@')[0] ||
             'User',
           email: data.user.email || '',
-          avatar: data.user.user_metadata?.avatar_url || '',
+          avatar: data.user.user_metadata?.avatar_url || '', // User avatar (different from agent avatar)
           isAdmin: isAdmin,
         });
       }

@@ -24,7 +24,6 @@ export type Agent = {
   tags?: string[];
   created_at: string;
   updated_at: string;
-  profile_image_url?: string;
   icon_name?: string | null;
   icon_color?: string | null;
   icon_background?: string | null;
@@ -99,7 +98,6 @@ export type AgentCreateRequest = {
   agentpress_tools?: Record<string, any>;
   is_default?: boolean;
   // New
-  profile_image_url?: string;
   // Icon system fields
   icon_name?: string | null;
   icon_color?: string | null;
@@ -158,7 +156,6 @@ export type AgentUpdateRequest = {
   agentpress_tools?: Record<string, any>;
   is_default?: boolean;
   // New
-  profile_image_url?: string;
   // Icon system fields
   icon_name?: string | null;
   icon_color?: string | null;

@@ -60,7 +60,6 @@ const useAgentConfigTourStore = create<AgentConfigTourState>()(
 
 const areAllTourTargetsReady = (): boolean => {
   const requiredTargets = [
-    '[data-tour="agent-header"]',
     '[data-tour="model-section"]',
     '[data-tour="system-prompt"]',
     '[data-tour="tools-section"]',

@@ -29,7 +29,6 @@ async def update_agent(
     # Debug logging for icon fields
     if config.ENV_MODE == EnvMode.STAGING:
         print(f"[DEBUG] update_agent: Received icon fields - icon_name={agent_data.icon_name}, icon_color={agent_data.icon_color}, icon_background={agent_data.icon_background}")
-        print(f"[DEBUG] update_agent: Also received - profile_image_url={agent_data.profile_image_url}")
     
     client = await utils.db.client
     
@@ -311,7 +310,6 @@ async def update_agent(
         
         print(f"[DEBUG] update_agent AFTER UPDATE FETCH: agent_id={agent.get('agent_id')}")
         print(f"[DEBUG] update_agent AFTER UPDATE FETCH: icon_name={agent.get('icon_name')}, icon_color={agent.get('icon_color')}, icon_background={agent.get('icon_background')}")
-        print(f"[DEBUG] update_agent AFTER UPDATE FETCH: profile_image_url={agent.get('profile_image_url')}")
         print(f"[DEBUG] update_agent AFTER UPDATE FETCH: All keys in agent: {agent.keys()}")
         
         current_version = None
@@ -388,7 +386,6 @@ async def update_agent(
             is_default=agent.get('is_default', False),
             is_public=agent.get('is_public', False),
             tags=agent.get('tags', []),
-            profile_image_url=agent_config.get('profile_image_url'),
             icon_name=agent_config.get('icon_name'),
             icon_color=agent_config.get('icon_color'),
             icon_background=agent_config.get('icon_background'),
@@ -403,7 +400,6 @@ async def update_agent(
 
         print(f"[DEBUG] update_agent FINAL RESPONSE: agent_id={response.agent_id}")
         print(f"[DEBUG] update_agent FINAL RESPONSE: icon_name={response.icon_name}, icon_color={response.icon_color}, icon_background={response.icon_background}")
-        print(f"[DEBUG] update_agent FINAL RESPONSE: profile_image_url={response.profile_image_url}")
         print(f"[DEBUG] update_agent FINAL RESPONSE: Full response dict keys: {response.dict().keys()}")
         
         return response
@@ -565,7 +561,6 @@ async def get_agent(agent_id: str, user_id: str = Depends(verify_and_get_user_id
         
         if config.ENV_MODE == EnvMode.STAGING:
             print(f"[DEBUG] get_agent: Fetched agent from DB - icon_name={agent_data.get('icon_name')}, icon_color={agent_data.get('icon_color')}, icon_background={agent_data.get('icon_background')}")
-            print(f"[DEBUG] get_agent: Also has - profile_image_url={agent_data.get('profile_image_url')}")
         
         if agent_data['account_id'] != user_id and not agent_data.get('is_public', False):
             raise HTTPException(status_code=403, detail="Access denied")
@@ -651,7 +646,6 @@ async def get_agent(agent_id: str, user_id: str = Depends(verify_and_get_user_id
             is_default=agent_data.get('is_default', False),
             is_public=agent_data.get('is_public', False),
             tags=agent_data.get('tags', []),
-            profile_image_url=agent_config.get('profile_image_url'),
             icon_name=agent_config.get('icon_name'),
             icon_color=agent_config.get('icon_color'),
             icon_background=agent_config.get('icon_background'),
@@ -781,7 +775,6 @@ async def create_agent(
             is_default=agent.get('is_default', False),
             is_public=agent.get('is_public', False),
             tags=agent.get('tags', []),
-            profile_image_url=agent.get('profile_image_url'),
             icon_name=agent.get('icon_name'),
             icon_color=agent.get('icon_color'),
             icon_background=agent.get('icon_background'),
@@ -795,7 +788,6 @@ async def create_agent(
         
         if config.ENV_MODE == EnvMode.STAGING:
             print(f"[DEBUG] create_agent RESPONSE: Returning icon_name={response.icon_name}, icon_color={response.icon_color}, icon_background={response.icon_background}")
-            print(f"[DEBUG] create_agent RESPONSE: Also returning profile_image_url={response.profile_image_url}")
         
         return response
         

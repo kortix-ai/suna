@@ -33,7 +33,6 @@ class AgentCreateRequest:
     custom_mcps: Optional[List[CustomMCP]] = None
     agentpress_tools: Optional[Dict[AgentPressTools, AgentPress_ToolConfig]] = None
     is_default: bool = False
-    profile_image_url: Optional[str] = None
     icon_name: Optional[str] = None
     icon_color: Optional[str] = None
     icon_background: Optional[str] = None
@@ -47,7 +46,6 @@ class AgentUpdateRequest:
     custom_mcps: Optional[List[CustomMCP]] = None
     agentpress_tools: Optional[Dict[AgentPressTools, AgentPress_ToolConfig]] = None
     is_default: Optional[bool] = None
-    profile_image_url: Optional[str] = None
     icon_name: Optional[str] = None
     icon_color: Optional[str] = None
     icon_background: Optional[str] = None

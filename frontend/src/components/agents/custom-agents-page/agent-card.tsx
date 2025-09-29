@@ -68,7 +68,6 @@ interface AgentData extends LegacyBaseAgentData {
       description_editable?: boolean;
       mcps_editable?: boolean;
     };
-    profile_image_url?: string;
   };
 }
 
@@ -78,7 +77,6 @@ interface AgentCardProps {
   mode: AgentCardMode;
   data: AgentCardData;
   styling?: {
-    avatar: string;
     color: string;
   };
   isActioning?: boolean;
@@ -339,14 +337,12 @@ const TemplateActions: React.FC<{
 
 const CardAvatar: React.FC<{ 
   isSunaAgent?: boolean; 
-  profileImageUrl?: string; 
   agentName?: string;
   iconName?: string;
   iconColor?: string;
   iconBackground?: string;
 }> = ({ 
   isSunaAgent = false, 
-  profileImageUrl, 
   agentName,
   iconName,
   iconColor = '#000000',
@@ -375,11 +371,6 @@ const CardAvatar: React.FC<{
     );
   }
   
-  if (profileImageUrl) {
-    return (
-      <img src={profileImageUrl} alt="Agent" className="h-14 w-14 rounded-2xl object-cover" />
-    );
-  }
   
   return (
     <div className="h-14 w-14 border bg-muted flex items-center justify-center rounded-2xl">
@@ -454,7 +445,6 @@ export const AgentCard: React.FC<AgentCardProps> = ({
         is_kortix_team: marketplaceData.is_kortix_team,
         download_count: marketplaceData.download_count,
         marketplace_published_at: marketplaceData.marketplace_published_at,
-        profile_image_url: (data as any)?.profile_image_url,
         icon_name: (data as any)?.icon_name,
         icon_color: (data as any)?.icon_color,
         icon_background: (data as any)?.icon_background,
@@ -468,7 +458,6 @@ export const AgentCard: React.FC<AgentCardProps> = ({
         template_id: templateData.template_id,
         is_public: templateData.is_public,
         download_count: templateData.download_count,
-        profile_image_url: (data as any)?.profile_image_url,
         icon_name: (data as any)?.icon_name,
         icon_color: (data as any)?.icon_color,
         icon_background: (data as any)?.icon_background,
@@ -486,7 +475,6 @@ export const AgentCard: React.FC<AgentCardProps> = ({
         download_count: agentData.download_count,
         current_version: agentData.current_version,
         metadata: agentData.metadata,
-        profile_image_url: (data as any)?.profile_image_url,
         icon_name: (data as any)?.icon_name,
         icon_color: (data as any)?.icon_color,
         icon_background: (data as any)?.icon_background,

@@ -409,7 +409,6 @@ async def get_thread_agent(thread_id: str, user_id: str = Depends(verify_and_get
                 is_default=agent_data.get('is_default', False),
                 is_public=agent_data.get('is_public', False),
                 tags=agent_data.get('tags', []),
-                profile_image_url=agent_config.get('profile_image_url'),
                 created_at=agent_data['created_at'],
                 updated_at=agent_data.get('updated_at', agent_data['created_at']),
                 current_version_id=agent_data.get('current_version_id'),
@@ -922,7 +921,7 @@ async def initiate_agent_with_files(
         message_payload = {"role": "user", "content": message_content}
         await client.table('messages').insert({
             "message_id": message_id, "thread_id": thread_id, "type": "user",
-            "is_llm_message": True, "content": json.dumps(message_payload),
+            "is_llm_message": True, "content": message_payload,  # Store as JSONB object, not JSON string
             "created_at": datetime.now(timezone.utc).isoformat()
         }).execute()
 
