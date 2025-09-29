@@ -2,8 +2,7 @@
 System prompt module for Suna.so AI agents.
 
 Provides functions to generate complete or custom system prompts using a
-modular YAML + JSON architecture. Reduces token usage by 44.6% compared
-to the original monolithic prompt.
+modular YAML + JSON architecture.
 """
 
 from .assembler import PromptAssembler
