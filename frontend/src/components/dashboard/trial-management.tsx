@@ -61,7 +61,7 @@ export function TrialManagement() {
             </div>
           </div>
           <CardDescription>
-            You're currently on a 7-day free trial with $20 in credits
+            You're currently on a 7-day free trial with $5 in credits
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">

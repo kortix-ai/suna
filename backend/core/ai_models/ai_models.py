@@ -6,6 +6,7 @@ from enum import Enum
 class ModelProvider(Enum):
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
+    BEDROCK = "bedrock"
     OPENROUTER = "openrouter"
     GOOGLE = "google"
     XAI = "xai"

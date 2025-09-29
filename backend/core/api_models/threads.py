@@ -7,9 +7,6 @@ from typing import Optional
 class AgentStartRequest(BaseModel):
     """Request model for starting an agent."""
     model_name: Optional[str] = None  # Will be set to default model in the endpoint
-    enable_thinking: Optional[bool] = False
-    reasoning_effort: Optional[str] = 'low'
-    stream: Optional[bool] = True
     enable_context_manager: Optional[bool] = True
     enable_prompt_caching: Optional[bool] = True
     agent_id: Optional[str] = None  # Custom agent to use
