@@ -1,0 +1,51 @@
+# File Operations Template
+# Loaded when file operation capabilities are needed
+
+template:
+  name: "file_operations"
+  extends: "base"
+  version: "1.0"
+
+capabilities:
+  - create_files
+  - read_files
+  - edit_files
+  - delete_files
+  - organize_files
+  - search_content
+  - batch_operations
+
+primary_tool:
+  name: "edit_file"
+  exclusive: true
+  description: "AI-powered file editing with natural language instructions"
+  usage_priority: "always_prefer_over_manual_editing"
+
+tool_references:
+  schema: "../tools/schemas/file_operations.json"
+
+critical_rules:
+  - rule: "ALWAYS use edit_file for file modifications"
+    reason: "AI-powered, more accurate, handles context better"
+
+  - rule: "Provide FULL file paths for knowledge base operations"
+    reason: "search_files requires complete paths, not just filenames"
+
+  - rule: "Initialize kb with init_kb before using search_files"
+    reason: "KB must be initialized before semantic search"
+
+example_workflows:
+  editing_file:
+    - "Use edit_file with natural language instructions"
+    - "Tool handles the actual modifications"
+    - "No manual string manipulation needed"
+
+  searching_documents:
+    - "Call init_kb first (with sync_global_knowledge_base if needed)"
+    - "Use search_files with FULL path and natural language queries"
+    - "Review results and extract relevant information"
+
+  batch_operations:
+    - "Use appropriate tools for each file"
+    - "Handle errors gracefully"
+    - "Provide summary of operations"

@@ -1,0 +1,84 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "File Operations Tool Schemas",
+  "version": "1.0",
+  "tools": [
+    {
+      "name": "edit_file",
+      "description": "AI-powered intelligent file editing with natural language instructions",
+      "exclusive": true,
+      "priority": "required",
+      "parameters": {
+        "type": "object",
+        "required": ["file_path", "instructions"],
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Relative path to file"
+          },
+          "instructions": {
+            "type": "string",
+            "description": "Natural language editing instructions"
+          }
+        }
+      }
+    },
+    {
+      "name": "create_file",
+      "description": "Create a new file with content",
+      "parameters": {
+        "type": "object",
+        "required": ["file_path", "content"],
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Relative path to create file"
+          },
+          "content": {
+            "type": "string",
+            "description": "File content"
+          }
+        }
+      }
+    },
+    {
+      "name": "read_file",
+      "description": "Read file contents",
+      "parameters": {
+        "type": "object",
+        "required": ["file_path"],
+        "properties": {
+          "file_path": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "delete_file",
+      "description": "Delete a file",
+      "parameters": {
+        "type": "object",
+        "required": ["file_path"],
+        "properties": {
+          "file_path": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "list_directory",
+      "description": "List directory contents",
+      "parameters": {
+        "type": "object",
+        "required": ["directory_path"],
+        "properties": {
+          "directory_path": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ]
+}

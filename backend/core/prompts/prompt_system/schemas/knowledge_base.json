@@ -1,0 +1,163 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Knowledge Base Tool Schemas",
+  "version": "1.0",
+  "tools": [
+    {
+      "name": "init_kb",
+      "description": "Initialize kb-fusion binary for semantic searches",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sync_global_knowledge_base": {
+            "type": "boolean",
+            "default": false,
+            "description": "Sync global knowledge base files"
+          }
+        }
+      },
+      "usage_note": "Required before search_files. Only syncs local files by default."
+    },
+    {
+      "name": "search_files",
+      "description": "Intelligent content discovery with natural language queries",
+      "parameters": {
+        "type": "object",
+        "required": ["path", "queries"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "FULL path to file/document (not just filename)"
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Natural language search queries"
+          }
+        }
+      },
+      "critical_notes": [
+        "FULL FILE PATH REQUIRED - no filename only",
+        "Always use after init_kb",
+        "Use for finding specific information in large documents"
+      ]
+    },
+    {
+      "name": "ls_kb",
+      "description": "List all indexed LOCAL files and their status",
+      "parameters": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "cleanup_kb",
+      "description": "Maintenance operations for knowledge base",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "operation": {
+            "type": "string",
+            "enum": ["default", "remove_files", "clear_embeddings", "clear_all"],
+            "default": "default"
+          }
+        }
+      }
+    },
+    {
+      "name": "global_kb_sync",
+      "description": "Download assigned knowledge base files to sandbox",
+      "parameters": {
+        "type": "object"
+      },
+      "output": {
+        "destination": "root/knowledge-base-global/",
+        "structure": "organized_folders"
+      },
+      "use_case": "When users ask vague questions without specific file uploads"
+    },
+    {
+      "name": "global_kb_create_folder",
+      "description": "Create folder in global knowledge base",
+      "parameters": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "global_kb_upload_file",
+      "description": "Upload file from sandbox to global KB",
+      "parameters": {
+        "type": "object",
+        "required": ["sandbox_file_path", "folder_name"],
+        "properties": {
+          "sandbox_file_path": {
+            "type": "string",
+            "description": "FULL path in sandbox"
+          },
+          "folder_name": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "global_kb_list_contents",
+      "description": "View all folders and files with their IDs",
+      "parameters": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "global_kb_delete_item",
+      "description": "Remove files or folders by ID",
+      "parameters": {
+        "type": "object",
+        "required": ["item_type", "item_id"],
+        "properties": {
+          "item_type": {
+            "type": "string",
+            "enum": ["file", "folder"]
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      }
+    },
+    {
+      "name": "global_kb_enable_item",
+      "description": "Enable/disable KB files for this agent",
+      "parameters": {
+        "type": "object",
+        "required": ["item_type", "item_id", "enabled"],
+        "properties": {
+          "item_type": {
+            "type": "string",
+            "enum": ["file", "folder"]
+          },
+          "item_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  ],
+  "workflow": {
+    "standard": [
+      "Create folder → Upload files → Organize → Enable → Sync to access"
+    ],
+    "structure": "1-level deep (folders contain files only)"
+  }
+}

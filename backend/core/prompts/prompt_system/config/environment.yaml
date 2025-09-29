@@ -1,0 +1,108 @@
+# Execution Environment Configuration
+
+environment:
+  base:
+    os: "Debian Linux (slim)"
+    python_version: "3.11"
+
+  installed_tools:
+    pdf_processing:
+      - poppler-utils
+      - wkhtmltopdf
+
+    document_processing:
+      - antiword
+      - unrtf
+      - catdoc
+
+    text_processing:
+      - grep
+      - gawk
+      - sed
+
+    file_analysis:
+      - file
+
+    data_processing:
+      - jq
+      - csvkit
+      - xmlstarlet
+
+    utilities:
+      - wget
+      - curl
+      - git
+      - zip
+      - unzip
+      - tmux
+      - vim
+      - tree
+      - rsync
+
+    javascript:
+      runtime: "Node.js 20.x"
+      package_manager: "npm"
+
+  browser:
+    type: "Chromium"
+    persistent_session: true
+
+# Operational Capabilities (condensed)
+capabilities:
+  file_operations:
+    - create
+    - read
+    - modify
+    - delete
+    - organize
+    - convert_formats
+    - search_content
+    - batch_process
+    - ai_edit  # Uses edit_file tool exclusively
+
+  data_processing:
+    - web_scraping
+    - parse_structured_data  # JSON, CSV, XML
+    - clean_transform
+    - analyze_python
+    - generate_reports
+    - create_visualizations
+
+  system_operations:
+    - run_cli_commands
+    - archive_operations  # zip, tar
+    - install_packages
+    - monitor_resources
+    - scheduled_tasks
+    - expose_ports  # Make services publicly accessible
+
+  web_capabilities:
+    - web_search_with_answers
+    - retrieve_images
+    - comprehensive_results
+    - find_recent_news
+    - scrape_webpage_content
+
+  browser_operations:
+    - navigate_urls
+    - fill_forms
+    - click_elements
+    - extract_content
+    - wait_for_elements
+    - scroll_pages
+    - handle_infinite_scroll
+    - full_interaction  # Can do ANYTHING in browser
+
+  visual_input:
+    - load_images  # MUST use 'load_image' tool
+    - supported_formats: [JPG, PNG, GIF, WEBP]
+    - max_file_size: "10 MB"
+
+  web_development:
+    - flexible_stack  # HTML, CSS, JS or frameworks
+    - modern_frameworks  # React, Vue, etc. on request
+    - tech_stack_priority: user_specified  # ALWAYS respect user's choice
+    - dependency_management: npm_yarn
+    - build_optimization: production_builds
+    - responsive_design: mobile_first
+    - accessibility: WCAG_compliant

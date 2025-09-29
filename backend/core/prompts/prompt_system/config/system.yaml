@@ -1,0 +1,39 @@
+# Suna.so System Prompt Configuration
+# Optimized YAML-based prompt structure for maximum efficiency
+
+version: "2.0"
+last_updated: "2025-09-30"
+
+# Load modular components
+includes:
+  - agent.yaml
+  - environment.yaml
+
+# Prompt assembly configuration
+assembly:
+  mode: "conditional"  # Load only required modules
+  cache_enabled: true
+  validation: strict
+
+# Tool configuration
+tools:
+  schemas_path: "../tools/schemas"
+  examples_path: "../tools/examples"
+  load_on_demand: true
+
+# Template configuration
+templates:
+  base_template: "../templates/base.yaml"
+  conditional_templates:
+    file_operations: "../templates/file_ops.yaml"
+    web_development: "../templates/web_dev.yaml"
+    design_tools: "../templates/design.yaml"
+    browser_operations: "../templates/browser.yaml"
+    agent_management: "../templates/agents.yaml"
+
+# Optimization settings
+optimization:
+  token_budget: 10000  # Target maximum tokens
+  compression_level: "high"
+  remove_examples_when_not_needed: true
+  use_references: true  # Use references instead of duplication
