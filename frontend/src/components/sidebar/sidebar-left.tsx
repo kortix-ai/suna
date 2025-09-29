@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Bot, Menu, Plus, Zap, ChevronRight, BookOpen, Code, Star, Package, Sparkle, Sparkles, X, AlarmClock, Check, Clipboard, ClipboardCheck } from 'lucide-react';
+import { Bot, Menu, Plus, Zap, ChevronRight, BookOpen, Code, Star, Package, Sparkle, Sparkles, X, MessageCircle } from 'lucide-react';
 
 import { NavAgents } from '@/components/sidebar/nav-agents';
 import { NavUserWithTeams } from '@/components/sidebar/nav-user-with-teams';
@@ -122,7 +122,7 @@ export function SidebarLeft({
 }: React.ComponentProps<typeof Sidebar>) {
   const { state, setOpen, setOpenMobile } = useSidebar();
   const isMobile = useIsMobile();
-  const [activeView, setActiveView] = useState<'chats' | 'tasks' | 'agents' | 'starred'>('chats');
+  const [activeView, setActiveView] = useState<'chats' | 'agents' | 'starred'>('chats');
   const [user, setUser] = useState<{
     name: string;
     email: string;
@@ -223,7 +223,7 @@ export function SidebarLeft({
           <Button
             variant="outline"
             size="sm"
-            className="w-full shadow-none justify-between h-12 rounded-2xl px-4"
+            className="w-full shadow-none justify-between h-12 px-4"
             asChild
           >
             <Link
@@ -244,19 +244,18 @@ export function SidebarLeft({
             </Link>
           </Button>
 
-          {/* Four 48x48 icon buttons with 16px radius */}
-          <div className="grid grid-cols-4 gap-3">
+          {/* Three 48x48 icon buttons with 16px radius */}
+          <div className="flex justify-between items-center">
             {[
-              { view: 'chats' as const, icon: AlarmClock },
-              { view: 'tasks' as const, icon: ClipboardCheck },
+              { view: 'chats' as const, icon: MessageCircle },
               { view: 'agents' as const, icon: Bot },
-              { view: 'starred' as const, icon: Star }
+              { view: 'starred' as const, icon: Zap }
             ].map(({ view, icon: Icon }) => (
               <Button
                 key={view}
                 variant="ghost"
                 size="icon"
-                className={`h-12 w-12 p-0 rounded-2xl cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border ${activeView === view ? 'bg-muted/60 border-[1.5px] border-border' : ''
+                className={`h-12 w-12 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border ${activeView === view ? 'bg-muted/60 border-[1.5px] border-border' : ''
                   }`}
                 onClick={() => setActiveView(view)}
               >
@@ -269,7 +268,7 @@ export function SidebarLeft({
               <Button
                 variant="default"
                 size="sm"
-                className="flex-1 justify-center gap-2 h-12 rounded-2xl"
+                className="flex-1 justify-center gap-2 h-12"
                 asChild
               >
                 <Link href="/agents">
@@ -280,7 +279,7 @@ export function SidebarLeft({
               <Button
                 variant="outline"
                 size="sm"
-                className="flex-1 justify-center gap-2 h-12 rounded-2xl"
+                className="flex-1 justify-center gap-2 h-12"
                 asChild
               >
                 <Link href="/community">
@@ -295,7 +294,6 @@ export function SidebarLeft({
         <div className="px-6">
           {/* Conditional content based on active view */}
           {activeView === 'chats' && <NavAgents />}
-          {activeView === 'tasks' && <NavAgents />}
           {activeView === 'agents' && <NavAgents />}
           {activeView === 'starred' && (
             <div className="text-center py-8 text-muted-foreground">

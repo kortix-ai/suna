@@ -1,7 +1,7 @@
 import React, { forwardRef, useEffect, useState } from 'react';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Square, Loader2, ArrowUp } from 'lucide-react';
+import { Square, Loader2, ArrowUp, CornerDownLeft } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { UploadedFile } from './chat-input';
 import { FileUploadHandler } from './file-upload-handler';
@@ -270,7 +270,7 @@ export const MessageInput = forwardRef<HTMLTextAreaElement, MessageInputProps>(
               ) : isAgentRunning ? (
                 <div className="min-h-[14px] min-w-[14px] w-[14px] h-[14px] rounded-sm bg-current" />
               ) : (
-                <ArrowUp className="h-5 w-5" />
+                <CornerDownLeft className="h-5 w-5" />
               )}
             </Button>
           </div>

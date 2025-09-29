@@ -189,7 +189,7 @@ export function NavUserWithTeams({
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
                 size="lg"
-                className="bg-transparent hover:bg-transparent data-[state=open]:bg-transparent border-[1.5px] border-border rounded-2xl h-[72px] p-3"
+                className="bg-transparent hover:bg-transparent data-[state=open]:bg-transparent border-[1.5px] border-border h-[72px] p-3"
               >
                 <Avatar className="h-12 w-12 rounded-full flex-shrink-0">
                   <AvatarImage src={user.avatar} alt={user.name} />
