@@ -91,8 +91,7 @@ class InstallationService:
                 missing_custom_configs=missing_configs,
                 template_info={
                     'template_id': template.template_id,
-                    'name': template.name,
-                    'description': template.description
+                    'name': template.name
                 }
             )
         
@@ -363,7 +362,6 @@ class InstallationService:
             'agent_id': agent_id,
             'account_id': request.account_id,
             'name': agent_name,
-            'description': template.description,
             'icon_name': template.icon_name or 'brain',
             'icon_color': template.icon_color or '#000000',
             'icon_background': template.icon_background or '#F3F4F6',

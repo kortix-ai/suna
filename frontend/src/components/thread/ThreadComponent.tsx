@@ -398,7 +398,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const handleSubmitMessage = useCallback(
     async (
       message: string,
-      options?: { model_name?: string; enable_thinking?: boolean },
+      options?: { model_name?: string },
     ) => {
       if (!message.trim()) return;
       setIsSending(true);

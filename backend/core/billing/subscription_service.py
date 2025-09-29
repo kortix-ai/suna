@@ -201,7 +201,7 @@ class SubscriptionService:
             'trial_ends_at': None
         }
 
-    async def create_checkout_session(self, account_id: str, price_id: str, success_url: str, cancel_url: str) -> Dict:
+    async def create_checkout_session(self, account_id: str, price_id: str, success_url: str, cancel_url: str, commitment_type: Optional[str] = None) -> Dict:
         customer_id = await self.get_or_create_stripe_customer(account_id)
         
         db = DBConnection()
@@ -247,7 +247,8 @@ class SubscriptionService:
                         'account_id': account_id,
                         'account_type': 'personal',
                         'converting_from_trial': 'true',
-                        'previous_tier': current_tier or 'trial'
+                        'previous_tier': current_tier or 'trial',
+                        'commitment_type': commitment_type or 'none'
                     }
                 }
             )
@@ -314,7 +315,8 @@ class SubscriptionService:
                 subscription_data={
                     'metadata': {
                         'account_id': account_id,
-                        'account_type': 'personal'
+                        'account_type': 'personal',
+                        'commitment_type': commitment_type or 'none'
                     }
                 }
             )
@@ -447,7 +449,7 @@ class SubscriptionService:
             logger.error(f"Error reactivating subscription {subscription_id}: {e}")
             raise HTTPException(status_code=500, detail=f"Stripe error: {str(e)}")
 
-    async def handle_subscription_change(self, subscription: Dict):
+    async def handle_subscription_change(self, subscription: Dict, previous_attributes: Dict = None):
         db = DBConnection()
         client = await db.client
         
@@ -463,7 +465,16 @@ class SubscriptionService:
             account_id = customer_result.data[0]['account_id']
         price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
         
-        # Handle commitment tracking
+
+        is_renewal = False
+        if previous_attributes and previous_attributes.get('current_period_start') and previous_attributes.get('current_period_end'):
+            prev_period_start = previous_attributes.get('current_period_start')
+            current_period_start = subscription.get('current_period_start')
+            
+            if prev_period_start and current_period_start and prev_period_start != current_period_start:
+                is_renewal = True
+                logger.info(f"[RENEWAL DETECTION] Subscription {subscription['id']} renewal detected - period start changed from {prev_period_start} to {current_period_start}")
+        
         await self._track_commitment_if_needed(account_id, price_id, subscription, client)
         
         new_tier_info = get_tier_by_price_id(price_id)
@@ -517,7 +528,7 @@ class SubscriptionService:
                 'credits': 0
             }
             
-            should_grant_credits = self._should_grant_credits(current_tier_name, current_tier, new_tier, subscription, old_subscription_id)
+            should_grant_credits = self._should_grant_credits(current_tier_name, current_tier, new_tier, subscription, old_subscription_id, is_renewal)
             
             if should_grant_credits:
                 await client.from_('credit_accounts').update({
@@ -575,10 +586,13 @@ class SubscriptionService:
         
         logger.info(f"[WEBHOOK] Started trial for user {account_id} via Stripe subscription - granted ${TRIAL_CREDITS} credits")
 
-    def _should_grant_credits(self, current_tier_name, current_tier, new_tier, subscription, old_subscription_id):
+    def _should_grant_credits(self, current_tier_name, current_tier, new_tier, subscription, old_subscription_id, is_renewal=False):
         should_grant_credits = False
-        
-        if current_tier_name in ['free', 'none'] and new_tier['name'] not in ['free', 'none']:
+
+        if is_renewal:
+            should_grant_credits = True
+            logger.info(f"Renewal detected for tier {new_tier['name']} - will grant credits")
+        elif current_tier_name in ['free', 'none'] and new_tier['name'] not in ['free', 'none']:
             should_grant_credits = True
             logger.info(f"Upgrade from free tier to {new_tier['name']} - will grant credits")
         elif current_tier:
@@ -719,7 +733,6 @@ class SubscriptionService:
             return []
 
     async def _track_commitment_if_needed(self, account_id: str, price_id: str, subscription: Dict, client):
-        """Track commitment if the subscription uses a commitment price ID"""
         if not is_commitment_price_id(price_id):
             return
         
@@ -727,10 +740,14 @@ class SubscriptionService:
         if commitment_duration == 0:
             return
         
-        start_date = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
-        end_date = start_date + timedelta(days=commitment_duration * 30)  # Approximate months
+        existing_commitment = await client.from_('commitment_history').select('id').eq('stripe_subscription_id', subscription['id']).execute()
+        if existing_commitment.data:
+            logger.info(f"[COMMITMENT] Commitment already tracked for subscription {subscription['id']}, skipping")
+            return
         
-        # Update credit_accounts with commitment info
+        start_date = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
+        end_date = start_date + timedelta(days=commitment_duration * 30)
+        
         await client.from_('credit_accounts').update({
             'commitment_type': 'yearly_commitment',
             'commitment_start_date': start_date.isoformat(),
@@ -739,7 +756,7 @@ class SubscriptionService:
             'can_cancel_after': end_date.isoformat()
         }).eq('account_id', account_id).execute()
         
-        # Log in commitment history
+        # Insert commitment history record
         await client.from_('commitment_history').insert({
             'account_id': account_id,
             'commitment_type': 'yearly_commitment',
@@ -749,7 +766,7 @@ class SubscriptionService:
             'stripe_subscription_id': subscription['id']
         }).execute()
         
-        logger.info(f"[COMMITMENT] Tracked yearly commitment for account {account_id}, ends {end_date.date()}")
+        logger.info(f"[COMMITMENT] Tracked yearly commitment for account {account_id}, subscription {subscription['id']}, ends {end_date.date()}")
     
     async def get_commitment_status(self, account_id: str) -> Dict:
         """Get the commitment status for an account"""

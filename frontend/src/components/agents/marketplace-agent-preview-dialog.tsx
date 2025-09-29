@@ -12,7 +12,7 @@ import type { MarketplaceTemplate } from '@/components/agents/installation/types
 import { useComposioToolkitIcon } from '@/hooks/react-query/composio/use-composio';
 import { useRouter } from 'next/navigation';
 import { backendApi } from '@/lib/api-client';
-import { AgentIconAvatar } from '@/components/agents/config/agent-icon-avatar';
+import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 
 interface MarketplaceAgentPreviewDialogProps {
   agent: MarketplaceTemplate | null;
@@ -157,14 +157,12 @@ export const MarketplaceAgentPreviewDialog: React.FC<MarketplaceAgentPreviewDial
         <DialogHeader className='p-6'>
           <DialogTitle className='sr-only'>Agent Preview</DialogTitle>
           <div className="flex-shrink-0">
-            <AgentIconAvatar
-              profileImageUrl={agent.profile_image_url}
+            <AgentAvatar
               iconName={agent.icon_name}
               iconColor={agent.icon_color}
               backgroundColor={agent.icon_background}
               agentName={agent.name}
               size={80}
-              className="shadow-lg"
             />
           </div>
         </DialogHeader>
@@ -191,9 +189,6 @@ export const MarketplaceAgentPreviewDialog: React.FC<MarketplaceAgentPreviewDial
                 </div>
               </div>
             </div>
-            <p className="text-muted-foreground leading-relaxed mb-4">
-              {agent.description || 'No description available'}
-            </p>
             {agent.tags && agent.tags.length > 0 && (
               <div className="flex items-center gap-2 mb-4">
                 <Tag className="h-4 w-4 text-muted-foreground" />

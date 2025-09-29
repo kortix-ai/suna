@@ -18,6 +18,7 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { useAgents } from '@/hooks/react-query/agents/use-agents';
 import { SubscriptionProvider } from '@/contexts/SubscriptionContext';
 import { MaintenanceAlert } from '../maintenance-alert';
+import { OnboardingProvider } from '@/components/onboarding/onboarding-provider';
 
 interface DashboardLayoutContentProps {
   children: React.ReactNode;
@@ -77,7 +78,7 @@ export default function DashboardLayoutContent({
     }
   }, [user, isLoading, router]);
 
-  let mantenanceBanner: React.ReactNode | null = null;
+  const mantenanceBanner: React.ReactNode | null = null;
 
   // Show loading state while checking auth, health, or maintenance status
   if (isLoading || isCheckingHealth || maintenanceLoading) {
@@ -106,32 +107,34 @@ export default function DashboardLayoutContent({
   return (
     <DeleteOperationProvider>
       <SubscriptionProvider>
-        <SidebarProvider>
-          <SidebarLeft />
-          <SidebarInset>
-            {mantenanceBanner}
-            <div className="bg-background">{children}</div>
-          </SidebarInset>
+        <OnboardingProvider>
+          <SidebarProvider>
+            <SidebarLeft />
+            <SidebarInset>
+              {mantenanceBanner}
+              <div className="bg-background">{children}</div>
+            </SidebarInset>
 
-          {/* <PricingAlert 
-          open={showPricingAlert} 
-          onOpenChange={setShowPricingAlert}
-          closeable={false}
-          accountId={personalAccount?.account_id}
-          /> */}
+            {/* <PricingAlert 
+            open={showPricingAlert} 
+            onOpenChange={setShowPricingAlert}
+            closeable={false}
+            accountId={personalAccount?.account_id}
+            /> */}
 
-          {/* <MaintenanceAlert
-            open={showMaintenanceAlert}
-            onOpenChange={setShowMaintenanceAlert}
-            closeable={true}
-          /> */}
+            {/* <MaintenanceAlert
+              open={showMaintenanceAlert}
+              onOpenChange={setShowMaintenanceAlert}
+              closeable={true}
+            /> */}
 
-          {/* Status overlay for deletion operations */}
-          <StatusOverlay />
-          
-          {/* Floating mobile menu button */}
-          <FloatingMobileMenuButton />
-        </SidebarProvider>
+            {/* Status overlay for deletion operations */}
+            <StatusOverlay />
+            
+            {/* Floating mobile menu button */}
+            <FloatingMobileMenuButton />
+          </SidebarProvider>
+        </OnboardingProvider>
       </SubscriptionProvider>
     </DeleteOperationProvider>
   );

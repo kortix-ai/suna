@@ -275,7 +275,7 @@ async def get_all_user_triggers(
         client = await db.client
         
         agents_result = await client.table('agents').select(
-            'agent_id, name, description, current_version_id, icon_name, icon_color, icon_background, profile_image_url'
+            'agent_id, name, description, current_version_id, icon_name, icon_color, icon_background'
         ).eq('account_id', user_id).execute()
         
         if not agents_result.data:
@@ -291,8 +291,7 @@ async def get_all_user_triggers(
                 'agent_description': agent_description,
                 'icon_name': agent.get('icon_name'),
                 'icon_color': agent.get('icon_color'),
-                'icon_background': agent.get('icon_background'),
-                'profile_image_url': agent.get('profile_image_url')
+                'icon_background': agent.get('icon_background')
             }
         
         agent_ids = [agent['agent_id'] for agent in agents_result.data]
@@ -332,8 +331,7 @@ async def get_all_user_triggers(
                 'agent_description': agent_info.get(agent_id, {}).get('agent_description', ''),
                 'icon_name': agent_info.get(agent_id, {}).get('icon_name'),
                 'icon_color': agent_info.get(agent_id, {}).get('icon_color'),
-                'icon_background': agent_info.get(agent_id, {}).get('icon_background'),
-                'profile_image_url': agent_info.get(agent_id, {}).get('profile_image_url')
+                'icon_background': agent_info.get(agent_id, {}).get('icon_background')
             }
             
             responses.append(response_data)

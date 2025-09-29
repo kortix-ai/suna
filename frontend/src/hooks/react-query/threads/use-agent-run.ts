@@ -21,9 +21,6 @@ export const useStartAgentMutation = () =>
       threadId: string;
       options?: {
         model_name?: string;
-        enable_thinking?: boolean;
-        reasoning_effort?: string;
-        stream?: boolean;
         agent_id?: string;
       };
     }) => startAgent(threadId, options),

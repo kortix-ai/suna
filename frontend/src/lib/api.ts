@@ -206,7 +206,6 @@ export type Message = {
   agent_id?: string;
   agents?: {
     name: string;
-    profile_image_url?: string;
   };
 };
 
@@ -731,9 +730,6 @@ export const startAgent = async (
   threadId: string,
   options?: {
     model_name?: string;
-    enable_thinking?: boolean;
-    reasoning_effort?: string;
-    stream?: boolean;
     agent_id?: string; // Optional again
   },
 ): Promise<{ agent_run_id: string }> => {
@@ -755,19 +751,14 @@ export const startAgent = async (
     }
 
     const defaultOptions = {
-      model_name: 'claude-3-7-sonnet-latest',
-      enable_thinking: false,
-      reasoning_effort: 'low',
-      stream: true,
+      model_name: 'anthropic/claude-3-7-sonnet-latest',
     };
 
     const finalOptions = { ...defaultOptions, ...options };
 
     const body: any = {
       model_name: finalOptions.model_name,
-      enable_thinking: finalOptions.enable_thinking,
-      reasoning_effort: finalOptions.reasoning_effort,
-      stream: finalOptions.stream,
+      stream: true, // Always stream for better UX
     };
     
     // Only include agent_id if it's provided

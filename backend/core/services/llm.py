@@ -16,7 +16,7 @@ from core.utils.config import config
 from core.agentpress.error_processor import ErrorProcessor
 
 # Configure LiteLLM
-os.environ['LITELLM_LOG'] = 'INFO'  # Reduced verbosity
+os.environ['LITELLM_LOG'] = 'DEBUG'
 litellm.modify_params = True
 litellm.drop_params = True
 
@@ -55,19 +55,13 @@ def setup_api_keys() -> None:
         # logger.debug(f"Set OPENROUTER_API_BASE to {config.OPENROUTER_API_BASE}")
 
 
-    # Set up AWS Bedrock credentials
-    aws_access_key = config.AWS_ACCESS_KEY_ID
-    aws_secret_key = config.AWS_SECRET_ACCESS_KEY
-    aws_region = config.AWS_REGION_NAME
-
-    if aws_access_key and aws_secret_key and aws_region:
-        logger.debug(f"AWS Bedrock configured for region: {aws_region}")
-        # Configure LiteLLM to use AWS credentials
-        os.environ["AWS_ACCESS_KEY_ID"] = aws_access_key
-        os.environ["AWS_SECRET_ACCESS_KEY"] = aws_secret_key
-        os.environ["AWS_REGION_NAME"] = aws_region
+    # Set up AWS Bedrock bearer token authentication
+    bedrock_token = config.AWS_BEARER_TOKEN_BEDROCK
+    if bedrock_token:
+        os.environ["AWS_BEARER_TOKEN_BEDROCK"] = bedrock_token
+        logger.debug("AWS Bedrock bearer token configured")
     else:
-        logger.warning(f"Missing AWS credentials for Bedrock integration - access_key: {bool(aws_access_key)}, secret_key: {bool(aws_secret_key)}, region: {aws_region}")
+        logger.warning("AWS_BEARER_TOKEN_BEDROCK not configured - Bedrock models will not be available")
 
 def setup_provider_router(openai_compatible_api_key: str = None, openai_compatible_api_base: str = None):
     global provider_router
@@ -96,19 +90,13 @@ def _configure_token_limits(params: Dict[str, Any], model_name: str, max_tokens:
         # logger.debug(f"No max_tokens specified, using provider defaults for model: {model_name}")
         return
     
-    if model_name.startswith("bedrock/") and "claude-3-7" in model_name:
-        # For Claude 3.7 in Bedrock, do not set max_tokens or max_tokens_to_sample
-        # as it causes errors with inference profiles
-        # logger.debug(f"Skipping max_tokens for Claude 3.7 model: {model_name}")
-        return
-    
     is_openai_o_series = 'o1' in model_name
     is_openai_gpt5 = 'gpt-5' in model_name
     param_name = "max_completion_tokens" if (is_openai_o_series or is_openai_gpt5) else "max_tokens"
     params[param_name] = max_tokens
     # logger.debug(f"Set {param_name}={max_tokens} for model: {model_name}")
 
-def _configure_anthropic(params: Dict[str, Any], model_name: str, messages: List[Dict[str, Any]]) -> None:
+def _configure_anthropic(params: Dict[str, Any], model_name: str) -> None:
     """Configure Anthropic-specific parameters."""
     if not ("claude" in model_name.lower() or "anthropic" in model_name.lower()):
         return
@@ -138,66 +126,60 @@ def _configure_openrouter(params: Dict[str, Any], model_name: str) -> None:
         params["extra_headers"] = extra_headers
         # logger.debug(f"Added OpenRouter site URL and app name to headers")
 
-def _configure_bedrock(params: Dict[str, Any], model_name: str, model_id: Optional[str]) -> None:
-    """Configure Bedrock-specific parameters."""
-    if not model_name.startswith("bedrock/"):
+def _configure_bedrock(params: Dict[str, Any], resolved_model_name: str, model_id: Optional[str]) -> None:
+    """Configure Bedrock-specific parameters including inference profile ARNs."""
+    if not resolved_model_name.startswith("bedrock/"):
         return
     
-    # logger.debug(f"Preparing AWS Bedrock parameters for model: {model_name}")
+    # Set inference profile ARNs if available and not already provided
+    from core.ai_models import model_manager
+    model_obj = model_manager.get_model(resolved_model_name)
+    if model_obj and not model_id:  # Only set if not already provided
+        if "claude-sonnet-4-20250514-v1:0" in resolved_model_name:
+            params["model_id"] = "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0"
+            # logger.debug(f"Set Bedrock inference profile ARN for Claude Sonnet 4")
+        elif "claude-3-7-sonnet-20250219-v1:0" in resolved_model_name:
+            params["model_id"] = "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
+            # logger.debug(f"Set Bedrock inference profile ARN for Claude 3.7 Sonnet")
 
-    # Auto-set model_id for Claude 3.7 Sonnet if not provided
-    if not model_id and "anthropic.claude-3-7-sonnet" in model_name:
-        params["model_id"] = "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
-        # logger.debug(f"Auto-set model_id for Claude 3.7 Sonnet: {params['model_id']}")
-
-def _configure_openai_gpt5(params: Dict[str, Any], model_name: str) -> None:
-    """Configure OpenAI GPT-5 specific parameters."""
-    if "gpt-5" not in model_name:
+def _configure_openai_compatible(params: Dict[str, Any], model_name: str, api_key: Optional[str], api_base: Optional[str]) -> None:
+    """Configure OpenAI-compatible provider setup."""
+    if not model_name.startswith("openai-compatible/"):
         return
     
-
-    # Drop unsupported temperature param (only default 1 allowed)
-    if "temperature" in params and params["temperature"] != 1:
-        params.pop("temperature", None)
-
-    # Request priority service tier when calling OpenAI directly
-
-    # Pass via both top-level and extra_body for LiteLLM compatibility
-    if not model_name.startswith("openrouter/"):
-        params["service_tier"] = "priority"
-        extra_body = params.get("extra_body", {})
-        if "service_tier" not in extra_body:
-            extra_body["service_tier"] = "priority"
-        params["extra_body"] = extra_body
-
-def _configure_kimi_k2(params: Dict[str, Any], model_name: str) -> None:
-    """Configure Kimi K2-specific parameters."""
-    is_kimi_k2 = "kimi-k2" in model_name.lower() or model_name.startswith("moonshotai/kimi-k2")
-    if not is_kimi_k2:
-        return
+    # Check if have required config either from parameters or environment
+    if (not api_key and not config.OPENAI_COMPATIBLE_API_KEY) or (
+        not api_base and not config.OPENAI_COMPATIBLE_API_BASE
+    ):
+        raise LLMError(
+            "OPENAI_COMPATIBLE_API_KEY and OPENAI_COMPATIBLE_API_BASE is required for openai-compatible models. If just updated the environment variables, wait a few minutes or restart the service to ensure they are loaded."
+        )
     
-    params["provider"] = {
-        "order": ["groq", "moonshotai"] #, "groq", "together/fp8", "novita/fp8", "baseten/fp8", 
-    }
+    setup_provider_router(api_key, api_base)
+    logger.debug(f"Configured OpenAI-compatible provider with custom API base")
 
-def _configure_thinking(params: Dict[str, Any], model_name: str, enable_thinking: Optional[bool], reasoning_effort: Optional[str]) -> None:
-    """Configure reasoning/thinking parameters for supported models."""
-    if not enable_thinking:
-        return
-    
-
-    effort_level = reasoning_effort or 'low'
+def _configure_thinking(params: Dict[str, Any], model_name: str) -> None:
+    """Configure reasoning/thinking parameters automatically based on model capabilities."""
+    # Check if model supports thinking/reasoning
     is_anthropic = "anthropic" in model_name.lower() or "claude" in model_name.lower()
     is_xai = "xai" in model_name.lower() or model_name.startswith("xai/")
+    is_bedrock_anthropic = "bedrock" in model_name.lower() and "anthropic" in model_name.lower()
     
-    if is_anthropic:
-        params["reasoning_effort"] = effort_level
-        params["temperature"] = 1.0  # Required by Anthropic when reasoning_effort is used
-        logger.info(f"Anthropic thinking enabled with reasoning_effort='{effort_level}'")
-    elif is_xai:
-        params["reasoning_effort"] = effort_level
-        logger.info(f"xAI thinking enabled with reasoning_effort='{effort_level}'")
-
+    # Enable thinking for supported models
+    if is_anthropic or is_xai or is_bedrock_anthropic:
+        # Use higher effort for premium models
+        if "sonnet-4" in model_name.lower() or "claude-4" in model_name.lower():
+            effort_level = "medium"
+        else:
+            effort_level = "low"
+        
+        if is_anthropic or is_bedrock_anthropic:
+            params["reasoning_effort"] = effort_level
+            params["temperature"] = 1.0  # Required by Anthropic when reasoning_effort is used
+            logger.info(f"Anthropic thinking auto-enabled with reasoning_effort='{effort_level}' for model: {model_name}")
+        elif is_xai:
+            params["reasoning_effort"] = effort_level
+            logger.info(f"xAI thinking auto-enabled with reasoning_effort='{effort_level}' for model: {model_name}")
 
 def _add_tools_config(params: Dict[str, Any], tools: Optional[List[Dict[str, Any]]], tool_choice: str) -> None:
     """Add tools configuration to parameters."""
@@ -220,11 +202,9 @@ def prepare_params(
     tool_choice: str = "auto",
     api_key: Optional[str] = None,
     api_base: Optional[str] = None,
-    stream: bool = False,
+    stream: bool = True,  # Always stream for better UX
     top_p: Optional[float] = None,
     model_id: Optional[str] = None,
-    enable_thinking: Optional[bool] = False,
-    reasoning_effort: Optional[str] = "low",
 ) -> Dict[str, Any]:
     from core.ai_models import model_manager
     resolved_model_name = model_manager.resolve_model_id(model_name)
@@ -240,45 +220,22 @@ def prepare_params(
         "num_retries": MAX_RETRIES,
     }
     
-    # Enable usage tracking for streaming requests
     if stream:
         params["stream_options"] = {"include_usage": True}
-        # logger.debug(f"Added stream_options for usage tracking: {params['stream_options']}")
-
     if api_key:
         params["api_key"] = api_key
     if api_base:
         params["api_base"] = api_base
     if model_id:
         params["model_id"] = model_id
-
-    if model_name.startswith("openai-compatible/"):
-        # Check if have required config either from parameters or environment
-        if (not api_key and not config.OPENAI_COMPATIBLE_API_KEY) or (
-            not api_base and not config.OPENAI_COMPATIBLE_API_BASE
-        ):
-            raise LLMError(
-                "OPENAI_COMPATIBLE_API_KEY and OPENAI_COMPATIBLE_API_BASE is required for openai-compatible models. If just updated the environment variables,  wait a few minutes or restart the service to ensure they are loaded."
-            )
-        
-        setup_provider_router(api_key, api_base)
-
-    # Handle token limits
-    _configure_token_limits(params, resolved_model_name, max_tokens)
-    # Add tools if provided
-    _add_tools_config(params, tools, tool_choice)
-    # Add Anthropic-specific parameters
-    _configure_anthropic(params, resolved_model_name, params["messages"])
-    # Add OpenRouter-specific parameters
-    _configure_openrouter(params, resolved_model_name)
-    # Add Bedrock-specific parameters
+    
     _configure_bedrock(params, resolved_model_name, model_id)
-
-    # Add OpenAI GPT-5 specific parameters
-    _configure_openai_gpt5(params, resolved_model_name)
-    # Add Kimi K2-specific parameters
-    _configure_kimi_k2(params, resolved_model_name)
-    _configure_thinking(params, resolved_model_name, enable_thinking, reasoning_effort)
+    _configure_openai_compatible(params, model_name, api_key, api_base)
+    _configure_token_limits(params, resolved_model_name, max_tokens)
+    _add_tools_config(params, tools, tool_choice)
+    _configure_anthropic(params, resolved_model_name)
+    _configure_openrouter(params, resolved_model_name)
+    # _configure_thinking(params, resolved_model_name)
 
     return params
 
@@ -292,25 +249,23 @@ async def make_llm_api_call(
     tool_choice: str = "auto",
     api_key: Optional[str] = None,
     api_base: Optional[str] = None,
-    stream: bool = False,
+    stream: bool = True,  # Always stream for better UX
     top_p: Optional[float] = None,
     model_id: Optional[str] = None,
-    enable_thinking: Optional[bool] = False,
-    reasoning_effort: Optional[str] = "low",
 ) -> Union[Dict[str, Any], AsyncGenerator, ModelResponse]:
     """Make an API call to a language model using LiteLLM."""
     logger.info(f"Making LLM API call to model: {model_name} with {len(messages)} messages")
     
     # DEBUG: Log if any messages have cache_control
-    cache_messages = [i for i, msg in enumerate(messages) if 
-                     isinstance(msg.get('content'), list) and 
-                     msg['content'] and 
-                     isinstance(msg['content'][0], dict) and 
-                     'cache_control' in msg['content'][0]]
-    if cache_messages:
-        logger.info(f"🔥 CACHE CONTROL: Found cache_control in messages at positions: {cache_messages}")
-    else:
-        logger.info(f"❌ NO CACHE CONTROL: No cache_control found in any messages")
+    # cache_messages = [i for i, msg in enumerate(messages) if 
+    #                  isinstance(msg.get('content'), list) and 
+    #                  msg['content'] and 
+    #                  isinstance(msg['content'][0], dict) and 
+    #                  'cache_control' in msg['content'][0]]
+    # if cache_messages:
+    #     logger.info(f"🔥 CACHE CONTROL: Found cache_control in messages at positions: {cache_messages}")
+    # else:
+    #     logger.info(f"❌ NO CACHE CONTROL: No cache_control found in any messages")
     
     # Check token count for context window issues
     # try:
@@ -337,8 +292,6 @@ async def make_llm_api_call(
         stream=stream,
         top_p=top_p,
         model_id=model_id,
-        enable_thinking=enable_thinking,
-        reasoning_effort=reasoning_effort,
     )
     
     try:
@@ -356,7 +309,6 @@ async def make_llm_api_call(
         processed_error = ErrorProcessor.process_llm_error(e, context={"model": model_name})
         ErrorProcessor.log_error(processed_error)
         raise LLMError(processed_error.message)
-
 
 async def _wrap_streaming_response(response) -> AsyncGenerator:
     """Wrap streaming response to handle errors during iteration."""

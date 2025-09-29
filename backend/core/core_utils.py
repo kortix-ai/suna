@@ -213,7 +213,8 @@ async def generate_and_update_project_name(project_id: str, prompt: str):
             model_name=model_name, 
             max_tokens=1000, 
             temperature=0.7,
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
+            stream=False
         )
 
         generated_name = None
@@ -275,16 +276,12 @@ async def generate_and_update_project_name(project_id: str, prompt: str):
         # No need to disconnect DBConnection singleton instance here
         logger.debug(f"Finished background naming and icon selection task for project: {project_id}")
 
-async def generate_agent_icon_and_colors(name: str, description: str = None) -> dict:
-    """Generates an agent icon and colors using an LLM based on agent name and description."""
+async def generate_agent_icon_and_colors(name: str) -> dict:
     logger.debug(f"Generating icon and colors for agent: {name}")
     try:
         model_name = "openai/gpt-5-nano"
-        
-        # Use pre-loaded Lucide React icons (loaded once at module level)
         relevant_icons = RELEVANT_ICONS
         
-        # Use exact colors from frontend presetColors array
         frontend_colors = [
             "#000000", "#FFFFFF", "#6366F1", "#10B981", "#F59E0B", 
             "#EF4444", "#8B5CF6", "#EC4899", "#14B8A6", "#F97316",
@@ -292,8 +289,6 @@ async def generate_agent_icon_and_colors(name: str, description: str = None) -> 
         ]
         
         agent_context = f"Agent name: {name}"
-        if description:
-            agent_context += f"\nAgent description: {description}"
             
         system_prompt = f"""You are a helpful assistant that selects appropriate icons and colors for AI agents based on their name and description.
 
@@ -320,7 +315,8 @@ async def generate_agent_icon_and_colors(name: str, description: str = None) -> 
             model_name=model_name, 
             max_tokens=4000, 
             temperature=0.7,
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
+            stream=False
         )
 
         # Default fallback values

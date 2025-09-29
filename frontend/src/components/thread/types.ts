@@ -22,7 +22,6 @@ export interface UnifiedMessage {
   agent_id?: string; // ID of the agent associated with this message
   agents?: {
     name: string;
-    profile_image_url?: string;
   }; // Agent information from join
 }
 

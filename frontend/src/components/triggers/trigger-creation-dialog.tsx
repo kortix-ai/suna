@@ -15,7 +15,7 @@ import { SimplifiedScheduleConfig } from '@/components/agents/triggers/providers
 import { ScheduleTriggerConfig } from '@/components/agents/triggers/types';
 import { useCreateTrigger, useUpdateTrigger } from '@/hooks/react-query/triggers';
 import { toast } from 'sonner';
-import { AgentSelectionDropdown } from '@/components/agents/agent-selection-dropdown';
+import { AgentSelector } from '@/components/agents/agent-selector';
 
 interface TriggerCreationDialogProps {
   open: boolean;
@@ -148,7 +148,7 @@ export function TriggerCreationDialog({
           </DialogHeader>
 
           <div className="space-y-4 py-4">
-            <AgentSelectionDropdown
+            <AgentSelector
               selectedAgentId={selectedAgent}
               onAgentSelect={setSelectedAgent}
               placeholder="Choose an agent"

@@ -29,10 +29,9 @@ redis_broker = RedisBroker(host=redis_host, port=redis_port, middleware=[dramati
 
 dramatiq.set_broker(redis_broker)
 
-
 _initialized = False
 db = DBConnection()
-instance_id = "single"
+instance_id = ""
 
 async def initialize():
     """Initialize the agent API with resources from the main API."""
@@ -59,11 +58,6 @@ async def run_agent_background(
     instance_id: str,
     project_id: str,
     model_name: str = "openai/gpt-5-mini",
-    enable_thinking: Optional[bool] = False,
-    reasoning_effort: Optional[str] = 'low',
-    stream: bool = True,
-    enable_context_manager: bool = True,
-    enable_prompt_caching: bool = True,
     agent_config: Optional[dict] = None,
     request_id: Optional[str] = None
 ):
@@ -108,7 +102,7 @@ async def run_agent_background(
 
     effective_model = model_manager.resolve_model_id(model_name)
     
-    logger.info(f"🚀 Using model: {effective_model} (thinking: {enable_thinking}, reasoning_effort: {reasoning_effort})")
+    logger.info(f"🚀 Using model: {effective_model}")
     
     client = await db.client
     start_time = datetime.now(timezone.utc)
@@ -167,11 +161,8 @@ async def run_agent_background(
 
         # Initialize agent generator
         agent_gen = run_agent(
-            thread_id=thread_id, project_id=project_id, stream=stream,
+            thread_id=thread_id, project_id=project_id,
             model_name=effective_model,
-            enable_thinking=enable_thinking, reasoning_effort=reasoning_effort,
-            enable_context_manager=enable_context_manager,
-            enable_prompt_caching=enable_prompt_caching,
             agent_config=agent_config,
             trace=trace,
         )
@@ -346,8 +337,6 @@ async def update_agent_run_status(
 
         if error:
             update_data["error"] = error
-
-
 
         # Retry up to 3 times
         for retry in range(3):

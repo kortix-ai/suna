@@ -11,6 +11,6 @@ ALTER TABLE agent_runs ADD COLUMN IF NOT EXISTS metadata JSONB DEFAULT '{}'::jso
 CREATE INDEX IF NOT EXISTS idx_agent_runs_metadata ON agent_runs USING GIN (metadata);
 
 -- Add comment to document the metadata column
-COMMENT ON COLUMN agent_runs.metadata IS 'Streaming and configuration parameters for this agent run (model_name, enable_thinking, reasoning_effort, enable_context_manager, etc.)';
+COMMENT ON COLUMN agent_runs.metadata IS 'Streaming and configuration parameters for this agent run (model_name, enable_thinking, reasoning_effort, etc.)';
 
 COMMIT; 

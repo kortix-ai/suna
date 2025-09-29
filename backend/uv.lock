@@ -1,4 +1,5 @@
 version = 1
+revision = 1
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.13'",
@@ -2782,22 +2783,15 @@ wheels = [
 
 [[package]]
 name = "reportlab"
-version = "3.6.13"
+version = "4.4.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
+    { name = "charset-normalizer" },
     { name = "pillow" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/65/82/45b443db5acaf7edb471be57335a22d9f3bb6e4e9c9133ffa926f8ecdf2a/reportlab-3.6.13.tar.gz", hash = "sha256:6f75d33f7a3720cf47371ab63ced0f0ebd1aeb6db19386ae92f8977a09be9611", size = 4035524 }
+sdist = { url = "https://files.pythonhosted.org/packages/f8/fa/ed71f3e750afb77497641eb0194aeda069e271ce6d6931140f8787e0e69a/reportlab-4.4.4.tar.gz", hash = "sha256:cb2f658b7f4a15be2cc68f7203aa67faef67213edd4f2d4bdd3eb20dab75a80d", size = 3711935 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2b/67/c79a1756c4896cf99717fc7627aba88934bdd4fa83424e7d1607d6191355/reportlab-3.6.13-cp311-cp311-macosx_10_9_x86_64.whl", hash = "sha256:d59e62faa03003be81aa14d37ac34ea110e5ac59c8678fd4c0daa7d8b8f42096", size = 2443911 },
-    { url = "https://files.pythonhosted.org/packages/f1/49/aa13de5d7c630c5ba2f6c00eec25486c8ca441c8cb30d0582fa29d824107/reportlab-3.6.13-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:afb418409e0d323c6cb5e3be7ea4d14dfbf8a07eb03ab0b0062904cacf819878", size = 2411528 },
-    { url = "https://files.pythonhosted.org/packages/db/c8/93e02e57eba7119a856fe9299ec7295af11b958c992729e2bcd723df0e90/reportlab-3.6.13-cp311-cp311-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:a477f652e6c417ad40387a8498d9ad827421006f156aab16f67adc9b81699a72", size = 2751462 },
-    { url = "https://files.pythonhosted.org/packages/81/8c/92229c993569e227e3cd75ac720ea8bcddf5778cb0c683b211e5b181412d/reportlab-3.6.13-cp311-cp311-manylinux_2_17_i686.manylinux2014_i686.whl", hash = "sha256:0b94e4f65a5f77a631cc010c9a7892d69e33f3251b760639dcc76420e138ce95", size = 2742177 },
-    { url = "https://files.pythonhosted.org/packages/8e/77/cf1c46bc7c7d792d41d6c2d9d029436e4757c226372c673efcb0432a1f65/reportlab-3.6.13-cp311-cp311-manylinux_2_17_ppc64le.manylinux2014_ppc64le.whl", hash = "sha256:7efdf68e97e8fea8683bfc17f25747fefbda729b9018bc2e3221658ac41ee0bd", size = 2845249 },
-    { url = "https://files.pythonhosted.org/packages/af/ba/b163134be4fc865d8a49952146ee70fd67e22e6b6d9a613b505b96d31181/reportlab-3.6.13-cp311-cp311-manylinux_2_17_s390x.manylinux2014_s390x.whl", hash = "sha256:e28a8d9cf462e2b4c9e71abd0630f9ec245d88b976b283b0dbb4602c9ddb3938", size = 2784629 },
-    { url = "https://files.pythonhosted.org/packages/81/6e/bfdbc55fb0ceaa7e1c8275464f201f8e5e4868297c27d663905f190ea25f/reportlab-3.6.13-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:d95fc8bc177a009053548c6d851a513b2147c465a5e8fea82287ea22d6825c4e", size = 2767420 },
-    { url = "https://files.pythonhosted.org/packages/65/71/107a5085a8d91be7f2811adbc693e237ae0304d384ed11520d4ca8c4bdcd/reportlab-3.6.13-cp311-cp311-win32.whl", hash = "sha256:48eadd93237c7e2739525c74cf6615dd6c1a767c839f4b0d7c12167dc0b09911", size = 2280146 },
-    { url = "https://files.pythonhosted.org/packages/8d/1a/a6785ae90fcd0fd048e9b385ba0693a02bd82b3126235175c630a69b5680/reportlab-3.6.13-cp311-cp311-win_amd64.whl", hash = "sha256:cca2d4c783f985b91b98e80d09ac79b6ed3f317a729cba5ba86edfe5eb9a2d9c", size = 2339084 },
+    { url = "https://files.pythonhosted.org/packages/57/66/e040586fe6f9ae7f3a6986186653791fb865947f0b745290ee4ab026b834/reportlab-4.4.4-py3-none-any.whl", hash = "sha256:299b3b0534e7202bb94ed2ddcd7179b818dcda7de9d8518a57c85a58a1ebaadb", size = 1954981 },
 ]
 
 [[package]]
@@ -3233,7 +3227,7 @@ requires-dist = [
     { name = "pyyaml", specifier = "==6.0.1" },
     { name = "questionary", specifier = "==2.0.1" },
     { name = "redis", specifier = "==5.2.1" },
-    { name = "reportlab", specifier = "==3.6.13" },
+    { name = "reportlab", specifier = ">=4.0.0" },
     { name = "requests", specifier = "==2.32.3" },
     { name = "sentry-sdk", extras = ["fastapi"], specifier = "==2.29.1" },
     { name = "setuptools", specifier = "==75.3.0" },

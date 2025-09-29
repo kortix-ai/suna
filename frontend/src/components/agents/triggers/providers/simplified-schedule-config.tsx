@@ -34,7 +34,7 @@ import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { TriggerProvider, ScheduleTriggerConfig } from '../types';
 import { useAgentWorkflows } from '@/hooks/react-query/agents/use-agent-workflows';
-import { AgentSelectionDropdown } from '@/components/agents/agent-selection-dropdown';
+import { AgentSelector } from '@/components/agents/agent-selector';
 
 interface SimplifiedScheduleConfigProps {
   provider: TriggerProvider;
@@ -512,7 +512,7 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
                       </div>
                       <div className="space-y-2">
                         <Label>Agent</Label>
-                        <AgentSelectionDropdown
+                        <AgentSelector
                           selectedAgentId={selectedAgent}
                           onAgentSelect={onAgentSelect}
                           placeholder="Choose an agent to handle this task"

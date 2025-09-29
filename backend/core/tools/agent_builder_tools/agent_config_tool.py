@@ -17,17 +17,13 @@ class AgentConfigTool(AgentBuilderBaseTool):
         "type": "function",
         "function": {
             "name": "update_agent",
-            "description": "Update the agent's configuration including name, description, tools, and MCP servers. System prompt additions are appended to existing instructions with high priority markers. Call this whenever the user wants to modify any aspect of the agent.",
+            "description": "Update the agent's configuration including name, tools, and MCP servers. System prompt additions are appended to existing instructions with high priority markers. Call this whenever the user wants to modify any aspect of the agent.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "name": {
                         "type": "string",
                         "description": "The name of the agent. Should be descriptive and indicate the agent's purpose."
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "A brief description of what the agent does and its capabilities."
                     },
                     "system_prompt": {
                         "type": "string",
@@ -65,7 +61,6 @@ class AgentConfigTool(AgentBuilderBaseTool):
         <function_calls>
         <invoke name="update_agent">
         <parameter name="name">Research Assistant</parameter>
-        <parameter name="description">An AI assistant specialized in conducting research and providing comprehensive analysis</parameter>
         <parameter name="system_prompt">Act as a research analyst. Always verify sources</parameter>
         <parameter name="agentpress_tools">{"web_search_tool": true, "sb_files_tool": true, "sb_shell_tool": false}</parameter>
         </invoke>
@@ -74,7 +69,6 @@ class AgentConfigTool(AgentBuilderBaseTool):
     async def update_agent(
         self,
         name: Optional[str] = None,
-        description: Optional[str] = None,
         system_prompt: Optional[str] = None,
         agentpress_tools: Optional[Dict[str, Dict[str, Any]]] = None,
         configured_mcps: Optional[list] = None
@@ -112,8 +106,6 @@ class AgentConfigTool(AgentBuilderBaseTool):
             agent_update_fields = {}
             if name is not None:
                 agent_update_fields["name"] = name
-            if description is not None:
-                agent_update_fields["description"] = description
                 
             config_changed = (system_prompt is not None or agentpress_tools is not None or configured_mcps is not None)
             
