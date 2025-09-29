@@ -257,7 +257,7 @@ export function AgentIconEditorDialog({
           backgroundColor={backgroundColor}
           agentName={agentName}
           size={100}
-          className="rounded-3xl border shadow-lg"
+          className="border shadow-lg"
         />
         <div className="text-center">
           <p className="font-medium">{agentName || 'Agent'}</p>

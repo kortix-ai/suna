@@ -51,7 +51,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   if (isLoading && agentId) {
     return (
       <div 
-        className={cn("bg-muted animate-pulse rounded-lg", className)}
+        className={cn("bg-muted animate-pulse rounded", className)}
         style={{ width: size, height: size }}
       />
     );
@@ -69,7 +69,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
     return (
       <div 
         className={cn(
-          "flex items-center justify-center rounded-lg bg-muted border",
+          "flex items-center justify-center rounded bg-muted border",
           className
         )}
         style={{ width: size, height: size }}
@@ -83,7 +83,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
     return (
       <div 
         className={cn(
-          "flex items-center justify-center rounded-lg transition-all",
+          "flex items-center justify-center rounded transition-all",
           className
         )}
         style={{ 
@@ -105,7 +105,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   return (
     <div 
       className={cn(
-        "flex items-center justify-center rounded-lg bg-muted",
+        "flex items-center justify-center rounded bg-muted",
         className
       )}
       style={{ width: size, height: size }}
