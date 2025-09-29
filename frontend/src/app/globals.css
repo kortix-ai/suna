@@ -467,39 +467,6 @@
     }
   }
 
-  /* Fix code blocks */
-  & pre {
-    margin-top: 0.5em;
-    margin-bottom: 0.5em;
-    padding: 0.75em 1em;
-    /* background 95 */
-    background-color: theme('colors.background/95');
-    border-radius: 0.375rem;
-    overflow-x: auto;
-    font-family: var(--font-mono);
-  }
-
-  & pre code {
-    background-color: transparent;
-    padding: 0;
-    font-size: 0.9em;
-    color: inherit;
-    font-family: var(--font-mono);
-    white-space: pre;
-    word-break: normal;
-    overflow-wrap: normal;
-  }
-
-  /* Fix inline code to ensure it wraps when needed */
-  & code:not([class*='language-']) {
-    padding: 0.2em 0.4em;
-    font-size: 0.85em;
-    font-family: var(--font-mono);
-    background-color: theme('colors.background/95');
-    border-radius: 3px;
-    word-break: break-word;
-  }
-
   /* Fix tables */
   & table {
     width: 100%;
@@ -521,14 +488,6 @@
     border: 1px solid theme('colors.slate.200');
   }
 
-  /* Fix blockquotes */
-  & blockquote {
-    border-left: 3px solid theme('colors.slate.300');
-    padding-left: 1em;
-    margin-left: 0;
-    font-style: italic;
-    color: theme('colors.slate.600');
-  }
 
   /* Dark mode specific overrides */
   .dark & {
