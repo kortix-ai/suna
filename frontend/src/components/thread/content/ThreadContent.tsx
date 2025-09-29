@@ -52,6 +52,12 @@ export function renderAttachments(attachments: string[], fileViewerHandler?: (fi
 
 // Render Markdown content while preserving XML tags that should be displayed as tool calls
 function preprocessTextOnlyTools(content: string): string {
+    console.log('🔍 preprocessTextOnlyTools called with:', typeof content, content);
+    
+    if (!content || typeof content !== 'string') {
+        console.warn('❌ preprocessTextOnlyTools: Invalid content type:', typeof content, content);
+        return content || '';
+    }
     
     // Handle new function calls format for text-only tools - extract text parameter content
     // Complete XML format

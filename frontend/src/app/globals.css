@@ -404,25 +404,67 @@
     padding-left: 1.5em;
     margin-top: 0.5em;
     margin-bottom: 0.5em;
+    list-style-position: outside;
   }
 
   & ul {
-    list-style-type: disc;
+    list-style-type: disc !important;
   }
 
   & ol {
-    list-style-type: decimal;
+    list-style-type: decimal !important;
   }
 
   & li {
     margin-top: 0.25em;
     margin-bottom: 0.25em;
+    display: list-item !important;
+    list-style-position: outside !important;
   }
 
   & li > ul,
   & li > ol {
     margin-top: 0.25em;
     margin-bottom: 0.25em;
+  }
+
+  /* Force numbered lists to show numbers */
+  & ol > li {
+    list-style-type: decimal !important;
+    display: list-item !important;
+  }
+
+  /* Enhanced link styling */
+  & a {
+    @apply text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 transition-colors duration-200;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-thickness: 1px;
+    
+    &:hover {
+      text-decoration-thickness: 2px;
+    }
+    
+    /* External link indicator */
+    &[target="_blank"]:after {
+      content: " ↗";
+      font-size: 0.8em;
+      opacity: 0.7;
+      margin-left: 2px;
+    }
+    
+    /* Special styling for URLs that look like previews */
+    &[href*="preview"]:before,
+    &[href*="demo"]:before {
+      content: "🔗 ";
+      opacity: 0.8;
+    }
+    
+    /* Live preview styling */
+    &[href*="Live Preview"]:before {
+      content: "📺 ";
+      opacity: 0.9;
+    }
   }
 
   /* Fix code blocks */

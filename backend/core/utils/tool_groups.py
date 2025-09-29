@@ -207,12 +207,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
                 enabled=True
             ),
             ToolMethod(
-                name="presentation_styles",
-                display_name="Presentation Styles",
-                description="Get available presentation styles",
-                enabled=True
-            ),
-            ToolMethod(
                 name="list_presentations",
                 display_name="List Presentations",
                 description="List all available presentations",
@@ -551,9 +545,63 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         tool_class="SandboxKbTool",
         methods=[
             ToolMethod(
-                name="query_knowledge_base",
-                display_name="Query Knowledge Base",
-                description="Search and query knowledge base",
+                name="init_kb",
+                display_name="Initialize Knowledge Base",
+                description="Initialize the kb-fusion binary and optionally sync knowledge base",
+                enabled=True
+            ),
+            ToolMethod(
+                name="search_files",
+                display_name="Search Files",
+                description="Perform semantic search on files using kb-fusion",
+                enabled=True
+            ),
+            ToolMethod(
+                name="cleanup_kb",
+                display_name="Cleanup Knowledge Base",
+                description="Perform maintenance and cleanup operations",
+                enabled=True
+            ),
+            ToolMethod(
+                name="ls_kb",
+                display_name="List Knowledge Base Files",
+                description="List indexed files in the knowledge base",
+                enabled=True
+            ),
+            ToolMethod(
+                name="global_kb_sync",
+                display_name="Sync Global Knowledge Base",
+                description="Sync agent's knowledge base files to sandbox",
+                enabled=True
+            ),
+            ToolMethod(
+                name="global_kb_create_folder",
+                display_name="Create Knowledge Base Folder",
+                description="Create a new folder in the global knowledge base",
+                enabled=True
+            ),
+            ToolMethod(
+                name="global_kb_upload_file",
+                display_name="Upload File to Knowledge Base",
+                description="Upload a file from sandbox to the global knowledge base",
+                enabled=True
+            ),
+            ToolMethod(
+                name="global_kb_delete_item",
+                display_name="Delete Knowledge Base Item",
+                description="Delete a file or folder from the global knowledge base",
+                enabled=True
+            ),
+            ToolMethod(
+                name="global_kb_enable_item",
+                display_name="Enable/Disable Knowledge Base Item",
+                description="Enable or disable a knowledge base file for this agent",
+                enabled=True
+            ),
+            ToolMethod(
+                name="global_kb_list_contents",
+                display_name="List Knowledge Base Contents",
+                description="List all folders and files in the global knowledge base",
                 enabled=True
             ),
         ]
@@ -613,7 +661,31 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
             ToolMethod(
                 name="create_document",
                 display_name="Create Document",
-                description="Create and edit documents",
+                description="Create new documents with rich text content",
+                enabled=True
+            ),
+            ToolMethod(
+                name="read_document",
+                display_name="Read Document",
+                description="Read the content of a document",
+                enabled=True
+            ),
+            ToolMethod(
+                name="list_documents",
+                display_name="List Documents",
+                description="List all documents in the workspace",
+                enabled=True
+            ),
+            ToolMethod(
+                name="delete_document",
+                display_name="Delete Document",
+                description="Delete a document from the workspace",
+                enabled=True
+            ),
+            ToolMethod(
+                name="get_format_guide",
+                display_name="Get Format Guide",
+                description="Get TipTap-compatible HTML format guide",
                 enabled=True
             ),
         ]

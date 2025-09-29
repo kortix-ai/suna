@@ -448,7 +448,11 @@ export const hasLanguageHighlighting = (language: string): boolean => {
 };
 
 export const splitContentIntoLines = (fileContent: string | null): string[] => {
-  return fileContent
-    ? fileContent.replace(/\\n/g, '\n').split('\n')
-    : [];
+  console.log('🔍 splitContentIntoLines called with:', typeof fileContent, fileContent);
+  
+  if (!fileContent || typeof fileContent !== 'string') {
+    console.warn('❌ splitContentIntoLines: Invalid content type:', typeof fileContent, fileContent);
+    return [];
+  }
+  return fileContent.replace(/\\n/g, '\n').split('\n');
 };

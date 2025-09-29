@@ -77,7 +77,7 @@ export function CsvRenderer({
         if (searchTerm) {
             filtered = filtered.filter((row: any) =>
                 Object.values(row).some(value =>
-                    String(value).toLowerCase().includes(searchTerm.toLowerCase())
+                    value != null && String(value).toLowerCase().includes(searchTerm.toLowerCase())
                 )
             );
         }
