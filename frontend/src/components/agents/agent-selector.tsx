@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
-import { Search, Plus, Check, ChevronDown } from 'lucide-react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { Search, Plus, Check, ChevronDown, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 
-interface AgentSelectionDropdownProps {
+interface AgentSelectorProps {
   selectedAgentId?: string;
   onAgentSelect: (agentId: string) => void;
   placeholder?: string;
@@ -26,7 +26,7 @@ interface AgentSelectionDropdownProps {
   variant?: 'default' | 'compact';
 }
 
-export const AgentSelectionDropdown: React.FC<AgentSelectionDropdownProps> = ({
+export const AgentSelector: React.FC<AgentSelectorProps> = ({
   selectedAgentId,
   onAgentSelect,
   placeholder = "Choose an agent",
@@ -37,33 +37,77 @@ export const AgentSelectionDropdown: React.FC<AgentSelectionDropdownProps> = ({
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [allAgents, setAllAgents] = useState<any[]>([]);
   const [showNewAgentDialog, setShowNewAgentDialog] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: agentsResponse, isLoading } = useAgents();
-  const agents = agentsResponse?.agents || [];
+  // Debounce search query
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+      setCurrentPage(1); // Reset to first page when searching
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
-  // Filter agents based on search query
-  const filteredAgents = agents.filter((agent: any) =>
-    agent.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    agent.description?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Fetch agents with pagination and search
+  const agentsParams = useMemo(() => ({
+    page: currentPage,
+    limit: 50,
+    search: debouncedSearchQuery || undefined,
+  }), [currentPage, debouncedSearchQuery]);
 
-  // Sort agents with selected first
-  const sortedAgents = React.useMemo(() => {
-    if (!selectedAgentId) return filteredAgents;
+  const { data: agentsResponse, isLoading, isFetching } = useAgents(agentsParams);
 
-    const selectedAgent = filteredAgents.find((agent: any) => agent.agent_id === selectedAgentId);
-    const otherAgents = filteredAgents.filter((agent: any) => agent.agent_id !== selectedAgentId);
+  // Update agents list when data changes
+  useEffect(() => {
+    if (agentsResponse?.agents) {
+      if (currentPage === 1 || debouncedSearchQuery) {
+        // First page or new search - replace all agents
+        setAllAgents(agentsResponse.agents);
+      } else {
+        // Subsequent pages - append to existing agents
+        setAllAgents(prev => [...prev, ...agentsResponse.agents]);
+      }
+    }
+  }, [agentsResponse, currentPage, debouncedSearchQuery]);
 
-    return selectedAgent ? [selectedAgent, ...otherAgents] : filteredAgents;
-  }, [filteredAgents, selectedAgentId]);
+  const agents = allAgents;
+
+  // Check if we can load more
+  const canLoadMore = useMemo(() => {
+    if (!agentsResponse?.pagination) return false;
+    return agentsResponse.pagination.current_page < agentsResponse.pagination.total_pages;
+  }, [agentsResponse?.pagination]);
+
+  const handleLoadMore = useCallback(() => {
+    if (canLoadMore && !isFetching) {
+      setCurrentPage(prev => prev + 1);
+    }
+  }, [canLoadMore, isFetching]);
+
+  // Order agents with selected first
+  const orderedAgents = useMemo(() => {
+    const list = [...agents];
+    if (!selectedAgentId) return list;
+    
+    const selectedIndex = list.findIndex(a => a.agent_id === selectedAgentId);
+    if (selectedIndex > 0) {
+      const [selected] = list.splice(selectedIndex, 1);
+      list.unshift(selected);
+    }
+    return list;
+  }, [agents, selectedAgentId]);
 
   useEffect(() => {
     if (isOpen) {
       setTimeout(() => searchInputRef.current?.focus(), 50);
     } else {
       setSearchQuery('');
+      setDebouncedSearchQuery('');
+      setCurrentPage(1);
     }
   }, [isOpen]);
 
@@ -85,7 +129,7 @@ export const AgentSelectionDropdown: React.FC<AgentSelectionDropdownProps> = ({
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <AgentAvatar
             agentId={selectedAgent.agent_id}
-            size={variant === 'compact' ? 16 : 20}
+            size={24}
             className="flex-shrink-0"
             fallbackName={selectedAgent.name}
           />
@@ -153,7 +197,7 @@ export const AgentSelectionDropdown: React.FC<AgentSelectionDropdownProps> = ({
                   </div>
                 ))}
               </div>
-            ) : sortedAgents.length === 0 ? (
+            ) : orderedAgents.length === 0 ? (
               <div className="px-3 py-6 text-center text-sm text-muted-foreground">
                 <Search className="h-6 w-6 mx-auto mb-2 opacity-40" />
                 <p>No agents found</p>
@@ -163,7 +207,7 @@ export const AgentSelectionDropdown: React.FC<AgentSelectionDropdownProps> = ({
               </div>
             ) : (
               <div className="space-y-0.5 py-1">
-                {sortedAgents.map((agent: any) => (
+                {orderedAgents.map((agent: any) => (
                   <DropdownMenuItem
                     key={agent.agent_id}
                     className="flex items-center gap-3 px-3 py-2.5 mx-1 rounded-lg cursor-pointer"
@@ -171,7 +215,7 @@ export const AgentSelectionDropdown: React.FC<AgentSelectionDropdownProps> = ({
                   >
                     <AgentAvatar
                       agentId={agent.agent_id}
-                      size={20}
+                      size={24}
                       className="flex-shrink-0"
                       fallbackName={agent.name}
                     />
@@ -193,6 +237,28 @@ export const AgentSelectionDropdown: React.FC<AgentSelectionDropdownProps> = ({
               </div>
             )}
           </div>
+
+          {/* Load More */}
+          {canLoadMore && (
+            <div className="px-1.5 pb-1">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="w-full h-8 text-xs text-muted-foreground hover:text-foreground"
+                onClick={handleLoadMore}
+                disabled={isFetching}
+              >
+                {isFetching ? (
+                  <>
+                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                    Loading...
+                  </>
+                ) : (
+                  'Load More'
+                )}
+              </Button>
+            </div>
+          )}
 
           {/* Create Agent Option */}
           {showCreateOption && (

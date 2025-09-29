@@ -2,7 +2,7 @@ from typing import Optional, List, Dict, Any, Tuple
 from .registry import registry
 from .ai_models import Model, ModelCapability
 from core.utils.logger import logger
-from .registry import DEFAULT_PREMIUM_MODEL, DEFAULT_FREE_MODEL
+from .registry import PREMIUM_MODEL_ID, FREE_MODEL_ID
 
 class ModelManager:
     def __init__(self):
@@ -188,7 +188,7 @@ class ModelManager:
         try:
             from core.utils.config import config, EnvMode
             if config.ENV_MODE == EnvMode.LOCAL:
-                return DEFAULT_PREMIUM_MODEL
+                return PREMIUM_MODEL_ID
                 
             from core.billing.subscription_service import subscription_service
             
@@ -210,14 +210,14 @@ class ModelManager:
             
             if is_paid_tier:
                 # logger.debug(f"Setting Default Premium Model for paid user {user_id}")
-                return DEFAULT_PREMIUM_MODEL
+                return PREMIUM_MODEL_ID
             else:
                 # logger.debug(f"Setting Default Free Model for free user {user_id}")
-                return DEFAULT_FREE_MODEL
+                return FREE_MODEL_ID
                 
         except Exception as e:
             logger.warning(f"Failed to determine user tier for {user_id}: {e}")
-            return DEFAULT_FREE_MODEL
+            return FREE_MODEL_ID
 
 
 model_manager = ModelManager() 

@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { SearchBar } from './search-bar';
 import { MarketplaceSectionHeader } from './marketplace-section-header';
-import { AgentCard } from './agent-card';
+import { UnifiedAgentCard } from '@/components/ui/unified-agent-card';
 import { Pagination } from '../pagination';
 
 import type { MarketplaceTemplate } from '@/components/agents/installation/types';
@@ -21,7 +21,7 @@ interface MarketplaceTabProps {
   installingItemId: string | null;
   onInstallClick: (item: MarketplaceTemplate, e?: React.MouseEvent) => void;
   onDeleteTemplate?: (item: MarketplaceTemplate, e?: React.MouseEvent) => void;
-  getItemStyling: (item: MarketplaceTemplate) => { avatar: string; color: string };
+  getItemStyling: (item: MarketplaceTemplate) => { color: string };
   currentUserId?: string;
   onAgentPreview?: (agent: MarketplaceTemplate) => void;
   
@@ -123,15 +123,31 @@ export const MarketplaceTab = ({
                 /> */}
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {allMarketplaceItems.map((item) => (
-                    <AgentCard
+                    <UnifiedAgentCard
                       key={item.id}
-                      mode="marketplace"
-                      data={item}
-                      styling={getItemStyling(item)}
-                      isActioning={installingItemId === item.id}
-                      onPrimaryAction={onInstallClick}
-                      onDeleteAction={onDeleteTemplate}
-                      onClick={() => handleAgentClick(item)}
+                      variant="marketplace"
+                      data={{
+                        id: item.id,
+                        name: item.name,
+                        tags: item.tags,
+                        created_at: item.created_at,
+                        creator_id: item.creator_id,
+                        creator_name: item.creator_name,
+                        is_kortix_team: item.is_kortix_team,
+                        download_count: item.download_count,
+                        marketplace_published_at: item.marketplace_published_at,
+                        icon_name: item.icon_name,
+                        icon_color: item.icon_color,
+                        icon_background: item.icon_background,
+                      }}
+                      state={{
+                        isActioning: installingItemId === item.id,
+                      }}
+                      actions={{
+                        onPrimaryAction: () => onInstallClick(item),
+                        onDeleteAction: () => onDeleteTemplate(item),
+                        onClick: () => handleAgentClick(item),
+                      }}
                       currentUserId={currentUserId}
                     />
                   ))}
@@ -140,15 +156,31 @@ export const MarketplaceTab = ({
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {allMarketplaceItems.map((item) => (
-                  <AgentCard
+                  <UnifiedAgentCard
                     key={item.id}
-                    mode="marketplace"
-                    data={item}
-                    styling={getItemStyling(item)}
-                    isActioning={installingItemId === item.id}
-                    onPrimaryAction={onInstallClick}
-                    onDeleteAction={onDeleteTemplate}
-                    onClick={() => handleAgentClick(item)}
+                    variant="marketplace"
+                    data={{
+                      id: item.id,
+                      name: item.name,
+                      tags: item.tags,
+                      created_at: item.created_at,
+                      creator_id: item.creator_id,
+                      creator_name: item.creator_name,
+                      is_kortix_team: item.is_kortix_team,
+                      download_count: item.download_count,
+                      marketplace_published_at: item.marketplace_published_at,
+                      icon_name: item.icon_name,
+                      icon_color: item.icon_color,
+                      icon_background: item.icon_background,
+                    }}
+                    state={{
+                      isActioning: installingItemId === item.id,
+                    }}
+                    actions={{
+                      onPrimaryAction: () => onInstallClick(item),
+                      onDeleteAction: () => onDeleteTemplate(item),
+                      onClick: () => handleAgentClick(item),
+                    }}
                     currentUserId={currentUserId}
                   />
                 ))}

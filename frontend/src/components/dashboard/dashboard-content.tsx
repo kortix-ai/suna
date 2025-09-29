@@ -171,9 +171,6 @@ export function DashboardContent() {
     message: string,
     options?: {
       model_name?: string;
-      enable_thinking?: boolean;
-      reasoning_effort?: string;
-      stream?: boolean;
       enable_context_manager?: boolean;
     },
   ) => {
@@ -204,9 +201,7 @@ export function DashboardContent() {
       });
 
       if (options?.model_name) formData.append('model_name', options.model_name);
-      formData.append('enable_thinking', String(options?.enable_thinking ?? false));
-      formData.append('reasoning_effort', options?.reasoning_effort ?? 'low');
-      formData.append('stream', String(options?.stream ?? true));
+      formData.append('stream', 'true'); // Always stream for better UX
       formData.append('enable_context_manager', String(options?.enable_context_manager ?? false));
 
       const result = await initiateAgentMutation.mutateAsync(formData);
@@ -438,6 +433,10 @@ export function DashboardContent() {
           open={showConfigDialog}
           onOpenChange={setShowConfigDialog}
           agentId={configAgentId}
+          onAgentChange={(newAgentId) => {
+            setConfigAgentId(newAgentId);
+            setSelectedAgent(newAgentId);
+          }}
         />
       )}
     </>

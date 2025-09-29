@@ -85,8 +85,8 @@ dependencies = [
   "google-auth-httplib2>=0.2.0",
   "typing-extensions==4.15.0",
   "svglib==1.5.1",
-  "reportlab==3.6.13",
   "chunkr-ai>=0.3.7",
+  "reportlab>=4.0.0",
 ]
 
 [project.urls]

@@ -14,7 +14,8 @@ import { toast } from 'sonner';
 import { AgentCountLimitDialog } from '@/components/agents/agent-count-limit-dialog';
 import type { MarketplaceTemplate } from '@/components/agents/installation/types';
 import { AgentCountLimitError } from '@/lib/api';
-import { AgentIconAvatar } from '@/components/agents/config/agent-icon-avatar';
+import { UnifiedAgentCard } from '@/components/ui/unified-agent-card';
+import type { BaseAgentData } from '@/components/ui/unified-agent-card';
 
 interface CustomAgentsSectionProps {
   onAgentSelect?: (templateId: string) => void;
@@ -55,7 +56,6 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
       is_kortix_team: template.is_kortix_team || false,
       creator_name: template.creator_name,
       created_at: template.created_at,
-      profile_image_url: template.profile_image_url,
       icon_name: template.icon_name,
       icon_color: template.icon_color,
       icon_background: template.icon_background,
@@ -68,6 +68,23 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
     setSelectedTemplate(marketplaceTemplate);
     setIsPreviewOpen(true);
   };
+
+  // Convert template to BaseAgentData
+  const convertTemplateToAgentData = (template: any): BaseAgentData => ({
+    id: template.template_id,
+    name: template.name,
+    description: template.description,
+    tags: template.tags || [],
+    created_at: template.created_at,
+    icon_name: template.icon_name,
+    icon_color: template.icon_color,
+    icon_background: template.icon_background,
+    creator_id: template.creator_id,
+    creator_name: template.creator_name,
+    is_kortix_team: template.is_kortix_team || false,
+    download_count: template.download_count || 0,
+    marketplace_published_at: template.marketplace_published_at,
+  });
 
   const handlePreviewInstall = (agent: MarketplaceTemplate) => {
     setIsPreviewOpen(false);
@@ -188,34 +205,14 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
         <TitleSection />
         <div className="grid gap-4 pb-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {templates.templates.slice(0, 4).map((template) => (
-            <div
+            <UnifiedAgentCard
               key={template.template_id}
-              className={cn(
-                'group relative bg-muted/30 rounded-3xl overflow-hidden transition-all duration-300 border cursor-pointer flex flex-col w-full border-border/50',
-                'hover:border-primary/20'
-              )}
-              onClick={() => handleCardClick(template)}
-            >
-              <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-              <div className="h-full relative flex flex-col overflow-hidden w-full p-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex-shrink-0">
-                    <AgentIconAvatar
-                      profileImageUrl={template.profile_image_url}
-                      iconName={template.icon_name}
-                      iconColor={template.icon_color}
-                      backgroundColor={template.icon_background}
-                      agentName={template.name}
-                      size={40}
-                      className="shadow-md"
-                    />
-                  </div>
-                  <h3 className="text-base font-semibold text-foreground line-clamp-1 flex-1 min-w-0">
-                    {template.name}
-                  </h3>
-                </div>
-              </div>
-            </div>
+              variant="dashboard"
+              data={convertTemplateToAgentData(template)}
+              actions={{
+                onClick: () => handleCardClick(template)
+              }}
+            />
           ))}
         </div>
       </div>

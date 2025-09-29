@@ -415,14 +415,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
         );
 
         if (agentData && !isSunaDefaultAgent) {
-            const profileUrl = agentData.profile_image_url;
-            const avatar = profileUrl ? (
-                <img src={profileUrl} alt={agentData.name || agentName} className="h-5 w-5 rounded object-cover" />
-            ) : agentData.avatar ? (
-                <div className="h-5 w-5 flex items-center justify-center rounded text-xs">
-                    <span className="text-lg">{agentData.avatar}</span>
-                </div>
-            ) : (
+            // Use modern icon system for agent display
+            const avatar = (
                 <div className="h-5 w-5 flex items-center justify-center rounded text-xs">
                     <KortixLogo size={16} />
                 </div>
@@ -435,11 +429,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
 
         if (recentAssistantWithAgent?.agents?.name) {
             const isSunaAgent = recentAssistantWithAgent.agents.name === 'Suna' || isSunaDefaultAgent;
-            // Prefer profile image if available on the agent payload
-            const profileUrl = (recentAssistantWithAgent as any)?.agents?.profile_image_url;
-            const avatar = profileUrl && !isSunaDefaultAgent ? (
-                <img src={profileUrl} alt={recentAssistantWithAgent.agents.name} className="h-5 w-5 rounded object-cover" />
-            ) : !isSunaDefaultAgent ? (
+            // Use modern icon system for agent display  
+            const avatar = !isSunaDefaultAgent ? (
                 <>
                     {isSunaAgent ? (
                         <div className="h-5 w-5 flex items-center justify-center rounded text-xs">
@@ -799,7 +790,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                     <div className="flex items-center">
                                                         <div className="rounded-md flex items-center justify-center relative">
                                                             {groupAgentId ? (
-                                                                <AgentAvatar agentId={groupAgentId} size={20} className="h-5 w-5" />
+                                                                <AgentAvatar agentId={groupAgentId} size={24} className="h-6 w-6" />
                                                             ) : (
                                                                 getAgentInfo().avatar
                                                             )}

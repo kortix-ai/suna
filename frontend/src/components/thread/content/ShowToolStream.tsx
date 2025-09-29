@@ -103,7 +103,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
         if (!rawContent) return { html: '', plainText: '' };
         
         // Remove only function call related XML tags: function_calls, invoke, parameter
-        let cleaned = rawContent
+        const cleaned = rawContent
             .replace(/<function_calls[^>]*>/gi, '')
             .replace(/<\/function_calls>/gi, '')
             .replace(/<invoke[^>]*>/gi, '')

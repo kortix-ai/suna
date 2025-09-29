@@ -32,7 +32,7 @@ class TemplateService:
         filters: MarketplaceFilters
     ) -> PaginatedResponse[Dict[str, Any]]:
         try:
-            logger.debug(f"Fetching marketplace templates with filters: {filters.__dict__}")
+            # logger.debug(f"Fetching marketplace templates with filters: {filters.__dict__}")
             
             from ..template_service import get_template_service
             from ..utils import format_template_for_response

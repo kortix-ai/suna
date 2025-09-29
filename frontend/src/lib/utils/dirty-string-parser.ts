@@ -133,7 +133,7 @@ class Parser {
         continue;
       }
       // key
-      let keyTok = this.tz.peek();
+      const keyTok = this.tz.peek();
       let key: string;
       if (keyTok.type === TokenType.String) {
         key = this.unquote(this.tz.next().value);

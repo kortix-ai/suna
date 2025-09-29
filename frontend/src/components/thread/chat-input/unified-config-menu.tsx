@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback, memo } from 'react';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -50,7 +50,7 @@ type UnifiedConfigMenuProps = {
     onUpgradeRequest?: () => void;
 };
 
-const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = ({
+const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMenu({
     isLoggedIn = true,
     selectedAgentId,
     onAgentSelect,
@@ -60,7 +60,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = ({
     canAccessModel,
     subscriptionStatus,
     onUpgradeRequest,
-}) => {
+}) {
     const [isOpen, setIsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
@@ -71,7 +71,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = ({
     const [showNewAgentDialog, setShowNewAgentDialog] = useState(false);
     const searchInputRef = useRef<HTMLInputElement>(null);
     const [execDialog, setExecDialog] = useState<{ open: boolean; playbook: any | null; agentId: string | null }>({ open: false, playbook: null, agentId: null });
-    const [agentConfigDialog, setAgentConfigDialog] = useState<{ open: boolean; tab: 'general' | 'instructions' | 'knowledge' | 'triggers' | 'playbooks' | 'tools' | 'integrations' }>({ open: false, tab: 'general' });
+    const [agentConfigDialog, setAgentConfigDialog] = useState<{ open: boolean; tab: 'instructions' | 'knowledge' | 'triggers' | 'playbooks' | 'tools' | 'integrations' }>({ open: false, tab: 'instructions' });
 
     // Debounce search query
     useEffect(() => {
@@ -163,29 +163,27 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = ({
 
 
 
-    const handleAgentClick = (agentId: string | undefined) => {
+    const handleAgentClick = useCallback((agentId: string | undefined) => {
         onAgentSelect?.(agentId);
         setIsOpen(false);
-    };
-
-    const handleQuickAction = (action: 'instructions' | 'knowledge' | 'triggers' | 'playbooks') => {
-        if (!selectedAgentId && !displayAgent?.agent_id) {
-            return;
-        }
-        setAgentConfigDialog({ open: true, tab: action });
-        setIsOpen(false);
-    };
-
-
-
-    const renderAgentIcon = (agent: any) => {
-        return <AgentAvatar agentId={agent?.agent_id} size={20} className="flex-shrink-0" fallbackName={agent?.name} />;
-    };
+    }, [onAgentSelect]);
 
     const displayAgent = useMemo(() => {
         const found = agents.find(a => a.agent_id === selectedAgentId) || agents[0];
         return found;
     }, [agents, selectedAgentId]);
+
+    const handleQuickAction = useCallback((action: 'instructions' | 'knowledge' | 'triggers' | 'playbooks') => {
+        if (!selectedAgentId && !displayAgent?.agent_id) {
+            return;
+        }
+        setAgentConfigDialog({ open: true, tab: action });
+        setIsOpen(false);
+    }, [selectedAgentId, displayAgent?.agent_id]);
+
+    const renderAgentIcon = useCallback((agent: any) => {
+        return <AgentAvatar agentId={agent?.agent_id} size={24} className="flex-shrink-0" fallbackName={agent?.name} />;
+    }, []);
 
     const currentAgentIdForPlaybooks = isLoggedIn ? displayAgent?.agent_id || '' : '';
     const { data: playbooks = [], isLoading: playbooksLoading } = useAgentWorkflows(currentAgentIdForPlaybooks);
@@ -407,20 +405,21 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = ({
                 playbook={execDialog.playbook as any}
                 agentId={execDialog.agentId || ''}
             />
-            {(selectedAgentId || displayAgent?.agent_id) && (
+            {(selectedAgentId || displayAgent?.agent_id) && agentConfigDialog.open && (
                 <AgentConfigurationDialog
                     open={agentConfigDialog.open}
                     onOpenChange={(open) => setAgentConfigDialog({ ...agentConfigDialog, open })}
                     agentId={selectedAgentId || displayAgent?.agent_id}
                     initialTab={agentConfigDialog.tab}
+                    onAgentChange={onAgentSelect}
                 />
             )}
 
         </>
     );
-};
+});
 
-const GuestMenu: React.FC<UnifiedConfigMenuProps> = () => {
+const GuestMenu: React.FC<UnifiedConfigMenuProps> = memo(function GuestMenu() {
     return (
         <TooltipProvider>
             <Tooltip>
@@ -448,7 +447,7 @@ const GuestMenu: React.FC<UnifiedConfigMenuProps> = () => {
             </Tooltip>
         </TooltipProvider>
     );
-};
+});
 
 export const UnifiedConfigMenu: React.FC<UnifiedConfigMenuProps> = (props) => {
     if (props.isLoggedIn) {

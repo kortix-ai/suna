@@ -54,16 +54,11 @@ load_dotenv()
 class AgentConfig:
     thread_id: str
     project_id: str
-    stream: bool
     native_max_auto_continues: int = 25
     max_iterations: int = 100
     model_name: str = "openai/gpt-5-mini"
-    enable_thinking: Optional[bool] = False
-    reasoning_effort: Optional[str] = 'low'
-    enable_context_manager: bool = True
     agent_config: Optional[dict] = None
     trace: Optional[StatefulTraceClient] = None
-    enable_prompt_caching: bool = True
 
 
 class ToolManager:
@@ -123,7 +118,6 @@ class ToolManager:
             ('sb_design_tool', SandboxDesignerTool, {'project_id': self.project_id, 'thread_id': self.thread_id, 'thread_manager': self.thread_manager}),
             ('sb_presentation_outline_tool', SandboxPresentationOutlineTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
             ('sb_presentation_tool', SandboxPresentationTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
-
             ('sb_sheets_tool', SandboxSheetsTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
             # ('sb_web_dev_tool', SandboxWebDevTool, {'project_id': self.project_id, 'thread_id': self.thread_id, 'thread_manager': self.thread_manager}),  # DEACTIVATED
             ('sb_upload_file_tool', SandboxUploadFileTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
@@ -761,7 +755,7 @@ class AgentRunner:
                 response = await self.thread_manager.run_thread(
                     thread_id=self.config.thread_id,
                     system_prompt=system_message,
-                    stream=self.config.stream,
+                    stream=True, 
                     llm_model=self.config.model_name,
                     llm_temperature=0,
                     llm_max_tokens=max_tokens,
@@ -777,11 +771,9 @@ class AgentRunner:
                         xml_adding_strategy="user_message"
                     ),
                     native_max_auto_continues=self.config.native_max_auto_continues,
-                    enable_thinking=self.config.enable_thinking,
-                    reasoning_effort=self.config.reasoning_effort,
                     generation=generation,
-                    enable_prompt_caching=self.config.enable_prompt_caching,
-                    enable_context_manager=self.config.enable_context_manager
+                    enable_prompt_caching=True,
+                    enable_context_manager=True
                 )
 
                 last_tool_call = None
@@ -900,15 +892,10 @@ class AgentRunner:
 async def run_agent(
     thread_id: str,
     project_id: str,
-    stream: bool,
     thread_manager: Optional[ThreadManager] = None,
     native_max_auto_continues: int = 25,
     max_iterations: int = 100,
     model_name: str = "openai/gpt-5-mini",
-    enable_thinking: Optional[bool] = False,
-    reasoning_effort: Optional[str] = 'low',
-    enable_context_manager: bool = False,
-    enable_prompt_caching: bool = False,
     agent_config: Optional[dict] = None,    
     trace: Optional[StatefulTraceClient] = None
 ):
@@ -927,14 +914,9 @@ async def run_agent(
     config = AgentConfig(
         thread_id=thread_id,
         project_id=project_id,
-        stream=stream,
         native_max_auto_continues=native_max_auto_continues,
         max_iterations=max_iterations,
         model_name=effective_model,
-        enable_thinking=enable_thinking,
-        reasoning_effort=reasoning_effort,
-        enable_context_manager=enable_context_manager,
-        enable_prompt_caching=enable_prompt_caching,
         agent_config=agent_config,
         trace=trace
     )

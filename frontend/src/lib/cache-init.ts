@@ -18,7 +18,7 @@ export function initializeCacheSystem() {
   // Clean up function to remove expired entries and release blob URLs
   const cleanupCache = () => {
     const now = Date.now();
-    let blobUrlsToRevoke: string[] = [];
+    const blobUrlsToRevoke: string[] = [];
     
     // This is the implementation detail of how we access the Map inside the FileCache
     // We can't modify it directly, but we need to iterate through it for cleanup

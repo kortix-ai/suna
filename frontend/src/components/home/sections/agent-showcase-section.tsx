@@ -3,57 +3,28 @@
 import { SectionHeader } from '@/components/home/section-header';
 import { motion } from 'motion/react';
 import { ArrowRight } from 'lucide-react';
+import { UnifiedAgentCard, type BaseAgentData } from '@/components/ui/unified-agent-card';
 
 // Simple Agent Card Component
 const AgentCard = ({ agent }: { agent: any }) => {
-  return (
-    <motion.div
-      className="flex flex-col items-start justify-end min-h-[400px] relative group cursor-pointer hover:bg-accent/30 transition-colors duration-300"
-    >
-      <div className="relative flex size-full items-center justify-center h-full overflow-hidden">
-        <div className="pointer-events-none absolute bottom-0 left-0 h-20 w-full bg-gradient-to-t from-background to-transparent z-20"></div>
-        
-        <div className="w-full h-full flex flex-col items-center justify-center gap-6 p-8 text-center">
-          <motion.div 
-            className="text-6xl mb-4 group-hover:scale-110 transition-transform duration-300"
-            whileHover={{ rotate: [0, -10, 10, 0] }}
-            transition={{ duration: 0.5 }}
-          >
-            {agent.icon}
-          </motion.div>
-          
-          <div className="space-y-3">
-            <h3 className="text-xl font-semibold tracking-tighter group-hover:text-primary transition-colors">
-              {agent.name}
-            </h3>
-            <p className="text-sm text-primary/70 font-medium uppercase tracking-wider">
-              {agent.role}
-            </p>
-            <p className="text-sm text-muted-foreground leading-relaxed max-w-xs">
-              {agent.desc}
-            </p>
-          </div>
+  // Convert to BaseAgentData
+  const convertToBaseAgentData = (agent: any): BaseAgentData => ({
+    id: agent.name.toLowerCase().replace(/\s+/g, '-'),
+    name: agent.name,
+    description: agent.desc,
+    role: agent.role,
+    icon: agent.icon,
+    created_at: new Date().toISOString(),
+  });
 
-          <motion.button
-            className="opacity-0 group-hover:opacity-100 inline-flex items-center gap-2 text-sm font-medium text-primary hover:text-primary/80 transition-all duration-300"
-            initial={{ y: 10 }}
-            whileHover={{ y: 0 }}
-          >
-            Try {agent.name} 
-            <ArrowRight className="w-4 h-4" />
-          </motion.button>
-        </div>
-      </div>
-      
-      <div className="flex-1 flex-col gap-2 p-6">
-        <h4 className="text-lg tracking-tighter font-semibold">
-          {agent.name} • {agent.role}
-        </h4>
-        <p className="text-muted-foreground text-sm">
-          {agent.shortDesc || agent.desc.split('.')[0] + '.'}
-        </p>
-      </div>
-    </motion.div>
+  return (
+    <UnifiedAgentCard
+      variant="showcase"
+      data={convertToBaseAgentData(agent)}
+      actions={{
+        onClick: () => console.log(`Try ${agent.name}`)
+      }}
+    />
   );
 };
 
