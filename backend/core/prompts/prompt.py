@@ -28,7 +28,7 @@ from pathlib import Path
 
 # Import the modular prompt assembler
 try:
-    from .prompt_system.assembler import (
+    from .assembler import (
         PromptAssembler,
         get_assembler,
         get_system_prompt as _get_system_prompt
@@ -38,7 +38,7 @@ except ImportError as e:
     MODULAR_SYSTEM_AVAILABLE = False
     raise ImportError(
         f"Failed to import modular prompt system: {e}. "
-        "Ensure prompt_system module is properly installed."
+        "Ensure assembler module is properly installed."
     )
 
 
