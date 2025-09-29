@@ -17,7 +17,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { handleFiles, FileUploadHandler } from './file-upload-handler';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Loader2, ArrowUp } from 'lucide-react';
+import { Loader2, ArrowUp, CornerDownLeft } from 'lucide-react';
 import { VoiceRecorder } from './voice-recorder';
 import { UnifiedConfigMenu } from './unified-config-menu';
 import { AttachmentGroup } from '../attachment-group';
@@ -178,7 +178,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     // - For paid users, only show when they're at 70% or more of their cost limit (30% or below remaining)
     const shouldShowUsage = useMemo(() => {
       if (!subscriptionData || !showToLowCreditUsers || isLocalMode()) return false;
-      
+
       // Free users: always show
       if (subscriptionStatus === 'no_subscription') {
         return true;
@@ -494,7 +494,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
             ) : isAgentRunning ? (
               <div className="min-h-[14px] min-w-[14px] w-[14px] h-[14px] rounded-sm bg-current" />
             ) : (
-              <ArrowUp className="h-5 w-5" />
+              <CornerDownLeft className="h-5 w-5" />
             )}
           </Button>
         </div>

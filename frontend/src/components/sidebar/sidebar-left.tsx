@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Bot, Menu, Plus, Zap, ChevronRight, BookOpen, Code, Star, Package, Sparkle, Sparkles, X, MessageCircle } from 'lucide-react';
+import { Bot, Menu, Plus, Zap, ChevronRight, BookOpen, Code, Star, Package, Sparkle, Sparkles, X, MessageCircle, PanelLeftOpen, Settings, LogOut, User, CreditCard, Key, Plug, Shield, DollarSign, KeyRound, Sun, Moon } from 'lucide-react';
 
 import { NavAgents } from '@/components/sidebar/nav-agents';
 import { NavUserWithTeams } from '@/components/sidebar/nav-user-with-teams';
@@ -32,11 +32,26 @@ import {
 import { NewAgentDialog } from '@/components/agents/new-agent-dialog';
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useTheme } from 'next-themes';
+import { useRouter } from 'next/navigation';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuGroup,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuPortal,
+} from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
@@ -122,7 +137,10 @@ export function SidebarLeft({
 }: React.ComponentProps<typeof Sidebar>) {
   const { state, setOpen, setOpenMobile } = useSidebar();
   const isMobile = useIsMobile();
+  const { theme, setTheme } = useTheme();
+  const router = useRouter();
   const [activeView, setActiveView] = useState<'chats' | 'agents' | 'starred'>('chats');
+  const [showEnterpriseCard, setShowEnterpriseCard] = useState(true);
   const [user, setUser] = useState<{
     name: string;
     email: string;
@@ -139,6 +157,13 @@ export function SidebarLeft({
   const searchParams = useSearchParams();
   const [showNewAgentDialog, setShowNewAgentDialog] = useState(false);
   const { isOpen: isDocumentModalOpen } = useDocumentModalStore();
+
+  // Logout handler
+  const handleLogout = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
 
   useEffect(() => {
     if (isMobile) {
@@ -199,11 +224,11 @@ export function SidebarLeft({
   return (
     <Sidebar
       collapsible="icon"
-      className="border-r border-border/50 bg-background [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] [&[data-state=expanded]]:w-80 w-80"
+      className="border-r border-border/50 bg-background [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']"
       {...props}
     >
-      <SidebarHeader className="px-[34px] py-3">
-        <div className="flex h-[32px] items-center justify-between">
+      <SidebarHeader className={cn("px-[34px] py-3", state === 'collapsed' && "px-6")}>
+        <div className={cn("flex h-[32px] items-center", state === 'collapsed' ? "justify-center" : "justify-between")}>
           <Link href="/dashboard" className="flex-shrink-0" onClick={() => isMobile && setOpenMobile(false)}>
             <KortixLogo size={24} />
           </Link>
@@ -218,34 +243,28 @@ export function SidebarLeft({
         </div>
       </SidebarHeader>
       <SidebarContent className="[&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
-        <div className="px-[34px] pt-4 space-y-4">
-          {/* New Chat button with shortcuts inside */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full shadow-none justify-between h-12 px-4"
-            asChild
-          >
-            <Link
-              href="/dashboard"
-              onClick={() => {
-                posthog.capture('new_task_clicked');
-                if (isMobile) setOpenMobile(false);
-              }}
+        {state === 'collapsed' ? (
+          /* Collapsed layout: + button and 3 state buttons only */
+          <div className="px-6 pt-4 space-y-3 flex flex-col items-center">
+            {/* + button */}
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-12 w-12 p-0 shadow-none"
+              asChild
             >
-              <div className="flex items-center gap-2">
+              <Link
+                href="/dashboard"
+                onClick={() => {
+                  posthog.capture('new_task_clicked');
+                  if (isMobile) setOpenMobile(false);
+                }}
+              >
                 <Plus className="h-4 w-4" />
-                New Chat
-              </div>
-              <div className="flex items-center gap-1">
-                <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-base leading-0 cursor-pointer">⌘</kbd>
-                <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-xs cursor-pointer">K</kbd>
-              </div>
-            </Link>
-          </Button>
+              </Link>
+            </Button>
 
-          {/* Three 48x48 icon buttons with 16px radius */}
-          <div className="flex justify-between items-center">
+            {/* 3 state buttons vertically */}
             {[
               { view: 'chats' as const, icon: MessageCircle },
               { view: 'agents' as const, icon: Bot },
@@ -255,91 +274,259 @@ export function SidebarLeft({
                 key={view}
                 variant="ghost"
                 size="icon"
-                className={`h-12 w-12 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border ${activeView === view ? 'bg-muted/60 border-[1.5px] border-border' : ''
-                  }`}
+                className={cn(
+                  "h-12 w-12 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border",
+                  activeView === view ? 'bg-muted/60 border-[1.5px] border-border' : ''
+                )}
                 onClick={() => setActiveView(view)}
               >
                 <Icon className="!h-5 !w-5" />
               </Button>
             ))}
-          </div>          {/* My Workers / Community toggle - Only show for agents view */}
-          {activeView === 'agents' && (
-            <div className="flex items-center gap-2">
-              <Button
-                variant="default"
-                size="sm"
-                className="flex-1 justify-center gap-2 h-12"
-                asChild
-              >
-                <Link href="/agents">
-                  <Bot className="h-4 w-4" />
-                  My Workers
-                </Link>
-              </Button>
+          </div>
+        ) : (
+          /* Expanded layout */
+          <>
+            <div className="px-[34px] pt-4 space-y-4">
+              {/* New Chat button */}
               <Button
                 variant="outline"
                 size="sm"
-                className="flex-1 justify-center gap-2 h-12"
+                className="w-full shadow-none justify-between h-12 px-4"
                 asChild
               >
-                <Link href="/community">
-                  <Package className="h-4 w-4" />
-                  Community
+                <Link
+                  href="/dashboard"
+                  onClick={() => {
+                    posthog.capture('new_task_clicked');
+                    if (isMobile) setOpenMobile(false);
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Plus className="h-4 w-4" />
+                    New Chat
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-base leading-0 cursor-pointer">⌘</kbd>
+                    <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-xs cursor-pointer">K</kbd>
+                  </div>
                 </Link>
               </Button>
-            </div>
-          )}
-        </div>
 
-        <div className="px-6">
-          {/* Conditional content based on active view */}
-          {activeView === 'chats' && <NavAgents />}
-          {activeView === 'agents' && <NavAgents />}
-          {activeView === 'starred' && (
-            <div className="text-center py-8 text-muted-foreground">
-              <Star className="h-8 w-8 mx-auto mb-2" />
-              <p className="text-sm">No starred items yet</p>
-            </div>
-          )}
-        </div>
+              {/* State buttons horizontally */}
+              <div className="flex justify-between items-center">
+                {[
+                  { view: 'chats' as const, icon: MessageCircle },
+                  { view: 'agents' as const, icon: Bot },
+                  { view: 'starred' as const, icon: Zap }
+                ].map(({ view, icon: Icon }) => (
+                  <Button
+                    key={view}
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      "h-12 w-12 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border",
+                      activeView === view ? 'bg-muted/60 border-[1.5px] border-border' : ''
+                    )}
+                    onClick={() => setActiveView(view)}
+                  >
+                    <Icon className="!h-5 !w-5" />
+                  </Button>
+                ))}
+              </div>
 
+              {/* My Workers / Community toggle - Only for agents view */}
+              {activeView === 'agents' && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="flex-1 justify-center gap-2 h-12"
+                    asChild
+                  >
+                    <Link href="/agents">
+                      <Bot className="h-4 w-4" />
+                      My Workers
+                    </Link>
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 justify-center gap-2 h-12"
+                    asChild
+                  >
+                    <Link href="/community">
+                      <Package className="h-4 w-4" />
+                      Community
+                    </Link>
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            {/* Content area */}
+            <div className="px-6">
+              {activeView === 'chats' && <NavAgents />}
+              {activeView === 'agents' && <NavAgents />}
+              {activeView === 'starred' && (
+                <div className="text-center py-8 text-muted-foreground">
+                  <Star className="h-8 w-8 mx-auto mb-2" />
+                  <p className="text-sm">No starred items yet</p>
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </SidebarContent>
 
-      {/* Enterprise Demo Card - Floating overlay above footer */}
-      <div className="absolute bottom-[96px] left-6 right-6 z-10">
-        <div className="rounded-2xl p-5 backdrop-blur-[12px] border-[1.5px] bg-gradient-to-br from-white/25 to-gray-300/25 dark:from-gray-600/25 dark:to-gray-800/25 border-gray-300/50 dark:border-gray-600/50">
-          <div className="flex items-center gap-2 mb-3">
-            <Sparkles className="h-4 w-4" />
-            <span className="text-sm font-medium text-foreground">Enterprise Demo</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="ml-auto h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
-            >
-              <X className="h-4 w-4" />
+      {/* Enterprise Demo Card - Only show when expanded */}
+      {state !== 'collapsed' && showEnterpriseCard && (
+        <div className="absolute bottom-[96px] left-6 right-6 z-10">
+          <div className="rounded-2xl p-5 backdrop-blur-[12px] border-[1.5px] bg-gradient-to-br from-white/25 to-gray-300/25 dark:from-gray-600/25 dark:to-gray-800/25 border-gray-300/50 dark:border-gray-600/50">
+            <div className="flex items-center gap-2 mb-3">
+              <Sparkles className="h-4 w-4" />
+              <span className="text-sm font-medium text-foreground">Enterprise Demo</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-auto h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                onClick={() => setShowEnterpriseCard(false)}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">
+              Request custom AI Workers implementation
+            </p>
+            <Button size="sm" className="w-full text-xs h-8">
+              Learn More
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground mb-4">
-            Request custom AI Workers implementation
-          </p>
-          <Button size="sm" className="w-full text-xs h-8">
-            Learn More
-          </Button>
         </div>
-      </div>
+      )}
 
-      <div className="px-6 pb-4">
+      <div className={cn("pb-4", state === 'collapsed' ? "px-6" : "px-6")}>
         {state === 'collapsed' && (
-          <div className="mt-2 flex justify-center">
+          <div className="flex flex-col items-center space-y-4">
             <Tooltip>
               <TooltipTrigger asChild>
-                <SidebarTrigger className="h-8 w-8" />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => setOpen(true)}
+                >
+                  <PanelLeftOpen className="!h-5.5 !w-5.5" />
+                </Button>
               </TooltipTrigger>
               <TooltipContent>Expand sidebar (CMD+B)</TooltipContent>
             </Tooltip>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Avatar className="h-12 w-12 cursor-pointer">
+                  <AvatarImage src={user.avatar} alt={user.name} />
+                  <AvatarFallback className="text-xs">
+                    {getInitials(user.name)}
+                  </AvatarFallback>
+                </Avatar>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                className="w-56"
+                side="right"
+                align="end"
+                sideOffset={8}
+              >
+                <DropdownMenuLabel className="p-0 font-normal">
+                  <div className="flex items-center gap-2 px-2 py-1.5">
+                    <Avatar className="h-8 w-8">
+                      <AvatarImage src={user.avatar} alt={user.name} />
+                      <AvatarFallback className="text-xs">
+                        {getInitials(user.name)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="grid flex-1 text-left text-sm leading-tight">
+                      <span className="truncate font-medium">{user.name}</span>
+                      <span className="truncate text-xs text-muted-foreground">{user.email}</span>
+                    </div>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                
+                <DropdownMenuGroup>
+                  {user.isAdmin && (
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>
+                        <Shield className="h-4 w-4 mr-2" />
+                        <span>Admin</span>
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuPortal>
+                        <DropdownMenuSubContent>
+                          <DropdownMenuItem asChild>
+                            <Link href="/admin/billing">
+                              <DollarSign className="h-4 w-4 mr-2" />
+                              Billing Management
+                            </Link>
+                          </DropdownMenuItem>
+                        </DropdownMenuSubContent>
+                      </DropdownMenuPortal>
+                    </DropdownMenuSub>
+                  )}
+
+                  <DropdownMenuItem onClick={() => {
+                    // Add upgrade logic here
+                  }}>
+                    <Zap className="h-4 w-4 mr-2" />
+                    Upgrade
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/settings/billing">
+                      <CreditCard className="h-4 w-4 mr-2" />
+                      Billing
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/settings/credentials">
+                      <Plug className="h-4 w-4 mr-2" />
+                      Integrations
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link href="/settings/api-keys">
+                      <Key className="h-4 w-4 mr-2" />
+                      API Keys
+                    </Link>
+                  </DropdownMenuItem>
+                  {isLocalMode() && (
+                    <DropdownMenuItem asChild>
+                      <Link href="/settings/env-manager">
+                        <KeyRound className="h-4 w-4 mr-2" />
+                        Local .Env Manager
+                      </Link>
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem
+                    onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+                      <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+                      <span>Theme</span>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuGroup>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  className="text-destructive focus:text-destructive focus:bg-destructive/10"
+                  onClick={handleLogout}
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  Log out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         )}
-        <UserProfileSection user={user} />
+        {state !== 'collapsed' && <UserProfileSection user={user} />}
       </div>
       <SidebarRail />
       <NewAgentDialog
