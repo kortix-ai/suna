@@ -489,42 +489,52 @@ export function AgentConfigurationDialog({
                   </div>
                 </TabsContent>
 
-                <TabsContent value="tools" className="p-6 mt-0 h-[calc(100vh-16rem)]">
-                  <GranularToolConfiguration
-                    tools={formData.agentpress_tools}
-                    onToolsChange={handleToolsChange}
-                    disabled={!areToolsEditable}
-                    isSunaAgent={isSunaAgent}
-                    isLoading={isLoading}
-                  />
+                <TabsContent value="tools" className="p-6 mt-0 flex flex-col h-full">
+                  <div className="flex flex-col flex-1 min-h-0 h-full">
+                    <GranularToolConfiguration
+                      tools={formData.agentpress_tools}
+                      onToolsChange={handleToolsChange}
+                      disabled={!areToolsEditable}
+                      isSunaAgent={isSunaAgent}
+                      isLoading={isLoading}
+                    />
+                  </div>
                 </TabsContent>
-                <TabsContent value="integrations" className="p-6 mt-0 h-[calc(100vh-16rem)]">
-                  <AgentMCPConfiguration
-                    configuredMCPs={formData.configured_mcps}
-                    customMCPs={formData.custom_mcps}
-                    onMCPChange={handleMCPChange}
-                    agentId={agentId}
-                    versionData={{
-                      configured_mcps: formData.configured_mcps,
-                      custom_mcps: formData.custom_mcps,
-                      system_prompt: formData.system_prompt,
-                      agentpress_tools: formData.agentpress_tools
-                    }}
-                    saveMode="callback"
-                    isLoading={updateAgentMCPsMutation.isPending}
-                  />
-                </TabsContent>
-
-                <TabsContent value="knowledge" className="p-6 mt-0 h-[calc(100vh-16rem)]">
-                  <AgentKnowledgeBaseManager agentId={agentId} agentName={formData.name || 'Agent'} />
-                </TabsContent>
-
-                <TabsContent value="playbooks" className="p-6 mt-0 h-[calc(100vh-16rem)]">
-                  <AgentPlaybooksConfiguration agentId={agentId} agentName={formData.name || 'Agent'} />
+                <TabsContent value="integrations" className="p-6 mt-0 flex flex-col h-full">
+                  <div className="flex flex-col flex-1 min-h-0 h-full">
+                    <AgentMCPConfiguration
+                      configuredMCPs={formData.configured_mcps}
+                      customMCPs={formData.custom_mcps}
+                      onMCPChange={handleMCPChange}
+                      agentId={agentId}
+                      versionData={{
+                        configured_mcps: formData.configured_mcps,
+                        custom_mcps: formData.custom_mcps,
+                        system_prompt: formData.system_prompt,
+                        agentpress_tools: formData.agentpress_tools
+                      }}
+                      saveMode="callback"
+                      isLoading={updateAgentMCPsMutation.isPending}
+                    />
+                  </div>
                 </TabsContent>
 
-                <TabsContent value="triggers" className="p-6 mt-0 h-[calc(100vh-16rem)]">
-                  <AgentTriggersConfiguration agentId={agentId} />
+                <TabsContent value="knowledge" className="p-6 mt-0 flex flex-col h-full">
+                  <div className="flex flex-col flex-1 min-h-0 h-full">
+                    <AgentKnowledgeBaseManager agentId={agentId} agentName={formData.name || 'Agent'} />
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="playbooks" className="p-6 mt-0 flex flex-col h-full">
+                  <div className="flex flex-col flex-1 min-h-0 h-full">
+                    <AgentPlaybooksConfiguration agentId={agentId} agentName={formData.name || 'Agent'} />
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="triggers" className="p-6 mt-0 flex flex-col h-full">
+                  <div className="flex flex-col flex-1 min-h-0 h-full">
+                    <AgentTriggersConfiguration agentId={agentId} />
+                  </div>
                 </TabsContent>
               </div>
             </Tabs>
