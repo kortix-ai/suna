@@ -31,6 +31,7 @@ from core.tools.sb_image_edit_tool import SandboxImageEditTool
 from core.tools.sb_designer_tool import SandboxDesignerTool
 from core.tools.sb_presentation_outline_tool import SandboxPresentationOutlineTool
 from core.tools.sb_presentation_tool import SandboxPresentationTool
+from core.tools.sb_document_parser import SandboxDocumentParserTool
 
 from core.services.langfuse import langfuse
 from langfuse.client import StatefulTraceClient
@@ -127,6 +128,8 @@ class ToolManager:
             # ('sb_web_dev_tool', SandboxWebDevTool, {'project_id': self.project_id, 'thread_id': self.thread_id, 'thread_manager': self.thread_manager}),  # DEACTIVATED
             ('sb_upload_file_tool', SandboxUploadFileTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
             ('sb_docs_tool', SandboxDocsTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
+
+            ('sb_document_parser_tool', SandboxDocumentParserTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
         ]
         
         for tool_name, tool_class, kwargs in sandbox_tools:
