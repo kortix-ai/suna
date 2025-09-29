@@ -411,6 +411,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                     onOpenChange={(open) => setAgentConfigDialog({ ...agentConfigDialog, open })}
                     agentId={selectedAgentId || displayAgent?.agent_id}
                     initialTab={agentConfigDialog.tab}
+                    onAgentChange={onAgentSelect}
                 />
             )}
 

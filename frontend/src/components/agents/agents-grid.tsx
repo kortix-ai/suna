@@ -385,6 +385,9 @@ export const AgentsGrid: React.FC<AgentsGridProps> = ({
           open={showConfigDialog}
           onOpenChange={setShowConfigDialog}
           agentId={configAgentId}
+          onAgentChange={(newAgentId) => {
+            setConfigAgentId(newAgentId);
+          }}
         />
       )}
     </>

@@ -8,9 +8,14 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Tabs,
   TabsContent,
@@ -35,13 +40,15 @@ import {
   Edit3,
   Save,
   Brain,
+  ChevronDown,
+  Search,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
 import { useAgentVersionData } from '@/hooks/use-agent-version-data';
-import { useUpdateAgent } from '@/hooks/react-query/agents/use-agents';
+import { useUpdateAgent, useAgents } from '@/hooks/react-query/agents/use-agents';
 import { useUpdateAgentMCPs } from '@/hooks/react-query/agents/use-update-agent-mcps';
 import { useExportAgent } from '@/hooks/react-query/agents/use-agent-export-import';
 import { ExpandableMarkdownEditor } from '@/components/ui/expandable-markdown-editor';
@@ -62,6 +69,7 @@ interface AgentConfigurationDialogProps {
   onOpenChange: (open: boolean) => void;
   agentId: string;
   initialTab?: 'instructions' | 'tools' | 'integrations' | 'knowledge' | 'playbooks' | 'triggers';
+  onAgentChange?: (agentId: string) => void;
 }
 
 export function AgentConfigurationDialog({
@@ -69,12 +77,15 @@ export function AgentConfigurationDialog({
   onOpenChange,
   agentId,
   initialTab = 'instructions',
+  onAgentChange,
 }: AgentConfigurationDialogProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
 
   const { agent, versionData, isViewingOldVersion, isLoading, error } = useAgentVersionData({ agentId });
+  const { data: agentsResponse } = useAgents({}, { enabled: !!onAgentChange });
+  const agents = agentsResponse?.agents || [];
 
   const updateAgentMutation = useUpdateAgent();
   const updateAgentMCPsMutation = useUpdateAgentMCPs();
@@ -341,70 +352,150 @@ export function AgentConfigurationDialog({
                   )}
                 </button>
 
-                <div>
-                  {isEditingName ? (
-                    <div className="flex items-center gap-2">
-                      <Input
-                        ref={nameInputRef}
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            handleNameSave();
-                          } else if (e.key === 'Escape') {
-                            setEditName(formData.name);
-                            setIsEditingName(false);
-                          }
-                        }}
-                        className="h-8 w-64"
-                        maxLength={50}
-                      />
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8"
-                        onClick={handleNameSave}
-                      >
-                        <Check className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-8 w-8"
-                        onClick={() => {
-                          setEditName(formData.name);
-                          setIsEditingName(false);
-                        }}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <DialogTitle className="text-xl font-semibold">
-                        {isLoading ? 'Loading...' : formData.name || 'Agent'}
-                      </DialogTitle>
-                      {isNameEditable && (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center gap-2">
+                    {isEditingName ? (
+                      // Name editing mode (takes priority over everything)
+                      <div className="flex items-center gap-2">
+                        <Input
+                          ref={nameInputRef}
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              handleNameSave();
+                            } else if (e.key === 'Escape') {
+                              setEditName(formData.name);
+                              setIsEditingName(false);
+                            }
+                          }}
+                          className="h-8 w-64"
+                          maxLength={50}
+                        />
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-6 w-6"
+                          className="h-8 w-8"
+                          onClick={handleNameSave}
+                        >
+                          <Check className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-8 w-8"
                           onClick={() => {
-                            setIsEditingName(true);
-                            setTimeout(() => {
-                              nameInputRef.current?.focus();
-                              nameInputRef.current?.select();
-                            }, 0);
+                            setEditName(formData.name);
+                            setIsEditingName(false);
                           }}
                         >
-                          <Edit3 className="h-3 w-3" />
+                          <X className="h-4 w-4" />
                         </Button>
-                      )}
-                    </div>
-                  )}
-                  <DialogDescription>
-                    Configure your agent's capabilities and behavior
-                  </DialogDescription>
+                      </div>
+                    ) : onAgentChange ? (
+                      // When agent switching is enabled, show a sleek inline agent selector
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <button className="flex items-center gap-2 hover:bg-muted/50 rounded-md px-2 py-1 transition-colors group">
+                              <DialogTitle className="text-xl font-semibold truncate">
+                                {isLoading ? 'Loading...' : formData.name || 'Agent'}
+                              </DialogTitle>
+                              <ChevronDown className="h-4 w-4 opacity-60 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent 
+                            className="w-80 p-0" 
+                            align="start"
+                            sideOffset={4}
+                          >
+                            <div className="p-3 border-b">
+                              <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                                <Search className="h-4 w-4" />
+                                Switch Agent
+                              </div>
+                            </div>
+                            <div className="max-h-60 overflow-y-auto">
+                              {agents.map((agent: any) => (
+                                <DropdownMenuItem
+                                  key={agent.agent_id}
+                                  onClick={() => onAgentChange(agent.agent_id)}
+                                  className="p-3 flex items-center gap-3 cursor-pointer"
+                                >
+                                  {agent.metadata?.is_suna_default ? (
+                                    <div className="w-6 h-6 rounded-lg bg-muted border flex items-center justify-center flex-shrink-0">
+                                      <KortixLogo size={12} />
+                                    </div>
+                                  ) : (
+                                    <AgentIconAvatar
+                                      profileImageUrl={agent.profile_image_url}
+                                      iconName={agent.icon_name}
+                                      iconColor={agent.icon_color}
+                                      backgroundColor={agent.icon_background}
+                                      agentName={agent.name}
+                                      size={24}
+                                      className="flex-shrink-0"
+                                    />
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="font-medium truncate">{agent.name}</div>
+                                    {agent.description && (
+                                      <div className="text-xs text-muted-foreground truncate">
+                                        {agent.description}
+                                      </div>
+                                    )}
+                                  </div>
+                                  {agent.agent_id === agentId && (
+                                    <Check className="h-4 w-4 text-primary flex-shrink-0" />
+                                  )}
+                                </DropdownMenuItem>
+                              ))}
+                            </div>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                        {/* Add edit button for name editing when agent switching is enabled */}
+                        {isNameEditable && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6 flex-shrink-0"
+                            onClick={() => {
+                              setIsEditingName(true);
+                              setTimeout(() => {
+                                nameInputRef.current?.focus();
+                                nameInputRef.current?.select();
+                              }, 0);
+                            }}
+                          >
+                            <Edit3 className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      // Static title mode (no agent switching available)
+                      <div className="flex items-center gap-2">
+                        <DialogTitle className="text-xl font-semibold">
+                          {isLoading ? 'Loading...' : formData.name || 'Agent'}
+                        </DialogTitle>
+                        {isNameEditable && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6"
+                            onClick={() => {
+                              setIsEditingName(true);
+                              setTimeout(() => {
+                                nameInputRef.current?.focus();
+                                nameInputRef.current?.select();
+                              }, 0);
+                            }}
+                          >
+                            <Edit3 className="h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 

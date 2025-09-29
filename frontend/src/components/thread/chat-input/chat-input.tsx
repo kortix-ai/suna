@@ -667,6 +667,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
               onOpenChange={(open) => setAgentConfigDialog({ ...agentConfigDialog, open })}
               agentId={selectedAgentId}
               initialTab={agentConfigDialog.tab}
+              onAgentChange={onAgentSelect}
             />
           )}
         </div>
