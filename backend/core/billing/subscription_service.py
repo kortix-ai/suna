@@ -201,7 +201,7 @@ class SubscriptionService:
             'trial_ends_at': None
         }
 
-    async def create_checkout_session(self, account_id: str, price_id: str, success_url: str, cancel_url: str) -> Dict:
+    async def create_checkout_session(self, account_id: str, price_id: str, success_url: str, cancel_url: str, commitment_type: Optional[str] = None) -> Dict:
         customer_id = await self.get_or_create_stripe_customer(account_id)
         
         db = DBConnection()
@@ -247,7 +247,8 @@ class SubscriptionService:
                         'account_id': account_id,
                         'account_type': 'personal',
                         'converting_from_trial': 'true',
-                        'previous_tier': current_tier or 'trial'
+                        'previous_tier': current_tier or 'trial',
+                        'commitment_type': commitment_type or 'none'
                     }
                 }
             )
@@ -314,7 +315,8 @@ class SubscriptionService:
                 subscription_data={
                     'metadata': {
                         'account_id': account_id,
-                        'account_type': 'personal'
+                        'account_type': 'personal',
+                        'commitment_type': commitment_type or 'none'
                     }
                 }
             )
@@ -719,7 +721,6 @@ class SubscriptionService:
             return []
 
     async def _track_commitment_if_needed(self, account_id: str, price_id: str, subscription: Dict, client):
-        """Track commitment if the subscription uses a commitment price ID"""
         if not is_commitment_price_id(price_id):
             return
         
@@ -727,10 +728,14 @@ class SubscriptionService:
         if commitment_duration == 0:
             return
         
-        start_date = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
-        end_date = start_date + timedelta(days=commitment_duration * 30)  # Approximate months
+        existing_commitment = await client.from_('commitment_history').select('id').eq('stripe_subscription_id', subscription['id']).execute()
+        if existing_commitment.data:
+            logger.info(f"[COMMITMENT] Commitment already tracked for subscription {subscription['id']}, skipping")
+            return
         
-        # Update credit_accounts with commitment info
+        start_date = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
+        end_date = start_date + timedelta(days=commitment_duration * 30)
+        
         await client.from_('credit_accounts').update({
             'commitment_type': 'yearly_commitment',
             'commitment_start_date': start_date.isoformat(),
@@ -739,7 +744,7 @@ class SubscriptionService:
             'can_cancel_after': end_date.isoformat()
         }).eq('account_id', account_id).execute()
         
-        # Log in commitment history
+        # Insert commitment history record
         await client.from_('commitment_history').insert({
             'account_id': account_id,
             'commitment_type': 'yearly_commitment',
@@ -749,7 +754,7 @@ class SubscriptionService:
             'stripe_subscription_id': subscription['id']
         }).execute()
         
-        logger.info(f"[COMMITMENT] Tracked yearly commitment for account {account_id}, ends {end_date.date()}")
+        logger.info(f"[COMMITMENT] Tracked yearly commitment for account {account_id}, subscription {subscription['id']}, ends {end_date.date()}")
     
     async def get_commitment_status(self, account_id: str) -> Dict:
         """Get the commitment status for an account"""
