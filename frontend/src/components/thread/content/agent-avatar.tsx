@@ -48,11 +48,17 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   const agentName = propAgentName ?? agent?.name ?? fallbackName;
   const isSuna = propIsSunaDefault ?? agent?.metadata?.is_suna_default;
 
+  // Calculate responsive border radius - proportional to size
+  // Use a ratio that prevents full rounding while maintaining nice corners
+  const borderRadiusStyle = {
+    borderRadius: `${Math.min(size * 0.25, 16)}px` // 25% of size, max 16px
+  };
+
   if (isLoading && agentId) {
     return (
       <div 
-        className={cn("bg-muted animate-pulse rounded", className)}
-        style={{ width: size, height: size }}
+        className={cn("bg-muted animate-pulse", className)}
+        style={{ width: size, height: size, ...borderRadiusStyle }}
       />
     );
   }
@@ -69,10 +75,10 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
     return (
       <div 
         className={cn(
-          "flex items-center justify-center rounded bg-muted border",
+          "flex items-center justify-center bg-muted border",
           className
         )}
-        style={{ width: size, height: size }}
+        style={{ width: size, height: size, ...borderRadiusStyle }}
       >
         <KortixLogo size={size * 0.6} />
       </div>
@@ -83,13 +89,14 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
     return (
       <div 
         className={cn(
-          "flex items-center justify-center rounded transition-all",
+          "flex items-center justify-center transition-all border",
           className
         )}
         style={{ 
           width: size, 
           height: size,
-          backgroundColor
+          backgroundColor,
+          ...borderRadiusStyle
         }}
       >
         <DynamicIcon 
@@ -105,10 +112,10 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   return (
     <div 
       className={cn(
-        "flex items-center justify-center rounded bg-muted",
+        "flex items-center justify-center bg-muted border",
         className
       )}
-      style={{ width: size, height: size }}
+      style={{ width: size, height: size, ...borderRadiusStyle }}
     >
       <DynamicIcon 
         name="bot" 

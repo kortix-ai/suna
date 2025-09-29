@@ -163,7 +163,6 @@ export const MarketplaceAgentPreviewDialog: React.FC<MarketplaceAgentPreviewDial
               backgroundColor={agent.icon_background}
               agentName={agent.name}
               size={80}
-              className="shadow-lg"
             />
           </div>
         </DialogHeader>

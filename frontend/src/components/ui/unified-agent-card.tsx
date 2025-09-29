@@ -136,12 +136,11 @@ const CardAvatar: React.FC<{
   
   if (isSunaAgent) {
     return (
-      <div className={cn(
-        "bg-muted border flex items-center justify-center rounded-2xl",
-        size <= 40 ? "h-10 w-10" : "h-14 w-14"
-      )}>
-        <KortixLogo size={size * 0.6} />
-      </div>
+      <AgentAvatar
+        isSunaDefault={true}
+        size={size}
+        className="border"
+      />
     );
   }
   
@@ -153,19 +152,17 @@ const CardAvatar: React.FC<{
         backgroundColor={data.icon_background}
         agentName={data.name}
         size={size}
-        className="shadow-sm"
       />
     );
   }
   
   // Fallback avatar
   return (
-    <div className={cn(
-      "border bg-muted flex items-center justify-center rounded-2xl",
-      size <= 40 ? "h-10 w-10" : "h-14 w-14"
-    )}>
-      <span className="text-lg font-semibold">{data.name?.charAt(0).toUpperCase() || '?'}</span>
-    </div>
+    <AgentAvatar
+      agentName={data.name}
+      size={size}
+      className="border"
+    />
   );
 };
 
@@ -376,7 +373,7 @@ export const UnifiedAgentCard: React.FC<UnifiedAgentCardProps> = ({
     >
       <Card 
         className={cn(
-          'cursor-pointer transition-all duration-300 hover:shadow-lg',
+          'cursor-pointer transition-all duration-300',
           isSelected 
             ? 'ring-2 ring-primary bg-primary/5' 
             : 'hover:border-primary/50',
@@ -432,7 +429,7 @@ export const UnifiedAgentCard: React.FC<UnifiedAgentCardProps> = ({
   
   const renderStandardCard = () => {
     const cardClassName = cn(
-      'group relative bg-card rounded-2xl overflow-hidden shadow-sm transition-all duration-300 border cursor-pointer flex flex-col border-border/50 hover:border-primary/20',
+      'group relative bg-card rounded-2xl overflow-hidden transition-all duration-300 border cursor-pointer flex flex-col border-border/50 hover:border-primary/20',
       className
     );
     

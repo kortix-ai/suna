@@ -38,8 +38,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useTheme } from 'next-themes';
 import ColorThief from 'colorthief';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { DynamicIcon } from 'lucide-react/dynamic';
+import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 
 interface MarketplaceTemplate {
   template_id: string;
@@ -357,13 +356,13 @@ export default function TemplateSharePage() {
   const hasTools = customTools.length > 0 || agentpressTools.length > 0;
 
   const getDefaultAvatar = () => {
-    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD'];
-    const color = colors[Math.floor(Math.random() * colors.length)];
     return (
-      <DynamicIcon
-        name={template.icon_name || 'bot' as any}
+      <AgentAvatar
+        iconName={template.icon_name}
+        iconColor={template.icon_color}
+        backgroundColor={template.icon_background}
+        agentName={template.name}
         size={28}
-        color={color}
       />
     );
   };
@@ -459,30 +458,23 @@ export default function TemplateSharePage() {
                   />
                 )}
                 <div className="relative aspect-square w-full max-w-sm mx-auto lg:mx-0 rounded-2xl overflow-hidden bg-background">
-                  {template.icon_name ? (
-                    <>
-                      <div 
-                        className="w-full h-full flex items-center justify-center"
-                        style={{ backgroundColor: template.icon_background || '#e5e5e5' }}
-                      >
-                        <DynamicIcon 
-                          name={template.icon_name as any}
-                          size={120}
-                          color={template.icon_color || '#000000'}
-                        />
-                      </div>
-                      <img 
-                        ref={imageRef}
-                        src={""} 
-                        alt={template.name}
-                        className="w-full h-full object-cover"
-                        crossOrigin="anonymous"
-                        onLoad={() => setImageLoaded(true)}
-                      />
-                    </>
-                  ) : (
-                    getDefaultAvatar()
-                  )}
+                  <div className="w-full h-full flex items-center justify-center">
+                    <AgentAvatar
+                      iconName={template.icon_name}
+                      iconColor={template.icon_color}
+                      backgroundColor={template.icon_background}
+                      agentName={template.name}
+                      size={120}
+                    />
+                  </div>
+                  <img 
+                    ref={imageRef}
+                    src={""} 
+                    alt={template.name}
+                    className="w-full h-full object-cover"
+                    crossOrigin="anonymous"
+                    onLoad={() => setImageLoaded(true)}
+                  />
                 </div>
               </div>
               <div className="space-y-4">

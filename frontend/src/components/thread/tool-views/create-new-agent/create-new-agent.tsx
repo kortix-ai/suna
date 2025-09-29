@@ -3,13 +3,9 @@ import {
   Bot,
   CheckCircle,
   AlertTriangle,
-  Sparkles,
-  Settings,
-  Zap,
   Calendar,
-  User,
-  Palette,
-  Shield
+  Sparkles,
+  User
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
 import { formatTimestamp, getToolTitle } from '../utils';
@@ -20,38 +16,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { LoadingState } from '../shared/LoadingState';
 import { Separator } from "@/components/ui/separator";
 import { extractCreateNewAgentData } from './_utils';
-import { DynamicIcon } from 'lucide-react/dynamic';
+import { AgentAvatar } from '../../content/agent-avatar';
 
-function IconPreview({ 
-  iconName, 
-  iconColor, 
-  iconBackground 
-}: { 
-  iconName: string; 
-  iconColor: string; 
-  iconBackground: string; 
-}) {
-  const iconMap: { [key: string]: React.ComponentType<{ className?: string }> } = {
-    bot: Bot,
-    sparkles: Sparkles,
-    zap: Zap,
-    settings: Settings,
-    shield: Shield,
-    user: User,
-    palette: Palette,
-  };
-  
-  const IconComponent = iconMap[iconName] || Bot;
-  
-  return (
-    <div 
-      className="w-12 h-12 rounded-xl flex items-center justify-center border"
-      style={{ backgroundColor: iconBackground }}
-    >
-      <DynamicIcon name={iconName as any} size={24} color={iconColor} />
-    </div>
-  );
-}
 
 export function CreateNewAgentToolView({
   name = 'create-new-agent',
@@ -150,17 +116,13 @@ export function CreateNewAgentToolView({
               <div className="border rounded-xl p-4 space-y-4">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    {icon_name && icon_color && icon_background ? (
-                      <IconPreview 
-                        iconName={icon_name} 
-                        iconColor={icon_color} 
-                        iconBackground={icon_background} 
-                      />
-                    ) : (
-                      <div className="w-12 h-12 rounded-xl bg-muted/50 border flex items-center justify-center overflow-hidden">
-                        <Bot className="w-6 h-6 text-blue-600 dark:text-blue-400" />
-                      </div>
-                    )}
+                    <AgentAvatar
+                      iconName={icon_name}
+                      iconColor={icon_color}
+                      backgroundColor={icon_background}
+                      agentName={agentName}
+                      size={48}
+                    />
                     <div>
                       <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">
                         {agentName}
