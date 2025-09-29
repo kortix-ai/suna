@@ -211,8 +211,8 @@ export const GranularToolConfiguration = ({
   const filteredGroups = getFilteredToolGroups();
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col h-full space-y-6">
+      <div className="flex items-center justify-between flex-shrink-0">
         <div>
           <h3 className="text-lg font-semibold">Tool Configuration</h3>
           <p className="text-sm text-muted-foreground">
@@ -224,7 +224,7 @@ export const GranularToolConfiguration = ({
         </Badge>
       </div>
 
-      <div className="relative">
+      <div className="relative flex-shrink-0">
         <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
         <Input
           placeholder="Search tools and capabilities..."
@@ -234,7 +234,7 @@ export const GranularToolConfiguration = ({
         />
       </div>
 
-      <ScrollArea className="h-[400px] pr-4">
+      <ScrollArea className="flex-1 pr-4">
         <div className="space-y-2">
           {filteredGroups.map((toolGroup) => {
             const isGroupEnabled = isToolGroupEnabled(toolGroup.name);
