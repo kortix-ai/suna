@@ -203,15 +203,13 @@ class PromptAssembler:
 
     def assemble_prompt(
         self,
-        context: Optional[str] = None,
         include_tools: Optional[List[str]] = None,
         include_templates: Optional[List[str]] = None
     ) -> str:
         """
-        Assemble complete system prompt based on context and requirements.
+        Assemble complete system prompt based on requirements.
 
         Args:
-            context: Optional context identifier for conditional loading
             include_tools: List of tool schemas to include (e.g., ['file_operations', 'web_operations'])
             include_templates: List of templates to include (e.g., ['file_ops', 'browser'])
 
@@ -220,7 +218,6 @@ class PromptAssembler:
         """
         # Create cache key
         cache_key = (
-            context,
             tuple(include_tools) if include_tools else None,
             tuple(include_templates) if include_templates else None
         )
@@ -265,99 +262,17 @@ class PromptAssembler:
 
     def get_full_prompt(self) -> str:
         """
-        Get the full system prompt with all capabilities.
-        Use this for maximum compatibility with the original prompt.
+        Get the complete system prompt with all tools and templates.
+
+        Returns:
+            Complete assembled system prompt string
         """
-        all_tools = [
-            "file_operations",
-            "knowledge_base",
-            "web_operations",
-            "agent_management",
-            "design_tools"
-        ]
-
-        all_templates = [
-            "file_ops",
-            "web_dev",
-            "browser",
-            "design",
-            "agents"
-        ]
-
         return self.assemble_prompt(
-            include_tools=all_tools,
-            include_templates=all_templates
-        )
-
-    def get_optimized_prompt(self, context: str) -> str:
-        """
-        Get an optimized prompt for specific context.
-        Only loads necessary components.
-
-        Args:
-            context: One of 'file', 'web', 'browser', 'design', 'agent', 'full'
-        """
-        context_mappings = {
-            "file": {
-                "tools": ["files", "knowledge_base"],
-                "templates": ["files"]
-            },
-            "web": {
-                "tools": ["web", "files"],
-                "templates": ["web"]
-            },
-            "browser": {
-                "tools": ["web", "files"],
-                "templates": ["browser"]
-            },
-            "design": {
-                "tools": ["design", "files"],
-                "templates": ["design"]
-            },
-            "agent": {
-                "tools": ["agents"],
-                "templates": ["agents"]
-            },
-            "full": {
-                "tools": ["files", "knowledge_base", "web", "agents", "design"],
-                "templates": ["files", "web", "browser", "design", "agents"]
-            }
-        }
-
-        mapping = context_mappings.get(context, context_mappings["full"])
-
-        return self.assemble_prompt(
-            context=context,
-            include_tools=mapping["tools"],
-            include_templates=mapping["templates"]
+            include_tools=["files", "knowledge_base", "web", "agents", "design"],
+            include_templates=["files", "web", "browser", "design", "agents"]
         )
 
     def clear_cache(self):
         """Clear the internal cache."""
         self._cache.clear()
         self._assembly_cache.clear()
-
-
-# Global assembler instance
-_assembler = None
-
-def get_assembler() -> PromptAssembler:
-    """Get or create the global prompt assembler instance."""
-    global _assembler
-    if _assembler is None:
-        _assembler = PromptAssembler()
-    return _assembler
-
-
-def get_system_prompt(context: str = "full") -> str:
-    """
-    Convenience function to get system prompt.
-
-    Args:
-        context: Context for prompt generation ('file', 'web', 'browser', 'design', 'agent', 'full')
-
-    Returns:
-        Assembled system prompt string
-    """
-    assembler = get_assembler()
-    return assembler.get_optimized_prompt(context)
