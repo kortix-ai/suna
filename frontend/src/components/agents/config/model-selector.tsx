@@ -2,6 +2,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Check, Search, AlertTriangle, Crown, Cpu, Plus, Edit, Trash, KeyRound } from 'lucide-react';
+import { ModelProviderIcon } from '@/lib/model-provider-icons';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -301,7 +302,8 @@ export function AgentModelSelector({
                 onClick={() => !disabled && handleSelect(model.id)}
                 onMouseEnter={() => setHighlightedIndex(index)}
               >
-                <div className="flex items-center">
+                <div className="flex items-center gap-3">
+                  <ModelProviderIcon modelId={model.id} size={24} />
                   <span className="font-medium">{model.label}</span>
                 </div>
                 <div className="flex items-center gap-2">
@@ -380,11 +382,11 @@ export function AgentModelSelector({
                       className
                     )}
                   >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="relative flex items-center justify-center">
-                        <Cpu className="h-4 w-4" />
-                        {/* API models are quality controlled - no low quality warning needed */}
-                      </div>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <ModelProviderIcon 
+                        modelId={selectedModel} 
+                        size={24}
+                      />
                       <span className="truncate">{selectedModelDisplay}</span>
                     </div>
                     <div className="flex items-center gap-2">
@@ -406,10 +408,7 @@ export function AgentModelSelector({
                       className
                     )}
                   >
-                    <div className="relative flex items-center justify-center">
-                      <Cpu className="h-4 w-4" />
-                      {/* API models are quality controlled - no low quality warning needed */}
-                    </div>
+                    <ModelProviderIcon modelId={selectedModel} size={24} />
                     <span className="text-sm">{selectedModelDisplay}</span>
                   </Button>
                 )}
@@ -509,7 +508,8 @@ export function AgentModelSelector({
                                         )}
                                         onClick={() => handleSelect(model.id)}
                                       >
-                                        <div className="flex items-center">
+                                        <div className="flex items-center gap-3">
+                                          <ModelProviderIcon modelId={model.id} size={24} />
                                           <span className="font-medium">{model.label}</span>
                                         </div>
                                         <div className="flex items-center gap-2">
