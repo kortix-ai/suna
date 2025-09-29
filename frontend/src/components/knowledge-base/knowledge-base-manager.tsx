@@ -103,6 +103,7 @@ export function KnowledgeBaseManager({
 
     // Assignment state for agent mode
     const [selectedEntries, setSelectedEntries] = useState<Set<string>>(new Set());
+    const [assignmentsLoading, setAssignmentsLoading] = useState(false);
 
     // Modal states
     const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -155,12 +156,13 @@ export function KnowledgeBaseManager({
         })
     );
 
-    // Build tree structure
+    // Build tree structure and auto-expand all folders for assignment mode
     React.useEffect(() => {
         const buildTree = () => {
             const tree: TreeItem[] = folders.map(folder => {
                 const existingFolder = treeData.find(item => item.id === folder.folder_id);
-                const isExpanded = existingFolder?.expanded || false;
+                // Auto-expand all folders in assignment mode, preserve state otherwise
+                const isExpanded = enableAssignments ? true : (existingFolder?.expanded || false);
 
                 return {
                     id: folder.folder_id,
@@ -181,24 +183,41 @@ export function KnowledgeBaseManager({
         };
 
         buildTree();
-    }, [folders, folderEntries]);
+    }, [folders, folderEntries, enableAssignments]);
 
-    // Load assignments for agent mode
+    // Load assignments and auto-fetch all folder entries for assignment mode
     React.useEffect(() => {
-        if (enableAssignments && agentId && !foldersLoading && folders.length > 0) {
+        if (enableAssignments && agentId) {
+            console.log('Loading assignments immediately for agent:', agentId);
             loadAssignments();
+            
+            // Auto-fetch all folder entries in assignment mode
+            if (!foldersLoading && folders.length > 0) {
+                console.log('Auto-fetching all folder entries for assignment mode');
+                folders.forEach(folder => {
+                    if (!folderEntries[folder.folder_id]) {
+                        fetchFolderEntries(folder.folder_id);
+                    }
+                });
+            }
         }
     }, [enableAssignments, agentId, foldersLoading, folders]);
 
     const loadAssignments = async () => {
         if (!agentId) return;
         
+        console.log('🔄 Starting to load assignments for agent:', agentId);
+        setAssignmentsLoading(true);
         try {
             const supabase = createClient();
             const { data: { session } } = await supabase.auth.getSession();
             
-            if (!session?.access_token) return;
+            if (!session?.access_token) {
+                console.warn('❌ No access token available for assignments');
+                return;
+            }
 
+            console.log('📡 Fetching assignments from API...');
             const response = await fetch(`${API_URL}/knowledge-base/agents/${agentId}/assignments`, {
                 headers: {
                     'Authorization': `Bearer ${session.access_token}`,
@@ -206,18 +225,32 @@ export function KnowledgeBaseManager({
                 }
             });
 
+            console.log('📡 Assignments response status:', response.status);
+
             if (response.ok) {
                 const assignments = await response.json();
+                console.log('📊 Raw assignments data:', assignments);
+                
                 const selectedSet = new Set<string>();
                 Object.entries(assignments).forEach(([entryId, enabled]) => {
                     if (enabled) {
                         selectedSet.add(entryId);
+                        console.log('✅ Added to selection:', entryId);
+                    } else {
+                        console.log('❌ Not selected:', entryId);
                     }
                 });
+                console.log('🎯 Final selected entries:', Array.from(selectedSet));
                 setSelectedEntries(selectedSet);
+            } else {
+                const errorText = await response.text();
+                console.error('❌ Failed to load assignments:', response.status, errorText);
             }
         } catch (error) {
-            console.warn('Failed to load assignments:', error);
+            console.error('❌ Error loading assignments:', error);
+        } finally {
+            setAssignmentsLoading(false);
+            console.log('✅ Assignment loading complete');
         }
     };
 
@@ -796,7 +829,7 @@ export function KnowledgeBaseManager({
         };
     };
 
-    if (foldersLoading) {
+    if (foldersLoading || (enableAssignments && assignmentsLoading)) {
         return (
             <div className="space-y-4">
                 {showHeader && (
@@ -809,16 +842,62 @@ export function KnowledgeBaseManager({
                     </div>
                 )}
                 <div className="space-y-3">
-                    <Skeleton className="h-12 w-full" />
-                    <div className="ml-4 space-y-2">
-                        <Skeleton className="h-8 w-3/4" />
-                        <Skeleton className="h-8 w-2/3" />
-                        <Skeleton className="h-8 w-4/5" />
+                    {/* Folder skeletons */}
+                    <div className="flex items-center gap-3 p-4 rounded-lg border border-border/30">
+                        <Skeleton className="h-4 w-4" /> {/* Chevron */}
+                        <Skeleton className="h-10 w-10 rounded-lg" /> {/* Folder icon */}
+                        <div className="flex-1 space-y-2">
+                            <Skeleton className="h-4 w-32" /> {/* Folder name */}
+                            <Skeleton className="h-3 w-20" /> {/* File count */}
+                        </div>
+                        {enableAssignments && <Skeleton className="h-5 w-9 rounded-full" />} {/* Assignment switch */}
+                        <Skeleton className="h-6 w-6" /> {/* Actions */}
                     </div>
-                    <Skeleton className="h-12 w-full" />
-                    <div className="ml-4 space-y-2">
-                        <Skeleton className="h-8 w-3/4" />
-                        <Skeleton className="h-8 w-1/2" />
+                    
+                    {/* File skeletons (indented) */}
+                    <div className="ml-6 space-y-2">
+                        <div className="flex items-center gap-3 p-3 rounded-lg border border-border/20">
+                            <Skeleton className="h-9 w-9 rounded-lg" /> {/* File icon */}
+                            <div className="flex-1 space-y-1">
+                                <Skeleton className="h-4 w-40" /> {/* Filename */}
+                                <Skeleton className="h-3 w-24" /> {/* File size */}
+                            </div>
+                            {enableAssignments && <Skeleton className="h-5 w-9 rounded-full" />} {/* Assignment switch */}
+                            <Skeleton className="h-6 w-6" /> {/* Actions */}
+                        </div>
+                        <div className="flex items-center gap-3 p-3 rounded-lg border border-border/20">
+                            <Skeleton className="h-9 w-9 rounded-lg" />
+                            <div className="flex-1 space-y-1">
+                                <Skeleton className="h-4 w-36" />
+                                <Skeleton className="h-3 w-20" />
+                            </div>
+                            {enableAssignments && <Skeleton className="h-5 w-9 rounded-full" />}
+                            <Skeleton className="h-6 w-6" />
+                        </div>
+                    </div>
+
+                    {/* Another folder */}
+                    <div className="flex items-center gap-3 p-4 rounded-lg border border-border/30">
+                        <Skeleton className="h-4 w-4" />
+                        <Skeleton className="h-10 w-10 rounded-lg" />
+                        <div className="flex-1 space-y-2">
+                            <Skeleton className="h-4 w-28" />
+                            <Skeleton className="h-3 w-16" />
+                        </div>
+                        {enableAssignments && <Skeleton className="h-5 w-9 rounded-full" />}
+                        <Skeleton className="h-6 w-6" />
+                    </div>
+
+                    <div className="ml-6 space-y-2">
+                        <div className="flex items-center gap-3 p-3 rounded-lg border border-border/20">
+                            <Skeleton className="h-9 w-9 rounded-lg" />
+                            <div className="flex-1 space-y-1">
+                                <Skeleton className="h-4 w-44" />
+                                <Skeleton className="h-3 w-28" />
+                            </div>
+                            {enableAssignments && <Skeleton className="h-5 w-9 rounded-full" />}
+                            <Skeleton className="h-6 w-6" />
+                        </div>
                     </div>
                 </div>
             </div>
