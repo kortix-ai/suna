@@ -59,7 +59,6 @@ import { AgentMCPConfiguration } from './agent-mcp-configuration';
 import { AgentKnowledgeBaseManager } from './knowledge-base/agent-kb-tree';
 import { AgentPlaybooksConfiguration } from './playbooks/agent-playbooks-configuration';
 import { AgentTriggersConfiguration } from './triggers/agent-triggers-configuration';
-import { ProfilePictureDialog } from './config/profile-picture-dialog';
 import { AgentIconAvatar } from './config/agent-icon-avatar';
 import { AgentVersionSwitcher } from './agent-version-switcher';
 import { DEFAULT_AGENTPRESS_TOOLS, ensureCoreToolsEnabled } from './tools';
@@ -92,7 +91,6 @@ export function AgentConfigurationDialog({
   const exportMutation = useExportAgent();
 
   const [activeTab, setActiveTab] = useState(initialTab);
-  const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
   const [isEditingName, setIsEditingName] = useState(false);
   const [editName, setEditName] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -111,7 +109,6 @@ export function AgentConfigurationDialog({
     configured_mcps: [] as any[],
     custom_mcps: [] as any[],
     is_default: false,
-    profile_image_url: '',
     icon_name: null as string | null,
     icon_color: '#000000',
     icon_background: '#e5e5e5',
@@ -143,7 +140,6 @@ export function AgentConfigurationDialog({
       configured_mcps: configSource.configured_mcps || [],
       custom_mcps: configSource.custom_mcps || [],
       is_default: configSource.is_default || false,
-      profile_image_url: configSource.profile_image_url || '',
       icon_name: configSource.icon_name || null,
       icon_color: configSource.icon_color || '#000000',
       icon_background: configSource.icon_background || '#e5e5e5',
@@ -177,7 +173,6 @@ export function AgentConfigurationDialog({
       };
 
       if (formData.model !== undefined) updateData.model = formData.model;
-      if (formData.profile_image_url !== undefined) updateData.profile_image_url = formData.profile_image_url;
       if (formData.icon_name !== undefined) updateData.icon_name = formData.icon_name;
       if (formData.icon_color !== undefined) updateData.icon_color = formData.icon_color;
       if (formData.icon_background !== undefined) updateData.icon_background = formData.icon_background;
@@ -279,18 +274,52 @@ export function AgentConfigurationDialog({
     }));
   };
 
-  const handleProfileImageChange = (profileImageUrl: string | null) => {
-    setFormData(prev => ({ ...prev, profile_image_url: profileImageUrl || '' }));
-  };
 
-  const handleIconChange = (iconName: string | null, iconColor: string, iconBackground: string) => {
+  const handleIconChange = async (iconName: string | null, iconColor: string, iconBackground: string) => {
+    // First update the local state
     setFormData(prev => ({
       ...prev,
       icon_name: iconName,
       icon_color: iconColor,
       icon_background: iconBackground,
-      profile_image_url: iconName && prev.profile_image_url ? '' : prev.profile_image_url
     }));
+
+    // Then immediately save to backend
+    try {
+      const updateData: any = {
+        agentId,
+        icon_name: iconName,
+        icon_color: iconColor,
+        icon_background: iconBackground,
+      };
+
+      await updateAgentMutation.mutateAsync(updateData);
+      
+      // Update original form data to reflect the save
+      setOriginalFormData(prev => ({
+        ...prev,
+        icon_name: iconName,
+        icon_color: iconColor,
+        icon_background: iconBackground,
+      }));
+
+      // Invalidate queries to refresh data
+      queryClient.invalidateQueries({ queryKey: ['agents', 'detail', agentId] });
+      queryClient.invalidateQueries({ queryKey: ['versions', 'list', agentId] });
+      
+      toast.success('Agent icon updated successfully!');
+    } catch (error) {
+      console.error('Failed to update agent icon:', error);
+      toast.error('Failed to update agent icon. Please try again.');
+      
+      // Revert the local state on error
+      setFormData(prev => ({
+        ...prev,
+        icon_name: originalFormData.icon_name,
+        icon_color: originalFormData.icon_color,
+        icon_background: originalFormData.icon_background,
+      }));
+    }
   };
 
   const handleExport = () => {
@@ -326,14 +355,8 @@ export function AgentConfigurationDialog({
           <DialogHeader className="px-6 pt-6 pb-4 flex-shrink-0">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <button
-                  className={cn(
-                    "cursor-pointer transition-opacity hover:opacity-80",
-                    isSunaAgent && "cursor-default hover:opacity-100"
-                  )}
-                  onClick={() => !isSunaAgent && setIsProfileDialogOpen(true)}
-                  type="button"
-                  disabled={isSunaAgent}
+                <div
+                  className="flex-shrink-0"
                 >
                   {isSunaAgent ? (
                     <div className="h-10 w-10 rounded-lg bg-muted border flex items-center justify-center">
@@ -341,7 +364,6 @@ export function AgentConfigurationDialog({
                     </div>
                   ) : (
                     <AgentIconAvatar
-                      profileImageUrl={formData.profile_image_url}
                       iconName={formData.icon_name}
                       iconColor={formData.icon_color}
                       backgroundColor={formData.icon_background}
@@ -350,7 +372,7 @@ export function AgentConfigurationDialog({
                       className="ring-1 ring-border hover:ring-foreground/20 transition-all"
                     />
                   )}
-                </button>
+                </div>
 
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center gap-2">
@@ -428,7 +450,6 @@ export function AgentConfigurationDialog({
                                     </div>
                                   ) : (
                                     <AgentIconAvatar
-                                      profileImageUrl={agent.profile_image_url}
                                       iconName={agent.icon_name}
                                       iconColor={agent.icon_color}
                                       backgroundColor={agent.icon_background}
@@ -659,17 +680,6 @@ export function AgentConfigurationDialog({
         </DialogContent>
       </Dialog>
 
-      <ProfilePictureDialog
-        isOpen={isProfileDialogOpen}
-        onClose={() => setIsProfileDialogOpen(false)}
-        currentImageUrl={formData.profile_image_url}
-        currentIconName={formData.icon_name}
-        currentIconColor={formData.icon_color}
-        currentBackgroundColor={formData.icon_background}
-        agentName={formData.name}
-        onImageUpdate={handleProfileImageChange}
-        onIconUpdate={handleIconChange}
-      />
     </>
   );
 }

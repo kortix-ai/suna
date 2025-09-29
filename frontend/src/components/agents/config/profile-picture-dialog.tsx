@@ -66,7 +66,7 @@ export function ProfilePictureDialog({
     if (onIconUpdate) {
       onIconUpdate(selectedIcon, iconColor, backgroundColor);
       onImageUpdate(null);
-      toast.success('Agent icon updated!');
+      // Toast will be shown by parent component
       onClose();
     }
   }, [selectedIcon, iconColor, backgroundColor, onIconUpdate, onImageUpdate, onClose]);
@@ -241,8 +241,8 @@ export function ProfilePictureDialog({
   ];
   
   const ColorControls = () => (
-    <div className="space-y-6">
-      <div className="flex flex-col items-center space-y-3 py-4">
+    <div className="space-y-4">
+      <div className="flex flex-col items-center space-y-2 py-3">
         <AgentIconAvatar
           iconName={selectedIcon}
           iconColor={iconColor}
@@ -256,7 +256,7 @@ export function ProfilePictureDialog({
         </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         <ColorPickerField
           label="Icon Color"
           color={iconColor}
@@ -270,9 +270,9 @@ export function ProfilePictureDialog({
         />
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-2">
         <Label className="text-sm font-medium">Quick Themes</Label>
-        <div className="grid grid-cols-5 gap-2">
+        <div className="grid grid-cols-5 gap-1.5">
           {presetThemes.map((preset) => (
             <button
               key={preset.name}
@@ -305,15 +305,15 @@ export function ProfilePictureDialog({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0">
-        <DialogHeader className="px-6 pt-6 pb-4 shrink-0">
+      <DialogContent className="max-w-4xl max-h-[80vh] flex flex-col p-0">
+        <DialogHeader className="px-4 pt-4 pb-3 shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-5 w-5" />
             Customize Agent Icon
           </DialogTitle>
         </DialogHeader>
-        <div className="hidden md:flex flex-1 min-h-0 px-6">
-          <div className="flex gap-6 w-full">
+        <div className="hidden md:flex flex-1 min-h-0 px-4">
+          <div className="flex gap-4 w-full">
             <div className="flex-1 min-w-0">
               <IconPicker
                 selectedIcon={selectedIcon}
@@ -324,14 +324,14 @@ export function ProfilePictureDialog({
               />
             </div>
             <Separator orientation="vertical" className="h-full" />
-            <div className="w-80 shrink-0">
-              <ScrollArea className="h-[500px] pr-4">
+            <div className="w-72 shrink-0 flex flex-col h-full">
+              <div className="flex-1 overflow-y-auto pr-3">
                 <ColorControls />
-              </ScrollArea>
+              </div>
             </div>
           </div>
         </div>
-        <div className="md:hidden flex-1 min-h-0 px-6">
+        <div className="md:hidden flex-1 min-h-0 px-4">
           <Tabs defaultValue="customize" className="h-full flex flex-col">
             <TabsList className="grid w-full grid-cols-2 shrink-0">
               <TabsTrigger value="customize">Customize</TabsTrigger>
@@ -354,7 +354,7 @@ export function ProfilePictureDialog({
             </TabsContent>
           </Tabs>
         </div>
-        <DialogFooter className="px-6 py-4 shrink-0 border-t">
+        <DialogFooter className="px-4 py-3 shrink-0 border-t">
           <div className="flex items-center gap-2 mr-auto">
             <Button
               variant="outline"
