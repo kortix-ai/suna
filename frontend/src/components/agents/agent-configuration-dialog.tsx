@@ -61,14 +61,14 @@ interface AgentConfigurationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   agentId: string;
-  initialTab?: 'general' | 'instructions' | 'tools' | 'integrations' | 'knowledge' | 'playbooks' | 'triggers';
+  initialTab?: 'instructions' | 'tools' | 'integrations' | 'knowledge' | 'playbooks' | 'triggers';
 }
 
 export function AgentConfigurationDialog({
   open,
   onOpenChange,
   agentId,
-  initialTab = 'general',
+  initialTab = 'instructions',
 }: AgentConfigurationDialogProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -299,7 +299,7 @@ export function AgentConfigurationDialog({
   }
 
   const tabItems = [
-    { id: 'general', label: 'General', icon: Settings, disabled: false },
+    // { id: 'general', label: 'General', icon: Settings, disabled: false },
     { id: 'instructions', label: 'Instructions', icon: Brain, disabled: isSunaAgent },
     { id: 'tools', label: 'Tools', icon: Wrench, disabled: isSunaAgent },
     { id: 'integrations', label: 'Integrations', icon: Server, disabled: false },
@@ -461,7 +461,7 @@ export function AgentConfigurationDialog({
                 </TabsList>
               </div>
               <div className="flex-1 overflow-auto">
-                <TabsContent value="general" className="p-6 mt-0 flex flex-col h-full">
+                {/* <TabsContent value="general" className="p-6 mt-0 flex flex-col h-full">
                   <div className="flex flex-col flex-1 gap-6">
                     <div className="flex-shrink-0">
                       <Label className="text-base font-semibold mb-3 block">Model</Label>
@@ -474,7 +474,7 @@ export function AgentConfigurationDialog({
                     </div>
 
                   </div>
-                </TabsContent>
+                </TabsContent> */}
 
                 <TabsContent value="instructions" className="p-6 mt-0 flex flex-col h-full">
                   <div className="flex flex-col flex-1 min-h-0">

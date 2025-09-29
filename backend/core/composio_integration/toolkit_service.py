@@ -247,7 +247,7 @@ class ToolkitService:
     
     async def get_toolkit_icon(self, toolkit_slug: str) -> Optional[str]:
         try:
-            logger.debug(f"Fetching toolkit icon for: {toolkit_slug}")
+            # logger.debug(f"Fetching toolkit icon for: {toolkit_slug}")
             toolkit_response = self.client.toolkits.retrieve(toolkit_slug)
             
             if hasattr(toolkit_response, 'model_dump'):
@@ -265,7 +265,7 @@ class ToolkitService:
             else:
                 logo = None
             
-            logger.debug(f"Successfully fetched icon for {toolkit_slug}: {logo}")
+            # logger.debug(f"Successfully fetched icon for {toolkit_slug}: {logo}")
             return logo
             
         except Exception as e:

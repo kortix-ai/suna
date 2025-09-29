@@ -56,10 +56,8 @@ class AgentConfig:
     native_max_auto_continues: int = 25
     max_iterations: int = 100
     model_name: str = "openai/gpt-5-mini"
-    enable_context_manager: bool = True
     agent_config: Optional[dict] = None
     trace: Optional[StatefulTraceClient] = None
-    enable_prompt_caching: bool = True
 
 
 class ToolManager:
@@ -119,7 +117,6 @@ class ToolManager:
             ('sb_design_tool', SandboxDesignerTool, {'project_id': self.project_id, 'thread_id': self.thread_id, 'thread_manager': self.thread_manager}),
             ('sb_presentation_outline_tool', SandboxPresentationOutlineTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
             ('sb_presentation_tool', SandboxPresentationTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
-
             ('sb_sheets_tool', SandboxSheetsTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
             # ('sb_web_dev_tool', SandboxWebDevTool, {'project_id': self.project_id, 'thread_id': self.thread_id, 'thread_manager': self.thread_manager}),  # DEACTIVATED
             ('sb_upload_file_tool', SandboxUploadFileTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
@@ -772,8 +769,8 @@ class AgentRunner:
                     ),
                     native_max_auto_continues=self.config.native_max_auto_continues,
                     generation=generation,
-                    enable_prompt_caching=self.config.enable_prompt_caching,
-                    enable_context_manager=self.config.enable_context_manager
+                    enable_prompt_caching=True,
+                    enable_context_manager=True
                 )
 
                 last_tool_call = None
@@ -896,8 +893,6 @@ async def run_agent(
     native_max_auto_continues: int = 25,
     max_iterations: int = 100,
     model_name: str = "openai/gpt-5-mini",
-    enable_context_manager: bool = False,
-    enable_prompt_caching: bool = False,
     agent_config: Optional[dict] = None,    
     trace: Optional[StatefulTraceClient] = None
 ):
@@ -919,8 +914,6 @@ async def run_agent(
         native_max_auto_continues=native_max_auto_continues,
         max_iterations=max_iterations,
         model_name=effective_model,
-        enable_context_manager=enable_context_manager,
-        enable_prompt_caching=enable_prompt_caching,
         agent_config=agent_config,
         trace=trace
     )
