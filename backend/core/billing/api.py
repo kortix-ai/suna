@@ -30,6 +30,7 @@ class CreateCheckoutSessionRequest(BaseModel):
     price_id: str
     success_url: str
     cancel_url: str
+    commitment_type: Optional[str] = None
 
 class CreatePortalSessionRequest(BaseModel):
     return_url: str
@@ -441,8 +442,9 @@ async def create_checkout_session(
         result = await subscription_service.create_checkout_session(
             account_id=account_id,
             price_id=request.price_id,
-                success_url=request.success_url,
-            cancel_url=request.cancel_url
+            success_url=request.success_url,
+            cancel_url=request.cancel_url,
+            commitment_type=request.commitment_type
         )
         return result
             
