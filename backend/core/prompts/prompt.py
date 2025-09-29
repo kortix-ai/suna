@@ -35,4 +35,9 @@ def get_custom_prompt(
     )
 
 
+def get_agent_builder_prompt() -> str:
+    """Get agent builder prompt with tools and templates."""
+    return _assembler.get_agent_builder_prompt()
+
+
 SYSTEM_PROMPT = get_system_prompt()

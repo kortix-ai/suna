@@ -12,7 +12,7 @@ from core.tools.web_search_tool import SandboxWebSearchTool
 from core.tools.image_search_tool import SandboxImageSearchTool
 from dotenv import load_dotenv
 from core.utils.config import config
-from core.prompts.agent_builder_prompt import get_agent_builder_prompt
+from core.prompts.prompt import get_agent_builder_prompt
 from core.agentpress.thread_manager import ThreadManager
 from core.agentpress.response_processor import ProcessorConfig
 from core.agentpress.error_processor import ErrorProcessor
@@ -537,11 +537,11 @@ class MessageManager:
             )
             
             if has_builder_tools:
-                from core.prompts.agent_builder_prompt import AGENT_BUILDER_SYSTEM_PROMPT
+                builder_prompt = get_agent_builder_prompt()
                 if system_message:
-                    system_message += f"\n\n{AGENT_BUILDER_SYSTEM_PROMPT}"
+                    system_message += f"\n\n{builder_prompt}"
                 else:
-                    system_message = AGENT_BUILDER_SYSTEM_PROMPT
+                    system_message = builder_prompt
         
         if system_message:
             return {

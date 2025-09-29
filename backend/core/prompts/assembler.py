@@ -165,6 +165,58 @@ class PromptAssembler:
                 for i, step in enumerate(steps, 1):
                     sections.append(f"{i}. {step}")
 
+        if "tool_mapping_guide" in template:
+            sections.append("\n## Tool Mapping Guide")
+            for use_case, tools in template["tool_mapping_guide"].items():
+                sections.append(f"\n**{use_case.replace('_', ' ').title()}:**")
+                if "required" in tools:
+                    sections.append(f"- Required: {', '.join(tools['required'])}")
+                if "optional" in tools:
+                    sections.append(f"- Optional: {', '.join(tools['optional'])}")
+                if "integrations" in tools:
+                    sections.append(f"- Integrations: {', '.join(tools['integrations'])}")
+
+        if "discovery_questions" in template:
+            sections.append("\n## Discovery Questions")
+            for category, questions in template["discovery_questions"].items():
+                sections.append(f"\n**{category.replace('_', ' ').title()}:**")
+                for question in questions:
+                    sections.append(f"- {question}")
+
+        if "workflow_indicators" in template:
+            sections.append("\n## Workflow Indicators")
+            for indicator in template["workflow_indicators"]:
+                sections.append(f"- {indicator}")
+
+        if "scheduling_indicators" in template:
+            sections.append("\n## Scheduling Indicators")
+            for indicator in template["scheduling_indicators"]:
+                sections.append(f"- {indicator}")
+
+        if "analysis_process" in template:
+            sections.append("\n## Analysis Process")
+            for step in template["analysis_process"]:
+                sections.append(f"- {step}")
+
+        if "best_practices" in template:
+            sections.append("\n## Best Practices")
+            best_practices = template["best_practices"]
+            if isinstance(best_practices, dict):
+                for category, practices in best_practices.items():
+                    sections.append(f"\n**{category.replace('_', ' ').title()}:**")
+                    for practice in practices:
+                        sections.append(f"- {practice}")
+            elif isinstance(best_practices, list):
+                for practice in best_practices:
+                    sections.append(f"- {practice}")
+
+        if "common_patterns" in template:
+            sections.append("\n## Common Patterns")
+            for pattern_type, patterns in template["common_patterns"].items():
+                sections.append(f"\n**{pattern_type.title()}:**")
+                for pattern in patterns:
+                    sections.append(f"- {pattern}")
+
         return "\n".join(sections)
 
     def assemble_prompt(
@@ -221,9 +273,34 @@ class PromptAssembler:
     def get_full_prompt(self) -> str:
         """Get complete system prompt with all tools and templates."""
         return self.assemble_prompt(
-            include_tools=["files", "knowledge_base", "web", "agents", "design"],
-            include_templates=["files", "web", "browser", "design", "agents"]
+            include_tools=["files", "knowledge_base", "web", "agents", "design", "agent_builder"],
+            include_templates=["files", "web", "browser", "design", "agents", "agent_builder"]
         )
+
+    def get_agent_builder_prompt(self) -> str:
+        """Get agent builder prompt with tools and templates."""
+        cache_key = ('agent_builder',)
+        if cache_key in self._assembly_cache:
+            return self._assembly_cache[cache_key]
+
+        sections = []
+        sections.append("## AGENT BUILDER & SELF-CONFIGURATION")
+
+        try:
+            schema = self.load_tool_schema("agent_builder")
+            sections.append(self._format_tool_schema(schema))
+        except FileNotFoundError:
+            print("Warning: agent_builder tool schema not found")
+
+        try:
+            template = self.load_template("agent_builder")
+            sections.append(self._format_template(template))
+        except FileNotFoundError:
+            print("Warning: agent_builder template not found")
+
+        result = "\n\n".join(sections)
+        self._assembly_cache[cache_key] = result
+        return result
 
     def clear_cache(self):
         """Clear internal caches."""
