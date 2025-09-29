@@ -449,7 +449,7 @@ class SubscriptionService:
             logger.error(f"Error reactivating subscription {subscription_id}: {e}")
             raise HTTPException(status_code=500, detail=f"Stripe error: {str(e)}")
 
-    async def handle_subscription_change(self, subscription: Dict):
+    async def handle_subscription_change(self, subscription: Dict, previous_attributes: Dict = None):
         db = DBConnection()
         client = await db.client
         
@@ -465,7 +465,16 @@ class SubscriptionService:
             account_id = customer_result.data[0]['account_id']
         price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
         
-        # Handle commitment tracking
+
+        is_renewal = False
+        if previous_attributes and previous_attributes.get('current_period_start') and previous_attributes.get('current_period_end'):
+            prev_period_start = previous_attributes.get('current_period_start')
+            current_period_start = subscription.get('current_period_start')
+            
+            if prev_period_start and current_period_start and prev_period_start != current_period_start:
+                is_renewal = True
+                logger.info(f"[RENEWAL DETECTION] Subscription {subscription['id']} renewal detected - period start changed from {prev_period_start} to {current_period_start}")
+        
         await self._track_commitment_if_needed(account_id, price_id, subscription, client)
         
         new_tier_info = get_tier_by_price_id(price_id)
@@ -519,7 +528,7 @@ class SubscriptionService:
                 'credits': 0
             }
             
-            should_grant_credits = self._should_grant_credits(current_tier_name, current_tier, new_tier, subscription, old_subscription_id)
+            should_grant_credits = self._should_grant_credits(current_tier_name, current_tier, new_tier, subscription, old_subscription_id, is_renewal)
             
             if should_grant_credits:
                 await client.from_('credit_accounts').update({
@@ -577,10 +586,13 @@ class SubscriptionService:
         
         logger.info(f"[WEBHOOK] Started trial for user {account_id} via Stripe subscription - granted ${TRIAL_CREDITS} credits")
 
-    def _should_grant_credits(self, current_tier_name, current_tier, new_tier, subscription, old_subscription_id):
+    def _should_grant_credits(self, current_tier_name, current_tier, new_tier, subscription, old_subscription_id, is_renewal=False):
         should_grant_credits = False
-        
-        if current_tier_name in ['free', 'none'] and new_tier['name'] not in ['free', 'none']:
+
+        if is_renewal:
+            should_grant_credits = True
+            logger.info(f"Renewal detected for tier {new_tier['name']} - will grant credits")
+        elif current_tier_name in ['free', 'none'] and new_tier['name'] not in ['free', 'none']:
             should_grant_credits = True
             logger.info(f"Upgrade from free tier to {new_tier['name']} - will grant credits")
         elif current_tier:
