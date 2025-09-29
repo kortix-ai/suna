@@ -50,7 +50,7 @@ interface MyAgentsTabProps {
   setTemplatesSearchQuery: (value: string) => void;
   onPublish: (template: any) => void;
   onUnpublish: (templateId: string, templateName: string) => void;
-  getTemplateStyling: (template: any) => { avatar: string; color: string };
+  getTemplateStyling: (template: any) => { color: string };
 
   onPublishAgent?: (agent: any) => void;
   publishingAgentId?: string | null;

@@ -22,17 +22,18 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { UnifiedAgentCard, type BaseAgentData, type AgentCardVariant } from '@/components/ui/unified-agent-card';
 
 export type AgentCardMode = 'marketplace' | 'template' | 'agent';
 
-interface BaseAgentData {
+interface LegacyBaseAgentData {
   id: string;
   name: string;
   tags?: string[];
   created_at: string;
 }
 
-interface MarketplaceData extends BaseAgentData {
+interface MarketplaceData extends LegacyBaseAgentData {
   creator_id: string;
   is_kortix_team?: boolean;
   download_count: number;
@@ -40,13 +41,13 @@ interface MarketplaceData extends BaseAgentData {
   marketplace_published_at?: string;
 }
 
-interface TemplateData extends BaseAgentData {
+interface TemplateData extends LegacyBaseAgentData {
   template_id: string;
   is_public?: boolean;
   download_count?: number;
 }
 
-interface AgentData extends BaseAgentData {
+interface AgentData extends LegacyBaseAgentData {
   agent_id: string;
   is_default?: boolean;
   is_public?: boolean;
@@ -67,7 +68,6 @@ interface AgentData extends BaseAgentData {
       description_editable?: boolean;
       mcps_editable?: boolean;
     };
-    profile_image_url?: string;
   };
 }
 
@@ -77,7 +77,6 @@ interface AgentCardProps {
   mode: AgentCardMode;
   data: AgentCardData;
   styling?: {
-    avatar: string;
     color: string;
   };
   isActioning?: boolean;
@@ -338,14 +337,12 @@ const TemplateActions: React.FC<{
 
 const CardAvatar: React.FC<{ 
   isSunaAgent?: boolean; 
-  profileImageUrl?: string; 
   agentName?: string;
   iconName?: string;
   iconColor?: string;
   iconBackground?: string;
 }> = ({ 
   isSunaAgent = false, 
-  profileImageUrl, 
   agentName,
   iconName,
   iconColor = '#000000',
@@ -374,11 +371,6 @@ const CardAvatar: React.FC<{
     );
   }
   
-  if (profileImageUrl) {
-    return (
-      <img src={profileImageUrl} alt="Agent" className="h-14 w-14 rounded-2xl object-cover" />
-    );
-  }
   
   return (
     <div className="h-14 w-14 border bg-muted flex items-center justify-center rounded-2xl">
@@ -408,6 +400,7 @@ const TagList: React.FC<{ tags?: string[] }> = ({ tags }) => {
   );
 };
 
+
 export const AgentCard: React.FC<AgentCardProps> = ({
   mode,
   data,
@@ -419,100 +412,92 @@ export const AgentCard: React.FC<AgentCardProps> = ({
   onClick,
   currentUserId
 }) => {
-  
-  const isSunaAgent = mode === 'agent' && (data as AgentData).metadata?.is_suna_default === true;
-  const isOwner = currentUserId && mode === 'marketplace' && (data as MarketplaceData).creator_id === currentUserId;
-  
-  const cardClassName = `group relative bg-card rounded-2xl overflow-hidden shadow-sm transition-all duration-300 border cursor-pointer flex flex-col border-border/50 hover:border-primary/20`;
-  
-  const renderBadge = () => {
+  // Convert legacy mode to new variant
+  const getVariant = (mode: AgentCardMode): AgentCardVariant => {
     switch (mode) {
       case 'marketplace':
-        return <MarketplaceBadge 
-          isKortixTeam={(data as MarketplaceData).is_kortix_team} 
-          isOwner={isOwner}
-        />;
+        return 'marketplace';
       case 'template':
-        return <TemplateBadge isPublic={(data as TemplateData).is_public} />;
+        return 'template';
       case 'agent':
-        return <AgentBadges agent={data as AgentData} isSunaAgent={isSunaAgent} />;
+        return 'agent';
       default:
-        return null;
+        return 'agent';
     }
   };
 
-  const renderMetadata = () => {
-    switch (mode) {
-      case 'marketplace':
-        return <MarketplaceMetadata data={data as MarketplaceData} />;
-      case 'template':
-        return <TemplateMetadata data={data as TemplateData} />;
-      case 'agent':
-        return <AgentMetadata data={data as AgentData} />;
-      default:
-        return null;
-    }
-  };
+  // Convert legacy data to BaseAgentData
+  const convertToBaseAgentData = (data: AgentCardData): BaseAgentData => {
+    const baseData: BaseAgentData = {
+      id: data.id,
+      name: data.name,
+      tags: data.tags,
+      created_at: data.created_at,
+    };
 
-  const renderActions = () => {
-    switch (mode) {
-      case 'marketplace':
-        return <MarketplaceActions 
-          onAction={onPrimaryAction} 
-          onDeleteAction={onDeleteAction}
-          isActioning={isActioning} 
-          data={data} 
-          currentUserId={currentUserId}
-        />;
-      case 'template':
-        return <TemplateActions 
-          data={data as TemplateData} 
-          onPrimaryAction={onPrimaryAction} 
-          onSecondaryAction={onSecondaryAction} 
-          isActioning={isActioning} 
-        />;
-      case 'agent':
-        return null;
-      default:
-        return null;
+    // Add mode-specific fields
+    if (mode === 'marketplace') {
+      const marketplaceData = data as MarketplaceData;
+      return {
+        ...baseData,
+        creator_id: marketplaceData.creator_id,
+        creator_name: marketplaceData.creator_name,
+        is_kortix_team: marketplaceData.is_kortix_team,
+        download_count: marketplaceData.download_count,
+        marketplace_published_at: marketplaceData.marketplace_published_at,
+        icon_name: (data as any)?.icon_name,
+        icon_color: (data as any)?.icon_color,
+        icon_background: (data as any)?.icon_background,
+      };
     }
+
+    if (mode === 'template') {
+      const templateData = data as TemplateData;
+      return {
+        ...baseData,
+        template_id: templateData.template_id,
+        is_public: templateData.is_public,
+        download_count: templateData.download_count,
+        icon_name: (data as any)?.icon_name,
+        icon_color: (data as any)?.icon_color,
+        icon_background: (data as any)?.icon_background,
+      };
+    }
+
+    if (mode === 'agent') {
+      const agentData = data as AgentData;
+      return {
+        ...baseData,
+        agent_id: agentData.agent_id,
+        is_default: agentData.is_default,
+        is_public: agentData.is_public,
+        marketplace_published_at: agentData.marketplace_published_at,
+        download_count: agentData.download_count,
+        current_version: agentData.current_version,
+        metadata: agentData.metadata,
+        icon_name: (data as any)?.icon_name,
+        icon_color: (data as any)?.icon_color,
+        icon_background: (data as any)?.icon_background,
+      };
+    }
+
+    return baseData;
   };
 
   return (
-    <div className={cardClassName} onClick={() => onClick?.(data)}>
-      <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-      <div className="relative p-6 flex flex-col flex-1">
-        <div className="flex items-start justify-between mb-4">
-          <CardAvatar 
-            isSunaAgent={isSunaAgent} 
-            profileImageUrl={(data as any)?.profile_image_url} 
-            agentName={data.name}
-            iconName={(data as any)?.icon_name}
-            iconColor={(data as any)?.icon_color}
-            iconBackground={(data as any)?.icon_background}
-          />
-          <div className="flex items-center gap-2">
-            {renderBadge()}
-          </div>
-        </div>
-        
-        <h3 className="text-lg font-semibold text-foreground mb-2 line-clamp-1">
-          {data.name}
-        </h3>
-        
-        <div className="flex-1 flex flex-col">
-          <div className="min-h-[1.25rem] mb-3">
-            <TagList tags={data.tags} />
-          </div>
-          
-          <div className="mt-auto">
-            <div className="mb-3">
-              {renderMetadata()}
-            </div>
-            {renderActions()}
-          </div>
-        </div>
-      </div>
-    </div>
+    <UnifiedAgentCard
+      variant={getVariant(mode)}
+      data={convertToBaseAgentData(data)}
+      actions={{
+        onPrimaryAction,
+        onSecondaryAction,
+        onDeleteAction,
+        onClick,
+      }}
+      state={{
+        isActioning,
+      }}
+      currentUserId={currentUserId}
+    />
   );
 }; 

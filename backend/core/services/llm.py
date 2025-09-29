@@ -90,12 +90,6 @@ def _configure_token_limits(params: Dict[str, Any], model_name: str, max_tokens:
         # logger.debug(f"No max_tokens specified, using provider defaults for model: {model_name}")
         return
     
-    if model_name.startswith("bedrock/") and "claude-3-7" in model_name:
-        # For Claude 3.7 in Bedrock, do not set max_tokens or max_tokens_to_sample
-        # as it causes errors with inference profiles
-        # logger.debug(f"Skipping max_tokens for Claude 3.7 model: {model_name}")
-        return
-    
     is_openai_o_series = 'o1' in model_name
     is_openai_gpt5 = 'gpt-5' in model_name
     param_name = "max_completion_tokens" if (is_openai_o_series or is_openai_gpt5) else "max_tokens"
@@ -131,6 +125,38 @@ def _configure_openrouter(params: Dict[str, Any], model_name: str) -> None:
             extra_headers["X-Title"] = app_name
         params["extra_headers"] = extra_headers
         # logger.debug(f"Added OpenRouter site URL and app name to headers")
+
+def _configure_bedrock(params: Dict[str, Any], resolved_model_name: str, model_id: Optional[str]) -> None:
+    """Configure Bedrock-specific parameters including inference profile ARNs."""
+    if not resolved_model_name.startswith("bedrock/"):
+        return
+    
+    # Set inference profile ARNs if available and not already provided
+    from core.ai_models import model_manager
+    model_obj = model_manager.get_model(resolved_model_name)
+    if model_obj and not model_id:  # Only set if not already provided
+        if "claude-sonnet-4-20250514-v1:0" in resolved_model_name:
+            params["model_id"] = "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0"
+            # logger.debug(f"Set Bedrock inference profile ARN for Claude Sonnet 4")
+        elif "claude-3-7-sonnet-20250219-v1:0" in resolved_model_name:
+            params["model_id"] = "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
+            # logger.debug(f"Set Bedrock inference profile ARN for Claude 3.7 Sonnet")
+
+def _configure_openai_compatible(params: Dict[str, Any], model_name: str, api_key: Optional[str], api_base: Optional[str]) -> None:
+    """Configure OpenAI-compatible provider setup."""
+    if not model_name.startswith("openai-compatible/"):
+        return
+    
+    # Check if have required config either from parameters or environment
+    if (not api_key and not config.OPENAI_COMPATIBLE_API_KEY) or (
+        not api_base and not config.OPENAI_COMPATIBLE_API_BASE
+    ):
+        raise LLMError(
+            "OPENAI_COMPATIBLE_API_KEY and OPENAI_COMPATIBLE_API_BASE is required for openai-compatible models. If just updated the environment variables, wait a few minutes or restart the service to ensure they are loaded."
+        )
+    
+    setup_provider_router(api_key, api_base)
+    logger.debug(f"Configured OpenAI-compatible provider with custom API base")
 
 def _configure_thinking(params: Dict[str, Any], model_name: str) -> None:
     """Configure reasoning/thinking parameters automatically based on model capabilities."""
@@ -194,11 +220,8 @@ def prepare_params(
         "num_retries": MAX_RETRIES,
     }
     
-    # Enable usage tracking for streaming requests
     if stream:
         params["stream_options"] = {"include_usage": True}
-        # logger.debug(f"Added stream_options for usage tracking: {params['stream_options']}")
-
     if api_key:
         params["api_key"] = api_key
     if api_base:
@@ -206,36 +229,12 @@ def prepare_params(
     if model_id:
         params["model_id"] = model_id
     
-    # For Bedrock models, set inference profile ARNs if available
-    if resolved_model_name.startswith("bedrock/"):
-        from core.ai_models import model_manager
-        model_obj = model_manager.get_model(resolved_model_name)
-        if model_obj and not model_id:  # Only set if not already provided
-            if "claude-sonnet-4-20250514-v1:0" in resolved_model_name:
-                params["model_id"] = "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0"
-            elif "claude-3-7-sonnet-20250219-v1:0" in resolved_model_name:
-                params["model_id"] = "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
-
-    if model_name.startswith("openai-compatible/"):
-        # Check if have required config either from parameters or environment
-        if (not api_key and not config.OPENAI_COMPATIBLE_API_KEY) or (
-            not api_base and not config.OPENAI_COMPATIBLE_API_BASE
-        ):
-            raise LLMError(
-                "OPENAI_COMPATIBLE_API_KEY and OPENAI_COMPATIBLE_API_BASE is required for openai-compatible models. If just updated the environment variables,  wait a few minutes or restart the service to ensure they are loaded."
-            )
-        
-        setup_provider_router(api_key, api_base)
-
-    # Handle token limits
+    _configure_bedrock(params, resolved_model_name, model_id)
+    _configure_openai_compatible(params, model_name, api_key, api_base)
     _configure_token_limits(params, resolved_model_name, max_tokens)
-    # Add tools if provided
     _add_tools_config(params, tools, tool_choice)
-    # Add Anthropic-specific parameters
     _configure_anthropic(params, resolved_model_name)
-    # Add OpenRouter-specific parameters
     _configure_openrouter(params, resolved_model_name)
-
     # _configure_thinking(params, resolved_model_name)
 
     return params
@@ -310,7 +309,6 @@ async def make_llm_api_call(
         processed_error = ErrorProcessor.process_llm_error(e, context={"model": model_name})
         ErrorProcessor.log_error(processed_error)
         raise LLMError(processed_error.message)
-
 
 async def _wrap_streaming_response(response) -> AsyncGenerator:
     """Wrap streaming response to handle errors during iteration."""

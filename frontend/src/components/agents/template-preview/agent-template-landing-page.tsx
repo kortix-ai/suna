@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { MarketplaceTemplate } from '@/components/agents/installation/types';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { AgentIconAvatar } from '@/components/agents/config/agent-icon-avatar';
+import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 import { 
   Bot, 
   Download, 
@@ -192,8 +192,7 @@ export const AgentTemplateLandingPage: React.FC<AgentTemplateLandingPageProps> =
               variants={fadeInUp}
             >
               <div className="relative">
-                <AgentIconAvatar
-                  profileImageUrl={template.profile_image_url}
+                <AgentAvatar
                   iconName={template.icon_name}
                   iconColor={template.icon_color}
                   backgroundColor={template.icon_background}

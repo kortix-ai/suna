@@ -351,7 +351,7 @@ class AgentExecutor:
             "thread_id": thread_id,
             "type": "user",
             "is_llm_message": True,
-            "content": json.dumps(message_payload),
+            "content": message_payload,  # Store as JSONB object, not JSON string
             "created_at": datetime.now(timezone.utc).isoformat()
         }).execute()
     
@@ -396,7 +396,6 @@ class AgentExecutor:
             "agent_version_id": agent_config.get('current_version_id'),
             "metadata": {
                 "model_name": model_name,
-                "enable_context_manager": True,
                 "trigger_execution": True,
                 "trigger_variables": trigger_variables
             }
@@ -412,8 +411,6 @@ class AgentExecutor:
             instance_id="trigger_executor",
             project_id=project_id,
             model_name=model_name,
-            enable_context_manager=True,
-            enable_prompt_caching=True,
             agent_config=agent_config,
             request_id=structlog.contextvars.get_contextvars().get('request_id'),
         )
@@ -645,7 +642,7 @@ class WorkflowExecutor:
             "thread_id": thread_id,
             "type": "user",
             "is_llm_message": True,
-            "content": json.dumps({"role": "user", "content": message_content}),
+            "content": {"role": "user", "content": message_content},  # Store as JSONB object, not JSON string
             "created_at": datetime.now(timezone.utc).isoformat()
         }).execute()
     
@@ -700,7 +697,6 @@ class WorkflowExecutor:
             "agent_version_id": agent_config.get('current_version_id'),
             "metadata": {
                 "model_name": model_name,
-                "enable_context_manager": True,
                 "workflow_execution": True
             }
         }).execute()
@@ -715,8 +711,6 @@ class WorkflowExecutor:
             instance_id=getattr(config, 'INSTANCE_ID', 'default'),
             project_id=project_id,
             model_name=model_name,
-            enable_context_manager=True,
-            enable_prompt_caching=True,
             agent_config=agent_config,
             request_id=None,
         )

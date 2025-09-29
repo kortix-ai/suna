@@ -21,7 +21,7 @@ interface MarketplaceTabProps {
   installingItemId: string | null;
   onInstallClick: (item: MarketplaceTemplate, e?: React.MouseEvent) => void;
   onDeleteTemplate?: (item: MarketplaceTemplate, e?: React.MouseEvent) => void;
-  getItemStyling: (item: MarketplaceTemplate) => { avatar: string; color: string };
+  getItemStyling: (item: MarketplaceTemplate) => { color: string };
   currentUserId?: string;
   onAgentPreview?: (agent: MarketplaceTemplate) => void;
   

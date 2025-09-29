@@ -206,7 +206,6 @@ export type Message = {
   agent_id?: string;
   agents?: {
     name: string;
-    profile_image_url?: string;
   };
 };
 

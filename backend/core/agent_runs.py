@@ -29,21 +29,6 @@ from .core_utils import check_agent_run_limit, check_project_count_limit
 
 router = APIRouter()
 
-async def check_billing_status(client, user_id: str) -> Tuple[bool, str, Optional[Dict]]:
-    """
-    Compatibility wrapper for the new credit-based billing system.
-    Converts new credit system response to match old billing status format.
-    """
-    can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(user_id)
-    
-    # Create a subscription-like object for backward compatibility
-    subscription_info = {
-        "price_id": "credit_based",
-        "plan_name": "Credit System",
-        "minutes_limit": "credit based"
-    }
-    
-    return can_run, message, subscription_info
 
 
 @router.post("/thread/{thread_id}/agent/start")
@@ -226,9 +211,7 @@ async def start_agent(
         "agent_id": agent_config.get('agent_id') if agent_config else None,
         "agent_version_id": agent_config.get('current_version_id') if agent_config else None,
         "metadata": {
-            "model_name": effective_model,
-            "requested_model": model_name,
-            "enable_context_manager": body.enable_context_manager
+            "model_name": effective_model
         }
     }).execute()
 
@@ -250,8 +233,6 @@ async def start_agent(
         agent_run_id=agent_run_id, thread_id=thread_id, instance_id=utils.instance_id,
         project_id=project_id,
         model_name=model_name,  # Already resolved above
-        enable_context_manager=body.enable_context_manager,
-        enable_prompt_caching=body.enable_prompt_caching,
         agent_config=agent_config,  # Pass agent configuration
         request_id=request_id,
     )
@@ -428,7 +409,6 @@ async def get_thread_agent(thread_id: str, user_id: str = Depends(verify_and_get
                 is_default=agent_data.get('is_default', False),
                 is_public=agent_data.get('is_public', False),
                 tags=agent_data.get('tags', []),
-                profile_image_url=agent_config.get('profile_image_url'),
                 created_at=agent_data['created_at'],
                 updated_at=agent_data.get('updated_at', agent_data['created_at']),
                 current_version_id=agent_data.get('current_version_id'),
@@ -941,7 +921,7 @@ async def initiate_agent_with_files(
         message_payload = {"role": "user", "content": message_content}
         await client.table('messages').insert({
             "message_id": message_id, "thread_id": thread_id, "type": "user",
-            "is_llm_message": True, "content": json.dumps(message_payload),
+            "is_llm_message": True, "content": message_payload,  # Store as JSONB object, not JSON string
             "created_at": datetime.now(timezone.utc).isoformat()
         }).execute()
 
@@ -961,9 +941,7 @@ async def initiate_agent_with_files(
             "agent_id": agent_config.get('agent_id') if agent_config else None,
             "agent_version_id": agent_config.get('current_version_id') if agent_config else None,
             "metadata": {
-                "model_name": effective_model,
-                "requested_model": model_name,
-                "enable_context_manager": enable_context_manager
+                "model_name": effective_model
             }
         }).execute()
         agent_run_id = agent_run.data[0]['id']
@@ -986,8 +964,6 @@ async def initiate_agent_with_files(
             agent_run_id=agent_run_id, thread_id=thread_id, instance_id=utils.instance_id,
             project_id=project_id,
             model_name=model_name,  # Already resolved above
-            enable_context_manager=enable_context_manager,
-            enable_prompt_caching=enable_prompt_caching,
             agent_config=agent_config,  # Pass agent configuration
             request_id=request_id,
         )

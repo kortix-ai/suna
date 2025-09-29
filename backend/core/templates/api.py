@@ -60,7 +60,6 @@ class TemplateResponse(BaseModel):
     download_count: int
     created_at: str
     updated_at: str
-    profile_image_url: Optional[str] = None
     icon_name: Optional[str] = None
     icon_color: Optional[str] = None
     icon_background: Optional[str] = None
