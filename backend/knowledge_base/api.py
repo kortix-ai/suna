@@ -3,7 +3,7 @@ from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from pydantic import BaseModel, Field, validator
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, require_agent_access, AuthorizedAgentAccess
 from core.services.supabase import DBConnection
-from core.knowledge_base.file_processor import FileProcessor
+from .file_processor import FileProcessor
 from core.utils.logger import logger
 from .validation import FileNameValidator, ValidationError, validate_folder_name_unique, validate_file_name_unique_in_folder
 
@@ -11,6 +11,7 @@ from .validation import FileNameValidator, ValidationError, validate_folder_name
 MAX_TOTAL_FILE_SIZE = 50 * 1024 * 1024  # 50MB total limit per user
 
 router = APIRouter(prefix="/knowledge-base", tags=["knowledge-base"])
+
 
 # Helper function to check total file size limit
 async def check_total_file_size_limit(account_id: str, new_file_size: int):
@@ -483,7 +484,7 @@ async def get_agent_assignments(
 ):
     """Get entry assignments for an agent."""
     try:
-        client = await db.client
+        client = await DBConnection().client
         
         # Get file-level assignments only
         file_result = await client.table('agent_knowledge_entry_assignments').select(

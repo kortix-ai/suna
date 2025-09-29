@@ -59,7 +59,6 @@ class AgentConfig:
     agent_config: Optional[dict] = None
     trace: Optional[StatefulTraceClient] = None
 
-
 class ToolManager:
     def __init__(self, thread_manager: ThreadManager, project_id: str, thread_id: str, agent_config: Optional[dict] = None):
         self.thread_manager = thread_manager
@@ -899,7 +898,6 @@ async def run_agent(
     effective_model = model_name
 
     # is_tier_default = model_name in ["Kimi K2", "Claude Sonnet 4", "openai/gpt-5-mini"]
-    
     # if is_tier_default and agent_config and agent_config.get('model'):
     #     effective_model = agent_config['model']
     #     logger.debug(f"Using model from agent config: {effective_model} (tier default was {model_name})")

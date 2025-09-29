@@ -22,7 +22,7 @@ class ModelRegistry:
         
         self.register(Model(
             id="anthropic/claude-sonnet-4-20250514" if is_local else "bedrock/anthropic.claude-sonnet-4-20250514-v1:0",
-            name="Claude Sonnet 4",
+            name="Sonnet 4",
             provider=ModelProvider.ANTHROPIC,
             aliases=["claude-sonnet-4", "anthropic/claude-sonnet-4", "Claude Sonnet 4", "claude-sonnet-4-20250514", "bedrock-claude-sonnet-4", "bedrock/claude-sonnet-4", "anthropic.claude-sonnet-4-20250514-v1:0"],
             context_window=1_000_000,
@@ -44,7 +44,7 @@ class ModelRegistry:
         
         self.register(Model(
             id="anthropic/claude-3-7-sonnet-latest" if is_local else "bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0",
-            name="Claude Sonnet 3.7",
+            name="Sonnet 3.7",
             provider=ModelProvider.ANTHROPIC,
             aliases=["sonnet-3.7", "claude-3.7", "Claude 3.7 Sonnet", "claude-3-7-sonnet-latest", "bedrock-claude-3.7", "bedrock/claude-3.7", "anthropic.claude-3-7-sonnet-20250219-v1:0"],
             context_window=200_000,

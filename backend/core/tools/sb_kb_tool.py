@@ -572,7 +572,7 @@ Agent ID: {agent_id}
                 return self.fail_response("No agent ID found for knowledge base operations")
             
             from core.services.supabase import DBConnection
-            from core.knowledge_base.file_processor import FileProcessor
+            from knowledge_base.file_processor import FileProcessor
             import os
             import mimetypes
             
