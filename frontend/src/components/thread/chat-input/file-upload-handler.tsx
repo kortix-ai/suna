@@ -252,7 +252,7 @@ export const FileUploadHandler = forwardRef<
                   onClick={handleFileUpload}
                   variant="outline"
                   size="sm"
-                  className="h-8 px-3 py-2 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-2"
+                  className="h-[42px] !px-4 py-2 bg-transparent border-0 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-2"
                   disabled={
                     !isLoggedIn || loading || (disabled && !isAgentRunning) || isUploading
                   }

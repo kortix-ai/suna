@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Bot, Menu, Plus, Zap, ChevronRight, BookOpen, Code, Star, Package, Sparkle, Sparkles, X, MessageCircle, PanelLeftOpen, Settings, LogOut, User, CreditCard, Key, Plug, Shield, DollarSign, KeyRound, Sun, Moon } from 'lucide-react';
 
 import { NavAgents } from '@/components/sidebar/nav-agents';
+import { NavAgentsView } from '@/components/sidebar/nav-agents-view';
 import { NavUserWithTeams } from '@/components/sidebar/nav-user-with-teams';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { CTACard } from '@/components/sidebar/cta';
@@ -334,40 +335,12 @@ export function SidebarLeft({
                   </Button>
                 ))}
               </div>
-
-              {/* My Workers / Community toggle - Only for agents view */}
-              {activeView === 'agents' && (
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="default"
-                    size="sm"
-                    className="flex-1 justify-center gap-2 h-12"
-                    asChild
-                  >
-                    <Link href="/agents">
-                      <Bot className="h-4 w-4" />
-                      My Workers
-                    </Link>
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 justify-center gap-2 h-12"
-                    asChild
-                  >
-                    <Link href="/community">
-                      <Package className="h-4 w-4" />
-                      Community
-                    </Link>
-                  </Button>
-                </div>
-              )}
             </div>
 
             {/* Content area */}
-            <div className="px-6">
+            <div className="px-6 flex-1 overflow-hidden">
               {activeView === 'chats' && <NavAgents />}
-              {activeView === 'agents' && <NavAgents />}
+              {activeView === 'agents' && <NavAgentsView />}
               {activeView === 'starred' && (
                 <div className="text-center py-8 text-muted-foreground">
                   <Star className="h-8 w-8 mx-auto mb-2" />
@@ -451,7 +424,7 @@ export function SidebarLeft({
                   </div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                
+
                 <DropdownMenuGroup>
                   {user.isAdmin && (
                     <DropdownMenuSub>
@@ -515,7 +488,7 @@ export function SidebarLeft({
                   </DropdownMenuItem>
                 </DropdownMenuGroup>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem 
+                <DropdownMenuItem
                   className="text-destructive focus:text-destructive focus:bg-destructive/10"
                   onClick={handleLogout}
                 >

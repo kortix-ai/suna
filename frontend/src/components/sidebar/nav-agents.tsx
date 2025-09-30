@@ -100,7 +100,7 @@ const ThreadItem: React.FC<{
     };
 
     return (
-      <div className="py-1">
+      <div className="">
         <Link
           href={thread.url}
           onClick={(e) => handleThreadClick(e, thread.threadId, thread.url)}
@@ -435,7 +435,7 @@ export function NavAgents() {
   return (
     <div>
 
-      <div className="overflow-y-auto max-h-[calc(100vh-200px)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+      <div className="overflow-y-auto max-h-[calc(100vh-280px)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] pb-10">
         {(state !== 'collapsed' || isMobile) && (
           <>
             {isLoading ? (

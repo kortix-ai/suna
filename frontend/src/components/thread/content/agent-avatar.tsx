@@ -10,42 +10,40 @@ interface AgentAvatarProps {
   // For fetching agent by ID
   agentId?: string;
   fallbackName?: string;
-  
+
   // For direct props (bypasses agent fetch)
   iconName?: string | null;
   iconColor?: string;
   backgroundColor?: string;
   agentName?: string;
   isSunaDefault?: boolean;
-  
+
   // Common props
   size?: number;
   className?: string;
 }
 
-export const AgentAvatar: React.FC<AgentAvatarProps> = ({ 
+export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   // Agent fetch props
-  agentId, 
+  agentId,
   fallbackName = "Suna",
-  
+
   // Direct props
   iconName: propIconName,
   iconColor: propIconColor,
   backgroundColor: propBackgroundColor,
   agentName: propAgentName,
   isSunaDefault: propIsSunaDefault,
-  
+
   // Common props
-  size = 16, 
+  size = 16,
   className = ""
 }) => {
   const { data: agent, isLoading } = useAgent(agentId || '');
 
   // Determine values from props or agent data
   const iconName = propIconName ?? agent?.icon_name;
-  const iconColor = propIconColor ?? agent?.icon_color ?? '#000000';
   const backgroundColor = propBackgroundColor ?? agent?.icon_background ?? '#F3F4F6';
-  const agentName = propAgentName ?? agent?.name ?? fallbackName;
   const isSuna = propIsSunaDefault ?? agent?.metadata?.is_suna_default;
 
   // Calculate responsive border radius - proportional to size
@@ -56,7 +54,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
 
   if (isLoading && agentId) {
     return (
-      <div 
+      <div
         className={cn("bg-muted animate-pulse", className)}
         style={{ width: size, height: size, ...borderRadiusStyle }}
       />
@@ -73,7 +71,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
 
   if (isSuna) {
     return (
-      <div 
+      <div
         className={cn(
           "flex items-center justify-center bg-muted border",
           className
@@ -87,22 +85,21 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
 
   if (iconName) {
     return (
-      <div 
+      <div
         className={cn(
           "flex items-center justify-center transition-all border",
           className
         )}
-        style={{ 
-          width: size, 
+        style={{
+          width: size,
           height: size,
           backgroundColor,
           ...borderRadiusStyle
         }}
       >
-        <DynamicIcon 
-          name={iconName as any} 
-          size={size * 0.5} 
-          color={iconColor}
+        <DynamicIcon
+          name={iconName as any}
+          size={size * 0.5}
         />
       </div>
     );
@@ -110,16 +107,16 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
 
   // Fallback to default bot icon
   return (
-    <div 
+    <div
       className={cn(
         "flex items-center justify-center bg-muted border",
         className
       )}
       style={{ width: size, height: size, ...borderRadiusStyle }}
     >
-      <DynamicIcon 
-        name="bot" 
-        size={size * 0.5} 
+      <DynamicIcon
+        name="bot"
+        size={size * 0.5}
         color="#6B7280"
       />
     </div>
@@ -131,9 +128,9 @@ interface AgentNameProps {
   fallback?: string;
 }
 
-export const AgentName: React.FC<AgentNameProps> = ({ 
-  agentId, 
-  fallback = "Suna" 
+export const AgentName: React.FC<AgentNameProps> = ({
+  agentId,
+  fallback = "Suna"
 }) => {
   const { data: agent, isLoading } = useAgent(agentId || '');
 

@@ -429,9 +429,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           onPaste={handlePaste}
           placeholder={placeholder}
           className={cn(
-            'w-full bg-transparent dark:bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 !text-[15px] min-h-[36px] max-h-[200px] overflow-y-auto resize-none',
+            'w-full bg-transparent dark:bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 min-h-[36px] max-h-[200px] overflow-y-auto resize-none',
             isDraggingOver ? 'opacity-40' : '',
           )}
+          style={{ fontSize: '15px' }}
           disabled={loading || (disabled && !isAgentRunning)}
           rows={1}
         />
@@ -470,13 +471,12 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
             onTranscription={handleTranscription}
             disabled={loading || (disabled && !isAgentRunning)}
           />}
-
           <Button
             type="submit"
             onClick={isAgentRunning && onStopAgent ? onStopAgent : handleSubmit}
             size="sm"
             className={cn(
-              'w-8 h-8 flex-shrink-0 self-end rounded-xl',
+              'w-[34px] h-[34px] flex-shrink-0 rounded-full',
               (!value.trim() && uploadedFiles.length === 0 && !isAgentRunning) ||
                 loading ||
                 (disabled && !isAgentRunning)
@@ -553,7 +553,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
             }}
           >
             <div className="w-full text-sm flex flex-col justify-between items-start rounded-lg">
-              <CardContent className={`w-full p-1.5 pb-2 ${bgColor} border rounded-3xl`}>
+              <CardContent className={`w-full p-1.5 pb-2 ${bgColor} border rounded-3xl h-[148px]`}>
                 <AttachmentGroup
                   files={uploadedFiles || []}
                   sandboxId={sandboxId}

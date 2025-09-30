@@ -2,10 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Square, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
+    Tooltip,
+    TooltipContent,
+    TooltipProvider,
+    TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useTranscription } from '@/hooks/react-query/transcription/use-transcription';
 
@@ -152,11 +152,11 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
     const getIcon = () => {
         switch (state) {
             case 'recording':
-                return <Square className="h-4 w-4" />;
+                return <Square className="h-5 w-5" />;
             case 'processing':
-                return <Loader2 className="h-4 w-4 animate-spin" />;
+                return <Loader2 className="h-5 w-5 animate-spin" />;
             default:
-                return <Mic className="h-4 w-4" />;
+                return <Mic className="h-5 w-5" />;
         }
     };
 
@@ -178,10 +178,10 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = ({
                 </TooltipTrigger>
                 <TooltipContent side="top" className="text-xs">
                     <p>
-                        {state === 'recording' 
-                            ? 'Click to stop recording' 
-                            : state === 'processing' 
-                                ? 'Processing...' 
+                        {state === 'recording'
+                            ? 'Click to stop recording'
+                            : state === 'processing'
+                                ? 'Processing...'
                                 : 'Record voice message'
                         }
                     </p>

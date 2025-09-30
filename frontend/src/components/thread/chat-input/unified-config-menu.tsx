@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Cpu, Search, Check, ChevronDown, Plus, ExternalLink, Loader2 } from 'lucide-react';
+import { Cpu, Search, Check, ChevronDown, Plus, ExternalLink, Loader2, Plug, Brain, LibraryBig, Zap, Workflow } from 'lucide-react';
 import { useAgents } from '@/hooks/react-query/agents/use-agents';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import type { ModelOption } from '@/hooks/use-model-selection';
@@ -182,7 +182,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
     }, [selectedAgentId, displayAgent?.agent_id]);
 
     const renderAgentIcon = useCallback((agent: any) => {
-        return <AgentAvatar agentId={agent?.agent_id} size={24} className="flex-shrink-0" fallbackName={agent?.name} />;
+        return <AgentAvatar agentId={agent?.agent_id} size={32} className="flex-shrink-0 !border-0 !bg-transparent" fallbackName={agent?.name} iconColor='#' />;
     }, []);
 
     const currentAgentIdForPlaybooks = isLoggedIn ? displayAgent?.agent_id || '' : '';
@@ -198,13 +198,13 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                     <Button
                         variant="ghost"
                         size="sm"
-                        className="h-8 px-2 bg-transparent border-0 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5"
+                        className="h-[42px] px-2 bg-transparent rounded-[1rem] text-muted-foreground border hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5"
                         aria-label="Config menu"
                     >
                         {onAgentSelect ? (
                             <div className="flex items-center gap-2 min-w-0 max-w-[180px]">
                                 {renderAgentIcon(displayAgent)}
-                                <span className="truncate text-sm font-medium">
+                                <span className="truncate text-[15px] font-medium">
                                     {displayAgent?.name || 'Suna'}
                                 </span>
                                 <ChevronDown size={12} className="opacity-60 flex-shrink-0" />
@@ -218,10 +218,10 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                     </Button>
                 </DropdownMenuTrigger>
 
-                <DropdownMenuContent align="end" className="w-80 p-0" sideOffset={6}>
-                    <div className="p-2" ref={searchContainerRef}>
+                <DropdownMenuContent align="end" className="w-[280px] p-3 border-[1.5px] border-border rounded-2xl" sideOffset={6}>
+                    <div className="mb-3">
                         <div className="relative">
-                            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-[18px] w-[18px] text-muted-foreground pointer-events-none" />
                             <input
                                 ref={searchInputRef}
                                 type="text"
@@ -229,151 +229,132 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 onKeyDown={handleSearchInputKeyDown}
-                                className="w-full h-8 pl-8 pr-2 rounded-lg text-sm bg-muted focus:outline-none"
+                                className="w-full h-11 pl-10 pr-4 rounded-2xl text-sm font-medium bg-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
                             />
                         </div>
                     </div>
 
                     {/* Agents */}
                     {onAgentSelect && (
-                        <div className="px-1.5">
-                            <div className="px-3 py-1 text-[11px] font-medium text-muted-foreground flex items-center justify-between">
-                                <span>Agents</span>
+                        <div className="">
+                            <div className="flex items-center justify-between mb-3">
+                                <span className="text-xs font-medium text-muted-foreground">My Workers</span>
                                 <Button
                                     size="sm"
                                     variant="ghost"
-                                    className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground hover:bg-muted/60 rounded-2xl border-[1.5px] border-border"
                                     onClick={() => { setIsOpen(false); setShowNewAgentDialog(true); }}
                                 >
-                                    <Plus className="h-3.5 w-3.5" />
+                                    <Plus className="h-4 w-4" />
                                 </Button>
                             </div>
                             {isLoading && orderedAgents.length === 0 ? (
-                                <div className="px-3 py-2 text-xs text-muted-foreground">Loading agents...</div>
+                                <div className="space-y-2">
+                                    {Array.from({ length: 3 }).map((_, i) => (
+                                        <div key={i} className="flex items-center gap-3 p-3 rounded-2xl">
+                                            <div className="h-8 w-8 bg-muted/60 border-[1.5px] border-border rounded-2xl animate-pulse"></div>
+                                            <div className="h-4 bg-muted rounded flex-1 animate-pulse"></div>
+                                        </div>
+                                    ))}
+                                </div>
                             ) : orderedAgents.length === 0 ? (
-                                <div className="px-3 py-2 text-xs text-muted-foreground">
-                                    {debouncedSearchQuery ? 'No agents found' : 'No agents'}
+                                <div className="p-6 text-center text-sm text-muted-foreground">
+                                    {debouncedSearchQuery ? 'No agents found' : 'No agents yet'}
                                 </div>
                             ) : (
                                 <>
-                                    <div className="max-h-[200px] overflow-y-auto">
+                                    <div className="max-h-[240px] overflow-y-auto space-y-3 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
                                         {orderedAgents.map((agent) => (
-                                            <DropdownMenuItem
+                                            <div
                                                 key={agent.agent_id}
-                                                className="text-sm px-3 py-2 mx-0 my-0.5 flex items-center justify-between cursor-pointer rounded-lg"
+                                                className="flex items-center gap-3 h-8 text-sm cursor-pointer"
                                                 onClick={() => handleAgentClick(agent.agent_id)}
                                             >
-                                                <div className="flex items-center gap-3 min-w-0 flex-1">
+                                                <div className="flex items-center justify-center w-8 h-8 bg-muted/60 border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
                                                     {renderAgentIcon(agent)}
-                                                    <span className="truncate font-medium">{agent.name}</span>
                                                 </div>
+                                                <span className="flex-1 truncate font-medium font-inter">{agent.name}</span>
                                                 {selectedAgentId === agent.agent_id && (
-                                                    <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                                                    <Check className="h-4 w-4 text-primary flex-shrink-0" />
                                                 )}
-                                            </DropdownMenuItem>
+                                            </div>
                                         ))}
                                     </div>
                                     {canLoadMore && (
-                                        <div className="px-1.5 pb-1">
+                                        <div className="pt-2">
                                             <Button
                                                 size="sm"
                                                 variant="ghost"
-                                                className="w-full h-8 text-xs text-muted-foreground hover:text-foreground"
+                                                className="w-full h-8 text-sm text-muted-foreground hover:text-foreground rounded-2xl hover:bg-muted/60"
                                                 onClick={handleLoadMore}
                                                 disabled={isFetching}
                                             >
                                                 {isFetching ? (
                                                     <>
-                                                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
                                                         Loading...
                                                     </>
                                                 ) : (
-                                                    'Load More'
+                                                    `+${orderedAgents.length - 5} more`
                                                 )}
                                             </Button>
                                         </div>
                                     )}
                                 </>
                             )}
-
-                            {/* Agents "see all" removed; scroll container shows all */}
-                            {/* Playbooks moved below (as hover submenu) */}
                         </div>
                     )}
 
-                    {onAgentSelect && <DropdownMenuSeparator className="!mt-0" />}
+                    {onAgentSelect && <div className="h-px bg-border -mx-3 my-3" />}
 
                     {/* Models */}
-                    <div className="px-1.5">
-                        <div className="px-3 py-1 text-[11px] font-medium text-muted-foreground">Models</div>
-                        <AgentModelSelector
-                            value={selectedModel}
-                            onChange={onModelChange}
-                            disabled={false}
-                            variant="menu-item"
-                        />
+                    <div className="">
+                        <div className="mb-3">
+                            <span className="text-xs font-medium text-muted-foreground">Models</span>
+                        </div>
+                        <div className="space-y-3">
+                            {modelOptions.slice(0, 4).map((model) => (
+                                <div
+                                    key={model.id}
+                                    className="flex items-center gap-3 h-8 text-sm cursor-pointer"
+                                    onClick={() => onModelChange(model.id)}
+                                >
+                                    <div className="flex items-center justify-center w-8 h-8 bg-muted/60 border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
+                                        <Cpu className="h-4 w-4" />
+                                    </div>
+                                    <span className="flex-1 truncate font-medium font-inter">{model.label}</span>
+                                    {selectedModel === model.id && (
+                                        <Check className="h-4 w-4 text-primary flex-shrink-0" />
+                                    )}
+                                </div>
+                            ))}
+                        </div>
                     </div>
-                    <DropdownMenuSeparator />
+                    <div className="h-px bg-border -mx-3 my-3" />
                     {onAgentSelect && (selectedAgentId || displayAgent?.agent_id) && (
-                        <div className="px-1.5">
-                            <DropdownMenuItem
-                                className="text-sm px-3 py-2 mx-0 my-0.5 flex items-center gap-2 cursor-pointer rounded-lg"
-                                onClick={() => handleQuickAction('instructions')}
-                            >
-                                <span className="font-medium">Instructions</span>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                                className="text-sm px-3 py-2 mx-0 my-0.5 flex items-center gap-2 cursor-pointer rounded-lg"
-                                onClick={() => handleQuickAction('knowledge')}
-                            >
-                                <span className="font-medium">Knowledge</span>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                                className="text-sm px-3 py-2 mx-0 my-0.5 flex items-center gap-2 cursor-pointer rounded-lg"
-                                onClick={() => handleQuickAction('triggers')}
-                            >
-                                <span className="font-medium">Triggers</span>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                                className="text-sm px-3 py-2 mx-0 my-0.5 flex items-center gap-2 cursor-pointer rounded-lg"
-                                onClick={() => handleQuickAction('playbooks')}
-                            >
-                                <span className="font-medium">Playbooks</span>
-                            </DropdownMenuItem>
-                            <TooltipProvider>
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <DropdownMenuItem
-                                            className="text-sm px-3 py-2 mx-0 my-0.5 flex items-center justify-between cursor-pointer rounded-lg"
-                                            onClick={() => setIntegrationsOpen(true)}
-                                        >
-                                            <span className="font-medium">Integrations</span>
-                                            <div className="flex items-center gap-1.5">
-                                                {googleDriveIcon?.icon_url && slackIcon?.icon_url && notionIcon?.icon_url ? (
-                                                    <>
-                                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                        <img src={googleDriveIcon.icon_url} className="w-4 h-4" alt="Google Drive" />
-                                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                        <img src={slackIcon.icon_url} className="w-3.5 h-3.5" alt="Slack" />
-                                                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                        <img src={notionIcon.icon_url} className="w-3.5 h-3.5" alt="Notion" />
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <Skeleton className="w-4 h-4 rounded" />
-                                                        <Skeleton className="w-3.5 h-3.5 rounded" />
-                                                        <Skeleton className="w-3.5 h-3.5 rounded" />
-                                                    </>
-                                                )}
-                                                <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
-                                            </div>
-                                        </DropdownMenuItem>
-                                    </TooltipTrigger>
-                                    <TooltipContent side="left" className="text-xs max-w-xs">
-                                        <p>Open integrations</p>
-                                    </TooltipContent>
-                                </Tooltip>
-                            </TooltipProvider>
+                        <div className="">
+                            <div className="mb-3">
+                                <span className="text-xs font-medium text-muted-foreground">Worker Settings</span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                                {[
+                                    { action: 'instructions' as const, icon: Plug },
+                                    { action: 'knowledge' as const, icon: Brain },
+                                    { action: 'integrations' as const, icon: LibraryBig },
+                                    { action: 'triggers' as const, icon: Zap },
+                                    { action: 'playbooks' as const, icon: Workflow },
+                                ].map(({ action, icon: Icon }) => (
+                                    <Button
+                                        key={action}
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-12 p-0 cursor-pointer hover:bg-muted/60 border-[1.5px] border-border rounded-2xl"
+                                        onClick={() => action === 'integrations' ? setIntegrationsOpen(true) : handleQuickAction(action)}
+                                    >
+                                        <Icon className="h-4 w-4" />
+                                    </Button>
+                                ))}
+                            </div>
                         </div>
                     )}
                 </DropdownMenuContent>
@@ -391,8 +372,8 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                     />
                 </DialogContent>
             </Dialog>
-            <NewAgentDialog 
-                open={showNewAgentDialog} 
+            <NewAgentDialog
+                open={showNewAgentDialog}
                 onOpenChange={setShowNewAgentDialog}
                 onSuccess={(agentId) => {
                     setShowNewAgentDialog(false);
