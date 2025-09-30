@@ -26,6 +26,7 @@ interface NewOnboardingPageProps {
 export function NewOnboardingPage({ className, onComplete, onClose }: NewOnboardingPageProps) {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isOpen, setIsOpen] = useState(true);
+  const [contextVersion, setContextVersion] = useState(0);
 
   const currentStepData = getStepByIndex(currentStepIndex);
   const progress = getProgressPercentage(currentStepIndex);
@@ -33,21 +34,15 @@ export function NewOnboardingPage({ className, onComplete, onClose }: NewOnboard
   const isLastStepFlag = isLastStep(currentStepIndex);
   const canSkip = canSkipStep(currentStepIndex);
 
-  // Keyboard navigation
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (!isOpen) return;
-      
-      if (event.key === 'ArrowLeft' && !isFirstStepFlag) {
-        handlePrevious();
-      } else if (event.key === 'ArrowRight' && !isLastStepFlag) {
-        handleNext();
-      }
-    };
+  // Force re-render when context changes
+  React.useEffect(() => {
+    const interval = setInterval(() => {
+      setContextVersion(v => v + 1);
+    }, 100);
+    return () => clearInterval(interval);
+  }, []);
 
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [currentStepIndex, isOpen, isFirstStepFlag, isLastStepFlag]);
+  // Removed keyboard navigation as requested
 
   const handleNext = () => {
     if (currentStepIndex < onboardingSteps.length - 1) {
@@ -81,35 +76,33 @@ export function NewOnboardingPage({ className, onComplete, onClose }: NewOnboard
 
   return (
     <div className={cn(
-      "fixed inset-0 z-50 bg-background/95 backdrop-blur-sm",
+      "fixed inset-0 z-50 bg-background",
       className
     )}>
-      <div className="h-full flex flex-col">
-        {/* Header */}
+      <div className="h-full w-full flex flex-col">
+        {/* Progress indicator - top center */}
         <motion.div
-          className="flex items-center justify-center px-6 py-4 border-b border-border/30 bg-background/95 backdrop-blur-sm"
+          className="flex items-center justify-center px-6 py-6"
           initial={{ y: -20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.3 }}
         >
-          {/* Progress indicator - perfectly centered */}
           <ProgressIndicator 
             steps={onboardingSteps.map(step => ({ id: step.id, title: step.title }))}
             currentStep={currentStepIndex}
           />
         </motion.div>
 
-        {/* Main content */}
-        <div className="flex-1 overflow-auto">
-          <div className="container mx-auto px-6 py-8">
+        {/* Main content - DEAD CENTER */}
+        <div className="flex-1 flex items-center justify-center overflow-auto px-6">
+          <div className="w-full max-w-6xl">
             <AnimatePresence mode="wait">
               <motion.div
                 key={currentStepData.id}
-                initial={{ opacity: 0, x: 20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -20 }}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
                 transition={{ duration: 0.3 }}
-                className="h-full"
               >
                 {currentStepData.content}
               </motion.div>
@@ -117,9 +110,9 @@ export function NewOnboardingPage({ className, onComplete, onClose }: NewOnboard
           </div>
         </div>
 
-        {/* Footer */}
+        {/* Footer - bottom center */}
         <motion.div
-          className="flex items-center justify-center px-6 py-4 border-t border-border/30 bg-background/95 backdrop-blur-sm"
+          className="flex items-center justify-center px-6 py-6"
           initial={{ y: 20, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ duration: 0.3, delay: 0.4 }}
@@ -137,11 +130,13 @@ export function NewOnboardingPage({ className, onComplete, onClose }: NewOnboard
               </Button>
             )}
 
+
             <Button
               onClick={isLastStepFlag ? handleComplete : handleNext}
               size="sm"
               className="h-9 px-6"
               disabled={!canProceed && !canSkip}
+              data-continue-button
             >
               {isLastStepFlag ? (
                 <>

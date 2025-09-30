@@ -2,6 +2,7 @@
 
 import { OnboardingStep } from '@/hooks/use-onboarding';
 import { CEOIntroStep } from './steps/ceo-intro-step';
+import { UserTypeStep } from './steps/user-type-step';
 import { SmartContextStep } from './steps/smart-context-step';
 import { WorkforceSelectionStep } from './steps/workforce-selection-step';
 import { MultiAgentConfigurationStep } from './agent-config/multi-agent-configuration';
@@ -19,10 +20,10 @@ export const onboardingSteps: OnboardingStep[] = [
     actionLabel: 'Get Started'
   },
   {
-    id: 'smart-context',
-    title: 'Smart Context',
-    description: 'Tell us about your needs',
-    content: <SmartContextStep />,
+    id: 'user-type',
+    title: 'Getting Started',
+    description: 'Individual or Company',
+    content: <UserTypeStep />,
     canSkip: false,
     actionLabel: 'Continue'
   },
@@ -31,7 +32,7 @@ export const onboardingSteps: OnboardingStep[] = [
     title: 'Choose Agents',
     description: 'Select your AI workforce',
     content: <WorkforceSelectionStep />,
-    canSkip: false,
+    canSkip: true,
     actionLabel: 'Configure Agents'
   },
   {
@@ -102,9 +103,15 @@ export const canProceedFromStep = (stepIndex: number, context?: any): boolean =>
 
   // Basic validation logic - can be extended
   switch (step.id) {
-    case 'smart-context':
-      // Require user type selection
-      return context?.userType !== undefined;
+    case 'user-type':
+      // Individuals can proceed immediately, companies need size and role
+      if (context?.userType === 'individual') {
+        return true;
+      }
+      if (context?.userType === 'company') {
+        return !!(context?.companySize && context?.role);
+      }
+      return false;
     
     case 'workforce-selection':
       // Require at least one agent selected

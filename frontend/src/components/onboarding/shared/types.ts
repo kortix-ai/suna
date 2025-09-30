@@ -7,6 +7,7 @@ export interface UserContext {
   companySize?: string;
   primaryGoals?: string[];
   websiteUrl?: string;
+  role?: string; // User's role at their company
   extractedContext?: {
     businessType?: string;
     services?: string[];
