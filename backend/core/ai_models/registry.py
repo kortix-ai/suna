@@ -1,5 +1,5 @@
 from typing import Dict, List, Optional, Set
-from .ai_models import Model, ModelProvider, ModelCapability, ModelPricing
+from .ai_models import Model, ModelProvider, ModelCapability, ModelPricing, ModelConfig
 from core.utils.config import config, EnvMode
 
 FREE_MODEL_ID = "moonshotai/kimi-k2"
@@ -39,7 +39,12 @@ class ModelRegistry:
             tier_availability=["paid"],
             priority=101,
             recommended=True,
-            enabled=True
+            enabled=True,
+            config=ModelConfig(
+                extra_headers={
+                    "anthropic-beta": "context-1m-2025-08-07"
+                },
+            )
         ))
         
         self.register(Model(
@@ -61,7 +66,12 @@ class ModelRegistry:
             tier_availability=["paid"],
             priority=100,
             recommended=True,
-            enabled=True
+            enabled=True,
+            config=ModelConfig(
+                extra_headers={
+                    "anthropic-beta": "context-1m-2025-08-07"
+                },
+            )
         ))
         
         self.register(Model(
@@ -81,7 +91,12 @@ class ModelRegistry:
             ),
             tier_availability=["paid"],
             priority=99,
-            enabled=True
+            enabled=True,
+            config=ModelConfig(
+                extra_headers={
+                    "anthropic-beta": "prompt-caching-2024-07-31"
+                },
+            )
         ))
 
         self.register(Model(
@@ -186,25 +201,30 @@ class ModelRegistry:
         ))
         
         
-        self.register(Model(
-            id="openrouter/moonshotai/kimi-k2",
-            name="Kimi K2",
-            provider=ModelProvider.MOONSHOTAI,
-            aliases=["kimi-k2", "Kimi K2", "moonshotai/kimi-k2"],
-            context_window=200_000,
-            capabilities=[
-                ModelCapability.CHAT,
-                ModelCapability.FUNCTION_CALLING,
-            ],
-            pricing=ModelPricing(
-                input_cost_per_million_tokens=1.00,
-                output_cost_per_million_tokens=3.00
-            ),
-            tier_availability=["free", "paid"],
-            priority=94,
-            enabled=True
-        ))
-
+        # self.register(Model(
+        #     id="openrouter/moonshotai/kimi-k2",
+        #     name="Kimi K2",
+        #     provider=ModelProvider.MOONSHOTAI,
+        #     aliases=["kimi-k2", "Kimi K2", "moonshotai/kimi-k2"],
+        #     context_window=200_000,
+        #     capabilities=[
+        #         ModelCapability.CHAT,
+        #         ModelCapability.FUNCTION_CALLING,
+        #     ],
+        #     pricing=ModelPricing(
+        #         input_cost_per_million_tokens=1.00,
+        #         output_cost_per_million_tokens=3.00
+        #     ),
+        #     tier_availability=["free", "paid"],
+        #     priority=94,
+        #     enabled=True,
+        #     config=ModelConfig(
+        #         extra_headers={
+        #             "HTTP-Referer": config.OR_SITE_URL if hasattr(config, 'OR_SITE_URL') and config.OR_SITE_URL else "",
+        #             "X-Title": config.OR_APP_NAME if hasattr(config, 'OR_APP_NAME') and config.OR_APP_NAME else ""
+        #         }
+        #     )
+        # ))
         
         # # DeepSeek Models
         # self.register(Model(

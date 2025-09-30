@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from enum import Enum
 
 
@@ -37,6 +37,36 @@ class ModelPricing:
 
 
 @dataclass
+class ModelConfig:
+    """Essential model configuration - provider settings and API configuration only."""
+    
+    # === Provider & API Configuration ===
+    api_base: Optional[str] = None
+    api_version: Optional[str] = None
+    base_url: Optional[str] = None  # Alternative to api_base
+    deployment_id: Optional[str] = None  # Azure
+    timeout: Optional[Union[float, int]] = None
+    num_retries: Optional[int] = None
+    
+    # === Headers (Provider-Specific) ===
+    headers: Optional[Dict[str, str]] = None
+    extra_headers: Optional[Dict[str, str]] = None
+    
+    
+    def __post_init__(self):
+        """Set intelligent defaults and validate configuration."""
+        # Merge headers if both are provided
+        if self.headers and self.extra_headers:
+            merged_headers = self.headers.copy()
+            merged_headers.update(self.extra_headers)
+            self.extra_headers = merged_headers
+            self.headers = None  # Use extra_headers as the single source
+        elif self.headers and not self.extra_headers:
+            self.extra_headers = self.headers
+            self.headers = None
+
+
+@dataclass
 class Model:
     id: str
     name: str
@@ -52,6 +82,9 @@ class Model:
     metadata: Dict[str, Any] = field(default_factory=dict)
     priority: int = 0
     recommended: bool = False
+    
+    # NEW: Centralized model configuration
+    config: Optional[ModelConfig] = None
     
     def __post_init__(self):        
         if ModelCapability.CHAT not in self.capabilities:
@@ -78,6 +111,50 @@ class Model:
     @property
     def is_free_tier(self) -> bool:
         return "free" in self.tier_availability
+    
+    def get_litellm_params(self, **override_params) -> Dict[str, Any]:
+        """Get complete LiteLLM parameters for this model, including all configuration."""
+        # Start with intelligent defaults
+        params = {
+            "model": self.id,
+            "num_retries": 3,
+            "stream_options": {"include_usage": True},  # Default for all models
+        }
+        
+        # Apply model-specific configuration if available
+        if self.config:
+            # Provider & API configuration parameters
+            api_params = [
+                'api_base', 'api_version', 'base_url', 'deployment_id', 
+                'timeout', 'num_retries'
+            ]
+            
+            # Apply configured parameters
+            for param_name in api_params:
+                param_value = getattr(self.config, param_name, None)
+                if param_value is not None:
+                    params[param_name] = param_value
+            
+            # Handle headers specially
+            if self.config.extra_headers:
+                params["extra_headers"] = self.config.extra_headers.copy()
+            elif self.config.headers:
+                params["extra_headers"] = self.config.headers.copy()
+        
+        
+        # Apply any runtime overrides
+        for key, value in override_params.items():
+            if value is not None:
+                # Handle extra_headers merging
+                if key == "extra_headers" and "extra_headers" in params:
+                    if isinstance(params["extra_headers"], dict) and isinstance(value, dict):
+                        params["extra_headers"].update(value)
+                    else:
+                        params[key] = value
+                else:
+                    params[key] = value
+        
+        return params
     
     def to_dict(self) -> Dict[str, Any]:
         return {
