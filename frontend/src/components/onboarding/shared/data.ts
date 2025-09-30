@@ -1,151 +1,115 @@
 import { AIAgent, Integration } from './types';
 
-// AI Agent definitions
+// AI Worker definitions - Specialized automation agents
 export const allAgents: AIAgent[] = [
   {
-    id: 'maya',
-    name: 'Maya',
-    role: 'Content Creator',
-    icon: 'PenTool',
-    description: 'Create engaging content, blog posts, social media, and marketing materials',
-    category: 'Growth',
-    tags: ['content', 'writing', 'marketing', 'social media'],
-    capabilities: ['Blog writing', 'Social media content', 'Email campaigns', 'SEO content']
+    id: 'email-assistant',
+    name: 'Email Assistant',
+    role: 'Email Management Specialist',
+    icon: 'Mail',
+    description: 'Automatically sort your email inbox, flag important messages, and draft personalized replies',
+    category: 'Productivity',
+    tags: ['email', 'automation', 'inbox', 'replies'],
+    capabilities: ['Smart inbox sorting', 'Priority flagging', 'Automated replies', 'Email categorization', 'Spam filtering']
   },
   {
-    id: 'hunter',
-    name: 'Hunter',
-    role: 'Talent Recruiter',
+    id: 'daily-recap',
+    name: 'Daily Recap Agent',
+    role: 'Morning Briefing Specialist',
+    icon: 'Sun',
+    description: 'Send a comprehensive daily recap email every morning to start your day informed',
+    category: 'Productivity',
+    tags: ['daily', 'recap', 'briefing', 'morning'],
+    capabilities: ['Daily summaries', 'Calendar overview', 'Priority tasks', 'Weather & news', 'Team updates']
+  },
+  {
+    id: 'weekly-recap',
+    name: 'Weekly Recap Agent',
+    role: 'Weekly Summary Specialist',
+    icon: 'Calendar',
+    description: 'Send a detailed weekly recap email at the start of each week with insights and planning',
+    category: 'Productivity',
+    tags: ['weekly', 'recap', 'summary', 'planning'],
+    capabilities: ['Weekly achievements', 'Goal tracking', 'Upcoming priorities', 'Team performance', 'Strategic insights']
+  },
+  {
+    id: 'lead-generator',
+    name: 'Lead Generation Agent',
+    role: 'Lead Generation Specialist',
     icon: 'Target',
-    description: 'Find, screen, and recruit top talent for your team',
-    category: 'Operations',
-    tags: ['recruitment', 'hr', 'talent', 'hiring'],
-    capabilities: ['Candidate sourcing', 'Resume screening', 'Interview scheduling', 'Talent pipeline']
+    description: 'Continuously grow your list of qualified leads through automated prospecting and research',
+    category: 'Sales',
+    tags: ['leads', 'prospecting', 'generation', 'automation'],
+    capabilities: ['Prospect identification', 'Lead qualification', 'Contact enrichment', 'CRM integration', 'Pipeline management']
   },
   {
-    id: 'nova',
-    name: 'Nova',
-    role: 'SEO Specialist',
-    icon: 'Rocket',
-    description: 'Optimize your website and content for search engines',
-    category: 'Growth',
-    tags: ['seo', 'optimization', 'search', 'analytics'],
-    capabilities: ['Keyword research', 'On-page SEO', 'Technical SEO', 'Performance tracking']
+    id: 'meeting-researcher',
+    name: 'Meeting Research Agent',
+    role: 'People Research Specialist',
+    icon: 'Users',
+    description: 'Provide in-depth research reports about people before meetings to help you prepare',
+    category: 'Research',
+    tags: ['research', 'meetings', 'preparation', 'insights'],
+    capabilities: ['Background research', 'Company analysis', 'Social media insights', 'Meeting prep reports', 'Conversation starters']
   },
   {
-    id: 'sage',
-    name: 'Sage',
-    role: 'Business Intelligence Analyst',
-    icon: 'BarChart3',
-    description: 'Analyze data and provide actionable business insights',
-    category: 'Analytics',
-    tags: ['analytics', 'data', 'insights', 'reporting'],
-    capabilities: ['Data analysis', 'Report generation', 'KPI tracking', 'Business intelligence']
-  },
-  {
-    id: 'alex',
-    name: 'Alex',
-    role: 'Customer Success Manager',
-    icon: 'Handshake',
-    description: 'Manage customer relationships and ensure satisfaction',
-    category: 'Support',
-    tags: ['customer success', 'support', 'retention', 'satisfaction'],
-    capabilities: ['Customer onboarding', 'Issue resolution', 'Retention strategies', 'Feedback analysis']
-  },
-  {
-    id: 'byte',
-    name: 'Byte',
-    role: 'Software Engineer',
-    icon: 'Code',
-    description: 'Develop and maintain software applications and systems',
-    category: 'Product',
-    tags: ['development', 'coding', 'software', 'engineering'],
-    capabilities: ['Code development', 'System architecture', 'Code review', 'Technical documentation']
-  },
-  {
-    id: 'pixel',
-    name: 'Pixel',
-    role: 'UI/UX Designer',
-    icon: 'Palette',
-    description: 'Design beautiful and intuitive user interfaces',
-    category: 'Product',
-    tags: ['design', 'ui', 'ux', 'interface'],
-    capabilities: ['UI design', 'UX research', 'Prototyping', 'Design systems']
-  },
-  {
-    id: 'echo',
-    name: 'Echo',
-    role: 'Sales Representative',
-    icon: 'Briefcase',
-    description: 'Drive sales and build relationships with prospects',
-    category: 'Growth',
-    tags: ['sales', 'prospects', 'leads', 'revenue'],
-    capabilities: ['Lead qualification', 'Sales calls', 'Pipeline management', 'Deal closing']
+    id: 'presentation-creator',
+    name: 'Presentation Agent',
+    role: 'Presentation Creation Specialist',
+    icon: 'Monitor',
+    description: 'Create professional presentations and slide decks tailored to your content and audience',
+    category: 'Content',
+    tags: ['presentations', 'slides', 'design', 'content'],
+    capabilities: ['Slide creation', 'Content structuring', 'Visual design', 'Template customization', 'Export formats']
   }
 ];
 
 // Agent categories
 export const agentCategories = [
-  { id: 'all', name: 'All', description: 'View all available agents' },
-  { id: 'Leadership', name: 'Leadership', description: 'Strategic and executive roles' },
-  { id: 'Growth', name: 'Growth', description: 'Marketing, sales, and business development' },
-  { id: 'Product', name: 'Product', description: 'Development, design, and product management' },
-  { id: 'Operations', name: 'Operations', description: 'HR, operations, and process management' },
-  { id: 'Analytics', name: 'Analytics', description: 'Data analysis and business intelligence' },
-  { id: 'Support', name: 'Support', description: 'Customer success and support' }
+  { id: 'all', name: 'All', description: 'View all available AI workers' },
+  { id: 'Productivity', name: 'Productivity', description: 'Email, scheduling, and daily automation' },
+  { id: 'Sales', name: 'Sales', description: 'Lead generation and sales automation' },
+  { id: 'Research', name: 'Research', description: 'Information gathering and analysis' },
+  { id: 'Content', name: 'Content', description: 'Content creation and presentation tools' }
 ];
 
-// Integration definitions by agent
+// Integration definitions by AI worker
 export const integrationsByAgent: Record<string, Integration[]> = {
-  maya: [
-    { name: 'Google Docs', icon: 'FileText', description: 'Write and collaborate on documents', category: 'productivity' },
-    { name: 'WordPress', icon: 'Edit', description: 'Publish content directly to WordPress', category: 'publishing' },
-    { name: 'Mailchimp', icon: 'Mail', description: 'Create email marketing campaigns', category: 'email' },
-    { name: 'Buffer', icon: 'Smartphone', description: 'Schedule social media posts', category: 'social' },
-    { name: 'Grammarly', icon: 'PenTool', description: 'AI-powered writing assistant', category: 'productivity' }
+  'email-assistant': [
+    { name: 'Gmail', icon: 'Mail', description: 'Connect to Gmail for email management', category: 'email' },
+    { name: 'Outlook', icon: 'Mail', description: 'Microsoft Outlook integration', category: 'email' },
+    { name: 'Slack', icon: 'MessageSquare', description: 'Team notifications and updates', category: 'communication' },
+    { name: 'Zapier', icon: 'Zap', description: 'Automate email workflows', category: 'automation' }
   ],
-  hunter: [
-    { name: 'LinkedIn', icon: 'Briefcase', description: 'Source and contact candidates', category: 'recruiting' },
-    { name: 'Indeed', icon: 'Search', description: 'Post jobs and search candidates', category: 'recruiting' },
-    { name: 'Calendly', icon: 'Calendar', description: 'Schedule interviews automatically', category: 'scheduling' },
-    { name: 'Greenhouse', icon: 'Sprout', description: 'Applicant tracking system', category: 'ats' },
-    { name: 'Slack', icon: 'MessageSquare', description: 'Team communication and updates', category: 'communication' }
+  'daily-recap': [
+    { name: 'Google Calendar', icon: 'Calendar', description: 'Calendar events and meetings', category: 'scheduling' },
+    { name: 'Todoist', icon: 'CheckSquare', description: 'Task and project management', category: 'productivity' },
+    { name: 'Weather API', icon: 'Cloud', description: 'Weather information', category: 'data' },
+    { name: 'News API', icon: 'Newspaper', description: 'Latest news updates', category: 'data' }
   ],
-  nova: [
-    { name: 'Google Analytics', icon: 'BarChart3', description: 'Website traffic analysis', category: 'analytics' },
-    { name: 'Search Console', icon: 'Search', description: 'Monitor search performance', category: 'seo' },
-    { name: 'SEMrush', icon: 'TrendingUp', description: 'Keyword research and tracking', category: 'seo' },
-    { name: 'Ahrefs', icon: 'Link', description: 'Backlink analysis and monitoring', category: 'seo' }
+  'weekly-recap': [
+    { name: 'Google Analytics', icon: 'BarChart3', description: 'Website performance metrics', category: 'analytics' },
+    { name: 'Asana', icon: 'Clipboard', description: 'Project progress tracking', category: 'project-management' },
+    { name: 'Slack', icon: 'MessageSquare', description: 'Team activity summaries', category: 'communication' },
+    { name: 'HubSpot', icon: 'Building', description: 'Sales and marketing metrics', category: 'crm' }
   ],
-  sage: [
-    { name: 'Google Analytics', icon: 'BarChart3', description: 'Web analytics and insights', category: 'analytics' },
-    { name: 'Tableau', icon: 'TrendingUp', description: 'Data visualization platform', category: 'visualization' },
-    { name: 'Power BI', icon: 'Zap', description: 'Business intelligence dashboard', category: 'bi' },
-    { name: 'Excel', icon: 'FileSpreadsheet', description: 'Spreadsheet analysis and reporting', category: 'productivity' }
+  'lead-generator': [
+    { name: 'LinkedIn', icon: 'Briefcase', description: 'Professional networking and prospecting', category: 'social' },
+    { name: 'Salesforce', icon: 'Cloud', description: 'CRM integration for lead management', category: 'crm' },
+    { name: 'Apollo', icon: 'Target', description: 'Lead database and enrichment', category: 'data' },
+    { name: 'ZoomInfo', icon: 'Search', description: 'Contact and company information', category: 'data' }
   ],
-  alex: [
-    { name: 'Intercom', icon: 'MessageSquare', description: 'Customer messaging platform', category: 'support' },
-    { name: 'Zendesk', icon: 'TicketCheck', description: 'Customer support ticketing', category: 'support' },
-    { name: 'HubSpot', icon: 'Building', description: 'CRM and customer management', category: 'crm' },
-    { name: 'Calendly', icon: 'Calendar', description: 'Meeting scheduling', category: 'scheduling' }
+  'meeting-researcher': [
+    { name: 'LinkedIn', icon: 'Briefcase', description: 'Professional background research', category: 'social' },
+    { name: 'Crunchbase', icon: 'Building', description: 'Company information and funding', category: 'data' },
+    { name: 'Google Search', icon: 'Search', description: 'General information gathering', category: 'search' },
+    { name: 'Twitter', icon: 'MessageSquare', description: 'Social media insights', category: 'social' }
   ],
-  byte: [
-    { name: 'GitHub', icon: 'Github', description: 'Code repository and collaboration', category: 'development' },
-    { name: 'VS Code', icon: 'Code', description: 'Code editor and development', category: 'development' },
-    { name: 'Jira', icon: 'Clipboard', description: 'Project and issue tracking', category: 'project-management' },
-    { name: 'Docker', icon: 'Box', description: 'Containerization and deployment', category: 'devops' }
-  ],
-  pixel: [
-    { name: 'Figma', icon: 'Palette', description: 'Design and prototyping tool', category: 'design' },
-    { name: 'Adobe XD', icon: 'Layers', description: 'UI/UX design platform', category: 'design' },
-    { name: 'Sketch', icon: 'Pen', description: 'Vector graphics and design', category: 'design' },
-    { name: 'Notion', icon: 'FileText', description: 'Documentation and collaboration', category: 'productivity' }
-  ],
-  echo: [
-    { name: 'Salesforce', icon: 'Cloud', description: 'CRM and sales management', category: 'crm' },
-    { name: 'HubSpot', icon: 'Building', description: 'Sales pipeline and automation', category: 'crm' },
-    { name: 'Calendly', icon: 'Calendar', description: 'Meeting and demo scheduling', category: 'scheduling' },
-    { name: 'Zoom', icon: 'Video', description: 'Video calls and presentations', category: 'communication' }
+  'presentation-creator': [
+    { name: 'PowerPoint', icon: 'Monitor', description: 'Microsoft PowerPoint integration', category: 'presentation' },
+    { name: 'Google Slides', icon: 'Monitor', description: 'Google Slides creation', category: 'presentation' },
+    { name: 'Canva', icon: 'Palette', description: 'Design templates and graphics', category: 'design' },
+    { name: 'Unsplash', icon: 'Image', description: 'High-quality stock photos', category: 'media' }
   ]
 };
 

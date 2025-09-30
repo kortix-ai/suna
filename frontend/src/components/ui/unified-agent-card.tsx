@@ -368,60 +368,60 @@ export const UnifiedAgentCard: React.FC<UnifiedAgentCardProps> = ({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay }}
-      whileHover={{ scale: 1.02 }}
-      whileTap={{ scale: 0.98 }}
+      className="relative"
     >
       <Card 
         className={cn(
-          'cursor-pointer transition-all duration-300',
+          'cursor-pointer transition-all duration-200 relative overflow-hidden',
           isSelected 
-            ? 'ring-2 ring-primary bg-primary/5' 
-            : 'hover:border-primary/50',
-          isRecommended ? 'border-primary/50 bg-primary/5' : '',
+            ? 'border-2 border-foreground bg-background' 
+            : 'border border-border hover:border-muted-foreground/30',
           className
         )}
         onClick={() => onToggle?.(data.id)}
       >
-        <CardContent className="p-6">
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-4 flex-1">
-              <div className="p-2 rounded-lg bg-primary/10">
-                <CardAvatar data={data} size={32} variant={variant} />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <h3 className="font-semibold text-lg">{data.name}</h3>
-                  {isRecommended && (
-                    <Badge variant="secondary" className="text-xs bg-primary/10 text-primary">
-                      Recommended
-                    </Badge>
-                  )}
-                </div>
-                <p className="text-primary font-medium text-sm mb-2">{data.role}</p>
-                <p className="text-muted-foreground text-sm mb-3">{data.description}</p>
-                
-                <CapabilitiesList capabilities={data.capabilities} />
-              </div>
+        <CardContent className="p-4 space-y-3">
+          {/* Header with name and selection */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-0.5 flex-1 min-w-0">
+              <h3 className="font-semibold text-sm leading-tight">{data.name}</h3>
+              <p className="text-xs text-muted-foreground leading-tight">{data.role}</p>
             </div>
             
-            <Button
-              variant={isSelected ? "default" : "outline"}
-              size="sm"
-              className={cn('ml-4', isSelected ? 'bg-primary text-primary-foreground' : '')}
-            >
+            {/* Selection indicator */}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              
               {isSelected ? (
-                <>
-                  <Check className="h-4 w-4 mr-1" />
-                  Selected
-                </>
+                <div className="flex items-center justify-center w-4 h-4 rounded-full bg-foreground text-background">
+                  <Check className="h-3 w-3" strokeWidth={3} />
+                </div>
               ) : (
-                <>
-                  <Plus className="h-4 w-4 mr-1" />
-                  Add
-                </>
+                <Plus className="h-4 w-4 text-muted-foreground" />
               )}
-            </Button>
+            </div>
           </div>
+          
+          {/* Description */}
+          <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2">
+            {data.description}
+          </p>
+          
+          {/* Capabilities - compact */}
+          {data.capabilities && data.capabilities.length > 0 && (
+            <div className="space-y-1">
+              {data.capabilities.slice(0, 3).map((capability) => (
+                <div key={capability} className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                  <span className="mt-1 w-0.5 h-0.5 rounded-full bg-muted-foreground/40 flex-shrink-0" />
+                  <span className="leading-tight">{capability}</span>
+                </div>
+              ))}
+              {data.capabilities.length > 3 && (
+                <div className="text-[11px] text-muted-foreground pl-2">
+                  +{data.capabilities.length - 3} more
+                </div>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
     </motion.div>

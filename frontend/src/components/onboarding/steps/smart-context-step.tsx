@@ -2,15 +2,12 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Building2, User, Globe, Loader2, Sparkles } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { Loader2 } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { StepWrapper } from '../shared/step-wrapper';
 import { userContext, updateUserContext } from '../shared/context';
-import { UserContext } from '../shared/types';
+import type { UserContext } from '../shared/types';
 
 export const SmartContextStep = () => {
   const [localContext, setLocalContext] = useState<UserContext>(userContext);
@@ -49,10 +46,9 @@ export const SmartContextStep = () => {
 
   // Auto-progress after context is filled
   useEffect(() => {
-    const hasBasicInfo = localContext.userType && (localContext.name || localContext.userType === 'company');
-    const hasGoals = localContext.primaryGoals && localContext.primaryGoals.length > 0;
+    const hasBasicInfo = localContext.websiteUrl && localContext.websiteUrl.trim().length > 10;
     
-    if (hasBasicInfo && hasGoals) {
+    if (hasBasicInfo) {
       // Auto-advance after a short delay
       const timer = setTimeout(() => {
         // This would trigger the next step in the parent component
@@ -61,19 +57,6 @@ export const SmartContextStep = () => {
     }
   }, [localContext]);
 
-  const goalOptions = [
-    'Content Creation', 'SEO Optimization', 'Social Media', 'Customer Support',
-    'Data Analysis', 'Lead Generation', 'Project Management', 'Design',
-    'Development', 'Email Marketing', 'Sales', 'Recruitment'
-  ];
-
-  const toggleGoal = (goal: string) => {
-    const currentGoals = localContext.primaryGoals || [];
-    const updatedGoals = currentGoals.includes(goal)
-      ? currentGoals.filter(g => g !== goal)
-      : [...currentGoals, goal];
-    updateContext({ primaryGoals: updatedGoals });
-  };
 
   return (
     <StepWrapper>
@@ -83,150 +66,98 @@ export const SmartContextStep = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <Sparkles className="h-12 w-12 text-primary mx-auto mb-4" />
-          <h2 className="text-2xl font-bold mb-3">Let's Get Smart About Your Needs</h2>
-          <p className="text-muted-foreground max-w-lg mx-auto">
-            Tell us a bit about yourself so we can recommend the perfect AI agents for your workflow
+          <h2 className="text-4xl font-bold mb-4">
+            {localContext.userType === 'company' ? 'Tell us about your company' : 'Tell us about yourself'}
+          </h2>
+          <p className="text-lg text-muted-foreground mb-8">
+            {localContext.userType === 'company' 
+              ? 'Help us understand your business better'
+              : 'Help us understand what you do'}
           </p>
         </motion.div>
 
-        <div className="max-w-lg mx-auto space-y-6">
-          {/* User Type Selection */}
+        <div className="w-full max-w-2xl mx-auto space-y-6">
+          {/* Main description textarea */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.1 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
             className="space-y-3"
           >
-            <Label className="text-sm font-medium">I am a...</Label>
-            <div className="grid grid-cols-2 gap-3">
-              <Card 
-                className={`cursor-pointer transition-all hover:shadow-md ${
-                  localContext.userType === 'individual' ? 'ring-2 ring-primary bg-primary/5' : ''
-                }`}
-                onClick={() => updateContext({ userType: 'individual' })}
-              >
-                <CardContent className="p-4 text-center">
-                  <User className="h-6 w-6 mx-auto mb-2 text-primary" />
-                  <p className="font-medium">Individual</p>
-                  <p className="text-xs text-muted-foreground">Freelancer, creator, or entrepreneur</p>
-                </CardContent>
-              </Card>
-              
-              <Card 
-                className={`cursor-pointer transition-all hover:shadow-md ${
-                  localContext.userType === 'company' ? 'ring-2 ring-primary bg-primary/5' : ''
-                }`}
-                onClick={() => updateContext({ userType: 'company' })}
-              >
-                <CardContent className="p-4 text-center">
-                  <Building2 className="h-6 w-6 mx-auto mb-2 text-primary" />
-                  <p className="font-medium">Company</p>
-                  <p className="text-xs text-muted-foreground">Business or organization</p>
-                </CardContent>
-              </Card>
-            </div>
-          </motion.div>
-
-          {/* Name Input */}
-          {localContext.userType && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.2 }}
-              className="space-y-2"
-            >
-              <Label htmlFor="name" className="text-sm font-medium">
-                {localContext.userType === 'individual' ? 'Your name (optional)' : 'Company name'}
-              </Label>
-              <Input
-                id="name"
-                placeholder={localContext.userType === 'individual' ? 'Enter your name' : 'Enter company name'}
-                value={localContext.name || ''}
-                onChange={(e) => updateContext({ name: e.target.value })}
-                className="text-center"
+            <Label htmlFor="description" className="text-base font-semibold text-center block">
+              {localContext.userType === 'company' ? 'What does your company do?' : 'What do you do?'}
+            </Label>
+            <div className="relative">
+              <Textarea
+                id="description"
+                placeholder={localContext.userType === 'company' 
+                  ? "Share your company website or describe what you do...\n\nExamples:\n• https://yourcompany.com\n• We help B2B SaaS companies scale their growth\n• Digital marketing agency for startups"
+                  : "Share your website or describe what you do...\n\nExamples:\n• https://myportfolio.com\n• Freelance graphic designer specializing in branding\n• Help small businesses with digital marketing"
+                }
+                value={localContext.websiteUrl || ''}
+                onChange={(e) => updateContext({ websiteUrl: e.target.value })}
+                onBlur={(e) => extractWebsiteContext(e.target.value)}
+                className="min-h-[120px] text-base leading-relaxed border-2 focus:border-primary transition-colors resize-none"
+                rows={5}
               />
-            </motion.div>
-          )}
-
-          {/* Website URL for companies */}
-          {localContext.userType === 'company' && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.3 }}
-              className="space-y-2"
-            >
-              <Label htmlFor="website" className="text-sm font-medium flex items-center gap-2">
-                <Globe className="h-4 w-4" />
-                Website URL (we'll analyze it for context)
-              </Label>
-              <div className="flex gap-2">
-                <Input
-                  id="website"
-                  placeholder="https://yourcompany.com"
-                  value={localContext.websiteUrl || ''}
-                  onChange={(e) => updateContext({ websiteUrl: e.target.value })}
-                  onBlur={(e) => extractWebsiteContext(e.target.value)}
-                />
-                {isExtracting && (
-                  <Button disabled size="sm">
+              {isExtracting && (
+                <div className="absolute top-3 right-3">
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground bg-background/80 backdrop-blur-sm px-2 py-1 rounded-md">
                     <Loader2 className="h-4 w-4 animate-spin" />
-                  </Button>
-                )}
-              </div>
-              {localContext.extractedContext && (
-                <div className="mt-3 p-3 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200 dark:border-green-800">
-                  <p className="text-sm font-medium text-green-800 dark:text-green-300 mb-2">
-                    ✨ Smart insights from your website:
-                  </p>
-                  <div className="space-y-1 text-sm text-green-700 dark:text-green-400">
-                    <p>• Business: {localContext.extractedContext.businessType}</p>
-                    <p>• Size: {localContext.extractedContext.size}</p>
-                    <p>• Services: {localContext.extractedContext.services?.join(', ')}</p>
+                    Analyzing...
                   </div>
                 </div>
               )}
-            </motion.div>
-          )}
+            </div>
+            
+            {localContext.extractedContext && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.3 }}
+                className="mt-4 p-4 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20 rounded-xl border border-green-200 dark:border-green-800"
+              >
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="h-2 w-2 bg-green-500 rounded-full animate-pulse" />
+                  <p className="text-sm font-semibold text-green-800 dark:text-green-300">
+                    Great! Here's what we learned:
+                  </p>
+                </div>
+                <div className="grid gap-2 text-sm">
+                  <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
+                    <span className="font-medium">Focus:</span>
+                    <span>{localContext.extractedContext.businessType}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-green-700 dark:text-green-400">
+                    <span className="font-medium">Scale:</span>
+                    <span>{localContext.extractedContext.size}</span>
+                  </div>
+                  <div className="flex items-start gap-2 text-green-700 dark:text-green-400">
+                    <span className="font-medium">Areas:</span>
+                    <span>{localContext.extractedContext.services?.join(', ')}</span>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </motion.div>
 
-          {/* Primary Goals */}
-          {localContext.userType && (
+          {/* Progress indicator */}
+          {localContext.websiteUrl && localContext.websiteUrl.trim().length > 10 && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.4 }}
-              className="space-y-3"
+              className="text-center mt-6"
             >
-              <Label className="text-sm font-medium">
-                What are your primary goals? (select all that apply)
-              </Label>
-              <div className="grid grid-cols-2 gap-2">
-                {goalOptions.map((goal) => (
-                  <Badge
-                    key={goal}
-                    variant={localContext.primaryGoals?.includes(goal) ? "default" : "outline"}
-                    className="cursor-pointer hover:bg-primary/10 transition-colors p-2 justify-center"
-                    onClick={() => toggleGoal(goal)}
-                  >
-                    {goal}
-                  </Badge>
-                ))}
-              </div>
-            </motion.div>
-          )}
-
-          {/* Progress indicator */}
-          {localContext.userType && localContext.primaryGoals && localContext.primaryGoals.length > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.5 }}
-              className="text-center"
-            >
-              <div className="inline-flex items-center gap-2 text-sm text-green-600 dark:text-green-400">
-                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                Perfect! We're ready to recommend your ideal AI agents
+              <div className="inline-flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-primary/10 to-primary/5 rounded-full border border-primary/20">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
+                  <div className="w-2 h-2 bg-primary/60 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }} />
+                  <div className="w-2 h-2 bg-primary/30 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }} />
+                </div>
+                <span className="text-sm font-medium text-primary">
+                  Perfect! Ready to find your AI assistants
+                </span>
               </div>
             </motion.div>
           )}

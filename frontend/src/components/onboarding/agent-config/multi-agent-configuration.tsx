@@ -2,15 +2,13 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { ChevronLeft, ChevronRight, CheckCircle2, Clock, Settings } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Settings } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StepWrapper } from '../shared/step-wrapper';
 import { AgentConfiguration } from './agent-configuration';
 import { allAgents } from '../shared/data';
 import { userContext } from '../shared/context';
-import { IconRenderer } from '../shared/icon-renderer';
 
 export const MultiAgentConfigurationStep = () => {
   const [currentAgentIndex, setCurrentAgentIndex] = useState(0);
@@ -68,72 +66,17 @@ export const MultiAgentConfigurationStep = () => {
 
   return (
     <StepWrapper>
-      <div className="space-y-8">
-        {/* Header with agent progress */}
+      <div className="space-y-6">
+        {/* Compact header */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="text-center space-y-6"
+          className="text-center"
         >
-          <div className="flex items-center justify-center gap-3">
-            <div className="p-3 rounded-xl bg-primary/10">
-              <IconRenderer iconName={currentAgent.icon} className="text-primary" size={32} />
-            </div>
-            <div>
-              <h2 className="text-2xl font-bold">Configure {currentAgent.name}</h2>
-              <p className="text-muted-foreground">
-                Customize {currentAgent.name} for your {currentAgent.role.toLowerCase()} needs
-              </p>
-            </div>
-          </div>
-
-          {/* Agent progress indicator */}
-          <div className="flex justify-center">
-            <Card className="p-4 bg-muted/30">
-              <div className="flex items-center space-x-4">
-                {selectedAgents.map((agent, index) => {
-                  const status = getAgentStatus(agent.id);
-                  const configured = isConfigured(agent.id);
-                  
-                  return (
-                    <div
-                      key={agent.id}
-                      className="flex items-center space-x-2"
-                    >
-                      <div
-                        className={`flex items-center space-x-2 px-3 py-2 rounded-full text-sm font-medium transition-all ${
-                          status === 'current'
-                            ? 'bg-primary text-primary-foreground scale-105'
-                            : status === 'completed'
-                            ? 'bg-primary/10 text-primary'
-                            : 'bg-muted text-muted-foreground'
-                        }`}
-                      >
-                        <IconRenderer iconName={agent.icon} className="text-primary" size={20} />
-                        <span>{agent.name}</span>
-                        {status === 'completed' && configured && (
-                          <CheckCircle2 className="h-4 w-4" />
-                        )}
-                        {status === 'current' && (
-                          <Clock className="h-4 w-4" />
-                        )}
-                      </div>
-                      {index < selectedAgents.length - 1 && (
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-          </div>
-
-          {/* Progress summary */}
-          <div className="flex justify-center">
-            <Badge variant="outline" className="px-4 py-2">
-              {currentAgentIndex + 1} of {selectedAgents.length} agents
-            </Badge>
-          </div>
+          <h2 className="text-2xl font-bold mb-2">Configure {currentAgent.name}</h2>
+          <p className="text-sm text-muted-foreground">
+            {currentAgentIndex + 1} of {selectedAgents.length}
+          </p>
         </motion.div>
 
         {/* Agent configuration */}
@@ -151,90 +94,49 @@ export const MultiAgentConfigurationStep = () => {
           />
         </motion.div>
 
-        {/* Navigation */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="flex justify-between items-center pt-6"
-        >
-          <Button
-            variant="outline"
-            onClick={previousAgent}
-            disabled={currentAgentIndex === 0}
-            className="flex items-center gap-2"
+        {/* Compact navigation */}
+        {selectedAgents.length > 1 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="flex justify-center items-center gap-3"
           >
-            <ChevronLeft className="h-4 w-4" />
-            Previous Agent
-          </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={previousAgent}
+              disabled={currentAgentIndex === 0}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
 
-          <div className="flex items-center gap-3">
-            {/* Skip option */}
-            {currentAgentIndex < selectedAgents.length - 1 && (
-              <Button
-                variant="ghost"
-                onClick={nextAgent}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                Skip for now
-              </Button>
-            )}
+            <div className="flex items-center gap-1">
+              {selectedAgents.map((agent, index) => (
+                <div
+                  key={agent.id}
+                  className={cn(
+                    'w-2 h-2 rounded-full transition-all',
+                    index === currentAgentIndex 
+                      ? 'bg-foreground w-6' 
+                      : isConfigured(agent.id)
+                      ? 'bg-foreground/40'
+                      : 'bg-border'
+                  )}
+                />
+              ))}
+            </div>
 
             <Button
+              variant="outline"
+              size="sm"
               onClick={nextAgent}
               disabled={currentAgentIndex === selectedAgents.length - 1}
-              className="flex items-center gap-2"
             >
-              {currentAgentIndex === selectedAgents.length - 1 ? (
-                <>
-                  <CheckCircle2 className="h-4 w-4" />
-                  Configuration Complete
-                </>
-              ) : (
-                <>
-                  Next Agent
-                  <ChevronRight className="h-4 w-4" />
-                </>
-              )}
+              <ChevronRight className="h-4 w-4" />
             </Button>
-          </div>
-        </motion.div>
-
-        {/* Configuration summary */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="bg-primary/5 border border-primary/20 rounded-lg p-6"
-        >
-          <h3 className="font-semibold mb-4 flex items-center gap-2">
-            <Settings className="h-5 w-5" />
-            Configuration Summary
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {selectedAgents.map((agent) => (
-              <div
-                key={agent.id}
-                className={`p-3 rounded-lg border ${
-                  isConfigured(agent.id)
-                    ? 'bg-primary/5 border-primary/20'
-                    : 'bg-muted border-border'
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <IconRenderer iconName={agent.icon} className="text-primary" size={16} />
-                  <span className="font-medium text-sm">{agent.name}</span>
-                  {isConfigured(agent.id) && (
-                    <CheckCircle2 className="h-3 w-3 text-primary" />
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {isConfigured(agent.id) ? 'Configured' : 'Needs configuration'}
-                </p>
-              </div>
-            ))}
-          </div>
-        </motion.div>
+          </motion.div>
+        )}
       </div>
     </StepWrapper>
   );

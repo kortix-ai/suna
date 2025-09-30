@@ -8,6 +8,7 @@ export { NewOnboardingPage } from './new-onboarding-page';
 
 // Step components
 export { CEOIntroStep } from './steps/ceo-intro-step';
+export { UserTypeStep } from './steps/user-type-step';
 export { SmartContextStep } from './steps/smart-context-step';
 export { WorkforceSelectionStep } from './steps/workforce-selection-step';
 export { TeamInvitationStep } from './steps/team-invitation-step';
