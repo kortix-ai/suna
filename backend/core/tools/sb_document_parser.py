@@ -1,6 +1,5 @@
 from chunkr_ai import Chunkr
 from typing import Dict, Any
-import os
 
 from core.agentpress.tool import ToolResult, openapi_schema, usage_example
 from core.agentpress.thread_manager import ThreadManager
@@ -17,13 +16,13 @@ class SandboxDocumentParserTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "parse_document",
-            "description": "Parse any document type and extract text, metadata, tables, and structured data. Auto-detects format or uses specified type.",
+            "description": "Parse any document type from a URL and extract text, metadata, tables, and structured data. Auto-detects format from URL.",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "file_path": {
+                    "url": {
                         "type": "string",
-                        "description": "Path to the document file to parse or a URL to the document"
+                        "description": "URL to the document file to parse (must start with http:// or https://)"
                     },
                     "extract_tables": {
                         "type": "boolean",
@@ -36,14 +35,14 @@ class SandboxDocumentParserTool(SandboxToolsBase):
                         "default": False
                     }
                 },
-                "required": ["file_path"]
+                "required": ["url"]
             }
         }
     })
     @usage_example('''
         <function_calls>
         <invoke name="parse_document">
-          <parameter name="file_path">documents/report.pdf</parameter>
+          <parameter name="url">https://example.com/report.pdf</parameter>
           <parameter name="extract_tables">true</parameter>
           <parameter name="extract_structured_data">true</parameter>
         </invoke>
@@ -51,14 +50,9 @@ class SandboxDocumentParserTool(SandboxToolsBase):
     ''')
     async def parse_document(
         self, 
-        file_path: str, 
-        document_type: str = "auto",
+        url: str, 
         extract_tables: bool = False, 
-        extract_images: bool = False, 
-        page_range: str = "all",
-        preserve_formatting: bool = False,
         extract_structured_data: bool = False,
-        ocr_language: str = "eng",
         options: Dict[str, Any] = None
     ) -> ToolResult:
         try:
@@ -67,23 +61,16 @@ class SandboxDocumentParserTool(SandboxToolsBase):
             if options is None:
                 options = {}
             
-            # Check if file_path is a URL or a file path
-            if file_path.startswith(('http://', 'https://')):
-                # It's a URL, use it directly
-                source_url = file_path
-                logger.info(f"Parsing document from URL: {file_path}")
-            else:
-                # It's a file path, check if it exists in workspace
-                full_file_path = os.path.join(self.workspace_path, file_path.lstrip('/'))
-                if not await self._file_exists(full_file_path):
-                    return self.fail_response(f"File not found: {file_path}")
-                source_url = full_file_path
-                logger.info(f"Parsing document from file: {full_file_path}")
+            # Validate that the input is a URL
+            if not url.startswith(('http://', 'https://')):
+                return self.fail_response(f"Invalid URL: {url}. URL must start with http:// or https://")
             
-            logger.debug(f"Uploading to Chunkr AI: {source_url}")
+            logger.info(f"Parsing document from URL: {url}")
+            
+            logger.debug(f"Uploading to Chunkr AI: {url}")
             
             # Upload to Chunkr and get the task result
-            task = await self.chunkr.upload(source_url)
+            task = await self.chunkr.upload(url)
             
             logger.debug(f"Chunkr task completed successfully")
             
@@ -91,13 +78,13 @@ class SandboxDocumentParserTool(SandboxToolsBase):
             parsed_content = self._extract_meaningful_content(task, extract_tables, extract_structured_data)
             
             return self.success_response({
-                "message": f"Successfully parsed document: {file_path}",
+                "message": f"Successfully parsed document from URL: {url}",
                 "content": parsed_content
             })
             
         except Exception as e:
-            logger.error(f"Error parsing document {file_path}: {e}", exc_info=True)
-            return self.fail_response(f"Error parsing document: {str(e)}")
+            logger.error(f"Error parsing document from URL {url}: {e}", exc_info=True)
+            return self.fail_response(f"Error parsing document from URL: {str(e)}")
     
     def _extract_meaningful_content(self, task, extract_tables: bool, extract_structured_data: bool) -> Dict[str, Any]:
         """Extract meaningful content from Chunkr task response without overwhelming detail."""
@@ -200,10 +187,3 @@ class SandboxDocumentParserTool(SandboxToolsBase):
             "tables_count": len(content["tables"]),
             "main_headings": [item["content"] for item in content["structure"][:5]]  # First 5 headings
         }
-    
-    async def _file_exists(self, path: str) -> bool:
-        try:
-            await self.sandbox.fs.get_file_info(path)
-            return True
-        except Exception:
-            return False

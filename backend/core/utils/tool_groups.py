@@ -847,6 +847,21 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         ]
     ),
 
+    "paper_search_tool": ToolGroup(
+        name="paper_search_tool",
+        display_name="Paper Search",
+        description="Search for papers using natural language queries",
+        tool_class="PaperSearchTool",
+        methods=[
+            ToolMethod(
+                name="paper_search",
+                display_name="Paper Search",
+                description="Search for papers using natural language queries",
+                enabled=True
+            ),
+        ]
+    ),
+
     "sb_document_parser_tool": ToolGroup(
         name="sb_document_parser_tool",
         display_name="Document Parser",

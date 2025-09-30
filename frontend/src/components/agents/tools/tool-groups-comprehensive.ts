@@ -139,6 +139,24 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
     ],
   },
 
+  paper_search_tool: {
+    name: 'paper_search_tool',
+    displayName: 'Paper Search',
+    description: 'Search for papers using natural language queries',
+    icon: 'Book',
+    color: 'bg-blue-100 dark:bg-blue-800/50',
+    toolClass: 'PaperSearchTool',
+    enabled: true,
+    methods: [
+      {
+        name: 'paper_search',
+        displayName: 'Paper Search',
+        description: 'Search for papers using natural language queries',
+        enabled: true,
+      },
+    ],
+  },
+
   sb_vision_tool: {
     name: 'sb_vision_tool',
     displayName: 'Vision & Image Analysis',

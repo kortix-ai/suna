@@ -45,6 +45,7 @@ from core.tools.sb_upload_file_tool import SandboxUploadFileTool
 from core.tools.sb_docs_tool import SandboxDocsTool
 from core.tools.people_search_tool import PeopleSearchTool
 from core.tools.company_search_tool import CompanySearchTool
+from core.tools.paper_search_tool import PaperSearchTool
 from core.ai_models.manager import model_manager
 
 load_dotenv()
@@ -171,6 +172,15 @@ class ToolManager:
                 else:
                     self.thread_manager.add_tool(CompanySearchTool, thread_manager=self.thread_manager)
                     logger.debug("Registered company_search_tool (all methods)")
+            
+            if 'paper_search_tool' not in disabled_tools:
+                enabled_methods = self._get_enabled_methods_for_tool('paper_search_tool')
+                if enabled_methods is not None:
+                    self.thread_manager.add_tool(PaperSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager)
+                    logger.debug(f"Registered paper_search_tool with methods: {enabled_methods}")
+                else:
+                    self.thread_manager.add_tool(PaperSearchTool, thread_manager=self.thread_manager)
+                    logger.debug("Registered paper_search_tool (all methods)")
     
     def _register_agent_builder_tools(self, agent_id: str, disabled_tools: List[str]):
         """Register agent builder tools."""
