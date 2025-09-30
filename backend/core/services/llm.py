@@ -126,22 +126,6 @@ def _configure_openrouter(params: Dict[str, Any], model_name: str) -> None:
         params["extra_headers"] = extra_headers
         # logger.debug(f"Added OpenRouter site URL and app name to headers")
 
-def _configure_bedrock(params: Dict[str, Any], resolved_model_name: str, model_id: Optional[str]) -> None:
-    """Configure Bedrock-specific parameters including inference profile ARNs."""
-    if not resolved_model_name.startswith("bedrock/"):
-        return
-    
-    # Set inference profile ARNs if available and not already provided
-    from core.ai_models import model_manager
-    model_obj = model_manager.get_model(resolved_model_name)
-    if model_obj and not model_id:  # Only set if not already provided
-        if "claude-sonnet-4-20250514-v1:0" in resolved_model_name:
-            params["model_id"] = "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0"
-            # logger.debug(f"Set Bedrock inference profile ARN for Claude Sonnet 4")
-        elif "claude-3-7-sonnet-20250219-v1:0" in resolved_model_name:
-            params["model_id"] = "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
-            # logger.debug(f"Set Bedrock inference profile ARN for Claude 3.7 Sonnet")
-
 def _configure_openai_compatible(params: Dict[str, Any], model_name: str, api_key: Optional[str], api_base: Optional[str]) -> None:
     """Configure OpenAI-compatible provider setup."""
     if not model_name.startswith("openai-compatible/"):
@@ -229,7 +213,6 @@ def prepare_params(
     if model_id:
         params["model_id"] = model_id
     
-    _configure_bedrock(params, resolved_model_name, model_id)
     _configure_openai_compatible(params, model_name, api_key, api_base)
     _configure_token_limits(params, resolved_model_name, max_tokens)
     _add_tools_config(params, tools, tool_choice)

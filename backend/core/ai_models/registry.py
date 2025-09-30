@@ -21,10 +21,32 @@ class ModelRegistry:
     def _initialize_models(self):
         
         self.register(Model(
-            id="anthropic/claude-sonnet-4-20250514" if is_local else "bedrock/anthropic.claude-sonnet-4-20250514-v1:0",
+            id="anthropic/claude-sonnet-4-5-20250929" if is_local else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            name="Sonnet 4.5",
+            provider=ModelProvider.ANTHROPIC,
+            aliases=["claude-sonnet-4.5", "anthropic/claude-sonnet-4.5", "Claude Sonnet 4.5", "claude-sonnet-4-5-20250929", "global.anthropic.claude-sonnet-4-5-20250929-v1:0", "arn:aws:bedrock:us-west-2:935064898258:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0"],
+            context_window=1_000_000,
+            capabilities=[
+                ModelCapability.CHAT,
+                ModelCapability.FUNCTION_CALLING,
+                ModelCapability.VISION,
+                ModelCapability.THINKING,
+            ],
+            pricing=ModelPricing(
+                input_cost_per_million_tokens=3.00,
+                output_cost_per_million_tokens=15.00
+            ),
+            tier_availability=["paid"],
+            priority=101,
+            recommended=True,
+            enabled=True
+        ))
+        
+        self.register(Model(
+            id="anthropic/claude-sonnet-4-20250514" if is_local else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0",
             name="Sonnet 4",
             provider=ModelProvider.ANTHROPIC,
-            aliases=["claude-sonnet-4", "anthropic/claude-sonnet-4", "Claude Sonnet 4", "claude-sonnet-4-20250514", "bedrock-claude-sonnet-4", "bedrock/claude-sonnet-4", "anthropic.claude-sonnet-4-20250514-v1:0"],
+            aliases=["claude-sonnet-4", "Claude Sonnet 4", "claude-sonnet-4-20250514", "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0"],
             context_window=1_000_000,
             capabilities=[
                 ModelCapability.CHAT,
@@ -43,10 +65,10 @@ class ModelRegistry:
         ))
         
         self.register(Model(
-            id="anthropic/claude-3-7-sonnet-latest" if is_local else "bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0",
+            id="anthropic/claude-3-7-sonnet-latest" if is_local else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0",
             name="Sonnet 3.7",
             provider=ModelProvider.ANTHROPIC,
-            aliases=["sonnet-3.7", "claude-3.7", "Claude 3.7 Sonnet", "claude-3-7-sonnet-latest", "bedrock-claude-3.7", "bedrock/claude-3.7", "anthropic.claude-3-7-sonnet-20250219-v1:0"],
+            aliases=["claude-3.7", "Claude 3.7 Sonnet", "claude-3-7-sonnet-latest", "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"],
             context_window=200_000,
             capabilities=[
                 ModelCapability.CHAT,
@@ -66,7 +88,7 @@ class ModelRegistry:
             id="xai/grok-4-fast-non-reasoning",
             name="Grok 4 Fast",
             provider=ModelProvider.XAI,
-            aliases=["grok-4-fast-non-reasoning", "x-ai/grok-4-fast-non-reasoning", "openrouter/x-ai/grok-4-fast-non-reasoning", "Grok 4 Fast"],
+            aliases=["grok-4-fast-non-reasoning", "Grok 4 Fast"],
             context_window=2_000_000,
             capabilities=[
                 ModelCapability.CHAT,
@@ -146,7 +168,7 @@ class ModelRegistry:
             id="gemini/gemini-2.5-pro",
             name="Gemini 2.5 Pro",
             provider=ModelProvider.GOOGLE,
-            aliases=["google/gemini-2.5-pro", "gemini-2.5-pro", "Gemini 2.5 Pro"],
+            aliases=["gemini-2.5-pro", "Gemini 2.5 Pro"],
             context_window=2_000_000,
             capabilities=[
                 ModelCapability.CHAT,
@@ -168,7 +190,7 @@ class ModelRegistry:
             id="openrouter/moonshotai/kimi-k2",
             name="Kimi K2",
             provider=ModelProvider.MOONSHOTAI,
-            aliases=["moonshotai/kimi-k2", "kimi-k2", "Kimi K2"],
+            aliases=["kimi-k2", "Kimi K2", "moonshotai/kimi-k2"],
             context_window=200_000,
             capabilities=[
                 ModelCapability.CHAT,
@@ -291,13 +313,11 @@ class ModelRegistry:
     
     def to_legacy_format(self) -> Dict:
         models_dict = {}
-        aliases_dict = {}
         pricing_dict = {}
         context_windows_dict = {}
         
         for model in self.get_all(enabled_only=True):
             models_dict[model.id] = {
-                "aliases": model.aliases,
                 "pricing": {
                     "input_cost_per_million_tokens": model.pricing.input_cost_per_million_tokens,
                     "output_cost_per_million_tokens": model.pricing.output_cost_per_million_tokens,
@@ -305,9 +325,6 @@ class ModelRegistry:
                 "context_window": model.context_window,
                 "tier_availability": model.tier_availability,
             }
-            
-            for alias in model.aliases:
-                aliases_dict[alias] = model.id
             
             if model.pricing:
                 pricing_dict[model.id] = {
@@ -328,7 +345,6 @@ class ModelRegistry:
         
         return {
             "MODELS": models_dict,
-            "MODEL_NAME_ALIASES": aliases_dict,
             "HARDCODED_MODEL_PRICES": pricing_dict,
             "MODEL_CONTEXT_WINDOWS": context_windows_dict,
             "FREE_TIER_MODELS": free_models,
