@@ -862,20 +862,20 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         ]
     ),
 
-    "sb_document_parser_tool": ToolGroup(
-        name="sb_document_parser_tool",
-        display_name="Document Parser",
-        description="Parse documents using Chunkr AI",
-        tool_class="SandboxDocumentParserTool",
-        methods=[
-            ToolMethod(
-                name="parse_document",
-                display_name="Parse Document",
-                description="Parse documents using Chunkr AI",
-                enabled=True
-            ),
-        ]
-    ),
+    # "sb_document_parser_tool": ToolGroup(
+    #     name="sb_document_parser_tool",
+    #     display_name="Document Parser",
+    #     description="Parse documents using Chunkr AI",
+    #     tool_class="SandboxDocumentParserTool",
+    #     methods=[
+    #         ToolMethod(
+    #             name="parse_document",
+    #             display_name="Parse Document",
+    #             description="Parse documents using Chunkr AI",
+    #             enabled=True
+    #         ),
+    #     ]
+    # ),
 
     "sb_web_dev_tool": ToolGroup(
         name="sb_web_dev_tool",

@@ -992,23 +992,23 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
     ],
   },
 
-  sb_document_parser_tool: {
-    name: 'sb_document_parser_tool',
-    displayName: 'Document Parser',
-    description: 'Parse documents using Chunkr AI',
-    icon: 'FileText',
-    color: 'bg-gray-100 dark:bg-gray-800/50',
-    toolClass: 'SandboxDocumentParserTool',
-    enabled: true,
-    methods: [
-      {
-        name: 'parse_document',
-        displayName: 'Parse Document',
-        description: 'Parse documents using Chunkr AI',
-        enabled: true,
-      },
-    ],
-  },
+//   sb_document_parser_tool: {
+//     name: 'sb_document_parser_tool',
+//     displayName: 'Document Parser',
+//     description: 'Parse documents using Chunkr AI',
+//     icon: 'FileText',
+//     color: 'bg-gray-100 dark:bg-gray-800/50',
+//     toolClass: 'SandboxDocumentParserTool',
+//     enabled: true,
+//     methods: [
+//       {
+//         name: 'parse_document',
+//         displayName: 'Parse Document',
+//         description: 'Parse documents using Chunkr AI',
+//         enabled: true,
+//       },
+//     ],
+//   },
 
   sb_kb_tool: {
     name: 'sb_kb_tool',
