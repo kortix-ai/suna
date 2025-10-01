@@ -288,7 +288,7 @@ export function FileOperationToolView({
           </div>
           <div className="pl-12">
             <CodeBlockCode
-              code={processUnicodeContent(fileContent)}
+              code={processUnicodeContent(fileContent, true)}
               language={language}
               className="text-xs"
             />
@@ -308,7 +308,7 @@ export function FileOperationToolView({
               {idx + 1}
             </div>
             <div className="table-cell pl-3 py-0.5 pr-4 text-xs font-mono whitespace-pre-wrap text-zinc-800 dark:text-zinc-300">
-              {processUnicodeContent(line) || ' '}
+              {processUnicodeContent(line, true) || ' '}
             </div>
           </div>
         ))}

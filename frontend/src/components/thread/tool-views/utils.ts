@@ -561,7 +561,7 @@ function processFileContent(content: string | object): string {
     return JSON.stringify(content, null, 2);
   }
 
-  const trimmedContent = content.trim();
+  const trimmedContent = typeof content === 'string' ? content.trim() : '';
   const isLikelyJson = (trimmedContent.startsWith('{') && trimmedContent.endsWith('}')) ||
                        (trimmedContent.startsWith('[') && trimmedContent.endsWith(']'));
   

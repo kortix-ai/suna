@@ -32,7 +32,6 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Markdown } from '@/components/ui/markdown';
 import { toast } from 'sonner';
-import { useAuth } from '@/components/AuthProvider';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -163,7 +162,6 @@ export default function TemplateSharePage() {
   const params = useParams();
   const templateId = params.shareId as string; // Note: keeping shareId param name for URL compatibility
   const router = useRouter();
-  const { user } = useAuth();
   const { theme, resolvedTheme, setTheme } = useTheme();
   const [colorPalette, setColorPalette] = useState<string[]>([]);
   const imageRef = useRef<HTMLImageElement>(null);

@@ -1,27 +1,26 @@
-import json
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, BackgroundTasks
-from pydantic import BaseModel, Field, HttpUrl
-from core.utils.auth_utils import verify_and_get_user_id_from_jwt, verify_and_get_agent_authorization, require_agent_access, AuthorizedAgentAccess
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
+from pydantic import BaseModel, Field, validator
+from core.utils.auth_utils import verify_and_get_user_id_from_jwt, require_agent_access, AuthorizedAgentAccess
 from core.services.supabase import DBConnection
-from core.knowledge_base.file_processor import FileProcessor
+from .file_processor import FileProcessor
 from core.utils.logger import logger
+from .validation import FileNameValidator, ValidationError, validate_folder_name_unique, validate_file_name_unique_in_folder
 
 # Constants
 MAX_TOTAL_FILE_SIZE = 50 * 1024 * 1024  # 50MB total limit per user
 
-db = DBConnection()
-
 router = APIRouter(prefix="/knowledge-base", tags=["knowledge-base"])
+
 
 # Helper function to check total file size limit
 async def check_total_file_size_limit(account_id: str, new_file_size: int):
     """Check if adding a new file would exceed the total file size limit."""
     try:
-        client = await db.client
+        client = await DBConnection().client
         
         # Get total size of all current entries for this account
-        result = await client.from_('knowledge_base_entries').select(
+        result = await client.table('knowledge_base_entries').select(
             'file_size'
         ).eq('account_id', account_id).eq('is_active', True).execute()
         
@@ -46,10 +45,30 @@ async def check_total_file_size_limit(account_id: str, new_file_size: int):
         logger.error(f"Error checking file size limit: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to check file size limit")
 
-# Folder management
-class CreateFolderRequest(BaseModel):
+# Models
+class FolderRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
+    
+    @validator('name')
+    def validate_folder_name(cls, v):
+        is_valid, error_message = FileNameValidator.validate_name(v, "folder")
+        if not is_valid:
+            raise ValueError(error_message)
+        return FileNameValidator.sanitize_name(v)
+
+class UpdateFolderRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = None
+    
+    @validator('name')
+    def validate_folder_name(cls, v):
+        if v is not None:
+            is_valid, error_message = FileNameValidator.validate_name(v, "folder")
+            if not is_valid:
+                raise ValueError(error_message)
+            return FileNameValidator.sanitize_name(v)
+        return v
 
 class FolderResponse(BaseModel):
     folder_id: str
@@ -58,765 +77,526 @@ class FolderResponse(BaseModel):
     entry_count: int
     created_at: str
 
-async def get_user_account_id(client, user_id: str) -> str:
-    """Get account_id for a user from the account_user table"""
-    account_user_result = await client.schema('basejump').from_('account_user').select('account_id').eq('user_id', user_id).execute()
-    
-    if not account_user_result.data or len(account_user_result.data) == 0:
-        raise HTTPException(status_code=404, detail="User account not found")
-    
-    return account_user_result.data[0]['account_id']
+class EntryResponse(BaseModel):
+    entry_id: str
+    filename: str
+    summary: str
+    file_size: int
+    created_at: str
 
+class UpdateEntryRequest(BaseModel):
+    summary: str = Field(..., min_length=1, max_length=1000)
 
+class AgentAssignmentRequest(BaseModel):
+    folder_ids: List[str]
+
+db = DBConnection()
+file_processor = FileProcessor()
+
+# Folder management
 @router.get("/folders", response_model=List[FolderResponse])
-async def get_folders(
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
-):
-    """Get all folders for the current user"""
+async def get_folders(user_id: str = Depends(verify_and_get_user_id_from_jwt)):
+    """Get all knowledge base folders for user."""
     try:
         client = await db.client
+        account_id = user_id
         
-        # Get current account_id from user
-        account_id = await get_user_account_id(client, user_id)
-        
-        # Get folders for this account
-        result = await client.from_("knowledge_base_folders").select("*").eq("account_id", account_id).order("created_at", desc=True).execute()
+        result = await client.table('knowledge_base_folders').select(
+            'folder_id, name, description, created_at'
+        ).eq('account_id', account_id).order('created_at', desc=True).execute()
         
         folders = []
-        for folder in result.data:
+        for folder_data in result.data:
+            # Count entries in folder
+            count_result = await client.table('knowledge_base_entries').select(
+                'entry_id', count='exact'
+            ).eq('folder_id', folder_data['folder_id']).execute()
+            
             folders.append(FolderResponse(
-                folder_id=folder["folder_id"],
-                name=folder["name"],
-                description=folder.get("description"),
-                entry_count=folder.get("entry_count", 0),
-                created_at=folder["created_at"]
+                folder_id=folder_data['folder_id'],
+                name=folder_data['name'],
+                description=folder_data['description'],
+                entry_count=count_result.count or 0,
+                created_at=folder_data['created_at']
             ))
         
         return folders
         
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Error getting folders: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve folders")
 
 @router.post("/folders", response_model=FolderResponse)
 async def create_folder(
-    request: CreateFolderRequest,
+    folder_data: FolderRequest,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    """Create a new folder"""
+    """Create a new knowledge base folder."""
     try:
         client = await db.client
+        account_id = user_id
         
-        # Get current account_id from user
-        account_id = await get_user_account_id(client, user_id)
+        # Get existing folder names to check for conflicts
+        existing_result = await client.table('knowledge_base_folders').select('name').eq('account_id', account_id).execute()
+        existing_names = [folder['name'] for folder in existing_result.data]
         
-        # Create folder
-        result = await client.from_("knowledge_base_folders").insert({
-            "name": request.name,
-            "description": request.description,
-            "account_id": account_id
-        }).execute()
+        # Generate unique name if there's a conflict
+        final_name = FileNameValidator.generate_unique_name(folder_data.name, existing_names, "folder")
         
-        if result.data:
-            folder = result.data[0]
-            return FolderResponse(
-                folder_id=folder["folder_id"],
-                name=folder["name"],
-                description=folder.get("description"),
-                entry_count=0,
-                created_at=folder["created_at"]
-            )
-        else:
+        insert_data = {
+            'account_id': account_id,
+            'name': final_name,
+            'description': folder_data.description
+        }
+        
+        result = await client.table('knowledge_base_folders').insert(insert_data).execute()
+        
+        if not result.data:
             raise HTTPException(status_code=500, detail="Failed to create folder")
         
+        created_folder = result.data[0]
+        
+        return FolderResponse(
+            folder_id=created_folder['folder_id'],
+            name=created_folder['name'],
+            description=created_folder['description'],
+            entry_count=0,
+            created_at=created_folder['created_at']
+        )
+        
+    except ValidationError:
+        raise
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error creating folder: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to create folder")
 
-class UpdateFolderRequest(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    description: Optional[str] = None
-
 @router.put("/folders/{folder_id}", response_model=FolderResponse)
 async def update_folder(
     folder_id: str,
-    request: UpdateFolderRequest,
+    folder_data: UpdateFolderRequest,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    """Update/rename a folder"""
+    """Update a knowledge base folder."""
     try:
         client = await db.client
+        account_id = user_id
         
-        # Verify folder access
-        folder_result = await client.from_("knowledge_base_folders").select("account_id").eq("folder_id", folder_id).single().execute()
+        # Verify ownership and get current folder
+        folder_result = await client.table('knowledge_base_folders').select(
+            'folder_id, name, description, created_at'
+        ).eq('folder_id', folder_id).eq('account_id', account_id).execute()
+        
         if not folder_result.data:
             raise HTTPException(status_code=404, detail="Folder not found")
         
-        # Get current account_id from user
-        user_account_id = await get_user_account_id(client, user_id)
-        if user_account_id != folder_result.data["account_id"]:
-            raise HTTPException(status_code=403, detail="Access denied")
+        current_folder = folder_result.data[0]
+        
+        # Build update data with only provided fields
+        update_data = {}
+        if folder_data.name is not None:
+            # Validate name uniqueness (excluding current folder)
+            await validate_folder_name_unique(folder_data.name, account_id, folder_id)
+            update_data['name'] = folder_data.name
+        if folder_data.description is not None:
+            update_data['description'] = folder_data.description
+            
+        # If no fields to update, return current folder
+        if not update_data:
+            # Count entries in folder
+            count_result = await client.table('knowledge_base_entries').select(
+                'entry_id', count='exact'
+            ).eq('folder_id', folder_id).execute()
+            
+            return FolderResponse(
+                folder_id=current_folder['folder_id'],
+                name=current_folder['name'],
+                description=current_folder['description'],
+                entry_count=count_result.count or 0,
+                created_at=current_folder['created_at']
+            )
         
         # Update folder
-        result = await client.from_("knowledge_base_folders").update({
-            "name": request.name,
-            "description": request.description
-        }).eq("folder_id", folder_id).select().execute()
+        result = await client.table('knowledge_base_folders').update(
+            update_data
+        ).eq('folder_id', folder_id).execute()
         
-        if result.data:
-            folder = result.data[0]
-            return FolderResponse(
-                folder_id=folder["folder_id"],
-                name=folder["name"],
-                description=folder.get("description"),
-                entry_count=folder.get("entry_count", 0),
-                created_at=folder["created_at"]
-            )
-        else:
+        if not result.data:
             raise HTTPException(status_code=500, detail="Failed to update folder")
         
+        updated_folder = result.data[0]
+        
+        # Count entries in folder
+        count_result = await client.table('knowledge_base_entries').select(
+            'entry_id', count='exact'
+        ).eq('folder_id', folder_id).execute()
+        
+        return FolderResponse(
+            folder_id=updated_folder['folder_id'],
+            name=updated_folder['name'],
+            description=updated_folder['description'],
+            entry_count=count_result.count or 0,
+            created_at=updated_folder['created_at']
+        )
+        
+    except ValidationError:
+        raise
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error updating folder: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to update folder")
 
-@router.get("/folders/{folder_id}/entries")
-async def get_folder_entries(
+@router.delete("/folders/{folder_id}")
+async def delete_folder(
     folder_id: str,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    """Get all entries in a folder"""
+    """Delete a knowledge base folder and all its entries."""
     try:
         client = await db.client
+        account_id = user_id
         
-        # Verify folder access
-        folder_result = await client.from_("knowledge_base_folders").select("account_id").eq("folder_id", folder_id).single().execute()
+        # Verify ownership
+        folder_result = await client.table('knowledge_base_folders').select(
+            'folder_id'
+        ).eq('folder_id', folder_id).eq('account_id', account_id).execute()
+        
         if not folder_result.data:
             raise HTTPException(status_code=404, detail="Folder not found")
         
-        # Get current account_id from user
-        user_account_id = await get_user_account_id(client, user_id)
-        if user_account_id != folder_result.data["account_id"]:
-            raise HTTPException(status_code=403, detail="Access denied")
+        # Get all entries in the folder to delete their files from S3
+        entries_result = await client.table('knowledge_base_entries').select(
+            'entry_id, file_path'
+        ).eq('folder_id', folder_id).execute()
         
-        # Get entries
-        result = await client.from_("knowledge_base_entries").select("*").eq("folder_id", folder_id).order("created_at", desc=True).execute()
+        # Delete all files from S3 storage
+        if entries_result.data:
+            file_paths = [entry['file_path'] for entry in entries_result.data]
+            try:
+                await client.storage.from_('file-uploads').remove(file_paths)
+                logger.info(f"Deleted {len(file_paths)} files from S3 for folder {folder_id}")
+            except Exception as e:
+                logger.warning(f"Failed to delete some files from S3: {str(e)}")
         
-        entries = result.data if result.data else []
-        return {"entries": entries}
+        # Delete folder (cascade will handle entries and assignments in DB)
+        await client.table('knowledge_base_folders').delete().eq('folder_id', folder_id).execute()
         
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting folder entries: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve folder entries")
-
-class KnowledgeBaseEntry(BaseModel):
-    entry_id: Optional[str] = None
-    name: str = Field(..., min_length=1, max_length=255)
-    description: Optional[str] = None
-    content: str = Field(..., min_length=1)
-    usage_context: str = Field(default="always", pattern="^(always|on_request|contextual)$")
-    is_active: bool = True
-
-class KnowledgeBaseEntryResponse(BaseModel):
-    entry_id: str
-    name: str
-    description: Optional[str]
-    content: str
-    usage_context: str
-    is_active: bool
-    content_tokens: Optional[int]
-    created_at: str
-    updated_at: str
-    source_type: Optional[str] = None
-    source_metadata: Optional[dict] = None
-    file_size: Optional[int] = None
-    file_mime_type: Optional[str] = None
-
-class KnowledgeBaseListResponse(BaseModel):
-    entries: List[KnowledgeBaseEntryResponse]
-    total_count: int
-    total_tokens: int
-
-class CreateKnowledgeBaseEntryRequest(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    description: Optional[str] = None
-    content: str = Field(..., min_length=1)
-    usage_context: str = Field(default="always", pattern="^(always|on_request|contextual)$")
-
-class UpdateKnowledgeBaseEntryRequest(BaseModel):
-    name: Optional[str] = Field(None, min_length=1, max_length=255)
-    description: Optional[str] = None
-    content: Optional[str] = Field(None, min_length=1)
-    usage_context: Optional[str] = Field(None, pattern="^(always|on_request|contextual)$")
-    is_active: Optional[bool] = None
-
-class ProcessingJobResponse(BaseModel):
-    job_id: str
-    job_type: str
-    status: str
-    source_info: dict
-    result_info: dict
-    entries_created: int
-    total_files: int
-    created_at: str
-    completed_at: Optional[str]
-    error_message: Optional[str]
-
-db = DBConnection()
-
-
-@router.get("/agents/{agent_id}", response_model=KnowledgeBaseListResponse)
-async def get_agent_knowledge_base(
-    agent_id: str,
-    include_inactive: bool = False,
-    auth: AuthorizedAgentAccess = Depends(require_agent_access)
-):
-    
-    """Get all knowledge base entries for an agent"""
-    try:
-        client = await db.client
-        user_id = auth.user_id        # Already authenticated and authorized!
-        agent_data = auth.agent_data  # Agent data already fetched during authorization
-
-        # No need for manual authorization - it's already done in the dependency!
-
-        result = await client.rpc('get_agent_knowledge_base', {
-            'p_agent_id': agent_id,
-            'p_include_inactive': include_inactive
-        }).execute()
-        
-        entries = []
-        total_tokens = 0
-        
-        for entry_data in result.data or []:
-            entry = KnowledgeBaseEntryResponse(
-                entry_id=entry_data['entry_id'],
-                name=entry_data['name'],
-                description=entry_data['description'],
-                content=entry_data['content'],
-                usage_context=entry_data['usage_context'],
-                is_active=entry_data['is_active'],
-                content_tokens=entry_data.get('content_tokens'),
-                created_at=entry_data['created_at'],
-                updated_at=entry_data.get('updated_at', entry_data['created_at']),
-                source_type=entry_data.get('source_type'),
-                source_metadata=entry_data.get('source_metadata'),
-                file_size=entry_data.get('file_size'),
-                file_mime_type=entry_data.get('file_mime_type')
-            )
-            entries.append(entry)
-            total_tokens += entry_data.get('content_tokens', 0) or 0
-        
-        return KnowledgeBaseListResponse(
-            entries=entries,
-            total_count=len(entries),
-            total_tokens=total_tokens
-        )
+        return {"success": True}
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting knowledge base for agent {agent_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve agent knowledge base")
+        logger.error(f"Error deleting folder: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete folder")
 
-@router.post("/agents/{agent_id}", response_model=KnowledgeBaseEntryResponse)
-async def create_agent_knowledge_base_entry(
-    agent_id: str,
-    entry_data: CreateKnowledgeBaseEntryRequest,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
-):
-    
-    """Create a new knowledge base entry for an agent"""
-    try:
-        client = await db.client
-        
-        # Verify agent access and get agent data
-        agent_data = await verify_and_get_agent_authorization(client, agent_id, user_id)
-        account_id = agent_data['account_id']
-        
-        insert_data = {
-            'agent_id': agent_id,
-            'account_id': account_id,
-            'name': entry_data.name,
-            'description': entry_data.description,
-            'content': entry_data.content,
-            'usage_context': entry_data.usage_context
-        }
-        
-        result = await client.table('agent_knowledge_base_entries').insert(insert_data).execute()
-        
-        if not result.data:
-            raise HTTPException(status_code=500, detail="Failed to create agent knowledge base entry")
-        
-        created_entry = result.data[0]
-        
-        return KnowledgeBaseEntryResponse(
-            entry_id=created_entry['entry_id'],
-            name=created_entry['name'],
-            description=created_entry['description'],
-            content=created_entry['content'],
-            usage_context=created_entry['usage_context'],
-            is_active=created_entry['is_active'],
-            content_tokens=created_entry.get('content_tokens'),
-            created_at=created_entry['created_at'],
-            updated_at=created_entry['updated_at']
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error creating knowledge base entry for agent {agent_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to create agent knowledge base entry")
-
-@router.post("/agents/{agent_id}/upload-file")
-async def upload_file_to_agent_kb(
-    agent_id: str,
-    background_tasks: BackgroundTasks,
+# File upload
+@router.post("/folders/{folder_id}/upload")
+async def upload_file(
+    folder_id: str,
     file: UploadFile = File(...),
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    
-    """Upload and process a file for agent knowledge base"""
+    """Upload a file to a knowledge base folder."""
     try:
         client = await db.client
+        account_id = user_id
         
-        # Verify agent access and get agent data
-        agent_data = await verify_and_get_agent_authorization(client, agent_id, user_id)
-        account_id = agent_data['account_id']
+        # Verify folder ownership
+        folder_result = await client.table('knowledge_base_folders').select(
+            'folder_id'
+        ).eq('folder_id', folder_id).eq('account_id', account_id).execute()
         
+        if not folder_result.data:
+            raise HTTPException(status_code=404, detail="Folder not found")
+        
+        # Validate and sanitize filename
+        if not file.filename:
+            raise ValidationError("Filename is required")
+        
+        is_valid, error_message = FileNameValidator.validate_name(file.filename, "file")
+        if not is_valid:
+            raise ValidationError(error_message)
+        
+        # Read file content
         file_content = await file.read()
         
         # Check total file size limit before processing
         await check_total_file_size_limit(account_id, len(file_content))
         
-        job_id = await client.rpc('create_agent_kb_processing_job', {
-            'p_agent_id': agent_id,
-            'p_account_id': account_id,
-            'p_job_type': 'file_upload',
-            'p_source_info': {
-                'filename': file.filename,
-                'mime_type': file.content_type,
-                'file_size': len(file_content)
-            }
-        }).execute()
+        # Generate unique filename if there's a conflict
+        final_filename = await validate_file_name_unique_in_folder(file.filename, folder_id)
         
-        if not job_id.data:
-            raise HTTPException(status_code=500, detail="Failed to create processing job")
-        
-        job_id = job_id.data
-        background_tasks.add_task(
-            process_file_background,
-            job_id,
-            agent_id,
-            account_id,
-            file_content,
-            file.filename,
-            file.content_type or 'application/octet-stream'
+        # Process file
+        result = await file_processor.process_file(
+            account_id=account_id,
+            folder_id=folder_id,
+            file_content=file_content,
+            filename=final_filename,
+            mime_type=file.content_type or 'application/octet-stream'
         )
         
-        return {
-            "job_id": job_id,
-            "message": "File upload started. Processing in background.",
-            "filename": file.filename
-        }
+        if not result['success']:
+            raise HTTPException(status_code=400, detail=result['error'])
         
+        # Add info about filename changes
+        if final_filename != file.filename:
+            result['filename_changed'] = True
+            result['original_filename'] = file.filename
+            result['final_filename'] = final_filename
+        
+        return result
+        
+    except ValidationError:
+        raise
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error uploading file to agent {agent_id}: {str(e)}")
+        logger.error(f"Error uploading file: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to upload file")
 
-
-@router.put("/{entry_id}", response_model=KnowledgeBaseEntryResponse)
-async def update_knowledge_base_entry(
-    entry_id: str,
-    entry_data: UpdateKnowledgeBaseEntryRequest,
+# Entries
+@router.get("/folders/{folder_id}/entries", response_model=List[EntryResponse])
+async def get_folder_entries(
+    folder_id: str,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    
-    """Update an agent knowledge base entry"""
+    """Get all entries in a folder."""
     try:
         client = await db.client
+        account_id = user_id
         
-        # Get the entry and verify it exists in agent_knowledge_base_entries table
-        entry_result = await client.table('agent_knowledge_base_entries').select('*').eq('entry_id', entry_id).execute()
-            
-        if not entry_result.data:
-            raise HTTPException(status_code=404, detail="Knowledge base entry not found")
+        # Verify folder ownership
+        folder_result = await client.table('knowledge_base_folders').select(
+            'folder_id'
+        ).eq('folder_id', folder_id).eq('account_id', account_id).execute()
         
-        entry = entry_result.data[0]
-        agent_id = entry['agent_id']
+        if not folder_result.data:
+            raise HTTPException(status_code=404, detail="Folder not found")
         
-        # Verify agent access
-        await verify_and_get_agent_authorization(client, agent_id, user_id)
+        result = await client.table('knowledge_base_entries').select(
+            'entry_id, filename, summary, file_size, created_at'
+        ).eq('folder_id', folder_id).eq('is_active', True).order('created_at', desc=True).execute()
         
-        update_data = {}
-        if entry_data.name is not None:
-            update_data['name'] = entry_data.name
-        if entry_data.description is not None:
-            update_data['description'] = entry_data.description
-        if entry_data.content is not None:
-            update_data['content'] = entry_data.content
-        if entry_data.usage_context is not None:
-            update_data['usage_context'] = entry_data.usage_context
-        if entry_data.is_active is not None:
-            update_data['is_active'] = entry_data.is_active
-        
-        if not update_data:
-            raise HTTPException(status_code=400, detail="No fields to update")
-        
-        result = await client.table('agent_knowledge_base_entries').update(update_data).eq('entry_id', entry_id).execute()
-        
-        if not result.data:
-            raise HTTPException(status_code=500, detail="Failed to update knowledge base entry")
-        
-        updated_entry = result.data[0]
-        
-        logger.debug(f"Updated agent knowledge base entry {entry_id} for agent {agent_id}")
-        
-        return KnowledgeBaseEntryResponse(
-            entry_id=updated_entry['entry_id'],
-            name=updated_entry['name'],
-            description=updated_entry['description'],
-            content=updated_entry['content'],
-            usage_context=updated_entry['usage_context'],
-            is_active=updated_entry['is_active'],
-            content_tokens=updated_entry.get('content_tokens'),
-            created_at=updated_entry['created_at'],
-            updated_at=updated_entry['updated_at'],
-            source_type=updated_entry.get('source_type'),
-            source_metadata=updated_entry.get('source_metadata'),
-            file_size=updated_entry.get('file_size'),
-            file_mime_type=updated_entry.get('file_mime_type')
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error updating knowledge base entry {entry_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to update knowledge base entry")
-
-@router.delete("/{entry_id}")
-async def delete_knowledge_base_entry(
-    entry_id: str,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
-):
-
-    """Delete an agent knowledge base entry"""
-    try:
-        client = await db.client
-        
-        # Get the entry and verify it exists in agent_knowledge_base_entries table
-        entry_result = await client.table('agent_knowledge_base_entries').select('entry_id, agent_id').eq('entry_id', entry_id).execute()
-            
-        if not entry_result.data:
-            raise HTTPException(status_code=404, detail="Knowledge base entry not found")
-        
-        entry = entry_result.data[0]
-        agent_id = entry['agent_id']
-        
-        # Verify agent access
-        await verify_and_get_agent_authorization(client, agent_id, user_id)
-        
-        result = await client.table('agent_knowledge_base_entries').delete().eq('entry_id', entry_id).execute()
-        
-        logger.debug(f"Deleted agent knowledge base entry {entry_id} for agent {agent_id}")
-        
-        return {"message": "Knowledge base entry deleted successfully"}
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error deleting knowledge base entry {entry_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to delete knowledge base entry")
-
-
-@router.get("/{entry_id}", response_model=KnowledgeBaseEntryResponse)
-async def get_knowledge_base_entry(
-    entry_id: str,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
-):
-    """Get a specific agent knowledge base entry"""
-    try:
-        client = await db.client
-        
-        # Get the entry from agent_knowledge_base_entries table only
-        result = await client.table('agent_knowledge_base_entries').select('*').eq('entry_id', entry_id).execute()
-        
-        if not result.data:
-            raise HTTPException(status_code=404, detail="Knowledge base entry not found")
-        
-        entry = result.data[0]
-        agent_id = entry['agent_id']
-        
-        # Verify agent access
-        await verify_and_get_agent_authorization(client, agent_id, user_id)
-        
-        logger.debug(f"Retrieved agent knowledge base entry {entry_id} for agent {agent_id}")
-        
-        return KnowledgeBaseEntryResponse(
-            entry_id=entry['entry_id'],
-            name=entry['name'],
-            description=entry['description'],
-            content=entry['content'],
-            usage_context=entry['usage_context'],
-            is_active=entry['is_active'],
-            content_tokens=entry.get('content_tokens'),
-            created_at=entry['created_at'],
-            updated_at=entry['updated_at'],
-            source_type=entry.get('source_type'),
-            source_metadata=entry.get('source_metadata'),
-            file_size=entry.get('file_size'),
-            file_mime_type=entry.get('file_mime_type')
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting knowledge base entry {entry_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve knowledge base entry")
-
-
-@router.get("/agents/{agent_id}/processing-jobs", response_model=List[ProcessingJobResponse])
-async def get_agent_processing_jobs(
-    agent_id: str,
-    limit: int = 10,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
-):
-    
-    """Get processing jobs for an agent"""
-    try:
-        client = await db.client
-
-        # Verify agent access
-        await verify_and_get_agent_authorization(client, agent_id, user_id)
-        
-        result = await client.rpc('get_agent_kb_processing_jobs', {
-            'p_agent_id': agent_id,
-            'p_limit': limit
-        }).execute()
-        
-        jobs = []
-        for job_data in result.data or []:
-            job = ProcessingJobResponse(
-                job_id=job_data['job_id'],
-                job_type=job_data['job_type'],
-                status=job_data['status'],
-                source_info=job_data['source_info'],
-                result_info=job_data['result_info'],
-                entries_created=job_data['entries_created'],
-                total_files=job_data['total_files'],
-                created_at=job_data['created_at'],
-                completed_at=job_data.get('completed_at'),
-                error_message=job_data.get('error_message')
+        return [
+            EntryResponse(
+                entry_id=entry['entry_id'],
+                filename=entry['filename'],
+                summary=entry['summary'],
+                file_size=entry['file_size'],
+                created_at=entry['created_at']
             )
-            jobs.append(job)
-        
-        return jobs
+            for entry in result.data
+        ]
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting processing jobs for agent {agent_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to get processing jobs")
+        logger.error(f"Error getting folder entries: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve entries")
 
-async def process_file_background(
-    job_id: str,
-    agent_id: str,
-    account_id: str,
-    file_content: bytes,
-    filename: str,
-    mime_type: str
-):
-    """Background task to process uploaded files"""
-    
-    processor = FileProcessor()
-    client = await processor.db.client
-    try:
-        await client.rpc('update_agent_kb_job_status', {
-            'p_job_id': job_id,
-            'p_status': 'processing'
-        }).execute()
-        
-        result = await processor.process_file_upload(
-            agent_id, account_id, file_content, filename, mime_type
-        )
-        
-        if result['success']:
-            await client.rpc('update_agent_kb_job_status', {
-                'p_job_id': job_id,
-                'p_status': 'completed',
-                'p_result_info': result,
-                'p_entries_created': 1,
-                'p_total_files': 1
-            }).execute()
-        else:
-            await client.rpc('update_agent_kb_job_status', {
-                'p_job_id': job_id,
-                'p_status': 'failed',
-                'p_error_message': result.get('error', 'Unknown error')
-            }).execute()
-            
-    except Exception as e:
-        logger.error(f"Error in background file processing for job {job_id}: {str(e)}")
-        try:
-            await client.rpc('update_agent_kb_job_status', {
-                'p_job_id': job_id,
-                'p_status': 'failed',
-                'p_error_message': str(e)
-            }).execute()
-        except:
-            pass
-
-
-@router.get("/agents/{agent_id}/context")
-async def get_agent_knowledge_base_context(
-    agent_id: str,
-    max_tokens: int = 4000,
+@router.delete("/entries/{entry_id}")
+async def delete_entry(
+    entry_id: str,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    
-    """Get knowledge base context for agent prompts"""
+    """Delete a knowledge base entry."""
     try:
         client = await db.client
+        account_id = user_id
         
-        # Verify agent access
-        await verify_and_get_agent_authorization(client, agent_id, user_id)
+        # Verify ownership
+        entry_result = await client.table('knowledge_base_entries').select(
+            'entry_id, file_path'
+        ).eq('entry_id', entry_id).eq('account_id', account_id).execute()
         
-        result = await client.rpc('get_agent_knowledge_base_context', {
-            'p_agent_id': agent_id,
-            'p_max_tokens': max_tokens
-        }).execute()
+        if not entry_result.data:
+            raise HTTPException(status_code=404, detail="Entry not found")
         
-        context = result.data if result.data else None
+        entry = entry_result.data[0]
         
-        return {
-            "context": context,
-            "max_tokens": max_tokens,
-            "agent_id": agent_id
-        }
+        # Delete from S3
+        try:
+            await client.storage.from_('file-uploads').remove([entry['file_path']])
+        except Exception as e:
+            logger.warning(f"Failed to delete file from S3: {str(e)}")
+        
+        # Delete from database
+        await client.table('knowledge_base_entries').delete().eq('entry_id', entry_id).execute()
+        
+        return {"success": True}
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting knowledge base context for agent {agent_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve agent knowledge base context")
+        logger.error(f"Error deleting entry: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete entry")
 
+@router.patch("/entries/{entry_id}", response_model=EntryResponse)
+async def update_entry(
+    entry_id: str,
+    request: UpdateEntryRequest,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    """Update a knowledge base entry summary."""
+    try:
+        client = await db.client
+        account_id = user_id
+        
+        # Verify ownership and get current entry
+        entry_result = await client.table('knowledge_base_entries').select(
+            'entry_id, filename, summary, file_size, created_at, account_id'
+        ).eq('entry_id', entry_id).eq('account_id', account_id).execute()
+        
+        if not entry_result.data:
+            raise HTTPException(status_code=404, detail="Entry not found")
+        
+        # Update the summary
+        update_result = await client.table('knowledge_base_entries').update({
+            'summary': request.summary
+        }).eq('entry_id', entry_id).execute()
+        
+        if not update_result.data:
+            raise HTTPException(status_code=500, detail="Failed to update entry")
+        
+        # Return the updated entry
+        updated_entry = update_result.data[0]
+        return EntryResponse(
+            entry_id=updated_entry['entry_id'],
+            filename=updated_entry['filename'],
+            summary=updated_entry['summary'],
+            file_size=updated_entry['file_size'],
+            created_at=updated_entry['created_at']
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating entry: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update entry")
 
-# Agent Assignment Management
-class AgentAssignmentRequest(BaseModel):
-    assignments: dict = Field(..., description="Dictionary of folder assignments")
-
-class AgentAssignmentResponse(BaseModel):
-    folder_id: str
-    enabled: bool
-    file_assignments: dict
-
+# Agent assignments
 @router.get("/agents/{agent_id}/assignments")
 async def get_agent_assignments(
     agent_id: str,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+    auth: AuthorizedAgentAccess = Depends(require_agent_access)
 ):
-    """Get current knowledge base assignments for an agent"""
+    """Get entry assignments for an agent."""
     try:
-        client = await db.client
+        client = await DBConnection().client
         
-        # Verify agent access
-        await verify_and_get_agent_authorization(client, agent_id, user_id)
-        
-        # Get specific file assignments only
-        file_result = await client.from_("agent_knowledge_entry_assignments").select("entry_id, enabled").eq("agent_id", agent_id).execute()
+        # Get file-level assignments only
+        file_result = await client.table('agent_knowledge_entry_assignments').select(
+            'entry_id, enabled'
+        ).eq('agent_id', agent_id).execute()
         
         return {row['entry_id']: row['enabled'] for row in file_result.data}
         
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Error getting agent assignments for {agent_id}: {str(e)}")
+        logger.error(f"Error getting agent assignments: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve agent assignments")
 
 @router.post("/agents/{agent_id}/assignments")
 async def update_agent_assignments(
     agent_id: str,
-    request: AgentAssignmentRequest,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+    assignment_data: dict,
+    auth: AuthorizedAgentAccess = Depends(require_agent_access)
 ):
-    """Update knowledge base assignments for an agent"""
+    """Update agent entry assignments."""
     try:
         client = await db.client
+        account_id = auth.user_id
+        entry_ids = assignment_data.get('entry_ids', [])
         
-        # Verify agent access
-        agent_auth = await verify_and_get_agent_authorization(client, agent_id, user_id)
-        account_id = agent_auth.account_id
+        # Clear existing assignments
+        await client.table('agent_knowledge_entry_assignments').delete().eq('agent_id', agent_id).execute()
         
-        # Delete existing assignments for this agent
-        await client.from_("agent_knowledge_entry_assignments").delete().eq("agent_id", agent_id).execute()
-        
-        # Insert new entry assignments - expect entry_ids list
-        entry_ids = request.assignments.get('entry_ids', [])
+        # Insert new entry assignments
         for entry_id in entry_ids:
-            await client.from_("agent_knowledge_entry_assignments").insert({
-                "agent_id": agent_id,
-                "entry_id": entry_id,
-                "account_id": account_id,
-                "enabled": True
+            await client.table('agent_knowledge_entry_assignments').insert({
+                'agent_id': agent_id,
+                'entry_id': entry_id,
+                'account_id': account_id,
+                'enabled': True
             }).execute()
         
-        return {"message": "Agent assignments updated successfully"}
+        return {"success": True, "message": "Assignments updated successfully"}
         
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Error updating agent assignments for {agent_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to update agent assignments")
+        logger.error(f"Error updating agent assignments: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update assignments")
 
+class FolderMoveRequest(BaseModel):
+    folder_id: str
 
-@router.get("/entries/{entry_id}/download")
-async def download_file(
+# File operations
+@router.put("/entries/{entry_id}/move")
+async def move_file(
     entry_id: str,
+    request: FolderMoveRequest,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    """Download the actual file content from S3"""
+    """Move a file to a different folder."""
     try:
         client = await db.client
+        account_id = user_id
         
-        # Get the entry from knowledge_base_entries table
-        result = await client.from_("knowledge_base_entries").select("file_path, filename, mime_type, account_id").eq("entry_id", entry_id).single().execute()
+        # Get current entry details including file path and filename
+        entry_result = await client.table('knowledge_base_entries').select(
+            'entry_id, folder_id, file_path, filename'
+        ).eq('entry_id', entry_id).execute()
         
-        if not result.data:
+        if not entry_result.data:
             raise HTTPException(status_code=404, detail="File not found")
         
-        entry = result.data
+        entry = entry_result.data[0]
+        current_folder_id = entry['folder_id']
+        current_file_path = entry['file_path']
+        filename = entry['filename']
         
-        # Verify user has access to this entry (check account_id)
-        user_account_id = await get_user_account_id(client, user_id)
-        if user_account_id != entry['account_id']:
-            raise HTTPException(status_code=403, detail="Access denied")
+        # If already in the target folder, no need to move
+        if current_folder_id == request.folder_id:
+            return {"success": True, "message": "File is already in the target folder"}
         
-        # Get file content from S3
-        file_response = await client.storage.from_('file-uploads').download(entry['file_path'])
+        # Verify target folder belongs to user
+        folder_result = await client.table('knowledge_base_folders').select(
+            'folder_id'
+        ).eq('folder_id', request.folder_id).eq('account_id', account_id).execute()
         
-        if not file_response:
-            raise HTTPException(status_code=404, detail="File content not found in storage")
+        if not folder_result.data:
+            raise HTTPException(status_code=404, detail="Target folder not found")
         
-        # For text files, return as text
-        if entry['mime_type'] and entry['mime_type'].startswith('text/'):
-            return {"content": file_response.decode('utf-8'), "is_binary": False}
-        else:
-            # For binary files (including PDFs), return base64 encoded content
-            import base64
-            return {"content": base64.b64encode(file_response).decode('utf-8'), "is_binary": True}
+        # Sanitize filename for storage (same logic as file processor)
+        sanitized_filename = file_processor.sanitize_filename(filename)
+        
+        # Create new file path
+        new_file_path = f"knowledge-base/{request.folder_id}/{entry_id}/{sanitized_filename}"
+        
+        # Move file in storage
+        try:
+            # Copy file to new location
+            copy_result = await client.storage.from_('file-uploads').copy(
+                current_file_path, new_file_path
+            )
+            
+            # Remove old file
+            await client.storage.from_('file-uploads').remove([current_file_path])
+            
+        except Exception as storage_error:
+            logger.error(f"Error moving file in storage: {str(storage_error)}")
+            raise HTTPException(status_code=500, detail="Failed to move file in storage")
+        
+        # Update the database with new folder and file path
+        await client.table('knowledge_base_entries').update({
+            'folder_id': request.folder_id,
+            'file_path': new_file_path
+        }).eq('entry_id', entry_id).execute()
+        
+        return {"success": True, "message": "File moved successfully"}
         
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error downloading file {entry_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to download file")
-
+        logger.error(f"Error moving file: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to move file")

@@ -4,7 +4,7 @@ from core.agentpress.tool import ToolResult, openapi_schema, usage_example
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from core.utils.config import config
-from knowledge_base.validation import FileNameValidator, ValidationError
+from core.knowledge_base.validation import FileNameValidator, ValidationError
 
 class SandboxKbTool(SandboxToolsBase):
     """Tool for knowledge base operations using kb-fusion binary in a Daytona sandbox.
@@ -476,7 +476,7 @@ Agent ID: {agent_id}
                 return self.fail_response("No agent ID found for knowledge base operations")
             
             from core.services.supabase import DBConnection
-            from knowledge_base.validation import validate_folder_name_unique
+            from core.knowledge_base.validation import validate_folder_name_unique
             db = DBConnection()
             client = await db.client
             
@@ -627,7 +627,7 @@ Agent ID: {agent_id}
                 return self.fail_response(f"File size limit exceeded. Current: {current_mb:.1f}MB, New: {new_mb:.1f}MB, Limit: 50MB")
             
             # Generate unique filename if there's a conflict
-            from knowledge_base.validation import validate_file_name_unique_in_folder
+            from core.knowledge_base.validation import validate_file_name_unique_in_folder
             final_filename = await validate_file_name_unique_in_folder(filename, folder_id)
             
             # Process file using existing processor

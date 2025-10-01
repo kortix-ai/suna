@@ -601,8 +601,8 @@ class WorkflowExecutor:
         return available_tools
     
     async def _validate_workflow_execution(self, account_id: str) -> None:
-        from core.billing import is_model_allowed, get_user_subscription_tier
-        from billing.billing_integration import billing_integration
+        from core.billing import is_model_allowed
+        from core.billing.billing_integration import billing_integration
         
         client = await self._db.client
         from core.ai_models import model_manager

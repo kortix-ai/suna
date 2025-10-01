@@ -56,7 +56,7 @@ async def start_agent(
     # Update model_name to use the resolved version
     model_name = resolved_model
 
-    logger.debug(f"Starting new agent for thread: {thread_id} with config: model={model_name}, context_manager={body.enable_context_manager} (Instance: {utils.instance_id})")
+    logger.debug(f"Starting new agent for thread: {thread_id} with config: model={model_name} (Instance: {utils.instance_id})")
     client = await utils.db.client
 
 
@@ -611,8 +611,6 @@ async def stream_agent_run(
 async def initiate_agent_with_files(
     prompt: str = Form(...),
     model_name: Optional[str] = Form(None),  # Default to None to use default model
-    enable_context_manager: Optional[bool] = Form(False),
-    enable_prompt_caching: Optional[bool] = Form(False),
     agent_id: Optional[str] = Form(None),  # Add agent_id parameter
     files: List[UploadFile] = File(default=[]),
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
