@@ -196,9 +196,9 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
             <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
                 <DropdownMenuTrigger asChild>
                     <Button
-                        variant="ghost"
+                        variant="outline"
                         size="sm"
-                        className="h-[42px] px-2 bg-transparent rounded-[1rem] text-muted-foreground border hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5"
+                        className="h-[42px] px-2 bg-transparent rounded-[1rem] text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5"
                         aria-label="Config menu"
                     >
                         {onAgentSelect ? (
