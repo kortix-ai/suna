@@ -132,7 +132,7 @@ export function XlsxRenderer({
       filtered = filtered.filter((row: any) =>
         Object.entries(row)
           .filter(([key]) => !hiddenColumns.has(key))
-          .some(([, value]) => String(value).toLowerCase().includes(searchTerm.toLowerCase()))
+          .some(([, value]) => value != null && String(value).toLowerCase().includes(searchTerm.toLowerCase()))
       );
     }
     if (sortConfig.column && sortConfig.direction) {

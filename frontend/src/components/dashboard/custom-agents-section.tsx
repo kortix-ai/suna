@@ -216,8 +216,6 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
           ))}
         </div>
       </div>
-
-      {/* Marketplace Preview Dialog */}
       <MarketplaceAgentPreviewDialog
         agent={selectedTemplate}
         isOpen={isPreviewOpen}

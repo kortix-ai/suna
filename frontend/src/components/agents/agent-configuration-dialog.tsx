@@ -273,12 +273,35 @@ export function AgentConfigurationDialog({
     setFormData(prev => ({ ...prev, agentpress_tools: toolsWithCoreEnabled }));
   };
 
-  const handleMCPChange = (updates: { configured_mcps: any[]; custom_mcps: any[] }) => {
+  const handleMCPChange = async (updates: { configured_mcps: any[]; custom_mcps: any[] }) => {
+    // Update local state immediately
     setFormData(prev => ({
       ...prev,
       configured_mcps: updates.configured_mcps || [],
       custom_mcps: updates.custom_mcps || []
     }));
+
+    // Save MCP changes immediately to backend
+    try {
+      await updateAgentMCPsMutation.mutateAsync({
+        agentId,
+        configured_mcps: updates.configured_mcps || [],
+        custom_mcps: updates.custom_mcps || [],
+        replace_mcps: true
+      });
+
+      // Update original form data to reflect the save
+      setOriginalFormData(prev => ({
+        ...prev,
+        configured_mcps: updates.configured_mcps || [],
+        custom_mcps: updates.custom_mcps || []
+      }));
+
+      toast.success('Integration settings updated');
+    } catch (error) {
+      console.error('Failed to save MCP changes:', error);
+      toast.error('Failed to save integration changes');
+    }
   };
 
 
@@ -366,9 +389,12 @@ export function AgentConfigurationDialog({
                   className="flex-shrink-0"
                 >
                   {isSunaAgent ? (
-                    <div className="h-10 w-10 rounded-lg bg-muted border flex items-center justify-center">
-                      <KortixLogo size={18} />
-                    </div>
+                    <AgentAvatar
+                      isSunaDefault={true}
+                      agentName={formData.name}
+                      size={40}
+                      className="ring-1 ring-border"
+                    />
                   ) : (
                     <button
                       onClick={(e) => {
@@ -468,20 +494,15 @@ export function AgentConfigurationDialog({
                                   onClick={() => onAgentChange(agent.agent_id)}
                                   className="p-3 flex items-center gap-3 cursor-pointer"
                                 >
-                                  {agent.metadata?.is_suna_default ? (
-                                    <div className="w-6 h-6 rounded-lg bg-muted border flex items-center justify-center flex-shrink-0">
-                                      <KortixLogo size={12} />
-                                    </div>
-                                  ) : (
-                                    <AgentAvatar
-                                      iconName={agent.icon_name}
-                                      iconColor={agent.icon_color}
-                                      backgroundColor={agent.icon_background}
-                                      agentName={agent.name}
-                                      size={24}
-                                      className="flex-shrink-0"
-                                    />
-                                  )}
+                                  <AgentAvatar
+                                    iconName={agent.icon_name}
+                                    iconColor={agent.icon_color}
+                                    backgroundColor={agent.icon_background}
+                                    agentName={agent.name}
+                                    isSunaDefault={agent.metadata?.is_suna_default}
+                                    size={24}
+                                    className="flex-shrink-0"
+                                  />
                                   <div className="flex-1 min-w-0">
                                     <div className="font-medium truncate">{agent.name}</div>
                                     {agent.description && (

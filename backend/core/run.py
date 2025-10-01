@@ -31,6 +31,7 @@ from core.tools.sb_image_edit_tool import SandboxImageEditTool
 from core.tools.sb_designer_tool import SandboxDesignerTool
 from core.tools.sb_presentation_outline_tool import SandboxPresentationOutlineTool
 from core.tools.sb_presentation_tool import SandboxPresentationTool
+from core.tools.sb_document_parser import SandboxDocumentParserTool
 
 from core.services.langfuse import langfuse
 from langfuse.client import StatefulTraceClient
@@ -44,6 +45,7 @@ from core.tools.sb_upload_file_tool import SandboxUploadFileTool
 from core.tools.sb_docs_tool import SandboxDocsTool
 from core.tools.people_search_tool import PeopleSearchTool
 from core.tools.company_search_tool import CompanySearchTool
+from core.tools.paper_search_tool import PaperSearchTool
 from core.ai_models.manager import model_manager
 
 load_dotenv()
@@ -58,7 +60,6 @@ class AgentConfig:
     model_name: str = "openai/gpt-5-mini"
     agent_config: Optional[dict] = None
     trace: Optional[StatefulTraceClient] = None
-
 
 class ToolManager:
     def __init__(self, thread_manager: ThreadManager, project_id: str, thread_id: str, agent_config: Optional[dict] = None):
@@ -121,6 +122,8 @@ class ToolManager:
             # ('sb_web_dev_tool', SandboxWebDevTool, {'project_id': self.project_id, 'thread_id': self.thread_id, 'thread_manager': self.thread_manager}),  # DEACTIVATED
             ('sb_upload_file_tool', SandboxUploadFileTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
             ('sb_docs_tool', SandboxDocsTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
+
+            # ('sb_document_parser_tool', SandboxDocumentParserTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
         ]
         
         for tool_name, tool_class, kwargs in sandbox_tools:
@@ -168,6 +171,15 @@ class ToolManager:
                 else:
                     self.thread_manager.add_tool(CompanySearchTool, thread_manager=self.thread_manager)
                     logger.debug("Registered company_search_tool (all methods)")
+            
+            if 'paper_search_tool' not in disabled_tools:
+                enabled_methods = self._get_enabled_methods_for_tool('paper_search_tool')
+                if enabled_methods is not None:
+                    self.thread_manager.add_tool(PaperSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager)
+                    logger.debug(f"Registered paper_search_tool with methods: {enabled_methods}")
+                else:
+                    self.thread_manager.add_tool(PaperSearchTool, thread_manager=self.thread_manager)
+                    logger.debug("Registered paper_search_tool (all methods)")
     
     def _register_agent_builder_tools(self, agent_id: str, disabled_tools: List[str]):
         """Register agent builder tools."""
@@ -674,9 +686,11 @@ class AgentRunner:
         all_tools = [
             'sb_shell_tool', 'sb_files_tool', 'sb_deploy_tool', 'sb_expose_tool',
             'web_search_tool', 'image_search_tool', 'sb_vision_tool', 'sb_presentation_tool', 'sb_image_edit_tool',
-            'sb_sheets_tool', 'sb_web_dev_tool', 'data_providers_tool', 'browser_tool',
-            'people_search_tool', 'company_search_tool', 'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 
-            'workflow_tool', 'trigger_tool'
+            'sb_sheets_tool', 'sb_kb_tool', 'sb_design_tool', 'sb_presentation_outline_tool', 'sb_upload_file_tool',
+            'sb_docs_tool', 'sb_browser_tool', 'sb_templates_tool', 'computer_use_tool', 'sb_web_dev_tool', 
+            'data_providers_tool', 'browser_tool', 'people_search_tool', 'company_search_tool', 
+            'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'workflow_tool', 'trigger_tool',
+            'agent_creation_tool'
         ]
         
         for tool_name in all_tools:
@@ -899,7 +913,6 @@ async def run_agent(
     effective_model = model_name
 
     # is_tier_default = model_name in ["Kimi K2", "Claude Sonnet 4", "openai/gpt-5-mini"]
-    
     # if is_tier_default and agent_config and agent_config.get('model'):
     #     effective_model = agent_config['model']
     #     logger.debug(f"Using model from agent config: {effective_model} (tier default was {model_name})")

@@ -2,12 +2,10 @@
 
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Settings, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { FieldRenderer } from './field-renderer';
-import { getConfigurationFields, getIntegrationFields, getConfigurationCompleteness } from './configuration-utils';
+import { getConfigurationFields, getIntegrationFields } from './configuration-utils';
 import { allAgents } from '../shared/data';
 import { AIAgent } from '../shared/types';
 import { IconRenderer } from '../shared/icon-renderer';
@@ -39,9 +37,6 @@ export const AgentConfiguration = ({
 
   const configFields = getConfigurationFields(agentId);
   const integrationFields = getIntegrationFields(agentId);
-  const allFields = [...configFields, ...integrationFields];
-  
-  const completeness = getConfigurationCompleteness(agentId, configuration);
 
   return (
     <div className="space-y-6">
@@ -66,39 +61,6 @@ export const AgentConfiguration = ({
         </motion.div>
       )}
 
-      {/* Configuration Progress */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-      >
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Settings className="h-5 w-5" />
-              Configuration Progress
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Completion</span>
-              <span className="font-medium">{completeness.configured} of {completeness.total} completed</span>
-            </div>
-            <Progress value={completeness.percentage} className="h-2" />
-            <div className="flex items-center gap-2 text-sm">
-              <TrendingUp className="h-4 w-4 text-green-500" />
-              <span className="text-muted-foreground">
-                {completeness.percentage}% configured
-              </span>
-              {completeness.percentage >= 80 && (
-                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                  Almost ready!
-                </Badge>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
 
       {/* Configuration Fields */}
       {configFields.length > 0 && (

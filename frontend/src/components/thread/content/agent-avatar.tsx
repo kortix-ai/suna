@@ -54,20 +54,13 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
     borderRadius: `${Math.min(size * 0.25, 16)}px` // 25% of size, max 16px
   };
 
-  if (isLoading && agentId) {
+  // Show skeleton for loading state or when no data is available
+  if ((isLoading && agentId) || (!agent && !agentId && !propIconName && !propIsSunaDefault)) {
     return (
       <div 
-        className={cn("bg-muted animate-pulse", className)}
+        className={cn("bg-muted animate-pulse border", className)}
         style={{ width: size, height: size, ...borderRadiusStyle }}
       />
-    );
-  }
-
-  if (!agent && !agentId && !propIconName && !propIsSunaDefault) {
-    return (
-      <div className={cn("flex items-center justify-center", className)}>
-        <KortixLogo size={size} />
-      </div>
     );
   }
 

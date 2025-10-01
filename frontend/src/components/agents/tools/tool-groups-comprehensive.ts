@@ -139,6 +139,24 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
     ],
   },
 
+  paper_search_tool: {
+    name: 'paper_search_tool',
+    displayName: 'Paper Search',
+    description: 'Search for papers using natural language queries',
+    icon: 'Book',
+    color: 'bg-blue-100 dark:bg-blue-800/50',
+    toolClass: 'PaperSearchTool',
+    enabled: true,
+    methods: [
+      {
+        name: 'paper_search',
+        displayName: 'Paper Search',
+        description: 'Search for papers using natural language queries',
+        enabled: true,
+      },
+    ],
+  },
+
   sb_vision_tool: {
     name: 'sb_vision_tool',
     displayName: 'Vision & Image Analysis',
@@ -452,12 +470,6 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
         name: 'delete_slide',
         displayName: 'Delete Slide',
         description: 'Delete slides from presentations',
-        enabled: true,
-      },
-      {
-        name: 'presentation_styles',
-        displayName: 'Presentation Styles',
-        description: 'Get available presentation styles',
         enabled: true,
       },
       {
@@ -974,6 +986,24 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
     ],
   },
 
+//   sb_document_parser_tool: {
+//     name: 'sb_document_parser_tool',
+//     displayName: 'Document Parser',
+//     description: 'Parse documents using Chunkr AI',
+//     icon: 'FileText',
+//     color: 'bg-gray-100 dark:bg-gray-800/50',
+//     toolClass: 'SandboxDocumentParserTool',
+//     enabled: true,
+//     methods: [
+//       {
+//         name: 'parse_document',
+//         displayName: 'Parse Document',
+//         description: 'Parse documents using Chunkr AI',
+//         enabled: true,
+//       },
+//     ],
+//   },
+
   sb_kb_tool: {
     name: 'sb_kb_tool',
     displayName: 'Knowledge Base',
@@ -984,9 +1014,63 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
     enabled: true,
     methods: [
       {
-        name: 'query_knowledge_base',
-        displayName: 'Query Knowledge Base',
-        description: 'Search and query knowledge base',
+        name: 'init_kb',
+        displayName: 'Initialize Knowledge Base',
+        description: 'Initialize the kb-fusion binary and optionally sync knowledge base',
+        enabled: true,
+      },
+      {
+        name: 'search_files',
+        displayName: 'Search Files',
+        description: 'Perform semantic search on files using kb-fusion',
+        enabled: true,
+      },
+      {
+        name: 'cleanup_kb',
+        displayName: 'Cleanup Knowledge Base',
+        description: 'Perform maintenance and cleanup operations',
+        enabled: true,
+      },
+      {
+        name: 'ls_kb',
+        displayName: 'List Knowledge Base Files',
+        description: 'List indexed files in the knowledge base',
+        enabled: true,
+      },
+      {
+        name: 'global_kb_sync',
+        displayName: 'Sync Global Knowledge Base',
+        description: 'Sync agent\'s knowledge base files to sandbox',
+        enabled: true,
+      },
+      {
+        name: 'global_kb_create_folder',
+        displayName: 'Create Knowledge Base Folder',
+        description: 'Create a new folder in the global knowledge base',
+        enabled: true,
+      },
+      {
+        name: 'global_kb_upload_file',
+        displayName: 'Upload File to Knowledge Base',
+        description: 'Upload a file from sandbox to the global knowledge base',
+        enabled: true,
+      },
+      {
+        name: 'global_kb_delete_item',
+        displayName: 'Delete Knowledge Base Item',
+        description: 'Delete a file or folder from the global knowledge base',
+        enabled: true,
+      },
+      {
+        name: 'global_kb_enable_item',
+        displayName: 'Enable/Disable Knowledge Base Item',
+        description: 'Enable or disable a knowledge base file for this agent',
+        enabled: true,
+      },
+      {
+        name: 'global_kb_list_contents',
+        displayName: 'List Knowledge Base Contents',
+        description: 'List all folders and files in the global knowledge base',
         enabled: true,
       },
     ],
@@ -1058,7 +1142,31 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
       {
         name: 'create_document',
         displayName: 'Create Document',
-        description: 'Create and edit documents',
+        description: 'Create new documents with rich text content',
+        enabled: true,
+      },
+      {
+        name: 'read_document',
+        displayName: 'Read Document',
+        description: 'Read the content of a document',
+        enabled: true,
+      },
+      {
+        name: 'list_documents',
+        displayName: 'List Documents',
+        description: 'List all documents in the workspace',
+        enabled: true,
+      },
+      {
+        name: 'delete_document',
+        displayName: 'Delete Document',
+        description: 'Delete a document from the workspace',
+        enabled: true,
+      },
+      {
+        name: 'get_format_guide',
+        displayName: 'Get Format Guide',
+        description: 'Get TipTap-compatible HTML format guide',
         enabled: true,
       },
     ],

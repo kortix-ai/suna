@@ -124,8 +124,8 @@ class ThreadManager:
             usage = content.get("usage", {})
             
             # DEBUG: Log the complete usage object to see what data we have
-            logger.info(f"🔍 THREAD MANAGER USAGE: {usage}")
-            logger.info(f"🔍 THREAD MANAGER CONTENT: {content}")
+            # logger.info(f"🔍 THREAD MANAGER USAGE: {usage}")
+            # logger.info(f"🔍 THREAD MANAGER CONTENT: {content}")
             
             prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
             completion_tokens = int(usage.get("completion_tokens", 0) or 0)
