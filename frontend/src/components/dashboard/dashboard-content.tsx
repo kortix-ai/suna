@@ -433,6 +433,10 @@ export function DashboardContent() {
           open={showConfigDialog}
           onOpenChange={setShowConfigDialog}
           agentId={configAgentId}
+          onAgentChange={(newAgentId) => {
+            setConfigAgentId(newAgentId);
+            setSelectedAgent(newAgentId);
+          }}
         />
       )}
     </>

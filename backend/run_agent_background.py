@@ -58,8 +58,6 @@ async def run_agent_background(
     instance_id: str,
     project_id: str,
     model_name: str = "openai/gpt-5-mini",
-    enable_context_manager: bool = True,
-    enable_prompt_caching: bool = True,
     agent_config: Optional[dict] = None,
     request_id: Optional[str] = None
 ):
@@ -165,8 +163,6 @@ async def run_agent_background(
         agent_gen = run_agent(
             thread_id=thread_id, project_id=project_id,
             model_name=effective_model,
-            enable_context_manager=enable_context_manager,
-            enable_prompt_caching=enable_prompt_caching,
             agent_config=agent_config,
             trace=trace,
         )

@@ -43,7 +43,6 @@ class MessageCreateRequest:
 @dataclass
 class AgentStartRequest:
     model_name: Optional[str] = None
-    enable_context_manager: Optional[bool] = False
     agent_id: Optional[str] = None
 
 

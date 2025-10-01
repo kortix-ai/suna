@@ -32,14 +32,12 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Markdown } from '@/components/ui/markdown';
 import { toast } from 'sonner';
-import { useAuth } from '@/components/AuthProvider';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useTheme } from 'next-themes';
 import ColorThief from 'colorthief';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { DynamicIcon } from 'lucide-react/dynamic';
+import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 
 interface MarketplaceTemplate {
   template_id: string;
@@ -56,7 +54,6 @@ interface MarketplaceTemplate {
   download_count: number;
   created_at: string;
   updated_at: string;
-  profile_image_url: string | null;
   icon_name: string | null;
   icon_color: string | null;
   icon_background: string | null;
@@ -165,7 +162,6 @@ export default function TemplateSharePage() {
   const params = useParams();
   const templateId = params.shareId as string; // Note: keeping shareId param name for URL compatibility
   const router = useRouter();
-  const { user } = useAuth();
   const { theme, resolvedTheme, setTheme } = useTheme();
   const [colorPalette, setColorPalette] = useState<string[]>([]);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -271,19 +267,20 @@ export default function TemplateSharePage() {
         '#ec4899',
         '#f43f5e'
       ]);
-    } else if (template?.profile_image_url && imageRef.current && imageLoaded) {
-      const colorThief = new ColorThief();
-      try {
-        const palette = colorThief.getPalette(imageRef.current, 6);
-        const colors = palette.map((rgb: number[]) => rgbToHex(rgb[0], rgb[1], rgb[2]));
-        console.log('Extracted colors (hex):', colors);
-        setColorPalette(colors);
-      } catch (error) {
-        console.error('Error extracting colors:', error);
-        setColorPalette([
-          '#6366f1', '#8b5cf6', '#ec4899', 
-          '#f43f5e', '#f97316', '#facc15'
-        ]);
+      if (imageRef.current && imageLoaded) {
+        const colorThief = new ColorThief();
+        try {
+          const palette = colorThief.getPalette(imageRef.current, 6);
+          const colors = palette.map((rgb: number[]) => rgbToHex(rgb[0], rgb[1], rgb[2]));
+          console.log('Extracted colors (hex):', colors);
+          setColorPalette(colors);
+        } catch (error) {
+          console.error('Error extracting colors:', error);
+          setColorPalette([
+            '#6366f1', '#8b5cf6', '#ec4899', 
+            '#f43f5e', '#f97316', '#facc15'
+          ]);
+        }
       }
     } else {
       setColorPalette([
@@ -291,7 +288,7 @@ export default function TemplateSharePage() {
         '#f43f5e', '#f97316', '#facc15'
       ]);
     }
-  }, [template?.profile_image_url, template?.icon_name, template?.icon_background, template?.icon_color, imageLoaded]);
+  }, [template?.icon_name, template?.icon_background, template?.icon_color, imageLoaded]);
 
   const handleInstall = () => {
     if (!template) return;
@@ -357,13 +354,13 @@ export default function TemplateSharePage() {
   const hasTools = customTools.length > 0 || agentpressTools.length > 0;
 
   const getDefaultAvatar = () => {
-    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD'];
-    const color = colors[Math.floor(Math.random() * colors.length)];
     return (
-      <DynamicIcon
-        name={template.icon_name || 'bot' as any}
+      <AgentAvatar
+        iconName={template.icon_name}
+        iconColor={template.icon_color}
+        backgroundColor={template.icon_background}
+        agentName={template.name}
         size={28}
-        color={color}
       />
     );
   };
@@ -373,12 +370,7 @@ export default function TemplateSharePage() {
     : ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#facc15'];
 
   const gradientStyle = {
-    background: `
-      radial-gradient(circle at 30% 20%, ${color2}90 0%, transparent 35%),
-      radial-gradient(circle at 70% 80%, ${color3}80 0%, transparent 35%),
-      radial-gradient(circle at 10% 60%, ${color1}85 0%, transparent 40%),
-      radial-gradient(circle at 50% 50%, ${color4}70 0%, transparent 50%)
-    `,
+    background: `radial-gradient(circle at 30% 20%, ${color2}90 0%, transparent 35%), radial-gradient(circle at 70% 80%, ${color3}80 0%, transparent 35%), radial-gradient(circle at 10% 60%, ${color1}85 0%, transparent 40%), radial-gradient(circle at 50% 50%, ${color4}70 0%, transparent 50%)`,
     filter: 'blur(80px) saturate(250%)',
     opacity: 1,
   };
@@ -464,31 +456,23 @@ export default function TemplateSharePage() {
                   />
                 )}
                 <div className="relative aspect-square w-full max-w-sm mx-auto lg:mx-0 rounded-2xl overflow-hidden bg-background">
-                  {template.icon_name ? (
-                    <div 
-                      className="w-full h-full flex items-center justify-center"
-                      style={{ backgroundColor: template.icon_background || '#e5e5e5' }}
-                    >
-                      <DynamicIcon 
-                        name={template.icon_name as any}
-                        size={120}
-                        color={template.icon_color || '#000000'}
-                      />
-                    </div>
-                  ) : template.profile_image_url ? (
-                    <>
-                      <img 
-                        ref={imageRef}
-                        src={template.profile_image_url} 
-                        alt={template.name}
-                        className="w-full h-full object-cover"
-                        crossOrigin="anonymous"
-                        onLoad={() => setImageLoaded(true)}
-                      />
-                    </>
-                  ) : (
-                    getDefaultAvatar()
-                  )}
+                  <div className="w-full h-full flex items-center justify-center">
+                    <AgentAvatar
+                      iconName={template.icon_name}
+                      iconColor={template.icon_color}
+                      backgroundColor={template.icon_background}
+                      agentName={template.name}
+                      size={120}
+                    />
+                  </div>
+                  <img 
+                    ref={imageRef}
+                    src={""} 
+                    alt={template.name}
+                    className="w-full h-full object-cover"
+                    crossOrigin="anonymous"
+                    onLoad={() => setImageLoaded(true)}
+                  />
                 </div>
               </div>
               <div className="space-y-4">
@@ -739,7 +723,8 @@ export default function TemplateSharePage() {
                 </CardContent>
               </Card>
             )}
-            {/* <Card className="bg-muted/30 border-muted/50">
+{/* 
+            <Card className="bg-muted/30 border-muted/50">
               <CardContent className="p-8 text-center">
                 <h3 className="text-2xl font-bold mb-4">Ready to get started?</h3>
                 <p className="text-muted-foreground mb-6">
@@ -762,7 +747,8 @@ export default function TemplateSharePage() {
                   </Button>
                 </div>
               </CardContent>
-            </Card> */}
+            </Card>
+            */}
           </div>
         </div>
       </div>

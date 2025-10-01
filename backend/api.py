@@ -123,7 +123,11 @@ async def log_requests_middleware(request: Request, call_next):
         return response
     except Exception as e:
         process_time = time.time() - start_time
-        logger.error(f"Request failed: {method} {path} | Error: {str(e)} | Time: {process_time:.2f}s")
+        try:
+            error_str = str(e)
+        except Exception:
+            error_str = f"Error of type {type(e).__name__}"
+        logger.error(f"Request failed: {method} {path} | Error: {error_str} | Time: {process_time:.2f}s")
         raise
 
 # Define allowed origins based on environment
@@ -171,11 +175,8 @@ api_router.include_router(template_api.router, prefix="/templates")
 api_router.include_router(transcription_api.router)
 api_router.include_router(email_api.router)
 
-from knowledge_base import api as knowledge_base_api
+from core.knowledge_base import api as knowledge_base_api
 api_router.include_router(knowledge_base_api.router)
-
-from core.knowledge_base import api as core_knowledge_base_api
-api_router.include_router(core_knowledge_base_api.router)
 
 api_router.include_router(triggers_api.router)
 

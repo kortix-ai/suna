@@ -71,7 +71,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
     const [showNewAgentDialog, setShowNewAgentDialog] = useState(false);
     const searchInputRef = useRef<HTMLInputElement>(null);
     const [execDialog, setExecDialog] = useState<{ open: boolean; playbook: any | null; agentId: string | null }>({ open: false, playbook: null, agentId: null });
-    const [agentConfigDialog, setAgentConfigDialog] = useState<{ open: boolean; tab: 'general' | 'instructions' | 'knowledge' | 'triggers' | 'playbooks' | 'tools' | 'integrations' }>({ open: false, tab: 'general' });
+    const [agentConfigDialog, setAgentConfigDialog] = useState<{ open: boolean; tab: 'instructions' | 'knowledge' | 'triggers' | 'playbooks' | 'tools' | 'integrations' }>({ open: false, tab: 'instructions' });
 
     // Debounce search query
     useEffect(() => {
@@ -182,7 +182,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
     }, [selectedAgentId, displayAgent?.agent_id]);
 
     const renderAgentIcon = useCallback((agent: any) => {
-        return <AgentAvatar agentId={agent?.agent_id} size={20} className="flex-shrink-0" fallbackName={agent?.name} />;
+        return <AgentAvatar agentId={agent?.agent_id} size={24} className="flex-shrink-0" fallbackName={agent?.name} />;
     }, []);
 
     const currentAgentIdForPlaybooks = isLoggedIn ? displayAgent?.agent_id || '' : '';
@@ -411,6 +411,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                     onOpenChange={(open) => setAgentConfigDialog({ ...agentConfigDialog, open })}
                     agentId={selectedAgentId || displayAgent?.agent_id}
                     initialTab={agentConfigDialog.tab}
+                    onAgentChange={onAgentSelect}
                 />
             )}
 

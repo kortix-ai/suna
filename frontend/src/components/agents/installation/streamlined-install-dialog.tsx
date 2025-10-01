@@ -22,7 +22,7 @@ import { cn } from '@/lib/utils';
 import { ProfileConnector } from './streamlined-profile-connector';
 import { CustomServerStep } from './custom-server-step';
 import type { MarketplaceTemplate, SetupStep } from './types';
-import { AgentIconAvatar } from '@/components/agents/config/agent-icon-avatar';
+import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 
 interface StreamlinedInstallDialogProps {
   item: MarketplaceTemplate | null;
@@ -342,8 +342,7 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
         <DialogHeader className="space-y-4">
           <div className="flex items-center gap-3">
             <div className="flex-shrink-0">
-              <AgentIconAvatar
-                profileImageUrl={item.profile_image_url}
+              <AgentAvatar
                 iconName={item.icon_name}
                 iconColor={item.icon_color}
                 backgroundColor={item.icon_background}

@@ -5,7 +5,7 @@ import { Plus, Globe, AlertTriangle } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AgentCard } from './agent-card';
+import { UnifiedAgentCard } from '@/components/ui/unified-agent-card';
 
 interface MyTemplatesTabProps {
   templatesError: any;
@@ -16,7 +16,7 @@ interface MyTemplatesTabProps {
   onUnpublish: (templateId: string, templateName: string) => void;
   onViewInMarketplace: () => void;
   onSwitchToMyAgents: () => void;
-  getTemplateStyling: (template: any) => { avatar: string; color: string };
+  getTemplateStyling: (template: any) => { color: string };
 }
 
 export const MyTemplatesTab = ({
@@ -73,18 +73,30 @@ export const MyTemplatesTab = ({
           {myTemplates?.map((template) => {
             const isActioning = templatesActioningId === template.template_id;
             return (
-              <AgentCard
+              <UnifiedAgentCard
                 key={template.template_id}
-                mode="template"
-                data={template}
-                styling={getTemplateStyling(template)}
-                isActioning={isActioning}
-                onPrimaryAction={
-                  template.is_public 
+                variant="template"
+                data={{
+                  id: template.template_id,
+                  name: template.name,
+                  tags: template.tags,
+                  created_at: template.created_at,
+                  template_id: template.template_id,
+                  is_public: template.is_public,
+                  download_count: template.download_count,
+                  icon_name: template.icon_name,
+                  icon_color: template.icon_color,
+                  icon_background: template.icon_background,
+                }}
+                state={{
+                  isActioning: isActioning,
+                }}
+                actions={{
+                  onPrimaryAction: template.is_public 
                     ? () => onUnpublish(template.template_id, template.name)
-                    : () => onPublish(template)
-                }
-                onSecondaryAction={template.is_public ? onViewInMarketplace : undefined}
+                    : () => onPublish(template),
+                  onSecondaryAction: template.is_public ? onViewInMarketplace : undefined,
+                }}
               />
             );
           })}

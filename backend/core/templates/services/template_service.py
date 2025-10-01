@@ -32,7 +32,7 @@ class TemplateService:
         filters: MarketplaceFilters
     ) -> PaginatedResponse[Dict[str, Any]]:
         try:
-            logger.debug(f"Fetching marketplace templates with filters: {filters.__dict__}")
+            # logger.debug(f"Fetching marketplace templates with filters: {filters.__dict__}")
             
             from ..template_service import get_template_service
             from ..utils import format_template_for_response
@@ -90,7 +90,11 @@ class TemplateService:
             )
                 
         except Exception as e:
-            logger.error(f"Error fetching marketplace templates: {e}", exc_info=True)
+            try:
+                error_str = str(e)
+            except Exception:
+                error_str = f"Error of type {type(e).__name__}"
+            logger.error(f"Error fetching marketplace templates: {error_str}")
             raise
 
     async def get_user_templates_paginated(
@@ -165,7 +169,11 @@ class TemplateService:
             )
                 
         except Exception as e:
-            logger.error(f"Error fetching user templates: {e}", exc_info=True)
+            try:
+                error_str = str(e)
+            except Exception:
+                error_str = f"Error of type {type(e).__name__}"
+            logger.error(f"Error fetching user templates: {error_str}")
             raise
 
     def _build_marketplace_base_query(self, filters: MarketplaceFilters):

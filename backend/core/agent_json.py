@@ -34,7 +34,6 @@ class JsonImportService:
         agent_info = {
             'name': json_data.get('name', 'Imported Agent'),
             'description': json_data.get('description', ''),
-            'profile_image_url': json_data.get('profile_image_url') or json_data.get('metadata', {}).get('profile_image_url'),
             'icon_name': json_data.get('icon_name', 'brain'),
             'icon_color': json_data.get('icon_color', '#000000'),
             'icon_background': json_data.get('icon_background', '#F3F4F6')
@@ -72,7 +71,6 @@ class JsonImportService:
                 agent_info={
                     'name': json_data.get('name', 'Imported Agent'),
                     'description': json_data.get('description', ''),
-                    'profile_image_url': json_data.get('profile_image_url') or json_data.get('metadata', {}).get('profile_image_url'),
                     'icon_name': json_data.get('icon_name', 'brain'),
                     'icon_color': json_data.get('icon_color', '#000000'),
                     'icon_background': json_data.get('icon_background', '#F3F4F6')
@@ -370,10 +368,7 @@ async def export_agent(agent_id: str, user_id: str = Depends(verify_and_get_user
                 'mcp': config.get('configured_mcps', []),
                 'custom_mcp': config.get('custom_mcps', [])
             },
-            'metadata': {
-                # include profile image url in metadata for completeness
-                'profile_image_url': agent.get('profile_image_url')
-            }
+            'metadata': {}
         }
         
         sanitized_config = template_service._fallback_sanitize_config(full_config)
@@ -389,7 +384,6 @@ async def export_agent(agent_id: str, user_id: str = Depends(verify_and_get_user
             "system_prompt": sanitized_config['system_prompt'],
             "name": config.get('name', ''),
             "description": config.get('description', ''),
-            "profile_image_url": agent.get('profile_image_url'),
             "tags": agent.get('tags', []),
             "export_metadata": export_metadata,
             "exported_at": datetime.now(timezone.utc).isoformat()

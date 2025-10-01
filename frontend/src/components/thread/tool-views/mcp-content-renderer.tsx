@@ -241,6 +241,8 @@ function JsonRenderer({ data }: { data: any }) {
 
 // Renderer for key-value pairs
 function KeyValueRenderer({ content }: { content: string }) {
+  if (!content || typeof content !== 'string') return <div>No content available</div>;
+  
   const lines = content.split('\n').filter(line => line.includes(':'));
   const pairs = lines.map(line => {
     const [key, ...valueParts] = line.split(':');

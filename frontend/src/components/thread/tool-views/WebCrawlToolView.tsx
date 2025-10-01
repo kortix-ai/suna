@@ -116,6 +116,9 @@ export function WebCrawlToolView({
   };
 
   const getContentStats = (content: string) => {
+    if (!content || typeof content !== 'string') {
+      return { wordCount: 0, charCount: 0, lineCount: 0 };
+    }
     const wordCount = content.trim().split(/\s+/).length;
     const charCount = content.length;
     const lineCount = content.split('\n').length;

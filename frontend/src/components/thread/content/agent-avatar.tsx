@@ -4,71 +4,119 @@ import React from 'react';
 import { useAgent } from '@/hooks/react-query/agents/use-agents';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { DynamicIcon } from 'lucide-react/dynamic';
+import { cn } from '@/lib/utils';
 
 interface AgentAvatarProps {
+  // For fetching agent by ID
   agentId?: string;
+  fallbackName?: string;
+  
+  // For direct props (bypasses agent fetch)
+  iconName?: string | null;
+  iconColor?: string;
+  backgroundColor?: string;
+  agentName?: string;
+  isSunaDefault?: boolean;
+  
+  // Common props
   size?: number;
   className?: string;
-  fallbackName?: string;
 }
 
 export const AgentAvatar: React.FC<AgentAvatarProps> = ({ 
+  // Agent fetch props
   agentId, 
+  fallbackName = "Suna",
+  
+  // Direct props
+  iconName: propIconName,
+  iconColor: propIconColor,
+  backgroundColor: propBackgroundColor,
+  agentName: propAgentName,
+  isSunaDefault: propIsSunaDefault,
+  
+  // Common props
   size = 16, 
-  className = "", 
-  fallbackName = "Suna" 
+  className = ""
 }) => {
   const { data: agent, isLoading } = useAgent(agentId || '');
 
-  if (isLoading && agentId) {
+  // Determine values from props or agent data
+  const iconName = propIconName ?? agent?.icon_name;
+  const iconColor = propIconColor ?? agent?.icon_color ?? '#000000';
+  const backgroundColor = propBackgroundColor ?? agent?.icon_background ?? '#F3F4F6';
+  const agentName = propAgentName ?? agent?.name ?? fallbackName;
+  const isSuna = propIsSunaDefault ?? agent?.metadata?.is_suna_default;
+
+  // Calculate responsive border radius - proportional to size
+  // Use a ratio that prevents full rounding while maintaining nice corners
+  const borderRadiusStyle = {
+    borderRadius: `${Math.min(size * 0.25, 16)}px` // 25% of size, max 16px
+  };
+
+  // Show skeleton for loading state or when no data is available
+  if ((isLoading && agentId) || (!agent && !agentId && !propIconName && !propIsSunaDefault)) {
     return (
       <div 
-        className={`bg-muted animate-pulse rounded ${className}`}
-        style={{ width: size, height: size }}
+        className={cn("bg-muted animate-pulse border", className)}
+        style={{ width: size, height: size, ...borderRadiusStyle }}
       />
     );
   }
 
-  if (!agent && !agentId) {
-    return <KortixLogo size={size} />;
-  }
-
-  const isSuna = agent?.metadata?.is_suna_default;
   if (isSuna) {
-    return <KortixLogo size={size} />;
-  }
-
-  if (agent?.icon_name) {
     return (
       <div 
-        className={`flex items-center justify-center rounded ${className}`}
+        className={cn(
+          "flex items-center justify-center bg-muted border",
+          className
+        )}
+        style={{ width: size, height: size, ...borderRadiusStyle }}
+      >
+        <KortixLogo size={size * 0.6} />
+      </div>
+    );
+  }
+
+  if (iconName) {
+    return (
+      <div 
+        className={cn(
+          "flex items-center justify-center transition-all border",
+          className
+        )}
         style={{ 
           width: size, 
           height: size,
-          backgroundColor: agent.icon_background || '#F3F4F6'
+          backgroundColor,
+          ...borderRadiusStyle
         }}
       >
         <DynamicIcon 
-          name={agent.icon_name as any} 
-          size={size * 0.6} 
-          color={agent.icon_color || '#000000'}
+          name={iconName as any} 
+          size={size * 0.5} 
+          color={iconColor}
         />
       </div>
     );
   }
 
-  if (agent?.profile_image_url) {
-    return (
-      <img 
-        src={agent.profile_image_url} 
-        alt={agent.name || fallbackName}
-        className={`rounded object-cover ${className}`}
-        style={{ width: size, height: size }}
+  // Fallback to default bot icon
+  return (
+    <div 
+      className={cn(
+        "flex items-center justify-center bg-muted border",
+        className
+      )}
+      style={{ width: size, height: size, ...borderRadiusStyle }}
+    >
+      <DynamicIcon 
+        name="bot" 
+        size={size * 0.5} 
+        color="#6B7280"
       />
-    );
-  }
-
-  return <KortixLogo size={size} />;
+    </div>
+  );
 };
 
 interface AgentNameProps {
@@ -87,4 +135,11 @@ export const AgentName: React.FC<AgentNameProps> = ({
   }
 
   return <span>{agent?.name || fallback}</span>;
-}; 
+};
+
+// Utility function for checking if agent has custom profile
+export function hasCustomProfile(agent: {
+  icon_name?: string | null;
+}): boolean {
+  return !!(agent.icon_name);
+} 

@@ -43,7 +43,6 @@ def _extract_suna_agent_config(agent_data: Dict[str, Any], version_data: Optiona
         'account_id': agent_data.get('account_id'),
         'current_version_id': agent_data.get('current_version_id'),
         'version_name': version_data.get('version_name', 'v1') if version_data else 'v1',
-        'profile_image_url': agent_data.get('profile_image_url'),
         'restrictions': {
             'system_prompt_editable': False,
             'tools_editable': False,
@@ -115,7 +114,6 @@ def _extract_custom_agent_config(agent_data: Dict[str, Any], version_data: Optio
             'custom_mcps': custom_mcps,
             'workflows': workflows,
             'triggers': triggers,
-            'profile_image_url': agent_data.get('profile_image_url'),
             'icon_name': agent_data.get('icon_name'),
             'icon_color': agent_data.get('icon_color'),
             'icon_background': agent_data.get('icon_background'),
@@ -149,7 +147,6 @@ def _extract_custom_agent_config(agent_data: Dict[str, Any], version_data: Optio
         'custom_mcps': [],
         'workflows': [],
         'triggers': [],
-        'profile_image_url': agent_data.get('profile_image_url'),
         'icon_name': agent_data.get('icon_name'),
         'icon_color': agent_data.get('icon_color'),
         'icon_background': agent_data.get('icon_background'),

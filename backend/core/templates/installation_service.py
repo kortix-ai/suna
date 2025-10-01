@@ -417,7 +417,11 @@ class InstallationService:
                 logger.error(f"Agent {agent_id} current_version_id was not updated after version creation!")
             
         except Exception as e:
-            logger.error(f"Failed to create initial version for agent {agent_id}: {e}", exc_info=True)
+            try:
+                error_str = str(e)
+            except Exception:
+                error_str = f"Error of type {type(e).__name__}"
+            logger.error(f"Failed to create initial version for agent {agent_id}: {error_str}")
             raise  # Re-raise the exception to ensure installation fails if version creation fails
     
     async def _restore_workflows(self, agent_id: str, template_config: Dict[str, Any]) -> None:

@@ -34,7 +34,7 @@ class DynamicToolBuilder:
     def _create_dynamic_method(self, tool_name: str, tool_info: Dict[str, Any], execute_callback: Callable[[str, Dict[str, Any]], Awaitable[ToolResult]]) -> Dict[str, Any]:
         method_name, clean_tool_name, server_name = self._parse_tool_name(tool_name)
         
-        logger.debug(f"Creating dynamic method for tool '{tool_name}': clean_tool_name='{clean_tool_name}', method_name='{method_name}', server='{server_name}'")
+        # logger.debug(f"Creating dynamic method for tool '{tool_name}': clean_tool_name='{clean_tool_name}', method_name='{method_name}', server='{server_name}'")
         
         async def dynamic_tool_method(**kwargs) -> ToolResult:
             return await execute_callback(tool_name, kwargs)
@@ -60,7 +60,7 @@ class DynamicToolBuilder:
         self.dynamic_tools[tool_name] = tool_data
         self.schemas[method_name] = [schema]
         
-        logger.debug(f"Created dynamic method '{method_name}' for MCP tool '{tool_name}' from server '{server_name}'")
+        # logger.debug(f"Created dynamic method '{method_name}' for MCP tool '{tool_name}' from server '{server_name}'")
         
         return tool_data
     

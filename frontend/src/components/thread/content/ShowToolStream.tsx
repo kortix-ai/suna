@@ -100,7 +100,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
 
     // Clean function call XML content but preserve other HTML/XML
     const cleanXMLContent = (rawContent: string): { html: string; plainText: string } => {
-        if (!rawContent) return { html: '', plainText: '' };
+        if (!rawContent || typeof rawContent !== 'string') return { html: '', plainText: '' };
         
         // Remove only function call related XML tags: function_calls, invoke, parameter
         const cleaned = rawContent

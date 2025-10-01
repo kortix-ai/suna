@@ -1,6 +1,8 @@
 import os
 import base64
 import mimetypes
+import uuid
+from datetime import datetime
 from typing import Optional, Tuple
 from io import BytesIO
 from PIL import Image
@@ -9,6 +11,7 @@ from core.agentpress.tool import ToolResult, openapi_schema, usage_example
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from core.tools.image_context_manager import ImageContextManager
+from core.services.supabase import DBConnection
 import json
 from svglib.svglib import svg2rlg
 from reportlab.graphics import renderPM
@@ -42,6 +45,7 @@ class SandboxVisionTool(SandboxToolsBase):
         # Make thread_manager accessible within the tool instance
         self.thread_manager = thread_manager
         self.image_context_manager = ImageContextManager(thread_manager)
+        self.db = DBConnection()
 
     async def convert_svg_with_sandbox_browser(self, svg_full_path: str) -> Tuple[bytes, str]:
         """Convert SVG to PNG using sandbox browser API for better rendering support.
@@ -364,13 +368,46 @@ class SandboxVisionTool(SandboxToolsBase):
                     print(f"[SeeImage] Warning: Could not save converted PNG to sandbox: {e}")
                     # Continue with original path if save fails
 
-            # Convert to base64
-            base64_image = base64.b64encode(compressed_bytes).decode('utf-8')
+            # Upload to Supabase Storage instead of base64
+            try:
+                # Generate unique filename
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                unique_id = str(uuid.uuid4())[:8]
+                
+                # Determine file extension from mime type
+                ext_map = {
+                    'image/jpeg': 'jpg',
+                    'image/png': 'png',
+                    'image/gif': 'gif',
+                    'image/webp': 'webp'
+                }
+                ext = ext_map.get(compressed_mime_type, 'jpg')
+                
+                # Create filename from original path
+                base_filename = os.path.splitext(os.path.basename(cleaned_path))[0]
+                storage_filename = f"loaded_images/{base_filename}_{timestamp}_{unique_id}.{ext}"
+                
+                # Upload to Supabase storage (public bucket for LLM access)
+                client = await self.db.client
+                storage_response = await client.storage.from_('image-uploads').upload(
+                    storage_filename,
+                    compressed_bytes,
+                    {"content-type": compressed_mime_type}
+                )
+                
+                # Get public URL
+                public_url = await client.storage.from_('image-uploads').get_public_url(storage_filename)
+                
+                print(f"[LoadImage] Uploaded image to S3: {public_url}")
+                
+            except Exception as upload_error:
+                print(f"[LoadImage] Failed to upload to S3: {upload_error}")
+                return self.fail_response(f"Failed to upload image to cloud storage: {str(upload_error)}")
 
-            # Add the image to context using the dedicated manager
+            # Add the image to context using the public URL
             result = await self.image_context_manager.add_image_to_context(
                 thread_id=self.thread_id,
-                base64_data=base64_image,
+                image_url=public_url,
                 mime_type=compressed_mime_type,
                 file_path=cleaned_path,
                 original_size=original_size,
@@ -382,8 +419,9 @@ class SandboxVisionTool(SandboxToolsBase):
 
             # Return structured output like other tools
             result_data = {
-                "message": f"Successfully loaded a compressed version of the image '{cleaned_path}' (reduced from {original_size / 1024:.1f}KB to {len(compressed_bytes) / 1024:.1f}KB).",
+                "message": f"Successfully loaded image '{cleaned_path}' and uploaded to cloud storage (reduced from {original_size / 1024:.1f}KB to {len(compressed_bytes) / 1024:.1f}KB). Using public URL instead of base64 for efficient token usage.",
                 "file_path": cleaned_path,
+                "image_url": public_url
             }
             
             return self.success_response(result_data)

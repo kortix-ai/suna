@@ -21,7 +21,6 @@ export interface TriggerWithAgent {
   icon_name?: string;
   icon_color?: string;
   icon_background?: string;
-  profile_image_url?: string;
 }
 
 const fetchAllTriggers = async (): Promise<TriggerWithAgent[]> => {

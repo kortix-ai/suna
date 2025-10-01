@@ -447,7 +447,7 @@ export function SharedTreeItem({
                                     </span>
                                     <span className="text-xs text-muted-foreground/50">•</span>
                                     <span className="text-xs text-muted-foreground">
-                                        Click to preview file
+                                        Click to edit summary
                                     </span>
                                 </>
                             )}
