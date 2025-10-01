@@ -42,7 +42,7 @@ class ModelRegistry:
             enabled=True,
             config=ModelConfig(
                 extra_headers={
-                    "anthropic-beta": "context-1m-2025-08-07"
+                    "anthropic-beta" if is_local else "anthropic_beta": "context-1m-2025-08-07"
                 },
             )
         ))
@@ -69,7 +69,7 @@ class ModelRegistry:
             enabled=True,
             config=ModelConfig(
                 extra_headers={
-                    "anthropic-beta": "context-1m-2025-08-07"
+                    "anthropic-beta" if is_local else "anthropic_beta": "context-1m-2025-08-07"
                 },
             )
         ))

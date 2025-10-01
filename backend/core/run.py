@@ -526,13 +526,12 @@ When using the tools:
 
 class MessageManager:
     def __init__(self, client, thread_id: str, model_name: str, trace: Optional[StatefulTraceClient], 
-                 agent_config: Optional[dict] = None, enable_context_manager: bool = False):
+                 agent_config: Optional[dict] = None):
         self.client = client
         self.thread_id = thread_id
         self.model_name = model_name
         self.trace = trace
         self.agent_config = agent_config
-        self.enable_context_manager = enable_context_manager
     
     async def build_temporary_message(self) -> Optional[dict]:
         system_message = None
@@ -782,9 +781,7 @@ class AgentRunner:
                         xml_adding_strategy="user_message"
                     ),
                     native_max_auto_continues=self.config.native_max_auto_continues,
-                    generation=generation,
-                    enable_prompt_caching=True,
-                    enable_context_manager=True
+                    generation=generation
                 )
 
                 last_tool_call = None
