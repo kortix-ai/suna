@@ -273,7 +273,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                                 <div className="flex items-center justify-center w-8 h-8 bg-muted/60 border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
                                                     {renderAgentIcon(agent)}
                                                 </div>
-                                                <span className="flex-1 truncate font-medium font-inter">{agent.name}</span>
+                                                <span className="flex-1 truncate font-medium">{agent.name}</span>
                                                 {selectedAgentId === agent.agent_id && (
                                                     <Check className="h-4 w-4 text-primary flex-shrink-0" />
                                                 )}
@@ -322,7 +322,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                     <div className="flex items-center justify-center w-8 h-8 bg-muted/60 border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
                                         <Cpu className="h-4 w-4" />
                                     </div>
-                                    <span className="flex-1 truncate font-medium font-inter">{model.label}</span>
+                                    <span className="flex-1 truncate font-medium">{model.label}</span>
                                     {selectedModel === model.id && (
                                         <Check className="h-4 w-4 text-primary flex-shrink-0" />
                                     )}

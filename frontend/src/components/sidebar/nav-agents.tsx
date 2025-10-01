@@ -122,7 +122,7 @@ const ThreadItem: React.FC<{
                 />
               )}
             </div>
-            <span className="flex-1 truncate font-inter">{thread.projectName}</span>
+            <span className="flex-1 truncate">{thread.projectName}</span>
             <span className="text-xs text-muted-foreground flex-shrink-0">
               {formatDate(thread.updatedAt)}
             </span>

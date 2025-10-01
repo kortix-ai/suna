@@ -53,7 +53,7 @@ const AgentItem: React.FC<{
             >
                 <Bot className="h-5 w-5" />
             </div>
-            <span className="flex-1 truncate font-inter">{agent.name}</span>
+            <span className="flex-1 truncate">{agent.name}</span>
             <span className="text-xs text-muted-foreground flex-shrink-0">
                 {formatDate(agent.updated_at || agent.created_at)}
             </span>
