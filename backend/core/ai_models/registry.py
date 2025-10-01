@@ -21,7 +21,7 @@ class ModelRegistry:
     def _initialize_models(self):
         
         self.register(Model(
-            id="anthropic/claude-sonnet-4-5-20250929" if is_local else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            id="anthropic/claude-sonnet-4-5-20250929", # if is_local else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0"
             name="Sonnet 4.5",
             provider=ModelProvider.ANTHROPIC,
             aliases=["claude-sonnet-4.5", "anthropic/claude-sonnet-4.5", "Claude Sonnet 4.5", "claude-sonnet-4-5-20250929", "global.anthropic.claude-sonnet-4-5-20250929-v1:0", "arn:aws:bedrock:us-west-2:935064898258:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0"],
@@ -42,7 +42,7 @@ class ModelRegistry:
             enabled=True,
             config=ModelConfig(
                 extra_headers={
-                    "anthropic-beta" if is_local else "anthropic_beta": "context-1m-2025-08-07"
+                    "anthropic-beta": "context-1m-2025-08-07" 
                 },
             )
         ))
@@ -69,7 +69,7 @@ class ModelRegistry:
             enabled=True,
             config=ModelConfig(
                 extra_headers={
-                    "anthropic-beta" if is_local else "anthropic_beta": "context-1m-2025-08-07"
+                    "anthropic-beta": "context-1m-2025-08-07" 
                 },
             )
         ))

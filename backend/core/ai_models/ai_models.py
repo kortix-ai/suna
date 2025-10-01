@@ -52,18 +52,6 @@ class ModelConfig:
     headers: Optional[Dict[str, str]] = None
     extra_headers: Optional[Dict[str, str]] = None
     
-    
-    def __post_init__(self):
-        """Set intelligent defaults and validate configuration."""
-        # Merge headers if both are provided
-        if self.headers and self.extra_headers:
-            merged_headers = self.headers.copy()
-            merged_headers.update(self.extra_headers)
-            self.extra_headers = merged_headers
-            self.headers = None  # Use extra_headers as the single source
-        elif self.headers and not self.extra_headers:
-            self.extra_headers = self.headers
-            self.headers = None
 
 
 @dataclass
@@ -118,9 +106,9 @@ class Model:
         params = {
             "model": self.id,
             "num_retries": 3,
-            "stream_options": {"include_usage": True},  # Default for all models
         }
         
+    
         # Apply model-specific configuration if available
         if self.config:
             # Provider & API configuration parameters
@@ -135,18 +123,22 @@ class Model:
                 if param_value is not None:
                     params[param_name] = param_value
             
-            # Handle headers specially
+            if self.config.headers:
+                params["headers"] = self.config.headers.copy()
             if self.config.extra_headers:
                 params["extra_headers"] = self.config.extra_headers.copy()
-            elif self.config.headers:
-                params["extra_headers"] = self.config.headers.copy()
         
         
         # Apply any runtime overrides
         for key, value in override_params.items():
             if value is not None:
-                # Handle extra_headers merging
-                if key == "extra_headers" and "extra_headers" in params:
+                # Handle headers and extra_headers merging separately
+                if key == "headers" and "headers" in params:
+                    if isinstance(params["headers"], dict) and isinstance(value, dict):
+                        params["headers"].update(value)
+                    else:
+                        params[key] = value
+                elif key == "extra_headers" and "extra_headers" in params:
                     if isinstance(params["extra_headers"], dict) and isinstance(value, dict):
                         params["extra_headers"].update(value)
                     else:
