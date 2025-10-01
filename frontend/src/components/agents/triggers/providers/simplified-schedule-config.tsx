@@ -357,6 +357,13 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
     }
   }, [oneTimeDate, oneTimeHour, oneTimeMinute]);
 
+  // Initialize recurring schedule on component mount if no preset is selected
+  useEffect(() => {
+    if (!selectedPreset && !config.cron_expression) {
+      handleRecurringScheduleChange();
+    }
+  }, []);
+
   const handlePresetSelect = (presetId: string) => {
     const allPresets = [...QUICK_PRESETS, ...RECURRING_PRESETS];
     const preset = allPresets.find(p => p.id === presetId);
@@ -384,17 +391,17 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
   };
 
   const generateCronFromRecurring = () => {
-    const minute = selectedMinute;
-    const hour = selectedHour;
+    const minute = selectedMinute || '0';
+    const hour = selectedHour || '9';
 
     switch (scheduleType) {
       case 'daily':
         return `${minute} ${hour} * * *`;
       case 'weekly':
-        const weekdays = selectedWeekdays.join(',');
+        const weekdays = selectedWeekdays.length > 0 ? selectedWeekdays.join(',') : '1';
         return `${minute} ${hour} * * ${weekdays}`;
       case 'monthly':
-        const monthDays = selectedMonthDays.join(',');
+        const monthDays = selectedMonthDays.length > 0 ? selectedMonthDays.join(',') : '1';
         return `${minute} ${hour} ${monthDays} * *`;
       default:
         return `${minute} ${hour} * * *`;
@@ -403,6 +410,13 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
 
   const handleRecurringScheduleChange = () => {
     const cronExpression = generateCronFromRecurring();
+    console.log('Generated cron expression:', cronExpression, {
+      scheduleType,
+      selectedHour,
+      selectedMinute,
+      selectedWeekdays,
+      selectedMonthDays
+    });
     onChange({
       ...config,
       cron_expression: cronExpression,
@@ -418,14 +432,24 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
     const newWeekdays = selectedWeekdays.includes(weekday)
       ? selectedWeekdays.filter(w => w !== weekday)
       : [...selectedWeekdays, weekday].sort();
-    setSelectedWeekdays(newWeekdays);
+    
+    // Prevent deselecting all weekdays (must have at least one)
+    if (newWeekdays.length > 0) {
+      setSelectedWeekdays(newWeekdays);
+      setTimeout(() => handleRecurringScheduleChange(), 0);
+    }
   };
 
   const handleMonthDayToggle = (day: string) => {
     const newDays = selectedMonthDays.includes(day)
       ? selectedMonthDays.filter(d => d !== day)
       : [...selectedMonthDays, day].sort((a, b) => parseInt(a) - parseInt(b));
-    setSelectedMonthDays(newDays);
+    
+    // Prevent deselecting all month days (must have at least one)
+    if (newDays.length > 0) {
+      setSelectedMonthDays(newDays);
+      setTimeout(() => handleRecurringScheduleChange(), 0);
+    }
   };
 
   const generateCronFromOneTime = () => {
@@ -658,7 +682,18 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
                           {/* Schedule Type */}
                           <div className="space-y-2">
                             <Label className="text-sm">How often should this run?</Label>
-                            <Select value={scheduleType} onValueChange={(value: 'daily' | 'weekly' | 'monthly') => setScheduleType(value)}>
+                            <Select value={scheduleType} onValueChange={(value: 'daily' | 'weekly' | 'monthly') => {
+                              setScheduleType(value);
+                              // Set appropriate defaults for the schedule type
+                              if (value === 'weekly' && selectedWeekdays.length === 5) {
+                                // If switching to weekly and currently have weekdays selected, set to just Monday
+                                setSelectedWeekdays(['1']);
+                              } else if (value === 'monthly' && selectedMonthDays.length !== 1) {
+                                // If switching to monthly, set to first day of month
+                                setSelectedMonthDays(['1']);
+                              }
+                              setTimeout(() => handleRecurringScheduleChange(), 0);
+                            }}>
                               <SelectTrigger>
                                 <SelectValue />
                               </SelectTrigger>
@@ -674,7 +709,10 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
                           <div className="space-y-2">
                             <Label className="text-sm">What time should it run?</Label>
                             <div className="flex gap-2 items-center">
-                              <Select value={selectedHour} onValueChange={setSelectedHour}>
+                              <Select value={selectedHour} onValueChange={(value) => {
+                                setSelectedHour(value);
+                                setTimeout(() => handleRecurringScheduleChange(), 0);
+                              }}>
                                 <SelectTrigger className="w-20">
                                   <SelectValue />
                                 </SelectTrigger>
@@ -687,7 +725,10 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
                                 </SelectContent>
                               </Select>
                               <span className="text-muted-foreground">:</span>
-                              <Select value={selectedMinute} onValueChange={setSelectedMinute}>
+                              <Select value={selectedMinute} onValueChange={(value) => {
+                                setSelectedMinute(value);
+                                setTimeout(() => handleRecurringScheduleChange(), 0);
+                              }}>
                                 <SelectTrigger className="w-20">
                                   <SelectValue />
                                 </SelectTrigger>
