@@ -125,17 +125,17 @@ export function Navbar() {
               : 'shadow-none px-3 md:px-7',
           )}
         >
-          <div className="flex h-[56px] items-center p-2 md:p-4">
+          <div className="flex h-[80px] md:h-[100px] items-center p-2 md:p-4">
             {/* Left Section - Logo */}
             <div className="flex items-center justify-start flex-shrink-0 w-auto md:w-[200px]">
               <Link href="/" className="flex items-center gap-2">
                 <Image
                   src="/adentic-icon.avif"
                   alt="Adentic"
-                  width={40}
-                  height={40}
+                  width={120}
+                  height={120}
                   priority
-                  className="h-10 w-10"
+                  className="h-16 w-16 md:h-20 md:w-20"
                 />
               </Link>
             </div>
@@ -222,10 +222,10 @@ export function Navbar() {
                     <Image
                       src="/adentic-icon.avif"
                       alt="Adentic"
-                      width={35}
-                      height={35}
+                      width={60}
+                      height={60}
                       priority
-                      className="h-8 w-8"
+                      className="h-12 w-12"
                     />
                   </Link>
                   <button
