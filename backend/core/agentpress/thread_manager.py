@@ -17,6 +17,7 @@ from langfuse.client import StatefulGenerationClient, StatefulTraceClient
 from core.services.langfuse import langfuse
 from datetime import datetime, timezone
 from core.billing.billing_integration import billing_integration
+from litellm.utils import token_counter
 
 ToolChoice = Literal["auto", "required", "none"]
 
@@ -305,8 +306,11 @@ class ThreadManager:
             if ENABLE_CONTEXT_MANAGER:
                 logger.debug(f"Context manager enabled, compressing {len(messages)} messages")
                 context_manager = ContextManager()
+
                 compressed_messages = context_manager.compress_messages(
-                    messages, llm_model, max_tokens=llm_max_tokens
+                    messages, llm_model, max_tokens=llm_max_tokens, 
+                    actual_total_tokens=None,  # Will be calculated inside
+                    system_prompt=system_prompt # KEY FIX: No caching during compression
                 )
                 logger.debug(f"Context compression completed: {len(messages)} -> {len(compressed_messages)} messages")
                 messages = compressed_messages
@@ -339,6 +343,10 @@ class ThreadManager:
                     )
                 except Exception as e:
                     logger.warning(f"Failed to update Langfuse generation: {e}")
+
+            # Log final prepared messages token count
+            final_prepared_tokens = token_counter(model=llm_model, messages=prepared_messages)
+            logger.info(f"📤 Final prepared messages being sent to LLM: {final_prepared_tokens} tokens")
 
             # Make LLM call
             try:
