@@ -167,7 +167,7 @@ export async function GET(request: NextRequest) {
                 bottom: '40px',
               }}
             >
-              <span style={{ color: '#64748b', fontSize: '20px' }}>Kortix Suna</span>
+              <span style={{ color: '#64748b', fontSize: '20px' }}>Adentic Adentic</span>
               <span style={{ color: '#334155', fontSize: '20px' }}>•</span>
               <span style={{ color: '#64748b', fontSize: '20px' }}>AI Agent Marketplace</span>
             </div>
@@ -228,7 +228,7 @@ export async function GET(request: NextRequest) {
                 color: '#94a3b8',
               }}
             >
-              Discover powerful AI agents on Kortix Suna
+              Discover powerful AI agents on Adentic Adentic
             </p>
           </div>
         </div>

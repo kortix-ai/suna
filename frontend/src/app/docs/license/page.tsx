@@ -23,7 +23,7 @@ export default function LicensePage() {
     <>
       <DocsHeader
         title="License"
-        description="Suna is open source software licensed under the Apache License, Version 2.0"
+        description="Adentic is open source software licensed under the Apache License, Version 2.0"
         breadcrumbs={breadcrumbs}
         lastUpdated="August 2025"
         showSeparator
@@ -32,7 +32,7 @@ export default function LicensePage() {
       />
       <DocsBody className="w-full h-[40vh] px-8 py-16 relative overflow-hidden rounded-3xl flex items-center justify-center border bg-background mb-12">
         <h1 className="text-xl tracking-tight text-foreground text-center">
-            <span className="font-semibold text-3xl">Suna is open source under the Apache 2.0 License. You can see the source code, self-host & contribute.</span>
+            <span className="font-semibold text-3xl">Adentic is open source under the Apache 2.0 License. You can see the source code, self-host & contribute.</span>
         </h1> 
         <Ripple/>
       </DocsBody>
@@ -40,8 +40,8 @@ export default function LicensePage() {
         <DocsBody className="mb-8">
           <h2 id="overview">Overview</h2>
           <p className="text-lg mb-6">
-            Suna is distributed under the Apache License 2.0, one of the most permissive and business-friendly open source licenses available.
-            This license allows you to use, modify, distribute, and sublicense Suna for both commercial and non-commercial purposes.
+            Adentic is distributed under the Apache License 2.0, one of the most permissive and business-friendly open source licenses available.
+            This license allows you to use, modify, distribute, and sublicense Adentic for both commercial and non-commercial purposes.
           </p>
         </DocsBody>
 
@@ -62,7 +62,7 @@ export default function LicensePage() {
         <DocsBullets variant="check" spacing="default" className="mb-8">
           <DocsBulletItem
             title="Commercial Use"
-            description="Use Suna for commercial purposes without any fees or royalties"
+            description="Use Adentic for commercial purposes without any fees or royalties"
           />
           <DocsBulletItem
             title="Modification"
@@ -70,7 +70,7 @@ export default function LicensePage() {
           />
           <DocsBulletItem
             title="Distribution"
-            description="Distribute original or modified versions of Suna"
+            description="Distribute original or modified versions of Adentic"
           />
           <DocsBulletItem
             title="Patent Use"
@@ -78,7 +78,7 @@ export default function LicensePage() {
           />
           <DocsBulletItem
             title="Private Use"
-            description="Use and modify Suna for private purposes without any obligations"
+            description="Use and modify Adentic for private purposes without any obligations"
           />
           <DocsBulletItem
             title="Sublicensing"
@@ -91,7 +91,7 @@ export default function LicensePage() {
         <DocsBody className="mb-8">
           <h2 id="conditions">Conditions</h2>
           <p className="text-lg mb-6">
-            When using Suna under the Apache License 2.0, you must:
+            When using Adentic under the Apache License 2.0, you must:
           </p>
         </DocsBody>
         <DocsBullets variant="default" spacing="default" className="mb-8">
@@ -124,7 +124,7 @@ export default function LicensePage() {
         <DocsBullets variant="default" spacing="default" className="mb-8">
           <DocsBulletItem
             title="No Trademark Use"
-            description="The license does not grant permission to use the trade names, trademarks, or service marks of Suna"
+            description="The license does not grant permission to use the trade names, trademarks, or service marks of Adentic"
           />
           <DocsBulletItem
             title="No Warranty"
@@ -138,7 +138,7 @@ export default function LicensePage() {
 
         <Alert className="mb-8">
           <AlertDescription>
-            <strong>Patent Retaliation Clause:</strong> If you initiate patent litigation against any entity alleging that Suna constitutes patent infringement, 
+            <strong>Patent Retaliation Clause:</strong> If you initiate patent litigation against any entity alleging that Adentic constitutes patent infringement, 
             your patent licenses under this license will terminate.
           </AlertDescription>
         </Alert>
@@ -151,7 +151,7 @@ export default function LicensePage() {
         
         <div className="space-y-6">
           <div className="border-l-4 border-primary pl-6">
-            <h3 className="font-semibold mb-2">Can I use Suna in my commercial product?</h3>
+            <h3 className="font-semibold mb-2">Can I use Adentic in my commercial product?</h3>
             <p className="text-muted-foreground">
               Yes! The Apache 2.0 license allows commercial use without any fees or restrictions.
             </p>
@@ -167,7 +167,7 @@ export default function LicensePage() {
           <div className="border-l-4 border-primary pl-6">
             <h3 className="font-semibold mb-2">Can I change the license for my derivative work?</h3>
             <p className="text-muted-foreground">
-              You can apply different license terms to your modifications, but the original Suna code remains under Apache 2.0.
+              You can apply different license terms to your modifications, but the original Adentic code remains under Apache 2.0.
             </p>
           </div>
           
@@ -184,7 +184,7 @@ export default function LicensePage() {
         <DocsBody className="mb-8">
           <h2 id="resources">Resources</h2>
           <p className="text-lg mb-6">
-            Learn more about the Apache License 2.0 and how to use Suna:
+            Learn more about the Apache License 2.0 and how to use Adentic:
           </p>
         </DocsBody>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">

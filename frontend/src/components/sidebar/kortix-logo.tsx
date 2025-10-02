@@ -4,10 +4,10 @@ import Image from 'next/image';
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
 
-interface KortixLogoProps {
+interface AdenticLogoProps {
   size?: number;
 }
-export function KortixLogo({ size = 24 }: KortixLogoProps) {
+export function AdenticLogo({ size = 24 }: AdenticLogoProps) {
   const { theme, systemTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
@@ -16,18 +16,20 @@ export function KortixLogo({ size = 24 }: KortixLogoProps) {
     setMounted(true);
   }, []);
 
-  const shouldInvert = mounted && (
-    theme === 'dark' || (theme === 'system' && systemTheme === 'dark')
-  );
-
+  // Use AVIF icon for small logo instances
   return (
     <Image
-        src="/kortix-symbol.svg"
-        alt="Kortix"
-        width={size}
-        height={size}
-        className={`${shouldInvert ? 'invert' : ''} flex-shrink-0`}
-        style={{ width: size, height: size, minWidth: size, minHeight: size }}
-      />
+      src="/adentic-icon.avif"
+      alt="Adentic"
+      width={size}
+      height={size}
+      className="object-contain"
+      style={{
+        width: size,
+        height: size,
+        minWidth: size,
+        minHeight: size
+      }}
+    />
   );
 }

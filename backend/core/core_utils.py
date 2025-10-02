@@ -577,7 +577,7 @@ async def check_agent_count_limit(client, account_id: str) -> Dict[str, Any]:
     Returns:
         Dict containing:
         - can_create: bool - whether user can create another agent
-        - current_count: int - current number of custom agents (excluding Suna defaults)
+        - current_count: int - current number of custom agents (excluding Adentic defaults)
         - limit: int - maximum agents allowed for this tier
         - tier_name: str - subscription tier name
     
@@ -604,7 +604,7 @@ async def check_agent_count_limit(client, account_id: str) -> Dict[str, Any]:
                 non_suna_agents.append(agent)
                 
         current_count = len(non_suna_agents)
-        logger.debug(f"Account {account_id} has {current_count} custom agents (excluding Suna defaults)")
+        logger.debug(f"Account {account_id} has {current_count} custom agents (excluding Adentic defaults)")
         
         try:
             from core.billing import subscription_service

@@ -19,11 +19,7 @@ export function FooterSection() {
     setMounted(true);
   }, []);
 
-  const logoSrc = !mounted
-    ? '/kortix-logo.svg'
-    : resolvedTheme === 'dark'
-      ? '/kortix-logo-white.svg'
-      : '/kortix-logo.svg';
+  const logoSrc = '/adentic-logo-footer.png';
 
   return (
     <footer id="footer" className="w-full pb-0 px-6">
@@ -34,10 +30,11 @@ export function FooterSection() {
               <Link href="/" className="flex items-center gap-2">
                 <Image
                   src={logoSrc}
-                  alt="Kortix Logo"
-                  width={122}
-                  height={22}
+                  alt="Adentic Logo"
+                  width={200}
+                  height={134}
                   priority
+                  className="h-32 w-auto"
                 />
               </Link>
               <p className="tracking-tight text-muted-foreground font-medium">
@@ -46,7 +43,7 @@ export function FooterSection() {
 
               <div className="flex items-center gap-4">
             <a
-              href="https://github.com/kortix-ai/suna"
+              href="https://www.linkedin.com/company/tryadentic"
               target="_blank"
               rel="noopener noreferrer"
               aria-label="GitHub"
@@ -153,6 +150,9 @@ export function FooterSection() {
           />
         </div>
       </Link>
+      <div className="text-center py-4 text-sm text-muted-foreground">
+        © 2025 Adentic. All rights reserved.
+      </div>
     </footer>
   );
 }

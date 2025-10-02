@@ -4,7 +4,7 @@ import os
 
 
 def extract_agent_config(agent_data: Dict[str, Any], version_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Extract agent configuration with simplified logic for Suna vs custom agents."""
+    """Extract agent configuration with simplified logic for Adentic vs custom agents."""
     agent_id = agent_data.get('agent_id', 'Unknown')
     metadata = agent_data.get('metadata', {})
     is_suna_default = metadata.get('is_suna_default', False)
@@ -14,7 +14,7 @@ def extract_agent_config(agent_data: Dict[str, Any], version_data: Optional[Dict
         print(f"[DEBUG] extract_agent_config: Called for agent {agent_id}, is_suna_default={is_suna_default}")
         print(f"[DEBUG] extract_agent_config: Input agent_data has icon_name={agent_data.get('icon_name')}, icon_color={agent_data.get('icon_color')}, icon_background={agent_data.get('icon_background')}")
     
-    # Handle Suna agents with special logic
+    # Handle Adentic agents with special logic
     if is_suna_default:
         return _extract_suna_agent_config(agent_data, version_data)
     
@@ -23,13 +23,13 @@ def extract_agent_config(agent_data: Dict[str, Any], version_data: Optional[Dict
 
 
 def _extract_suna_agent_config(agent_data: Dict[str, Any], version_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """Extract config for Suna agents - always use central config with user customizations."""
+    """Extract config for Adentic agents - always use central config with user customizations."""
     from core.suna_config import SUNA_CONFIG
     
     agent_id = agent_data.get('agent_id', 'Unknown')
-    logger.debug(f"Using Suna central config for agent {agent_id}")
+    logger.debug(f"Using Adentic central config for agent {agent_id}")
     
-    # Start with central Suna config
+    # Start with central Adentic config
     config = {
         'agent_id': agent_data['agent_id'],
         'name': SUNA_CONFIG['name'],

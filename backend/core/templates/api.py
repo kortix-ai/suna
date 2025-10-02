@@ -12,7 +12,7 @@ from .template_service import (
     AgentTemplate,
     TemplateNotFoundError,
     TemplateAccessDeniedError,
-    SunaDefaultAgentTemplateError
+    AdenticDefaultAgentTemplateError
 )
 from .installation_service import (
     get_installation_service,
@@ -156,8 +156,8 @@ async def create_template_from_agent(
     except TemplateAccessDeniedError as e:
         logger.warning(f"Template creation failed - access denied: {e}")
         raise HTTPException(status_code=403, detail=str(e))
-    except SunaDefaultAgentTemplateError as e:
-        logger.warning(f"Template creation failed - Suna default agent: {e}")
+    except AdenticDefaultAgentTemplateError as e:
+        logger.warning(f"Template creation failed - Adentic default agent: {e}")
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         try:
@@ -350,7 +350,7 @@ async def get_marketplace_templates(
     limit: Optional[int] = Query(20, ge=1, le=100, description="Number of items per page"),
     search: Optional[str] = Query(None, description="Search term for name"),
     tags: Optional[str] = Query(None, description="Comma-separated list of tags to filter by"),
-    is_kortix_team: Optional[bool] = Query(None, description="Filter for Kortix team templates"),
+    is_kortix_team: Optional[bool] = Query(None, description="Filter for Adentic team templates"),
     mine: Optional[bool] = Query(None, description="Filter to show only user's own templates"),
     sort_by: Optional[str] = Query("download_count", description="Sort field: download_count, newest, name"),
     sort_order: Optional[str] = Query("desc", description="Sort order: asc, desc"),

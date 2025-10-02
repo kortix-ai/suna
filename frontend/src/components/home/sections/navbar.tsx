@@ -103,11 +103,7 @@ export function Navbar() {
   const toggleDrawer = () => setIsDrawerOpen((prev) => !prev);
   const handleOverlayClick = () => setIsDrawerOpen(false);
 
-  const logoSrc = !mounted
-    ? '/kortix-logo.svg'
-    : resolvedTheme === 'dark'
-      ? '/kortix-logo-white.svg'
-      : '/kortix-logo.svg';
+  const logoSrc = '/logo-transparent.png';
 
   return (
     <header
@@ -132,15 +128,15 @@ export function Navbar() {
           <div className="flex h-[56px] items-center p-2 md:p-4">
             {/* Left Section - Logo */}
             <div className="flex items-center justify-start flex-shrink-0 w-auto md:w-[200px]">
-              <Link href="/" className="flex items-center gap-3">
+              <Link href="/" className="flex items-center gap-2">
                 <Image
-                  src={logoSrc}
-                  alt="Kortix Logo"
-                  width={80}
-                  height={14}
-                  className="md:w-[100px] md:h-[18px]"
+                  src="/adentic-icon.avif"
+                  alt="Adentic"
+                  width={40}
+                  height={40}
                   priority
-                /> 
+                  className="h-10 w-10"
+                />
               </Link>
             </div>
 
@@ -222,17 +218,15 @@ export function Navbar() {
               {/* Mobile menu content */}
               <div className="flex flex-col gap-4">
                 <div className="flex items-center justify-between">
-                  <Link href="/" className="flex items-center gap-3">
+                  <Link href="/" className="flex items-center gap-2">
                     <Image
-                      src={logoSrc}
-                      alt="Kortix Logo"
-                      width={120}
-                      height={22}
+                      src="/adentic-icon.avif"
+                      alt="Adentic"
+                      width={35}
+                      height={35}
                       priority
+                      className="h-8 w-8"
                     />
-                    <span className="font-medium text-primary text-sm">
-                      / Suna
-                    </span>
                   </Link>
                   <button
                     onClick={toggleDrawer}

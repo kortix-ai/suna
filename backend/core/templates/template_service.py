@@ -178,7 +178,7 @@ class TemplateNotFoundError(Exception):
 class TemplateAccessDeniedError(Exception):
     pass
 
-class SunaDefaultAgentTemplateError(Exception):
+class AdenticDefaultAgentTemplateError(Exception):
     pass
 
 class TemplateService:
@@ -202,7 +202,7 @@ class TemplateService:
             raise TemplateAccessDeniedError("You can only create templates from your own agents")
         
         if self._is_suna_default_agent(agent):
-            raise SunaDefaultAgentTemplateError("Cannot create template from Suna default agent")
+            raise AdenticDefaultAgentTemplateError("Cannot create template from Adentic default agent")
         
         version_config = await self._get_agent_version_config(agent)
         if not version_config:

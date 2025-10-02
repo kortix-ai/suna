@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useAgent } from '@/hooks/react-query/agents/use-agents';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { AdenticLogo } from '@/components/sidebar/kortix-logo';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { cn } from '@/lib/utils';
 
@@ -16,7 +16,7 @@ interface AgentAvatarProps {
   iconColor?: string;
   backgroundColor?: string;
   agentName?: string;
-  isSunaDefault?: boolean;
+  isAdenticDefault?: boolean;
   
   // Common props
   size?: number;
@@ -26,14 +26,14 @@ interface AgentAvatarProps {
 export const AgentAvatar: React.FC<AgentAvatarProps> = ({ 
   // Agent fetch props
   agentId, 
-  fallbackName = "Suna",
+  fallbackName = "Adentic",
   
   // Direct props
   iconName: propIconName,
   iconColor: propIconColor,
   backgroundColor: propBackgroundColor,
   agentName: propAgentName,
-  isSunaDefault: propIsSunaDefault,
+  isAdenticDefault: propIsAdenticDefault,
   
   // Common props
   size = 16, 
@@ -46,7 +46,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   const iconColor = propIconColor ?? agent?.icon_color ?? '#000000';
   const backgroundColor = propBackgroundColor ?? agent?.icon_background ?? '#F3F4F6';
   const agentName = propAgentName ?? agent?.name ?? fallbackName;
-  const isSuna = propIsSunaDefault ?? agent?.metadata?.is_suna_default;
+  const isAdentic = propIsAdenticDefault ?? agent?.metadata?.is_suna_default;
 
   // Calculate responsive border radius - proportional to size
   // Use a ratio that prevents full rounding while maintaining nice corners
@@ -55,7 +55,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   };
 
   // Show skeleton for loading state or when no data is available
-  if ((isLoading && agentId) || (!agent && !agentId && !propIconName && !propIsSunaDefault)) {
+  if ((isLoading && agentId) || (!agent && !agentId && !propIconName && !propIsAdenticDefault)) {
     return (
       <div 
         className={cn("bg-muted animate-pulse border", className)}
@@ -64,7 +64,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
     );
   }
 
-  if (isSuna) {
+  if (isAdentic) {
     return (
       <div 
         className={cn(
@@ -73,7 +73,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
         )}
         style={{ width: size, height: size, ...borderRadiusStyle }}
       >
-        <KortixLogo size={size * 0.6} />
+        <AdenticLogo size={size * 0.6} />
       </div>
     );
   }
@@ -126,7 +126,7 @@ interface AgentNameProps {
 
 export const AgentName: React.FC<AgentNameProps> = ({ 
   agentId, 
-  fallback = "Suna" 
+  fallback = "Adentic" 
 }) => {
   const { data: agent, isLoading } = useAgent(agentId || '');
 

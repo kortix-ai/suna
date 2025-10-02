@@ -454,7 +454,7 @@ export function useDeleteTemplate() {
   });
 }
 
-export function useKortixTeamTemplates() {
+export function useAdenticTeamTemplates() {
   return useMarketplaceTemplates({
     is_kortix_team: true,
     limit: 10

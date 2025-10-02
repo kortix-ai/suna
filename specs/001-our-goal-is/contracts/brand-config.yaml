@@ -1,0 +1,103 @@
+# Brand Configuration Contract
+# This defines how brand configuration is accessed throughout the application
+
+openapi: 3.0.0
+info:
+  title: Brand Configuration API
+  version: 1.0.0
+  description: Configuration endpoints for Adentic brand assets and settings
+
+paths:
+  /api/brand/config:
+    get:
+      summary: Get brand configuration
+      description: Returns the current brand configuration including colors, text, and social links
+      operationId: getBrandConfig
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrandConfig'
+              example:
+                name: "Adentic"
+                primaryColor: "#CC3A00"
+                copyrightText: "© 2025 Adentic. All rights reserved."
+                social:
+                  linkedin: "https://www.linkedin.com/company/tryadentic"
+                  twitter: "https://twitter.com/adentic"
+                  github: "https://github.com/adentic"
+                assets:
+                  logoUrl: "/logo.svg"
+                  faviconUrl: "/favicon.ico"
+                  ogImageUrl: "/og-image.png"
+
+components:
+  schemas:
+    BrandConfig:
+      type: object
+      required:
+        - name
+        - primaryColor
+        - copyrightText
+        - social
+        - assets
+      properties:
+        name:
+          type: string
+          description: Brand name
+          example: "Adentic"
+        primaryColor:
+          type: string
+          pattern: '^#[0-9A-Fa-f]{6}$'
+          description: Primary brand color in hex format
+          example: "#CC3A00"
+        copyrightText:
+          type: string
+          description: Copyright notice for footer
+          example: "© 2025 Adentic. All rights reserved."
+        social:
+          type: object
+          required:
+            - linkedin
+          properties:
+            linkedin:
+              type: string
+              format: uri
+              description: LinkedIn company page URL
+              example: "https://www.linkedin.com/company/tryadentic"
+            twitter:
+              type: string
+              format: uri
+              description: Twitter/X profile URL
+            github:
+              type: string
+              format: uri
+              description: GitHub organization URL
+            facebook:
+              type: string
+              format: uri
+              description: Facebook page URL
+        assets:
+          type: object
+          required:
+            - logoUrl
+            - faviconUrl
+          properties:
+            logoUrl:
+              type: string
+              description: Primary logo URL path
+              example: "/logo.svg"
+            faviconUrl:
+              type: string
+              description: Favicon URL path
+              example: "/favicon.ico"
+            ogImageUrl:
+              type: string
+              description: OpenGraph image URL path
+              example: "/og-image.png"
+            appleTouchIconUrl:
+              type: string
+              description: Apple touch icon URL path
+              example: "/apple-touch-icon.png"

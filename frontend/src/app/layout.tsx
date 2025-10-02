@@ -1,7 +1,7 @@
 import { ThemeProvider } from '@/components/home/theme-provider';
 import { siteConfig } from '@/lib/site';
 import type { Metadata, Viewport } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
+import { Playfair_Display, Geist_Mono } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
 import { Toaster } from '@/components/ui/sonner';
@@ -12,9 +12,10 @@ import Script from 'next/script';
 import { PostHogIdentify } from '@/components/posthog-identify';
 import '@/lib/polyfills'; // Load polyfills early
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
+const playfairDisplay = Playfair_Display({
+  variable: '--font-playfair',
   subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800', '900'],
 });
 
 const geistMono = Geist_Mono({
@@ -23,7 +24,7 @@ const geistMono = Geist_Mono({
 });
 
 export const viewport: Viewport = {
-  themeColor: 'black',
+  themeColor: '#CC3A00',
 };
 
 export const metadata: Metadata = {
@@ -33,7 +34,7 @@ export const metadata: Metadata = {
     template: `%s - ${siteConfig.name}`,
   },
   description:
-    'Kortix is a fully open source AI assistant that helps you accomplish real-world tasks with ease. Through natural conversation, Kortix becomes your digital companion for research, data analysis, and everyday challenges.',
+    'Adentic is a fully open source AI assistant platform that helps you build, manage, and train AI agents. Through natural conversation, Adentic becomes your platform for creating intelligent digital workers.',
   keywords: [
     'AI',
     'artificial intelligence',
@@ -45,13 +46,13 @@ export const metadata: Metadata = {
     'research',
     'data analysis',
   ],
-  authors: [{ name: 'Kortix Team', url: 'https://suna.so' }],
+  authors: [{ name: 'Adentic Team', url: 'https://suna.so' }],
   creator:
-    'Kortix Team',
+    'Adentic Team',
   publisher:
-    'Kortix Team',
+    'Adentic Team',
   category: 'Technology',
-  applicationName: 'Suna',
+  applicationName: 'Adentic',
   formatDetection: {
     telephone: false,
     email: false,
@@ -66,17 +67,17 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: 'Suna - Open Source Generalist AI Worker',
+    title: 'Adentic - Open Source Generalist AI Worker',
     description:
-      'Suna is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
+      'Adentic is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
     url: siteConfig.url,
-    siteName: 'Suna',
+    siteName: 'Adentic',
     images: [
       {
         url: '/banner.png',
         width: 1200,
         height: 630,
-        alt: 'Suna - Open Source Generalist AI Worker',
+        alt: 'Adentic - Open Source Generalist AI Worker',
         type: 'image/png',
       },
     ],
@@ -85,9 +86,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Suna - Open Source Generalist AI Worker',
+    title: 'Adentic - Open Source Generalist AI Worker',
     description:
-      'Suna is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
+      'Adentic is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
     creator: '@kortixai',
     site: '@kortixai',
     images: [
@@ -95,7 +96,7 @@ export const metadata: Metadata = {
         url: '/banner.png',
         width: 1200,
         height: 630,
-        alt: 'Suna - Open Source Generalist AI Worker',
+        alt: 'Adentic - Open Source Generalist AI Worker',
       },
     ],
   },
@@ -129,7 +130,7 @@ export default function RootLayout({
       </head>
 
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased font-sans bg-background`}
+        className={`${playfairDisplay.variable} ${geistMono.variable} antialiased font-sans bg-background`}
       >
         <noscript>
           <iframe

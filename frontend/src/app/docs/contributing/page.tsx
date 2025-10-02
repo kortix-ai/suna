@@ -19,8 +19,8 @@ export default function ContributingPage() {
   return (
     <>
       <DocsHeader
-        title="Contributing to Suna"
-        description="Help make Suna better for everyone! We welcome contributions from the community"
+        title="Contributing to Adentic"
+        description="Help make Adentic better for everyone! We welcome contributions from the community"
         breadcrumbs={breadcrumbs}
         lastUpdated="August 2025"
         showSeparator
@@ -38,7 +38,7 @@ export default function ContributingPage() {
         <DocsBullets variant="check" spacing="default" className="mb-8">
           <DocsBulletItem
             title="Fork the Repository"
-            description="Create your own fork of the Kortix repository on GitHub"
+            description="Create your own fork of the Adentic repository on GitHub"
           />
           <DocsBulletItem
             title="Clone Locally"
@@ -59,7 +59,7 @@ export default function ContributingPage() {
         <DocsBody className="mb-8">
           <h2 id="ways-to-contribute">Ways to Contribute</h2>
           <p className="text-lg mb-6">
-            There are many ways to help improve Kortix:
+            There are many ways to help improve Adentic:
           </p>
         </DocsBody>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">

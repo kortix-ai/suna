@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Suna Agent Installation Script for Individual Users
+Adentic Agent Installation Script for Individual Users
 
-Simple script to install Suna agents for users by email address.
+Simple script to install Adentic agents for users by email address.
 
 Usage:
-    # Install Suna for a user
+    # Install Adentic for a user
     python install_suna_for_user.py user@example.com
     
     # Install with replacement (if agent already exists)
@@ -25,15 +25,15 @@ from typing import Optional, Dict, Any
 backend_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(backend_dir))
 
-from core.utils.suna_default_agent_service import SunaDefaultAgentService
+from core.utils.suna_default_agent_service import AdenticDefaultAgentService
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 
 
-class SunaUserInstaller:
+class AdenticUserInstaller:
     def __init__(self):
         self.db = DBConnection()
-        self.service = SunaDefaultAgentService(self.db)
+        self.service = AdenticDefaultAgentService(self.db)
     
     async def initialize(self):
         await self.db.initialize()
@@ -100,36 +100,36 @@ class SunaUserInstaller:
         account_id = account['id']
         print(f"✅ Found account: {account['name']} ({account_id})")
         
-        print(f"🚀 Installing Suna agent...")
+        print(f"🚀 Installing Adentic agent...")
         agent_id = await self.service.install_suna_agent_for_user(
             account_id, 
             replace_existing=replace
         )
         
         if agent_id:
-            print(f"✅ Successfully installed Suna agent!")
+            print(f"✅ Successfully installed Adentic agent!")
             print(f"   🤖 Agent ID: {agent_id}")
             print(f"   👤 User: {email}")
             print(f"   📦 Account: {account_id}")
         else:
-            print(f"❌ Failed to install Suna agent for {email}")
+            print(f"❌ Failed to install Adentic agent for {email}")
 
 
 
 async def main():
     parser = argparse.ArgumentParser(
-        description="Install Suna agent for a user by email",
+        description="Install Adentic agent for a user by email",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__
     )
     
     parser.add_argument('email', help='Email address of the user')
     parser.add_argument('--replace', action='store_true', 
-                       help='Replace existing Suna agent if present')
+                       help='Replace existing Adentic agent if present')
     
     args = parser.parse_args()
     
-    installer = SunaUserInstaller()
+    installer = AdenticUserInstaller()
     
     try:
         await installer.initialize()

@@ -57,7 +57,7 @@ export const DocsMobileHeader = () => {
       <div className="flex items-center justify-between p-4">
         <div>
           <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-primary/80 bg-clip-text text-transparent">
-            Suna Docs
+            Adentic Docs
           </h1>
         </div>
         
@@ -91,7 +91,7 @@ export const DocsMobileHeader = () => {
               {/* Logo/Title */}
               <div className="mb-8">
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/80 bg-clip-text text-transparent">
-                  Suna Docs
+                  Adentic Docs
                 </h1>
                 <p className="text-sm text-muted-foreground mt-1">
                   Build powerful AI agents

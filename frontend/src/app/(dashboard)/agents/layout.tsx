@@ -2,11 +2,11 @@ import { Metadata } from 'next';
 import { redirect } from 'next/navigation';
 
 export const metadata: Metadata = {
-  title: 'Agent Conversation | Kortix Suna',
-  description: 'Interactive agent conversation powered by Kortix Suna',
+  title: 'Agent Conversation | Adentic Adentic',
+  description: 'Interactive agent conversation powered by Adentic Adentic',
   openGraph: {
-    title: 'Agent Conversation | Kortix Suna',
-    description: 'Interactive agent conversation powered by Kortix Suna',
+    title: 'Agent Conversation | Adentic Adentic',
+    description: 'Interactive agent conversation powered by Adentic Adentic',
     type: 'website',
   },
 };

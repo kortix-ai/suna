@@ -26,20 +26,20 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar"
 import { ThemeToggle } from "./home/theme-toggle"
-import { KortixLogo } from "./sidebar/kortix-logo"
+import { AdenticLogo } from "./sidebar/kortix-logo"
 import Image from "next/image"
 import { useEffect } from "react"
 import { useTheme } from "next-themes"
 
 const data = {
   user: {
-    name: "Kortix User",
+    name: "Adentic User",
     email: "docs@kortix.ai",
     avatar: "/favicon.png",
   },
   teams: [
     {
-      name: "Kortix AI",
+      name: "Adentic AI",
       logo: GalleryVerticalEnd,
       plan: "Open Source",
     },
@@ -49,7 +49,7 @@ const data = {
       title: "Getting Started",
       items: [
         {
-          title: "What is Kortix?",
+          title: "What is Adentic?",
           url: "/docs/introduction",
         },
         {
@@ -103,11 +103,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     setMounted(true);
   }, []);
 
-  const logoSrc = !mounted
-    ? '/kortix-logo.svg'
-    : resolvedTheme === 'dark'
-      ? '/kortix-logo-white.svg'
-      : '/kortix-logo.svg';
+  // Using text-based branding instead of logo files
   
 
   const isActive = (url: string) => {
@@ -118,12 +114,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     <Sidebar className="w-72 [&_[data-sidebar=sidebar]]:bg-white dark:[&_[data-sidebar=sidebar]]:bg-black border-none" {...props}>
       <SidebarHeader className="bg-transparent p-6 px-2">
         <Image
-          src={logoSrc}
-          alt="Kortix Logo"
-          width={80}
-          height={14}
-          className="md:w-[100px] md:h-[18px]"
+          src="/adentic-icon.avif"
+          alt="Adentic"
+          width={50}
+          height={50}
           priority
+          className="h-12 w-12"
         /> 
       </SidebarHeader>
       <SidebarContent className="px-2 bg-transparent scrollbar-thin scrollbar-thumb-primary/20 scrollbar-track-transparent">

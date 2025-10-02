@@ -21,7 +21,7 @@ export default function DocsLayout({
           <div className="lg:hidden bg-white dark:bg-black fixed top-0 left-0 right-0 z-50 backdrop-blur-sm h-16">
             <div className="flex items-center justify-between px-4 h-full">
               <SidebarTrigger className="-ml-1" />
-              <h1 className="font-semibold truncate">Suna Docs</h1>
+              <h1 className="font-semibold truncate">Adentic Docs</h1>
             </div>
           </div>
           <div className="flex h-full">

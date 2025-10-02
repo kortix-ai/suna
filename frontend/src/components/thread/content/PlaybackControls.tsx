@@ -481,11 +481,9 @@ export const PlaybackControls = ({
               <div className="flex items-center justify-center w-6 h-6 rounded-md overflow-hidden bg-primary/10">
                 <Link href="/">
                   <img
-                    src="/kortix-symbol.svg"
-                    alt="Kortix"
-                    width={16}
-                    height={16}
-                    className="object-contain"
+                    src="/adentic-icon.avif"
+                    alt="Adentic"
+                    className="w-full h-full object-cover"
                   />
                 </Link>
               </div>

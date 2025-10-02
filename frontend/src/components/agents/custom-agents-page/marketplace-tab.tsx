@@ -81,7 +81,7 @@ export const MarketplaceTab = ({
             <SelectContent className='rounded-xl'>
               <SelectItem className='rounded-xl' value="all">All Agents</SelectItem>
               <SelectItem className='rounded-xl' value="mine">Mine</SelectItem>
-              <SelectItem className='rounded-xl' value="kortix">Kortix Verified</SelectItem>
+              <SelectItem className='rounded-xl' value="kortix">Adentic Verified</SelectItem>
               <SelectItem className='rounded-xl' value="community">Community</SelectItem>
             </SelectContent>
           </Select>

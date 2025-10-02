@@ -112,7 +112,7 @@ const deliverables: DeliverableType[] = [
               {['Contacted', 'Interview', 'Pending', 'Contacted', 'New', 'Interview', 'Contacted', 'New', 'Pending', 'New', 'Contacted', 'New'].map((status, i) => (
                 <div key={i} className={`h-4 rounded text-xs flex items-center justify-center ${
                   status === 'Interview' ? 'bg-yellow-200 dark:bg-yellow-800' :
-                  status === 'Contacted' ? 'bg-blue-200 dark:bg-blue-800' :
+                  status === 'Contacted' ? 'bg-orange-200 dark:bg-orange-800' :
                   status === 'Pending' ? 'bg-orange-200 dark:bg-orange-800' :
                   'bg-gray-200 dark:bg-gray-800'
                 }`}>
@@ -166,40 +166,40 @@ const deliverables: DeliverableType[] = [
     type: 'Documentation',
     description: 'Produce detailed, well-structured documentation that makes complex information accessible. From technical manuals to user guides, our AI creates clear, comprehensive documentation that improves understanding and reduces support overhead.',
     preview: (
-      <div className="w-full h-full bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 rounded-2xl p-6 border border-blue-200/50 dark:border-blue-800/50 shadow-2xl">
+      <div className="w-full h-full bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 rounded-2xl p-6 border border-orange-200/50 dark:border-orange-800/50 shadow-2xl">
         <div className="space-y-4 h-full">
-          <div className="h-6 bg-blue-200 dark:bg-blue-800 rounded w-2/3"></div>
+          <div className="h-6 bg-orange-200 dark:bg-orange-800 rounded w-2/3"></div>
           
           <div className="space-y-2">
-            <div className="h-3 bg-blue-100 dark:bg-blue-900 rounded w-full"></div>
-            <div className="h-3 bg-blue-100 dark:bg-blue-900 rounded w-11/12"></div>
-            <div className="h-3 bg-blue-100 dark:bg-blue-900 rounded w-10/12"></div>
+            <div className="h-3 bg-orange-100 dark:bg-orange-900 rounded w-full"></div>
+            <div className="h-3 bg-orange-100 dark:bg-orange-900 rounded w-11/12"></div>
+            <div className="h-3 bg-orange-100 dark:bg-orange-900 rounded w-10/12"></div>
           </div>
           
           <div className="pt-2">
-            <div className="h-4 bg-blue-200 dark:bg-blue-800 rounded w-1/2 mb-2"></div>
+            <div className="h-4 bg-orange-200 dark:bg-orange-800 rounded w-1/2 mb-2"></div>
             <div className="space-y-2">
-              <div className="h-3 bg-blue-100 dark:bg-blue-900 rounded w-full"></div>
-              <div className="h-3 bg-blue-100 dark:bg-blue-900 rounded w-9/12"></div>
-              <div className="h-3 bg-blue-100 dark:bg-blue-900 rounded w-10/12"></div>
-              <div className="h-3 bg-blue-100 dark:bg-blue-900 rounded w-8/12"></div>
+              <div className="h-3 bg-orange-100 dark:bg-orange-900 rounded w-full"></div>
+              <div className="h-3 bg-orange-100 dark:bg-orange-900 rounded w-9/12"></div>
+              <div className="h-3 bg-orange-100 dark:bg-orange-900 rounded w-10/12"></div>
+              <div className="h-3 bg-orange-100 dark:bg-orange-900 rounded w-8/12"></div>
             </div>
           </div>
           
           <div className="pt-2">
-            <div className="h-4 bg-blue-200 dark:bg-blue-800 rounded w-2/5 mb-2"></div>
+            <div className="h-4 bg-orange-200 dark:bg-orange-800 rounded w-2/5 mb-2"></div>
             <div className="space-y-2">
-              <div className="h-3 bg-blue-100 dark:bg-blue-900 rounded w-full"></div>
-              <div className="h-3 bg-blue-100 dark:bg-blue-900 rounded w-11/12"></div>
-              <div className="h-3 bg-blue-100 dark:bg-blue-900 rounded w-7/12"></div>
+              <div className="h-3 bg-orange-100 dark:bg-orange-900 rounded w-full"></div>
+              <div className="h-3 bg-orange-100 dark:bg-orange-900 rounded w-11/12"></div>
+              <div className="h-3 bg-orange-100 dark:bg-orange-900 rounded w-7/12"></div>
             </div>
           </div>
           
-          <div className="bg-blue-100 dark:bg-blue-900/50 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
-            <div className="h-3 bg-blue-200 dark:bg-blue-800 rounded w-1/3 mb-2"></div>
+          <div className="bg-orange-100 dark:bg-orange-900/50 rounded-lg p-3 border border-orange-200 dark:border-orange-800">
+            <div className="h-3 bg-orange-200 dark:bg-orange-800 rounded w-1/3 mb-2"></div>
             <div className="space-y-1">
-              <div className="h-2 bg-blue-150 dark:bg-blue-850 rounded w-full"></div>
-              <div className="h-2 bg-blue-150 dark:bg-blue-850 rounded w-4/5"></div>
+              <div className="h-2 bg-orange-150 dark:bg-orange-850 rounded w-full"></div>
+              <div className="h-2 bg-orange-150 dark:bg-orange-850 rounded w-4/5"></div>
             </div>
           </div>
         </div>

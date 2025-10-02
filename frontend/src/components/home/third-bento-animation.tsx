@@ -114,11 +114,11 @@ export function AITaskExecution({
           }}
           className="relative"
         >
-          <div className="size-12 bg-black rounded-full flex items-center justify-center">
-            <img 
-              src="/kortix-symbol.svg" 
-              alt="Kortix Symbol" 
-              className="size-6 filter brightness-0 invert"
+          <div className="size-12 bg-black rounded-full flex items-center justify-center overflow-hidden">
+            <img
+              src="/adentic-icon.avif"
+              alt="Adentic"
+              className="w-full h-full object-cover"
             />
           </div>
           {/* Pulsing ring */}

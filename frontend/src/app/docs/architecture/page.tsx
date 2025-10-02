@@ -17,7 +17,7 @@ export default function ArchitecturePage() {
     <>
       <DocsHeader
         title="Platform Architecture"
-        subtitle="Understanding the core components and design of the Kortix platform"
+        subtitle="Understanding the core components and design of the Adentic platform"
         breadcrumbs={breadcrumbs}
         badge="Technical"
         lastUpdated="December 2024"
@@ -30,7 +30,7 @@ export default function ArchitecturePage() {
         <DocsBody className="mb-8">
           <h2>🏗️ Platform Architecture</h2>
           <p className="text-lg mb-6">
-            Kortix consists of four main components that work together to provide a complete AI agent development platform:
+            Adentic consists of four main components that work together to provide a complete AI agent development platform:
           </p>
         </DocsBody>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
@@ -61,7 +61,7 @@ export default function ArchitecturePage() {
         <DocsBody className="mb-8">
           <h2>🚀 Technology Stack</h2>
           <p className="text-lg mb-6">
-            Modern technologies powering the Kortix platform:
+            Modern technologies powering the Adentic platform:
           </p>
         </DocsBody>
         
@@ -135,7 +135,7 @@ export default function ArchitecturePage() {
         <DocsBody className="mb-8">
           <h2>🔄 Data Flow</h2>
           <p className="text-lg mb-6">
-            How information moves through the Kortix platform:
+            How information moves through the Adentic platform:
           </p>
           
           <div className="bg-muted/50 border border-border rounded-lg p-6 mb-6">

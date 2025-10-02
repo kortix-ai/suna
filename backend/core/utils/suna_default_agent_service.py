@@ -4,21 +4,21 @@ from core.services.supabase import DBConnection
 from datetime import datetime, timezone
 
 
-class SunaDefaultAgentService:
-    """Simplified Suna agent management service."""
+class AdenticDefaultAgentService:
+    """Simplified Adentic agent management service."""
     
     def __init__(self, db: DBConnection = None):
         self._db = db or DBConnection()
-        logger.debug("🔄 SunaDefaultAgentService initialized (simplified)")
+        logger.debug("🔄 AdenticDefaultAgentService initialized (simplified)")
     
     async def get_suna_default_config(self) -> Dict[str, Any]:
-        """Get the current Suna configuration."""
+        """Get the current Adentic configuration."""
         from core.suna_config import SUNA_CONFIG
         return SUNA_CONFIG.copy()
     
     async def install_for_all_users(self) -> Dict[str, Any]:
-        """Install Suna agent for all users who don't have one."""
-        logger.debug("🚀 Installing Suna agents for users who don't have them")
+        """Install Adentic agent for all users who don't have one."""
+        logger.debug("🚀 Installing Adentic agents for users who don't have them")
         
         try:
             client = await self._db.client
@@ -27,21 +27,21 @@ class SunaDefaultAgentService:
             accounts_result = await client.schema('basejump').table('accounts').select('id').eq('personal_account', True).execute()
             all_account_ids = {row['id'] for row in accounts_result.data} if accounts_result.data else set()
             
-            # Get existing Suna agents
+            # Get existing Adentic agents
             existing_result = await client.table('agents').select('account_id').eq('metadata->>is_suna_default', 'true').execute()
             existing_account_ids = {row['account_id'] for row in existing_result.data} if existing_result.data else set()
             
-            # Find accounts without Suna
+            # Find accounts without Adentic
             missing_accounts = all_account_ids - existing_account_ids
             
             if not missing_accounts:
                 return {
                     "installed_count": 0,
                     "failed_count": 0,
-                    "details": ["All users already have Suna agents"]
+                    "details": ["All users already have Adentic agents"]
                 }
             
-            logger.debug(f"📦 Installing Suna for {len(missing_accounts)} users")
+            logger.debug(f"📦 Installing Adentic for {len(missing_accounts)} users")
             
             success_count = 0
             failed_count = 0
@@ -51,7 +51,7 @@ class SunaDefaultAgentService:
                 try:
                     await self._create_suna_agent_for_user(account_id)
                     success_count += 1
-                    logger.debug(f"✅ Installed Suna for user {account_id}")
+                    logger.debug(f"✅ Installed Adentic for user {account_id}")
                 except Exception as e:
                     failed_count += 1
                     error_msg = f"Failed to install for user {account_id}: {str(e)}"
@@ -74,13 +74,13 @@ class SunaDefaultAgentService:
             }
     
     async def install_suna_agent_for_user(self, account_id: str, replace_existing: bool = False) -> Optional[str]:
-        """Install Suna agent for a specific user."""
-        logger.debug(f"🔄 Installing Suna agent for user: {account_id}")
+        """Install Adentic agent for a specific user."""
+        logger.debug(f"🔄 Installing Adentic agent for user: {account_id}")
         
         try:
             client = await self._db.client
             
-            # Check for existing Suna agent
+            # Check for existing Adentic agent
             existing_result = await client.table('agents').select('agent_id').eq('account_id', account_id).eq('metadata->>is_suna_default', 'true').execute()
             
             if existing_result.data:
@@ -89,14 +89,14 @@ class SunaDefaultAgentService:
                 if replace_existing:
                     # Delete existing agent
                     await self._delete_agent(existing_agent_id)
-                    logger.debug(f"Deleted existing Suna agent for replacement")
+                    logger.debug(f"Deleted existing Adentic agent for replacement")
                 else:
-                    logger.debug(f"User {account_id} already has Suna agent: {existing_agent_id}")
+                    logger.debug(f"User {account_id} already has Adentic agent: {existing_agent_id}")
                     return existing_agent_id
 
             # Create new agent
             agent_id = await self._create_suna_agent_for_user(account_id)
-            logger.debug(f"Successfully installed Suna agent {agent_id} for user {account_id}")
+            logger.debug(f"Successfully installed Adentic agent {agent_id} for user {account_id}")
             return agent_id
                 
         except Exception as e:
@@ -104,7 +104,7 @@ class SunaDefaultAgentService:
             return None
     
     async def get_suna_agent_stats(self) -> Dict[str, Any]:
-        """Get statistics about Suna agents."""
+        """Get statistics about Adentic agents."""
         try:
             client = await self._db.client
             
@@ -121,7 +121,7 @@ class SunaDefaultAgentService:
             return {
                 "total_agents": total_count,
                 "recent_installs": recent_count,
-                "note": "Suna agents always use current central configuration"
+                "note": "Adentic agents always use current central configuration"
             }
             
         except Exception as e:
@@ -129,7 +129,7 @@ class SunaDefaultAgentService:
             return {"error": str(e)}
     
     async def _create_suna_agent_for_user(self, account_id: str) -> str:
-        """Create a Suna agent for a user."""
+        """Create a Adentic agent for a user."""
         from core.suna_config import SUNA_CONFIG
         
         client = await self._db.client
@@ -164,7 +164,7 @@ class SunaDefaultAgentService:
         return agent_id
     
     async def _create_initial_version(self, agent_id: str, account_id: str) -> None:
-        """Create initial version for Suna agent."""
+        """Create initial version for Adentic agent."""
         try:
             from core.versioning.version_service import get_version_service
             from core.suna_config import SUNA_CONFIG
@@ -179,13 +179,13 @@ class SunaDefaultAgentService:
                 agentpress_tools=SUNA_CONFIG["agentpress_tools"],
                 model=SUNA_CONFIG["model"],
                 version_name="v1",
-                change_description="Initial Suna agent installation"
+                change_description="Initial Adentic agent installation"
             )
             
-            logger.debug(f"Created initial version for Suna agent {agent_id}")
+            logger.debug(f"Created initial version for Adentic agent {agent_id}")
             
         except Exception as e:
-            logger.error(f"Failed to create initial version for Suna agent {agent_id}: {e}")
+            logger.error(f"Failed to create initial version for Adentic agent {agent_id}: {e}")
             raise
     
     async def _delete_agent(self, agent_id: str) -> bool:

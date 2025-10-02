@@ -128,7 +128,7 @@ const ViewToggle: React.FC<ViewToggleProps> = memo(function ViewToggle({ current
 
 // Helper function to generate the computer title
 const getComputerTitle = (agentName?: string): string => {
-  return agentName ? `${agentName}'s Computer` : "Suna's Computer";
+  return agentName ? `${agentName}'s Computer` : "Adentic's Computer";
 };
 
 // Reusable header component for the tool panel

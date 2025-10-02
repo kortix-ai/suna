@@ -12,7 +12,7 @@ export function HeroVideoSection() {
           Watch Intelligence in Motion
         </h2>
         <p className="text-muted-foreground text-center text-balance font-medium">
-          Watch how Suna executes complex workflows with precision and autonomy
+          Watch how Adentic executes complex workflows with precision and autonomy
         </p>
       </SectionHeader>
 

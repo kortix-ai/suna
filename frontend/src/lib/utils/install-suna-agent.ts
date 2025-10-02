@@ -1,12 +1,12 @@
 "use server";
 
-async function installSunaForNewUser(userId: string) {
+async function installAdenticForNewUser(userId: string) {
   try {
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
     const adminApiKey = process.env.KORTIX_ADMIN_API_KEY;
     
     if (!adminApiKey) {
-      console.error('KORTIX_ADMIN_API_KEY not configured - cannot install Suna agent');
+      console.error('KORTIX_ADMIN_API_KEY not configured - cannot install Adentic agent');
       return;
     }
   
@@ -25,16 +25,16 @@ async function installSunaForNewUser(userId: string) {
       return true;
     } else {
       const errorData = await response.json().catch(() => ({}));
-      console.error(`Failed to install Suna agent for user:`, errorData);
+      console.error(`Failed to install Adentic agent for user:`, errorData);
       return false;
     }
   } catch (error) {
-    console.error('Error installing Suna agent for new user:', error);
+    console.error('Error installing Adentic agent for new user:', error);
     return false;
   }
 }
 
-export async function checkAndInstallSunaAgent(userId: string, userCreatedAt: string) {
+export async function checkAndInstallAdenticAgent(userId: string, userCreatedAt: string) {
   const userCreatedDate = new Date(userCreatedAt);
   const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
   
@@ -44,7 +44,7 @@ export async function checkAndInstallSunaAgent(userId: string, userCreatedAt: st
       return;
     }
     
-    const success = await installSunaForNewUser(userId);
+    const success = await installAdenticForNewUser(userId);
     
     if (typeof window !== 'undefined') {
       localStorage.setItem(installKey, Date.now().toString());

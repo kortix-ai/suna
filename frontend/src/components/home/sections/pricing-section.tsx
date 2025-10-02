@@ -732,8 +732,8 @@ export function PricingSection({
         </div>
       </div>
       {showInfo && (
-        <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg max-w-2xl mx-auto">
-          <p className="text-sm text-blue-800 dark:text-blue-200 text-center">
+        <div className="mt-4 p-4 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800 rounded-lg max-w-2xl mx-auto">
+          <p className="text-sm text-orange-800 dark:text-orange-200 text-center">
             <strong>What are AI tokens?</strong> Tokens are units of text that AI models process. 
             Your plan includes credits to spend on various AI models - the more complex the task, 
             the more tokens used.

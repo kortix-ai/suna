@@ -2,7 +2,7 @@
 
 import React, { useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { KortixLogo } from '../sidebar/kortix-logo';
+import { AdenticLogo } from '../sidebar/kortix-logo';
 import { AlertDialog, AlertDialogContent, AlertDialogHeader } from '../ui/alert-dialog';
 import { AlertDialogDescription, AlertDialogTitle } from '@radix-ui/react-alert-dialog';
 
@@ -25,17 +25,17 @@ export const TourConfirmationDialog = React.memo(({ open, onAccept, onDecline }:
         <div className="relative">
           <AlertDialogHeader className="p-6 pb-4">
             <div className='h-32 w-full rounded-xl bg-muted/50 border flex items-center justify-center'>
-                <KortixLogo size={60} />
+                <AdenticLogo size={60} />
             </div>
             <div className="flex items-center gap-4 mt-4">
               <div>
                 <AlertDialogTitle className="text-xl font-semibold">
-                  Welcome to Suna
+                  Welcome to Adentic
                 </AlertDialogTitle>
               </div>
             </div>
             <AlertDialogDescription>
-            Would you like a quick guided tour to help you get started? We'll show you the key features and how to make the most of Suna.
+            Would you like a quick guided tour to help you get started? We'll show you the key features and how to make the most of Adentic.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex items-center justify-between p-6">

@@ -45,43 +45,43 @@ async def update_agent(
         restrictions = agent_metadata.get('restrictions', {})
         
         if is_suna_agent:
-            logger.warning(f"Update attempt on Suna default agent {agent_id} by user {user_id}")
+            logger.warning(f"Update attempt on Adentic default agent {agent_id} by user {user_id}")
             
             if (agent_data.name is not None and 
                 agent_data.name != existing_data.get('name') and 
                 restrictions.get('name_editable') == False):
-                logger.error(f"User {user_id} attempted to modify restricted name of Suna agent {agent_id}")
+                logger.error(f"User {user_id} attempted to modify restricted name of Adentic agent {agent_id}")
                 raise HTTPException(
                     status_code=403, 
-                    detail="Suna's name cannot be modified. This restriction is managed centrally."
+                    detail="Adentic's name cannot be modified. This restriction is managed centrally."
                 )
             
             
             if (agent_data.system_prompt is not None and 
                 restrictions.get('system_prompt_editable') == False):
-                logger.error(f"User {user_id} attempted to modify restricted system prompt of Suna agent {agent_id}")
+                logger.error(f"User {user_id} attempted to modify restricted system prompt of Adentic agent {agent_id}")
                 raise HTTPException(
                     status_code=403, 
-                    detail="Suna's system prompt cannot be modified. This is managed centrally to ensure optimal performance."
+                    detail="Adentic's system prompt cannot be modified. This is managed centrally to ensure optimal performance."
                 )
             
             if (agent_data.agentpress_tools is not None and 
                 restrictions.get('tools_editable') == False):
-                logger.error(f"User {user_id} attempted to modify restricted tools of Suna agent {agent_id}")
+                logger.error(f"User {user_id} attempted to modify restricted tools of Adentic agent {agent_id}")
                 raise HTTPException(
                     status_code=403, 
-                    detail="Suna's default tools cannot be modified. These tools are optimized for Suna's capabilities."
+                    detail="Adentic's default tools cannot be modified. These tools are optimized for Adentic's capabilities."
                 )
             
             if ((agent_data.configured_mcps is not None or agent_data.custom_mcps is not None) and 
                 restrictions.get('mcps_editable') == False):
-                logger.error(f"User {user_id} attempted to modify restricted MCPs of Suna agent {agent_id}")
+                logger.error(f"User {user_id} attempted to modify restricted MCPs of Adentic agent {agent_id}")
                 raise HTTPException(
                     status_code=403, 
-                    detail="Suna's integrations cannot be modified."
+                    detail="Adentic's integrations cannot be modified."
                 )
             
-            logger.debug(f"Suna agent update validation passed for agent {agent_id} by user {user_id}")
+            logger.debug(f"Adentic agent update validation passed for agent {agent_id} by user {user_id}")
 
         current_version_data = None
         if existing_data.get('current_version_id'):
@@ -428,7 +428,7 @@ async def delete_agent(agent_id: str, user_id: str = Depends(verify_and_get_user
             raise HTTPException(status_code=400, detail="Cannot delete default agent")
         
         if agent.get('metadata', {}).get('is_suna_default', False):
-            raise HTTPException(status_code=400, detail="Cannot delete Suna default agent")
+            raise HTTPException(status_code=400, detail="Cannot delete Adentic default agent")
         
         # Clean up triggers before deleting agent to ensure proper remote cleanup
         try:

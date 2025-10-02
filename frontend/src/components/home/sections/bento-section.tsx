@@ -11,7 +11,7 @@ export function BentoSection() {
       content: <FirstBentoAnimation />,
       title: 'Describe your needs',
       description:
-        'Tell Kortix what you need and customize your AI worker for your use cases.',
+        'Tell Adentic what you need and customize your AI worker for your use cases.',
     },
     {
       id: 2,

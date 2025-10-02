@@ -25,12 +25,12 @@ export function AgentExamples({
   const agents = agentsResponse?.agents || [];
   const selectedAgent = agents.find(a => a.agent_id === selectedAgentId);
 
-  const isKortixTeam = selectedAgent?.metadata?.is_kortix_team === true;
+  const isAdenticTeam = selectedAgent?.metadata?.is_kortix_team === true;
   const kortixTemplateId = selectedAgent?.metadata?.kortix_template_id;
   const agentName = selectedAgent?.name?.toLowerCase() || '';
   const templateName = selectedAgent?.metadata?.template_name?.toLowerCase() || '';
   
-  if (isKortixTeam) {
+  if (isAdenticTeam) {
     if (
       agentName.includes('doc') || 
       templateName.includes('doc') ||

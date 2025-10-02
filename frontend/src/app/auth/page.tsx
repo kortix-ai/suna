@@ -29,7 +29,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import GitHubSignIn from '@/components/GithubSignIn';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { AdenticLogo } from '@/components/sidebar/kortix-logo';
 import { Ripple } from '@/components/ui/ripple';
 import { ReleaseBadge } from '@/components/auth/release-badge';
 
@@ -264,7 +264,7 @@ function LoginContent() {
   return (
       <div className="min-h-screen bg-background relative">
         <div className="absolute top-6 left-6 z-10">
-            <KortixLogo size={28} />
+            <AdenticLogo size={28} />
         </div>
         <div className="flex min-h-screen">
           <div className="relative flex-1 flex items-center justify-center p-4 lg:p-8">

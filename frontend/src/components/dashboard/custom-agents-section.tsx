@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Ripple } from '../ui/ripple';
-import { useKortixTeamTemplates, useInstallTemplate } from '@/hooks/react-query/secure-mcp/use-secure-mcp';
+import { useAdenticTeamTemplates, useInstallTemplate } from '@/hooks/react-query/secure-mcp/use-secure-mcp';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useRouter } from 'next/navigation';
 import { MarketplaceAgentPreviewDialog } from '@/components/agents/marketplace-agent-preview-dialog';
@@ -34,7 +34,7 @@ const TitleSection = () => (
 
 export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps) {
   const router = useRouter();
-  const { data: templates, isLoading, error } = useKortixTeamTemplates();
+  const { data: templates, isLoading, error } = useAdenticTeamTemplates();
   const installTemplate = useInstallTemplate();
   
   const [selectedTemplate, setSelectedTemplate] = React.useState<MarketplaceTemplate | null>(null);

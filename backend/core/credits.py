@@ -95,7 +95,7 @@ class CreditService:
                         'account_id': user_id,
                         'amount': str(FREE_TIER_INITIAL_CREDITS),
                         'type': 'tier_grant',
-                        'description': 'Welcome to Suna! Free tier initial credits',
+                        'description': 'Welcome to Adentic! Free tier initial credits',
                         'balance_after': str(FREE_TIER_INITIAL_CREDITS)
                     }).execute()
                 else:
