@@ -91,7 +91,8 @@ class ContextManager:
     def compress_tool_result_messages(self, messages: List[Dict[str, Any]], llm_model: str, max_tokens: Optional[int], token_threshold: int = 1000, uncompressed_total_token_count: Optional[int] = None) -> List[Dict[str, Any]]:
         """Compress the tool result messages except the most recent one.
         
-        CRITICAL: Never compresses cached messages to preserve cache hits.
+        Compression is deterministic (simple truncation), ensuring consistent results across requests.
+        This allows prompt caching (applied later) to produce cache hits on identical compressed content.
         """
         if uncompressed_total_token_count is None:
             uncompressed_total_token_count = token_counter(model=llm_model, messages=messages)
@@ -120,7 +121,8 @@ class ContextManager:
     def compress_user_messages(self, messages: List[Dict[str, Any]], llm_model: str, max_tokens: Optional[int], token_threshold: int = 1000, uncompressed_total_token_count: Optional[int] = None) -> List[Dict[str, Any]]:
         """Compress the user messages except the most recent one.
         
-        CRITICAL: Never compresses cached messages to preserve cache hits.
+        Compression is deterministic (simple truncation), ensuring consistent results across requests.
+        This allows prompt caching (applied later) to produce cache hits on identical compressed content.
         """
         if uncompressed_total_token_count is None:
             uncompressed_total_token_count = token_counter(model=llm_model, messages=messages)
@@ -149,7 +151,8 @@ class ContextManager:
     def compress_assistant_messages(self, messages: List[Dict[str, Any]], llm_model: str, max_tokens: Optional[int], token_threshold: int = 1000, uncompressed_total_token_count: Optional[int] = None) -> List[Dict[str, Any]]:
         """Compress the assistant messages except the most recent one.
         
-        CRITICAL: Never compresses cached messages to preserve cache hits.
+        Compression is deterministic (simple truncation), ensuring consistent results across requests.
+        This allows prompt caching (applied later) to produce cache hits on identical compressed content.
         """
         if uncompressed_total_token_count is None:
             uncompressed_total_token_count = token_counter(model=llm_model, messages=messages)
