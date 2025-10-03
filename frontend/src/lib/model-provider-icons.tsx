@@ -112,7 +112,7 @@ export function ModelProviderIcon({
         alt={`${provider} icon`}
         width={size * 0.9} // Increase to 90% for maximum visibility
         height={size * 0.9}
-        className="object-contain"
+        className="object-contain dark:brightness-0 dark:invert"
         style={{ width: size * 0.9, height: size * 0.9 }}
       />
     </div>

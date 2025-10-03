@@ -58,6 +58,7 @@ import ListAgentWorkflowsToolView from '../list-agent-workflows/list-agent-workf
 import { createPresentationViewerToolContent, parsePresentationSlidePath } from '../utils/presentation-utils';
 import { extractToolData } from '../utils';
 import { KbToolView } from '../KbToolView';
+import { ExpandMessageToolView } from '../expand-message-tool/ExpandMessageToolView';
 
 
 export type ToolViewComponent = React.ComponentType<ToolViewProps>;
@@ -122,6 +123,8 @@ const defaultRegistry: ToolViewRegistryType = {
   'ask': AskToolView,
   'complete': CompleteToolView,
   'wait': WaitToolView,
+  'expand_message': ExpandMessageToolView,
+  'expand-message': ExpandMessageToolView,
 
   'deploy': DeployToolView,
 
