@@ -1,0 +1,24 @@
+app = 'kortix-worker'
+primary_region = 'lhr'
+
+[build]
+
+[env]
+  ENV_MODE = 'production'
+  REDIS_HOST = 'kortix-redis.internal'
+  REDIS_PORT = '6379'
+  REDIS_SSL = 'false'
+  PYTHONPATH = '/app'
+
+[processes]
+  worker = "uv run dramatiq --skip-logging --processes 4 --threads 4 run_agent_background"
+
+[[vm]]
+  size = 'performance-2x'
+  memory = '4096'
+  cpus = 2
+
+[[services]]
+  processes = ["worker"]
+  internal_port = 8001
+

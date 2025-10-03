@@ -134,6 +134,12 @@ async def log_requests_middleware(request: Request, call_next):
 allowed_origins = ["https://www.suna.so", "https://suna.so"]
 allow_origin_regex = None
 
+# Add production Fly.io frontend
+allowed_origins.append("https://kortix-frontend.fly.dev")
+
+# Add custom domain (future-proof)
+allowed_origins.append("https://workspace.tryadentic.com")
+
 # Add staging-specific origins
 if config.ENV_MODE == EnvMode.LOCAL:
     allowed_origins.append("http://localhost:3000")

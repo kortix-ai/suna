@@ -1,0 +1,30 @@
+app = 'kortix-frontend'
+primary_region = 'lhr'
+
+[build]
+
+[env]
+  NODE_ENV = 'production'
+  NEXT_PUBLIC_VERCEL_ENV = 'production'
+  NEXT_TELEMETRY_DISABLED = '1'
+  PORT = '3000'
+  HOSTNAME = '0.0.0.0'
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ['app']
+
+  [http_service.concurrency]
+    type = 'connections'
+    hard_limit = 1000
+    soft_limit = 800
+
+[[vm]]
+  size = 'performance-1x'
+  memory = '2048'
+  cpus = 1
+

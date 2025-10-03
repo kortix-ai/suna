@@ -1,0 +1,22 @@
+app = 'kortix-redis'
+primary_region = 'lhr'
+
+[build]
+  image = 'redis:7-alpine'
+
+[[services]]
+  internal_port = 6379
+  protocol = 'tcp'
+
+  [[services.ports]]
+    port = 6379
+
+[[vm]]
+  size = 'shared-cpu-1x'
+  memory = '1024'
+  cpus = 1
+
+[mounts]
+  source = 'redis_data'
+  destination = '/data'
+

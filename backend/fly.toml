@@ -1,0 +1,30 @@
+app = 'kortix-backend'
+primary_region = 'lhr'
+
+[build]
+
+[env]
+  ENV_MODE = 'production'
+  REDIS_HOST = 'kortix-redis.internal'
+  REDIS_PORT = '6379'
+  REDIS_SSL = 'false'
+  PYTHONPATH = '/app'
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+  auto_stop_machines = 'off'
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ['app']
+
+  [http_service.concurrency]
+    type = 'connections'
+    hard_limit = 2000
+    soft_limit = 1500
+
+[[vm]]
+  size = 'performance-2x'
+  memory = '4096'
+  cpus = 2
+
