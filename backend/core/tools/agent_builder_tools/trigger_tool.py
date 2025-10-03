@@ -1,6 +1,6 @@
 import json
 from typing import Optional, Dict, Any, List
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema
 from core.agentpress.thread_manager import ThreadManager
 from .base_tool import AgentBuilderBaseTool
 from core.utils.logger import logger
@@ -107,18 +107,6 @@ class TriggerTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="create_scheduled_trigger">
-        <parameter name="name">Daily Report Generation</parameter>
-        <parameter name="description">Generates daily reports every morning at 9 AM</parameter>
-        <parameter name="cron_expression">0 9 * * *</parameter>
-        <parameter name="execution_type">workflow</parameter>
-        <parameter name="workflow_id">workflow-123</parameter>
-        <parameter name="workflow_input">{"report_type": "daily", "include_charts": true}</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def create_scheduled_trigger(
         self,
         name: str,
@@ -224,12 +212,6 @@ class TriggerTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="get_scheduled_triggers">
-        </invoke>
-        </function_calls>
-        ''')
     async def get_scheduled_triggers(self) -> ToolResult:
         try:
             from core.triggers import TriggerType
@@ -301,13 +283,6 @@ class TriggerTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="delete_scheduled_trigger">
-        <parameter name="trigger_id">trigger-123</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def delete_scheduled_trigger(self, trigger_id: str) -> ToolResult:
         try:
             trigger_svc = get_trigger_service(self.db)
@@ -360,14 +335,6 @@ class TriggerTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="toggle_scheduled_trigger">
-        <parameter name="trigger_id">trigger-123</parameter>
-        <parameter name="is_active">false</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def toggle_scheduled_trigger(self, trigger_id: str, is_active: bool) -> ToolResult:
         try:
             trigger_svc = get_trigger_service(self.db)
@@ -423,11 +390,6 @@ class TriggerTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="list_event_trigger_apps"></invoke>
-        </function_calls>
-    ''')
     async def list_event_trigger_apps(self) -> ToolResult:
         try:
             trigger_service = ComposioTriggerService()
@@ -460,13 +422,6 @@ class TriggerTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="list_app_event_triggers">
-        <parameter name="toolkit_slug">gmail</parameter>
-        </invoke>
-        </function_calls>
-    ''')
     async def list_app_event_triggers(self, toolkit_slug: str) -> ToolResult:
         try:
             trigger_service = ComposioTriggerService()
@@ -505,22 +460,6 @@ class TriggerTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="list_event_trigger_apps"></invoke>
-        <invoke name="list_app_event_triggers"><parameter name="toolkit_slug">gmail</parameter></invoke>
-        <invoke name="get_credential_profiles">
-        <parameter name="toolkit_slug">[toolkit_slug]</parameter>
-        </invoke>        
-        <invoke name="create_event_trigger">
-          <parameter name="slug">GMAIL_NEW_GMAIL_MESSAGE</parameter>
-          <parameter name="profile_id">profile_123</parameter>
-          <parameter name="trigger_config">{"interval": 1, "userId": "me", "labelIds": "INBOX"}</parameter>
-          <parameter name="route">agent</parameter>
-          <parameter name="agent_prompt">Read this</parameter>
-        </invoke>
-        </function_calls>
-    ''')
     async def create_event_trigger(
         self,
         slug: str,

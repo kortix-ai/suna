@@ -7,7 +7,7 @@ from typing import Optional, Tuple
 from io import BytesIO
 from PIL import Image
 from urllib.parse import urlparse
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from core.tools.image_context_manager import ImageContextManager
@@ -278,21 +278,6 @@ class SandboxVisionTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <!-- Example: Load a local image named 'diagram.png' inside the 'docs' folder into context -->
-        <function_calls>
-        <invoke name="load_image">
-        <parameter name="file_path">docs/diagram.png</parameter>
-        </invoke>
-        </function_calls>
-
-        <!-- Example: Load an image from a URL into context -->
-        <function_calls>
-        <invoke name="load_image">
-        <parameter name="file_path">https://example.com/image.jpg</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def load_image(self, file_path: str) -> ToolResult:
         """Loads an image file from local file system or from a URL, compresses it, converts it to base64, and adds it to conversation context."""
         try:
@@ -441,13 +426,6 @@ class SandboxVisionTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <!-- Example: Clear all images from conversation context -->
-        <function_calls>
-        <invoke name="clear_images_from_context">
-        </invoke>
-        </function_calls>
-        ''')
     async def clear_images_from_context(self) -> ToolResult:
         """Removes all image_context messages from the current thread to free up tokens."""
         try:
@@ -476,13 +454,6 @@ class SandboxVisionTool(SandboxToolsBase):
     #         }
     #     }
     # })
-    # @usage_example('''
-    #     <!-- Example: List all images currently in conversation context -->
-    #     <function_calls>
-    #     <invoke name="list_images_in_context">
-    #     </invoke>
-    #     </function_calls>
-    #     ''')
     # async def list_images_in_context(self) -> ToolResult:
     #     """Lists all images currently in the conversation context."""
     #     try:

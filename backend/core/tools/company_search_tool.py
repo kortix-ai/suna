@@ -5,7 +5,7 @@ import json
 from decimal import Decimal
 from exa_py import Exa
 from exa_py.websets.types import CreateWebsetParameters, CreateEnrichmentParameters
-from core.agentpress.tool import Tool, ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import Tool, ToolResult, openapi_schema
 from core.utils.config import config, EnvMode
 from core.utils.logger import logger
 from core.agentpress.thread_manager import ThreadManager
@@ -92,20 +92,6 @@ class CompanySearchTool(Tool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="company_search">
-        <parameter name="query">B2B SaaS companies in Silicon Valley with over $10M funding</parameter>
-        </invoke>
-        </function_calls>
-        
-        <function_calls>
-        <invoke name="company_search">
-        <parameter name="query">Healthcare technology startups in Boston</parameter>
-        <parameter name="enrichment_description">Company website, recent news, and leadership team</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def company_search(
         self,
         query: str,

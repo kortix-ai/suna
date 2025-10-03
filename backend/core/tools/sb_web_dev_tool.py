@@ -5,7 +5,7 @@ from pathlib import Path
 import time
 from uuid import uuid4
 
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema
 from core.agentpress.thread_manager import ThreadManager
 from core.sandbox.tool_base import SandboxToolsBase
 from core.utils.logger import logger
@@ -148,15 +148,6 @@ class SandboxWebDevTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <!-- Create a new Vite React project -->
-        <function_calls>
-        <invoke name="create_vite_react_project">
-        <parameter name="project_name">my-react-app</parameter>
-
-        </invoke>
-        </function_calls>
-        ''')
     async def create_vite_react_project(self, project_name: str) -> ToolResult:
         try:
             await self._ensure_sandbox()
@@ -215,14 +206,6 @@ class SandboxWebDevTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <!-- Get structure of a project -->
-        <function_calls>
-        <invoke name="get_project_structure">
-        <parameter name="project_name">my-app</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def get_project_structure(self, project_name: str, max_depth: int = 3) -> ToolResult:
         try:
             await self._ensure_sandbox()
@@ -284,15 +267,6 @@ class SandboxWebDevTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <!-- Build a Vite React project for production -->
-        <function_calls>
-        <invoke name="build_project">
-        <parameter name="project_name">my-app</parameter>
-        <parameter name="package_manager">npm</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def build_project(self, project_name: str, package_manager: str = "npm") -> ToolResult:
         try:
             await self._ensure_sandbox()
@@ -330,15 +304,6 @@ class SandboxWebDevTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <!-- Start development server -->
-        <function_calls>
-        <invoke name="start_dev_server">
-        <parameter name="project_name">my-app</parameter>
-        <parameter name="port">5173</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def start_dev_server(self, project_name: str, package_manager: str = "npm", port: int = 5173) -> ToolResult:
         try:
             await self._ensure_sandbox()
@@ -397,15 +362,6 @@ class SandboxWebDevTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <!-- Start preview server after building -->
-        <function_calls>
-        <invoke name="start_preview_server">
-        <parameter name="project_name">my-app</parameter>
-        <parameter name="port">4173</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def start_preview_server(self, project_name: str, package_manager: str = "npm", port: int = 4173) -> ToolResult:
         try:
             await self._ensure_sandbox()

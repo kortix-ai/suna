@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from pathlib import Path
 
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from core.services.supabase import DBConnection
@@ -46,13 +46,6 @@ class SandboxUploadFileTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="upload_file">
-        <parameter name="file_path">report.pdf</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def upload_file(
         self,
         file_path: str,

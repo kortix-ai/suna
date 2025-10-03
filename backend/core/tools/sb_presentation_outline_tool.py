@@ -1,4 +1,4 @@
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from typing import List, Dict, Optional
@@ -52,46 +52,6 @@ class SandboxPresentationOutlineTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="create_presentation_outline">
-        <parameter name="title">The Future of AI</parameter>
-        <parameter name="subtitle">Transforming how we work, create, and connect</parameter>
-        <parameter name="slides">[
-            {
-                "title": "The Future of AI",
-                "description": "Title slide with bold typography and clean flat design, setting a professional tone for the presentation.",
-                "notes": "Open with confidence. Use a solid color background with high contrast text. Keep the design minimal and impactful."
-            },
-            {
-                "title": "Revolutionary Technology",
-                "description": "Content slide showcasing key AI capabilities with clean typography and simple bullet points.",
-                "notes": "Highlight the four key areas: neural networks, automation, creativity, and connectivity. Use flat icons or simple graphics."
-            },
-            {
-                "title": "The Question",
-                "description": "Minimal slide with large, bold text asking a thought-provoking question.",
-                "notes": "Pause for emphasis. Use a contrasting flat color background. Let the question sink in before continuing."
-            },
-            {
-                "title": "Real-World Impact",
-                "description": "Showcase concrete AI applications across industries with clean layout and organized content sections.",
-                "notes": "Present examples from healthcare, transportation, climate, and education using flat design principles."
-            },
-            {
-                "title": "The Road Ahead",
-                "description": "Inspirational slide with a powerful quote and forward-looking message about human potential.",
-                "notes": "Quote: 'The best way to predict the future is to invent it.' Use clean typography and solid colors."
-            },
-            {
-                "title": "Thank You",
-                "description": "Clean, minimal closing slide inviting questions, using flat design with good typography.",
-                "notes": "Keep it simple. Use a solid background color with contrasting text. Create space for audience engagement."
-            }
-        ]</parameter>
-        </invoke>
-        </function_calls>
-    ''')
     async def create_presentation_outline(
         self,
         title: str,

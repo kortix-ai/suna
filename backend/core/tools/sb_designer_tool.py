@@ -1,5 +1,5 @@
 from typing import Optional
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 import httpx
@@ -117,53 +117,6 @@ class SandboxDesignerTool(SandboxToolsBase):
             },
         }
     )
-    @usage_example("""
-        Create Instagram post:
-        <function_calls>
-        <invoke name="designer_create_or_edit">
-        <parameter name="mode">create</parameter>
-        <parameter name="prompt">Product launch announcement: New wireless headphones, sleek product shot on gradient background, bold headline 'Sound Redefined', price $299, minimalist layout with plenty of breathing room</parameter>
-        <parameter name="platform_preset">instagram_square</parameter>
-        <parameter name="design_style">minimalist</parameter>
-        <parameter name="quality">auto</parameter>
-        </invoke>
-        </function_calls>
-        
-        Create YouTube thumbnail:
-        <function_calls>
-        <invoke name="designer_create_or_edit">
-        <parameter name="mode">create</parameter>
-        <parameter name="prompt">Tech review thumbnail: Split screen comparing two smartphones, VS text in the center with lightning effect, '2024 FLAGSHIP BATTLE' text, high contrast, eye-catching colors</parameter>
-        <parameter name="platform_preset">youtube_thumbnail</parameter>
-        <parameter name="design_style">bold</parameter>
-        <parameter name="quality">auto</parameter>
-        </invoke>
-        </function_calls>
-        
-        Create LinkedIn banner:
-        <function_calls>
-        <invoke name="designer_create_or_edit">
-        <parameter name="mode">create</parameter>
-        <parameter name="prompt">Professional banner for marketing director: Abstract flowing shapes in corporate blue, 'Strategic Marketing Leadership' tagline, subtle network connections pattern, sophisticated and executive-level design</parameter>
-        <parameter name="platform_preset">linkedin_banner</parameter>
-        <parameter name="design_style">professional</parameter>
-        <parameter name="quality">auto</parameter>
-        </invoke>
-        </function_calls>
-        
-        Create custom size design:
-        <function_calls>
-        <invoke name="designer_create_or_edit">
-        <parameter name="mode">create</parameter>
-        <parameter name="prompt">App UI mockup: Mobile banking dashboard with card balance, recent transactions list, quick action buttons, clean navigation bar, using brand colors blue and white</parameter>
-        <parameter name="platform_preset">custom</parameter>
-        <parameter name="width">1920</parameter>
-        <parameter name="height">1080</parameter>
-        <parameter name="design_style">modern</parameter>
-        <parameter name="quality">auto</parameter>
-        </invoke>
-        </function_calls>
-        """)
     async def designer_create_or_edit(
         self,
         mode: str,

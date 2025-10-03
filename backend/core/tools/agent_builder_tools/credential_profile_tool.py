@@ -1,6 +1,6 @@
 from typing import Optional, List
 from uuid import uuid4
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema
 from core.agentpress.thread_manager import ThreadManager
 from .base_tool import AgentBuilderBaseTool
 from core.composio_integration.composio_service import get_integration_service
@@ -32,13 +32,6 @@ class CredentialProfileTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="get_credential_profiles">
-        <parameter name="toolkit_slug">github</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def get_credential_profiles(self, toolkit_slug: Optional[str] = None) -> ToolResult:
         try:
             account_id = await self._get_current_account_id()
@@ -93,15 +86,6 @@ class CredentialProfileTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="create_credential_profile">
-        <parameter name="toolkit_slug">github</parameter>
-        <parameter name="profile_name">Personal GitHub</parameter>
-        <parameter name="display_name">My Personal GitHub Account</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def create_credential_profile(
         self,
         toolkit_slug: str,
@@ -180,15 +164,6 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="configure_profile_for_agent">
-        <parameter name="profile_id">profile-uuid-123</parameter>
-        <parameter name="enabled_tools">["create_issue", "list_repositories", "get_user"]</parameter>
-        <parameter name="display_name">Personal GitHub Integration</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def configure_profile_for_agent(
         self, 
         profile_id: str, 
@@ -324,13 +299,6 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="delete_credential_profile">
-        <parameter name="profile_id">profile-uuid-123</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def delete_credential_profile(self, profile_id: str) -> ToolResult:
         try:
             account_id = await self._get_current_account_id()

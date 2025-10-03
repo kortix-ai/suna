@@ -1,6 +1,6 @@
 import json
 from typing import Optional, Dict, Any, List
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema
 from core.agentpress.thread_manager import ThreadManager
 from .base_tool import AgentBuilderBaseTool
 from core.utils.logger import logger
@@ -193,15 +193,6 @@ class WorkflowTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="create_workflow">
-        <parameter name="name">Company Research Playbook</parameter>
-        <parameter name="template">Research companies and update sheets using {{sheet_id}} and {{limit}}</parameter>
-        <parameter name="variables">[{"key":"sheet_id","label":"Sheet ID","required":true},{"key":"limit","label":"Row Limit","required":false}]</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def create_workflow(
         self,
         name: str,
@@ -296,13 +287,6 @@ class WorkflowTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="get_workflows">
-        <parameter name="include_steps">true</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def get_workflows(self, include_steps: bool = True) -> ToolResult:
         try:
             client = await self.db.client
@@ -403,15 +387,6 @@ class WorkflowTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="update_workflow">
-        <parameter name="workflow_id">workflow-123</parameter>
-        <parameter name="name">Updated Research Workflow</parameter>
-        <parameter name="status">active</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def update_workflow(
         self,
         workflow_id: str,
@@ -502,13 +477,6 @@ class WorkflowTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="delete_workflow">
-        <parameter name="workflow_id">workflow-123</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def delete_workflow(self, workflow_id: str) -> ToolResult:
         try:
             client = await self.db.client
@@ -552,14 +520,6 @@ class WorkflowTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="activate_workflow">
-        <parameter name="workflow_id">workflow-123</parameter>
-        <parameter name="active">true</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def activate_workflow(self, workflow_id: str, active: bool = True) -> ToolResult:
         try:
             client = await self.db.client

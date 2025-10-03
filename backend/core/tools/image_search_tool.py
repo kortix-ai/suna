@@ -1,6 +1,6 @@
 import httpx
 from dotenv import load_dotenv
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema
 from core.utils.config import config
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
@@ -55,23 +55,6 @@ class SandboxImageSearchTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <!-- Single search -->
-        <function_calls>
-        <invoke name="image_search">
-        <parameter name="query">cute cats playing</parameter>
-        <parameter name="num_results">20</parameter>
-        </invoke>
-        </function_calls>
-        
-        <!-- Batch search (more efficient for multiple queries) -->
-        <function_calls>
-        <invoke name="image_search">
-        <parameter name="query">["cats", "dogs", "birds"]</parameter>
-        <parameter name="num_results">15</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def image_search(
         self, 
         query: Union[str, List[str]],

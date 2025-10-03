@@ -1,7 +1,7 @@
 import json
 from typing import Optional, Dict, Any, List
 from uuid import uuid4
-from core.agentpress.tool import Tool, ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import Tool, ToolResult, openapi_schema
 from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
 from core.utils.core_tools_helper import ensure_core_tools_enabled
@@ -130,48 +130,6 @@ class AgentCreationTool(Tool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="ask">
-        <parameter name="text">I'd like to create a specialized Research Assistant agent for you. Here are the details:
-
-**Agent Details:**
-- **Name**: Research Assistant
-- **Purpose**: Conduct thorough research, analyze information, and provide comprehensive reports
-- **Capabilities**: Web search, document analysis, data compilation, source verification
-- **Tools**: Web search, file management, vision analysis
-- **Icon**: Brain icon with blue background
-
-This agent will be optimized for research tasks and will have access to search tools and document processing capabilities. 
-
-Would you like me to proceed with creating this Research Assistant agent?</parameter>
-        </invoke>
-        </function_calls>
-
-        <!-- After user confirms -->
-        <function_calls>
-        <invoke name="create_new_agent">
-        <parameter name="name">Research Assistant</parameter>
-        <parameter name="system_prompt">Act as a research analyst and information specialist. Your primary role is to conduct thorough research on any topic, analyze information from multiple sources, and provide comprehensive, well-structured reports.
-
-Key responsibilities:
-- Always verify information from multiple credible sources
-- Provide clear citations and source references
-- Structure findings in a logical, easy-to-understand format
-- Identify potential biases or limitations in sources
-- Suggest areas for further research when relevant
-- Present balanced perspectives on controversial topics
-
-Approach each research task methodically, starting with broad searches and then drilling down into specific aspects. Always prioritize accuracy and thoroughness over speed.</parameter>
-        <parameter name="icon_name">brain</parameter>
-        <parameter name="icon_color">#4F46E5</parameter>
-        <parameter name="icon_background">#DBEAFE</parameter>
-        <parameter name="agentpress_tools">{"web_search_tool": true, "sb_files_tool": true, "sb_vision_tool": true, "browser_tool": true, "sb_shell_tool": false, "data_providers_tool": true}</parameter>
-        <parameter name="configured_mcps">[]</parameter>
-        <parameter name="is_default">false</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def create_new_agent(
         self,
         name: str,
@@ -318,13 +276,6 @@ Approach each research task methodically, starting with broad searches and then 
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="search_mcp_servers_for_agent">
-        <parameter name="search_query">github</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def search_mcp_servers_for_agent(self, search_query: str) -> ToolResult:
         try:
             from core.composio_integration.composio_service import get_integration_service
@@ -389,13 +340,6 @@ Approach each research task methodically, starting with broad searches and then 
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="get_mcp_server_details">
-        <parameter name="toolkit_slug">googlesheets</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def get_mcp_server_details(self, toolkit_slug: str) -> ToolResult:
         try:
             from core.composio_integration.toolkit_service import ToolkitService
@@ -461,14 +405,6 @@ Approach each research task methodically, starting with broad searches and then 
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="create_credential_profile_for_agent">
-        <parameter name="toolkit_slug">github</parameter>
-        <parameter name="profile_name">My GitHub Account</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def create_credential_profile_for_agent(
         self,
         toolkit_slug: str,
@@ -544,13 +480,6 @@ Approach each research task methodically, starting with broad searches and then 
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="discover_mcp_tools_for_agent">
-        <parameter name="profile_name">My GitHub Account</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def discover_mcp_tools_for_agent(self, profile_name: str) -> ToolResult:
         try:
             account_id = self.account_id
@@ -653,16 +582,6 @@ Approach each research task methodically, starting with broad searches and then 
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="configure_agent_integration">
-        <parameter name="agent_id">agent-uuid-123</parameter>
-        <parameter name="profile_name">My GitHub Account</parameter>
-        <parameter name="enabled_tools">["create_issue", "list_repositories", "get_pull_requests"]</parameter>
-        <parameter name="display_name">GitHub Integration</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def configure_agent_integration(
         self,
         agent_id: str,
@@ -856,16 +775,6 @@ Approach each research task methodically, starting with broad searches and then 
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="create_agent_workflow">
-        <parameter name="agent_id">agent-uuid-123</parameter>
-        <parameter name="name">Daily Report Generator</parameter>
-        <parameter name="template">Generate a daily report for {{department}} including metrics from {{start_date}} to {{end_date}}</parameter>
-        <parameter name="variables">[{"key":"department","label":"Department Name","required":true},{"key":"start_date","label":"Start Date","required":true},{"key":"end_date","label":"End Date","required":true}]</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def create_agent_workflow(
         self,
         agent_id: str,
@@ -995,13 +904,6 @@ Approach each research task methodically, starting with broad searches and then 
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="list_agent_workflows">
-        <parameter name="agent_id">agent-uuid-123</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def list_agent_workflows(self, agent_id: str, include_steps: bool = False) -> ToolResult:
         try:
             account_id = self.account_id
@@ -1075,15 +977,6 @@ Approach each research task methodically, starting with broad searches and then 
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="activate_agent_workflow">
-        <parameter name="agent_id">agent-uuid-123</parameter>
-        <parameter name="workflow_id">workflow-456</parameter>
-        <parameter name="active">true</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def activate_agent_workflow(self, agent_id: str, workflow_id: str, active: bool = True) -> ToolResult:
         try:
             account_id = self.account_id
@@ -1156,14 +1049,6 @@ Approach each research task methodically, starting with broad searches and then 
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="delete_agent_workflow">
-        <parameter name="agent_id">agent-uuid-123</parameter>
-        <parameter name="workflow_id">workflow-456</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def delete_agent_workflow(self, agent_id: str, workflow_id: str) -> ToolResult:
         try:
             account_id = self.account_id
@@ -1273,19 +1158,6 @@ Approach each research task methodically, starting with broad searches and then 
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="create_agent_scheduled_trigger">
-        <parameter name="agent_id">agent-uuid-123</parameter>
-        <parameter name="name">Daily Report Generation</parameter>
-        <parameter name="description">Generates daily reports every morning at 9 AM</parameter>
-        <parameter name="cron_expression">0 9 * * *</parameter>
-        <parameter name="execution_type">workflow</parameter>
-        <parameter name="workflow_id">workflow-123</parameter>
-        <parameter name="workflow_input">{"report_type": "daily", "include_charts": true}</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def create_agent_scheduled_trigger(
         self,
         agent_id: str,
@@ -1412,13 +1284,6 @@ Approach each research task methodically, starting with broad searches and then 
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="list_agent_scheduled_triggers">
-        <parameter name="agent_id">agent-uuid-123</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def list_agent_scheduled_triggers(self, agent_id: str) -> ToolResult:
         try:
             account_id = self.account_id
@@ -1512,15 +1377,6 @@ Approach each research task methodically, starting with broad searches and then 
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="toggle_agent_scheduled_trigger">
-        <parameter name="agent_id">agent-uuid-123</parameter>
-        <parameter name="trigger_id">trigger-456</parameter>
-        <parameter name="is_active">false</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def toggle_agent_scheduled_trigger(self, agent_id: str, trigger_id: str, is_active: bool) -> ToolResult:
         try:
             account_id = self.account_id
@@ -1601,14 +1457,6 @@ Approach each research task methodically, starting with broad searches and then 
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="delete_agent_scheduled_trigger">
-        <parameter name="agent_id">agent-uuid-123</parameter>
-        <parameter name="trigger_id">trigger-456</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def delete_agent_scheduled_trigger(self, agent_id: str, trigger_id: str) -> ToolResult:
         try:
             account_id = self.account_id
@@ -1711,31 +1559,6 @@ Approach each research task methodically, starting with broad searches and then 
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="update_agent_config">
-        <parameter name="agent_id">agent-uuid-123</parameter>
-        <parameter name="system_prompt">Act as a senior software engineer and code reviewer. Your role is to analyze code, suggest improvements, identify bugs, and ensure best practices are followed.
-
-Key responsibilities:
-- Review code for bugs, security issues, and performance problems
-- Suggest architectural improvements and design patterns
-- Ensure code follows established conventions and standards
-- Provide constructive feedback with specific examples
-- Help optimize code for maintainability and readability
-
-When reviewing code:
-1. Check for potential bugs and edge cases
-2. Verify error handling and input validation
-3. Assess code organization and structure
-4. Recommend performance optimizations
-5. Ensure proper documentation and comments
-
-Always provide actionable feedback with code examples when possible.</parameter>
-        <parameter name="change_description">Updated system prompt to focus more on code review and best practices</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def update_agent_config(
         self,
         agent_id: str,

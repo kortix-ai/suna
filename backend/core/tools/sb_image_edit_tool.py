@@ -1,5 +1,5 @@
 from typing import Optional
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 import httpx
@@ -45,29 +45,6 @@ class SandboxImageEditTool(SandboxToolsBase):
             },
         }
     )
-    @usage_example("""
-        Generate mode example (new image):
-        <function_calls>
-        <invoke name="image_edit_or_generate">
-        <parameter name="mode">generate</parameter>
-        <parameter name="prompt">A futuristic cityscape at sunset</parameter>
-        </invoke>
-        </function_calls>
-        
-        Edit mode example (modifying existing):
-        <function_calls>
-        <invoke name="image_edit_or_generate">
-        <parameter name="mode">edit</parameter>
-        <parameter name="prompt">Add a red hat to the person in the image</parameter>
-        <parameter name="image_path">generated_image_abc123.png</parameter>
-        </invoke>
-        </function_calls>
-        
-        Multi-turn workflow (follow-up edits):
-        1. User: "Create a logo" → generate mode
-        2. User: "Make it more colorful" → edit mode (automatic)
-        3. User: "Add text to it" → edit mode (automatic)
-        """)
     async def image_edit_or_generate(
         self,
         mode: str,
