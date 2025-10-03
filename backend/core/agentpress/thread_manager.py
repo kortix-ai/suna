@@ -102,13 +102,11 @@ class ThreadManager:
 
         try:
             result = await client.table('messages').insert(data_to_insert).execute()
-            # logger.debug(f"Successfully added message to thread {thread_id}")
 
             if result.data and len(result.data) > 0 and 'message_id' in result.data[0]:
                 saved_message = result.data[0]
                 
-                # Handle billing for assistant response end messages
-                if type == "assistant_response_end" and isinstance(content, dict):
+                if type == "llm_response_end" and isinstance(content, dict):
                     await self._handle_billing(thread_id, content, saved_message)
                 
                 return saved_message
@@ -120,18 +118,17 @@ class ThreadManager:
             raise
 
     async def _handle_billing(self, thread_id: str, content: dict, saved_message: dict):
-        """Handle billing for LLM usage."""
         try:
-            usage = content.get("usage", {})
+            llm_response_id = content.get("llm_response_id", "unknown")
+            logger.info(f"💰 Processing billing for LLM response: {llm_response_id}")
             
-            # DEBUG: Log the complete usage object to see what data we have
-            # logger.info(f"🔍 THREAD MANAGER USAGE: {usage}")
-            # logger.info(f"🔍 THREAD MANAGER CONTENT: {content}")
+            usage = content.get("usage", {})
             
             prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
             completion_tokens = int(usage.get("completion_tokens", 0) or 0)
+            is_estimated = usage.get("estimated", False)
+            is_fallback = usage.get("fallback", False)
             
-            # Try cache_read_input_tokens first (Anthropic standard), then fallback to prompt_tokens_details.cached_tokens
             cache_read_tokens = int(usage.get("cache_read_input_tokens", 0) or 0)
             if cache_read_tokens == 0:
                 cache_read_tokens = int(usage.get("prompt_tokens_details", {}).get("cached_tokens", 0) or 0)
@@ -139,8 +136,8 @@ class ThreadManager:
             cache_creation_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
             model = content.get("model")
             
-            # DEBUG: Log what we detected
-            logger.info(f"🔍 CACHE DETECTION: cache_read={cache_read_tokens}, cache_creation={cache_creation_tokens}, prompt={prompt_tokens}")
+            usage_type = "FALLBACK ESTIMATE" if is_fallback else ("ESTIMATED" if is_estimated else "EXACT")
+            logger.info(f"💰 Usage type: {usage_type} - prompt={prompt_tokens}, completion={completion_tokens}, cache_read={cache_read_tokens}, cache_creation={cache_creation_tokens}")
             
             client = await self.db.client
             thread_row = await client.table('threads').select('account_id').eq('thread_id', thread_id).limit(1).execute()
