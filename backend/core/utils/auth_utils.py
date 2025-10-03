@@ -170,7 +170,6 @@ async def verify_and_get_user_id_from_jwt(request: Request) -> str:
             detail="Invalid token",
             headers={"WWW-Authenticate": "Bearer"}
         )
-
     
 async def get_user_id_from_stream_auth(
     request: Request,

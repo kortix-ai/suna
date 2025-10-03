@@ -1,7 +1,7 @@
 from tavily import AsyncTavilyClient
 import httpx
 from dotenv import load_dotenv
-from core.agentpress.tool import Tool, ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import Tool, ToolResult, openapi_schema
 from core.utils.config import config
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
@@ -54,22 +54,6 @@ class SandboxWebSearchTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="web_search">
-        <parameter name="query">what is Kortix AI and what are they building?</parameter>
-        <parameter name="num_results">20</parameter>
-        </invoke>
-        </function_calls>
-        
-        <!-- Another search example -->
-        <function_calls>
-        <invoke name="web_search">
-        <parameter name="query">latest AI research on transformer models</parameter>
-        <parameter name="num_results">20</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def web_search(
         self, 
         query: str,
@@ -158,21 +142,6 @@ class SandboxWebSearchTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="scrape_webpage">
-        <parameter name="urls">https://www.kortix.ai/,https://github.com/kortix-ai/suna</parameter>
-        </invoke>
-        </function_calls>
-        
-        <!-- Example with HTML content included -->
-        <function_calls>
-        <invoke name="scrape_webpage">
-        <parameter name="urls">https://example.com/complex-page</parameter>
-        <parameter name="include_html">true</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def scrape_webpage(
         self,
         urls: str,

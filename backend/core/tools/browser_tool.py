@@ -1,4 +1,4 @@
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema
 from core.agentpress.thread_manager import ThreadManager
 from core.sandbox.tool_base import SandboxToolsBase
 from core.utils.logger import logger
@@ -316,13 +316,6 @@ class BrowserTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="browser_navigate_to">
-        <parameter name="url">https://example.com</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def browser_navigate_to(self, url: str) -> ToolResult:
         """Navigate to a URL using Stagehand."""
         logger.debug(f"Browser navigating to: {url}")
@@ -360,22 +353,6 @@ class BrowserTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="browser_act">
-        <parameter name="action">fill in the login form with %username% and %password%</parameter>
-        <parameter name="variables">{"username": "john.doe", "password": "secret123"}</parameter>
-        <parameter name="iframes">true</parameter>
-        </invoke>
-        </function_calls>
-        
-        <function_calls>
-        <invoke name="browser_act">
-        <parameter name="action">click on upload resume button</parameter>
-        <parameter name="filePath">/workspace/downloads/document.pdf</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def browser_act(self, action: str, variables: dict = None, iframes: bool = False, filePath: dict = None) -> ToolResult:
         """Perform any browser action using Stagehand."""
         logger.debug(f"Browser acting: {action} (variables={'***' if variables else None}, iframes={iframes}), filePath={filePath}")
@@ -406,14 +383,6 @@ class BrowserTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="browser_extract_content">
-        <parameter name="instruction">extract all product names and prices from the main product list</parameter>
-        <parameter name="iframes">true</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def browser_extract_content(self, instruction: str, iframes: bool = False) -> ToolResult:
         """Extract structured content from the current page using Stagehand."""
         logger.debug(f"Browser extracting: {instruction} (iframes={iframes})")
@@ -437,13 +406,6 @@ class BrowserTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="browser_screenshot">
-        <parameter name="name">page_screenshot</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def browser_screenshot(self, name: str = "screenshot") -> ToolResult:
         """Take a screenshot using Stagehand."""
         logger.debug(f"Browser taking screenshot: {name}")

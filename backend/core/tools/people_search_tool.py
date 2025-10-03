@@ -5,7 +5,7 @@ import json
 from decimal import Decimal
 from exa_py import Exa
 from exa_py.websets.types import CreateWebsetParameters, CreateEnrichmentParameters
-from core.agentpress.tool import Tool, ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import Tool, ToolResult, openapi_schema
 from core.utils.config import config, EnvMode
 from core.utils.logger import logger
 from core.agentpress.thread_manager import ThreadManager
@@ -92,20 +92,6 @@ class PeopleSearchTool(Tool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="people_search">
-        <parameter name="query">Chief Technology Officers at B2B SaaS companies in Silicon Valley</parameter>
-        </invoke>
-        </function_calls>
-        
-        <function_calls>
-        <invoke name="people_search">
-        <parameter name="query">Senior Python developers with AI experience at FAANG companies</parameter>
-        <parameter name="enrichment_description">LinkedIn profile and current job title</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def people_search(
         self,
         query: str,

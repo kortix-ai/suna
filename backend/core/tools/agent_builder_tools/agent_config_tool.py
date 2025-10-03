@@ -1,6 +1,6 @@
 import json
 from typing import Optional, Dict, Any
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema
 from core.agentpress.thread_manager import ThreadManager
 from .base_tool import AgentBuilderBaseTool
 from core.utils.logger import logger
@@ -57,15 +57,6 @@ class AgentConfigTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="update_agent">
-        <parameter name="name">Research Assistant</parameter>
-        <parameter name="system_prompt">Act as a research analyst. Always verify sources</parameter>
-        <parameter name="agentpress_tools">{"web_search_tool": true, "sb_files_tool": true, "sb_shell_tool": false}</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def update_agent(
         self,
         name: Optional[str] = None,
@@ -246,12 +237,6 @@ class AgentConfigTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="get_current_agent_config">
-        </invoke>
-        </function_calls>
-        ''')
     async def get_current_agent_config(self) -> ToolResult:
         try:
             agent_data = await self._get_agent_data()

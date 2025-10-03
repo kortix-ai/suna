@@ -1,6 +1,6 @@
 import json
 from typing import Optional
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema
 from core.agentpress.thread_manager import ThreadManager
 from .base_tool import AgentBuilderBaseTool
 from core.composio_integration.toolkit_service import ToolkitService
@@ -34,14 +34,6 @@ class MCPSearchTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="search_mcp_servers">
-        <parameter name="query">linear</parameter>
-        <parameter name="limit">5</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def search_mcp_servers(
         self,
         query: str,
@@ -106,13 +98,6 @@ class MCPSearchTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="get_app_details">
-        <parameter name="toolkit_slug">github</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def get_app_details(self, toolkit_slug: str) -> ToolResult:
         try:
             toolkit_service = ToolkitService()
@@ -161,13 +146,6 @@ class MCPSearchTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="discover_user_mcp_servers">
-        <parameter name="profile_id">profile-uuid-123</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def discover_user_mcp_servers(self, profile_id: str) -> ToolResult:
         try:
             account_id = await self._get_current_account_id()

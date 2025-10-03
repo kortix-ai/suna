@@ -89,12 +89,12 @@ export function ModelProviderIcon({
     return (
       <div 
         className={cn(
-          "flex items-center justify-center bg-muted border flex-shrink-0",
+          "flex items-center justify-center bg-muted dark:bg-zinc-800 border dark:border-zinc-700 flex-shrink-0",
           className
         )}
         style={{ width: size, height: size, ...borderRadiusStyle }}
       >
-        <Cpu size={size * 0.6} className="text-muted-foreground" />
+        <Cpu size={size * 0.6} className="text-muted-foreground dark:text-zinc-200" />
       </div>
     );
   }
@@ -102,7 +102,7 @@ export function ModelProviderIcon({
   return (
     <div 
       className={cn(
-        "flex items-center justify-center bg-background border flex-shrink-0",
+        "flex items-center justify-center bg-background dark:bg-zinc-800 border dark:border-zinc-700 flex-shrink-0",
         className
       )}
       style={{ width: size, height: size, ...borderRadiusStyle }}
@@ -110,10 +110,10 @@ export function ModelProviderIcon({
       <Image
         src={iconSrc}
         alt={`${provider} icon`}
-        width={size * 0.9} // Increase to 90% for maximum visibility
-        height={size * 0.9}
-        className="object-contain dark:invert"
-        style={{ width: size * 0.9, height: size * 0.9 }}
+        width={size * 0.6} // Match agent avatar spacing
+        height={size * 0.6}
+        className="object-contain dark:brightness-0 dark:invert"
+        style={{ width: size * 0.6, height: size * 0.6 }}
       />
     </div>
   );

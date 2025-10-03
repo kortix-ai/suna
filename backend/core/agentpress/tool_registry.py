@@ -103,27 +103,3 @@ class ToolRegistry:
         # logger.debug(f"Retrieved {len(schemas)} OpenAPI schemas")
         return schemas
 
-    def get_usage_examples(self) -> Dict[str, str]:
-        """Get usage examples for tools.
-        
-        Returns:
-            Dict mapping function names to their usage examples
-        """
-        examples = {}
-        
-        # Get all registered tools and their schemas
-        for tool_name, tool_info in self.tools.items():
-            tool_instance = tool_info['instance']
-            all_schemas = tool_instance.get_schemas()
-            
-            # Look for usage examples for this function
-            if tool_name in all_schemas:
-                for schema in all_schemas[tool_name]:
-                    if schema.schema_type == SchemaType.USAGE_EXAMPLE:
-                        examples[tool_name] = schema.schema.get('example', '')
-                        # logger.debug(f"Found usage example for {tool_name}")
-                        break
-        
-        # logger.debug(f"Retrieved {len(examples)} usage examples")
-        return examples
-

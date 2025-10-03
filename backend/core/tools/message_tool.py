@@ -1,5 +1,5 @@
 from typing import List, Optional, Union
-from core.agentpress.tool import Tool, ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import Tool, ToolResult, openapi_schema
 from core.utils.logger import logger
 
 class MessageTool(Tool):
@@ -38,20 +38,6 @@ class MessageTool(Tool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="ask">
-        <parameter name="text">I'm planning to bake the chocolate cake for your birthday party. The recipe mentions "rich frosting" but doesn't specify what type. Could you clarify your preferences? For example:
-1. Would you prefer buttercream or cream cheese frosting?
-2. Do you want any specific flavor added to the frosting (vanilla, coffee, etc.)?
-3. Should I add any decorative toppings like sprinkles or fruit?
-4. Do you have any dietary restrictions I should be aware of?
-
-This information will help me make sure the cake meets your expectations for the celebration.</parameter>
-        <parameter name="attachments">recipes/chocolate_cake.txt,photos/cake_examples.jpg</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def ask(self, text: str, attachments: Optional[Union[str, List[str]]] = None) -> ToolResult:
         """Ask the user a question and wait for a response.
 
@@ -71,62 +57,6 @@ This information will help me make sure the cake meets your expectations for the
         except Exception as e:
             return self.fail_response(f"Error asking user: {str(e)}")
 
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "web_browser_takeover",
-            "description": "Request user takeover of browser interaction. Use this tool when: 1) The page requires complex human interaction that automated tools cannot handle, 2) Authentication or verification steps require human input, 3) The page has anti-bot measures that prevent automated access, 4) Complex form filling or navigation is needed, 5) The page requires human verification (CAPTCHA, etc.). IMPORTANT: This tool should be used as a last resort after web-search and crawl-webpage have failed, and when direct browser tools are insufficient. Always provide clear context about why takeover is needed and what actions the user should take.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "text": {
-                        "type": "string",
-                        "description": "Instructions for the user about what actions to take in the browser. Include: 1) Clear explanation of why takeover is needed, 2) Specific steps the user should take, 3) What information to look for or extract, 4) How to indicate when they're done, 5) Any important context about the current page state."
-                    },
-                    "attachments": {
-                        "anyOf": [
-                            {"type": "string"},
-                            {"items": {"type": "string"}, "type": "array"}
-                        ],
-                        "description": "(Optional) List of files or URLs to attach to the takeover request. Include when: 1) Screenshots or visual references are needed, 2) Previous search results or crawled content is relevant, 3) Supporting documentation is required. Always use relative paths to /workspace directory."
-                    }
-                },
-                "required": ["text"]
-            }
-        }
-    })
-    @usage_example('''
-        <function_calls>
-        <invoke name="web_browser_takeover">
-        <parameter name="text">I've encountered a CAPTCHA verification on the page that I can't solve automatically. Could you help me out?
-
-Here's what I need you to do:
-1. Solve the CAPTCHA puzzle that's currently displayed
-2. Let me know once you've completed it
-3. I'll then continue with the automated process
-
-If you encounter any issues or need to take additional steps, please let me know. Thanks for your help!</parameter>
-        </invoke>
-        </function_calls>
-        ''')
-    async def web_browser_takeover(self, text: str, attachments: Optional[Union[str, List[str]]] = None) -> ToolResult:
-        """Request user takeover of browser interaction.
-
-        Args:
-            text: Instructions for the user about what actions to take
-            attachments: Optional file paths or URLs to attach to the request
-
-        Returns:
-            ToolResult indicating the takeover request was successfully sent
-        """
-        try:
-            # Convert single attachment to list for consistent handling
-            if attachments and isinstance(attachments, str):
-                attachments = [attachments]
-
-            return self.success_response({"status": "Awaiting user browser takeover..."})
-        except Exception as e:
-            return self.fail_response(f"Error requesting browser takeover: {str(e)}")
 
 #     @openapi_schema({
 #         "type": "function",
@@ -201,116 +131,6 @@ If you encounter any issues or need to take additional steps, please let me know
 #         except Exception as e:
 #             return self.fail_response(f"Error informing user: {str(e)}")
 
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "present_presentation",
-            "description": "Present the final presentation to the user. Use this tool when: 1) All slides have been created and formatted, 2) The presentation is ready for user review, 3) You want to show the user the complete presentation with all files, 4) The presentation creation process is finished and you want to deliver the final result. IMPORTANT: This tool is specifically for presenting completed presentations, not for intermediate steps. Include the presentation name, slide count, and all relevant file attachments. This tool provides a special UI for presentation delivery.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "presentation_name": {
-                        "type": "string",
-                        "description": "The identifier/folder name of the presentation (e.g., 'test_presentation'). This should match the presentation_name used in create_slide."
-                    },
-                    "presentation_title": {
-                        "type": "string",
-                        "description": "The human-readable title of the presentation (e.g., 'Test Presentation'). This will be displayed prominently to the user."
-                    },
-                    "presentation_path": {
-                        "type": "string",
-                        "description": "The file path where the presentation is located (e.g., 'presentations/my-presentation/'). This helps users locate the files."
-                    },
-                    "slide_count": {
-                        "type": "integer",
-                        "description": "The total number of slides in the presentation. This gives users a quick overview of the presentation size."
-                    },
-                    "text": {
-                        "type": "string",
-                        "description": "A summary or description of the presentation to present to the user. Include: 1) What the presentation covers, 2) Key highlights or features, 3) Any important notes about the presentation, 4) How to use or view the presentation."
-                    },
-                    "attachments": {
-                        "anyOf": [
-                            {"type": "string"},
-                            {"items": {"type": "string"}, "type": "array"}
-                        ],
-                        "description": "List of presentation files to attach. Include: 1) All HTML slide files (e.g., 'presentations/my-presentation/slide_01.html'), 2) Any additional presentation files (PDF exports, etc.), 3) Supporting files if relevant. Always use relative paths to /workspace directory."
-                    },
-                    "presentation_url": {
-                        "type": "string",
-                        "description": "(Optional) A direct URL to view the presentation if available. This could be a hosted version or a specific viewing link."
-                    }
-                },
-                "required": ["presentation_name", "presentation_title", "presentation_path", "slide_count", "text", "attachments"]
-            }
-        }
-    })
-    @usage_example('''
-        <function_calls>
-        <invoke name="present_presentation">
-        <parameter name="presentation_name">quarterly-sales-report-2024</parameter>
-        <parameter name="presentation_title">Quarterly Sales Report 2024</parameter>
-        <parameter name="presentation_path">presentations/quarterly-sales-report-2024/</parameter>
-        <parameter name="slide_count">8</parameter>
-        <parameter name="text">I've created a comprehensive quarterly sales report presentation with 8 slides covering:
-1. Executive Summary
-2. Sales Performance Overview
-3. Regional Breakdown
-4. Product Performance
-5. Key Metrics & KPIs
-6. Challenges & Opportunities
-7. Recommendations
-8. Next Steps
-
-The presentation is ready for your review. You can view each slide individually or download the files for offline use.</parameter>
-        <parameter name="attachments">presentations/quarterly-sales-report-2024/slide_01.html,presentations/quarterly-sales-report-2024/slide_02.html,presentations/quarterly-sales-report-2024/slide_03.html,presentations/quarterly-sales-report-2024/slide_04.html,presentations/quarterly-sales-report-2024/slide_05.html,presentations/quarterly-sales-report-2024/slide_06.html,presentations/quarterly-sales-report-2024/slide_07.html,presentations/quarterly-sales-report-2024/slide_08.html</parameter>
-        </invoke>
-        </function_calls>
-        ''')
-    async def present_presentation(
-        self, 
-        presentation_name: str,
-        presentation_title: str,
-        presentation_path: str,
-        slide_count: int,
-        text: str,
-        attachments: Union[str, List[str]],
-        presentation_url: Optional[str] = None
-    ) -> ToolResult:
-        """Present the final presentation to the user.
-
-        Args:
-            presentation_name: The identifier/folder name of the presentation
-            presentation_title: The human-readable title of the presentation
-            presentation_path: The file path where the presentation is located
-            slide_count: The total number of slides in the presentation
-            text: A summary or description of the presentation
-            attachments: List of presentation files to attach
-            presentation_url: Optional direct URL to view the presentation
-
-        Returns:
-            ToolResult indicating successful presentation delivery
-        """
-        try:
-            # Convert single attachment to list for consistent handling
-            if attachments and isinstance(attachments, str):
-                attachments = [attachments]
-
-            # Create a structured response with all presentation data
-            result_data = {
-                "presentation_name": presentation_name,
-                "presentation_title": presentation_title,
-                "presentation_path": presentation_path,
-                "slide_count": slide_count,
-                "text": text,
-                "attachments": attachments,
-                "presentation_url": presentation_url,
-                "status": "presentation_delivered"
-            }
-                
-            return self.success_response(result_data)
-        except Exception as e:
-            return self.fail_response(f"Error presenting presentation: {str(e)}")
 
     @openapi_schema({
         "type": "function",
@@ -336,20 +156,6 @@ The presentation is ready for your review. You can view each slide individually 
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="complete">
-        <parameter name="text">I have successfully completed all tasks for your project. Here's what was accomplished:
-1. Created the web application with modern UI components
-2. Implemented user authentication and database integration
-3. Deployed the application to production
-4. Created comprehensive documentation
-
-All deliverables are attached for your review.</parameter>
-        <parameter name="attachments">app/src/main.js,docs/README.md,deployment-config.yaml</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def complete(self, text: Optional[str] = None, attachments: Optional[Union[str, List[str]]] = None) -> ToolResult:
         """Indicate that the agent has completed all tasks and is entering complete state.
 
@@ -388,19 +194,6 @@ All deliverables are attached for your review.</parameter>
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="wait">
-        <parameter name="seconds">3</parameter>
-        </invoke>
-        </function_calls>
-
-        <function_calls>
-        <invoke name="wait">
-        <parameter name="seconds">5</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def wait(self, seconds: int) -> ToolResult:
         """Pause execution for a specified number of seconds.
 

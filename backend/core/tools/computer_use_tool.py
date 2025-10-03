@@ -7,7 +7,7 @@ import logging
 from typing import Optional, Dict
 import os
 
-from core.agentpress.tool import Tool, ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import Tool, ToolResult, openapi_schema
 from core.sandbox.tool_base import SandboxToolsBase
 from daytona_sdk import AsyncSandbox
 
@@ -105,14 +105,6 @@ class ComputerUseTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="move_to">
-        <parameter name="x">100</parameter>
-        <parameter name="y">200</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def move_to(self, x: float, y: float) -> ToolResult:
         """Move cursor to specified position."""
         try:
@@ -166,16 +158,6 @@ class ComputerUseTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="click">
-        <parameter name="x">100</parameter>
-        <parameter name="y">200</parameter>
-        <parameter name="button">left</parameter>
-        <parameter name="num_clicks">1</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def click(self, x: Optional[float] = None, y: Optional[float] = None, 
                    button: str = "left", num_clicks: int = 1) -> ToolResult:
         """Click at current or specified position."""
@@ -223,13 +205,6 @@ class ComputerUseTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="scroll">
-        <parameter name="amount">-3</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def scroll(self, amount: int) -> ToolResult:
         """
         Scroll the mouse wheel at current position.
@@ -272,13 +247,6 @@ class ComputerUseTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="typing">
-        <parameter name="text">Hello World!</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def typing(self, text: str) -> ToolResult:
         """Type specified text."""
         try:
@@ -314,13 +282,6 @@ class ComputerUseTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="press">
-        <parameter name="key">enter</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def press(self, key: str) -> ToolResult:
         """Press and release a key."""
         try:
@@ -355,13 +316,6 @@ class ComputerUseTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="wait">
-        <parameter name="duration">1.5</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def wait(self, duration: float = 0.5) -> ToolResult:
         """Wait for specified duration."""
         try:
@@ -390,13 +344,6 @@ class ComputerUseTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="mouse_down">
-        <parameter name="button">left</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def mouse_down(self, button: str = "left", x: Optional[float] = None, y: Optional[float] = None) -> ToolResult:
         """Press a mouse button at current or specified position."""
         try:
@@ -439,13 +386,6 @@ class ComputerUseTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="mouse_up">
-        <parameter name="button">left</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def mouse_up(self, button: str = "left", x: Optional[float] = None, y: Optional[float] = None) -> ToolResult:
         """Release a mouse button at current or specified position."""
         try:
@@ -491,14 +431,6 @@ class ComputerUseTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="drag_to">
-        <parameter name="x">500</parameter>
-        <parameter name="y">50</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def drag_to(self, x: float, y: float) -> ToolResult:
         """Click and drag from current position to target position."""
         try:
@@ -581,13 +513,6 @@ class ComputerUseTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="hotkey">
-        <parameter name="keys">ctrl+a</parameter>
-        </invoke>
-        </function_calls>
-        ''')    
     async def hotkey(self, keys: str) -> ToolResult:
         """Press a key combination."""
         try:

@@ -1,7 +1,7 @@
 import json
 import os
 from typing import Optional, Dict, Any, List
-from core.agentpress.tool import openapi_schema, usage_example
+from core.agentpress.tool import openapi_schema
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
@@ -222,10 +222,6 @@ IMPORTANT: All content must be wrapped in proper HTML tags. Do not use unsupport
             }
         }
     })
-    @usage_example("""Create a document with TipTap-formatted HTML like:
-    title="API Documentation", 
-    content="<h1>API Overview</h1><p>This document describes our REST API.</p><h2>Authentication</h2><p>Use <code>Bearer token</code> in headers.</p><ul><li>Get token from /auth endpoint</li><li>Include in Authorization header</li></ul>"
-    """)
     async def create_document(self, title: str, content: str, format: str = "html", metadata: Optional[Dict] = None) -> ToolResult:
         try:
             await self._ensure_docs_directory()

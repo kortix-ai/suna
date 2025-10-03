@@ -9,7 +9,7 @@ from statistics import mean
 from typing import Any, Dict, List, Optional, Tuple
 
 import chardet
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema
 from core.sandbox.tool_base import SandboxToolsBase
 from core.utils.logger import logger
 
@@ -194,19 +194,6 @@ class SandboxSheetsTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="update_sheet">
-          <parameter name="file_path">employee_details.xlsx</parameter>
-          <parameter name="sheet_name">Employee Database</parameter>
-          <parameter name="operations">[
-            {"type":"insert_row","row_index":6,"values":["","","","","","","","","",""]},
-            {"type":"insert_row","row_index":7,"values":["SUMMARY CALCULATIONS","","","","","","","","",""]},
-            {"type":"insert_row","row_index":8,"values":["Total Employees:","=COUNTA(A2:A100)","","","","","","","",""]}
-          ]</parameter>
-        </invoke>
-        </function_calls>
-    ''')
     async def update_sheet(self, file_path: str, operations: List[Dict[str, Any]], sheet_name: Optional[str] = None, save_as: Optional[str] = None) -> ToolResult:
         try:
             await self._ensure_sandbox()
@@ -447,16 +434,6 @@ class SandboxSheetsTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="view_sheet">
-          <parameter name="file_path">reports/sales.xlsx</parameter>
-          <parameter name="sheet_name">Sheet1</parameter>
-          <parameter name="max_rows">50</parameter>
-          <parameter name="export_csv_path">reports/sales_preview.csv</parameter>
-        </invoke>
-        </function_calls>
-    ''')
     async def view_sheet(self, file_path: str, sheet_name: Optional[str] = None, max_rows: int = 100, export_csv_path: Optional[str] = None) -> ToolResult:
         try:
             await self._ensure_sandbox()
@@ -499,16 +476,6 @@ class SandboxSheetsTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="create_sheet">
-          <parameter name="file_path">data/sample.csv</parameter>
-          <parameter name="headers">["region","revenue"]</parameter>
-          <parameter name="rows">[["NA",100],["EU",120]]</parameter>
-          <parameter name="overwrite">true</parameter>
-        </invoke>
-        </function_calls>
-    ''')
     async def create_sheet(self, file_path: str, headers: Optional[List[str]] = None, rows: Optional[List[List[Any]]] = None, sheet_name: Optional[str] = None, overwrite: bool = False) -> ToolResult:
         try:
             await self._ensure_sandbox()
@@ -555,16 +522,6 @@ class SandboxSheetsTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="analyze_sheet">
-          <parameter name="file_path">data/sales.csv</parameter>
-          <parameter name="target_columns">["revenue"]</parameter>
-          <parameter name="group_by">region</parameter>
-          <parameter name="export_csv_path">data/sales_summary.csv</parameter>
-        </invoke>
-        </function_calls>
-    ''')
     async def analyze_sheet(self, file_path: str, sheet_name: Optional[str] = None, target_columns: Optional[List[str]] = None, group_by: Optional[str] = None, aggregations: Optional[List[str]] = None, export_csv_path: Optional[str] = None) -> ToolResult:
         try:
             await self._ensure_sandbox()
@@ -694,18 +651,6 @@ class SandboxSheetsTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="visualize_sheet">
-          <parameter name="file_path">reports/sales.csv</parameter>
-          <parameter name="x_column">region</parameter>
-          <parameter name="y_columns">["revenue"]</parameter>
-          <parameter name="chart_type">bar</parameter>
-          <parameter name="save_as">reports/sales_chart.xlsx</parameter>
-          <parameter name="export_csv_path">reports/sales_chart_data.csv</parameter>
-        </invoke>
-        </function_calls>
-    ''')
     async def visualize_sheet(self, file_path: str, x_column: str, y_columns: List[str], chart_type: str = "bar", sheet_name: Optional[str] = None, save_as: Optional[str] = None, export_csv_path: Optional[str] = None) -> ToolResult:
         try:
             await self._ensure_sandbox()
@@ -831,16 +776,6 @@ class SandboxSheetsTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="format_sheet">
-          <parameter name="file_path">reports/sales_chart.xlsx</parameter>
-          <parameter name="sheet_name">Data</parameter>
-          <parameter name="bold_headers">true</parameter>
-          <parameter name="conditional_format">{"column":"revenue"}</parameter>
-        </invoke>
-        </function_calls>
-    ''')
     async def format_sheet(self, file_path: str, sheet_name: Optional[str] = None, bold_headers: bool = True, auto_width: bool = True, apply_banding: bool = True, conditional_format: Optional[Dict[str, Any]] = None) -> ToolResult:
         try:
             await self._ensure_sandbox()

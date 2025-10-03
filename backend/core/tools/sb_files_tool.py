@@ -1,4 +1,4 @@
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema
 from core.sandbox.tool_base import SandboxToolsBase
 from core.utils.files_utils import should_exclude_file, clean_path
 from core.agentpress.thread_manager import ThreadManager
@@ -103,21 +103,6 @@ class SandboxFilesTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="create_file">
-        <parameter name="file_path">src/main.py</parameter>
-        <parameter name="file_contents">
-        # This is the file content
-        def main():
-            print("Hello, World!")
-        
-        if __name__ == "__main__":
-            main()
-        </parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def create_file(self, file_path: str, file_contents: str, permissions: str = "644") -> ToolResult:
         try:
             # Ensure sandbox is initialized
@@ -182,15 +167,6 @@ class SandboxFilesTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="str_replace">
-        <parameter name="file_path">src/main.py</parameter>
-        <parameter name="old_str">text to replace (must appear exactly once in the file)</parameter>
-        <parameter name="new_str">replacement text that will be inserted instead</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def str_replace(self, file_path: str, old_str: str, new_str: str) -> ToolResult:
         try:
             # Ensure sandbox is initialized
@@ -259,19 +235,6 @@ class SandboxFilesTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="full_file_rewrite">
-        <parameter name="file_path">src/main.py</parameter>
-        <parameter name="file_contents">
-        This completely replaces the entire file content.
-        Use when making major changes to a file or when the changes
-        are too extensive for str-replace.
-        All previous content will be lost and replaced with this text.
-        </parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def full_file_rewrite(self, file_path: str, file_contents: str, permissions: str = "644") -> ToolResult:
         try:
             # Ensure sandbox is initialized
@@ -318,13 +281,6 @@ class SandboxFilesTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="delete_file">
-        <parameter name="file_path">src/main.py</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def delete_file(self, file_path: str) -> ToolResult:
         try:
             # Ensure sandbox is initialized
@@ -434,52 +390,6 @@ class SandboxFilesTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <!-- Example: Mark multiple scattered tasks as complete in a todo list -->
-        <function_calls>
-        <invoke name="edit_file">
-        <parameter name="target_file">todo.md</parameter>
-        <parameter name="instructions">I am marking the research and setup tasks as complete in my todo list.</parameter>
-        <parameter name="code_edit">
-// ... existing code ...
-- [x] Research topic A
-- [ ] Research topic B
-- [x] Research topic C
-// ... existing code ...
-- [x] Setup database
-- [x] Configure server
-// ... existing code ...
-        </parameter>
-        </invoke>
-        </function_calls>
-
-        <!-- Example: Add error handling and logging to a function -->
-        <function_calls>
-        <invoke name="edit_file">
-        <parameter name="target_file">src/main.py</parameter>
-        <parameter name="instructions">I am adding error handling and logging to the user authentication function</parameter>
-        <parameter name="code_edit">
-// ... existing imports ...
-from my_app.logging import logger
-from my_app.exceptions import DatabaseError
-// ... existing code ...
-def authenticate_user(username, password):
-    try:
-        user = get_user(username)
-        if user and verify_password(password, user.password_hash):
-            return user
-        return None
-    except DatabaseError as e:
-        logger.error(f"Database error during authentication: {e}")
-        return None
-    except Exception as e:
-        logger.error(f"Unexpected error during authentication: {e}")
-        return None
-// ... existing code ...
-        </parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def edit_file(self, target_file: str, instructions: str, code_edit: str) -> ToolResult:
         try:
             await self._ensure_sandbox()

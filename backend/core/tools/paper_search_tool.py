@@ -5,7 +5,7 @@ import json
 from decimal import Decimal
 from exa_py import Exa
 from exa_py.websets.types import CreateWebsetParameters, CreateEnrichmentParameters
-from core.agentpress.tool import Tool, ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import Tool, ToolResult, openapi_schema
 from core.utils.config import config, EnvMode
 from core.utils.logger import logger
 from core.agentpress.thread_manager import ThreadManager
@@ -92,20 +92,6 @@ class PaperSearchTool(Tool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="paper_search">
-        <parameter name="query">Recent papers on large language models and reasoning capabilities</parameter>
-        </invoke>
-        </function_calls>
-        
-        <function_calls>
-        <invoke name="paper_search">
-        <parameter name="query">Quantum computing research papers from 2024</parameter>
-        <parameter name="enrichment_description">Paper abstract, methodology, experimental results, and citations</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def paper_search(
         self,
         query: str,

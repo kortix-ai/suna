@@ -1,7 +1,7 @@
 from chunkr_ai import Chunkr
 from typing import Dict, Any
 
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema
 from core.agentpress.thread_manager import ThreadManager
 from core.sandbox.tool_base import SandboxToolsBase
 from core.utils.logger import logger
@@ -39,15 +39,6 @@ class SandboxDocumentParserTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="parse_document">
-          <parameter name="url">https://example.com/report.pdf</parameter>
-          <parameter name="extract_tables">true</parameter>
-          <parameter name="extract_structured_data">true</parameter>
-        </invoke>
-        </function_calls>
-    ''')
     async def parse_document(
         self, 
         url: str, 

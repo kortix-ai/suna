@@ -353,7 +353,6 @@ class PromptManager:
                                   mcp_wrapper_instance: Optional[MCPToolWrapper],
                                   client=None,
                                   tool_registry=None,
-                                  include_xml_examples: bool = False,
                                   xml_tool_calling: bool = True) -> dict:
         
         default_system_content = get_system_prompt()
@@ -463,20 +462,12 @@ class PromptManager:
             system_content += mcp_info
         
         # Add XML tool calling instructions to system prompt if requested
-        if include_xml_examples and xml_tool_calling and tool_registry:
+        if xml_tool_calling and tool_registry:
             openapi_schemas = tool_registry.get_openapi_schemas()
-            usage_examples = tool_registry.get_usage_examples()
             
             if openapi_schemas:
                 # Convert schemas to JSON string
                 schemas_json = json.dumps(openapi_schemas, indent=2)
-                
-                # Build usage examples section if any exist
-                usage_examples_section = ""
-                if usage_examples:
-                    usage_examples_section = "\n\nUsage Examples:\n"
-                    for func_name, example in usage_examples.items():
-                        usage_examples_section += f"\n{func_name}:\n{example}\n"
                 
                 examples_content = f"""
 
@@ -504,7 +495,6 @@ When using the tools:
 - Include all required parameters as specified in the schema
 - Format complex data (objects, arrays) as JSON strings within the parameter tags
 - Boolean values should be "true" or "false" (lowercase)
-{usage_examples_section}
 """
                 
                 system_content += examples_content
@@ -719,7 +709,6 @@ class AgentRunner:
             self.config.thread_id, 
             mcp_wrapper_instance, self.client,
             tool_registry=self.thread_manager.tool_registry,
-            include_xml_examples=True,
             xml_tool_calling=True
         )
         logger.info(f"📝 System message built once: {len(str(system_message.get('content', '')))} chars")

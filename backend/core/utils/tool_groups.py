@@ -218,6 +218,12 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
                 description="Delete entire presentations",
                 enabled=True
             ),
+            ToolMethod(
+                name="present_presentation",
+                display_name="Present Presentation",
+                description="Present completed presentations to user",
+                enabled=True
+            ),
         ]
     ),
     
@@ -1066,12 +1072,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
                 name="web_browser_takeover",
                 display_name="Request Browser Takeover",
                 description="Request user takeover of browser interaction",
-                enabled=True
-            ),
-            ToolMethod(
-                name="present_presentation",
-                display_name="Present Presentation",
-                description="Present completed presentations to user",
                 enabled=True
             ),
             ToolMethod(

@@ -1,4 +1,4 @@
-from core.agentpress.tool import Tool, ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import Tool, ToolResult, openapi_schema
 from core.agentpress.thread_manager import ThreadManager
 import json
 
@@ -27,28 +27,6 @@ class ExpandMessageTool(Tool):
             }
         }
     })
-    @usage_example('''
-        <!-- Example 1: Expand a message that was truncated in the previous conversation -->
-        <function_calls>
-        <invoke name="expand_message">
-        <parameter name="message_id">ecde3a4c-c7dc-4776-ae5c-8209517c5576</parameter>
-        </invoke>
-        </function_calls>
-
-        <!-- Example 2: Expand a message to create reports or analyze truncated data -->
-        <function_calls>
-        <invoke name="expand_message">
-        <parameter name="message_id">f47ac10b-58cc-4372-a567-0e02b2c3d479</parameter>
-        </invoke>
-        </function_calls>
-
-        <!-- Example 3: Expand a message when you need the full content for analysis -->
-        <function_calls>
-        <invoke name="expand_message">
-        <parameter name="message_id">550e8400-e29b-41d4-a716-446655440000</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def expand_message(self, message_id: str) -> ToolResult:
         """Expand a message from the previous conversation with the user.
 
