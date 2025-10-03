@@ -232,6 +232,12 @@ def apply_anthropic_caching_strategy(
     This prevents cache invalidation while optimizing for context window utilization
     and cost efficiency across different conversation patterns.
     """
+    # DEBUG: Count message roles to verify tool results are included
+    message_roles = [msg.get('role', 'unknown') for msg in conversation_messages]
+    role_counts = {}
+    for role in message_roles:
+        role_counts[role] = role_counts.get(role, 0) + 1
+    logger.debug(f"🔍 CACHING INPUT: {len(conversation_messages)} messages - Roles: {role_counts}")
     if not conversation_messages:
         conversation_messages = []
     
@@ -256,10 +262,15 @@ def apply_anthropic_caching_strategy(
     
     # Calculate mathematically optimized cache threshold
     if cache_threshold_tokens is None:
+        # Include system prompt tokens in calculation for accurate density (like compression does)
+        # Use token_counter on combined messages to match compression's calculation method
+        from litellm import token_counter
+        total_tokens = token_counter(model=model_name, messages=[working_system_prompt] + conversation_messages) if conversation_messages else 0
+        
         cache_threshold_tokens = calculate_optimal_cache_threshold(
             context_window_tokens, 
             len(conversation_messages),
-            get_messages_token_count(conversation_messages, model_name) if conversation_messages else 0
+            total_tokens  # Now includes system prompt for accurate density calculation
         )
     
     logger.info(f"📊 Applying single cache breakpoint strategy for {len(conversation_messages)} messages")
@@ -307,6 +318,7 @@ def apply_anthropic_caching_strategy(
     max_cacheable_tokens = int(context_window_tokens * 0.8)
     
     if total_conversation_tokens <= max_cacheable_tokens:
+        logger.debug(f"Conversation fits within cache limits - use chunked approach")
         # Conversation fits within cache limits - use chunked approach
         chunks_created = create_conversation_chunks(
             conversation_messages, 
@@ -350,6 +362,7 @@ def create_conversation_chunks(
     Final messages are NEVER cached to prevent cache invalidation.
     Returns number of cache blocks created.
     """
+    logger.debug(f"Creating conversation chunks - chunk threshold: {chunk_threshold_tokens}, max blocks: {max_blocks}")
     if not messages or max_blocks <= 0:
         return 0
     

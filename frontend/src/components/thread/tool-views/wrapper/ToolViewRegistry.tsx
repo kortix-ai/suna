@@ -13,6 +13,8 @@ import { WebScrapeToolView } from '../web-scrape-tool/WebScrapeToolView';
 import { WebSearchToolView } from '../web-search-tool/WebSearchToolView';
 import { PeopleSearchToolView } from '../people-search-tool/PeopleSearchToolView';
 import { CompanySearchToolView } from '../company-search-tool/CompanySearchToolView';
+import { PaperSearchToolView } from '../paper-search-tool/PaperSearchToolView';
+import { DocumentParserToolView } from '../document-parser-tool/DocumentParserToolView';
 import { SeeImageToolView } from '../see-image-tool/SeeImageToolView';
 import { TerminateCommandToolView } from '../command-tool/TerminateCommandToolView';
 import { AskToolView } from '../ask-tool/AskToolView';
@@ -56,6 +58,7 @@ import ListAgentWorkflowsToolView from '../list-agent-workflows/list-agent-workf
 import { createPresentationViewerToolContent, parsePresentationSlidePath } from '../utils/presentation-utils';
 import { extractToolData } from '../utils';
 import { KbToolView } from '../KbToolView';
+import { ExpandMessageToolView } from '../expand-message-tool/ExpandMessageToolView';
 
 
 export type ToolViewComponent = React.ComponentType<ToolViewProps>;
@@ -79,11 +82,14 @@ const defaultRegistry: ToolViewRegistryType = {
   'read-file': FileOperationToolView,
   'edit-file': FileEditToolView,
 
+  'parse-document': DocumentParserToolView,
+
   'str-replace': StrReplaceToolView,
 
   'web-search': WebSearchToolView,
   'people-search': PeopleSearchToolView,
   'company-search': CompanySearchToolView,
+  'paper-search': PaperSearchToolView,
   'crawl-webpage': WebCrawlToolView,
   'scrape-webpage': WebScrapeToolView,
   'image-search': WebSearchToolView,
@@ -117,6 +123,8 @@ const defaultRegistry: ToolViewRegistryType = {
   'ask': AskToolView,
   'complete': CompleteToolView,
   'wait': WaitToolView,
+  'expand_message': ExpandMessageToolView,
+  'expand-message': ExpandMessageToolView,
 
   'deploy': DeployToolView,
 

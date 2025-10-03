@@ -88,9 +88,15 @@ class ContextManager:
             else:
                 return msg_content
   
-    def compress_tool_result_messages(self, messages: List[Dict[str, Any]], llm_model: str, max_tokens: Optional[int], token_threshold: int = 1000) -> List[Dict[str, Any]]:
-        """Compress the tool result messages except the most recent one."""
-        uncompressed_total_token_count = token_counter(model=llm_model, messages=messages)
+    def compress_tool_result_messages(self, messages: List[Dict[str, Any]], llm_model: str, max_tokens: Optional[int], token_threshold: int = 1000, uncompressed_total_token_count: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Compress the tool result messages except the most recent one.
+        
+        Compression is deterministic (simple truncation), ensuring consistent results across requests.
+        This allows prompt caching (applied later) to produce cache hits on identical compressed content.
+        """
+        if uncompressed_total_token_count is None:
+            uncompressed_total_token_count = token_counter(model=llm_model, messages=messages)
+
         max_tokens_value = max_tokens or (100 * 1000)
 
         if uncompressed_total_token_count > max_tokens_value:
@@ -112,9 +118,15 @@ class ContextManager:
                             msg["content"] = self.safe_truncate(msg["content"], int(max_tokens_value * 2))
         return messages
 
-    def compress_user_messages(self, messages: List[Dict[str, Any]], llm_model: str, max_tokens: Optional[int], token_threshold: int = 1000) -> List[Dict[str, Any]]:
-        """Compress the user messages except the most recent one."""
-        uncompressed_total_token_count = token_counter(model=llm_model, messages=messages)
+    def compress_user_messages(self, messages: List[Dict[str, Any]], llm_model: str, max_tokens: Optional[int], token_threshold: int = 1000, uncompressed_total_token_count: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Compress the user messages except the most recent one.
+        
+        Compression is deterministic (simple truncation), ensuring consistent results across requests.
+        This allows prompt caching (applied later) to produce cache hits on identical compressed content.
+        """
+        if uncompressed_total_token_count is None:
+            uncompressed_total_token_count = token_counter(model=llm_model, messages=messages)
+
         max_tokens_value = max_tokens or (100 * 1000)
 
         if uncompressed_total_token_count > max_tokens_value:
@@ -136,9 +148,15 @@ class ContextManager:
                             msg["content"] = self.safe_truncate(msg["content"], int(max_tokens_value * 2))
         return messages
 
-    def compress_assistant_messages(self, messages: List[Dict[str, Any]], llm_model: str, max_tokens: Optional[int], token_threshold: int = 1000) -> List[Dict[str, Any]]:
-        """Compress the assistant messages except the most recent one."""
-        uncompressed_total_token_count = token_counter(model=llm_model, messages=messages)
+    def compress_assistant_messages(self, messages: List[Dict[str, Any]], llm_model: str, max_tokens: Optional[int], token_threshold: int = 1000, uncompressed_total_token_count: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Compress the assistant messages except the most recent one.
+        
+        Compression is deterministic (simple truncation), ensuring consistent results across requests.
+        This allows prompt caching (applied later) to produce cache hits on identical compressed content.
+        """
+        if uncompressed_total_token_count is None:
+            uncompressed_total_token_count = token_counter(model=llm_model, messages=messages)
+
         max_tokens_value = max_tokens or (100 * 1000)
         
         if uncompressed_total_token_count > max_tokens_value:
@@ -188,15 +206,10 @@ class ContextManager:
                 result.append(msg)
         return result
 
-    def compress_messages(self, messages: List[Dict[str, Any]], llm_model: str, max_tokens: Optional[int] = 41000, token_threshold: int = 4096, max_iterations: int = 5) -> List[Dict[str, Any]]:
-        """Compress the messages.
+    def compress_messages(self, messages: List[Dict[str, Any]], llm_model: str, max_tokens: Optional[int] = 41000, token_threshold: int = 4096, max_iterations: int = 5, actual_total_tokens: Optional[int] = None, system_prompt: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Compress the messages WITHOUT applying caching during iterations.
         
-        Args:
-            messages: List of messages to compress
-            llm_model: Model name for token counting
-            max_tokens: Maximum allowed tokens
-            token_threshold: Token threshold for individual message compression (must be a power of 2)
-            max_iterations: Maximum number of compression iterations
+        Caching should be applied ONCE at the end by the caller, not during compression.
         """
         # Get model-specific token limits from constants
         context_window = model_manager.get_context_window(llm_model)
@@ -218,24 +231,46 @@ class ContextManager:
         result = messages
         result = self.remove_meta_messages(result)
 
-        uncompressed_total_token_count = token_counter(model=llm_model, messages=result)
+        # Calculate initial token count - just conversation + system prompt, NO caching overhead
+        print(f"actual_total_tokens: {actual_total_tokens}")
+        if actual_total_tokens is not None:
+            uncompressed_total_token_count = actual_total_tokens
+        else:
+            print("no actual_total_tokens")
+            # Count conversation + system prompt WITHOUT caching
+            if system_prompt:
+                uncompressed_total_token_count = token_counter(model=llm_model, messages=[system_prompt] + result)
+            else:
+                uncompressed_total_token_count = token_counter(model=llm_model, messages=result)
+            logger.info(f"Initial token count (no caching): {uncompressed_total_token_count}")
 
-        result = self.compress_tool_result_messages(result, llm_model, max_tokens, token_threshold)
-        result = self.compress_user_messages(result, llm_model, max_tokens, token_threshold)
-        result = self.compress_assistant_messages(result, llm_model, max_tokens, token_threshold)
+        # Apply compression
+        result = self.compress_tool_result_messages(result, llm_model, max_tokens, token_threshold, uncompressed_total_token_count)
+        result = self.compress_user_messages(result, llm_model, max_tokens, token_threshold, uncompressed_total_token_count)
+        result = self.compress_assistant_messages(result, llm_model, max_tokens, token_threshold, uncompressed_total_token_count)
 
-        compressed_token_count = token_counter(model=llm_model, messages=result)
+        # Recalculate WITHOUT caching overhead
+        if system_prompt:
+            compressed_total = token_counter(model=llm_model, messages=[system_prompt] + result)
+        else:
+            compressed_total = token_counter(model=llm_model, messages=result)
+        
+        logger.info(f"Context compression: {uncompressed_total_token_count} -> {compressed_total} token")
 
-        logger.info(f"Context compression: {uncompressed_total_token_count} -> {compressed_token_count} tokens")
-
+        # Recurse if still too large
         if max_iterations <= 0:
-            logger.warning(f"compress_messages: Max iterations reached, omitting messages")
-            result = self.compress_messages_by_omitting_messages(messages, llm_model, max_tokens)
+            logger.warning(f"Max iterations reached, omitting messages")
+            result = self.compress_messages_by_omitting_messages(result, llm_model, max_tokens, system_prompt=system_prompt)
             return result
 
-        if compressed_token_count > max_tokens:
-            logger.warning(f"Further token compression is needed: {compressed_token_count} > {max_tokens}")
-            result = self.compress_messages(messages, llm_model, max_tokens, token_threshold // 2, max_iterations - 1)
+        if compressed_total > max_tokens:
+            logger.warning(f"Further compression needed: {compressed_total} > {max_tokens}")
+            # Recursive call - still NO caching
+            result = self.compress_messages(
+                result, llm_model, max_tokens, 
+                token_threshold // 2, max_iterations - 1, 
+                compressed_total, system_prompt,
+            )
 
         return self.middle_out_messages(result)
     
@@ -245,7 +280,8 @@ class ContextManager:
             llm_model: str, 
             max_tokens: Optional[int] = 41000,
             removal_batch_size: int = 10,
-            min_messages_to_keep: int = 10
+            min_messages_to_keep: int = 10,
+            system_prompt: Optional[Dict[str, Any]] = None
         ) -> List[Dict[str, Any]]:
         """Compress the messages by omitting messages from the middle.
         
@@ -263,15 +299,19 @@ class ContextManager:
         result = self.remove_meta_messages(result)
 
         # Early exit if no compression needed
-        initial_token_count = token_counter(model=llm_model, messages=result)
+        if system_prompt:
+            initial_token_count = token_counter(model=llm_model, messages=[system_prompt] + result)
+        else:
+            initial_token_count = token_counter(model=llm_model, messages=result)
+        
         max_allowed_tokens = max_tokens or (100 * 1000)
         
         if initial_token_count <= max_allowed_tokens:
             return result
 
         # Separate system message (assumed to be first) from conversation messages
-        system_message = messages[0] if messages and isinstance(messages[0], dict) and messages[0].get('role') == 'system' else None
-        conversation_messages = result[1:] if system_message else result
+        system_message = system_prompt
+        conversation_messages = result
         
         safety_limit = 500
         current_token_count = initial_token_count
@@ -302,9 +342,14 @@ class ContextManager:
             messages_to_count = ([system_message] + conversation_messages) if system_message else conversation_messages
             current_token_count = token_counter(model=llm_model, messages=messages_to_count)
 
-        # Prepare final result
-        final_messages = ([system_message] + conversation_messages) if system_message else conversation_messages
-        final_token_count = token_counter(model=llm_model, messages=final_messages)
+        # Prepare final result - return only conversation messages (matches compress_messages pattern)
+        final_messages = conversation_messages
+        
+        # Log with system prompt included for accurate token reporting
+        if system_message:
+            final_token_count = token_counter(model=llm_model, messages=[system_message] + final_messages)
+        else:
+            final_token_count = token_counter(model=llm_model, messages=final_messages)
         
         logger.info(f"Context compression (omit): {initial_token_count} -> {final_token_count} tokens ({len(messages)} -> {len(final_messages)} messages)")
             

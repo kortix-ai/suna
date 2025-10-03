@@ -22,20 +22,20 @@ class ImageContextManager:
     async def add_image_to_context(
         self, 
         thread_id: str, 
-        base64_data: str, 
+        image_url: str,
         mime_type: str, 
         file_path: str,
         original_size: int,
         compressed_size: int
     ) -> Optional[Dict[str, Any]]:
-        """Add an image to the conversation context as a proper LLM message."""
+        """Add an image to the conversation context as a proper LLM message using image URL."""
         try:
             # Create the LLM-compatible message format directly
             message_content = {
                 "role": "user",
                 "content": [
                     {"type": "text", "text": f"Here is the image from '{file_path}':"},
-                    {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_data}"}}
+                    {"type": "image_url", "image_url": {"url": image_url}}
                 ]
             }
             

@@ -139,6 +139,24 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
     ],
   },
 
+  paper_search_tool: {
+    name: 'paper_search_tool',
+    displayName: 'Paper Search',
+    description: 'Search for papers using natural language queries',
+    icon: 'Book',
+    color: 'bg-blue-100 dark:bg-blue-800/50',
+    toolClass: 'PaperSearchTool',
+    enabled: true,
+    methods: [
+      {
+        name: 'paper_search',
+        displayName: 'Paper Search',
+        description: 'Search for papers using natural language queries',
+        enabled: true,
+      },
+    ],
+  },
+
   sb_vision_tool: {
     name: 'sb_vision_tool',
     displayName: 'Vision & Image Analysis',
@@ -967,6 +985,24 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
       },
     ],
   },
+
+//   sb_document_parser_tool: {
+//     name: 'sb_document_parser_tool',
+//     displayName: 'Document Parser',
+//     description: 'Parse documents using Chunkr AI',
+//     icon: 'FileText',
+//     color: 'bg-gray-100 dark:bg-gray-800/50',
+//     toolClass: 'SandboxDocumentParserTool',
+//     enabled: true,
+//     methods: [
+//       {
+//         name: 'parse_document',
+//         displayName: 'Parse Document',
+//         description: 'Parse documents using Chunkr AI',
+//         enabled: true,
+//       },
+//     ],
+//   },
 
   sb_kb_tool: {
     name: 'sb_kb_tool',

@@ -17,6 +17,7 @@ from langfuse.client import StatefulGenerationClient, StatefulTraceClient
 from core.services.langfuse import langfuse
 from datetime import datetime, timezone
 from core.billing.billing_integration import billing_integration
+from litellm.utils import token_counter
 
 ToolChoice = Literal["auto", "required", "none"]
 
@@ -124,8 +125,8 @@ class ThreadManager:
             usage = content.get("usage", {})
             
             # DEBUG: Log the complete usage object to see what data we have
-            logger.info(f"🔍 THREAD MANAGER USAGE: {usage}")
-            logger.info(f"🔍 THREAD MANAGER CONTENT: {content}")
+            # logger.info(f"🔍 THREAD MANAGER USAGE: {usage}")
+            # logger.info(f"🔍 THREAD MANAGER CONTENT: {content}")
             
             prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
             completion_tokens = int(usage.get("completion_tokens", 0) or 0)
@@ -230,14 +231,9 @@ class ThreadManager:
         native_max_auto_continues: int = 25,
         max_xml_tool_calls: int = 0,
         generation: Optional[StatefulGenerationClient] = None,
-        enable_prompt_caching: bool = True,
-        enable_context_manager: Optional[bool] = None,
     ) -> Union[Dict[str, Any], AsyncGenerator]:
         """Run a conversation thread with LLM integration and tool execution."""
         logger.debug(f"🚀 Starting thread execution for {thread_id} with model {llm_model}")
-
-        # Determine if context manager should be used (default to True)
-        use_context_manager = enable_context_manager if enable_context_manager is not None else True
 
         # Ensure we have a valid ProcessorConfig object
         if processor_config is None:
@@ -262,8 +258,7 @@ class ThreadManager:
             result = await self._execute_run(
                 thread_id, system_prompt, llm_model, llm_temperature, llm_max_tokens,
                 tool_choice, config, stream,
-                generation, auto_continue_state, temporary_message, enable_prompt_caching,
-                use_context_manager
+                generation, auto_continue_state, temporary_message
             )
             
             # If result is an error dict, convert it to a generator that yields the error
@@ -277,15 +272,14 @@ class ThreadManager:
             thread_id, system_prompt, llm_model, llm_temperature, llm_max_tokens,
             tool_choice, config, stream,
             generation, auto_continue_state, temporary_message,
-            native_max_auto_continues, enable_prompt_caching, use_context_manager
+            native_max_auto_continues
         )
 
     async def _execute_run(
         self, thread_id: str, system_prompt: Dict[str, Any], llm_model: str,
         llm_temperature: float, llm_max_tokens: Optional[int], tool_choice: ToolChoice,
         config: ProcessorConfig, stream: bool, generation: Optional[StatefulGenerationClient],
-        auto_continue_state: Dict[str, Any], temporary_message: Optional[Dict[str, Any]] = None,
-        enable_prompt_caching: bool = False, use_context_manager: bool = True
+        auto_continue_state: Dict[str, Any], temporary_message: Optional[Dict[str, Any]] = None
     ) -> Union[Dict[str, Any], AsyncGenerator]:
         """Execute a single LLM run."""
         
@@ -303,20 +297,28 @@ class ThreadManager:
                 partial_content = auto_continue_state['continuous_state']['accumulated_content']
                 messages.append({"role": "assistant", "content": partial_content})
 
-            # Apply context compression if enabled
-            if use_context_manager:
+            # ===== CENTRAL CONFIGURATION =====
+            ENABLE_CONTEXT_MANAGER = True   # Set to False to disable context compression
+            ENABLE_PROMPT_CACHING = True    # Set to False to disable prompt caching
+            # ==================================
+
+            # Apply context compression
+            if ENABLE_CONTEXT_MANAGER:
                 logger.debug(f"Context manager enabled, compressing {len(messages)} messages")
                 context_manager = ContextManager()
+
                 compressed_messages = context_manager.compress_messages(
-                    messages, llm_model, max_tokens=llm_max_tokens
+                    messages, llm_model, max_tokens=llm_max_tokens, 
+                    actual_total_tokens=None,  # Will be calculated inside
+                    system_prompt=system_prompt # KEY FIX: No caching during compression
                 )
                 logger.debug(f"Context compression completed: {len(messages)} -> {len(compressed_messages)} messages")
                 messages = compressed_messages
             else:
                 logger.debug("Context manager disabled, using raw messages")
 
-            # Apply caching if enabled
-            if enable_prompt_caching:
+            # Apply caching
+            if ENABLE_PROMPT_CACHING:
                 prepared_messages = apply_anthropic_caching_strategy(system_prompt, messages, llm_model)
                 prepared_messages = validate_cache_blocks(prepared_messages, llm_model)
             else:
@@ -341,6 +343,10 @@ class ThreadManager:
                     )
                 except Exception as e:
                     logger.warning(f"Failed to update Langfuse generation: {e}")
+
+            # Log final prepared messages token count
+            final_prepared_tokens = token_counter(model=llm_model, messages=prepared_messages)
+            logger.info(f"📤 Final prepared messages being sent to LLM: {final_prepared_tokens} tokens")
 
             # Make LLM call
             try:
@@ -387,8 +393,7 @@ class ThreadManager:
         llm_temperature: float, llm_max_tokens: Optional[int], tool_choice: ToolChoice,
         config: ProcessorConfig, stream: bool, generation: Optional[StatefulGenerationClient],
         auto_continue_state: Dict[str, Any], temporary_message: Optional[Dict[str, Any]],
-        native_max_auto_continues: int, enable_prompt_caching: bool = False,
-        use_context_manager: bool = True
+        native_max_auto_continues: int
     ) -> AsyncGenerator:
         """Generator that handles auto-continue logic."""
         logger.debug(f"Starting auto-continue generator, max: {native_max_auto_continues}")
@@ -407,8 +412,7 @@ class ThreadManager:
                     thread_id, system_prompt, llm_model, llm_temperature, llm_max_tokens,
                     tool_choice, config, stream,
                     generation, auto_continue_state,
-                    temporary_message if auto_continue_state['count'] == 0 else None,
-                    enable_prompt_caching, use_context_manager
+                    temporary_message if auto_continue_state['count'] == 0 else None
                 )
 
                 # Handle error responses

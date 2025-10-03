@@ -323,7 +323,7 @@ export function UploadFileToolView({
                           size="sm"
                         >
                           <ExternalLink className="h-3.5 w-3.5" />
-                          Open Secure File
+                          Open File
                         </Button>
                       </div>
                     </div>

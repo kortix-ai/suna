@@ -235,9 +235,9 @@ class CustomMCPHandler:
                     'custom_config': server_config
                 }
                 tools_registered += 1
-                logger.debug(f"Registered custom tool: {tool_name}")
+                # logger.debug(f"Registered custom tool: {tool_name}")
         
-        logger.debug(f"Successfully initialized custom MCP {server_name} with {tools_registered} tools")
+        # logger.debug(f"Successfully initialized custom MCP {server_name} with {tools_registered} tools")
     
     def _register_custom_tools_from_info(self, tools_info: List[Dict[str, Any]], server_name: str, enabled_tools: List[str], custom_type: str, server_config: Dict[str, Any]):
         tools_registered = 0

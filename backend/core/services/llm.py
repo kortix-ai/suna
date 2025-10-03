@@ -16,9 +16,15 @@ from core.utils.config import config
 from core.agentpress.error_processor import ErrorProcessor
 
 # Configure LiteLLM
-os.environ['LITELLM_LOG'] = 'DEBUG'
+# os.environ['LITELLM_LOG'] = 'DEBUG'
+# litellm.set_verbose = True  # Enable verbose logging
 litellm.modify_params = True
 litellm.drop_params = True
+
+# Enable additional debug logging
+# import logging
+# litellm_logger = logging.getLogger("LiteLLM")
+# litellm_logger.setLevel(logging.DEBUG)
 
 # Constants
 MAX_RETRIES = 3
@@ -83,65 +89,6 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
     ]
     provider_router = Router(model_list=model_list)
 
-def _configure_token_limits(params: Dict[str, Any], model_name: str, max_tokens: Optional[int]) -> None:
-    """Configure token limits based on model type."""
-    # Only set max_tokens if explicitly provided - let providers use their defaults otherwise
-    if max_tokens is None:
-        # logger.debug(f"No max_tokens specified, using provider defaults for model: {model_name}")
-        return
-    
-    is_openai_o_series = 'o1' in model_name
-    is_openai_gpt5 = 'gpt-5' in model_name
-    param_name = "max_completion_tokens" if (is_openai_o_series or is_openai_gpt5) else "max_tokens"
-    params[param_name] = max_tokens
-    # logger.debug(f"Set {param_name}={max_tokens} for model: {model_name}")
-
-def _configure_anthropic(params: Dict[str, Any], model_name: str) -> None:
-    """Configure Anthropic-specific parameters."""
-    if not ("claude" in model_name.lower() or "anthropic" in model_name.lower()):
-        return
-    
-    # Include prompt caching and context-1m beta features
-    params["extra_headers"] = {
-        "anthropic-beta": "prompt-caching-2024-07-31,context-1m-2025-08-07"
-    }
-    logger.debug(f"Added Anthropic-specific headers for prompt caching and 1M context window")
-
-def _configure_openrouter(params: Dict[str, Any], model_name: str) -> None:
-    """Configure OpenRouter-specific parameters."""
-    if not model_name.startswith("openrouter/"):
-        return
-    
-    # logger.debug(f"Preparing OpenRouter parameters for model: {model_name}")
-
-    # Add optional site URL and app name from config
-    site_url = config.OR_SITE_URL
-    app_name = config.OR_APP_NAME
-    if site_url or app_name:
-        extra_headers = params.get("extra_headers", {})
-        if site_url:
-            extra_headers["HTTP-Referer"] = site_url
-        if app_name:
-            extra_headers["X-Title"] = app_name
-        params["extra_headers"] = extra_headers
-        # logger.debug(f"Added OpenRouter site URL and app name to headers")
-
-def _configure_bedrock(params: Dict[str, Any], resolved_model_name: str, model_id: Optional[str]) -> None:
-    """Configure Bedrock-specific parameters including inference profile ARNs."""
-    if not resolved_model_name.startswith("bedrock/"):
-        return
-    
-    # Set inference profile ARNs if available and not already provided
-    from core.ai_models import model_manager
-    model_obj = model_manager.get_model(resolved_model_name)
-    if model_obj and not model_id:  # Only set if not already provided
-        if "claude-sonnet-4-20250514-v1:0" in resolved_model_name:
-            params["model_id"] = "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0"
-            # logger.debug(f"Set Bedrock inference profile ARN for Claude Sonnet 4")
-        elif "claude-3-7-sonnet-20250219-v1:0" in resolved_model_name:
-            params["model_id"] = "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
-            # logger.debug(f"Set Bedrock inference profile ARN for Claude 3.7 Sonnet")
-
 def _configure_openai_compatible(params: Dict[str, Any], model_name: str, api_key: Optional[str], api_base: Optional[str]) -> None:
     """Configure OpenAI-compatible provider setup."""
     if not model_name.startswith("openai-compatible/"):
@@ -158,29 +105,6 @@ def _configure_openai_compatible(params: Dict[str, Any], model_name: str, api_ke
     setup_provider_router(api_key, api_base)
     logger.debug(f"Configured OpenAI-compatible provider with custom API base")
 
-def _configure_thinking(params: Dict[str, Any], model_name: str) -> None:
-    """Configure reasoning/thinking parameters automatically based on model capabilities."""
-    # Check if model supports thinking/reasoning
-    is_anthropic = "anthropic" in model_name.lower() or "claude" in model_name.lower()
-    is_xai = "xai" in model_name.lower() or model_name.startswith("xai/")
-    is_bedrock_anthropic = "bedrock" in model_name.lower() and "anthropic" in model_name.lower()
-    
-    # Enable thinking for supported models
-    if is_anthropic or is_xai or is_bedrock_anthropic:
-        # Use higher effort for premium models
-        if "sonnet-4" in model_name.lower() or "claude-4" in model_name.lower():
-            effort_level = "medium"
-        else:
-            effort_level = "low"
-        
-        if is_anthropic or is_bedrock_anthropic:
-            params["reasoning_effort"] = effort_level
-            params["temperature"] = 1.0  # Required by Anthropic when reasoning_effort is used
-            logger.info(f"Anthropic thinking auto-enabled with reasoning_effort='{effort_level}' for model: {model_name}")
-        elif is_xai:
-            params["reasoning_effort"] = effort_level
-            logger.info(f"xAI thinking auto-enabled with reasoning_effort='{effort_level}' for model: {model_name}")
-
 def _add_tools_config(params: Dict[str, Any], tools: Optional[List[Dict[str, Any]]], tool_choice: str) -> None:
     """Add tools configuration to parameters."""
     if tools is None:
@@ -192,52 +116,6 @@ def _add_tools_config(params: Dict[str, Any], tools: Optional[List[Dict[str, Any
     })
     # logger.debug(f"Added {len(tools)} tools to API parameters")
 
-def prepare_params(
-    messages: List[Dict[str, Any]],
-    model_name: str,
-    temperature: float = 0,
-    max_tokens: Optional[int] = None,
-    response_format: Optional[Any] = None,
-    tools: Optional[List[Dict[str, Any]]] = None,
-    tool_choice: str = "auto",
-    api_key: Optional[str] = None,
-    api_base: Optional[str] = None,
-    stream: bool = True,  # Always stream for better UX
-    top_p: Optional[float] = None,
-    model_id: Optional[str] = None,
-) -> Dict[str, Any]:
-    from core.ai_models import model_manager
-    resolved_model_name = model_manager.resolve_model_id(model_name)
-    # logger.debug(f"Model resolution: '{model_name}' -> '{resolved_model_name}'")
-    
-    params = {
-        "model": resolved_model_name,
-        "messages": messages,
-        "temperature": temperature,
-        "response_format": response_format,
-        "top_p": top_p,
-        "stream": stream,
-        "num_retries": MAX_RETRIES,
-    }
-    
-    if stream:
-        params["stream_options"] = {"include_usage": True}
-    if api_key:
-        params["api_key"] = api_key
-    if api_base:
-        params["api_base"] = api_base
-    if model_id:
-        params["model_id"] = model_id
-    
-    _configure_bedrock(params, resolved_model_name, model_id)
-    _configure_openai_compatible(params, model_name, api_key, api_base)
-    _configure_token_limits(params, resolved_model_name, max_tokens)
-    _add_tools_config(params, tools, tool_choice)
-    _configure_anthropic(params, resolved_model_name)
-    _configure_openrouter(params, resolved_model_name)
-    # _configure_thinking(params, resolved_model_name)
-
-    return params
 
 async def make_llm_api_call(
     messages: List[Dict[str, Any]],
@@ -252,50 +130,72 @@ async def make_llm_api_call(
     stream: bool = True,  # Always stream for better UX
     top_p: Optional[float] = None,
     model_id: Optional[str] = None,
+    headers: Optional[Dict[str, str]] = None,
+    extra_headers: Optional[Dict[str, str]] = None,
 ) -> Union[Dict[str, Any], AsyncGenerator, ModelResponse]:
     """Make an API call to a language model using LiteLLM."""
     logger.info(f"Making LLM API call to model: {model_name} with {len(messages)} messages")
     
-    # DEBUG: Log if any messages have cache_control
-    # cache_messages = [i for i, msg in enumerate(messages) if 
-    #                  isinstance(msg.get('content'), list) and 
-    #                  msg['content'] and 
-    #                  isinstance(msg['content'][0], dict) and 
-    #                  'cache_control' in msg['content'][0]]
-    # if cache_messages:
-    #     logger.info(f"🔥 CACHE CONTROL: Found cache_control in messages at positions: {cache_messages}")
-    # else:
-    #     logger.info(f"❌ NO CACHE CONTROL: No cache_control found in any messages")
+    # Prepare parameters using centralized model configuration
+    from core.ai_models import model_manager
+    resolved_model_name = model_manager.resolve_model_id(model_name)
+    # logger.debug(f"Model resolution: '{model_name}' -> '{resolved_model_name}'")
     
-    # Check token count for context window issues
-    # try:
-    #     from litellm import token_counter
-    #     total_tokens = token_counter(model=model_name, messages=messages)
-    #     logger.debug(f"Estimated input tokens: {total_tokens}")
-        
-    #     if total_tokens > 200000:
-    #         logger.warning(f"High token count detected: {total_tokens}")
-    # except Exception:
-    #     pass  # Token counting is optional
+    # Only pass headers/extra_headers if they are not None to avoid overriding model config
+    override_params = {
+        "messages": messages,
+        "temperature": temperature,
+        "response_format": response_format,
+        "top_p": top_p,
+        "stream": stream,
+        "api_key": api_key,
+        "api_base": api_base
+    }
     
-    # Prepare parameters
-    params = prepare_params(
-        messages=messages,
-        model_name=model_name,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        response_format=response_format,
-        tools=tools,
-        tool_choice=tool_choice,
-        api_key=api_key,
-        api_base=api_base,
-        stream=stream,
-        top_p=top_p,
-        model_id=model_id,
-    )
+    # Only add headers if they are provided (not None)
+    if headers is not None:
+        override_params["headers"] = headers
+    if extra_headers is not None:
+        override_params["extra_headers"] = extra_headers
+    
+    params = model_manager.get_litellm_params(resolved_model_name, **override_params)
+    
+    # logger.debug(f"Parameters from model_manager.get_litellm_params: {params}")
+    
+    if model_id:
+        params["model_id"] = model_id
+    
+    if stream:
+        params["stream_options"] = {"include_usage": True}
+    
+    # Apply additional configurations that aren't in the model config yet
+    _configure_openai_compatible(params, model_name, api_key, api_base)
+    _add_tools_config(params, tools, tool_choice)
     
     try:
-        # logger.debug(f"Calling LiteLLM acompletion for {model_name}")
+        # Log the complete parameters being sent to LiteLLM
+        # logger.debug(f"Calling LiteLLM acompletion for {resolved_model_name}")
+        # logger.debug(f"Complete LiteLLM parameters: {params}")
+        
+        # # Save parameters to txt file for debugging
+        # import json
+        # import os
+        # from datetime import datetime
+        
+        # debug_dir = "debug_logs"
+        # os.makedirs(debug_dir, exist_ok=True)
+        
+        # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        # filename = f"{debug_dir}/llm_params_{timestamp}.txt"
+        
+        # with open(filename, 'w') as f:
+        #     f.write(f"Timestamp: {datetime.now().isoformat()}\n")
+        #     f.write(f"Model Name: {model_name}\n")
+        #     f.write(f"Resolved Model Name: {resolved_model_name}\n")
+        #     f.write(f"Parameters:\n{json.dumps(params, indent=2, default=str)}\n")
+        
+        # logger.debug(f"LiteLLM parameters saved to: {filename}")
+        
         response = await provider_router.acompletion(**params)
         
         # For streaming responses, we need to handle errors that occur during iteration
@@ -323,3 +223,20 @@ async def _wrap_streaming_response(response) -> AsyncGenerator:
 
 setup_api_keys()
 setup_provider_router()
+
+
+if __name__ == "__main__":
+    from litellm import completion
+    import os
+
+    setup_api_keys()
+
+    response = completion(
+        model="bedrock/anthropic.claude-sonnet-4-20250115-v1:0",
+        messages=[{"role": "user", "content": "Hello! Testing 1M context window."}],
+        max_tokens=100,
+        extra_headers={
+            "anthropic-beta": "context-1m-2025-08-07"  # 👈 Enable 1M context
+        }
+    )
+

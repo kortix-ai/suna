@@ -214,7 +214,6 @@ class TemplateService:
             template_id=str(uuid4()),
             creator_id=creator_id,
             name=agent['name'],
-            description=agent.get('description'),
             config=sanitized_config,
             tags=tags or [],
             is_public=make_public,
@@ -266,7 +265,11 @@ class TemplateService:
             return self._map_to_template(result.data)
             
         except Exception as e:
-            logger.error(f"Error in get_template for {template_id}: {e}", exc_info=True)
+            try:
+                error_str = str(e)
+            except Exception:
+                error_str = f"Error of type {type(e).__name__}"
+            logger.error(f"Error in get_template for {template_id}: {error_str}")
             raise
     
     async def get_user_templates(self, creator_id: str) -> List[AgentTemplate]:

@@ -237,22 +237,10 @@ class ResponseProcessor:
         agent_should_terminate = False # Flag to track if a terminating tool has been executed
         complete_native_tool_calls = [] # Initialize early for use in assistant_response_end
 
-        # Collect metadata for reconstructing LiteLLM response object
-        streaming_metadata = {
-            "model": llm_model,
-            "created": None,
-            "usage": {
-                "prompt_tokens": 0,
-                "completion_tokens": 0,
-                "total_tokens": 0,
-                "cache_creation_input_tokens": 0,
-                "cache_read_input_tokens": 0,
-                "prompt_tokens_details": {"cached_tokens": 0}
-            },
-            "response_ms": None,
-            "first_chunk_time": None,
-            "last_chunk_time": None
-        }
+        # Store the complete LiteLLM response object as received
+        final_llm_response = None
+        first_chunk_time = None
+        last_chunk_time = None
 
         logger.debug(f"Streaming Config: XML={config.xml_tool_calling}, Native={config.native_tool_calling}, "
                    f"Execute on stream={config.execute_on_stream}, Strategy={config.tool_execution_strategy}")
@@ -291,52 +279,23 @@ class ResponseProcessor:
             async for chunk in llm_response:
                 chunk_count += 1
                 
-                # Extract streaming metadata from chunks
+                # Track timing
                 current_time = datetime.now(timezone.utc).timestamp()
-                if streaming_metadata["first_chunk_time"] is None:
-                    streaming_metadata["first_chunk_time"] = current_time
-                streaming_metadata["last_chunk_time"] = current_time
+                if first_chunk_time is None:
+                    first_chunk_time = current_time
+                last_chunk_time = current_time
                 
                 # Log info about chunks periodically for debugging
                 if chunk_count == 1 or (chunk_count % 1000 == 0) or hasattr(chunk, 'usage'):
                     logger.debug(f"Processing chunk #{chunk_count}, type={type(chunk).__name__}")
                 
-                if hasattr(chunk, 'created') and chunk.created:
-                    streaming_metadata["created"] = chunk.created
-                if hasattr(chunk, 'model') and chunk.model:
-                    streaming_metadata["model"] = chunk.model
-                # DEBUG: Always log chunk info to see what's available
-                # logger.info(f"🔍 CHUNK #{chunk_count}: type={type(chunk)}, has_usage={hasattr(chunk, 'usage')}, usage_value={getattr(chunk, 'usage', 'NO_ATTR')}")
-                if hasattr(chunk, 'usage'):
-                    logger.info(f"🔍 USAGE OBJECT: {chunk.usage}")
-
-                if hasattr(chunk, 'usage') and chunk.usage:
-                    # DEBUG: Log the complete usage object to see what data we have
-                    logger.info(f"🔍 RAW USAGE OBJECT: {chunk.usage}")
-                    if hasattr(chunk.usage, '__dict__'):
-                        logger.info(f"🔍 USAGE ATTRS: {chunk.usage.__dict__}")
-
-                    # Save the usage object EXACTLY as received - don't modify cache data
-                    if hasattr(chunk.usage, 'prompt_tokens') and chunk.usage.prompt_tokens is not None:
-                        streaming_metadata["usage"]["prompt_tokens"] = chunk.usage.prompt_tokens
-                    if hasattr(chunk.usage, 'completion_tokens') and chunk.usage.completion_tokens is not None:
-                        streaming_metadata["usage"]["completion_tokens"] = chunk.usage.completion_tokens
-                    if hasattr(chunk.usage, 'total_tokens') and chunk.usage.total_tokens is not None:
-                        streaming_metadata["usage"]["total_tokens"] = chunk.usage.total_tokens
-
-                    # Cache metrics - save EXACTLY as received
-                    if hasattr(chunk.usage, 'cache_creation_input_tokens') and chunk.usage.cache_creation_input_tokens is not None:
-                        streaming_metadata["usage"]["cache_creation_input_tokens"] = chunk.usage.cache_creation_input_tokens
-                    if hasattr(chunk.usage, 'cache_read_input_tokens') and chunk.usage.cache_read_input_tokens is not None:
-                        streaming_metadata["usage"]["cache_read_input_tokens"] = chunk.usage.cache_read_input_tokens
-
-                    # prompt_tokens_details - save EXACTLY as received
-                    if hasattr(chunk.usage, 'prompt_tokens_details') and chunk.usage.prompt_tokens_details is not None:
-                        details = chunk.usage.prompt_tokens_details
-                        if "prompt_tokens_details" not in streaming_metadata["usage"]:
-                            streaming_metadata["usage"]["prompt_tokens_details"] = {}
-                        if hasattr(details, 'cached_tokens') and details.cached_tokens is not None:
-                            streaming_metadata["usage"]["prompt_tokens_details"]["cached_tokens"] = details.cached_tokens
+                # Store the complete LiteLLM response chunk when we get usage data
+                if hasattr(chunk, 'usage') and chunk.usage and final_llm_response is None:
+                    logger.info(f"🔍 STORING COMPLETE LiteLLM RESPONSE CHUNK AS RECEIVED")
+                    final_llm_response = chunk  # Store the entire chunk object as-is
+                    logger.info(f"🔍 STORED MODEL: {getattr(chunk, 'model', 'NO_MODEL')}")
+                    logger.info(f"🔍 STORED USAGE: {chunk.usage}")
+                    logger.info(f"🔍 STORED RESPONSE TYPE: {type(chunk)}")
 
                 if hasattr(chunk, 'choices') and chunk.choices and hasattr(chunk.choices[0], 'finish_reason') and chunk.choices[0].finish_reason:
                     finish_reason = chunk.choices[0].finish_reason
@@ -492,51 +451,18 @@ class ResponseProcessor:
 
             logger.info(f"Stream complete. Total chunks: {chunk_count}")
             
-            # Extract final cache metrics
-            final_cache_creation = streaming_metadata['usage'].get('cache_creation_input_tokens', 0)
-            # Try cache_read_input_tokens first (Anthropic standard), then fallback to prompt_tokens_details.cached_tokens
-            final_cache_read = streaming_metadata['usage'].get('cache_read_input_tokens', 0)
-            if final_cache_read == 0:
-                final_cache_read = streaming_metadata['usage'].get('prompt_tokens_details', {}).get('cached_tokens', 0)
-
-            final_prompt_tokens = streaming_metadata['usage'].get('prompt_tokens', 0)
-            final_completion_tokens = streaming_metadata['usage'].get('completion_tokens', 0)
+            # Calculate response time if we have timing data
+            response_ms = None
+            if first_chunk_time and last_chunk_time:
+                response_ms = (last_chunk_time - first_chunk_time) * 1000
             
-            logger.info(f"Final usage: prompt={final_prompt_tokens}, completion={final_completion_tokens}")
-            
-            # Cache info will be logged by thread_manager during billing
-
-            # Note: cache_metrics is now None since we removed the probe
-            # All cache data should be captured directly from streaming chunks above
-            
-            if streaming_metadata["usage"]["total_tokens"] == 0:
-                # logger.debug("No usage data from provider, using fallback token counting (normal for some providers like Anthropic)")
-                
-                try:
-                    from litellm import token_counter
-                    
-                    prompt_tokens = token_counter(
-                        model=llm_model,
-                        messages=prompt_messages
-                    )
-
-                    completion_tokens = token_counter(
-                        model=llm_model,
-                        text=accumulated_content or ""
-                    )
-
-                    streaming_metadata["usage"]["prompt_tokens"]      = prompt_tokens
-                    streaming_metadata["usage"]["completion_tokens"]  = completion_tokens
-                    streaming_metadata["usage"]["total_tokens"]       = prompt_tokens + completion_tokens
-
-                    logger.info(
-                        f"🔥 Estimated tokens – prompt: {prompt_tokens}, "
-                        f"completion: {completion_tokens}, total: {prompt_tokens + completion_tokens}"
-                    )
-                    self.trace.event(name="usage_calculated_with_litellm_token_counter", level="DEFAULT", status_message=(f"Usage calculated with litellm.token_counter"))
-                except Exception as e:
-                    logger.warning(f"Failed to calculate usage: {str(e)}")
-                    self.trace.event(name="failed_to_calculate_usage", level="WARNING", status_message=(f"Failed to calculate usage: {str(e)}"))
+            # Log what we captured
+            if final_llm_response:
+                logger.info(f"✅ Captured complete LiteLLM response object")
+                logger.info(f"🔍 RESPONSE MODEL: {getattr(final_llm_response, 'model', 'NO_MODEL')}")
+                logger.info(f"🔍 RESPONSE USAGE: {getattr(final_llm_response, 'usage', 'NO_USAGE')}")
+            else:
+                logger.warning("⚠️ No complete LiteLLM response captured from streaming chunks")
 
 
             tool_results_buffer = []
@@ -825,20 +751,20 @@ class ResponseProcessor:
                 # Save assistant_response_end BEFORE terminating
                 if last_assistant_message_object:
                     try:
-                        # Calculate response time if we have timing data
-                        if streaming_metadata["first_chunk_time"] and streaming_metadata["last_chunk_time"]:
-                            streaming_metadata["response_ms"] = (streaming_metadata["last_chunk_time"] - streaming_metadata["first_chunk_time"]) * 1000
-
-                        # Create a LiteLLM-like response object for streaming (before termination)
-                        # Check if we have any actual usage data
-                        has_usage_data = (
-                            streaming_metadata["usage"]["prompt_tokens"] > 0 or
-                            streaming_metadata["usage"]["completion_tokens"] > 0 or
-                            streaming_metadata["usage"]["total_tokens"] > 0
-                        )
-                        
-                        assistant_end_content = {
-                            "choices": [
+                        # Use the complete LiteLLM response object as received
+                        if final_llm_response:
+                            logger.info("✅ Using complete LiteLLM response for assistant_response_end (before termination)")
+                            # Serialize the complete response object as-is
+                            assistant_end_content = self._serialize_model_response(final_llm_response)
+                            
+                            # Add streaming flag and response timing if available
+                            assistant_end_content["streaming"] = True
+                            if response_ms:
+                                assistant_end_content["response_ms"] = response_ms
+                                
+                            # For streaming responses, we need to construct the choices manually
+                            # since the streaming chunk doesn't have the complete message structure
+                            assistant_end_content["choices"] = [
                                 {
                                     "finish_reason": finish_reason or "stop",
                                     "index": 0,
@@ -848,27 +774,20 @@ class ResponseProcessor:
                                         "tool_calls": complete_native_tool_calls or None
                                     }
                                 }
-                            ],
-                            "created": streaming_metadata.get("created"),
-                            "model": streaming_metadata.get("model", llm_model),
-                            "usage": streaming_metadata["usage"],  # Always include usage like LiteLLM does
-                            "streaming": True,  # Add flag to indicate this was reconstructed from streaming
-                        }
+                            ]
+                        else:
+                            logger.warning("⚠️ No complete LiteLLM response available, skipping assistant_response_end")
+                            assistant_end_content = None
                         
-                        # DEBUG: Log the streaming metadata usage before saving assistant_end_content
-                        logger.info(f"🔍 RESPONSE PROCESSOR STREAMING USAGE (before termination): {streaming_metadata['usage']}")
-                        
-                        # Only include response_ms if we have timing data
-                        if streaming_metadata.get("response_ms"):
-                            assistant_end_content["response_ms"] = streaming_metadata["response_ms"]
-                        
-                        await self.add_message(
-                            thread_id=thread_id,
-                            type="assistant_response_end",
-                            content=assistant_end_content,
-                            is_llm_message=False,
-                            metadata={"thread_run_id": thread_run_id}
-                        )
+                        # Only save if we have content
+                        if assistant_end_content:
+                            await self.add_message(
+                                thread_id=thread_id,
+                                type="assistant_response_end",
+                                content=assistant_end_content,
+                                is_llm_message=False,
+                                metadata={"thread_run_id": thread_run_id}
+                            )
                         logger.debug("Assistant response end saved for stream (before termination)")
                     except Exception as e:
                         logger.error(f"Error saving assistant response end for stream (before termination): {str(e)}")
@@ -882,20 +801,27 @@ class ResponseProcessor:
             if not should_auto_continue:
                 if last_assistant_message_object: # Only save if assistant message was saved
                     try:
-                        # Calculate response time if we have timing data
-                        if streaming_metadata["first_chunk_time"] and streaming_metadata["last_chunk_time"]:
-                            streaming_metadata["response_ms"] = (streaming_metadata["last_chunk_time"] - streaming_metadata["first_chunk_time"]) * 1000
-
-                        # Create a LiteLLM-like response object for streaming
-                        # Check if we have any actual usage data
-                        has_usage_data = (
-                            streaming_metadata["usage"]["prompt_tokens"] > 0 or
-                            streaming_metadata["usage"]["completion_tokens"] > 0 or
-                            streaming_metadata["usage"]["total_tokens"] > 0
-                        )
-                        
-                        assistant_end_content = {
-                            "choices": [
+                        # Use the complete LiteLLM response object as received
+                        if final_llm_response:
+                            logger.info("✅ Using complete LiteLLM response for assistant_response_end (normal)")
+                            
+                            # Log the complete response object for debugging
+                            logger.info(f"🔍 COMPLETE RESPONSE OBJECT: {final_llm_response}")
+                            logger.info(f"🔍 RESPONSE OBJECT TYPE: {type(final_llm_response)}")
+                            logger.info(f"🔍 RESPONSE OBJECT DICT: {final_llm_response.__dict__ if hasattr(final_llm_response, '__dict__') else 'NO_DICT'}")
+                            
+                            # Serialize the complete response object as-is
+                            assistant_end_content = self._serialize_model_response(final_llm_response)
+                            logger.info(f"🔍 SERIALIZED CONTENT: {assistant_end_content}")
+                            
+                            # Add streaming flag and response timing if available
+                            assistant_end_content["streaming"] = True
+                            if response_ms:
+                                assistant_end_content["response_ms"] = response_ms
+                                
+                            # For streaming responses, we need to construct the choices manually
+                            # since the streaming chunk doesn't have the complete message structure
+                            assistant_end_content["choices"] = [
                                 {
                                     "finish_reason": finish_reason or "stop",
                                     "index": 0,
@@ -905,27 +831,21 @@ class ResponseProcessor:
                                         "tool_calls": complete_native_tool_calls or None
                                     }
                                 }
-                            ],
-                            "created": streaming_metadata.get("created"),
-                            "model": streaming_metadata.get("model", llm_model),
-                            "usage": streaming_metadata["usage"],  # Always include usage like LiteLLM does
-                            "streaming": True,  # Add flag to indicate this was reconstructed from streaming
-                        }
-                        
-                        # DEBUG: Log the streaming metadata usage before saving assistant_end_content
-                        logger.info(f"🔍 RESPONSE PROCESSOR STREAMING USAGE (normal): {streaming_metadata['usage']}")
-                        
-                        # Only include response_ms if we have timing data
-                        if streaming_metadata.get("response_ms"):
-                            assistant_end_content["response_ms"] = streaming_metadata["response_ms"]
-                        
-                        await self.add_message(
-                            thread_id=thread_id,
-                            type="assistant_response_end",
-                            content=assistant_end_content,
-                            is_llm_message=False,
-                            metadata={"thread_run_id": thread_run_id}
-                        )
+                            ]
+                                
+                            # DEBUG: Log the actual response usage
+                            logger.info(f"🔍 RESPONSE PROCESSOR COMPLETE USAGE (normal): {assistant_end_content.get('usage', 'NO_USAGE')}")
+                            logger.info(f"🔍 FINAL ASSISTANT END CONTENT: {assistant_end_content}")
+                            
+                            await self.add_message(
+                                thread_id=thread_id,
+                                type="assistant_response_end",
+                                content=assistant_end_content,
+                                is_llm_message=False,
+                                metadata={"thread_run_id": thread_run_id}
+                            )
+                        else:
+                            logger.warning("⚠️ No complete LiteLLM response available, skipping assistant_response_end")
                         logger.debug("Assistant response end saved for stream")
                     except Exception as e:
                         logger.error(f"Error saving assistant response end for stream: {str(e)}")
@@ -957,11 +877,11 @@ class ResponseProcessor:
                 # Set the final output in the generation object if provided
                 if generation and 'accumulated_content' in locals():
                     try:
-                        # Update generation with usage metrics before ending
-                        if streaming_metadata and streaming_metadata.get("usage"):
+                        # Update generation with usage metrics from the complete LiteLLM response
+                        if final_llm_response and hasattr(final_llm_response, 'usage'):
                             generation.update(
-                                usage=streaming_metadata["usage"],
-                                model=streaming_metadata.get("model", llm_model)
+                                usage=final_llm_response.usage.model_dump() if hasattr(final_llm_response.usage, 'model_dump') else dict(final_llm_response.usage),
+                                model=getattr(final_llm_response, 'model', llm_model)
                             )
                         generation.end(output=accumulated_content)
                         logger.debug(f"Set generation output: {len(accumulated_content)} chars with usage metrics")

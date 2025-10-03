@@ -1,5 +1,5 @@
 from typing import Dict, List, Optional, Set
-from .ai_models import Model, ModelProvider, ModelCapability, ModelPricing
+from .ai_models import Model, ModelProvider, ModelCapability, ModelPricing, ModelConfig
 from core.utils.config import config, EnvMode
 
 FREE_MODEL_ID = "moonshotai/kimi-k2"
@@ -21,10 +21,37 @@ class ModelRegistry:
     def _initialize_models(self):
         
         self.register(Model(
-            id="anthropic/claude-sonnet-4-20250514" if is_local else "bedrock/anthropic.claude-sonnet-4-20250514-v1:0",
+            id="anthropic/claude-sonnet-4-5-20250929" if is_local else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            name="Sonnet 4.5",
+            provider=ModelProvider.ANTHROPIC,
+            aliases=["claude-sonnet-4.5", "anthropic/claude-sonnet-4.5", "Claude Sonnet 4.5", "claude-sonnet-4-5-20250929", "global.anthropic.claude-sonnet-4-5-20250929-v1:0", "arn:aws:bedrock:us-west-2:935064898258:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0"],
+            context_window=1_000_000,
+            capabilities=[
+                ModelCapability.CHAT,
+                ModelCapability.FUNCTION_CALLING,
+                ModelCapability.VISION,
+                ModelCapability.THINKING,
+            ],
+            pricing=ModelPricing(
+                input_cost_per_million_tokens=3.00,
+                output_cost_per_million_tokens=15.00
+            ),
+            tier_availability=["paid"],
+            priority=101,
+            recommended=True,
+            enabled=True,
+            config=ModelConfig(
+                extra_headers={
+                    "anthropic-beta": "context-1m-2025-08-07" 
+                },
+            )
+        ))
+        
+        self.register(Model(
+            id="anthropic/claude-sonnet-4-20250514" if is_local else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0",
             name="Sonnet 4",
             provider=ModelProvider.ANTHROPIC,
-            aliases=["claude-sonnet-4", "anthropic/claude-sonnet-4", "Claude Sonnet 4", "claude-sonnet-4-20250514", "bedrock-claude-sonnet-4", "bedrock/claude-sonnet-4", "anthropic.claude-sonnet-4-20250514-v1:0"],
+            aliases=["claude-sonnet-4", "Claude Sonnet 4", "claude-sonnet-4-20250514", "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0"],
             context_window=1_000_000,
             capabilities=[
                 ModelCapability.CHAT,
@@ -39,14 +66,19 @@ class ModelRegistry:
             tier_availability=["paid"],
             priority=100,
             recommended=True,
-            enabled=True
+            enabled=True,
+            config=ModelConfig(
+                extra_headers={
+                    "anthropic-beta": "context-1m-2025-08-07" 
+                },
+            )
         ))
         
         self.register(Model(
-            id="anthropic/claude-3-7-sonnet-latest" if is_local else "bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0",
+            id="anthropic/claude-3-7-sonnet-latest" if is_local else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0",
             name="Sonnet 3.7",
             provider=ModelProvider.ANTHROPIC,
-            aliases=["sonnet-3.7", "claude-3.7", "Claude 3.7 Sonnet", "claude-3-7-sonnet-latest", "bedrock-claude-3.7", "bedrock/claude-3.7", "anthropic.claude-3-7-sonnet-20250219-v1:0"],
+            aliases=["claude-3.7", "Claude 3.7 Sonnet", "claude-3-7-sonnet-latest", "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"],
             context_window=200_000,
             capabilities=[
                 ModelCapability.CHAT,
@@ -59,14 +91,19 @@ class ModelRegistry:
             ),
             tier_availability=["paid"],
             priority=99,
-            enabled=True
+            enabled=True,
+            config=ModelConfig(
+                extra_headers={
+                    "anthropic-beta": "prompt-caching-2024-07-31"
+                },
+            )
         ))
 
         self.register(Model(
             id="xai/grok-4-fast-non-reasoning",
             name="Grok 4 Fast",
             provider=ModelProvider.XAI,
-            aliases=["grok-4-fast-non-reasoning", "x-ai/grok-4-fast-non-reasoning", "openrouter/x-ai/grok-4-fast-non-reasoning", "Grok 4 Fast"],
+            aliases=["grok-4-fast-non-reasoning", "Grok 4 Fast"],
             context_window=2_000_000,
             capabilities=[
                 ModelCapability.CHAT,
@@ -146,7 +183,7 @@ class ModelRegistry:
             id="gemini/gemini-2.5-pro",
             name="Gemini 2.5 Pro",
             provider=ModelProvider.GOOGLE,
-            aliases=["google/gemini-2.5-pro", "gemini-2.5-pro", "Gemini 2.5 Pro"],
+            aliases=["gemini-2.5-pro", "Gemini 2.5 Pro"],
             context_window=2_000_000,
             capabilities=[
                 ModelCapability.CHAT,
@@ -164,25 +201,30 @@ class ModelRegistry:
         ))
         
         
-        self.register(Model(
-            id="openrouter/moonshotai/kimi-k2",
-            name="Kimi K2",
-            provider=ModelProvider.MOONSHOTAI,
-            aliases=["moonshotai/kimi-k2", "kimi-k2", "Kimi K2"],
-            context_window=200_000,
-            capabilities=[
-                ModelCapability.CHAT,
-                ModelCapability.FUNCTION_CALLING,
-            ],
-            pricing=ModelPricing(
-                input_cost_per_million_tokens=1.00,
-                output_cost_per_million_tokens=3.00
-            ),
-            tier_availability=["free", "paid"],
-            priority=94,
-            enabled=True
-        ))
-
+        # self.register(Model(
+        #     id="openrouter/moonshotai/kimi-k2",
+        #     name="Kimi K2",
+        #     provider=ModelProvider.MOONSHOTAI,
+        #     aliases=["kimi-k2", "Kimi K2", "moonshotai/kimi-k2"],
+        #     context_window=200_000,
+        #     capabilities=[
+        #         ModelCapability.CHAT,
+        #         ModelCapability.FUNCTION_CALLING,
+        #     ],
+        #     pricing=ModelPricing(
+        #         input_cost_per_million_tokens=1.00,
+        #         output_cost_per_million_tokens=3.00
+        #     ),
+        #     tier_availability=["free", "paid"],
+        #     priority=94,
+        #     enabled=True,
+        #     config=ModelConfig(
+        #         extra_headers={
+        #             "HTTP-Referer": config.OR_SITE_URL if hasattr(config, 'OR_SITE_URL') and config.OR_SITE_URL else "",
+        #             "X-Title": config.OR_APP_NAME if hasattr(config, 'OR_APP_NAME') and config.OR_APP_NAME else ""
+        #         }
+        #     )
+        # ))
         
         # # DeepSeek Models
         # self.register(Model(
@@ -291,13 +333,11 @@ class ModelRegistry:
     
     def to_legacy_format(self) -> Dict:
         models_dict = {}
-        aliases_dict = {}
         pricing_dict = {}
         context_windows_dict = {}
         
         for model in self.get_all(enabled_only=True):
             models_dict[model.id] = {
-                "aliases": model.aliases,
                 "pricing": {
                     "input_cost_per_million_tokens": model.pricing.input_cost_per_million_tokens,
                     "output_cost_per_million_tokens": model.pricing.output_cost_per_million_tokens,
@@ -305,9 +345,6 @@ class ModelRegistry:
                 "context_window": model.context_window,
                 "tier_availability": model.tier_availability,
             }
-            
-            for alias in model.aliases:
-                aliases_dict[alias] = model.id
             
             if model.pricing:
                 pricing_dict[model.id] = {
@@ -328,7 +365,6 @@ class ModelRegistry:
         
         return {
             "MODELS": models_dict,
-            "MODEL_NAME_ALIASES": aliases_dict,
             "HARDCODED_MODEL_PRICES": pricing_dict,
             "MODEL_CONTEXT_WINDOWS": context_windows_dict,
             "FREE_TIER_MODELS": free_models,

@@ -204,7 +204,7 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
       <div className="w-full">
         <TitleSection />
         <div className="grid gap-4 pb-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {templates.templates.slice(0, 4).map((template) => (
+          {templates.templates.map((template) => (
             <UnifiedAgentCard
               key={template.template_id}
               variant="dashboard"
@@ -216,8 +216,6 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
           ))}
         </div>
       </div>
-
-      {/* Marketplace Preview Dialog */}
       <MarketplaceAgentPreviewDialog
         agent={selectedTemplate}
         isOpen={isPreviewOpen}

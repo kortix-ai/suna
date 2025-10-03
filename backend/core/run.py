@@ -31,6 +31,7 @@ from core.tools.sb_image_edit_tool import SandboxImageEditTool
 from core.tools.sb_designer_tool import SandboxDesignerTool
 from core.tools.sb_presentation_outline_tool import SandboxPresentationOutlineTool
 from core.tools.sb_presentation_tool import SandboxPresentationTool
+from core.tools.sb_document_parser import SandboxDocumentParserTool
 
 from core.services.langfuse import langfuse
 from langfuse.client import StatefulTraceClient
@@ -44,6 +45,7 @@ from core.tools.sb_upload_file_tool import SandboxUploadFileTool
 from core.tools.sb_docs_tool import SandboxDocsTool
 from core.tools.people_search_tool import PeopleSearchTool
 from core.tools.company_search_tool import CompanySearchTool
+from core.tools.paper_search_tool import PaperSearchTool
 from core.ai_models.manager import model_manager
 
 load_dotenv()
@@ -120,6 +122,8 @@ class ToolManager:
             # ('sb_web_dev_tool', SandboxWebDevTool, {'project_id': self.project_id, 'thread_id': self.thread_id, 'thread_manager': self.thread_manager}),  # DEACTIVATED
             ('sb_upload_file_tool', SandboxUploadFileTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
             ('sb_docs_tool', SandboxDocsTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
+
+            # ('sb_document_parser_tool', SandboxDocumentParserTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
         ]
         
         for tool_name, tool_class, kwargs in sandbox_tools:
@@ -167,6 +171,15 @@ class ToolManager:
                 else:
                     self.thread_manager.add_tool(CompanySearchTool, thread_manager=self.thread_manager)
                     logger.debug("Registered company_search_tool (all methods)")
+            
+            if 'paper_search_tool' not in disabled_tools:
+                enabled_methods = self._get_enabled_methods_for_tool('paper_search_tool')
+                if enabled_methods is not None:
+                    self.thread_manager.add_tool(PaperSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager)
+                    logger.debug(f"Registered paper_search_tool with methods: {enabled_methods}")
+                else:
+                    self.thread_manager.add_tool(PaperSearchTool, thread_manager=self.thread_manager)
+                    logger.debug("Registered paper_search_tool (all methods)")
     
     def _register_agent_builder_tools(self, agent_id: str, disabled_tools: List[str]):
         """Register agent builder tools."""
@@ -513,13 +526,12 @@ When using the tools:
 
 class MessageManager:
     def __init__(self, client, thread_id: str, model_name: str, trace: Optional[StatefulTraceClient], 
-                 agent_config: Optional[dict] = None, enable_context_manager: bool = False):
+                 agent_config: Optional[dict] = None):
         self.client = client
         self.thread_id = thread_id
         self.model_name = model_name
         self.trace = trace
         self.agent_config = agent_config
-        self.enable_context_manager = enable_context_manager
     
     async def build_temporary_message(self) -> Optional[dict]:
         system_message = None
@@ -769,9 +781,7 @@ class AgentRunner:
                         xml_adding_strategy="user_message"
                     ),
                     native_max_auto_continues=self.config.native_max_auto_continues,
-                    generation=generation,
-                    enable_prompt_caching=True,
-                    enable_context_manager=True
+                    generation=generation
                 )
 
                 last_tool_call = None
