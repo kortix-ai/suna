@@ -226,8 +226,6 @@ async def health_check():
 
 
 app.include_router(api_router, prefix="/api")
-app.include_router(billing_router)
-app.include_router(transcription_api.router)
 
 
 if __name__ == "__main__":

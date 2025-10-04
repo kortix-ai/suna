@@ -21,13 +21,35 @@ from core.ai_models import model_manager
 from .api_models import AgentStartRequest, AgentVersionResponse, AgentResponse, ThreadAgentResponse, InitiateAgentResponse
 from . import core_utils as utils
 from .core_utils import (
-    stop_agent_run_with_helpers as stop_agent_run, get_agent_run_with_access_check, 
-    _get_version_service, generate_and_update_project_name
+    stop_agent_run_with_helpers as stop_agent_run,
+    _get_version_service, generate_and_update_project_name,
+    check_agent_run_limit, check_project_count_limit
 )
-from .config_helper import extract_agent_config
-from .core_utils import check_agent_run_limit, check_project_count_limit
 
 router = APIRouter()
+
+
+async def _get_agent_run_with_access_check(client, agent_run_id: str, user_id: str):
+    """
+    Get an agent run and verify the user has access to it.
+    
+    Internal helper for this module only.
+    """
+    from core.utils.auth_utils import verify_and_authorize_thread_access
+    
+    agent_run = await client.table('agent_runs').select('*, threads(account_id)').eq('id', agent_run_id).execute()
+    if not agent_run.data:
+        raise HTTPException(status_code=404, detail="Agent run not found")
+
+    agent_run_data = agent_run.data[0]
+    thread_id = agent_run_data['thread_id']
+    account_id = agent_run_data['threads']['account_id']
+    
+    if account_id == user_id:
+        return agent_run_data
+        
+    await verify_and_authorize_thread_access(client, thread_id, user_id)
+    return agent_run_data
 
 
 
@@ -78,92 +100,40 @@ async def start_agent(
         thread_metadata=thread_metadata,
     )
     
-    # Load agent configuration with version support
-    agent_config = None
-    effective_agent_id = body.agent_id  # Optional agent ID from request
+    # Load agent configuration using unified loader
+    from .agent_loader import get_agent_loader
+    loader = await get_agent_loader()
     
-    logger.debug(f"[AGENT LOAD] Agent loading flow:")
-    logger.debug(f"  - body.agent_id: {body.agent_id}")
-    logger.debug(f"  - effective_agent_id: {effective_agent_id}")
-
+    agent_data = None
+    effective_agent_id = body.agent_id
+    
+    logger.debug(f"[AGENT LOAD] Loading agent: {effective_agent_id or 'default'}")
+    
+    # Try to load specified agent
     if effective_agent_id:
-        logger.debug(f"[AGENT LOAD] Querying for agent: {effective_agent_id}")
-        # Get agent
-        agent_result = await client.table('agents').select('*').eq('agent_id', effective_agent_id).eq('account_id', account_id).execute()
-        logger.debug(f"[AGENT LOAD] Query result: found {len(agent_result.data) if agent_result.data else 0} agents")
-        
-        if not agent_result.data:
+        try:
+            agent_data = await loader.load_agent(effective_agent_id, user_id, load_config=True)
+            logger.debug(f"Using agent {agent_data.name} ({effective_agent_id}) version {agent_data.version_name}")
+        except HTTPException as e:
             if body.agent_id:
-                raise HTTPException(status_code=404, detail="Agent not found or access denied")
-            else:
-                logger.warning(f"Stored agent_id {effective_agent_id} not found, falling back to default")
-                effective_agent_id = None
-        else:
-            agent_data = agent_result.data[0]
-            version_data = None
-            if agent_data.get('current_version_id'):
-                try:
-                    version_service = await _get_version_service()
-                    version_obj = await version_service.get_version(
-                        agent_id=effective_agent_id,
-                        version_id=agent_data['current_version_id'],
-                        user_id=user_id
-                    )
-                    version_data = version_obj.to_dict()
-                    logger.debug(f"[AGENT LOAD] Got version data from version manager: {version_data.get('version_name')}")
-                except Exception as e:
-                    logger.warning(f"[AGENT LOAD] Failed to get version data: {e}")
-            
-            logger.debug(f"[AGENT LOAD] About to call extract_agent_config with agent_data keys: {list(agent_data.keys())}")
-            # logger.debug(f"[AGENT LOAD] version_data type: {type(version_data)}, has data: {version_data is not None}")
-            
-            agent_config = extract_agent_config(agent_data, version_data)
-            
-            if version_data:
-                logger.debug(f"Using agent {agent_config['name']} ({effective_agent_id}) version {agent_config.get('version_name', 'v1')}")
-            else:
-                logger.debug(f"Using agent {agent_config['name']} ({effective_agent_id}) - no version data")
-            source = "request" if body.agent_id else "fallback"
-    else:
-        logger.debug(f"[AGENT LOAD] No effective_agent_id, will try default agent")
-
-    if not agent_config:
-        logger.debug(f"[AGENT LOAD] No agent config yet, querying for default agent")
-        default_agent_result = await client.table('agents').select('*').eq('account_id', account_id).eq('is_default', True).execute()
-        logger.debug(f"[AGENT LOAD] Default agent query result: found {len(default_agent_result.data) if default_agent_result.data else 0} default agents")
+                raise  # Explicit agent not found - fail
+            logger.warning(f"Stored agent_id {effective_agent_id} not found, falling back to default")
+    
+    # Fall back to default agent
+    if not agent_data:
+        logger.debug(f"[AGENT LOAD] Loading default agent")
+        default_agent = await client.table('agents').select('agent_id').eq('account_id', account_id).eq('is_default', True).maybe_single().execute()
         
-        if default_agent_result.data:
-            agent_data = default_agent_result.data[0]
-            
-            # Use versioning system to get current version
-            version_data = None
-            if agent_data.get('current_version_id'):
-                try:
-                    version_service = await _get_version_service()
-                    version_obj = await version_service.get_version(
-                        agent_id=agent_data['agent_id'],
-                        version_id=agent_data['current_version_id'],
-                        user_id=user_id
-                    )
-                    version_data = version_obj.to_dict()
-                    logger.debug(f"[AGENT LOAD] Got default agent version from version manager: {version_data.get('version_name')}")
-                except Exception as e:
-                    logger.warning(f"[AGENT LOAD] Failed to get default agent version data: {e}")
-            
-            logger.debug(f"[AGENT LOAD] About to call extract_agent_config for DEFAULT agent with version data: {version_data is not None}")
-            
-            agent_config = extract_agent_config(agent_data, version_data)
-            
-            if version_data:
-                logger.debug(f"Using default agent: {agent_config['name']} ({agent_config['agent_id']}) version {agent_config.get('version_name', 'v1')}")
-            else:
-                logger.debug(f"Using default agent: {agent_config['name']} ({agent_config['agent_id']}) - no version data")
+        if default_agent.data:
+            agent_data = await loader.load_agent(default_agent.data['agent_id'], user_id, load_config=True)
+            logger.debug(f"Using default agent: {agent_data.name} ({agent_data.agent_id}) version {agent_data.version_name}")
         else:
             logger.warning(f"[AGENT LOAD] No default agent found for account {account_id}")
-
-    logger.debug(f"[AGENT LOAD] Final agent_config: {agent_config is not None}")
+    
+    # Convert to dict for backward compatibility with rest of function
+    agent_config = agent_data.to_dict() if agent_data else None
+    
     if agent_config:
-        logger.debug(f"[AGENT LOAD] Agent config keys: {list(agent_config.keys())}")
         logger.debug(f"Using agent {agent_config['agent_id']} for this agent run (thread remains agent-agnostic)")
 
     # Unified billing and model access check
@@ -247,7 +217,7 @@ async def stop_agent(agent_run_id: str, user_id: str = Depends(verify_and_get_us
     )
     logger.debug(f"Received request to stop agent run: {agent_run_id}")
     client = await utils.db.client
-    await get_agent_run_with_access_check(client, agent_run_id, user_id)
+    await _get_agent_run_with_access_check(client, agent_run_id, user_id)
     await stop_agent_run(agent_run_id)
     return {"status": "stopped"}
 
@@ -272,7 +242,7 @@ async def get_agent_run(agent_run_id: str, user_id: str = Depends(verify_and_get
     )
     logger.debug(f"Fetching agent run details: {agent_run_id}")
     client = await utils.db.client
-    agent_run_data = await get_agent_run_with_access_check(client, agent_run_id, user_id)
+    agent_run_data = await _get_agent_run_with_access_check(client, agent_run_id, user_id)
     # Note: Responses are not included here by default, they are in the stream or DB
     return {
         "id": agent_run_data['id'],
@@ -389,33 +359,13 @@ async def get_thread_agent(thread_id: str, user_id: str = Depends(verify_and_get
                 'created_by': current_version.created_by
             }
         
-        from .config_helper import extract_agent_config
-        agent_config = extract_agent_config(agent_data, version_data)
-        
-        system_prompt = agent_config['system_prompt']
-        configured_mcps = agent_config['configured_mcps']
-        custom_mcps = agent_config['custom_mcps']
-        agentpress_tools = agent_config['agentpress_tools']
+        # Load agent using unified loader
+        from .agent_loader import get_agent_loader
+        loader = await get_agent_loader()
+        agent_obj = await loader.load_agent(agent_data['agent_id'], user_id, load_config=True)
         
         return {
-            "agent": AgentResponse(
-                agent_id=agent_data['agent_id'],
-                name=agent_data['name'],
-                description=agent_data.get('description'),
-                system_prompt=system_prompt,
-                configured_mcps=configured_mcps,
-                custom_mcps=custom_mcps,
-                agentpress_tools=agentpress_tools,
-                is_default=agent_data.get('is_default', False),
-                is_public=agent_data.get('is_public', False),
-                tags=agent_data.get('tags', []),
-                created_at=agent_data['created_at'],
-                updated_at=agent_data.get('updated_at', agent_data['created_at']),
-                current_version_id=agent_data.get('current_version_id'),
-                version_count=agent_data.get('version_count', 1),
-                current_version=current_version,
-                metadata=agent_data.get('metadata')
-            ),
+            "agent": agent_obj.to_pydantic_model(),
             "source": agent_source,
             "message": f"Using {agent_source} agent: {agent_data['name']}. Threads are agent-agnostic - you can change agents anytime."
         }
@@ -437,7 +387,7 @@ async def stream_agent_run(
     client = await utils.db.client
 
     user_id = await get_user_id_from_stream_auth(request, token) # practically instant
-    agent_run_data = await get_agent_run_with_access_check(client, agent_run_id, user_id) # 1 db query
+    agent_run_data = await _get_agent_run_with_access_check(client, agent_run_id, user_id) # 1 db query
 
     structlog.contextvars.bind_contextvars(
         agent_run_id=agent_run_id,
@@ -642,85 +592,31 @@ async def initiate_agent_with_files(
     client = await utils.db.client
     account_id = user_id # In Basejump, personal account_id is the same as user_id
     
-    # Load agent configuration with version support (same as start_agent endpoint)
-    agent_config = None
+    # Load agent configuration using unified loader
+    from .agent_loader import get_agent_loader
+    loader = await get_agent_loader()
     
-    logger.debug(f"[AGENT INITIATE] Agent loading flow:")
-    logger.debug(f"  - agent_id param: {agent_id}")
+    agent_data = None
     
+    logger.debug(f"[AGENT INITIATE] Loading agent: {agent_id or 'default'}")
+    
+    # Try to load specified agent
     if agent_id:
-        logger.debug(f"[AGENT INITIATE] Querying for specific agent: {agent_id}")
-        # Get agent
-        agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', account_id).execute()
-        logger.debug(f"[AGENT INITIATE] Query result: found {len(agent_result.data) if agent_result.data else 0} agents")
-        
-        if not agent_result.data:
-            raise HTTPException(status_code=404, detail="Agent not found or access denied")
-        
-        agent_data = agent_result.data[0]
-        
-        # Use versioning system to get current version
-        version_data = None
-        if agent_data.get('current_version_id'):
-            try:
-                version_service = await _get_version_service()
-                version_obj = await version_service.get_version(
-                    agent_id=agent_id,
-                    version_id=agent_data['current_version_id'],
-                    user_id=user_id
-                )
-                version_data = version_obj.to_dict()
-                logger.debug(f"[AGENT INITIATE] Got version data from version manager: {version_data.get('version_name')}")
-                logger.debug(f"[AGENT INITIATE] Version data: {version_data}")
-            except Exception as e:
-                logger.warning(f"[AGENT INITIATE] Failed to get version data: {e}")
-        
-        logger.debug(f"[AGENT INITIATE] About to call extract_agent_config with version data: {version_data is not None}")
-        
-        agent_config = extract_agent_config(agent_data, version_data)
-        
-        if version_data:
-            logger.debug(f"Using custom agent: {agent_config['name']} ({agent_id}) version {agent_config.get('version_name', 'v1')}")
-        else:
-            logger.debug(f"Using custom agent: {agent_config['name']} ({agent_id}) - no version data")
+        agent_data = await loader.load_agent(agent_id, user_id, load_config=True)
+        logger.debug(f"Using agent {agent_data.name} ({agent_id}) version {agent_data.version_name}")
     else:
-        logger.debug(f"[AGENT INITIATE] No agent_id provided, querying for default agent")
-        # Try to get default agent for the account
-        default_agent_result = await client.table('agents').select('*').eq('account_id', account_id).eq('is_default', True).execute()
-        logger.debug(f"[AGENT INITIATE] Default agent query result: found {len(default_agent_result.data) if default_agent_result.data else 0} default agents")
+        # Load default agent
+        logger.debug(f"[AGENT INITIATE] Loading default agent")
+        default_agent = await client.table('agents').select('agent_id').eq('account_id', account_id).eq('is_default', True).maybe_single().execute()
         
-        if default_agent_result.data:
-            agent_data = default_agent_result.data[0]
-            
-            # Use versioning system to get current version
-            version_data = None
-            if agent_data.get('current_version_id'):
-                try:
-                    version_service = await _get_version_service()
-                    version_obj = await version_service.get_version(
-                        agent_id=agent_data['agent_id'],
-                        version_id=agent_data['current_version_id'],
-                        user_id=user_id
-                    )
-                    version_data = version_obj.to_dict()
-                    logger.debug(f"[AGENT INITIATE] Got default agent version from version manager: {version_data.get('version_name')}")
-                except Exception as e:
-                    logger.warning(f"[AGENT INITIATE] Failed to get default agent version data: {e}")
-            
-            logger.debug(f"[AGENT INITIATE] About to call extract_agent_config for DEFAULT agent with version data: {version_data is not None}")
-            
-            agent_config = extract_agent_config(agent_data, version_data)
-            
-            if version_data:
-                logger.debug(f"Using default agent: {agent_config['name']} ({agent_config['agent_id']}) version {agent_config.get('version_name', 'v1')}")
-            else:
-                logger.debug(f"Using default agent: {agent_config['name']} ({agent_config['agent_id']}) - no version data")
+        if default_agent.data:
+            agent_data = await loader.load_agent(default_agent.data['agent_id'], user_id, load_config=True)
+            logger.debug(f"Using default agent: {agent_data.name} ({agent_data.agent_id}) version {agent_data.version_name}")
         else:
             logger.warning(f"[AGENT INITIATE] No default agent found for account {account_id}")
     
-    logger.debug(f"[AGENT INITIATE] Final agent_config: {agent_config is not None}")
-    if agent_config:
-        logger.debug(f"[AGENT INITIATE] Agent config keys: {list(agent_config.keys())}")
+    # Convert to dict for backward compatibility with rest of function
+    agent_config = agent_data.to_dict() if agent_data else None
 
     # Unified billing and model access check
     can_proceed, error_message, context = await billing_integration.check_model_and_billing_access(

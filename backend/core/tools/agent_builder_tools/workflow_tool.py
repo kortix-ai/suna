@@ -147,8 +147,6 @@ class WorkflowTool(AgentBuilderBaseTool):
         validate_step_list(steps)
         return errors
 
-
-
     @openapi_schema({
         "type": "function",
         "function": {
