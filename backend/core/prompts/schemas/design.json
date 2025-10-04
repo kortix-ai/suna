@@ -1,0 +1,165 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Professional Design & Image Tools Schemas",
+  "version": "1.0",
+  "tools": [
+    {
+      "name": "designer_create_or_edit",
+      "description": "Create professional designs optimized for marketing and social media",
+      "priority": "use_for_professional_designs",
+      "parameters": {
+        "type": "object",
+        "required": ["mode", "prompt", "platform_preset"],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["create", "edit"]
+          },
+          "prompt": {
+            "type": "string",
+            "description": "Extremely detailed design prompt"
+          },
+          "platform_preset": {
+            "type": "string",
+            "enum": [
+              "instagram_square", "instagram_portrait", "instagram_story", "instagram_landscape",
+              "facebook_post", "facebook_cover", "facebook_story",
+              "twitter_post", "twitter_header",
+              "linkedin_post", "linkedin_banner",
+              "youtube_thumbnail",
+              "pinterest_pin",
+              "tiktok_video",
+              "google_ads_square", "google_ads_medium", "google_ads_banner",
+              "facebook_ads_feed",
+              "display_ad_billboard", "display_ad_vertical",
+              "presentation_16_9",
+              "business_card",
+              "email_header",
+              "blog_header",
+              "flyer_a4",
+              "poster_a3",
+              "custom"
+            ],
+            "description": "MANDATORY - never skip this parameter"
+          },
+          "design_style": {
+            "type": "string",
+            "enum": [
+              "modern", "minimalist", "material", "glassmorphism", "neomorphism",
+              "flat", "luxury", "tech", "vintage", "bold", "professional",
+              "playful", "geometric", "abstract", "organic"
+            ]
+          },
+          "quality": {
+            "type": "string",
+            "enum": ["low", "medium", "high", "auto"],
+            "default": "auto"
+          },
+          "image_path": {
+            "type": "string",
+            "description": "Required when mode is 'edit'"
+          },
+          "width": {
+            "type": "integer",
+            "description": "Only when platform_preset is 'custom'"
+          },
+          "height": {
+            "type": "integer",
+            "description": "Only when platform_preset is 'custom'"
+          }
+        }
+      },
+      "automatic_design_principles": [
+        "Rule of thirds and golden ratio composition",
+        "WCAG contrast standards for text",
+        "10% margin safe zones for text",
+        "Professional typography with kerning/leading",
+        "8px grid system for spacing",
+        "Visual flow and focal points",
+        "Platform-specific optimizations"
+      ],
+      "use_cases": [
+        "Marketing materials",
+        "Social media posts",
+        "Advertisements",
+        "Banners",
+        "Professional graphics",
+        "UI mockups",
+        "Presentations",
+        "Business cards",
+        "Posters",
+        "Flyers"
+      ],
+      "critical_success_factors": [
+        "Be EXTREMELY detailed in prompts (colors, composition, text, style, mood, lighting)",
+        "Always specify platform_preset (MANDATORY)",
+        "Include design_style for better results",
+        "Mention specific text/copy if needed",
+        "Describe brand elements (logos, colors, fonts)",
+        "Request professional photography style for products",
+        "Use action words (dynamic, floating, energetic) for movement",
+        "Specify background styles (gradient, pattern, solid, textured)"
+      ]
+    },
+    {
+      "name": "image_edit_or_generate",
+      "description": "Generate artistic images, illustrations, photos",
+      "use_for": "Non-professional artistic content",
+      "parameters": {
+        "type": "object",
+        "required": ["mode", "prompt"],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["generate", "edit"]
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "image_path": {
+            "type": "string",
+            "description": "Required when mode is 'edit'"
+          },
+          "quality": {
+            "type": "string",
+            "enum": ["low", "medium", "high", "auto"],
+            "default": "auto"
+          }
+        }
+      }
+    },
+    {
+      "name": "load_image",
+      "description": "Load and view image files (REQUIRED for visual input)",
+      "critical": true,
+      "parameters": {
+        "type": "object",
+        "required": ["file_path"],
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Relative path to image"
+          }
+        }
+      },
+      "supported_formats": ["JPG", "PNG", "GIF", "WEBP"],
+      "max_size": "10 MB",
+      "note": "MUST use this tool to see images - no other way exists"
+    }
+  ],
+  "tool_selection_guide": {
+    "use_designer_tool_for": [
+      "Marketing materials",
+      "Social media content",
+      "Professional advertisements",
+      "Business graphics",
+      "Brand materials"
+    ],
+    "use_image_generator_for": [
+      "Artistic images",
+      "Illustrations",
+      "General photos",
+      "Non-marketing visual content"
+    ]
+  }
+}

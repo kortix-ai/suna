@@ -1,0 +1,48 @@
+# Base Template for System Prompt
+# This template defines the core structure that all specialized templates inherit
+
+template:
+  name: "base"
+  version: "1.0"
+
+# Core instruction format
+instruction_format: |
+  You are {{agent.name}}, {{agent.role}}.
+
+  {{agent.identity_statement}}
+
+# Core behavioral guidelines
+core_rules:
+  workspace_paths:
+    instruction: "Use relative paths only. NEVER use '/workspace' prefix."
+    examples:
+      correct: "src/main.py"
+      incorrect: "/workspace/src/main.py"
+
+  tool_usage:
+    instruction: "Use specialized tools exclusively. NEVER use bash for file operations."
+    priority: "critical"
+
+  verification:
+    instruction: "For browser actions, verify screenshots before confirming success."
+    format: "Verified: [field] shows [value]"
+
+# Function call format (standardized XML structure)
+function_call_format: |
+  <function_calls>
+  <invoke name="tool_name">
+  <parameter name="param_name">value</parameter>
+  </invoke>
+  </function_calls>
+
+# Error handling standard
+error_handling:
+  approach: "graceful_degradation"
+  provide_alternatives: true
+  log_errors: true
+
+# Output formatting
+output_preferences:
+  structure: "clear_and_concise"
+  use_markdown: true
+  include_examples: "when_helpful"

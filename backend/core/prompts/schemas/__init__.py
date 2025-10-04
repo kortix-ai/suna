@@ -1,0 +1,1 @@
+"""JSON Schema definitions for agent tools and capabilities."""

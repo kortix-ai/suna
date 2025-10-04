@@ -1,0 +1,242 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Agent Management Tool Schemas",
+  "version": "1.0",
+  "philosophy": "You are not just Suna - you are an agent creator! Create specialized AI workers tailored to specific needs.",
+  "tools": [
+    {
+      "name": "create_agent",
+      "description": "Create a new AI agent",
+      "parameters": {
+        "type": "object",
+        "required": ["name", "description", "avatar_url"],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "avatar_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "list_agents",
+      "description": "List all agents for current user",
+      "parameters": {
+        "type": "object"
+      }
+    },
+    {
+      "name": "delete_agent",
+      "description": "Delete an agent",
+      "parameters": {
+        "type": "object",
+        "required": ["agent_id"],
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      }
+    },
+    {
+      "name": "create_agent_workflow",
+      "description": "Create workflow for agent",
+      "parameters": {
+        "type": "object",
+        "required": ["agent_id", "name", "prompt", "input_variables"],
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string",
+            "description": "Template with {{variable}} placeholders"
+          },
+          "input_variables": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["key", "label", "required"],
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "required": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "activate_agent_workflow",
+      "description": "Enable/disable workflow",
+      "parameters": {
+        "type": "object",
+        "required": ["agent_id", "workflow_id", "active"],
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "workflow_id": {
+            "type": "string"
+          },
+          "active": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "name": "create_agent_scheduled_trigger",
+      "description": "Create scheduled trigger for agent",
+      "parameters": {
+        "type": "object",
+        "required": ["agent_id", "name", "cron_expression", "trigger_type"],
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "cron_expression": {
+            "type": "string",
+            "description": "Cron format schedule"
+          },
+          "trigger_type": {
+            "type": "string",
+            "enum": ["agent", "workflow"]
+          },
+          "description": {
+            "type": "string"
+          },
+          "agent_prompt": {
+            "type": "string",
+            "description": "Required if trigger_type is 'agent'"
+          }
+        }
+      }
+    },
+    {
+      "name": "search_mcp_servers_for_agent",
+      "description": "Search available MCP integrations",
+      "parameters": {
+        "type": "object",
+        "required": ["query"],
+        "properties": {
+          "query": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_mcp_server_details",
+      "description": "Get details of MCP server",
+      "parameters": {
+        "type": "object",
+        "required": ["server_id"],
+        "properties": {
+          "server_id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "create_credential_profile_for_agent",
+      "description": "Create auth profile for integration",
+      "parameters": {
+        "type": "object",
+        "required": ["mcp_server_id", "profile_name"],
+        "properties": {
+          "mcp_server_id": {
+            "type": "string"
+          },
+          "profile_name": {
+            "type": "string"
+          }
+        }
+      },
+      "returns": "auth_link"
+    },
+    {
+      "name": "discover_mcp_tools_for_agent",
+      "description": "Discover available tools from integration",
+      "parameters": {
+        "type": "object",
+        "required": ["profile_id"],
+        "properties": {
+          "profile_id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "name": "configure_agent_integration",
+      "description": "Configure agent with integration tools",
+      "parameters": {
+        "type": "object",
+        "required": ["agent_id", "profile_id", "tool_names"],
+        "properties": {
+          "agent_id": {
+            "type": "string"
+          },
+          "profile_id": {
+            "type": "string"
+          },
+          "tool_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "critical_integration_workflow": {
+    "mandatory": true,
+    "steps": [
+      "1. SEARCH: search_mcp_servers_for_agent to find integration",
+      "2. DETAILS (Optional): get_mcp_server_details for auth methods",
+      "3. CREATE PROFILE: create_credential_profile_for_agent to get auth link",
+      "4. AUTHENTICATE: User MUST click link and complete authentication",
+      "5. WAIT: Ask user 'Have you completed authentication?'",
+      "6. DISCOVER: discover_mcp_tools_for_agent to get available tools",
+      "7. CONFIGURE: configure_agent_integration with discovered tool names"
+    ],
+    "critical_note": "NEVER SKIP STEPS! Integration will NOT work without proper authentication"
+  },
+  "best_practices": [
+    "Start with core functionality, add enhancements later",
+    "Use descriptive names and clear descriptions",
+    "Configure only necessary tools to maintain focus",
+    "Set up workflows for common use cases",
+    "Add triggers for autonomous operation",
+    "Test integrations before declaring success"
+  ]
+}

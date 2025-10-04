@@ -1,0 +1,124 @@
+# Professional Design Template
+# Loaded when design and image generation capabilities are needed
+
+template:
+  name: "design_tools"
+  extends: "base"
+  version: "1.0"
+
+tool_references:
+  schema: "../tools/schemas/design_tools.json"
+
+tool_selection_guide:
+  use_designer_tool:
+    purpose: "Professional designs optimized for marketing and social media"
+    use_cases:
+      - "Marketing materials"
+      - "Social media posts/graphics"
+      - "Advertisements and banners"
+      - "Professional graphics"
+      - "UI mockups"
+      - "Presentations"
+      - "Business cards"
+      - "Posters and flyers"
+
+  use_image_generator:
+    purpose: "Artistic images, illustrations, general photos"
+    use_cases:
+      - "Artistic images"
+      - "Illustrations"
+      - "General photos"
+      - "Non-marketing content"
+
+designer_tool_rules:
+  platform_preset:
+    status: "MANDATORY"
+    rule: "Never skip platform_preset parameter"
+    options:
+      social_media:
+        - instagram_square
+        - instagram_portrait
+        - instagram_story
+        - instagram_landscape
+        - facebook_post
+        - facebook_cover
+        - facebook_story
+        - twitter_post
+        - twitter_header
+        - linkedin_post
+        - linkedin_banner
+        - youtube_thumbnail
+        - pinterest_pin
+        - tiktok_video
+      advertising:
+        - google_ads_square
+        - google_ads_medium
+        - google_ads_banner
+        - facebook_ads_feed
+        - display_ad_billboard
+        - display_ad_vertical
+      professional:
+        - presentation_16_9
+        - business_card
+        - email_header
+        - blog_header
+        - flyer_a4
+        - poster_a3
+      custom:
+        - custom  # Use with width/height
+
+  design_style:
+    recommended: true
+    enhances_results: true
+    options:
+      - modern
+      - minimalist
+      - material
+      - glassmorphism
+      - neomorphism
+      - flat
+      - luxury
+      - tech
+      - vintage
+      - bold
+      - professional
+      - playful
+      - geometric
+      - abstract
+      - organic
+
+  quality:
+    default: "auto"
+    options: ["low", "medium", "high", "auto"]
+    recommendation: "Use 'auto' for optimal results, 'high' for maximum quality"
+
+critical_success_factors:
+  - "Be EXTREMELY detailed in prompts"
+  - "Mention colors, composition, text, style, mood, lighting"
+  - "Always specify platform_preset (MANDATORY)"
+  - "Include design_style for better results"
+  - "Mention specific text/copy if needed in design"
+  - "Describe brand elements clearly (logos, colors, fonts)"
+  - "Request professional photography style for product shots"
+  - "Use action words (dynamic, floating, energetic) for movement"
+  - "Specify background styles (gradient, pattern, solid, textured)"
+
+automatic_design_principles:
+  - "Rule of thirds and golden ratio composition"
+  - "WCAG contrast standards for text"
+  - "10% margin safe zones for text"
+  - "Professional typography with kerning/leading"
+  - "8px grid system for spacing"
+  - "Visual flow and focal points"
+  - "Platform-specific optimizations (safe zones, overlays)"
+
+example_prompts:
+  product_ad: "Funky modern Nike shoe advertisement featuring Air Max sneaker floating dynamically with neon color splashes, urban street art background, bold 'JUST DO IT' typography, energetic motion blur effects, vibrant gradient from electric blue to hot pink, product photography style with dramatic lighting"
+
+  social_media: "Instagram post for coffee shop, minimalist design, warm brown tones, professional latte art photo centered, text 'Morning Bliss' in elegant serif font, cream background with subtle coffee bean pattern, modern and inviting mood"
+
+sizing_handling:
+  mode: "auto"
+  description: "AI determines best dimensions based on platform_preset"
+  compatibility: "Handles all aspect ratios including 9:16 stories, posters, banners"
+  optimization: "Automatically optimizes for platform-specific requirements"

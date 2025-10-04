@@ -1,0 +1,382 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Agent Configuration & Building Tools",
+  "version": "1.0",
+  "description": "Tools for self-configuration, agent creation, and external service integration",
+
+  "tools": [
+    {
+      "name": "update_agent",
+      "description": "Modify your own identity, capabilities, and tool access",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "system_prompt": {
+            "type": "string",
+            "description": "Updated system prompt defining personality and expertise"
+          },
+          "name": {
+            "type": "string",
+            "description": "Agent name"
+          },
+          "description": {
+            "type": "string",
+            "description": "Brief description of agent purpose"
+          },
+          "enabled_tools": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "List of enabled tool names"
+          },
+          "mcp_servers": {
+            "type": "array",
+            "description": "External MCP server integrations"
+          }
+        }
+      },
+      "critical_notes": [
+        "When adding new MCP servers, they merge with existing ones",
+        "All previously configured integrations are preserved"
+      ]
+    },
+
+    {
+      "name": "create_new_agent",
+      "description": "Create a new specialized AI agent",
+      "parameters": {
+        "type": "object",
+        "required": ["name", "system_prompt"],
+        "properties": {
+          "name": {"type": "string"},
+          "system_prompt": {"type": "string"},
+          "description": {"type": "string"},
+          "enabled_tools": {"type": "array"},
+          "mcp_servers": {"type": "array"}
+        }
+      },
+      "critical_notes": [
+        "ALWAYS ask user for explicit permission before creating any agent",
+        "NEVER create agents without clear user confirmation"
+      ]
+    },
+
+    {
+      "name": "get_agent_creation_suggestions",
+      "description": "Get suggestions for specialized agents based on user needs",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "use_case": {
+            "type": "string",
+            "description": "Description of what the agent should do"
+          }
+        }
+      }
+    },
+
+    {
+      "name": "search_mcp_servers",
+      "description": "Find external service integrations by keyword",
+      "parameters": {
+        "type": "object",
+        "required": ["query"],
+        "properties": {
+          "query": {"type": "string"},
+          "limit": {
+            "type": "integer",
+            "default": 5,
+            "description": "Number of results (max 5)"
+          }
+        }
+      },
+      "critical_notes": [
+        "NEVER search for more than 5 MCP servers",
+        "Always use limit=5 parameter"
+      ]
+    },
+
+    {
+      "name": "get_popular_mcp_servers",
+      "description": "Browse trending, well-tested integrations",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {"type": "integer", "default": 10}
+        }
+      }
+    },
+
+    {
+      "name": "get_mcp_server_tools",
+      "description": "Explore available tools for an MCP server",
+      "parameters": {
+        "type": "object",
+        "required": ["server_slug"],
+        "properties": {
+          "server_slug": {"type": "string"}
+        }
+      }
+    },
+
+    {
+      "name": "test_mcp_server_connection",
+      "description": "Verify an MCP server connection works",
+      "parameters": {
+        "type": "object",
+        "required": ["profile_id"],
+        "properties": {
+          "profile_id": {"type": "string"}
+        }
+      }
+    },
+
+    {
+      "name": "get_credential_profiles",
+      "description": "List existing credential profiles for external services",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "toolkit_slug": {
+            "type": "string",
+            "description": "Optional filter by toolkit"
+          }
+        }
+      },
+      "critical_notes": [
+        "ALWAYS check existing profiles BEFORE creating new ones",
+        "Ask user if they want to use existing or create new"
+      ]
+    },
+
+    {
+      "name": "create_credential_profile",
+      "description": "Set up new service connection (includes connection link)",
+      "parameters": {
+        "type": "object",
+        "required": ["app_slug", "profile_name"],
+        "properties": {
+          "app_slug": {
+            "type": "string",
+            "description": "Exact app_slug from search results"
+          },
+          "profile_name": {"type": "string"}
+        }
+      },
+      "critical_notes": [
+        "MUST use search_mcp_servers first to get exact app_slug",
+        "Response includes connection_link for user to authorize",
+        "WAIT for user to connect before proceeding"
+      ]
+    },
+
+    {
+      "name": "configure_profile_for_agent",
+      "description": "Add connected services to agents",
+      "parameters": {
+        "type": "object",
+        "required": ["profile_id", "enabled_tools"],
+        "properties": {
+          "profile_id": {"type": "string"},
+          "enabled_tools": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Specific tools user selected"
+          }
+        }
+      },
+      "critical_notes": [
+        "MUST call discover_user_mcp_servers first to get available tools",
+        "ALWAYS ask user to select specific tools",
+        "NEVER skip tool selection step"
+      ]
+    },
+
+    {
+      "name": "create_workflow",
+      "description": "Design multi-step automated processes",
+      "parameters": {
+        "type": "object",
+        "required": ["name", "steps"],
+        "properties": {
+          "name": {"type": "string"},
+          "description": {"type": "string"},
+          "steps": {
+            "type": "array",
+            "description": "Ordered list of workflow steps"
+          }
+        }
+      },
+      "critical_notes": [
+        "MUST call get_current_agent_config first to verify available tools",
+        "Only use tools that are actually enabled for the agent"
+      ]
+    },
+
+    {
+      "name": "get_workflows",
+      "description": "Review existing workflows",
+      "parameters": {"type": "object"}
+    },
+
+    {
+      "name": "update_workflow",
+      "description": "Modify existing workflow",
+      "parameters": {
+        "type": "object",
+        "required": ["workflow_id"],
+        "properties": {
+          "workflow_id": {"type": "string"},
+          "name": {"type": "string"},
+          "steps": {"type": "array"}
+        }
+      }
+    },
+
+    {
+      "name": "delete_workflow",
+      "description": "Remove workflow",
+      "parameters": {
+        "type": "object",
+        "required": ["workflow_id"],
+        "properties": {
+          "workflow_id": {"type": "string"}
+        }
+      }
+    },
+
+    {
+      "name": "activate_workflow",
+      "description": "Enable or disable workflow execution",
+      "parameters": {
+        "type": "object",
+        "required": ["workflow_id", "active"],
+        "properties": {
+          "workflow_id": {"type": "string"},
+          "active": {"type": "boolean"}
+        }
+      }
+    },
+
+    {
+      "name": "create_scheduled_trigger",
+      "description": "Set up cron-based scheduling for workflows or agents",
+      "parameters": {
+        "type": "object",
+        "required": ["schedule", "route"],
+        "properties": {
+          "schedule": {
+            "type": "string",
+            "description": "Cron expression (e.g., '0 9 * * *' for 9 AM daily)"
+          },
+          "route": {
+            "type": "string",
+            "enum": ["agent", "workflow"],
+            "description": "Target type"
+          },
+          "workflow_id": {
+            "type": "string",
+            "description": "Required if route is 'workflow'"
+          },
+          "agent_prompt": {
+            "type": "string",
+            "description": "Required if route is 'agent'"
+          }
+        }
+      }
+    },
+
+    {
+      "name": "get_scheduled_triggers",
+      "description": "View all scheduled tasks",
+      "parameters": {"type": "object"}
+    },
+
+    {
+      "name": "delete_scheduled_trigger",
+      "description": "Remove scheduled task",
+      "parameters": {
+        "type": "object",
+        "required": ["trigger_id"],
+        "properties": {
+          "trigger_id": {"type": "string"}
+        }
+      }
+    },
+
+    {
+      "name": "toggle_scheduled_trigger",
+      "description": "Enable or disable scheduled execution",
+      "parameters": {
+        "type": "object",
+        "required": ["trigger_id", "enabled"],
+        "properties": {
+          "trigger_id": {"type": "string"},
+          "enabled": {"type": "boolean"}
+        }
+      }
+    },
+
+    {
+      "name": "list_event_trigger_apps",
+      "description": "Discover apps with available event triggers",
+      "parameters": {"type": "object"}
+    },
+
+    {
+      "name": "list_app_event_triggers",
+      "description": "List triggers for a specific app with config schema",
+      "parameters": {
+        "type": "object",
+        "required": ["app_slug"],
+        "properties": {
+          "app_slug": {"type": "string"}
+        }
+      }
+    },
+
+    {
+      "name": "create_event_trigger",
+      "description": "Create event-based trigger from external apps",
+      "parameters": {
+        "type": "object",
+        "required": ["slug", "profile_id", "connected_account_id", "trigger_config", "route"],
+        "properties": {
+          "slug": {"type": "string"},
+          "profile_id": {"type": "string"},
+          "connected_account_id": {"type": "string"},
+          "trigger_config": {"type": "object"},
+          "route": {
+            "type": "string",
+            "enum": ["agent", "workflow"]
+          },
+          "agent_prompt": {
+            "type": "string",
+            "description": "Required if route is 'agent'"
+          },
+          "workflow_id": {
+            "type": "string",
+            "description": "Required if route is 'workflow'"
+          }
+        }
+      }
+    },
+
+    {
+      "name": "get_current_agent_config",
+      "description": "Review your current setup and capabilities",
+      "parameters": {"type": "object"}
+    }
+  ],
+
+  "best_practices": [
+    "Always check existing profiles before creating new ones",
+    "Wait for user connection confirmation after creating credential profiles",
+    "Always ask user to select specific tools when configuring profiles",
+    "Verify tool availability before creating workflows",
+    "Use exact names from tool responses - never guess or invent names",
+    "Never search for more than 5 MCP servers at once",
+    "Always ask for explicit permission before creating new agents",
+    "Rank MCP servers by popularity when presenting options",
+    "Explain reasoning behind tool and integration recommendations"
+  ]
+}

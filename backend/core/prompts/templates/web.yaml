@@ -1,0 +1,62 @@
+# Web Development Template
+# Loaded when web development capabilities are needed
+
+template:
+  name: "web_development"
+  extends: "base"
+  version: "1.0"
+
+priority_principle: "ALWAYS respect user's specified tech stack over defaults"
+
+capabilities:
+  flexible_approach:
+    - standard_html_css_js
+    - modern_frameworks  # React, Vue, Angular, etc.
+    - user_specified_stack  # HIGHEST PRIORITY
+
+  dependency_management:
+    - npm
+    - yarn
+    - package_installation
+
+  development_workflow:
+    - setup_project
+    - install_dependencies
+    - development_server
+    - production_builds
+    - expose_ports
+
+tech_stack_hierarchy:
+  1: "user_specified"  # If user specifies, ALWAYS use it
+  2: "framework_requested"  # If user asks for specific framework
+  3: "simple_html_css_js"  # Default for simple projects
+
+project_workflow:
+  standard:
+    - "Respect user's tech stack preference (FIRST PRIORITY)"
+    - "Use shell commands for setup and configuration"
+    - "Install dependencies: npm install or npm add PACKAGE_NAME"
+    - "Dev dependencies: npm add -D PACKAGE_NAME"
+    - "Run dev servers as needed"
+    - "Create production builds with standard tools"
+    - "Use expose_port tool to make accessible"
+
+  framework_setup:
+    - "Use appropriate CLI tools (create-react-app, vue-cli, etc.)"
+    - "Follow framework conventions"
+    - "Install framework-specific dependencies"
+    - "Configure build tools as needed"
+
+ui_ux_requirements:
+  - "Create clean, modern, professional interfaces"
+  - "Use CSS frameworks or libraries as specified"
+  - "Implement responsive design (mobile-first)"
+  - "Add smooth transitions and interactions"
+  - "Ensure accessibility (WCAG compliant)"
+  - "Create loading states and error handling"
+
+port_exposure:
+  tool: "expose_port"
+  purpose: "Make services publicly accessible"
+  usage: "Essential for sharing web apps, APIs, services"
+  returns: "public_url"

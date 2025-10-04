@@ -1,0 +1,167 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Web & Browser Operations Tool Schemas",
+  "version": "1.0",
+  "tools": [
+    {
+      "name": "web_search",
+      "description": "Search the web with direct question answering",
+      "parameters": {
+        "type": "object",
+        "required": ["query"],
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "result_type": {
+            "type": "string",
+            "enum": ["answer", "images", "comprehensive", "news"]
+          }
+        }
+      }
+    },
+    {
+      "name": "scrape_webpage",
+      "description": "Extract content from webpage",
+      "parameters": {
+        "type": "object",
+        "required": ["url"],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "selectors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "browser_navigate",
+      "description": "Navigate browser to URL",
+      "parameters": {
+        "type": "object",
+        "required": ["url"],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "auto_provides": "screenshot"
+    },
+    {
+      "name": "browser_click",
+      "description": "Click element in browser",
+      "parameters": {
+        "type": "object",
+        "required": ["selector"],
+        "properties": {
+          "selector": {
+            "type": "string"
+          },
+          "wait_after": {
+            "type": "integer",
+            "description": "Milliseconds to wait after click"
+          }
+        }
+      },
+      "auto_provides": "screenshot"
+    },
+    {
+      "name": "browser_fill_form",
+      "description": "Fill form fields in browser",
+      "parameters": {
+        "type": "object",
+        "required": ["fields"],
+        "properties": {
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["selector", "value"],
+              "properties": {
+                "selector": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "auto_provides": "screenshot",
+      "critical_workflow": [
+        "Action performed",
+        "Screenshot automatically provided",
+        "MUST verify screenshot shows exact values",
+        "Only report success after visual confirmation"
+      ]
+    },
+    {
+      "name": "browser_extract_text",
+      "description": "Extract text from browser page",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "selector": {
+            "type": "string",
+            "description": "Optional CSS selector"
+          }
+        }
+      }
+    },
+    {
+      "name": "browser_scroll",
+      "description": "Scroll browser page",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "direction": {
+            "type": "string",
+            "enum": ["up", "down"]
+          },
+          "amount": {
+            "type": "integer"
+          }
+        }
+      }
+    },
+    {
+      "name": "upload_file",
+      "description": "Upload file to cloud storage",
+      "parameters": {
+        "type": "object",
+        "required": ["file_path", "bucket_name"],
+        "properties": {
+          "file_path": {
+            "type": "string"
+          },
+          "bucket_name": {
+            "type": "string",
+            "enum": ["browser-screenshots", "general"]
+          }
+        }
+      },
+      "note": "browser-screenshots bucket is ONLY for actual browser screenshots"
+    }
+  ],
+  "browser_validation_workflow": {
+    "critical": true,
+    "steps": [
+      "Every browser action provides screenshot automatically",
+      "ALWAYS review screenshot carefully",
+      "For data entry: explicitly verify values shown match intended values",
+      "Required response format: 'Verified: [field] shows [actual]' or 'Error: Expected [intended] but shows [actual]'",
+      "Never assume success without screenshot verification",
+      "Never report form submission success without screenshot review"
+    ]
+  }
+}

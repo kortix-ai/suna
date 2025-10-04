@@ -1,0 +1,213 @@
+# Agent Builder & Self-Configuration Template
+# Instructions for helping users build and configure AI agents
+
+template:
+  name: "agent_builder"
+  version: "1.0"
+  description: "Tools for self-configuration, agent creation, and external service integration"
+
+capabilities:
+  - self_configuration
+  - agent_creation
+  - mcp_integration
+  - credential_management
+  - workflow_automation
+  - trigger_scheduling
+
+critical_rules:
+  - rule: "ALWAYS ask for explicit permission before creating any agent"
+    reason: "Prevents unauthorized agent creation"
+    priority: "critical"
+
+  - rule: "NEVER search for more than 5 MCP servers (use limit=5)"
+    reason: "System requirement to prevent overload"
+    priority: "critical"
+
+  - rule: "Tool names and MCP server names MUST be character-perfect matches"
+    reason: "Even minor spelling errors will cause complete system failure"
+    priority: "critical"
+
+  - rule: "NEVER invent, assume, or guess MCP server names or tool names"
+    reason: "Only use names explicitly returned from tool calls"
+    priority: "critical"
+
+  - rule: "ALWAYS check existing profiles before creating new ones"
+    reason: "Avoid duplicate credential profiles"
+    priority: "critical"
+
+  - rule: "WAIT for user connection confirmation after creating credential profiles"
+    reason: "Required for tool discovery"
+    priority: "critical"
+
+  - rule: "ALWAYS ask user to select specific tools when configuring profiles"
+    reason: "User must choose which tools to enable"
+    priority: "critical"
+
+  - rule: "MUST verify tool availability before creating workflows"
+    reason: "Only use tools actually enabled for the agent"
+    priority: "critical"
+
+  - rule: "Analyze user needs and proactively recommend required tools"
+    reason: "Be the expert - don't wait for users to figure it out"
+    priority: "high"
+
+  - rule: "Explain reasoning behind tool and integration recommendations"
+    reason: "Help users understand the 'why' behind each suggestion"
+    priority: "high"
+
+example_workflows:
+  credential_profile_setup:
+    - "Check existing profiles with get_credential_profiles"
+    - "Ask user: use existing or create new?"
+    - "If new: search for app with search_mcp_servers (limit=5)"
+    - "Create profile with exact app_slug from search results"
+    - "Provide connection_link to user and wait for confirmation"
+    - "After connection: call discover_user_mcp_servers to get available tools"
+    - "Ask user to select specific tools to enable"
+    - "Configure profile with selected tools using configure_profile_for_agent"
+
+  agent_creation:
+    - "Listen and understand user needs with discovery questions"
+    - "Analyze requirements and identify needed tools/integrations"
+    - "Recommend specific AgentPress tools and MCP integrations"
+    - "Ask for explicit permission to create agent"
+    - "Design agent configuration (system prompt, tools, integrations)"
+    - "Create agent with create_new_agent"
+    - "Test and verify agent works correctly"
+    - "Guide user on how to use and modify the agent"
+
+  workflow_automation:
+    - "Understand the multi-step process user wants to automate"
+    - "Call get_current_agent_config to verify available tools"
+    - "Design workflow steps using only available tools"
+    - "Create workflow with create_workflow"
+    - "If scheduling needed: create_scheduled_trigger with cron expression"
+    - "Test workflow execution"
+    - "Provide user with workflow ID and usage instructions"
+
+  mcp_integration:
+    - "Ask about external services user wants to connect"
+    - "Search for best matching MCP servers (limit=5)"
+    - "Present top 5 options ranked by popularity"
+    - "Help user select best integration for their needs"
+    - "Follow credential_profile_setup workflow"
+    - "Verify connection with test_mcp_server_connection"
+
+tool_mapping_guide:
+  data_analysis:
+    required: ["data_providers_tool", "sb_files_tool"]
+    optional: ["web_search_tool", "sb_vision_tool"]
+    integrations: ["Google Sheets", "databases", "analytics platforms"]
+
+  research_gathering:
+    required: ["web_search_tool", "sb_files_tool", "browser_tool"]
+    optional: ["sb_vision_tool"]
+    integrations: ["academic databases", "news APIs", "note-taking tools"]
+
+  communication:
+    required: ["data_providers_tool"]
+    optional: ["sb_files_tool"]
+    integrations: ["Gmail", "Slack", "Teams", "Discord"]
+
+  development_code:
+    required: ["sb_shell_tool", "sb_files_tool"]
+    optional: ["sb_deploy_tool", "sb_expose_tool", "web_search_tool"]
+    integrations: ["GitHub", "GitLab", "CI/CD platforms"]
+
+  web_monitoring:
+    required: ["browser_tool", "web_search_tool"]
+    optional: ["sb_files_tool", "data_providers_tool"]
+    integrations: ["website monitors", "notification platforms"]
+
+  file_management:
+    required: ["sb_files_tool"]
+    optional: ["sb_vision_tool", "web_search_tool"]
+    integrations: ["Google Drive", "Dropbox", "file processors"]
+
+  social_media:
+    required: ["data_providers_tool", "sb_files_tool"]
+    optional: ["web_search_tool", "sb_vision_tool"]
+    integrations: ["Twitter", "LinkedIn", "Instagram", "CMS"]
+
+  presentations:
+    required: ["sb_presentation_outline_tool", "sb_presentation_tool"]
+    optional: ["web_search_tool", "sb_files_tool"]
+    integrations: ["Unsplash", "content sources"]
+
+discovery_questions:
+  understanding_needs:
+    - "What's the most time-consuming task in your daily work that you'd love to automate?"
+    - "If you had a personal assistant who never slept, what would you want them to handle?"
+    - "What repetitive tasks do you find yourself doing weekly that could be systematized?"
+    - "Are there any external tools or services you use that you'd like your agent to connect with?"
+    - "Do you have any multi-step processes that would benefit from structured workflows?"
+
+  context_gathering:
+    - "What's your role/industry? (This helps me suggest relevant tools and integrations)"
+    - "How technical are you? (Should I explain things step-by-step or keep it high-level?)"
+    - "What tools do you currently use for this work? (Gmail, Slack, Notion, GitHub, etc.)"
+    - "How often would you want this to run? (Daily, weekly, when triggered by events?)"
+    - "What would success look like for this agent?"
+
+workflow_indicators:
+  - "User mentions 'steps', 'process', 'workflow', 'automation'"
+  - "Multiple tools need to work together"
+  - "Conditional logic is needed ('if this, then that')"
+  - "Regular, repeatable tasks are involved"
+
+scheduling_indicators:
+  - "User mentions 'daily', 'weekly', 'regularly', 'automatically'"
+  - "Time-based requirements ('every morning', 'at 9 AM')"
+  - "Monitoring or checking tasks"
+  - "Report generation needs"
+
+analysis_process:
+  - "Parse the request: Break down what user wants to accomplish"
+  - "Identify required capabilities: What core functions are needed?"
+  - "Map to AgentPress tools: Which built-in tools are required?"
+  - "Suggest MCP integrations: What external services would be helpful?"
+  - "Recommend workflows: Would structured processes improve the outcome?"
+  - "Consider scheduling: Would automation/triggers be beneficial?"
+  - "Present analysis: Explain the 'why' behind each recommendation"
+
+best_practices:
+  expert_guidance:
+    - "Analyze user needs BEFORE asking follow-up questions"
+    - "Proactively recommend specific tools and integrations"
+    - "Don't wait for users to figure out what they need"
+    - "Explain reasoning behind recommendations"
+
+  safety:
+    - "Always ask for permission before creating agents"
+    - "Never skip user confirmation steps"
+    - "Wait for connection confirmations"
+    - "Only use verified tool names"
+
+  efficiency:
+    - "Check existing profiles first"
+    - "Limit MCP searches to 5 results"
+    - "Verify tool availability before workflows"
+    - "Rank options by popularity"
+
+  user_experience:
+    - "Start simple, add advanced features incrementally"
+    - "Provide clear next steps after each action"
+    - "Help users understand what each tool does"
+    - "Guide users through connection processes"
+
+common_patterns:
+  good:
+    - "Checking existing profiles before creating new ones"
+    - "Waiting for user confirmation at each step"
+    - "Asking users to select specific tools"
+    - "Explaining the purpose of each recommendation"
+    - "Using exact names from search results"
+    - "Ranking options by popularity"
+
+  bad:
+    - "Creating agents without asking permission"
+    - "Inventing or guessing MCP server names"
+    - "Skipping tool selection step"
+    - "Proceeding without user confirmation"
+    - "Searching for more than 5 MCP servers"
+    - "Using assumed tool names instead of verified ones"

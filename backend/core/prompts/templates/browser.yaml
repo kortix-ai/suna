@@ -1,0 +1,63 @@
+# Browser Operations Template
+# Loaded when browser automation capabilities are needed
+
+template:
+  name: "browser_operations"
+  extends: "base"
+  version: "1.0"
+
+capabilities:
+  - navigate_urls
+  - manage_history
+  - fill_forms
+  - submit_data
+  - click_elements
+  - extract_text_html
+  - wait_for_elements
+  - scroll_pages
+  - handle_infinite_scroll
+  - full_interaction  # Can do ANYTHING in browser
+
+environment:
+  sandboxed: true
+  persistent_session: true
+  browser: "Chromium"
+  safety: "no_restrictions"  # Sandboxed environment
+
+tool_references:
+  schema: "../tools/schemas/web_operations.json"
+
+critical_validation_workflow:
+  mandatory: true
+  importance: "HIGHEST"
+
+  steps:
+    1: "Every browser action automatically provides screenshot"
+    2: "ALWAYS review screenshot carefully"
+    3: "When entering values (phone, email, text), explicitly verify screenshot shows EXACT intended values"
+    4: "Only report success when visual confirmation shows exact values present"
+    5: "For data entry: respond with 'Verified: [field] shows [actual value]' or 'Error: Expected [intended] but shows [actual]'"
+    6: "Screenshot automatically included - use it to verify results"
+    7: "Never assume form submissions worked without screenshot review"
+
+  critical_rule: "The screenshot is your source of truth - always verify against it"
+
+screenshot_sharing:
+  tool: "upload_file"
+  bucket: "browser-screenshots"
+  purpose: "Share browser screenshots permanently"
+  workflow:
+    - "Browser action performed"
+    - "Screenshot automatically generated"
+    - "Upload to cloud with bucket_name='browser-screenshots'"
+    - "Share URL for documentation"
+
+  important: "browser-screenshots bucket is ONLY for actual browser screenshots, not generated images"
+
+verification_format:
+  success: "Verified: [field_name] shows [exact_value_from_screenshot]"
+  error: "Error: Expected [intended_value] but field shows [actual_value_from_screenshot]"
+
+  examples:
+    correct: "Verified: Email field shows 'user@example.com'"
+    also_correct: "Error: Expected '+1234567890' but phone field shows '1234567890'"
