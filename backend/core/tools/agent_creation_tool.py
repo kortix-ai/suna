@@ -15,7 +15,10 @@ class AgentCreationTool(Tool):
         self.db = db_connection
         self.account_id = account_id
 
-    async def _get_current_account_id(self) -> Optional[str]:
+    async def _get_current_account_id(self) -> str:
+        """Get account_id (already provided in constructor)."""
+        if not self.account_id:
+            raise ValueError("No account_id available")
         return self.account_id
 
     async def _sync_workflows_to_version_config(self, agent_id: str) -> None:

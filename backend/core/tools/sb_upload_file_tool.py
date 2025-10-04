@@ -137,28 +137,15 @@ class SandboxUploadFileTool(SandboxToolsBase):
             return self.fail_response(f"Unexpected error during secure file upload: {str(e)}")
     
     async def _get_current_account_id(self) -> str:
-        try:
-            context_vars = structlog.contextvars.get_contextvars()
-            thread_id = context_vars.get('thread_id')
-            
-            if not thread_id:
-                raise ValueError("No thread_id available from execution context")
-            
-            client = await self.db.client
-            
-            thread_result = await client.table('threads').select('account_id').eq('thread_id', thread_id).limit(1).execute()
-            if not thread_result.data:
-                raise ValueError(f"Could not find thread with ID: {thread_id}")
-            
-            account_id = thread_result.data[0]['account_id']
-            if not account_id:
-                raise ValueError("Thread has no associated account_id")
-            
-            return account_id
-            
-        except Exception as e:
-            logger.error(f"Error getting current account_id: {e}")
-            raise
+        """Get account_id from current thread context."""
+        context_vars = structlog.contextvars.get_contextvars()
+        thread_id = context_vars.get('thread_id')
+        
+        if not thread_id:
+            raise ValueError("No thread_id available from execution context")
+        
+        from core.utils.auth_utils import get_account_id_from_thread
+        return await get_account_id_from_thread(thread_id, self.db)
     
     async def _track_upload(
         self,
