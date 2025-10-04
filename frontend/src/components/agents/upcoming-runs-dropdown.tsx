@@ -86,11 +86,6 @@ const RunItem: React.FC<RunItemProps> = ({ run }) => {
                 </div>
               )}
               
-              {run.workflow_id && (
-                <div className="mt-2 p-2 bg-muted/50 rounded text-xs">
-                  <strong>Workflow:</strong> {run.workflow_id}
-                </div>
-              )}
               
               <div className="text-xs text-muted-foreground mt-2">
                 Timezone: {run.timezone}

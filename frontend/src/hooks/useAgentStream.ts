@@ -16,7 +16,6 @@ import {
 import { safeJsonParse } from '@/components/thread/utils';
 import { agentKeys } from '@/hooks/react-query/agents/keys';
 import { composioKeys } from '@/hooks/react-query/composio/keys';
-import { workflowKeys } from '@/hooks/react-query/agents/workflow-keys';
 import { knowledgeBaseKeys } from '@/hooks/react-query/knowledge-base/keys';
 import { fileQueryKeys } from '@/hooks/react-query/files/use-file-queries';
 
@@ -281,10 +280,6 @@ export function useAgentStream(
         });
 
         queryClient.invalidateQueries({ queryKey: ['triggers', agentId] });
-
-        queryClient.invalidateQueries({
-          queryKey: workflowKeys.agent(agentId),
-        });
 
         queryClient.invalidateQueries({
           queryKey: knowledgeBaseKeys.agent(agentId),

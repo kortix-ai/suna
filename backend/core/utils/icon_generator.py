@@ -4,65 +4,117 @@ Icon and color generation utilities for agents and projects.
 import json
 import traceback
 from typing import Dict
-from pathlib import Path
 from core.utils.logger import logger
 from core.services.llm import make_llm_api_call
 
-# Load Lucide React icons once at module level for performance
-try:
-    icons_file_path = Path(__file__).parent.parent.parent / 'lucide_icons_cleaned.json'
-    with open(icons_file_path, 'r') as f:
-        RELEVANT_ICONS = json.load(f)
-    logger.info(f"Loaded {len(RELEVANT_ICONS)} Lucide React icons from file")
-except Exception as e:
-    logger.warning(f"Failed to load icons file: {e}. Using fallback icons.")
-    # Fallback to essential icons if file loading fails
-    RELEVANT_ICONS = [
-        # Core AI/Agent icons
-        "message-circle", "code", "brain", "sparkles", "zap", "rocket", "bot",
-        "cpu", "microchip", "terminal", "workflow", "target", "lightbulb",
-        
-        # Data & Storage
-        "database", "file", "files", "folder", "folders", "hard-drive", "cloud",
-        "download", "upload", "save", "copy", "trash", "archive",
-        
-        # User & Communication
-        "user", "users", "mail", "phone", "send", "reply", "bell", 
-        "headphones", "mic", "video", "camera",
-        
-        # Navigation & UI
-        "house", "globe", "map", "map-pin", "search", "filter", "settings",
-        "menu", "grid2x2", "list", "layout-grid", "panel-left", "panel-right",
-        
-        # Actions & Tools
-        "play", "pause", "refresh-cw", "rotate-cw", "wrench", "pen", "pencil", 
-        "brush", "scissors", "hammer",
-        
-        # Status & Feedback
-        "check", "x", "plus", "minus", "info", "thumbs-up", "thumbs-down", 
-        "heart", "star", "flag", "bookmark",
-        
-        # Time & Calendar
-        "clock", "calendar", "timer", "hourglass", "history",
-        
-        # Security & Privacy
-        "shield", "lock", "key", "fingerprint", "eye",
-        
-        # Business & Productivity
-        "briefcase", "building", "store", "shopping-cart", "credit-card",
-        "chart-bar", "chart-pie", "trending-up", "trending-down",
-        
-        # Creative & Media
-        "music", "image", "images", "film", "palette", "paintbrush",
-        "speaker", "volume",
-        
-        # System & Technical
-        "cog", "monitor", "laptop", "smartphone", "wifi", "bluetooth", 
-        "usb", "plug", "battery", "power",
-        
-        # Nature & Environment
-        "sun", "moon", "leaf", "flower", "mountain", "earth"
-    ]
+# Lucide React icons (hardcoded for performance)
+RELEVANT_ICONS = [
+    "accessibility", "activity", "air-vent", "airplay", "alarm-clock", "album",
+    "align-left", "align-right", "ambulance", "ampersand", "anchor", "angry",
+    "antenna", "anvil", "aperture", "app-window", "apple", "archive", "armchair",
+    "arrow-down", "arrow-left", "arrow-right", "arrow-up", "asterisk", "at-sign",
+    "atom", "audio-lines", "award", "axe", "axis3d", "baby", "backpack", "badge",
+    "baggage-claim", "ban", "banana", "bandage", "banknote", "barcode", "baseline",
+    "bath", "battery", "battery-charging", "beaker", "bean", "bed", "beef", "beer",
+    "bell", "biceps-flexed", "bike", "binary", "binoculars", "biohazard", "bird",
+    "bitcoin", "blend", "blinds", "blocks", "bluetooth", "bold", "bolt", "bomb",
+    "bone", "book", "bookmark", "boom-box", "bot", "box", "boxes", "braces",
+    "brackets", "brain", "brick-wall", "briefcase", "bring-to-front", "brush",
+    "bug", "building", "bus", "cable", "cable-car", "cake", "calculator", "calendar",
+    "camera", "candy", "cannabis", "captions", "car", "caravan", "carrot",
+    "case-sensitive", "cassette-tape", "cast", "castle", "cat", "cctv", "chart-bar",
+    "chart-pie", "check", "chef-hat", "cherry", "chevron-down", "chevron-right",
+    "chrome", "church", "cigarette", "circle", "circuit-board", "citrus",
+    "clapperboard", "clipboard", "clock", "cloud", "cloud-download", "clover",
+    "club", "code", "codepen", "codesandbox", "coffee", "cog", "coins", "columns2",
+    "combine", "command", "compass", "component", "computer", "concierge-bell",
+    "cone", "construction", "contact", "container", "contrast", "cookie",
+    "cooking-pot", "copy", "copyleft", "copyright", "corner-down-left",
+    "corner-up-right", "cpu", "creative-commons", "credit-card", "croissant",
+    "crop", "cross", "crosshair", "crown", "cuboid", "cup-soda", "currency",
+    "cylinder", "dam", "database", "delete", "dessert", "diameter", "diamond",
+    "dices", "diff", "disc", "divide", "dna", "dock", "dog", "dollar-sign",
+    "donut", "door-open", "dot", "download", "drafting-compass", "drama",
+    "dribbble", "drill", "droplet", "drum", "drumstick", "dumbbell", "ear",
+    "earth", "eclipse", "egg", "ellipsis", "equal", "eraser", "ethernet-port",
+    "euro", "expand", "external-link", "eye", "facebook", "factory", "fan",
+    "fast-forward", "feather", "fence", "ferris-wheel", "figma", "file", "files",
+    "film", "filter", "filter-x", "fingerprint", "fire-extinguisher", "fish",
+    "flag", "flame", "flashlight", "flask-conical", "flip-horizontal",
+    "flip-vertical", "flower", "focus", "fold-horizontal", "fold-vertical",
+    "folder", "folders", "footprints", "forklift", "forward", "frame", "framer",
+    "frown", "fuel", "fullscreen", "gallery-horizontal", "gamepad", "gauge",
+    "gavel", "gem", "ghost", "gift", "git-branch", "git-commit-horizontal",
+    "git-compare", "git-fork", "git-graph", "git-merge", "git-pull-request",
+    "github", "gitlab", "glass-water", "glasses", "globe", "goal", "grab",
+    "graduation-cap", "grape", "grid2x2", "grip", "group", "guitar", "ham",
+    "hammer", "hand", "hand-helping", "handshake", "hard-drive", "hard-hat",
+    "hash", "haze", "hdmi-port", "heading", "headphones", "heart", "heart-off",
+    "heater", "hexagon", "highlighter", "history", "hop", "hospital", "hotel",
+    "hourglass", "house", "house-plug", "house-plus", "house-wifi",
+    "ice-cream-bowl", "ice-cream-cone", "id-card", "image", "image-down",
+    "image-minus", "image-off", "image-play", "image-plus", "image-up",
+    "image-upscale", "images", "import", "inbox", "indent-decrease",
+    "indent-increase", "indian-rupee", "infinity", "info", "inspection-panel",
+    "instagram", "italic", "iteration-ccw", "iteration-cw", "japanese-yen",
+    "joystick", "kanban", "key", "keyboard", "lamp", "land-plot", "landmark",
+    "languages", "laptop", "lasso", "laugh", "layers", "layout-grid", "leaf",
+    "lectern", "letter-text", "library", "life-buoy", "ligature", "lightbulb",
+    "link", "linkedin", "list", "list-check", "list-plus", "loader", "locate",
+    "lock", "lock-open", "log-in", "log-out", "logs", "lollipop", "luggage",
+    "magnet", "mail", "mailbox", "mails", "map", "map-pin", "mars", "mars-stroke",
+    "martini", "maximize", "medal", "megaphone", "meh", "memory-stick", "menu",
+    "merge", "message-circle", "mic", "microchip", "microscope", "microwave",
+    "milestone", "milk", "minimize", "minus", "monitor", "moon", "mountain",
+    "mouse", "move-left", "move-right", "move-up", "move-down", "music",
+    "navigation", "network", "newspaper", "nfc", "non-binary", "notebook",
+    "notepad-text", "nut", "octagon", "omega", "option", "orbit", "origami",
+    "package", "package-plus", "paintbrush", "palette", "panel-bottom",
+    "panel-left", "panel-right", "panel-top", "panels-left-bottom",
+    "panels-right-bottom", "panels-top-left", "paperclip", "parentheses",
+    "parking-meter", "party-popper", "pause", "paw-print", "pc-case", "pen",
+    "pencil", "pentagon", "percent", "person-standing", "philippine-peso",
+    "phone", "pi", "piano", "pickaxe", "picture-in-picture", "piggy-bank",
+    "pilcrow", "pill", "pill-bottle", "pin", "pipette", "pizza", "plane", "play",
+    "plug", "plus", "pocket", "pocket-knife", "podcast", "pointer", "popcorn",
+    "popsicle", "pound-sterling", "power", "presentation", "printer", "projector",
+    "proportions", "puzzle", "pyramid", "qr-code", "quote", "rabbit", "radar",
+    "radiation", "radical", "radio", "radius", "rail-symbol", "rainbow", "rat",
+    "ratio", "receipt", "rectangle-horizontal", "recycle", "redo", "refresh-ccw",
+    "refresh-cw", "refrigerator", "regex", "remove-formatting", "repeat",
+    "replace", "reply", "rewind", "ribbon", "rocket", "rocking-chair",
+    "roller-coaster", "rotate-ccw", "rotate-cw", "rotate3d", "route", "router",
+    "rows2", "rss", "ruler", "russian-ruble", "sailboat", "salad", "sandwich",
+    "satellite", "satellite-dish", "save", "scale", "scale3d", "scaling", "scan",
+    "school", "scissors", "screen-share", "scroll", "search", "section", "send",
+    "send-to-back", "separator-horizontal", "separator-vertical", "server",
+    "settings", "shapes", "share", "sheet", "shell", "shield", "ship",
+    "ship-wheel", "shirt", "shopping-cart", "shovel", "shower-head", "shrink",
+    "shrub", "shuffle", "sigma", "signal", "signature", "signpost", "siren",
+    "skip-back", "skip-forward", "skull", "slack", "slash", "slice",
+    "sliders-horizontal", "smartphone", "smile", "snail", "snowflake", "sofa",
+    "soup", "space", "spade", "sparkles", "speaker", "speech", "spell-check",
+    "spline", "split", "spray-can", "sprout", "square", "squircle", "squirrel",
+    "stamp", "star", "step-forward", "stethoscope", "sticker", "sticky-note",
+    "store", "stretch-horizontal", "strikethrough", "subscript", "sun",
+    "superscript", "swatch-book", "swiss-franc", "switch-camera", "sword",
+    "swords", "syringe", "table", "tablet", "tag", "tally1", "tangent", "target",
+    "telescope", "tent", "terminal", "test-tube", "text", "theater",
+    "thermometer", "thumbs-down", "thumbs-up", "ticket", "timer", "toggle-right",
+    "toilet", "tornado", "torus", "touchpad", "tower-control", "toy-brick",
+    "tractor", "traffic-cone", "train-front", "transgender", "trash", "tree-pine",
+    "trello", "trending-down", "trending-up", "trending-up-down", "triangle",
+    "trophy", "truck", "turtle", "tv", "twitch", "twitter", "type", "umbrella",
+    "underline", "undo", "unfold-horizontal", "unfold-vertical", "ungroup",
+    "university", "unlink", "unplug", "upload", "usb", "user", "users",
+    "utensils", "utility-pole", "variable", "vault", "vegan", "venetian-mask",
+    "venus", "venus-and-mars", "vibrate", "video", "videotape", "view",
+    "voicemail", "volleyball", "volume", "vote", "wallet", "wallpaper", "wand",
+    "warehouse", "washing-machine", "watch", "waves", "waypoints", "webcam",
+    "webhook", "weight", "wheat", "whole-word", "wifi", "wind", "wind-arrow-down",
+    "wine", "workflow", "worm", "wrap-text", "wrench", "x", "youtube", "zap",
+    "zap-off", "zoom-in", "zoom-out"
+]
 
 
 async def generate_icon_and_colors(name: str, description: str = "") -> Dict[str, str]:
@@ -78,7 +130,7 @@ async def generate_icon_and_colors(name: str, description: str = "") -> Dict[str
     """
     logger.debug(f"Generating icon and colors for: {name}")
     try:
-        model_name = "openai/gpt-4o-mini"
+        model_name = "openai/gpt-5-nano"
         
         frontend_colors = [
             "#000000", "#FFFFFF", "#6366F1", "#10B981", "#F59E0B", 

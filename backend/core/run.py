@@ -186,7 +186,6 @@ class ToolManager:
         from core.tools.agent_builder_tools.agent_config_tool import AgentConfigTool
         from core.tools.agent_builder_tools.mcp_search_tool import MCPSearchTool
         from core.tools.agent_builder_tools.credential_profile_tool import CredentialProfileTool
-        from core.tools.agent_builder_tools.workflow_tool import WorkflowTool
         from core.tools.agent_builder_tools.trigger_tool import TriggerTool
         from core.services.supabase import DBConnection
         
@@ -196,7 +195,6 @@ class ToolManager:
             ('agent_config_tool', AgentConfigTool),
             ('mcp_search_tool', MCPSearchTool),
             ('credential_profile_tool', CredentialProfileTool),
-            ('workflow_tool', WorkflowTool),
             ('trigger_tool', TriggerTool),
         ]
 
@@ -374,7 +372,7 @@ class PromptManager:
             agentpress_tools = agent_config.get('agentpress_tools', {})
             has_builder_tools = any(
                 agentpress_tools.get(tool, False) 
-                for tool in ['agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'workflow_tool', 'trigger_tool']
+                for tool in ['agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'trigger_tool']
             )
             
             if has_builder_tools:
@@ -535,7 +533,7 @@ class MessageManager:
             agentpress_tools = self.agent_config.get('agentpress_tools', {})
             has_builder_tools = any(
                 agentpress_tools.get(tool, False) 
-                for tool in ['agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'workflow_tool', 'trigger_tool']
+                for tool in ['agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'trigger_tool']
             )
             
             if has_builder_tools:
@@ -678,7 +676,7 @@ class AgentRunner:
             'sb_sheets_tool', 'sb_kb_tool', 'sb_design_tool', 'sb_presentation_outline_tool', 'sb_upload_file_tool',
             'sb_docs_tool', 'sb_browser_tool', 'sb_templates_tool', 'computer_use_tool', 'sb_web_dev_tool', 
             'data_providers_tool', 'browser_tool', 'people_search_tool', 'company_search_tool', 
-            'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'workflow_tool', 'trigger_tool',
+            'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'trigger_tool',
             'agent_creation_tool'
         ]
         

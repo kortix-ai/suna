@@ -11,7 +11,6 @@ import {
   Settings
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { CredentialProfileSelector } from '@/components/workflows/CredentialProfileSelector';
 import { ComposioCredentialProfileSelector } from '@/components/agents/composio/composio-credential-profile-selector';
 import { ComposioConnector } from '@/components/agents/composio/composio-connector';
 import { useCreateCredentialProfile, useCredentialProfiles, type CreateCredentialProfileRequest } from '@/hooks/react-query/mcp/use-credential-profiles';
@@ -207,24 +206,11 @@ export const ProfileConnector: React.FC<ProfileConnectorProps> = ({
         </div>
       ) : (
         <div className="space-y-4">
-          <CredentialProfileSelector
-            mcpQualifiedName={step.qualified_name}
-            mcpDisplayName={step.service_name}
-            selectedProfileId={selectedProfileId}
-            onProfileSelect={(profileId) => {
-              // Use step.id to support trigger-specific profiles
-              onProfileSelect(step.id, profileId);
-              if (profileId) {
-                onComplete?.();
-              }
-            }}
-          />
-
-          <div className="flex items-center gap-3">
-            <Separator className="flex-1" />
-            <span className="text-xs text-muted-foreground">OR</span>
-            <Separator className="flex-1" />
-          </div>
+          <Alert>
+            <AlertDescription>
+              MCP credential profile selection coming soon. For now, please use Composio integrations.
+            </AlertDescription>
+          </Alert>
 
           <Button 
             variant="outline" 

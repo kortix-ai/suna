@@ -114,7 +114,6 @@ class InstallationService:
             request.custom_system_prompt or template.system_prompt
         )
         
-        await self._restore_workflows(agent_id, template.config) 
         await self._restore_triggers(agent_id, request.account_id, template.config, request.profile_mappings)
         
         await self._increment_download_count(template.template_id)
@@ -424,118 +423,6 @@ class InstallationService:
             logger.error(f"Failed to create initial version for agent {agent_id}: {error_str}")
             raise  # Re-raise the exception to ensure installation fails if version creation fails
     
-    async def _restore_workflows(self, agent_id: str, template_config: Dict[str, Any]) -> None:
-        workflows = template_config.get('workflows', [])
-        if not workflows:
-            logger.debug(f"No workflows to restore for agent {agent_id}")
-            return
-            
-        client = await self._db.client
-        restored_count = 0
-        
-        for workflow in workflows:
-            try:
-                steps = workflow.get('steps', [])
-                if steps:
-                    steps = self._regenerate_step_ids(steps)
-
-                workflow_data = {
-                    'id': str(uuid4()),
-                    'agent_id': agent_id,
-                    'name': workflow.get('name', 'Untitled Workflow'),
-                    'description': workflow.get('description'),
-                    'status': workflow.get('status', 'draft'),
-                    'trigger_phrase': workflow.get('trigger_phrase'),
-                    'is_default': workflow.get('is_default', False),
-                    'steps': steps,
-                    'created_at': datetime.now(timezone.utc).isoformat(),
-                    'updated_at': datetime.now(timezone.utc).isoformat()
-                }
-                
-                result = await client.table('agent_workflows').insert(workflow_data).execute()
-                if result.data:
-                    restored_count += 1
-                    logger.debug(f"Restored workflow '{workflow_data['name']}' for agent {agent_id}")
-                else:
-                    logger.warning(f"Failed to insert workflow '{workflow_data['name']}' for agent {agent_id}")
-                    
-            except Exception as e:
-                logger.error(f"Failed to restore workflow '{workflow.get('name', 'Unknown')}' for agent {agent_id}: {e}")
-        
-        logger.debug(f"Successfully restored {restored_count}/{len(workflows)} workflows for agent {agent_id}")
-
-        if restored_count > 0:
-            await self._sync_workflows_to_version_config(agent_id)
-    
-    async def _sync_workflows_to_version_config(self, agent_id: str) -> None:
-        try:
-            client = await self._db.client
-            
-            agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).single().execute()
-            if not agent_result.data or not agent_result.data.get('current_version_id'):
-                logger.warning(f"No current version found for agent {agent_id}")
-                return
-            
-            current_version_id = agent_result.data['current_version_id']
-            
-            workflows_result = await client.table('agent_workflows').select('*').eq('agent_id', agent_id).execute()
-            workflows = workflows_result.data if workflows_result.data else []
-            
-            version_result = await client.table('agent_versions').select('config').eq('version_id', current_version_id).single().execute()
-            if not version_result.data:
-                logger.warning(f"Version {current_version_id} not found")
-                return
-            
-            config = version_result.data.get('config', {})
-            
-            config['workflows'] = workflows
-            
-            await client.table('agent_versions').update({'config': config}).eq('version_id', current_version_id).execute()
-            logger.debug(f"Synced {len(workflows)} workflows to version config for agent {agent_id}")
-            
-        except Exception as e:
-            logger.error(f"Failed to sync workflows to version config for agent {agent_id}: {e}")
-    
-    def _regenerate_step_ids(self, steps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        if not steps:
-            return []
-        
-        new_steps = []
-        id_mapping = {}
-        
-        for step in steps:
-            if not isinstance(step, dict):
-                continue
-                
-            old_id = step.get('id')
-            if old_id:
-                if old_id not in id_mapping:
-                    id_mapping[old_id] = f"step-{str(uuid4())[:8]}"
-                new_id = id_mapping[old_id]
-            else:
-                new_id = f"step-{str(uuid4())[:8]}"
-            
-            new_step = {
-                'id': new_id,
-                'name': step.get('name', ''),
-                'description': step.get('description', ''),
-                'type': step.get('type', 'instruction'),
-                'config': step.get('config', {}),
-                'order': step.get('order', 0)
-            }
-            
-            if 'conditions' in step:
-                new_step['conditions'] = step['conditions']
-            
-            if 'children' in step and isinstance(step['children'], list):
-                new_step['children'] = self._regenerate_step_ids(step['children'])
-            else:
-                new_step['children'] = []
-            
-            new_steps.append(new_step)
-        
-        return new_steps
-    
     async def _restore_triggers(
         self,
         agent_id: str,
@@ -549,34 +436,12 @@ class InstallationService:
             return
         
         client = await self._db.client
-        workflow_name_to_id = {}
-        workflows_result = await client.table('agent_workflows').select('id, name').eq('agent_id', agent_id).execute()
-        if workflows_result.data:
-            for workflow in workflows_result.data:
-                workflow_name_to_id[workflow['name']] = workflow['id']
-        
         created_count = 0
         failed_count = 0
         
         for i, trigger in enumerate(triggers):
             trigger_config = trigger.get('config', {})
             provider_id = trigger_config.get('provider_id', '')
-            
-            workflow_id = None
-            if trigger_config.get('execution_type') == 'workflow':
-                existing_workflow_id = trigger_config.get('workflow_id')
-                if existing_workflow_id:
-                    workflow_id = existing_workflow_id
-                    logger.debug(f"Using existing workflow_id {workflow_id} for trigger '{trigger.get('name')}'")
-                else:
-                    workflow_name = trigger_config.get('workflow_name')
-                    if workflow_name and workflow_name in workflow_name_to_id:
-                        workflow_id = workflow_name_to_id[workflow_name]
-                        logger.debug(f"Resolved workflow_name '{workflow_name}' to workflow_id {workflow_id} for trigger '{trigger.get('name')}'")
-                    elif workflow_name:
-                        logger.warning(f"Workflow '{workflow_name}' not found for trigger '{trigger.get('name')}'")
-                    else:
-                        logger.warning(f"No workflow_name or workflow_id specified for workflow execution trigger '{trigger.get('name')}'")
             
             if provider_id == 'composio':
                 qualified_name = trigger_config.get('qualified_name')
@@ -591,10 +456,7 @@ class InstallationService:
                     is_active=trigger.get('is_active', True),
                     trigger_slug=trigger_config.get('trigger_slug', ''),
                     qualified_name=qualified_name,
-                    execution_type=trigger_config.get('execution_type', 'agent'),
                     agent_prompt=trigger_config.get('agent_prompt'),
-                    workflow_id=workflow_id,
-                    workflow_input=trigger_config.get('workflow_input'),
                     profile_mappings=profile_mappings,
                     trigger_profile_key=trigger_profile_key
                 )
@@ -604,12 +466,6 @@ class InstallationService:
                 else:
                     failed_count += 1
             else:
-                updated_trigger_config = trigger_config.copy()
-                if workflow_id:
-                    updated_trigger_config['workflow_id'] = workflow_id
-                
-                execution_type = trigger_config.get('execution_type', 'agent')
-                trigger_workflow_id = workflow_id if execution_type == 'workflow' else None
                 
                 trigger_data = {
                     'trigger_id': str(uuid4()),
@@ -618,16 +474,14 @@ class InstallationService:
                     'name': trigger.get('name', 'Unnamed Trigger'),
                     'description': trigger.get('description'),
                     'is_active': trigger.get('is_active', True),
-                    'config': updated_trigger_config,
-                    'workflow_id': trigger_workflow_id,
-                    'execution_type': execution_type,
+                    'config': trigger_config.copy(),
                     'created_at': datetime.now(timezone.utc).isoformat(),
                     'updated_at': datetime.now(timezone.utc).isoformat()
                 }
                 result = await client.table('agent_triggers').insert(trigger_data).execute()
                 if result.data:
                     created_count += 1
-                    logger.debug(f"Restored trigger '{trigger_data['name']}' with workflow_id {trigger_workflow_id} for agent {agent_id}")
+                    logger.debug(f"Restored trigger '{trigger_data['name']}' for agent {agent_id}")
                 else:
                     failed_count += 1
                     logger.warning(f"Failed to insert trigger '{trigger.get('name')}' for agent {agent_id}")
@@ -687,10 +541,7 @@ class InstallationService:
         is_active: bool,
         trigger_slug: str,
         qualified_name: Optional[str],
-        execution_type: str,
         agent_prompt: Optional[str],
-        workflow_id: Optional[str],
-        workflow_input: Optional[Dict[str, Any]],
         profile_mappings: Dict[str, str],
         trigger_profile_key: Optional[str] = None
     ) -> bool:
@@ -823,17 +674,12 @@ class InstallationService:
             config: Dict[str, Any] = {
                 "composio_trigger_id": composio_trigger_id,
                 "trigger_slug": trigger_slug,
-                "execution_type": execution_type,
                 "qualified_name": qualified_name,
                 "profile_id": profile_id,
                 "provider_id": "composio"
             }
-            if execution_type == "agent" and agent_prompt:
+            if agent_prompt:
                 config["agent_prompt"] = agent_prompt
-            if execution_type == "workflow" and workflow_id:
-                config["workflow_id"] = workflow_id
-                if workflow_input:
-                    config["workflow_input"] = workflow_input
 
             await trigger_service.create_trigger(
                 agent_id=agent_id,

@@ -27,7 +27,7 @@ import { useFileDelete } from '@/hooks/react-query/files';
 import { useQueryClient } from '@tanstack/react-query';
 import { ToolCallInput } from './floating-tool-preview';
 import { ChatSnack } from './chat-snack';
-import { Brain, Zap, Workflow, Database, ArrowDown } from 'lucide-react';
+import { Brain, Zap, Database, ArrowDown } from 'lucide-react';
 import { useComposioToolkitIcon } from '@/hooks/react-query/composio/use-composio';
 import { Skeleton } from '@/components/ui/skeleton';
 
@@ -630,13 +630,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                   >
                     <Zap className="h-3.5 w-3.5 flex-shrink-0" />
                     <span className="text-xs font-medium">Triggers</span>
-                  </button>
-                  <button
-                    onClick={() => setAgentConfigDialog({ open: true, tab: 'playbooks' })}
-                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-lg hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
-                  >
-                    <Workflow className="h-3.5 w-3.5 flex-shrink-0" />
-                    <span className="text-xs font-medium">Playbooks</span>
                   </button>
                 </div>
               </div>

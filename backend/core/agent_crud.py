@@ -99,9 +99,6 @@ async def update_agent(
         if current_version_data is None:
             logger.debug(f"Agent {agent_id} has no version data, creating initial version")
             try:
-                workflows_result = await client.table('agent_workflows').select('*').eq('agent_id', agent_id).execute()
-                workflows = workflows_result.data if workflows_result.data else []
-                
                 # Fetch triggers for the agent
                 triggers_result = await client.table('agent_triggers').select('*').eq('agent_id', agent_id).execute()
                 triggers = []
@@ -135,7 +132,6 @@ async def update_agent(
                     agentpress_tools=initial_version_data["agentpress_tools"],
                     configured_mcps=initial_version_data["configured_mcps"],
                     custom_mcps=initial_version_data["custom_mcps"],
-                    workflows=workflows,
                     triggers=triggers
                 )
                 initial_version_data["config"] = initial_config

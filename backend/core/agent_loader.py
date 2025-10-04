@@ -40,7 +40,6 @@ class AgentData:
     configured_mcps: Optional[list] = None
     custom_mcps: Optional[list] = None
     agentpress_tools: Optional[Dict[str, Any]] = None
-    workflows: Optional[list] = None
     triggers: Optional[list] = None
     
     # Version info
@@ -129,7 +128,6 @@ class AgentData:
                 "configured_mcps": self.configured_mcps,
                 "custom_mcps": self.custom_mcps,
                 "agentpress_tools": self.agentpress_tools,
-                "workflows": self.workflows,
                 "triggers": self.triggers,
                 "version_name": self.version_name,
                 "is_suna_default": self.is_suna_default,
@@ -297,7 +295,6 @@ class AgentLoader:
             configured_mcps=template_row.get('mcp_requirements', []),
             custom_mcps=[],
             agentpress_tools=template_row.get('agentpress_tools', {}),
-            workflows=[],
             triggers=[],
             version_name='template',
             is_suna_default=False,
@@ -351,7 +348,6 @@ class AgentLoader:
         agent.agentpress_tools = _extract_agentpress_tools_for_run(SUNA_CONFIG['agentpress_tools'])
         agent.configured_mcps = []
         agent.custom_mcps = []
-        agent.workflows = []
         agent.triggers = []
         agent.centrally_managed = True
         agent.restrictions = {
@@ -393,7 +389,6 @@ class AgentLoader:
                 from core.config_helper import _extract_agentpress_tools_for_run
                 agent.agentpress_tools = _extract_agentpress_tools_for_run(tools.get('agentpress', {}))
                 
-                agent.workflows = config.get('workflows', [])
                 agent.triggers = config.get('triggers', [])
             else:
                 # Old format compatibility
@@ -407,7 +402,6 @@ class AgentLoader:
                     version_dict.get('agentpress_tools', {})
                 )
                 
-                agent.workflows = []
                 agent.triggers = []
             
             agent.version_name = version_dict.get('version_name', 'v1')
@@ -430,7 +424,6 @@ class AgentLoader:
         agent.configured_mcps = []
         agent.custom_mcps = []
         agent.agentpress_tools = _extract_agentpress_tools_for_run(_get_default_agentpress_tools())
-        agent.workflows = []
         agent.triggers = []
         agent.version_name = 'v1'
         agent.restrictions = {}
@@ -483,7 +476,6 @@ class AgentLoader:
         agent.configured_mcps = tools.get('mcp', [])
         agent.custom_mcps = tools.get('custom_mcp', [])
         agent.agentpress_tools = _extract_agentpress_tools_for_run(tools.get('agentpress', {}))
-        agent.workflows = config.get('workflows', [])
         agent.triggers = config.get('triggers', [])
         agent.version_name = version_row.get('version_name', 'v1')
         agent.version_number = version_row.get('version_number')

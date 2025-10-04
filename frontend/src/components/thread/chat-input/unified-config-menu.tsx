@@ -27,8 +27,6 @@ import { IntegrationsRegistry } from '@/components/agents/integrations-registry'
 import { useComposioToolkitIcon } from '@/hooks/react-query/composio/use-composio';
 import { Skeleton } from '@/components/ui/skeleton';
 import { NewAgentDialog } from '@/components/agents/new-agent-dialog';
-import { useAgentWorkflows } from '@/hooks/react-query/agents/use-agent-workflows';
-import { PlaybookExecuteDialog } from '@/components/playbooks/playbook-execute-dialog';
 import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 import { AgentModelSelector } from '@/components/agents/config/model-selector';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
@@ -70,8 +68,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
     const [integrationsOpen, setIntegrationsOpen] = useState(false);
     const [showNewAgentDialog, setShowNewAgentDialog] = useState(false);
     const searchInputRef = useRef<HTMLInputElement>(null);
-    const [execDialog, setExecDialog] = useState<{ open: boolean; playbook: any | null; agentId: string | null }>({ open: false, playbook: null, agentId: null });
-    const [agentConfigDialog, setAgentConfigDialog] = useState<{ open: boolean; tab: 'instructions' | 'knowledge' | 'triggers' | 'playbooks' | 'tools' | 'integrations' }>({ open: false, tab: 'instructions' });
+    const [agentConfigDialog, setAgentConfigDialog] = useState<{ open: boolean; tab: 'instructions' | 'knowledge' | 'triggers' | 'tools' | 'integrations' }>({ open: false, tab: 'instructions' });
 
     // Debounce search query
     useEffect(() => {
@@ -173,7 +170,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
         return found;
     }, [agents, selectedAgentId]);
 
-    const handleQuickAction = useCallback((action: 'instructions' | 'knowledge' | 'triggers' | 'playbooks') => {
+    const handleQuickAction = useCallback((action: 'instructions' | 'knowledge' | 'triggers') => {
         if (!selectedAgentId && !displayAgent?.agent_id) {
             return;
         }
@@ -185,14 +182,8 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
         return <AgentAvatar agentId={agent?.agent_id} size={24} className="flex-shrink-0" fallbackName={agent?.name} />;
     }, []);
 
-    const currentAgentIdForPlaybooks = isLoggedIn ? displayAgent?.agent_id || '' : '';
-    const { data: playbooks = [], isLoading: playbooksLoading } = useAgentWorkflows(currentAgentIdForPlaybooks);
-    const [playbooksExpanded, setPlaybooksExpanded] = useState(true);
-
     return (
         <>
-            {/* Reusable list of workflows to avoid re-fetch storms; each instance fetches scoped to agentId */}
-
             <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
                 <DropdownMenuTrigger asChild>
                     <Button
@@ -297,7 +288,6 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                             )}
 
                             {/* Agents "see all" removed; scroll container shows all */}
-                            {/* Playbooks moved below (as hover submenu) */}
                         </div>
                     )}
 
@@ -333,12 +323,6 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                 onClick={() => handleQuickAction('triggers')}
                             >
                                 <span className="font-medium">Triggers</span>
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                                className="text-sm px-3 py-2 mx-0 my-0.5 flex items-center gap-2 cursor-pointer rounded-lg"
-                                onClick={() => handleQuickAction('playbooks')}
-                            >
-                                <span className="font-medium">Playbooks</span>
                             </DropdownMenuItem>
                             <TooltipProvider>
                                 <Tooltip>
@@ -398,12 +382,6 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                     setShowNewAgentDialog(false);
                     onAgentSelect?.(agentId);
                 }}
-            />
-            <PlaybookExecuteDialog
-                open={execDialog.open}
-                onOpenChange={(open) => setExecDialog((s) => ({ ...s, open }))}
-                playbook={execDialog.playbook as any}
-                agentId={execDialog.agentId || ''}
             />
             {(selectedAgentId || displayAgent?.agent_id) && agentConfigDialog.open && (
                 <AgentConfigurationDialog

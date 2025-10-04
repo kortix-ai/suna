@@ -454,45 +454,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         ]
     ),
 
-    "workflow_tool": ToolGroup(
-        name="workflow_tool",
-        display_name="Workflows",
-        description="Create and manage automated workflows",
-        tool_class="WorkflowTool",
-        methods=[
-            ToolMethod(
-                name="create_workflow",
-                display_name="Create Workflow",
-                description="Create new automated workflows",
-                enabled=True
-            ),
-            ToolMethod(
-                name="get_workflows",
-                display_name="Get Workflows",
-                description="List all available workflows",
-                enabled=True
-            ),
-            ToolMethod(
-                name="update_workflow",
-                display_name="Update Workflow",
-                description="Update existing workflows",
-                enabled=True
-            ),
-            ToolMethod(
-                name="delete_workflow",
-                display_name="Delete Workflow",
-                description="Delete workflows",
-                enabled=True
-            ),
-            ToolMethod(
-                name="activate_workflow",
-                display_name="Activate Workflow",
-                description="Activate or deactivate workflows",
-                enabled=True
-            ),
-        ]
-    ),
-
     "trigger_tool": ToolGroup(
         name="trigger_tool",
         display_name="Triggers",
@@ -737,30 +698,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
                 name="configure_agent_integration",
                 display_name="Configure Agent Integration",
                 description="Configure integrations for new agents",
-                enabled=True
-            ),
-            ToolMethod(
-                name="create_agent_workflow",
-                display_name="Create Agent Workflow",
-                description="Create workflows for new agents",
-                enabled=True
-            ),
-            ToolMethod(
-                name="list_agent_workflows",
-                display_name="List Agent Workflows",
-                description="List workflows for agents",
-                enabled=True
-            ),
-            ToolMethod(
-                name="activate_agent_workflow",
-                display_name="Activate Agent Workflow",
-                description="Activate or deactivate agent workflows",
-                enabled=True
-            ),
-            ToolMethod(
-                name="delete_agent_workflow",
-                display_name="Delete Agent Workflow",
-                description="Delete agent workflows",
                 enabled=True
             ),
             ToolMethod(
