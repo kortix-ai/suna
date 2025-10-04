@@ -9,7 +9,6 @@ from pathlib import Path
 from core.agentpress.tool import ToolResult, openapi_schema
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
-from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.utils.config import config
 
@@ -17,8 +16,8 @@ from core.utils.config import config
 class SandboxUploadFileTool(SandboxToolsBase):
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
-        self.workspace_path = "/workspace"
-        self.db = DBConnection()
+        from core.utils.db_helpers import get_initialized_db
+        self.db = get_initialized_db()
         
     @openapi_schema({
         "type": "function",

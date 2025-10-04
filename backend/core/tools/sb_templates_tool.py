@@ -13,7 +13,6 @@ class SandboxTemplatesTool(SandboxToolsBase):
 
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
-        self.workspace_path = "/workspace"
         self.local_templates_dir = "/opt/templates"
         self.local_manifest = f"{self.local_templates_dir}/manifest.json"
         self.remote_manifest_url = os.getenv("TEMPLATES_MANIFEST_URL")
