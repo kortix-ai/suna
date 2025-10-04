@@ -357,7 +357,7 @@ async def get_marketplace_templates(
     request: Request = None
 ):
     try:
-        from core.templates.services.marketplace_service import TemplateService, MarketplaceFilters
+        from core.templates.services.marketplace_service import MarketplaceService, MarketplaceFilters
         creator_id_filter = None
         if mine:
             try:
@@ -387,8 +387,8 @@ async def get_marketplace_templates(
         )
         
         client = await db.client
-        template_service = TemplateService(client)
-        paginated_result = await template_service.get_marketplace_templates_paginated(
+        marketplace_service = MarketplaceService(client)
+        paginated_result = await marketplace_service.get_marketplace_templates_paginated(
             pagination_params=pagination_params,
             filters=filters
         )
@@ -429,7 +429,7 @@ async def get_my_templates(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        from core.templates.services.marketplace_service import TemplateService, MarketplaceFilters
+        from core.templates.services.marketplace_service import MarketplaceService, MarketplaceFilters
         
         pagination_params = PaginationParams(
             page=page,
@@ -444,9 +444,9 @@ async def get_my_templates(
         )
         
         client = await db.client
-        template_service = TemplateService(client)
+        marketplace_service = MarketplaceService(client)
         
-        paginated_result = await template_service.get_user_templates_paginated(
+        paginated_result = await marketplace_service.get_user_templates_paginated(
             pagination_params=pagination_params,
             filters=filters
         )

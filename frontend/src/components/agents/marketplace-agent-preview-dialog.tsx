@@ -153,7 +153,7 @@ export const MarketplaceAgentPreviewDialog: React.FC<MarketplaceAgentPreviewDial
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] p-0 overflow-hidden">
+      <DialogContent className="max-w-lg max-h-[90vh] p-0 overflow-hidden">
         <DialogHeader className='p-6'>
           <DialogTitle className='sr-only'>Agent Preview</DialogTitle>
           <div className="flex-shrink-0">
@@ -167,13 +167,13 @@ export const MarketplaceAgentPreviewDialog: React.FC<MarketplaceAgentPreviewDial
           </div>
         </DialogHeader>
         <div className="-mt-4 flex flex-col max-h-[calc(90vh-8rem)] overflow-hidden">
-          <div className="p-6 py-0 pb-4">
-            <div className="flex items-start justify-between mb-4">
+          <div className="p-6 py-0 pb-2">
+            <div className="flex items-start justify-between mb-2">
               <div className="flex-1">
                 <h2 className="text-2xl font-bold text-foreground mb-2">
                   {agent.name}
                 </h2>
-                <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
+                {/* <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
                   <div className="flex items-center gap-1">
                     <User className="h-4 w-4" />
                     {agent.creator_name || 'Unknown'}
@@ -186,11 +186,11 @@ export const MarketplaceAgentPreviewDialog: React.FC<MarketplaceAgentPreviewDial
                     <Calendar className="h-4 w-4" />
                     {formatDate(agent.created_at)}
                   </div>
-                </div>
+                </div> */}
               </div>
             </div>
             {agent.tags && agent.tags.length > 0 && (
-              <div className="flex items-center gap-2 mb-4">
+              <div className="flex items-center gap-2 mb-2">
                 <Tag className="h-4 w-4 text-muted-foreground" />
                 <div className="flex flex-wrap gap-1">
                   {agent.tags.map((tag, index) => (
@@ -202,11 +202,11 @@ export const MarketplaceAgentPreviewDialog: React.FC<MarketplaceAgentPreviewDial
               </div>
             )}
           </div>
-          <div className="flex-1 gap-4 overflow-y-auto p-6 pt-4 space-y-4">
+          <div className="flex-1 gap-4 overflow-y-auto p-6 pt-2 space-y-3">
             {agent.model && (
               <Card className='p-0 border-none bg-transparent shadow-none'>
                 <CardContent className="p-0">
-                  <div className="flex items-center gap-2 mb-3">
+                  <div className="flex items-center gap-2 mb-2">
                     <Cpu className="h-4 w-4 text-primary" />
                     <h3 className="font-semibold">Model Configuration</h3>
                   </div>
@@ -226,7 +226,7 @@ export const MarketplaceAgentPreviewDialog: React.FC<MarketplaceAgentPreviewDial
             {integrations.length > 0 && (
               <Card className='p-0 border-none bg-transparent shadow-none'>
                 <CardContent className="p-0">
-                  <div className="flex items-center gap-2 mb-3">
+                  <div className="flex items-center gap-2 mb-2">
                     <Plug className="h-4 w-4 text-primary" />
                     <h3 className="font-semibold">Integrations</h3>
                   </div>
@@ -255,7 +255,7 @@ export const MarketplaceAgentPreviewDialog: React.FC<MarketplaceAgentPreviewDial
             {triggerRequirements.length > 0 && (
               <Card className='p-0 border-none bg-transparent shadow-none'>
                 <CardContent className="p-0">
-                  <div className="flex items-center gap-2 mb-3">
+                  <div className="flex items-center gap-2 mb-2">
                     <Zap className="h-4 w-4 text-primary" />
                     <h3 className="font-semibold">Event Triggers</h3>
                   </div>
@@ -291,7 +291,7 @@ export const MarketplaceAgentPreviewDialog: React.FC<MarketplaceAgentPreviewDial
             {customTools.length > 0 && (
               <Card className='p-0 border-none bg-transparent shadow-none'>
                 <CardContent className="p-0">
-                  <div className="flex items-center gap-2 mb-3">
+                  <div className="flex items-center gap-2 mb-2">
                     <Wrench className="h-4 w-4 text-primary" />
                     <h3 className="font-semibold">Custom Tools</h3>
                   </div>
@@ -328,7 +328,7 @@ export const MarketplaceAgentPreviewDialog: React.FC<MarketplaceAgentPreviewDial
               </Card>
             )}
           </div>
-          <div className="p-6 pt-4">
+          <div className="p-6 pt-3">
             <div className="flex gap-3">
               <Button
                 onClick={handleInstall}
@@ -347,17 +347,14 @@ export const MarketplaceAgentPreviewDialog: React.FC<MarketplaceAgentPreviewDial
                   </>
                 )}
               </Button>
-              <Button variant="outline" onClick={handleShare} disabled={isGeneratingShareLink}>
+              {/* <Button variant="outline" onClick={handleShare} disabled={isGeneratingShareLink}>
                 {isGeneratingShareLink ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Share className="h-4 w-4" />
                 )}
                 Share
-              </Button>
-              <Button variant="outline" onClick={onClose}>
-                Close
-              </Button>
+              </Button> */}
             </div>
           </div>
         </div>

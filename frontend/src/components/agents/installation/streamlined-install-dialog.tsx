@@ -348,7 +348,6 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
                 backgroundColor={item.icon_background}
                 agentName={item.name}
                 size={48}
-                className="shadow-lg"
               />
             </div>
             <div className="min-w-0 flex-1">
