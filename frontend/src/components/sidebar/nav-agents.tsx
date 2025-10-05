@@ -582,7 +582,7 @@ export function NavAgents() {
             ) : (
               <SidebarMenuItem>
                 <SidebarMenuButton className="text-sidebar-foreground/70">
-                  <span>No triggers yet</span>
+                  <span>No tasks yet</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             )}

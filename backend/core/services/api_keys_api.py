@@ -20,7 +20,7 @@ from core.services.api_keys import (
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
 
-router = APIRouter()
+router = APIRouter(tags=["api-keys"])
 
 
 async def get_api_key_service() -> APIKeyService:

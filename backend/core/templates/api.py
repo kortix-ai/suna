@@ -23,7 +23,7 @@ from .installation_service import (
 )
 from .utils import format_template_for_response
 
-router = APIRouter()
+router = APIRouter(tags=["templates"])
 
 db: Optional[DBConnection] = None
 

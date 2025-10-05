@@ -26,7 +26,7 @@ from .core_utils import (
     check_agent_run_limit, check_project_count_limit
 )
 
-router = APIRouter()
+router = APIRouter(tags=["agent-runs"])
 
 
 async def _get_agent_run_with_access_check(client, agent_run_id: str, user_id: str):
@@ -51,9 +51,7 @@ async def _get_agent_run_with_access_check(client, agent_run_id: str, user_id: s
     await verify_and_authorize_thread_access(client, thread_id, user_id)
     return agent_run_data
 
-
-
-@router.post("/thread/{thread_id}/agent/start")
+@router.post("/thread/{thread_id}/agent/start", summary="Start Agent Run", operation_id="start_agent_run")
 async def start_agent(
     thread_id: str,
     body: AgentStartRequest = Body(...),
@@ -209,7 +207,7 @@ async def start_agent(
 
     return {"agent_run_id": agent_run_id, "status": "running"}
 
-@router.post("/agent-run/{agent_run_id}/stop")
+@router.post("/agent-run/{agent_run_id}/stop", summary="Stop Agent Run", operation_id="stop_agent_run")
 async def stop_agent(agent_run_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
     """Stop a running agent."""
     structlog.contextvars.bind_contextvars(
@@ -221,7 +219,7 @@ async def stop_agent(agent_run_id: str, user_id: str = Depends(verify_and_get_us
     await stop_agent_run(agent_run_id)
     return {"status": "stopped"}
 
-@router.get("/thread/{thread_id}/agent-runs")
+@router.get("/thread/{thread_id}/agent-runs", summary="List Thread Agent Runs", operation_id="list_thread_agent_runs")
 async def get_agent_runs(thread_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
     """Get all agent runs for a thread."""
     structlog.contextvars.bind_contextvars(
@@ -234,7 +232,7 @@ async def get_agent_runs(thread_id: str, user_id: str = Depends(verify_and_get_u
     logger.debug(f"Found {len(agent_runs.data)} agent runs for thread: {thread_id}")
     return {"agent_runs": agent_runs.data}
 
-@router.get("/agent-run/{agent_run_id}")
+@router.get("/agent-run/{agent_run_id}", summary="Get Agent Run", operation_id="get_agent_run")
 async def get_agent_run(agent_run_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
     """Get agent run status and responses."""
     structlog.contextvars.bind_contextvars(
@@ -253,7 +251,7 @@ async def get_agent_run(agent_run_id: str, user_id: str = Depends(verify_and_get
         "error": agent_run_data['error']
     }
 
-@router.get("/thread/{thread_id}/agent", response_model=ThreadAgentResponse)
+@router.get("/thread/{thread_id}/agent", response_model=ThreadAgentResponse, summary="Get Thread Agent", operation_id="get_thread_agent")
 async def get_thread_agent(thread_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
     """Get the agent details for a specific thread. Since threads are fully agent-agnostic, 
     this returns the most recently used agent from agent_runs only."""
@@ -376,7 +374,7 @@ async def get_thread_agent(thread_id: str, user_id: str = Depends(verify_and_get
         logger.error(f"Error fetching agent for thread {thread_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch thread agent: {str(e)}")
 
-@router.get("/agent-run/{agent_run_id}/stream")
+@router.get("/agent-run/{agent_run_id}/stream", summary="Stream Agent Run", operation_id="stream_agent_run")
 async def stream_agent_run(
     agent_run_id: str,
     token: Optional[str] = None,
@@ -557,7 +555,7 @@ async def stream_agent_run(
 
 
 
-@router.post("/agent/initiate", response_model=InitiateAgentResponse)
+@router.post("/agent/initiate", response_model=InitiateAgentResponse, summary="Initiate Agent Session", operation_id="initiate_agent_session")
 async def initiate_agent_with_files(
     prompt: str = Form(...),
     model_name: Optional[str] = Form(None),  # Default to None to use default model
@@ -576,11 +574,16 @@ async def initiate_agent_with_files(
     # Use model from config if not specified in the request
     logger.debug(f"Original model_name from request: {model_name}")
 
-    if model_name is None:
-        model_name = "openai/gpt-5-mini"
-        logger.debug(f"Using default model: {model_name}")
+    client = await utils.db.client
+    account_id = user_id # In Basejump, personal account_id is the same as user_id
 
     from core.ai_models import model_manager
+    
+    if model_name is None:
+        # Use tier-based default model from registry
+        model_name = await model_manager.get_default_model_for_user(client, account_id)
+        logger.debug(f"Using tier-based default model: {model_name}")
+
     # Log the model name after alias resolution using new model manager
     resolved_model = model_manager.resolve_model_id(model_name)
     logger.debug(f"Resolved model name: {resolved_model}")
@@ -589,8 +592,6 @@ async def initiate_agent_with_files(
     model_name = resolved_model
 
     logger.debug(f"Initiating new agent with prompt and {len(files)} files (Instance: {utils.instance_id}), model: {model_name}")
-    client = await utils.db.client
-    account_id = user_id # In Basejump, personal account_id is the same as user_id
     
     # Load agent configuration using unified loader
     from .agent_loader import get_agent_loader

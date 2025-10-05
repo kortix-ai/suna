@@ -388,8 +388,6 @@ class MCPService:
             return await self._get_custom_server_url(qualified_name, config)
         elif provider == 'composio':
             return await self._get_composio_server_url(qualified_name, config)
-        elif provider == 'pipedream':
-            return self._get_pipedream_server_url(qualified_name, config)
         else:
             raise MCPProviderError(f"Unknown provider type: {provider}")
     
@@ -398,8 +396,6 @@ class MCPService:
             return self._get_custom_headers(qualified_name, config, external_user_id)
         elif provider == 'composio':
             return self._get_composio_headers(qualified_name, config, external_user_id)
-        elif provider == 'pipedream':
-            return self._get_pipedream_headers(qualified_name, config, external_user_id)
         else:
             raise MCPProviderError(f"Unknown provider type: {provider}")
     
@@ -446,23 +442,6 @@ class MCPService:
         """Get headers for Composio MCP connection"""
         headers = {"Content-Type": "application/json"}
         # Composio handles auth through the URL itself
-        return headers
-    
-    def _get_pipedream_server_url(self, qualified_name: str, config: Dict[str, Any]) -> str:
-        """Get Pipedream server URL"""
-        return config.get("url", "https://remote.mcp.pipedream.net")
-    
-    def _get_pipedream_headers(self, qualified_name: str, config: Dict[str, Any], external_user_id: Optional[str] = None) -> Dict[str, str]:
-        """Get headers for Pipedream MCP connection"""
-        headers = {"Content-Type": "application/json"}
-        
-        if "headers" in config:
-            headers.update(config["headers"])
-        
-        # For Pipedream, external_user_id is used differently
-        if external_user_id:
-            headers["X-External-User-Id"] = external_user_id
-            
         return headers
 
 

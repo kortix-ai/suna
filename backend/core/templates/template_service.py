@@ -26,8 +26,6 @@ class MCPRequirementValue:
     trigger_index: Optional[int] = None
     
     def is_custom(self) -> bool:
-        if self.qualified_name.startswith('pipedream:'):
-            return False
         if self.custom_type == 'composio' or self.qualified_name.startswith('composio.'):
             return False
         return self.custom_type is not None and self.qualified_name.startswith('custom_')
@@ -92,19 +90,14 @@ class AgentTemplate:
                 
                 qualified_name = mcp.get('mcp_qualified_name') or mcp.get('qualifiedName')
                 if not qualified_name:
-                    if mcp_type == 'pipedream':
-                        app_slug = mcp.get('app_slug') or mcp.get('config', {}).get('headers', {}).get('x-pd-app-slug')
-                        if not app_slug:
-                            app_slug = mcp_name.lower().replace(' ', '').replace('(', '').replace(')', '')
-                        qualified_name = f"pipedream:{app_slug}"
-                    elif mcp_type == 'composio':
+                    if mcp_type == 'composio':
                         toolkit_slug = mcp.get('toolkit_slug') or mcp_name.lower().replace(' ', '_')
                         qualified_name = f"composio.{toolkit_slug}"
                     else:
                         safe_name = mcp_name.replace(' ', '_').lower()
                         qualified_name = f"custom_{mcp_type}_{safe_name}"
                 
-                if mcp_type in ['pipedream', 'composio']:
+                if mcp_type == 'composio':
                     required_config = []
                 elif mcp_type in ['http', 'sse', 'json']:
                     required_config = ['url']
@@ -118,7 +111,7 @@ class AgentTemplate:
                     required_config=required_config,
                     custom_type=mcp_type,
                     toolkit_slug=mcp.get('toolkit_slug') if mcp_type == 'composio' else None,
-                    app_slug=mcp.get('app_slug') if mcp_type == 'pipedream' else None,
+                    app_slug=None,
                     source='tool'
                 ))
         
@@ -524,33 +517,7 @@ class TemplateService:
                     'enabledTools': mcp.get('enabledTools', [])
                 }
                 
-                if mcp_type == 'pipedream':
-                    original_config = mcp.get('config', {})
-                    app_slug = (
-                        mcp.get('app_slug') or
-                        original_config.get('headers', {}).get('x-pd-app-slug')
-                    )
-                    qualified_name = mcp.get('qualifiedName')
-                    
-                    if not app_slug:
-                        if qualified_name and qualified_name.startswith('pipedream:'):
-                            app_slug = qualified_name[10:]
-                        else:
-                            app_slug = mcp_name.lower().replace(' ', '').replace('(', '').replace(')', '')
-                    
-                    if not qualified_name:
-                        qualified_name = f"pipedream:{app_slug}"
-                    
-                    sanitized_mcp['qualifiedName'] = qualified_name
-                    sanitized_mcp['app_slug'] = app_slug
-                    
-                    sanitized_mcp['config'] = {
-                        'url': original_config.get('url'),
-                        'headers': {k: v for k, v in original_config.get('headers', {}).items() 
-                                  if k not in ['profile_id', 'x-pd-app-slug']}
-                    }
-                    
-                elif mcp_type == 'composio':
+                if mcp_type == 'composio':
                     original_config = mcp.get('config', {})
                     qualified_name = (
                         mcp.get('mcp_qualified_name') or 

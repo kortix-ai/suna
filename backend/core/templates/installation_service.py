@@ -283,28 +283,7 @@ class InstallationService:
                 if profile_id:
                     profile = await profile_service.get_profile(request.account_id, profile_id)
                     if profile:
-                        if req.qualified_name.startswith('pipedream:'):
-                            app_slug = req.app_slug or profile.config.get('app_slug')
-                            if not app_slug:
-                                app_slug = req.qualified_name.split(':')[1] if ':' in req.qualified_name else req.display_name.lower()
-                            
-                            pipedream_config = {
-                                'url': 'https://remote.mcp.pipedream.net',
-                                'headers': {
-                                    'x-pd-app-slug': app_slug
-                                },
-                                'profile_id': profile_id
-                            }
-                            
-                            mcp_config = {
-                                'name': req.display_name,
-                                'type': 'pipedream',
-                                'config': pipedream_config,
-                                'enabledTools': req.enabled_tools
-                            }
-                            agent_config['tools']['custom_mcp'].append(mcp_config)
-                            
-                        elif req.qualified_name.startswith('composio.') or 'composio' in req.qualified_name:
+                        if req.qualified_name.startswith('composio.') or 'composio' in req.qualified_name:
                             toolkit_slug = req.toolkit_slug
                             if not toolkit_slug:
                                 toolkit_slug = req.qualified_name

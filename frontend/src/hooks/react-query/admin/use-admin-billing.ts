@@ -18,31 +18,6 @@ interface RefundRequest {
   payment_intent_id?: string;
 }
 
-interface UserSearchRequest {
-  email?: string;
-  account_id?: string;
-}
-
-interface GrantCreditsRequest {
-  account_ids: string[];
-  amount: number;
-  reason: string;
-  is_expiring: boolean;
-  notify_users: boolean;
-}
-
-export function useSearchUser() {
-  return useMutation({
-    mutationFn: async (request: UserSearchRequest) => {
-      const response = await backendApi.post('/admin/billing/user/search', request);
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-      return response.data;
-    },
-  });
-}
-
 export function useUserBillingSummary(userId: string | null) {
   return useQuery({
     queryKey: ['admin', 'billing', 'user', userId],
@@ -102,27 +77,3 @@ export function useProcessRefund() {
     },
   });
 }
-
-export function useGrantBulkCredits() {
-  return useMutation({
-    mutationFn: async (request: GrantCreditsRequest) => {
-      const response = await backendApi.post('/admin/billing/credits/grant-bulk', request);
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-      return response.data;
-    },
-  });
-}
-
-export function useMigrateUserToCredits() {
-  return useMutation({
-    mutationFn: async (userId: string) => {
-      const response = await backendApi.post(`/admin/billing/migrate-user/${userId}`);
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-      return response.data;
-    },
-  });
-} 

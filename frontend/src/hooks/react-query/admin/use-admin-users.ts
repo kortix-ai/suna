@@ -129,46 +129,6 @@ interface SearchResponse {
   pagination: PaginationMeta;
 }
 
-export function useAdminUserSearch() {
-  return useMutation({
-    mutationFn: async (email: string): Promise<SearchResponse> => {
-      const response = await backendApi.get(`/admin/users/search/email?email=${encodeURIComponent(email)}`);
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-      return response.data;
-    },
-  });
-}
-
-interface AdvancedSearchParams {
-  email_contains?: string;
-  tier_in?: string[];
-  subscription_status_in?: string[];
-  trial_status_in?: string[];
-  balance_min?: number;
-  balance_max?: number;
-  created_after?: string;
-  created_before?: string;
-  has_activity_since?: string;
-  sort_by?: string;
-  sort_order?: 'asc' | 'desc';
-  page?: number;
-  page_size?: number;
-}
-
-export function useAdminAdvancedSearch() {
-  return useMutation({
-    mutationFn: async (params: AdvancedSearchParams): Promise<UserListResponse> => {
-      const response = await backendApi.post('/admin/users/search/advanced', params);
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-      return response.data;
-    },
-  });
-}
-
 export function useAdminUserStats() {
   return useQuery({
     queryKey: ['admin', 'users', 'stats'],
@@ -180,6 +140,48 @@ export function useAdminUserStats() {
       return response.data;
     },
     staleTime: 300000,
+  });
+}
+
+export interface UserThreadSummary {
+  thread_id: string;
+  project_id?: string | null;
+  project_name?: string | null;
+  is_public: boolean;
+  created_at: string;
+  updated_at: string;
+  url: string;
+}
+
+interface UserThreadsResponse {
+  data: UserThreadSummary[];
+  pagination: PaginationMeta;
+}
+
+interface UserThreadsParams {
+  email: string;
+  page?: number;
+  page_size?: number;
+}
+
+export function useAdminUserThreads(params: UserThreadsParams) {
+  return useQuery({
+    queryKey: ['admin', 'users', 'threads', params.email, params.page, params.page_size],
+    queryFn: async (): Promise<UserThreadsResponse> => {
+      const searchParams = new URLSearchParams();
+      
+      searchParams.append('email', params.email);
+      if (params.page) searchParams.append('page', params.page.toString());
+      if (params.page_size) searchParams.append('page_size', params.page_size.toString());
+      
+      const response = await backendApi.get(`/admin/users/threads/by-email?${searchParams.toString()}`);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    enabled: !!params.email,
+    staleTime: 30000,
   });
 }
 

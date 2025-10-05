@@ -23,8 +23,8 @@ from core import api as core_api
 
 from core.sandbox import api as sandbox_api
 from core.billing.api import router as billing_router
-from core.billing.admin import router as billing_admin_router
-from core.admin.users_admin import router as users_admin_router
+from core.admin.admin_api import router as admin_router
+from core.admin.billing_admin_api import router as billing_admin_router
 from core.services import transcription as transcription_api
 import sys
 from core.services import email_api
@@ -69,7 +69,6 @@ async def lifespan(app: FastAPI):
         # asyncio.create_task(core_api.restore_running_agent_runs())
         
         triggers_api.initialize(db)
-        pipedream_api.initialize(db)
         credentials_api.initialize(db)
         template_api.initialize(db)
         composio_api.initialize(db)
@@ -162,7 +161,7 @@ api_router.include_router(sandbox_api.router)
 api_router.include_router(billing_router)
 api_router.include_router(api_keys_api.router)
 api_router.include_router(billing_admin_router)
-api_router.include_router(users_admin_router)
+api_router.include_router(admin_router)
 
 from core.mcp_module import api as mcp_api
 from core.credentials import api as credentials_api
@@ -180,12 +179,6 @@ api_router.include_router(knowledge_base_api.router)
 
 api_router.include_router(triggers_api.router)
 
-from core.pipedream import api as pipedream_api
-api_router.include_router(pipedream_api.router)
-
-from core.admin import api as admin_api
-api_router.include_router(admin_api.router)
-
 from core.composio_integration import api as composio_api
 api_router.include_router(composio_api.router)
 
@@ -195,7 +188,7 @@ api_router.include_router(google_slides_router)
 from core.google.google_docs_api import router as google_docs_router
 api_router.include_router(google_docs_router)
 
-@api_router.get("/health")
+@api_router.get("/health", summary="Health Check", operation_id="health_check", tags=["system"])
 async def health_check():
     logger.debug("Health check endpoint called")
     return {
@@ -204,8 +197,8 @@ async def health_check():
         "instance_id": instance_id
     }
 
-@api_router.get("/health-docker")
-async def health_check():
+@api_router.get("/health-docker", summary="Docker Health Check", operation_id="health_check_docker", tags=["system"])
+async def health_check_docker():
     logger.debug("Health docker check endpoint called")
     try:
         client = await redis.get_client()
@@ -234,13 +227,17 @@ if __name__ == "__main__":
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
     
-    workers = 4
+    # Enable reload mode for local and staging environments
+    is_dev_env = config.ENV_MODE in [EnvMode.LOCAL, EnvMode.STAGING]
+    workers = 1 if is_dev_env else 4
+    reload = is_dev_env
     
-    logger.debug(f"Starting server on 0.0.0.0:8000 with {workers} workers")
+    logger.debug(f"Starting server on 0.0.0.0:8000 with {workers} workers (reload={reload})")
     uvicorn.run(
         "api:app", 
         host="0.0.0.0", 
         port=8000,
         workers=workers,
+        reload=reload,
         loop="asyncio"
     )

@@ -202,18 +202,9 @@ def sanitize_config_for_security(config: Dict[str, Any]) -> Dict[str, Any]:
                 'name': mcp.get('name'),
                 'type': mcp.get('type'),
                 'display_name': mcp.get('display_name') or mcp.get('name'),
-                'enabledTools': mcp.get('enabledTools', [])
+                'enabledTools': mcp.get('enabledTools', []),
+                'config': {}
             }
-            
-            if mcp.get('type') == 'pipedream':
-                original_config = mcp.get('config', {})
-                sanitized_mcp['config'] = {
-                    'url': original_config.get('url'),
-                    'headers': {k: v for k, v in original_config.get('headers', {}).items() 
-                              if k != 'profile_id'}
-                }
-            else:
-                sanitized_mcp['config'] = {}
             
             sanitized['tools']['custom_mcp'].append(sanitized_mcp)
     

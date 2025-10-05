@@ -37,8 +37,10 @@ import {
   RefreshCw,
   Clock,
   Infinity,
+  MessageSquare,
+  ExternalLink,
 } from 'lucide-react';
-import { useAdminUserDetails } from '@/hooks/react-query/admin/use-admin-users';
+import { useAdminUserDetails, useAdminUserThreads } from '@/hooks/react-query/admin/use-admin-users';
 import {
   useUserBillingSummary,
   useAdjustCredits,
@@ -65,9 +67,15 @@ export function AdminUserDetailsDialog({
   const [refundReason, setRefundReason] = useState('');
   const [adjustIsExpiring, setAdjustIsExpiring] = useState(true);
   const [refundIsExpiring, setRefundIsExpiring] = useState(false);
+  const [threadsPage, setThreadsPage] = useState(1);
 
   const { data: userDetails, isLoading } = useAdminUserDetails(user?.id || null);
   const { data: billingSummary, refetch: refetchBilling } = useUserBillingSummary(user?.id || null);
+  const { data: userThreads, isLoading: threadsLoading } = useAdminUserThreads({
+    email: user?.email || '',
+    page: threadsPage,
+    page_size: 10,
+  });
   const adjustCreditsMutation = useAdjustCredits();
   const processRefundMutation = useProcessRefund();
 
@@ -210,8 +218,9 @@ export function AdminUserDetailsDialog({
             </div>
           ) : (
             <Tabs defaultValue="overview" className="w-full">
-              <TabsList className="grid w-full grid-cols-4 sticky top-0 z-10">
+              <TabsList className="grid w-full grid-cols-5 sticky top-0 z-10">
                 <TabsTrigger value="overview">Overview</TabsTrigger>
+                <TabsTrigger value="threads">Threads</TabsTrigger>
                 <TabsTrigger value="transactions">Transactions</TabsTrigger>
                 <TabsTrigger value="activity">Activity</TabsTrigger>
                 <TabsTrigger value="actions">Admin Actions</TabsTrigger>
@@ -284,6 +293,95 @@ export function AdminUserDetailsDialog({
                   </CardContent>
                 </Card>
               </div>
+            </TabsContent>
+
+            <TabsContent value="threads" className="space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <MessageSquare className="h-4 w-4" />
+                    User Threads
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {threadsLoading ? (
+                    <div className="space-y-2">
+                      {[...Array(3)].map((_, i) => (
+                        <Skeleton key={i} className="h-16 w-full" />
+                      ))}
+                    </div>
+                  ) : userThreads && userThreads.data.length > 0 ? (
+                    <div className="space-y-2">
+                      {userThreads.data.map((thread) => (
+                        <div
+                          key={thread.thread_id}
+                          className="flex items-start justify-between p-3 border rounded-lg hover:bg-muted/50 transition-colors"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              {thread.project_name ? (
+                                <p className="text-sm font-medium truncate">{thread.project_name}</p>
+                              ) : (
+                                <p className="text-sm font-medium text-muted-foreground">Direct Thread</p>
+                              )}
+                              {thread.is_public && (
+                                <Badge variant="outline" className="text-xs">Public</Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                              <span>Updated {formatDate(thread.updated_at)}</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1 font-mono truncate">
+                              {thread.thread_id}
+                            </p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            asChild
+                            className="ml-2 flex-shrink-0"
+                          >
+                            <a
+                              href={thread.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              Open
+                            </a>
+                          </Button>
+                        </div>
+                      ))}
+                      {userThreads.pagination && userThreads.pagination.total_pages > 1 && (
+                        <div className="flex items-center justify-between pt-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!userThreads.pagination.has_previous}
+                            onClick={() => setThreadsPage(p => Math.max(1, p - 1))}
+                          >
+                            Previous
+                          </Button>
+                          <span className="text-sm text-muted-foreground">
+                            Page {userThreads.pagination.current_page} of {userThreads.pagination.total_pages}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!userThreads.pagination.has_next}
+                            onClick={() => setThreadsPage(p => p + 1)}
+                          >
+                            Next
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No threads found</p>
+                  )}
+                </CardContent>
+              </Card>
             </TabsContent>
 
             <TabsContent value="transactions" className="space-y-4">

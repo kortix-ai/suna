@@ -16,9 +16,9 @@ from . import core_utils as utils
 from .core_utils import _get_version_service, merge_custom_mcps
 from .config_helper import build_unified_config
 
-router = APIRouter()
+router = APIRouter(tags=["agents"])
 
-@router.put("/agents/{agent_id}", response_model=AgentResponse)
+@router.put("/agents/{agent_id}", response_model=AgentResponse, summary="Update Agent", operation_id="update_agent")
 async def update_agent(
     agent_id: str,
     agent_data: AgentUpdateRequest,
@@ -368,7 +368,7 @@ async def update_agent(
         logger.error(f"Error updating agent {agent_id} for user {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to update agent: {str(e)}")
 
-@router.delete("/agents/{agent_id}")
+@router.delete("/agents/{agent_id}", summary="Delete Agent", operation_id="delete_agent")
 async def delete_agent(agent_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
     logger.debug(f"Deleting agent: {agent_id}")
     client = await utils.db.client
@@ -433,7 +433,7 @@ async def delete_agent(agent_id: str, user_id: str = Depends(verify_and_get_user
         logger.error(f"Error deleting agent {agent_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.get("/agents", response_model=AgentsResponse)
+@router.get("/agents", response_model=AgentsResponse, summary="List Agents", operation_id="list_agents")
 async def get_agents(
     user_id: str = Depends(verify_and_get_user_id_from_jwt),
     page: Optional[int] = Query(1, ge=1, description="Page number (1-based)"),
@@ -502,7 +502,7 @@ async def get_agents(
         logger.error(f"Error fetching agents for user {user_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to fetch agents: {str(e)}")
 
-@router.get("/agents/{agent_id}", response_model=AgentResponse)
+@router.get("/agents/{agent_id}", response_model=AgentResponse, summary="Get Agent", operation_id="get_agent")
 async def get_agent(agent_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
     """Get a single agent with full configuration."""
     logger.debug(f"Fetching agent {agent_id} for user: {user_id}")
@@ -523,7 +523,7 @@ async def get_agent(agent_id: str, user_id: str = Depends(verify_and_get_user_id
         logger.error(f"Error fetching agent {agent_id} for user {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch agent: {str(e)}")
 
-@router.post("/agents", response_model=AgentResponse)
+@router.post("/agents", response_model=AgentResponse, summary="Create Agent", operation_id="create_agent")
 async def create_agent(
     agent_data: AgentCreateRequest,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
@@ -635,7 +635,7 @@ async def create_agent(
         logger.error(f"Error creating agent for user {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to create agent: {str(e)}")
 
-@router.post("/agents/generate-icon", response_model=AgentIconGenerationResponse)
+@router.post("/agents/generate-icon", response_model=AgentIconGenerationResponse, summary="Generate Agent Icon", operation_id="generate_agent_icon")
 async def generate_agent_icon(
     request: AgentIconGenerationRequest,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)

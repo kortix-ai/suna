@@ -13,9 +13,9 @@ from core.agentpress.thread_manager import ThreadManager
 from . import core_utils as utils
 from .core_utils import _get_version_service
 
-router = APIRouter()
+router = APIRouter(tags=["agent-tools"])
 
-@router.get("/agents/{agent_id}/custom-mcp-tools")
+@router.get("/agents/{agent_id}/custom-mcp-tools", summary="Get Agent Custom MCP Tools", operation_id="get_agent_custom_mcp_tools")
 async def get_custom_mcp_tools_for_agent(
     agent_id: str,
     request: Request,
@@ -100,7 +100,7 @@ async def get_custom_mcp_tools_for_agent(
         logger.error(f"Error getting custom MCP tools for agent {agent_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.post("/agents/{agent_id}/custom-mcp-tools")
+@router.post("/agents/{agent_id}/custom-mcp-tools", summary="Update Agent Custom MCP Tools", operation_id="update_agent_custom_mcp_tools")
 async def update_custom_mcp_tools_for_agent(
     agent_id: str,
     request: dict,
@@ -211,7 +211,7 @@ async def update_custom_mcp_tools_for_agent(
         logger.error(f"Error updating custom MCP tools for agent {agent_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.put("/agents/{agent_id}/custom-mcp-tools")
+@router.put("/agents/{agent_id}/custom-mcp-tools", summary="Update Agent Custom MCPs", operation_id="update_agent_custom_mcps")
 async def update_agent_custom_mcps(
     agent_id: str,
     request: dict,
@@ -319,7 +319,7 @@ async def update_agent_custom_mcps(
         logger.error(f"Error updating agent custom MCPs: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.get("/agents/{agent_id}/tools")
+@router.get("/agents/{agent_id}/tools", summary="Get Agent Tools", operation_id="get_agent_tools")
 async def get_agent_tools(
     agent_id: str,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)

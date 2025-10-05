@@ -12,9 +12,9 @@ from core.sandbox.sandbox import create_sandbox, delete_sandbox
 from .api_models import CreateThreadResponse, MessageCreateRequest
 from . import core_utils as utils
 
-router = APIRouter()
+router = APIRouter(tags=["threads"])
 
-@router.get("/threads")
+@router.get("/threads", summary="List User Threads", operation_id="list_user_threads")
 async def get_user_threads(
     user_id: str = Depends(verify_and_get_user_id_from_jwt),
     page: Optional[int] = Query(1, ge=1, description="Page number (1-based)"),
@@ -118,7 +118,7 @@ async def get_user_threads(
         logger.error(f"Error fetching threads for user {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch threads: {str(e)}")
 
-@router.get("/threads/{thread_id}")
+@router.get("/threads/{thread_id}", summary="Get Thread", operation_id="get_thread")
 async def get_thread(
     thread_id: str,
     auth: AuthorizedThreadAccess = Depends(require_thread_access)
@@ -198,7 +198,7 @@ async def get_thread(
         logger.error(f"Error fetching thread {thread_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch thread: {str(e)}")
 
-@router.post("/threads", response_model=CreateThreadResponse)
+@router.post("/threads", response_model=CreateThreadResponse, summary="Create Thread", operation_id="create_thread")
 async def create_thread(
     name: Optional[str] = Form(None),
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
@@ -301,7 +301,7 @@ async def create_thread(
         # TODO: Clean up created project/thread if creation fails mid-way
         raise HTTPException(status_code=500, detail=f"Failed to create thread: {str(e)}")
 
-@router.get("/threads/{thread_id}/messages")
+@router.get("/threads/{thread_id}/messages", summary="Get Thread Messages", operation_id="get_thread_messages")
 async def get_thread_messages(
     thread_id: str,
     user_id: str = Depends(verify_and_get_user_id_from_jwt),
@@ -331,7 +331,7 @@ async def get_thread_messages(
         logger.error(f"Error fetching messages for thread {thread_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch messages: {str(e)}")
 
-@router.post("/threads/{thread_id}/messages/add")
+@router.post("/threads/{thread_id}/messages/add", summary="Add Message to Thread", operation_id="add_message_to_thread")
 async def add_message_to_thread(
     thread_id: str,
     message: str,
@@ -356,7 +356,7 @@ async def add_message_to_thread(
         logger.error(f"Error adding message to thread {thread_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to add message: {str(e)}")
 
-@router.post("/threads/{thread_id}/messages")
+@router.post("/threads/{thread_id}/messages", summary="Create Thread Message", operation_id="create_thread_message")
 async def create_message(
     thread_id: str,
     message_data: MessageCreateRequest,
@@ -397,7 +397,7 @@ async def create_message(
         logger.error(f"Error creating message in thread {thread_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to create message: {str(e)}")
 
-@router.delete("/threads/{thread_id}/messages/{message_id}")
+@router.delete("/threads/{thread_id}/messages/{message_id}", summary="Delete Thread Message", operation_id="delete_thread_message")
 async def delete_message(
     thread_id: str,
     message_id: str,
