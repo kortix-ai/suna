@@ -44,6 +44,30 @@ def _decode_jwt_safely(token: str) -> dict:
         }
     )
 
+async def get_account_id_from_thread(thread_id: str, db: "DBConnection") -> str:
+    """
+    Get account_id from thread_id.
+    
+    Raises:
+        ValueError: If thread not found or has no account_id
+    """
+    try:
+        client = await db.client
+        thread_result = await client.table('threads').select('account_id').eq('thread_id', thread_id).limit(1).execute()
+        
+        if not thread_result.data:
+            raise ValueError(f"Could not find thread with ID: {thread_id}")
+        
+        account_id = thread_result.data[0]['account_id']
+        if not account_id:
+            raise ValueError("Thread has no associated account_id")
+        
+        return account_id
+    except Exception as e:
+        structlog.get_logger().error(f"Error getting account_id from thread: {e}")
+        raise
+
+
 async def _get_user_id_from_account_cached(account_id: str) -> Optional[str]:
     cache_key = f"account_user:{account_id}"
     

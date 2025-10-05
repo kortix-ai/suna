@@ -15,58 +15,11 @@ class AgentCreationTool(Tool):
         self.db = db_connection
         self.account_id = account_id
 
-    async def _get_current_account_id(self) -> Optional[str]:
+    async def _get_current_account_id(self) -> str:
+        """Get account_id (already provided in constructor)."""
+        if not self.account_id:
+            raise ValueError("No account_id available")
         return self.account_id
-
-    async def _sync_workflows_to_version_config(self, agent_id: str) -> None:
-        try:
-            account_id = self.account_id
-            if not account_id:
-                logger.warning(f"No account ID available for sync operation on agent {agent_id}")
-                return
-                
-            client = await self.db.client
-
-            agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).eq('account_id', account_id).single().execute()
-            if not agent_result.data or not agent_result.data.get('current_version_id'):
-                logger.warning(f"No current version found for agent {agent_id} or access denied")
-                return
-            
-            current_version_id = agent_result.data['current_version_id']
-            
-            workflows_result = await client.table('agent_workflows').select('*').eq('agent_id', agent_id).execute()
-            workflows = workflows_result.data if workflows_result.data else []
-            
-            triggers_result = await client.table('agent_triggers').select('*').eq('agent_id', agent_id).execute()
-            triggers = []
-            if triggers_result.data:
-                import json
-                for trigger in triggers_result.data:
-                    trigger_copy = trigger.copy()
-                    if 'config' in trigger_copy and isinstance(trigger_copy['config'], str):
-                        try:
-                            trigger_copy['config'] = json.loads(trigger_copy['config'])
-                        except json.JSONDecodeError:
-                            logger.warning(f"Failed to parse trigger config for {trigger_copy.get('trigger_id')}")
-                            trigger_copy['config'] = {}
-                    triggers.append(trigger_copy)
-            
-            version_result = await client.table('agent_versions').select('config').eq('version_id', current_version_id).single().execute()
-            if not version_result.data:
-                logger.warning(f"Version {current_version_id} not found")
-                return
-            
-            config = version_result.data.get('config', {})
-            
-            config['workflows'] = workflows
-            config['triggers'] = triggers
-
-            await client.table('agent_versions').update({'config': config}).eq('version_id', current_version_id).execute()
-            
-            logger.debug(f"Synced {len(workflows)} workflows and {len(triggers)} triggers to version config for agent {agent_id}")
-            
-        except Exception as e:
-            logger.error(f"Failed to sync workflows and triggers to version config: {e}")
 
     @openapi_schema({
         "type": "function",
@@ -167,7 +120,6 @@ class AgentCreationTool(Tool):
                     "agent_config_tool": True,
                     "mcp_search_tool": True,
                     "credential_profile_tool": True,
-                    "workflow_tool": True,
                     "trigger_tool": True
                 }
                 
@@ -233,7 +185,6 @@ class AgentCreationTool(Tool):
                 success_message += "The agent is now available in your agent library and ready to use!\n\n"
                 success_message += f"🔧 **For Advanced Configuration:**\n"
                 success_message += f"Visit the agent configuration page to further customize:\n"
-                success_message += f"• Add workflows and automation\n"
                 success_message += f"• Set up triggers and schedules\n" 
                 success_message += f"• Configure additional MCP integrations\n"
                 success_message += f"• Fine-tune tool settings\n"
@@ -726,395 +677,11 @@ class AgentCreationTool(Tool):
             logger.error(f"Failed to configure agent integration: {e}", exc_info=True)
             return self.fail_response("Failed to configure integration")
 
-    
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "create_agent_workflow",
-            "description": "Create a workflow/playbook for a newly created agent. This stores a Start node with a single child that contains config.playbook { template, variables }.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "agent_id": {
-                        "type": "string",
-                        "description": "The ID of the agent to create the workflow for"
-                    },
-                    "name": {
-                        "type": "string",
-                        "description": "Name of the workflow"
-                    },
-                    "template": {
-                        "type": "string",
-                        "description": "Workflow/playbook instructions text. Use {{variable}} tokens for dynamic values."
-                    },
-                    "variables": {
-                        "type": "array",
-                        "description": "Optional variable specifications",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "key": {"type": "string"},
-                                "label": {"type": "string"},
-                                "required": {"type": "boolean", "default": True}
-                            },
-                            "required": ["key"]
-                        },
-                        "default": []
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "Optional short description (auto-summarized from template if omitted)"
-                    },
-                    "is_default": {
-                        "type": "boolean",
-                        "description": "Whether this should be the default workflow",
-                        "default": False
-                    }
-                },
-                "required": ["agent_id", "name", "template"]
-            }
-        }
-    })
-    async def create_agent_workflow(
-        self,
-        agent_id: str,
-        name: str,
-        template: str,
-        variables: Optional[List[Dict[str, Any]]] = None,
-        description: Optional[str] = None,
-        is_default: bool = False
-    ) -> ToolResult:
-        try:
-            account_id = self.account_id
-            if not account_id:
-                return self.fail_response("Unable to determine current account ID")
-            
-            client = await self.db.client
-            
-            agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', account_id).execute()
-            if not agent_result.data:
-                return self.fail_response("Agent not found or access denied")
-            
-            variables = variables or []
-            
-            playbook_step = {
-                'id': 'workflow-exec',
-                'name': 'Execute Workflow Template',
-                'description': 'Execute the workflow/playbook template using provided variables.',
-                'type': 'instruction',
-                'config': {
-                    'playbook': {
-                        'template': template,
-                        'variables': variables,
-                    }
-                },
-                'order': 1,
-                'children': []
-            }
-            
-            start_node = {
-                'id': 'start-node',
-                'name': 'Start',
-                'description': 'Click to add steps or use the Add Node button',
-                'type': 'instruction',
-                'config': {},
-                'order': 0,
-                'children': [playbook_step]
-            }
-            
-            steps_json = self._convert_steps_to_json([start_node])
-            
-            def _summarize(text: str) -> str:
-                s = (text or '').strip().replace('\n', ' ')
-                return s[:160] + ('…' if len(s) > 160 else '')
-            
-            workflow_data = {
-                'agent_id': agent_id,
-                'name': name,
-                'description': description if description is not None else _summarize(template),
-                'trigger_phrase': None,
-                'is_default': is_default,
-                'status': 'draft',
-                'steps': steps_json,
-            }
-            
-            result = await client.table('agent_workflows').insert(workflow_data).execute()
-            if not result.data:
-                return self.fail_response("Failed to create workflow")
-            
-            workflow = result.data[0]
-            
-            success_message = f"✅ Successfully created workflow '{name}' for agent!\n\n"
-            success_message += f"**Workflow Details:**\n"
-            success_message += f"- Name: {workflow['name']}\n"
-            success_message += f"- Description: {workflow.get('description', 'No description')}\n"
-            success_message += f"- Status: {workflow['status']}\n"
-            success_message += f"- Default: {'Yes' if workflow['is_default'] else 'No'}\n"
-            if variables:
-                success_message += f"- Variables: {len(variables)} configured\n"
-                for var in variables[:3]:
-                    success_message += f"  • {{{{**{var['key']}**}}}}: {var.get('label', var['key'])} {'(required)' if var.get('required', True) else '(optional)'}\n"
-                if len(variables) > 3:
-                    success_message += f"  • ...and {len(variables) - 3} more\n"
-            success_message += f"\nThe workflow has been created in **draft** status. You can activate it when ready to use."
-            
-            try:
-                await self._sync_workflows_to_version_config(agent_id)
-            except Exception as e:
-                logger.warning(f"Failed to sync workflows to version config: {e}")
-            
-            return self.success_response({
-                    "message": success_message,
-                    "workflow": {
-                        "id": workflow["id"],
-                        "agent_id": agent_id,
-                        "name": workflow["name"],
-                        "description": workflow.get("description"),
-                        "is_default": workflow["is_default"],
-                        "status": workflow["status"],
-                        "steps_count": len(steps_json),
-                        "variables_count": len(variables),
-                        "created_at": workflow["created_at"]
-                    }
-                })
-            
-        except Exception as e:
-            logger.error(f"Failed to create workflow: {e}", exc_info=True)
-            return self.fail_response("Failed to create workflow")
-    
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "list_agent_workflows",
-            "description": "List all workflows for a specific agent",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "agent_id": {
-                        "type": "string",
-                        "description": "The ID of the agent to list workflows for"
-                    },
-                    "include_steps": {
-                        "type": "boolean",
-                        "description": "Whether to include detailed step information",
-                        "default": False
-                    }
-                },
-                "required": ["agent_id"]
-            }
-        }
-    })
-    async def list_agent_workflows(self, agent_id: str, include_steps: bool = False) -> ToolResult:
-        try:
-            account_id = self.account_id
-            if not account_id:
-                return self.fail_response("Unable to determine current account ID")
-            
-            client = await self.db.client
-            
-            agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', account_id).execute()
-            if not agent_result.data:
-                return self.fail_response("Agent not found or access denied")
-            
-            result = await client.table('agent_workflows').select('*').eq('agent_id', agent_id).order('created_at', desc=True).execute()
-            
-            workflows = []
-            for workflow_data in result.data:
-                workflow_info = {
-                    "id": workflow_data["id"],
-                    "name": workflow_data["name"],
-                    "description": workflow_data.get("description"),
-                    "trigger_phrase": workflow_data.get("trigger_phrase"),
-                    "is_default": workflow_data["is_default"],
-                    "status": workflow_data["status"],
-                    "created_at": workflow_data["created_at"],
-                    "updated_at": workflow_data["updated_at"]
-                }
-                
-                if include_steps:
-                    steps_json = workflow_data.get("steps", [])
-                    workflow_info["steps"] = steps_json
-                    workflow_info["steps_count"] = len(steps_json)
-                else:
-                    workflow_info["steps_count"] = len(workflow_data.get("steps", []))
-                
-                workflows.append(workflow_info)
-            
-            return self.success_response({
-                "message": f"Found {len(workflows)} workflow(s) for agent",
-                "agent_id": agent_id,
-                "workflows": workflows,
-                "total_count": len(workflows)
-            })
-            
-        except Exception as e:
-            logger.error(f"Failed to list workflows: {e}", exc_info=True)
-            return self.fail_response("Failed to list workflows")
-    
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "activate_agent_workflow",
-            "description": "Activate or deactivate a workflow for an agent. Only active workflows can be executed.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "agent_id": {
-                        "type": "string",
-                        "description": "The ID of the agent that owns the workflow"
-                    },
-                    "workflow_id": {
-                        "type": "string",
-                        "description": "The ID of the workflow to activate/deactivate"
-                    },
-                    "active": {
-                        "type": "boolean",
-                        "description": "Whether to activate (true) or deactivate (false) the workflow",
-                        "default": True
-                    }
-                },
-                "required": ["agent_id", "workflow_id"]
-            }
-        }
-    })
-    async def activate_agent_workflow(self, agent_id: str, workflow_id: str, active: bool = True) -> ToolResult:
-        try:
-            account_id = self.account_id
-            if not account_id:
-                return self.fail_response("Unable to determine current account ID")
-            
-            client = await self.db.client
-            
-            agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', account_id).execute()
-            if not agent_result.data:
-                return self.fail_response("Agent not found or access denied")
-            
-            workflow_result = await client.table('agent_workflows').select('*').eq('id', workflow_id).eq('agent_id', agent_id).execute()
-            if not workflow_result.data:
-                return self.fail_response("Workflow not found or access denied")
-            
-            workflow_name = workflow_result.data[0]['name']
-            new_status = 'active' if active else 'inactive'
-            
-            result = await client.table('agent_workflows').update({'status': new_status}).eq('id', workflow_id).execute()
-            
-            if not result.data:
-                return self.fail_response("Failed to update workflow status")
-            
-            action = "activated" if active else "deactivated"
-            
-            success_message = f"✅ Workflow '{workflow_name}' has been {action}!\n\n"
-            success_message += f"**Workflow Details:**\n"
-            success_message += f"- Name: {workflow_name}\n"
-            success_message += f"- Status: **{new_status}**\n\n"
-            if active:
-                success_message += "The workflow is now active and can be executed."
-            else:
-                success_message += "The workflow is now inactive and won't be executed until reactivated."
-            
-
-            try:
-                await self._sync_workflows_to_version_config(agent_id)
-            except Exception as e:
-                logger.warning(f"Failed to sync workflows to version config: {e}")
-            
-            return self.success_response({
-                "message": success_message,
-                "workflow_name": workflow_name,
-                "status": new_status
-            })
-            
-        except Exception as e:
-            logger.error(f"Failed to update workflow status: {e}", exc_info=True)
-            return self.fail_response("Failed to update workflow status")
-
-    @openapi_schema({
-        "type": "function",
-        "function": {
-            "name": "delete_agent_workflow",
-            "description": "Delete a workflow from an agent. This action cannot be undone.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "agent_id": {
-                        "type": "string",
-                        "description": "The ID of the agent that owns the workflow"
-                    },
-                    "workflow_id": {
-                        "type": "string",
-                        "description": "The ID of the workflow to delete"
-                    }
-                },
-                "required": ["agent_id", "workflow_id"]
-            }
-        }
-    })
-    async def delete_agent_workflow(self, agent_id: str, workflow_id: str) -> ToolResult:
-        try:
-            account_id = self.account_id
-            if not account_id:
-                return self.fail_response("Unable to determine current account ID")
-            
-            client = await self.db.client
-
-            agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', account_id).execute()
-            if not agent_result.data:
-                return self.fail_response("Agent not found or access denied")
-
-            workflow_result = await client.table('agent_workflows').select('*').eq('id', workflow_id).eq('agent_id', agent_id).execute()
-            if not workflow_result.data:
-                return self.fail_response("Workflow not found or access denied")
-            
-            workflow_name = workflow_result.data[0]['name']
-            
-            result = await client.table('agent_workflows').delete().eq('id', workflow_id).execute()
-            
-            try:
-                await self._sync_workflows_to_version_config(agent_id)
-            except Exception as e:
-                logger.warning(f"Failed to sync workflows to version config: {e}")
-            
-            return self.success_response({
-                "message": f"✅ Workflow '{workflow_name}' has been deleted successfully.",
-                "workflow_name": workflow_name
-            })
-            
-        except Exception as e:
-            logger.error(f"Failed to delete workflow: {e}", exc_info=True)
-            return self.fail_response("Failed to delete workflow")
-    
-    def _convert_steps_to_json(self, steps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        if not steps:
-            return []
-        
-        result = []
-        for step in steps:
-            step_dict = {
-                'name': step.get('name', ''),
-                'description': step.get('description'),
-                'type': step.get('type', 'instruction'),
-                'config': step.get('config', {}),
-                'conditions': step.get('conditions'),
-                'order': step.get('order', 0)
-            }
-            
-            if 'id' in step and step.get('id'):
-                step_dict['id'] = step['id']
-            if 'parentConditionalId' in step and step.get('parentConditionalId'):
-                step_dict['parentConditionalId'] = step['parentConditionalId']
-            
-            if step.get('children'):
-                step_dict['children'] = self._convert_steps_to_json(step['children'])
-            
-            result.append(step_dict)
-        
-        return result
-
     @openapi_schema({
         "type": "function",
         "function": {
             "name": "create_agent_scheduled_trigger",
-            "description": "Create a scheduled trigger for a newly created agent to execute workflows or run the agent directly using cron expressions.",
+            "description": "Create a scheduled trigger for a newly created agent to run the agent with a specific prompt using cron expressions.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1134,27 +701,12 @@ class AgentCreationTool(Tool):
                         "type": "string",
                         "description": "Cron expression defining when to run (e.g., '0 9 * * *' for daily at 9am, '*/30 * * * *' for every 30 minutes)"
                     },
-                    "execution_type": {
-                        "type": "string",
-                        "enum": ["workflow", "agent"],
-                        "description": "Whether to execute a workflow or run the agent directly",
-                        "default": "agent"
-                    },
-                    "workflow_id": {
-                        "type": "string",
-                        "description": "ID of the workflow to execute (required if execution_type is 'workflow')"
-                    },
-                    "workflow_input": {
-                        "type": "object",
-                        "description": "Input data to pass to the workflow (optional, only for workflow execution)",
-                        "additionalProperties": True
-                    },
                     "agent_prompt": {
                         "type": "string",
-                        "description": "Prompt to send to the agent when triggered (required if execution_type is 'agent')"
+                        "description": "Prompt to send to the agent when triggered"
                     }
                 },
-                "required": ["agent_id", "name", "cron_expression", "execution_type"]
+                "required": ["agent_id", "name", "cron_expression", "agent_prompt"]
             }
         }
     })
@@ -1163,11 +715,8 @@ class AgentCreationTool(Tool):
         agent_id: str,
         name: str,
         cron_expression: str,
-        execution_type: str = "agent",
-        description: Optional[str] = None,
-        workflow_id: Optional[str] = None,
-        workflow_input: Optional[Dict[str, Any]] = None,
-        agent_prompt: Optional[str] = None
+        agent_prompt: str,
+        description: Optional[str] = None
     ) -> ToolResult:
         try:
             account_id = self.account_id
@@ -1180,36 +729,14 @@ class AgentCreationTool(Tool):
             if not agent_result.data:
                 return self.fail_response("Agent not found or access denied")
             
-            if execution_type not in ["workflow", "agent"]:
-                return self.fail_response("execution_type must be either 'workflow' or 'agent'")
-            
-            if execution_type == "workflow" and not workflow_id:
-                return self.fail_response("workflow_id is required when execution_type is 'workflow'")
-            
-            if execution_type == "agent" and not agent_prompt:
-                return self.fail_response("agent_prompt is required when execution_type is 'agent'")
-            
-            if execution_type == "workflow":
-                workflow_result = await client.table('agent_workflows').select('*').eq('id', workflow_id).eq('agent_id', agent_id).execute()
-                if not workflow_result.data:
-                    return self.fail_response("Workflow not found or access denied")
-                
-                workflow = workflow_result.data[0]
-                if workflow['status'] != 'active':
-                    return self.fail_response("Workflow is not active. Please activate it first.")
+            if not agent_prompt:
+                return self.fail_response("agent_prompt is required")
             
             trigger_config = {
                 "cron_expression": cron_expression,
-                "execution_type": execution_type,
-                "provider_id": "schedule"
+                "provider_id": "schedule",
+                "agent_prompt": agent_prompt
             }
-            
-            if execution_type == "workflow":
-                trigger_config["workflow_id"] = workflow_id
-                if workflow_input:
-                    trigger_config["workflow_input"] = workflow_input
-            else:
-                trigger_config["agent_prompt"] = agent_prompt
             
             from core.triggers import get_trigger_service
             trigger_svc = get_trigger_service(self.db)
@@ -1227,22 +754,10 @@ class AgentCreationTool(Tool):
                 success_message += f"**Trigger Details:**\n"
                 success_message += f"- Name: {name}\n"
                 success_message += f"- Schedule: `{cron_expression}`\n"
-                success_message += f"- Type: {execution_type.capitalize()} execution\n"
-                
-                if execution_type == "workflow":
-                    success_message += f"- Workflow: {workflow['name']}\n"
-                    if workflow_input:
-                        success_message += f"- Input Data: Configured with {len(workflow_input)} parameters\n"
-                else:
-                    success_message += f"- Prompt: {agent_prompt[:50]}{'...' if len(agent_prompt) > 50 else ''}\n"
-                
+                success_message += f"- Type: Agent execution\n"
+                success_message += f"- Prompt: {agent_prompt[:50]}{'...' if len(agent_prompt) > 50 else ''}\n"
                 success_message += f"- Status: **Active**\n\n"
                 success_message += f"The trigger is now active and will run according to the schedule."
-
-                try:
-                    await self._sync_workflows_to_version_config(agent_id)
-                except Exception as e:
-                    logger.warning(f"Failed to sync triggers to version config: {e}")
                 
                 return self.success_response({
                     "message": success_message,
@@ -1252,7 +767,6 @@ class AgentCreationTool(Tool):
                         "name": trigger.name,
                         "description": trigger.description,
                         "cron_expression": cron_expression,
-                        "execution_type": execution_type,
                         "is_active": trigger.is_active,
                         "created_at": trigger.created_at.isoformat()
                     }
@@ -1311,15 +825,6 @@ class AgentCreationTool(Tool):
                     "total_count": 0
                 })
             
-            workflows = {}
-            for trigger in schedule_triggers:
-                if trigger.config.get("execution_type") == "workflow" and trigger.config.get("workflow_id"):
-                    workflow_id = trigger.config["workflow_id"]
-                    if workflow_id not in workflows:
-                        workflow_result = await client.table('agent_workflows').select('name').eq('id', workflow_id).execute()
-                        if workflow_result.data:
-                            workflows[workflow_id] = workflow_result.data[0]['name']
-            
             formatted_triggers = []
             for trigger in schedule_triggers:
                 formatted = {
@@ -1327,17 +832,11 @@ class AgentCreationTool(Tool):
                     "name": trigger.name,
                     "description": trigger.description,
                     "cron_expression": trigger.config.get("cron_expression"),
-                    "execution_type": trigger.config.get("execution_type", "agent"),
                     "is_active": trigger.is_active,
                     "created_at": trigger.created_at.isoformat()
                 }
                 
-                if trigger.config.get("execution_type") == "workflow":
-                    workflow_id = trigger.config.get("workflow_id")
-                    formatted["workflow_name"] = workflows.get(workflow_id, "Unknown Workflow")
-                    formatted["workflow_input"] = trigger.config.get("workflow_input")
-                else:
-                    formatted["agent_prompt"] = trigger.config.get("agent_prompt")
+                formatted["agent_prompt"] = trigger.config.get("agent_prompt")
                 
                 formatted_triggers.append(formatted)
             
@@ -1418,7 +917,7 @@ class AgentCreationTool(Tool):
                     success_message += "The trigger is now inactive and won't run until re-enabled."
                 
                 try:
-                    await self._sync_workflows_to_version_config(agent_id)
+                    await self._sync_triggers_to_version_config(agent_id)
                 except Exception as e:
                     logger.warning(f"Failed to sync triggers to version config: {e}")
                 
@@ -1484,7 +983,7 @@ class AgentCreationTool(Tool):
             
             if success:
                 try:
-                    await self._sync_workflows_to_version_config(agent_id)
+                    await self._sync_triggers_to_version_config(agent_id)
                 except Exception as e:
                     logger.warning(f"Failed to sync triggers to version config: {e}")
                 
@@ -1671,9 +1170,9 @@ class AgentCreationTool(Tool):
                 }).eq('agent_id', agent_id).execute()
                 
                 try:
-                    await self._sync_workflows_to_version_config(agent_id)
+                    await self._sync_triggers_to_version_config(agent_id)
                 except Exception as e:
-                    logger.warning(f"Failed to sync workflows and triggers to new version: {e}")
+                    logger.warning(f"Failed to sync triggers to new version: {e}")
             
             updated_agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).execute()
             updated_agent = updated_agent_result.data[0] if updated_agent_result.data else agent_data
@@ -1710,4 +1209,45 @@ class AgentCreationTool(Tool):
         except Exception as e:
             logger.error(f"Failed to update agent: {e}", exc_info=True)
             return self.fail_response("Failed to update agent configuration")
+    
+    async def _sync_triggers_to_version_config(self, agent_id: str) -> None:
+        """Sync triggers to the current version config."""
+        try:
+            client = await self.db.client
+            
+            agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).single().execute()
+            if not agent_result.data or not agent_result.data.get('current_version_id'):
+                logger.warning(f"No current version found for agent {agent_id}")
+                return
+            
+            current_version_id = agent_result.data['current_version_id']
+            
+            triggers_result = await client.table('agent_triggers').select('*').eq('agent_id', agent_id).execute()
+            triggers = []
+            if triggers_result.data:
+                import json
+                for trigger in triggers_result.data:
+                    trigger_copy = trigger.copy()
+                    if 'config' in trigger_copy and isinstance(trigger_copy['config'], str):
+                        try:
+                            trigger_copy['config'] = json.loads(trigger_copy['config'])
+                        except json.JSONDecodeError:
+                            logger.warning(f"Failed to parse trigger config for {trigger_copy.get('trigger_id')}")
+                            trigger_copy['config'] = {}
+                    triggers.append(trigger_copy)
+            
+            version_result = await client.table('agent_versions').select('config').eq('version_id', current_version_id).single().execute()
+            if not version_result.data:
+                logger.warning(f"Version {current_version_id} not found")
+                return
+            
+            config = version_result.data.get('config', {})
+            config['triggers'] = triggers
+            
+            await client.table('agent_versions').update({'config': config}).eq('version_id', current_version_id).execute()
+            
+            logger.debug(f"Synced {len(triggers)} triggers to version config for agent {agent_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to sync triggers to version config: {e}")
     

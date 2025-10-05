@@ -224,10 +224,7 @@ class VersionService:
         
         if not version_name:
             version_name = f"v{version_number}"
-        
-        workflows_result = await client.table('agent_workflows').select('*').eq('agent_id', agent_id).execute()
-        workflows = workflows_result.data if workflows_result.data else []
-        
+                
         triggers_result = await client.table('agent_triggers').select('*').eq('agent_id', agent_id).execute()
         triggers = []
         if triggers_result.data:
@@ -281,7 +278,6 @@ class VersionService:
                     'mcp': version.configured_mcps,
                     'custom_mcp': normalized_custom_mcps
                 },
-                'workflows': workflows,
                 'triggers': triggers
             }
         }

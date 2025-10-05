@@ -16,7 +16,6 @@ class SandboxPresentationTool(SandboxToolsBase):
     
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
-        self.workspace_path = "/workspace"
         self.presentations_dir = "presentations"
 
 

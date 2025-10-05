@@ -33,7 +33,6 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
 import { TriggerProvider, ScheduleTriggerConfig } from '../types';
-import { useAgentWorkflows } from '@/hooks/react-query/agents/use-agent-workflows';
 import { AgentSelector } from '@/components/agents/agent-selector';
 
 interface SimplifiedScheduleConfigProps {
@@ -321,9 +320,6 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
 }) => {
   const [currentStep, setCurrentStep] = useState<'setup' | 'schedule' | 'execute'>('setup');
   const [selectedPreset, setSelectedPreset] = useState<string>('');
-  const [executionType, setExecutionType] = useState<'agent' | 'workflow'>(
-    config.execution_type || 'agent'
-  );
   const [timezone, setTimezone] = useState<string>(config.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone);
 
   // Recurring schedule state
@@ -338,7 +334,6 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
   const [oneTimeHour, setOneTimeHour] = useState<string>('9');
   const [oneTimeMinute, setOneTimeMinute] = useState<string>('0');
 
-  const { data: workflows = [] } = useAgentWorkflows(agentId);
 
   // Find matching preset
   useEffect(() => {
@@ -473,30 +468,10 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
     setSelectedPreset(''); // Clear preset selection when using one-time
   };
 
-  const handleExecutionTypeChange = (type: 'agent' | 'workflow') => {
-    setExecutionType(type);
-    onChange({
-      ...config,
-      execution_type: type,
-      // Clear the other type's config
-      agent_prompt: type === 'agent' ? config.agent_prompt : undefined,
-      workflow_id: type === 'workflow' ? config.workflow_id : undefined,
-      workflow_input: type === 'workflow' ? config.workflow_input : undefined
-    });
-  };
-
   const handleAgentPromptChange = (prompt: string) => {
     onChange({
       ...config,
-      execution_type: 'agent',
       agent_prompt: prompt
-    });
-  };
-
-  const handleWorkflowChange = (workflowId: string) => {
-    onChange({
-      ...config,
-      workflow_id: workflowId
     });
   };
 
@@ -1034,40 +1009,24 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
                       <p className="text-sm text-muted-foreground">Choose how your task should be executed</p>
                     </div>
 
-                    <RadioGroup
-                      value={executionType}
-                      onValueChange={(value) => handleExecutionTypeChange(value as 'agent' | 'workflow')}
-                      className="space-y-3"
-                    >
+                    <div className="p-3 border rounded-lg bg-muted/30">
                       <div className="flex items-center space-x-3">
-                        <RadioGroupItem value="agent" id="agent-prompt" />
+                        <div className="p-1.5 rounded-lg bg-primary/10">
+                          <Sparkles className="h-4 w-4 text-primary" />
+                        </div>
                         <div className="flex-1">
-                          <Label htmlFor="agent-prompt" className="font-medium cursor-pointer">
-                            Send Prompt to Agent
-                          </Label>
+                          <Label className="font-medium">Agent Instructions</Label>
                           <p className="text-sm text-muted-foreground">
-                            Give your agent custom instructions to follow
+                            Provide instructions for your agent to execute
                           </p>
                         </div>
                       </div>
-
-                      <div className="flex items-center space-x-3">
-                        <RadioGroupItem value="workflow" id="playbook" />
-                        <div className="flex-1">
-                          <Label htmlFor="playbook" className="font-medium cursor-pointer">
-                            Run Playbook (Workflow)
-                          </Label>
-                          <p className="text-sm text-muted-foreground">
-                            Execute a predefined sequence of actions
-                          </p>
-                        </div>
-                      </div>
-                    </RadioGroup>
+                    </div>
 
                   </div>
 
                   {/* Agent Instructions */}
-                  {executionType === 'agent' && (
+                  {true && (
                     <div className="border rounded-lg p-4 space-y-4">
                       <div>
                         <h3 className="font-medium mb-1">Agent Instructions</h3>
@@ -1091,59 +1050,6 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
                     </div>
                   )}
 
-                  {/* Workflow Selection */}
-                  {executionType === 'workflow' && (
-                    <div className="border rounded-lg p-4 space-y-4">
-                      <div>
-                        <h3 className="font-medium mb-1">Select Playbook</h3>
-                        <p className="text-sm text-muted-foreground">Choose a workflow to execute</p>
-                      </div>
-                      {workflows.length > 0 ? (
-                        <div className="space-y-2">
-                          {workflows.map((workflow: any) => (
-                            <Card
-                              key={workflow.id}
-                              className={cn(
-                                "cursor-pointer transition-all",
-                                config.workflow_id === workflow.id
-                                  ? "ring-2 ring-primary border-primary/50 bg-primary/5"
-                                  : "hover:border-muted-foreground/20"
-                              )}
-                              onClick={() => handleWorkflowChange(workflow.id)}
-                            >
-                              <CardContent className="p-3">
-                                <div className="flex items-center gap-3">
-                                  <div className={cn(
-                                    "p-1.5 rounded-lg",
-                                    config.workflow_id === workflow.id
-                                      ? "bg-primary/10 text-primary"
-                                      : "bg-muted text-muted-foreground"
-                                  )}>
-                                    <Activity className="h-3.5 w-3.5" />
-                                  </div>
-                                  <div className="flex-1">
-                                    <h4 className="font-medium text-sm">{workflow.name}</h4>
-                                    {workflow.description && (
-                                      <p className="text-xs text-muted-foreground">{workflow.description}</p>
-                                    )}
-                                  </div>
-                                </div>
-                              </CardContent>
-                            </Card>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="text-center py-6 text-muted-foreground border rounded-lg">
-                          <Activity className="h-6 w-6 mx-auto mb-2 opacity-50" />
-                          <p className="text-sm">No playbooks available</p>
-                          <p className="text-xs">Create a workflow first to use this option</p>
-                        </div>
-                      )}
-                      {errors.workflow_id && (
-                        <p className="text-sm text-destructive">{errors.workflow_id}</p>
-                      )}
-                    </div>
-                  )}
                 </div>
               </div>
 
@@ -1165,17 +1071,13 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
                           name,
                           description,
                           config: {
-                            ...config,
-                            execution_type: executionType
+                            ...config
                           },
                           is_active: isActive
                         });
                       }
                     }}
-                    disabled={
-                      (executionType === 'agent' && !config.agent_prompt?.trim()) ||
-                      (executionType === 'workflow' && !config.workflow_id)
-                    }
+                    disabled={!config.agent_prompt?.trim()}
                     size="sm"
                   >
                     {isEditMode ? 'Update Scheduled Task' : 'Create Scheduled Task'}

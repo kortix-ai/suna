@@ -28,7 +28,6 @@ class TaskListTool(SandboxToolsBase):
     Features:
     - Create, update, and delete tasks organized by sections
     - Support for batch operations across multiple sections
-    - Organize tasks into logical sections and workflows
     - Track completion status and progress
     """
     

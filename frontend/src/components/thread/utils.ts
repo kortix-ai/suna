@@ -410,10 +410,7 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['create-credential-profile-for-agent', 'Creating Credential Profile'],
   ['discover-mcp-tools-for-agent', 'Discovering MCP Tools'],
   ['configure-agent-integration', 'Configuring Agent Integration'],
-  ['create-agent-workflow', 'Creating Agent Workflow'],
-  ['activate-agent-workflow', 'Activating Agent Workflow'],
   ['create-agent-scheduled-trigger', 'Creating Scheduled Trigger'],
-  ['list-agent-workflows', 'Listing Agent Workflows'],
   ['list-agent-scheduled-triggers', 'Listing Agent Scheduled Triggers'],
 ]);
 

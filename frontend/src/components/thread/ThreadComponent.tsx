@@ -167,7 +167,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const stopAgentMutation = useStopAgentMutation();
   const { data: threadAgentData } = useThreadAgent(threadId);
   const agent = threadAgentData?.agent;
-  const workflowId = threadQuery.data?.metadata?.workflow_id;
 
   useEffect(() => {
     queryClient.invalidateQueries({ queryKey: threadKeys.agentRuns(threadId) });

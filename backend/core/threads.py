@@ -331,27 +331,6 @@ async def get_thread_messages(
         logger.error(f"Error fetching messages for thread {thread_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch messages: {str(e)}")
 
-@router.get("/agent-runs/{agent_run_id}")
-async def get_agent_run(
-    agent_run_id: str,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt),
-):
-    """
-    [DEPRECATED] Get an agent run by ID.
-
-    This endpoint is deprecated and may be removed in future versions.
-    """
-    logger.warning(f"[DEPRECATED] Fetching agent run: {agent_run_id}")
-    client = await utils.db.client
-    try:
-        agent_run_result = await client.table('agent_runs').select('*').eq('agent_run_id', agent_run_id).eq('account_id', user_id).execute()
-        if not agent_run_result.data:
-            raise HTTPException(status_code=404, detail="Agent run not found")
-        return agent_run_result.data[0]
-    except Exception as e:
-        logger.error(f"Error fetching agent run {agent_run_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch agent run: {str(e)}")
-
 @router.post("/threads/{thread_id}/messages/add")
 async def add_message_to_thread(
     thread_id: str,

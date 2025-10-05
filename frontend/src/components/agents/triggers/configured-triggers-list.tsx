@@ -132,15 +132,10 @@ export const ConfiguredTriggersList: React.FC<ConfiguredTriggersListProps> = ({
                     {truncateString(trigger.description, 50)}
                   </p>
                 )}
-                {trigger.trigger_type === 'schedule' && trigger.config && (
+                {trigger.trigger_type === 'schedule' && trigger.config && trigger.config.agent_prompt && (
                   <div className={`text-xs mt-1 transition-colors ${trigger.is_active ? "text-muted-foreground" : "text-muted-foreground/80"
                     }`}>
-                    {trigger.config.execution_type === 'agent' && trigger.config.agent_prompt && (
-                      <p>Prompt: {truncateString(trigger.config.agent_prompt, 40)}</p>
-                    )}
-                    {trigger.config.execution_type === 'workflow' && trigger.config.workflow_id && (
-                      <p>Workflow: {trigger.config.workflow_id}</p>
-                    )}
+                    <p>Prompt: {truncateString(trigger.config.agent_prompt, 40)}</p>
                   </div>
                 )}
               </div>

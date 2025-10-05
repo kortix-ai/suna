@@ -734,48 +734,6 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
     ],
   },
 
-  workflow_tool: {
-    name: 'workflow_tool',
-    displayName: 'Workflows',
-    description: 'Create and manage automated workflows',
-    icon: 'Workflow',
-    color: 'bg-emerald-100 dark:bg-emerald-800/50',
-    toolClass: 'WorkflowTool',
-    enabled: true,
-    methods: [
-      {
-        name: 'create_workflow',
-        displayName: 'Create Workflow',
-        description: 'Create new automated workflows',
-        enabled: true,
-      },
-      {
-        name: 'get_workflows',
-        displayName: 'Get Workflows',
-        description: 'List all available workflows',
-        enabled: true,
-      },
-      {
-        name: 'update_workflow',
-        displayName: 'Update Workflow',
-        description: 'Update existing workflows',
-        enabled: true,
-      },
-      {
-        name: 'delete_workflow',
-        displayName: 'Delete Workflow',
-        description: 'Delete workflows',
-        enabled: true,
-      },
-      {
-        name: 'activate_workflow',
-        displayName: 'Activate Workflow',
-        description: 'Activate or deactivate workflows',
-        enabled: true,
-      },
-    ],
-  },
-
   trigger_tool: {
     name: 'trigger_tool',
     displayName: 'Triggers',
@@ -873,30 +831,6 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
         name: 'configure_agent_integration',
         displayName: 'Configure Agent Integration',
         description: 'Configure integrations for new agents',
-        enabled: true,
-      },
-      {
-        name: 'create_agent_workflow',
-        displayName: 'Create Agent Workflow',
-        description: 'Create workflows for new agents',
-        enabled: true,
-      },
-      {
-        name: 'list_agent_workflows',
-        displayName: 'List Agent Workflows',
-        description: 'List workflows for agents',
-        enabled: true,
-      },
-      {
-        name: 'activate_agent_workflow',
-        displayName: 'Activate Agent Workflow',
-        description: 'Activate or deactivate agent workflows',
-        enabled: true,
-      },
-      {
-        name: 'delete_agent_workflow',
-        displayName: 'Delete Agent Workflow',
-        description: 'Delete agent workflows',
         enabled: true,
       },
       {

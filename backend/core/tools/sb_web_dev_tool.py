@@ -24,7 +24,6 @@ class SandboxWebDevTool(SandboxToolsBase):
         super().__init__(project_id, thread_manager)
         self.thread_id = thread_id
         self._sessions: Dict[str, str] = {}
-        self.workspace_path = self.WORKSPACE_PATH
 
     async def _ensure_session(self, session_name: str = "default") -> str:
         if session_name not in self._sessions:

@@ -26,7 +26,6 @@ from .utils import get_next_run_time, get_human_readable_schedule
 # ===== ROUTERS =====
 
 router = APIRouter(prefix="/triggers", tags=["triggers"])
-workflows_router = APIRouter(prefix="/workflows", tags=["workflows"])
 
 # Global database connection
 db: Optional[DBConnection] = None
@@ -79,9 +78,7 @@ class UpcomingRun(BaseModel):
     next_run_time_local: str
     timezone: str
     cron_expression: str
-    execution_type: str
     agent_prompt: Optional[str] = None
-    workflow_id: Optional[str] = None
     is_active: bool
     human_readable: str
 
@@ -89,44 +86,6 @@ class UpcomingRun(BaseModel):
 class UpcomingRunsResponse(BaseModel):
     upcoming_runs: List[UpcomingRun]
     total_count: int
-
-
-# Workflow models
-class WorkflowStepRequest(BaseModel):
-    id: Optional[str] = None  # CRITICAL: Accept ID from frontend
-    name: str
-    description: Optional[str] = None
-    type: Optional[str] = "instruction"
-    config: Dict[str, Any] = {}
-    conditions: Optional[Dict[str, Any]] = None
-    order: int
-    parentConditionalId: Optional[str] = None  # CRITICAL: Accept parentConditionalId
-    children: Optional[List['WorkflowStepRequest']] = None
-
-
-class WorkflowCreateRequest(BaseModel):
-    name: str
-    description: Optional[str] = None
-    trigger_phrase: Optional[str] = None
-    is_default: bool = False
-    steps: List[WorkflowStepRequest] = []
-
-
-class WorkflowUpdateRequest(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    trigger_phrase: Optional[str] = None
-    is_default: Optional[bool] = None
-    status: Optional[str] = None
-    steps: Optional[List[WorkflowStepRequest]] = None
-
-
-class WorkflowExecuteRequest(BaseModel):
-    input_data: Optional[Dict[str, Any]] = None
-    model_name: Optional[str] = None
-
-
-WorkflowStepRequest.model_rebuild()
 
 
 def initialize(database: DBConnection):
@@ -140,37 +99,6 @@ async def verify_and_authorize_trigger_agent_access(agent_id: str, user_id: str)
     
     if not result.data:
         raise HTTPException(status_code=404, detail="Agent not found or access denied")
-
-
-async def sync_workflows_to_version_config(agent_id: str):
-    try:
-        client = await db.client
-        
-        agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).single().execute()
-        if not agent_result.data or not agent_result.data.get('current_version_id'):
-            logger.warning(f"No current version found for agent {agent_id}")
-            return
-        
-        current_version_id = agent_result.data['current_version_id']
-        
-        workflows_result = await client.table('agent_workflows').select('*').eq('agent_id', agent_id).execute()
-        workflows = workflows_result.data if workflows_result.data else []
-        
-        version_result = await client.table('agent_versions').select('config').eq('version_id', current_version_id).single().execute()
-        if not version_result.data:
-            logger.warning(f"Version {current_version_id} not found")
-            return
-        
-        config = version_result.data.get('config', {})
-        
-        config['workflows'] = workflows
-        
-        await client.table('agent_versions').update({'config': config}).eq('version_id', current_version_id).execute()
-        
-        logger.debug(f"Synced {len(workflows)} workflows to version config for agent {agent_id}")
-        
-    except Exception as e:
-        logger.error(f"Failed to sync workflows to version config: {e}")
 
 
 async def sync_triggers_to_version_config(agent_id: str):
@@ -392,9 +320,7 @@ async def get_agent_upcoming_runs(
                     next_run_time_local=next_run_local.isoformat(),
                     timezone=user_timezone,
                     cron_expression=cron_expression,
-                    execution_type=config.get('execution_type', 'agent'),
                     agent_prompt=config.get('agent_prompt'),
-                    workflow_id=config.get('workflow_id'),
                     is_active=trigger.is_active,
                     human_readable=human_readable
                 ))
@@ -624,7 +550,7 @@ async def trigger_webhook(
             )
         
         # Execute if needed
-        if result.should_execute_agent or result.should_execute_workflow:
+        if result.should_execute_agent:
             trigger = await trigger_service.get_trigger(trigger_id)
             if trigger:
                 logger.debug(f"Executing agent {trigger.agent_id} for trigger {trigger_id}")
@@ -652,7 +578,6 @@ async def trigger_webhook(
                     "execution": execution_result,
                     "trigger_result": {
                         "should_execute_agent": result.should_execute_agent,
-                        "should_execute_workflow": result.should_execute_workflow,
                         "agent_prompt": result.agent_prompt
                     }
                 })
@@ -664,8 +589,7 @@ async def trigger_webhook(
             "success": True,
             "message": "Trigger processed successfully (no execution needed)",
             "trigger_result": {
-                "should_execute_agent": result.should_execute_agent,
-                "should_execute_workflow": result.should_execute_workflow
+                "should_execute_agent": result.should_execute_agent
             }
         })
         
@@ -677,247 +601,3 @@ async def trigger_webhook(
         )
 
 
-# ===== WORKFLOW ENDPOINTS =====
-
-def convert_steps_to_json(steps: List[WorkflowStepRequest]) -> List[Dict[str, Any]]:
-    """Convert workflow steps to JSON format"""
-    if not steps:
-        return []
-    
-    result = []
-    for step in steps:
-        step_dict = {
-            'name': step.name,
-            'description': step.description,
-            'type': step.type or 'instruction',
-            'config': step.config,
-            'conditions': step.conditions,
-            'order': step.order
-        }
-        
-        # CRITICAL: Preserve ID and parentConditionalId if they exist
-        if hasattr(step, 'id') and step.id:
-            step_dict['id'] = step.id
-        if hasattr(step, 'parentConditionalId') and step.parentConditionalId:
-            step_dict['parentConditionalId'] = step.parentConditionalId
-            
-        if step.children:
-            step_dict['children'] = convert_steps_to_json(step.children)
-        result.append(step_dict)
-    return result
-
-
-@workflows_router.get("/agents/{agent_id}/workflows")
-async def get_agent_workflows(
-    agent_id: str,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
-):
-    """Get workflows for an agent"""
-    await verify_and_authorize_trigger_agent_access(agent_id, user_id)
-    
-    client = await db.client
-    result = await client.table('agent_workflows').select('*').eq('agent_id', agent_id).order('created_at', desc=True).execute()
-    
-    return result.data
-
-
-@workflows_router.post("/agents/{agent_id}/workflows")
-async def create_agent_workflow(
-    agent_id: str,
-    workflow_data: WorkflowCreateRequest,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
-):
-    """Create a new workflow for an agent"""
-    await verify_and_authorize_trigger_agent_access(agent_id, user_id)
-    
-    try:
-        client = await db.client
-        steps_json = convert_steps_to_json(workflow_data.steps)
-        
-        result = await client.table('agent_workflows').insert({
-            'agent_id': agent_id,
-            'name': workflow_data.name,
-            'description': workflow_data.description,
-            'trigger_phrase': workflow_data.trigger_phrase,
-            'is_default': workflow_data.is_default,
-            'status': 'draft',
-            'steps': steps_json
-        }).execute()
-        
-        # Sync workflows to version config after creation
-        await sync_workflows_to_version_config(agent_id)
-        
-        return result.data[0]
-        
-    except Exception as e:
-        logger.error(f"Error creating workflow: {e}")
-        raise HTTPException(status_code=400, detail=f"Failed to create workflow: {str(e)}")
-
-
-@workflows_router.put("/agents/{agent_id}/workflows/{workflow_id}")
-async def update_agent_workflow(
-    agent_id: str,
-    workflow_id: str,
-    workflow_data: WorkflowUpdateRequest,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
-):
-    """Update a workflow"""
-    await verify_and_authorize_trigger_agent_access(agent_id, user_id)
-    
-    client = await db.client
-    
-    # Verify workflow exists
-    workflow_result = await client.table('agent_workflows').select('*').eq('id', workflow_id).eq('agent_id', agent_id).execute()
-    if not workflow_result.data:
-        raise HTTPException(status_code=404, detail="Workflow not found")
-    
-    # Build update data
-    update_data = {}
-    if workflow_data.name is not None:
-        update_data['name'] = workflow_data.name
-    if workflow_data.description is not None:
-        update_data['description'] = workflow_data.description
-    if workflow_data.trigger_phrase is not None:
-        update_data['trigger_phrase'] = workflow_data.trigger_phrase
-    if workflow_data.is_default is not None:
-        update_data['is_default'] = workflow_data.is_default
-    if workflow_data.status is not None:
-        update_data['status'] = workflow_data.status
-    if workflow_data.steps is not None:
-        update_data['steps'] = convert_steps_to_json(workflow_data.steps)
-    
-    if update_data:
-        await client.table('agent_workflows').update(update_data).eq('id', workflow_id).execute()
-    
-    # Sync workflows to version config after update
-    await sync_workflows_to_version_config(agent_id)
-
-    # Return updated workflow
-    updated_result = await client.table('agent_workflows').select('*').eq('id', workflow_id).execute()
-    return updated_result.data[0]
-
-
-@workflows_router.delete("/agents/{agent_id}/workflows/{workflow_id}")
-async def delete_agent_workflow(
-    agent_id: str,
-    workflow_id: str,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
-):
-    await verify_and_authorize_trigger_agent_access(agent_id, user_id)
-    
-    client = await db.client
-    
-    workflow_result = await client.table('agent_workflows').select('*').eq('id', workflow_id).eq('agent_id', agent_id).execute()
-    if not workflow_result.data:
-        raise HTTPException(status_code=404, detail="Workflow not found")
-    
-    await client.table('agent_workflows').delete().eq('id', workflow_id).execute()
-    
-    await sync_workflows_to_version_config(agent_id)
-    
-    return {"message": "Workflow deleted successfully"}
-
-
-@workflows_router.post("/agents/{agent_id}/workflows/{workflow_id}/execute")
-async def execute_agent_workflow(
-    agent_id: str,
-    workflow_id: str,
-    execution_data: WorkflowExecuteRequest,
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
-):
-    print("DEBUG: Executing workflow", workflow_id, "for agent", agent_id)
-    await verify_and_authorize_trigger_agent_access(agent_id, user_id)
-    
-    client = await db.client
-    
-    workflow_result = await client.table('agent_workflows').select('*').eq('id', workflow_id).eq('agent_id', agent_id).execute()
-    if not workflow_result.data:
-        raise HTTPException(status_code=404, detail="Workflow not found")
-    
-    workflow = workflow_result.data[0]
-    if workflow['status'] != 'active':
-        raise HTTPException(status_code=400, detail="Workflow is not active")
-    
-    agent_result = await client.table('agents').select('account_id, name').eq('agent_id', agent_id).execute()
-    if not agent_result.data:
-        raise HTTPException(status_code=404, detail="Agent not found")
-    
-    account_id = agent_result.data[0]['account_id']
-    
-    from core.versioning.version_service import get_version_service
-    version_service = await get_version_service()
-    active_version = await version_service.get_active_version(agent_id, "system")
-
-    if active_version and active_version.model:
-        model_name = active_version.model
-    else:
-        from core.ai_models import model_manager
-        model_name = await model_manager.get_default_model_for_user(client, account_id)
-        print("DEBUG: Using tier-based default model:", model_name)
-    
-    # Unified billing and model access check
-    can_proceed, error_message, context = await billing_integration.check_model_and_billing_access(
-        account_id, model_name
-    )
-    
-    if not can_proceed:
-        if context.get("error_type") == "model_access_denied":
-            raise HTTPException(status_code=403, detail={
-                "message": error_message, 
-                "allowed_models": context.get("allowed_models", [])
-            })
-        elif context.get("error_type") == "insufficient_credits":
-            raise HTTPException(status_code=402, detail={"message": error_message, "error": "insufficient_credits"})
-        else:
-            raise HTTPException(status_code=500, detail={"message": error_message})
-    
-    from .trigger_service import TriggerResult, TriggerEvent, TriggerType
-    
-    trigger_result = TriggerResult(
-        success=True,
-        should_execute_workflow=True,
-        workflow_id=workflow_id,
-        workflow_input=execution_data.input_data or {},
-        execution_variables={
-            'triggered_by': 'manual',
-            'execution_timestamp': datetime.now(timezone.utc).isoformat(),
-            'user_id': user_id,
-            'execution_source': 'workflow_api',
-            'model_name': model_name  # Use the model from agent version config
-        }
-    )
-    
-    trigger_event = TriggerEvent(
-        trigger_id=f"manual_{workflow_id}_{uuid.uuid4()}",
-        agent_id=agent_id,
-        trigger_type=TriggerType.WEBHOOK,
-        raw_data=execution_data.input_data or {}
-    )
-    
-    execution_service = get_execution_service(db)
-    execution_result = await execution_service.execute_trigger_result(
-        agent_id=agent_id,
-        trigger_result=trigger_result,
-        trigger_event=trigger_event
-    )
-    
-    if execution_result["success"]:
-        logger.debug(f"Manual workflow execution started: {execution_result}")
-        return {
-            "thread_id": execution_result.get("thread_id"),
-            "agent_run_id": execution_result.get("agent_run_id"),
-            "status": "running",
-            "message": f"Workflow '{workflow['name']}' execution started"
-        }
-    else:
-        logger.error(f"Manual workflow execution failed: {execution_result}")
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "error": "Failed to start workflow execution",
-                "details": execution_result.get("error", "Unknown error")
-            }
-        )
-
-
-router.include_router(workflows_router)

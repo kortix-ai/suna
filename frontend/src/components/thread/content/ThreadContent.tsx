@@ -1,4 +1,4 @@
-import React, { useRef, useState, useCallback, useEffect } from 'react';
+import React, { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { CircleDashed, CheckCircle, AlertTriangle } from 'lucide-react';
 import { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/components/thread/types';
 import { FileAttachmentGrid } from '@/components/thread/file-attachment';
@@ -19,6 +19,7 @@ import { ShowToolStream } from './ShowToolStream';
 import { ComposioUrlDetector } from './composio-url-detector';
 import { StreamingText } from './StreamingText';
 import { HIDE_STREAMING_XML_TAGS } from '@/components/thread/utils';
+import { useAgentsFromCache } from '@/hooks/react-query/agents/use-agents';
 
 
 // Helper function to render all attachments as standalone messages
@@ -425,6 +426,20 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
     const [shouldJustifyToTop, setShouldJustifyToTop] = useState(false);
     const { session } = useAuth();
 
+    // Collect unique agent IDs from messages to prefetch from cache
+    const agentIds = useMemo(() => {
+        const ids = new Set<string>();
+        messages.forEach(msg => {
+            if (msg.agent_id) {
+                ids.add(msg.agent_id);
+            }
+        });
+        return Array.from(ids);
+    }, [messages]);
+
+    // Get agents from cache (doesn't fetch, just reads from existing cache)
+    const agentsMap = useAgentsFromCache(agentIds);
+
     // React Query file preloader
     const { preloadFiles } = useFilePreloader();
 
@@ -815,21 +830,22 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                         // Get agent_id from the first assistant message in this group
                                         const firstAssistantMsg = group.messages.find(m => m.type === 'assistant');
                                         const groupAgentId = firstAssistantMsg?.agent_id;
+                                        const groupAgent = groupAgentId ? agentsMap.get(groupAgentId) : undefined;
 
                                         return (
                                             <div key={group.key} ref={groupIndex === groupedMessages.length - 1 ? latestMessageRef : null}>
                                                 <div className="flex flex-col gap-2">
                                                     <div className="flex items-center">
                                                         <div className="rounded-md flex items-center justify-center relative">
-                                                            {groupAgentId ? (
-                                                                <AgentAvatar agentId={groupAgentId} size={24} className="h-6 w-6" />
+                                                            {groupAgent || groupAgentId ? (
+                                                                <AgentAvatar agent={groupAgent} agentId={groupAgentId} size={24} className="h-6 w-6" />
                                                             ) : (
                                                                 getAgentInfo().avatar
                                                             )}
                                                         </div>
                                                         <p className='ml-2 text-sm text-muted-foreground'>
-                                                            {groupAgentId ? (
-                                                                <AgentName agentId={groupAgentId} fallback={getAgentInfo().name} />
+                                                            {groupAgent || groupAgentId ? (
+                                                                <AgentName agent={groupAgent} agentId={groupAgentId} fallback={getAgentInfo().name} />
                                                             ) : (
                                                                 getAgentInfo().name
                                                             )}

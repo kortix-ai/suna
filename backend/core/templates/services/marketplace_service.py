@@ -22,7 +22,7 @@ class MarketplaceFilters:
         self.sort_order = sort_order
 
 
-class TemplateService:
+class MarketplaceService:
     def __init__(self, db_client):
         self.db = db_client
 
@@ -36,9 +36,10 @@ class TemplateService:
             
             from ..template_service import get_template_service
             from ..utils import format_template_for_response
-            from core.services.supabase import DBConnection
+            from core.utils.db_helpers import get_initialized_db
             
-            db_connection = DBConnection()
+            db_connection = get_initialized_db()
+            await db_connection.initialize()
             template_service = get_template_service(db_connection)
             
             limit = pagination_params.page_size
@@ -107,12 +108,13 @@ class TemplateService:
             
             from ..template_service import get_template_service
             from ..utils import format_template_for_response
-            from core.services.supabase import DBConnection
+            from core.utils.db_helpers import get_initialized_db
             
             if not filters.creator_id:
                 raise ValueError("creator_id is required for user templates")
             
-            db_connection = DBConnection()
+            db_connection = get_initialized_db()
+            await db_connection.initialize()
             template_service = get_template_service(db_connection)
             
             all_templates = await template_service.get_user_templates(filters.creator_id)

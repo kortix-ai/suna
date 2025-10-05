@@ -17,7 +17,6 @@ class SandboxFilesTool(SandboxToolsBase):
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
         self.SNIPPET_LINES = 4  # Number of context lines to show around edits
-        self.workspace_path = "/workspace"  # Ensure we're always operating in /workspace
 
     def clean_path(self, path: str) -> str:
         """Clean and normalize a path to be relative to /workspace"""

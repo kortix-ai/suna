@@ -28,10 +28,7 @@ class TriggerEvent:
 class TriggerResult:
     success: bool
     should_execute_agent: bool = False
-    should_execute_workflow: bool = False
     agent_prompt: Optional[str] = None
-    workflow_id: Optional[str] = None
-    workflow_input: Optional[Dict[str, Any]] = None
     execution_variables: Dict[str, Any] = field(default_factory=dict)
     error_message: Optional[str] = None
 
@@ -309,10 +306,7 @@ class TriggerService:
             'event_data': event_data,
             'success': result.success,
             'should_execute_agent': result.should_execute_agent,
-            'should_execute_workflow': result.should_execute_workflow,
             'agent_prompt': result.agent_prompt,
-            'workflow_id': result.workflow_id,
-            'workflow_input': result.workflow_input,
             'execution_variables': result.execution_variables,
             'error_message': result.error_message,
             'event_timestamp': event.timestamp.isoformat(),

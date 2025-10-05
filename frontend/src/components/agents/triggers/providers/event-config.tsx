@@ -24,7 +24,6 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TriggerProvider, EventTriggerConfig } from '../types';
-import { useAgentWorkflows } from '@/hooks/react-query/agents/use-agent-workflows';
 
 interface EventTriggerConfigFormProps {
   provider: TriggerProvider;
@@ -80,16 +79,6 @@ const getEventTypeFromSlug = (triggerSlug: string) => {
   return 'Event';
 };
 
-interface VariableSpec {
-  key: string;
-  label: string;
-  type: 'string' | 'number' | 'boolean' | 'select' | 'multiselect';
-  required?: boolean;
-  options?: string[];
-  default?: string | number | boolean | string[];
-  helperText?: string;
-}
-
 export const EventTriggerConfigForm: React.FC<EventTriggerConfigFormProps> = ({
   provider,
   config,
@@ -103,83 +92,11 @@ export const EventTriggerConfigForm: React.FC<EventTriggerConfigFormProps> = ({
   isActive,
   onActiveChange,
 }) => {
-  const { data: workflows = [], isLoading: isLoadingWorkflows } = useAgentWorkflows(agentId);
-
-  const selectedWorkflow = useMemo(() => {
-    return (workflows || []).find((w) => w.id === config.workflow_id);
-  }, [workflows, config.workflow_id]);
-
-  const { variableSpecs, templateText } = useMemo(() => {
-    if (!selectedWorkflow) return { variableSpecs: [] as VariableSpec[], templateText: '' };
-    const stepsAny = ((selectedWorkflow as any)?.steps as any[]) || [];
-    const start = stepsAny.find(
-      (s: any) => s?.name === 'Start' && s?.description === 'Click to add steps or use the Add Node button',
-    );
-    const child = start?.children?.[0] ?? stepsAny[0];
-    const vars = (child?.config?.playbook?.variables as VariableSpec[]) || [];
-    const tpl = (child?.config?.playbook?.template as string) || '';
-    return { variableSpecs: vars, templateText: tpl };
-  }, [selectedWorkflow]);
-
-  // Initialize defaults for variable inputs when workflow changes or dialog loads
-  useEffect(() => {
-    if (!selectedWorkflow || config.execution_type !== 'workflow') return;
-    if (!variableSpecs || variableSpecs.length === 0) return;
-    const defaults: Record<string, any> = {};
-    for (const v of variableSpecs) {
-      if (v.default !== undefined && (config.workflow_input?.[v.key] === undefined)) {
-        defaults[v.key] = v.default;
-      }
-    }
-    if (Object.keys(defaults).length > 0) {
-      onChange({
-        ...config,
-        workflow_input: { ...(config.workflow_input || {}), ...defaults },
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedWorkflow?.id, config.execution_type]);
-
-  const handleVarChange = useCallback((key: string, value: any) => {
-    onChange({
-      ...config,
-      workflow_input: { ...(config.workflow_input || {}), [key]: value },
-    });
-  }, [config, onChange]);
 
   const handleAgentPromptChange = (value: string) => {
     onChange({
       ...config,
       agent_prompt: value,
-    });
-  };
-
-  const handleExecutionTypeChange = (value: 'agent' | 'workflow') => {
-    const newConfig = {
-      ...config,
-      execution_type: value,
-    };
-    if (value === 'agent') {
-      delete newConfig.workflow_id;
-      delete newConfig.workflow_input;
-    } else {
-      delete newConfig.agent_prompt;
-      if (!newConfig.workflow_input) {
-        newConfig.workflow_input = { prompt: '' };
-      }
-    }
-    onChange(newConfig);
-  };
-
-  const handleWorkflowChange = (workflowId: string) => {
-    if (workflowId.startsWith('__')) {
-      return;
-    }
-    onChange({
-      ...config,
-      workflow_id: workflowId,
-      // reset inputs when switching playbooks to avoid leaking old keys
-      workflow_input: {},
     });
   };
 
@@ -235,84 +152,21 @@ export const EventTriggerConfigForm: React.FC<EventTriggerConfigFormProps> = ({
               <div>
                 <h3 className="text-sm font-medium mb-4 flex items-center gap-2">
                   <Zap className="h-4 w-4" />
-                  Execution Configuration
+                  Agent Instructions
                 </h3>
                 <div className="space-y-3">
-                  <Tabs value={config.execution_type || 'agent'} onValueChange={handleExecutionTypeChange} className="w-full">
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="agent">Agent</TabsTrigger>
-                      <TabsTrigger value="workflow">Workflow</TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="workflow" className="mt-3">
-                      <div className="space-y-3">
-                        <Select value={config.workflow_id || ''} onValueChange={handleWorkflowChange}>
-                          <SelectTrigger className={errors.workflow_id ? 'border-destructive' : ''}>
-                            <SelectValue placeholder="Select workflow" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {isLoadingWorkflows ? (
-                              <SelectItem value="__loading__" disabled>Loading...</SelectItem>
-                            ) : workflows.length === 0 ? (
-                              <SelectItem value="__no_workflows__" disabled>No workflows</SelectItem>
-                            ) : (
-                              workflows.filter(w => w.status === 'active').map((workflow) => (
-                                <SelectItem key={workflow.id} value={workflow.id}>
-                                  {workflow.name}
-                                </SelectItem>
-                              ))
-                            )}
-                          </SelectContent>
-                        </Select>
-                        {errors.workflow_id && (
-                          <p className="text-xs text-destructive">{errors.workflow_id}</p>
-                        )}
-
-                        {variableSpecs && variableSpecs.length > 0 ? (
-                          <div className="space-y-2">
-                            {variableSpecs.map((v) => (
-                              <Input
-                                key={v.key}
-                                type={v.type === 'number' ? 'number' : 'text'}
-                                placeholder={v.label}
-                                value={(config.workflow_input?.[v.key] ?? '') as any}
-                                onChange={(e) => handleVarChange(v.key, v.type === 'number' ? Number(e.target.value) : e.target.value)}
-                              />
-                            ))}
-                          </div>
-                        ) : (
-                          <Textarea
-                            value={config.workflow_input?.prompt || config.workflow_input?.message || ''}
-                            onChange={(e) => {
-                              onChange({
-                                ...config,
-                                workflow_input: { prompt: e.target.value },
-                              });
-                            }}
-                            placeholder="Instructions for workflow"
-                            rows={2}
-                            className={errors.workflow_input ? 'border-destructive' : ''}
-                          />
-                        )}
-                        {errors.workflow_input && (
-                          <p className="text-xs text-destructive">{errors.workflow_input}</p>
-                        )}
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="agent" className="mt-3">
-                      <Textarea
-                        value={config.agent_prompt || ''}
-                        onChange={(e) => handleAgentPromptChange(e.target.value)}
-                        placeholder="Agent prompt"
-                        rows={2}
-                        className={errors.agent_prompt ? 'border-destructive' : ''}
-                      />
-                      {errors.agent_prompt && (
-                        <p className="text-xs text-destructive">{errors.agent_prompt}</p>
-                      )}
-                    </TabsContent>
-                  </Tabs>
+                  <Label htmlFor="agent-prompt" className="text-sm">What should the agent do when this event occurs?</Label>
+                  <Textarea
+                    id="agent-prompt"
+                    value={config.agent_prompt || ''}
+                    onChange={(e) => handleAgentPromptChange(e.target.value)}
+                    placeholder="Enter instructions for the agent..."
+                    rows={3}
+                    className={errors.agent_prompt ? 'border-destructive' : ''}
+                  />
+                  {errors.agent_prompt && (
+                    <p className="text-xs text-destructive">{errors.agent_prompt}</p>
+                  )}
                 </div>
               </div>
             </div>

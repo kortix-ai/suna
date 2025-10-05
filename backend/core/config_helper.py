@@ -58,23 +58,28 @@ def _extract_suna_agent_config(agent_data: Dict[str, Any], version_data: Optiona
             tools = version_config.get('tools', {})
             config['configured_mcps'] = tools.get('mcp', [])
             config['custom_mcps'] = tools.get('custom_mcp', [])
-            config['workflows'] = version_config.get('workflows', [])
             config['triggers'] = version_config.get('triggers', [])
         else:
             config['configured_mcps'] = version_data.get('configured_mcps', [])
             config['custom_mcps'] = version_data.get('custom_mcps', [])
-            config['workflows'] = []
             config['triggers'] = []
     else:
         config['configured_mcps'] = agent_data.get('configured_mcps', [])
         config['custom_mcps'] = agent_data.get('custom_mcps', [])
-        config['workflows'] = []
         config['triggers'] = []
     
     return config
 
 
 def _extract_custom_agent_config(agent_data: Dict[str, Any], version_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Extract configuration for custom agents.
+    
+    Args:
+        agent_data: Agent metadata from agents table
+        version_data: Optional version configuration. When None, uses safe fallback config.
+                      This is expected during list operations for performance.
+    """
     agent_id = agent_data.get('agent_id', 'Unknown')
     
     # Debug logging for icon fields
@@ -82,6 +87,7 @@ def _extract_custom_agent_config(agent_data: Dict[str, Any], version_data: Optio
         print(f"[DEBUG] _extract_custom_agent_config: Input agent_data has icon_name={agent_data.get('icon_name')}, icon_color={agent_data.get('icon_color')}, icon_background={agent_data.get('icon_background')}")
     
     if version_data:
+        # Use version configuration when available
         logger.debug(f"Using version data for custom agent {agent_id} (version: {version_data.get('version_name', 'unknown')})")
         
         if version_data.get('config'):
@@ -92,7 +98,6 @@ def _extract_custom_agent_config(agent_data: Dict[str, Any], version_data: Optio
             configured_mcps = tools.get('mcp', [])
             custom_mcps = tools.get('custom_mcp', [])
             agentpress_tools = tools.get('agentpress', {})
-            workflows = config.get('workflows', [])
             triggers = config.get('triggers', [])
         else:
             system_prompt = version_data.get('system_prompt', '')
@@ -100,7 +105,6 @@ def _extract_custom_agent_config(agent_data: Dict[str, Any], version_data: Optio
             configured_mcps = version_data.get('configured_mcps', [])
             custom_mcps = version_data.get('custom_mcps', [])
             agentpress_tools = version_data.get('agentpress_tools', {})
-            workflows = []
             triggers = []
         
         config = {
@@ -112,7 +116,6 @@ def _extract_custom_agent_config(agent_data: Dict[str, Any], version_data: Optio
             'agentpress_tools': _extract_agentpress_tools_for_run(agentpress_tools),
             'configured_mcps': configured_mcps,
             'custom_mcps': custom_mcps,
-            'workflows': workflows,
             'triggers': triggers,
             'icon_name': agent_data.get('icon_name'),
             'icon_color': agent_data.get('icon_color'),
@@ -132,10 +135,8 @@ def _extract_custom_agent_config(agent_data: Dict[str, Any], version_data: Optio
         
         return config
     
-    logger.warning(f"No version data found for custom agent {agent_id}, creating default configuration")
-    logger.debug(f"Agent data keys: {list(agent_data.keys())}")
-    logger.debug(f"Agent current_version_id: {agent_data.get('current_version_id')}")
-    
+    # No version data provided - use fallback config
+    # This is expected during list operations where we don't load full configs for performance
     fallback_config = {
         'agent_id': agent_data['agent_id'],
         'name': agent_data.get('name', 'Unnamed Agent'),
@@ -145,7 +146,6 @@ def _extract_custom_agent_config(agent_data: Dict[str, Any], version_data: Optio
         'agentpress_tools': _extract_agentpress_tools_for_run(_get_default_agentpress_tools()),
         'configured_mcps': [],
         'custom_mcps': [],
-        'workflows': [],
         'triggers': [],
         'icon_name': agent_data.get('icon_name'),
         'icon_color': agent_data.get('icon_color'),
@@ -172,7 +172,6 @@ def build_unified_config(
     configured_mcps: List[Dict[str, Any]],
     custom_mcps: Optional[List[Dict[str, Any]]] = None,
     suna_metadata: Optional[Dict[str, Any]] = None,
-    workflows: Optional[List[Dict[str, Any]]] = None,
     triggers: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
     simplified_tools = {}
@@ -189,7 +188,6 @@ def build_unified_config(
             'mcp': configured_mcps or [],
             'custom_mcp': custom_mcps or []
         },
-        'workflows': workflows or [],
         'triggers': triggers or [],
         'metadata': {}
     }
@@ -222,7 +220,6 @@ def _get_default_agentpress_tools() -> Dict[str, bool]:
         "mcp_search_tool": True,
         "credential_profile_tool": True,
         "agent_creation_tool": True,
-        "workflow_tool": True,
         "trigger_tool": True
     }
 

@@ -5,9 +5,6 @@ export interface CreateAgentScheduledTriggerData {
   name: string | null;
   description?: string | null;
   cron_expression: string | null;
-  execution_type: string | null;
-  workflow_id?: string | null;
-  workflow_input?: Record<string, any> | null;
   agent_prompt?: string | null;
   trigger: {
     id: string;
@@ -15,7 +12,6 @@ export interface CreateAgentScheduledTriggerData {
     name: string;
     description?: string;
     cron_expression: string;
-    execution_type: string;
     is_active: boolean;
     created_at: string;
   } | null;
@@ -54,9 +50,6 @@ export function extractCreateAgentScheduledTriggerData(
     name: null,
     description: null,
     cron_expression: null,
-    execution_type: null,
-    workflow_id: null,
-    workflow_input: null,
     agent_prompt: null,
     trigger: null,
     actualIsSuccess: isSuccess || false,
@@ -97,9 +90,6 @@ export function extractCreateAgentScheduledTriggerData(
               name: args.name || null,
               description: args.description || null,
               cron_expression: args.cron_expression || null,
-              execution_type: args.execution_type || null,
-              workflow_id: args.workflow_id || null,
-              workflow_input: args.workflow_input || null,
               agent_prompt: args.agent_prompt || null,
               trigger: output.trigger,
               actualIsSuccess: true
@@ -122,9 +112,6 @@ export function extractCreateAgentScheduledTriggerData(
             name: args.name || null,
             description: args.description || null,
             cron_expression: args.cron_expression || null,
-            execution_type: args.execution_type || null,
-            workflow_id: args.workflow_id || null,
-            workflow_input: args.workflow_input || null,
             agent_prompt: args.agent_prompt || null,
             trigger: toolOutput.trigger,
             actualIsSuccess: true

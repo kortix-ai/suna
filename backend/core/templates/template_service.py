@@ -66,9 +66,6 @@ class AgentTemplate:
     def agentpress_tools(self) -> Dict[str, Any]:
         return self.config.get('tools', {}).get('agentpress', {})
     
-    @property
-    def workflows(self) -> List[Dict[str, Any]]:
-        return self.config.get('workflows', [])
     
     @property
     def mcp_requirements(self) -> List[MCPRequirementValue]:
@@ -473,20 +470,6 @@ class TemplateService:
             else:
                 sanitized_agentpress[tool_name] = False
         
-        workflows = config.get('workflows', [])
-        sanitized_workflows = []
-        for workflow in workflows:
-            if isinstance(workflow, dict):
-                sanitized_workflow = {
-                    'name': workflow.get('name'),
-                    'description': workflow.get('description'),
-                    'status': workflow.get('status', 'draft'),
-                    'trigger_phrase': workflow.get('trigger_phrase'),
-                    'is_default': workflow.get('is_default', False),
-                    'steps': workflow.get('steps', [])
-                }
-                sanitized_workflows.append(sanitized_workflow)
-        
         triggers = config.get('triggers', [])
         sanitized_triggers = []
         for trigger in triggers:
@@ -497,22 +480,7 @@ class TemplateService:
                 sanitized_config = {
                     'provider_id': provider_id,
                     'agent_prompt': trigger_config.get('agent_prompt', ''),
-                    'execution_type': trigger_config.get('execution_type', 'agent')
                 }
-                
-                if sanitized_config['execution_type'] == 'workflow':
-                    workflow_id = trigger_config.get('workflow_id')
-                    if workflow_id:
-                        workflow_name = None
-                        for workflow in workflows:
-                            if workflow.get('id') == workflow_id:
-                                workflow_name = workflow.get('name')
-                                break
-                        if workflow_name:
-                            sanitized_config['workflow_name'] = workflow_name
-                    
-                    if 'workflow_input' in trigger_config:
-                        sanitized_config['workflow_input'] = trigger_config['workflow_input']
                 
                 if provider_id == 'schedule':
                     sanitized_config['cron_expression'] = trigger_config.get('cron_expression', '')
@@ -539,7 +507,6 @@ class TemplateService:
                 'mcp': config.get('tools', {}).get('mcp', []),
                 'custom_mcp': []
             },
-            'workflows': sanitized_workflows,
             'triggers': sanitized_triggers,
             'metadata': {}
         }

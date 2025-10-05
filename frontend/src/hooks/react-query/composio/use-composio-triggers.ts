@@ -74,11 +74,9 @@ export interface CreateComposioEventTriggerRequest {
   profile_id: string;
   slug: string;
   trigger_config: Record<string, any>;
-  route: 'agent' | 'workflow';
+  route: 'agent';
   name?: string;
   agent_prompt?: string;
-  workflow_id?: string;
-  workflow_input?: Record<string, any>;
   connected_account_id?: string;
   toolkit_slug?: string;
 }

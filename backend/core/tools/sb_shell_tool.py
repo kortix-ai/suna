@@ -14,7 +14,6 @@ class SandboxShellTool(SandboxToolsBase):
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
         self._sessions: Dict[str, str] = {}  # Maps session names to session IDs
-        self.workspace_path = "/workspace"  # Ensure we're always operating in /workspace
 
     async def _ensure_session(self, session_name: str = "default") -> str:
         """Ensure a session exists and return its ID."""

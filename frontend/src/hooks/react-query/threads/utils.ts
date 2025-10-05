@@ -9,10 +9,6 @@ export type Thread = {
     created_at: string;
     updated_at: string;
     metadata?: {
-      workflow_id?: string;
-      workflow_name?: string;
-      workflow_run_name?: string;
-      is_workflow_execution?: boolean;
       agent_id?: string;
     
       [key: string]: any;
