@@ -42,7 +42,6 @@ class UserThreadSummary(BaseModel):
     is_public: bool
     created_at: datetime
     updated_at: datetime
-    url: str
 
 # ============================================================================
 # USER MANAGEMENT ENDPOINTS
@@ -388,17 +387,11 @@ async def get_user_threads_by_email(
             
             projects_map = {p['project_id']: p['name'] for p in projects_result.data or []}
         
-        # Get frontend URL
-        frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
-        
         # Build thread summaries
         threads = []
         for thread in threads_result.data:
             project_id = thread.get('project_id')
             project_name = projects_map.get(project_id) if project_id else None
-            
-            # Construct URL - use share URL for admin access
-            url = f"{frontend_url}share/{thread['thread_id']}"
             
             threads.append(UserThreadSummary(
                 thread_id=thread['thread_id'],
@@ -406,8 +399,7 @@ async def get_user_threads_by_email(
                 project_name=project_name,
                 is_public=thread.get('is_public', False),
                 created_at=datetime.fromisoformat(thread['created_at'].replace('Z', '+00:00')),
-                updated_at=datetime.fromisoformat(thread['updated_at'].replace('Z', '+00:00')),
-                url=url
+                updated_at=datetime.fromisoformat(thread['updated_at'].replace('Z', '+00:00'))
             ))
         
         return await PaginationService.paginate_with_total_count(

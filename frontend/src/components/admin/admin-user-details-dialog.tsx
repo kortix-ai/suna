@@ -342,7 +342,7 @@ export function AdminUserDetailsDialog({
                             className="ml-2 flex-shrink-0"
                           >
                             <a
-                              href={thread.url}
+                              href={`/share/${thread.thread_id}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="flex items-center gap-1"
