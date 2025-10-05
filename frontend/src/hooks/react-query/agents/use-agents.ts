@@ -3,7 +3,7 @@ import { useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { agentKeys } from './keys';
 import { Agent, AgentUpdateRequest, AgentsParams, createAgent, deleteAgent, getAgent, getAgents, getThreadAgent, updateAgent } from './utils';
-import { useRef, useCallback, useState } from 'react';
+import { useRef, useCallback, useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { DEFAULT_AGENTPRESS_TOOLS } from '@/components/agents/tools';
 
@@ -213,4 +213,82 @@ export const useThreadAgent = (threadId: string) => {
       gcTime: 10 * 60 * 1000,
     }
   )();
+};
+
+/**
+ * Hook to get an agent from the cache without fetching.
+ * This checks all cached agent list queries to find the agent.
+ * Returns undefined if not found in cache.
+ */
+export const useAgentFromCache = (agentId: string | undefined): Agent | undefined => {
+  const queryClient = useQueryClient();
+  
+  return useMemo(() => {
+    if (!agentId) return undefined;
+
+    // First check if we have it in the detail cache
+    const cachedAgent = queryClient.getQueryData<Agent>(agentKeys.detail(agentId));
+    if (cachedAgent) return cachedAgent;
+
+    // Otherwise, search through all agent list caches
+    const allAgentLists = queryClient.getQueriesData<{ agents: Agent[] }>({ 
+      queryKey: agentKeys.lists() 
+    });
+
+    for (const [_, data] of allAgentLists) {
+      if (data?.agents) {
+        const found = data.agents.find(agent => agent.agent_id === agentId);
+        if (found) return found;
+      }
+    }
+
+    return undefined;
+  }, [agentId, queryClient]);
+};
+
+/**
+ * Hook to get multiple agents from cache by IDs.
+ * Returns a map of agentId -> Agent for quick lookup.
+ */
+export const useAgentsFromCache = (agentIds: string[]): Map<string, Agent> => {
+  const queryClient = useQueryClient();
+  
+  return useMemo(() => {
+    const agentsMap = new Map<string, Agent>();
+    
+    if (!agentIds || agentIds.length === 0) return agentsMap;
+
+    // Get all cached agent list queries
+    const allAgentLists = queryClient.getQueriesData<{ agents: Agent[] }>({ 
+      queryKey: agentKeys.lists() 
+    });
+
+    // Build a map of all cached agents
+    const allCachedAgents = new Map<string, Agent>();
+    for (const [_, data] of allAgentLists) {
+      if (data?.agents) {
+        data.agents.forEach(agent => {
+          allCachedAgents.set(agent.agent_id, agent);
+        });
+      }
+    }
+
+    // Also check individual agent caches
+    for (const agentId of agentIds) {
+      const cachedAgent = queryClient.getQueryData<Agent>(agentKeys.detail(agentId));
+      if (cachedAgent) {
+        allCachedAgents.set(agentId, cachedAgent);
+      }
+    }
+
+    // Return only the requested agents
+    for (const agentId of agentIds) {
+      const agent = allCachedAgents.get(agentId);
+      if (agent) {
+        agentsMap.set(agentId, agent);
+      }
+    }
+
+    return agentsMap;
+  }, [agentIds, queryClient]);
 };

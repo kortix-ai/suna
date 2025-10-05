@@ -635,7 +635,6 @@ async def create_agent(
         logger.error(f"Error creating agent for user {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to create agent: {str(e)}")
 
-
 @router.post("/agents/generate-icon", response_model=AgentIconGenerationResponse)
 async def generate_agent_icon(
     request: AgentIconGenerationRequest,
