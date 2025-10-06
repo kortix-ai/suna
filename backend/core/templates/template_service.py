@@ -48,6 +48,7 @@ class AgentTemplate:
     icon_background: Optional[str] = None
     metadata: ConfigType = field(default_factory=dict)
     creator_name: Optional[str] = None
+    usage_examples: List[Dict[str, Any]] = field(default_factory=list)
     
     def with_public_status(self, is_public: bool, published_at: Optional[datetime] = None) -> 'AgentTemplate':
         return AgentTemplate(
@@ -180,7 +181,8 @@ class TemplateService:
         agent_id: str,
         creator_id: str,
         make_public: bool = False,
-        tags: Optional[List[str]] = None
+        tags: Optional[List[str]] = None,
+        usage_examples: Optional[List[Dict[str, Any]]] = None
     ) -> str:
         logger.debug(f"Creating template from agent {agent_id} for user {creator_id}")
         
@@ -211,7 +213,8 @@ class TemplateService:
             icon_name=agent.get('icon_name'),
             icon_color=agent.get('icon_color'),
             icon_background=agent.get('icon_background'),
-            metadata=agent.get('metadata', {})
+            metadata=agent.get('metadata', {}),
+            usage_examples=usage_examples or []
         )
         
         await self._save_template(template)
@@ -346,15 +349,26 @@ class TemplateService:
         
         return templates
     
-    async def publish_template(self, template_id: str, creator_id: str) -> bool:
+    async def publish_template(
+        self, 
+        template_id: str, 
+        creator_id: str,
+        usage_examples: Optional[List[Dict[str, Any]]] = None
+    ) -> bool:
         logger.debug(f"Publishing template {template_id}")
         
         client = await self._db.client
-        result = await client.table('agent_templates').update({
+        update_data = {
             'is_public': True,
             'marketplace_published_at': datetime.now(timezone.utc).isoformat(),
             'updated_at': datetime.now(timezone.utc).isoformat()
-        }).eq('template_id', template_id)\
+        }
+        
+        if usage_examples is not None:
+            update_data['usage_examples'] = usage_examples
+        
+        result = await client.table('agent_templates').update(update_data)\
+          .eq('template_id', template_id)\
           .eq('creator_id', creator_id)\
           .execute()
         
@@ -579,13 +593,18 @@ class TemplateService:
             'icon_name': template.icon_name,
             'icon_color': template.icon_color,
             'icon_background': template.icon_background,
-            'metadata': template.metadata
+            'metadata': template.metadata,
+            'usage_examples': template.usage_examples
         }
         
         await client.table('agent_templates').insert(template_data).execute()
     
     def _map_to_template(self, data: Dict[str, Any]) -> AgentTemplate:
         creator_name = data.get('creator_name')
+        
+        usage_examples = data.get('usage_examples', [])
+        logger.debug(f"Mapping template {data.get('template_id')}: usage_examples from DB = {usage_examples}")
+        logger.debug(f"Raw data keys: {list(data.keys())}")
         
         return AgentTemplate(
             template_id=data['template_id'],
@@ -603,7 +622,8 @@ class TemplateService:
             icon_color=data.get('icon_color'),
             icon_background=data.get('icon_background'),
             metadata=data.get('metadata', {}),
-            creator_name=creator_name
+            creator_name=creator_name,
+            usage_examples=usage_examples
         )
     
     # Share link functionality removed - now using direct template ID URLs for simplicity

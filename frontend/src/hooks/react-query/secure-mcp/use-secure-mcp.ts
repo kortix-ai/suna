@@ -26,11 +26,21 @@ export interface TestCredentialResponse {
   error_details?: string;
 }
 
+export interface UsageExampleMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  tool_calls?: Array<{
+    name: string;
+    arguments?: Record<string, any>;
+  }>;
+}
+
 export interface AgentTemplate {
   template_id: string;
   creator_id: string;
   name: string;
   description?: string;
+  system_prompt?: string;
   mcp_requirements: MCPRequirement[];
   agentpress_tools: Record<string, any>;
   tags: string[];
@@ -43,6 +53,7 @@ export interface AgentTemplate {
   icon_color?: string;
   icon_background?: string;
   is_kortix_team?: boolean;
+  usage_examples?: UsageExampleMessage[];
   metadata?: {
     source_agent_id?: string;
     source_version_id?: string;
@@ -92,6 +103,7 @@ export interface CreateTemplateRequest {
   agent_id: string;
   make_public?: boolean;
   tags?: string[];
+  usage_examples?: UsageExampleMessage[];
 }
 
 // =====================================================
@@ -355,7 +367,15 @@ export function usePublishTemplate() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ template_id, tags }: { template_id: string; tags?: string[] }): Promise<{ message: string }> => {
+    mutationFn: async ({ 
+      template_id, 
+      tags,
+      usage_examples 
+    }: { 
+      template_id: string; 
+      tags?: string[];
+      usage_examples?: UsageExampleMessage[];
+    }): Promise<{ message: string }> => {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
 
@@ -369,7 +389,7 @@ export function usePublishTemplate() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ tags }),
+        body: JSON.stringify({ tags, usage_examples }),
       });
 
       if (!response.ok) {

@@ -28,10 +28,17 @@ router = APIRouter(tags=["templates"])
 db: Optional[DBConnection] = None
 
 
+class UsageExampleMessage(BaseModel):
+    role: str
+    content: str
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+
+
 class CreateTemplateRequest(BaseModel):
     agent_id: str
     make_public: bool = False
     tags: Optional[List[str]] = None
+    usage_examples: Optional[List[UsageExampleMessage]] = None
 
 
 class InstallTemplateRequest(BaseModel):
@@ -44,6 +51,7 @@ class InstallTemplateRequest(BaseModel):
 
 class PublishTemplateRequest(BaseModel):
     tags: Optional[List[str]] = None
+    usage_examples: Optional[List[UsageExampleMessage]] = None
 
 
 class TemplateResponse(BaseModel):
@@ -65,6 +73,7 @@ class TemplateResponse(BaseModel):
     icon_background: Optional[str] = None
     metadata: Dict[str, Any]
     creator_name: Optional[str] = None
+    usage_examples: Optional[List[UsageExampleMessage]] = None
 
 
 class InstallationResponse(BaseModel):
@@ -138,11 +147,16 @@ async def create_template_from_agent(
         
         template_service = get_template_service(db)
         
+        usage_examples = None
+        if request.usage_examples:
+            usage_examples = [msg.dict() for msg in request.usage_examples]
+        
         template_id = await template_service.create_from_agent(
             agent_id=request.agent_id,
             creator_id=user_id,
             make_public=request.make_public,
-            tags=request.tags
+            tags=request.tags,
+            usage_examples=usage_examples
         )
         
         logger.debug(f"Successfully created template {template_id} from agent {request.agent_id}")
@@ -181,7 +195,15 @@ async def publish_template(
         
         template_service = get_template_service(db)
         
-        success = await template_service.publish_template(template_id, user_id)
+        usage_examples = None
+        if request.usage_examples:
+            usage_examples = [msg.dict() for msg in request.usage_examples]
+        
+        success = await template_service.publish_template(
+            template_id, 
+            user_id,
+            usage_examples=usage_examples
+        )
         
         if not success:
             logger.warning(f"Failed to publish template {template_id} for user {user_id}")
