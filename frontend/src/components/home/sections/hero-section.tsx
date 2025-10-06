@@ -375,14 +375,14 @@ export function HeroSection() {
           </Link> */}
           <div className="flex flex-col items-center justify-center gap-3 sm:gap-4 pt-8 sm:pt-12 max-w-4xl mx-auto">
             <h1 className="text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-medium tracking-tighter text-balance text-center px-2">
-              <span className="text-primary">Hire Adentic for </span>
+              <span className="text-primary">AI Marketing Platform for </span>
               <RotatingText 
-                texts={['Research', 'Presentations', 'Docs', 'Spreadsheets', 'Design', 'Data Analysis', 'Email Management', 'Social Media', 'SEO', 'Lead Generation', 'Customer Support', 'Content Creation', 'Project Management', 'Sales', 'Marketing', 'Analytics']}
+                texts={['Campaign Management', 'Lead Generation', 'Content Creation', 'Email Automation', 'Analytics & Reporting', 'Social Media', 'SEO Optimization', 'Marketing Operations', 'Agency Teams', 'In-House Marketing']}
                 className="text-secondary"
               />
             </h1>
             <p className="text-base md:text-lg text-center text-muted-foreground font-medium text-balance leading-relaxed tracking-tight max-w-2xl px-2">
-            Deploy AI Workers that run your business autonomously.
+            Transform your marketing operations with AI-powered automation built for agencies and in-house teams.
             </p>
           </div>
 
@@ -392,7 +392,7 @@ export function HeroSection() {
                 <ChatInput
                   ref={chatInputRef}
                   onSubmit={handleChatInputSubmit}
-                  placeholder="Give Adentic a task to complete..."
+                  placeholder="What marketing task can we automate for you?"
                   loading={isSubmitting}
                   disabled={isSubmitting}
                   value={inputValue}
