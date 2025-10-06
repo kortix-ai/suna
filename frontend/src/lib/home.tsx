@@ -1252,12 +1252,12 @@ export const siteConfig = {
         {
           id: 9,
           title: 'Privacy Policy',
-          url: 'https://tryadenti.com',
+          url: 'https://tryadentic.com',
         },
         {
           id: 10,
           title: 'Terms of Service',
-          url: 'https://tryadenti.com',
+          url: 'https://tryadentic.com',
         },
       ],
     },

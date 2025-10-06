@@ -11,7 +11,7 @@ import { AnimatePresence, motion, useInView } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
 export function ReasoningBasic() {
-  const reasoningText = `Perfect! I'll create an AI Worker that monitors your email, automatically categorizes messages, and sends you daily summaries. The agent will also draft responses for common inquiries and flag urgent messages for immediate attention.`;
+  const reasoningText = `Perfect! I'll create an AI Worker that monitors your marketing channels, automatically identifies high-value leads, and optimizes your conversion funnels. The agent will also A/B test campaigns and generate performance reports for continuous improvement.`;
 
   return (
     <Reasoning>
@@ -70,8 +70,8 @@ export function FirstBentoAnimation() {
             }}
           >
             <p className="text-sm">
-              I need an AI Worker to help manage my email inbox. Can you create 
-              one that categorizes messages and drafts responses automatically?
+              I need an AI Worker to help manage my marketing campaigns. Can you create 
+              one that automates lead generation and optimizes conversion funnels?
             </p>
           </motion.div>
           <div className="flex items-center bg-background rounded-full w-fit border border-border flex-shrink-0">
