@@ -78,7 +78,7 @@ export function NavAgentsView() {
     const agents = agentsResponse?.agents || [];
 
     const handleAgentClick = (agentId: string) => {
-        router.push(`/dashboard?agent_id=${agentId}`);
+        router.push(`/agents/config/${agentId}`);
         if (isMobile) {
             setOpenMobile(false);
         }
