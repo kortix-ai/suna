@@ -59,6 +59,14 @@ interface MarketplaceTemplate {
   icon_background: string | null;
   metadata: Record<string, any>;
   creator_name: string | null;
+  usage_examples?: Array<{
+    role: string;
+    content: string;
+    tool_calls?: Array<{
+      name: string;
+      arguments?: Record<string, any>;
+    }>;
+  }>;
 }
 
 const IntegrationIcon: React.FC<{ 

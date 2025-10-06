@@ -51,6 +51,7 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
       creator_id: template.creator_id,
       name: template.name,
       description: template.description,
+      system_prompt: template.system_prompt,
       tags: template.tags || [],
       download_count: template.download_count || 0,
       is_kortix_team: template.is_kortix_team || false,
@@ -63,8 +64,9 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
       agentpress_tools: template.agentpress_tools || {},
       model: template.metadata?.model,
       marketplace_published_at: template.marketplace_published_at,
+      usage_examples: template.usage_examples,
     };
-    
+    console.log('usage examples', template.usage_examples);
     setSelectedTemplate(marketplaceTemplate);
     setIsPreviewOpen(true);
   };
