@@ -267,7 +267,6 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
             </div>
           </div>
         </DialogHeader>
-
         <div className="mt-6">
           {isLoading ? (
             <div className="flex items-center justify-center py-12">

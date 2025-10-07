@@ -120,6 +120,7 @@ async def update_agent(
                     "version_number": 1,
                     "version_name": "v1",
                     "system_prompt": existing_data.get('system_prompt', ''),
+                    "model": existing_data.get('model'),
                     "configured_mcps": existing_data.get('configured_mcps', []),
                     "custom_mcps": existing_data.get('custom_mcps', []),
                     "agentpress_tools": existing_data.get('agentpress_tools', {}),
@@ -150,6 +151,7 @@ async def update_agent(
                 else:
                     current_version_data = {
                         'system_prompt': existing_data.get('system_prompt', ''),
+                        'model': existing_data.get('model'),
                         'configured_mcps': existing_data.get('configured_mcps', []),
                         'custom_mcps': existing_data.get('custom_mcps', []),
                         'agentpress_tools': existing_data.get('agentpress_tools', {})
@@ -158,6 +160,7 @@ async def update_agent(
                 logger.warning(f"Failed to create initial version for agent {agent_id}: {e}")
                 current_version_data = {
                     'system_prompt': existing_data.get('system_prompt', ''),
+                    'model': existing_data.get('model'),
                     'configured_mcps': existing_data.get('configured_mcps', []),
                     'custom_mcps': existing_data.get('custom_mcps', []),
                     'agentpress_tools': existing_data.get('agentpress_tools', {})
@@ -180,6 +183,10 @@ async def update_agent(
         if values_different(agent_data.system_prompt, current_version_data.get('system_prompt')):
             needs_new_version = True
             version_changes['system_prompt'] = agent_data.system_prompt
+        
+        if values_different(agent_data.model, current_version_data.get('model')):
+            needs_new_version = True
+            version_changes['model'] = agent_data.model
         
         if values_different(agent_data.configured_mcps, current_version_data.get('configured_mcps', [])):
             needs_new_version = True
@@ -220,6 +227,7 @@ async def update_agent(
             print(f"[DEBUG] update_agent: Prepared update_data with icon fields - icon_name={update_data.get('icon_name')}, icon_color={update_data.get('icon_color')}, icon_background={update_data.get('icon_background')}")
         
         current_system_prompt = agent_data.system_prompt if agent_data.system_prompt is not None else current_version_data.get('system_prompt', '')
+        current_model = agent_data.model if agent_data.model is not None else current_version_data.get('model')
 
         if agent_data.configured_mcps is not None:
             if agent_data.replace_mcps:
@@ -257,6 +265,7 @@ async def update_agent(
                     agent_id=agent_id,
                     user_id=user_id,
                     system_prompt=current_system_prompt,
+                    model=current_model,
                     configured_mcps=current_configured_mcps,
                     custom_mcps=current_custom_mcps,
                     agentpress_tools=current_agentpress_tools,
