@@ -211,6 +211,7 @@ export default function AgentsPage() {
           mcp_requirements: template.mcp_requirements,
           metadata: template.metadata,
           usage_examples: template.usage_examples,
+          config: template.config,
         };
 
         items.push(item);
@@ -331,7 +332,8 @@ export default function AgentsPage() {
     item: MarketplaceTemplate, 
     instanceName?: string, 
     profileMappings?: Record<string, string>, 
-    customMcpConfigs?: Record<string, Record<string, any>>
+    customMcpConfigs?: Record<string, Record<string, any>>,
+    triggerConfigs?: Record<string, Record<string, any>>
   ) => {
     setInstallingItemId(item.id);
     
@@ -375,7 +377,8 @@ export default function AgentsPage() {
         template_id: item.template_id,
         instance_name: instanceName,
         profile_mappings: profileMappings,
-        custom_mcp_configs: customMcpConfigs
+        custom_mcp_configs: customMcpConfigs,
+        trigger_configs: triggerConfigs
       });
 
       if (result.status === 'installed') {

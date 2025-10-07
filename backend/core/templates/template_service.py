@@ -496,6 +496,28 @@ class TemplateService:
                     sanitized_config['trigger_slug'] = trigger_config.get('trigger_slug', '')
                     if 'qualified_name' in trigger_config:
                         sanitized_config['qualified_name'] = trigger_config['qualified_name']
+                    
+                    excluded_fields = {
+                        'profile_id', 'composio_trigger_id', 'provider_id', 
+                        'agent_prompt', 'trigger_slug', 'qualified_name'
+                    }
+                    
+                    trigger_fields = {}
+                    for key, value in trigger_config.items():
+                        if key not in excluded_fields:
+                            if isinstance(value, bool):
+                                trigger_fields[key] = {'type': 'boolean', 'required': True}
+                            elif isinstance(value, (int, float)):
+                                trigger_fields[key] = {'type': 'number', 'required': True}
+                            elif isinstance(value, list):
+                                trigger_fields[key] = {'type': 'array', 'required': True}
+                            elif isinstance(value, dict):
+                                trigger_fields[key] = {'type': 'object', 'required': True}
+                            else:
+                                trigger_fields[key] = {'type': 'string', 'required': True}
+                    
+                    if trigger_fields:
+                        sanitized_config['trigger_fields'] = trigger_fields
 
                 sanitized_trigger = {
                     'name': trigger.get('name'),

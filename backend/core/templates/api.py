@@ -47,6 +47,7 @@ class InstallTemplateRequest(BaseModel):
     custom_system_prompt: Optional[str] = None
     profile_mappings: Optional[Dict[str, str]] = None
     custom_mcp_configs: Optional[Dict[str, Dict[str, Any]]] = None
+    trigger_configs: Optional[Dict[str, Dict[str, Any]]] = None
 
 
 class PublishTemplateRequest(BaseModel):
@@ -74,7 +75,7 @@ class TemplateResponse(BaseModel):
     metadata: Dict[str, Any]
     creator_name: Optional[str] = None
     usage_examples: Optional[List[UsageExampleMessage]] = None
-
+    config: Optional[Dict[str, Any]] = None
 
 class InstallationResponse(BaseModel):
     status: str
@@ -313,13 +314,16 @@ async def install_template(
         
         installation_service = get_installation_service(db)
         
+        logger.info(f"Installing template with trigger_configs: {request.trigger_configs}")
+        
         install_request = TemplateInstallationRequest(
             template_id=request.template_id,
             account_id=user_id,
             instance_name=request.instance_name,
             custom_system_prompt=request.custom_system_prompt,
             profile_mappings=request.profile_mappings,
-            custom_mcp_configs=request.custom_mcp_configs
+            custom_mcp_configs=request.custom_mcp_configs,
+            trigger_configs=request.trigger_configs
         )
         
         result = await installation_service.install_template(install_request)

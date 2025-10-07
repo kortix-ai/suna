@@ -6,6 +6,7 @@ export type Agent = {
   agent_id: string;
   name: string;
   system_prompt: string;
+  model?: string | null;
   configured_mcps: Array<{
     name: string;
     config: Record<string, any>;
@@ -97,8 +98,6 @@ export type AgentCreateRequest = {
   }>;
   agentpress_tools?: Record<string, any>;
   is_default?: boolean;
-  // New
-  // Icon system fields
   icon_name?: string | null;
   icon_color?: string | null;
   icon_background?: string | null;
@@ -106,7 +105,7 @@ export type AgentCreateRequest = {
 
 export type AgentVersionCreateRequest = {
   system_prompt: string;
-  model?: string;  // Add model field
+  model?: string;
   configured_mcps?: Array<{
     name: string;
     config: Record<string, any>;
@@ -143,6 +142,7 @@ export type AgentUpdateRequest = {
   name?: string;
   description?: string;
   system_prompt?: string;
+  model?: string | null;
   configured_mcps?: Array<{
     name: string;
     config: Record<string, any>;
@@ -155,12 +155,9 @@ export type AgentUpdateRequest = {
   }>;
   agentpress_tools?: Record<string, any>;
   is_default?: boolean;
-  // New
-  // Icon system fields
   icon_name?: string | null;
   icon_color?: string | null;
   icon_background?: string | null;
-  // MCP replacement flag
   replace_mcps?: boolean;
 };
 

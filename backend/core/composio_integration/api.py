@@ -23,6 +23,7 @@ from .composio_service import (
 from .toolkit_service import ToolkitService, ToolsListResponse
 from .composio_profile_service import ComposioProfileService, ComposioProfile
 from .composio_trigger_service import ComposioTriggerService
+from .trigger_schema import TriggerSchemaService
 from core.triggers.trigger_service import get_trigger_service, TriggerEvent, TriggerType
 from core.triggers.execution_service import get_execution_service
 from .client import ComposioClient
@@ -640,6 +641,22 @@ async def list_triggers_for_app(
         raise HTTPException(status_code=502, detail="Composio API error")
     except Exception as e:
         logger.error(f"Error listing triggers for app {toolkit_slug}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/triggers/schema/{trigger_slug}")
+async def get_trigger_schema(
+    trigger_slug: str,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt),
+) -> Dict[str, Any]:
+    try:
+        schema_service = TriggerSchemaService()
+        schema = await schema_service.get_trigger_schema(trigger_slug)
+        return schema
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get trigger schema for {trigger_slug}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

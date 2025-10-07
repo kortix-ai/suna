@@ -140,7 +140,7 @@ export function AgentConfigurationDialog({
     const newFormData = {
       name: configSource.name || '',
       system_prompt: configSource.system_prompt || '',
-      model: configSource.model,
+      model: configSource.model || undefined,
       agentpress_tools: ensureCoreToolsEnabled(configSource.agentpress_tools || DEFAULT_AGENTPRESS_TOOLS),
       configured_mcps: configSource.configured_mcps || [],
       custom_mcps: configSource.custom_mcps || [],
@@ -177,7 +177,7 @@ export function AgentConfigurationDialog({
         agentpress_tools: formData.agentpress_tools,
       };
 
-      if (formData.model !== undefined) updateData.model = formData.model;
+      if (formData.model !== undefined && formData.model !== null) updateData.model = formData.model;
       if (formData.icon_name !== undefined) updateData.icon_name = formData.icon_name;
       if (formData.icon_color !== undefined) updateData.icon_color = formData.icon_color;
       if (formData.icon_background !== undefined) updateData.icon_background = formData.icon_background;
@@ -254,7 +254,7 @@ export function AgentConfigurationDialog({
   };
 
   const handleModelChange = (model: string) => {
-    setFormData(prev => ({ ...prev, model }));
+    setFormData(prev => ({ ...prev, model: model || undefined }));
   };
 
   const handleToolsChange = (tools: Record<string, boolean | { enabled: boolean; description: string }>) => {

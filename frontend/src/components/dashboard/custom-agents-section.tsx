@@ -36,7 +36,7 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
   const router = useRouter();
   const { data: templates, isLoading, error } = useKortixTeamTemplates();
   const installTemplate = useInstallTemplate();
-  
+
   const [selectedTemplate, setSelectedTemplate] = React.useState<MarketplaceTemplate | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = React.useState(false);
   const [showInstallDialog, setShowInstallDialog] = React.useState(false);
@@ -65,8 +65,9 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
       model: template.metadata?.model,
       marketplace_published_at: template.marketplace_published_at,
       usage_examples: template.usage_examples,
+      config: template.config,
     };
-    console.log('usage examples', template.usage_examples);
+
     setSelectedTemplate(marketplaceTemplate);
     setIsPreviewOpen(true);
   };
@@ -94,12 +95,12 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
     setShowInstallDialog(true);
   };
 
-  // Handle the actual installation from the streamlined dialog
   const handleInstall = async (
     item: MarketplaceTemplate, 
     instanceName: string, 
     profileMappings: Record<string, string>, 
-    customServerConfigs: Record<string, any>
+    customServerConfigs: Record<string, any>,
+    triggerConfigs?: Record<string, Record<string, any>>
   ) => {
     if (!item) return;
 
@@ -111,6 +112,7 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
         instance_name: instanceName,
         profile_mappings: profileMappings,
         custom_mcp_configs: customServerConfigs,
+        trigger_configs: triggerConfigs,
       });
 
       if (result.status === 'installed' && result.instance_id) {
