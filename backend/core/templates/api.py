@@ -370,6 +370,56 @@ class MarketplaceTemplatesResponse(BaseModel):
     templates: List[TemplateResponse]
     pagination: MarketplacePaginationInfo
 
+@router.get("/kortix-all", response_model=MarketplaceTemplatesResponse)
+async def get_all_kortix_templates(
+    request: Request = None
+):
+    try:
+        from core.templates.services.marketplace_service import MarketplaceService, MarketplaceFilters
+        
+        pagination_params = PaginationParams(
+            page=1,
+            page_size=1000
+        )
+        
+        filters = MarketplaceFilters(
+            is_kortix_team=True,
+            sort_by="download_count",
+            sort_order="desc"
+        )
+        
+        client = await db.client
+        marketplace_service = MarketplaceService(client)
+        paginated_result = await marketplace_service.get_marketplace_templates_paginated(
+            pagination_params=pagination_params,
+            filters=filters
+        )
+        
+        template_responses = []
+        for template_data in paginated_result.data:
+            template_response = TemplateResponse(**template_data)
+            template_responses.append(template_response)
+        
+        return MarketplaceTemplatesResponse(
+            templates=template_responses,
+            pagination=MarketplacePaginationInfo(
+                current_page=1,
+                page_size=len(template_responses),
+                total_items=len(template_responses),
+                total_pages=1,
+                has_next=False,
+                has_previous=False
+            )
+        )
+        
+    except Exception as e:
+        try:
+            error_str = str(e)
+        except Exception:
+            error_str = f"Error of type {type(e).__name__}"
+        logger.error(f"Error getting all Kortix templates: {error_str}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 @router.get("/marketplace", response_model=MarketplaceTemplatesResponse)
 async def get_marketplace_templates(
     page: Optional[int] = Query(1, ge=1, description="Page number (1-based)"),
