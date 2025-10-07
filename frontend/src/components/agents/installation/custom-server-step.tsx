@@ -36,24 +36,35 @@ export const CustomServerStep: React.FC<CustomServerStepProps> = ({
         </div>
       )}
       <div className="space-y-4">
-        {step.required_fields?.map((field) => (
-          <div key={field.key} className="space-y-2">
-            <Input
-              id={field.key}
-              type={field.type}
-              placeholder={field.placeholder}
-              value={config[field.key] || ''}
-              onChange={(e) => handleFieldChange(field.key, e.target.value)}
-              className="h-11"
-            />
-            {field.description && (
-              <div className="flex items-start gap-2">
-                <Info className="h-3 w-3 text-muted-foreground mt-0.5 flex-shrink-0" />
-                <p className="text-xs text-muted-foreground">{field.description}</p>
-              </div>
-            )}
-          </div>
-        ))}
+        {step.required_config?.map(key => {
+          const label = key === 'url' ? `${step.service_name} Server URL` : key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+          const type = key === 'url' ? 'url' : 'text';
+          const placeholder = key === 'url' ? `https://your-${step.service_name.toLowerCase()}-server.com` : `Enter ${key}`;
+          const description = key === 'url' ? `Your personal ${step.service_name} server endpoint` : undefined;
+          
+          return (
+            <div key={key} className="space-y-2">
+              <Label htmlFor={key}>
+                {label}
+                <span className="text-destructive ml-1">*</span>
+              </Label>
+              <Input
+                id={key}
+                type={type}
+                placeholder={placeholder}
+                value={config[key] || ''}
+                onChange={(e) => handleFieldChange(key, e.target.value)}
+                className="h-11"
+              />
+              {description && (
+                <div className="flex items-start gap-2">
+                  <Info className="h-3 w-3 text-muted-foreground mt-0.5 flex-shrink-0" />
+                  <p className="text-xs text-muted-foreground">{description}</p>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

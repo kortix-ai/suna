@@ -42,6 +42,15 @@ export interface MarketplaceTemplate {
     source_version_id?: string;
     source_version_name?: string;
   };
+  config?: {
+    triggers?: Array<{
+      name: string;
+      description?: string;
+      trigger_type: string;
+      is_active: boolean;
+      config: Record<string, any>;
+    }>;
+  };
 }
 
 export interface SetupStep {
@@ -62,4 +71,8 @@ export interface SetupStep {
     description?: string;
   }>;
   source?: 'trigger' | 'tool';
+  trigger_slug?: string;
+  trigger_index?: number;
+  trigger_fields?: Record<string, { type: string; required: boolean }>;
+  required_config?: string[];
 }

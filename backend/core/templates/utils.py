@@ -134,7 +134,8 @@ def format_template_for_response(template: AgentTemplate) -> Dict[str, Any]:
         'icon_background': template.icon_background,
         'metadata': template.metadata,
         'creator_name': template.creator_name,
-        'usage_examples': template.usage_examples
+        'usage_examples': template.usage_examples,
+        'config': template.config,
     }
     
     logger.debug(f"Response for {template.template_id} includes usage_examples: {response.get('usage_examples')}")

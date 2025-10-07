@@ -60,6 +60,15 @@ export interface AgentTemplate {
     source_version_name?: string;
     model?: string;
   };
+  config?: {
+    triggers?: Array<{
+      name: string;
+      description?: string;
+      trigger_type: string;
+      is_active: boolean;
+      config: Record<string, any>;
+    }>;
+  };
 }
 
 export interface MCPRequirement {
@@ -76,6 +85,7 @@ export interface InstallTemplateRequest {
   custom_system_prompt?: string;
   profile_mappings?: Record<string, string>;
   custom_mcp_configs?: Record<string, Record<string, any>>;
+  trigger_configs?: Record<string, Record<string, any>>;
 }
 
 export interface InstallationResponse {

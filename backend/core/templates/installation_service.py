@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
 from uuid import uuid4
 import os
+import json
 import httpx
 
 from core.services.supabase import DBConnection
@@ -32,6 +33,7 @@ class TemplateInstallationRequest:
     custom_system_prompt: Optional[str] = None
     profile_mappings: Optional[Dict[QualifiedName, ProfileId]] = None
     custom_mcp_configs: Optional[Dict[QualifiedName, ConfigType]] = None
+    trigger_configs: Optional[Dict[str, Dict[str, Any]]] = None
 
 @dataclass
 class TemplateInstallationResult:
@@ -114,7 +116,7 @@ class InstallationService:
             request.custom_system_prompt or template.system_prompt
         )
         
-        await self._restore_triggers(agent_id, request.account_id, template.config, request.profile_mappings)
+        await self._restore_triggers(agent_id, request.account_id, template.config, request.profile_mappings, request.trigger_configs)
         
         await self._increment_download_count(template.template_id)
         
@@ -407,7 +409,8 @@ class InstallationService:
         agent_id: str,
         account_id: str,
         config: Dict[str, Any],
-        profile_mappings: Optional[Dict[str, str]] = None
+        profile_mappings: Optional[Dict[str, str]] = None,
+        trigger_configs: Optional[Dict[str, Dict[str, Any]]] = None
     ) -> None:
         triggers = config.get('triggers', [])
         if not triggers:
@@ -427,6 +430,23 @@ class InstallationService:
                 
                 trigger_profile_key = f"{qualified_name}_trigger_{i}"
                 
+                trigger_specific_config = {}
+                if trigger_configs and trigger_profile_key in trigger_configs:
+                    trigger_specific_config = trigger_configs[trigger_profile_key].copy()
+                    logger.info(f"Using user-provided trigger config for {trigger_profile_key}: {trigger_specific_config}")
+                else:
+                    logger.info(f"No user trigger config found for key {trigger_profile_key}. Available keys: {list(trigger_configs.keys()) if trigger_configs else 'None'}")
+                
+                metadata_fields = {
+                    'provider_id', 'qualified_name', 'trigger_slug', 
+                    'agent_prompt', 'profile_id', 'composio_trigger_id',
+                    'trigger_fields'
+                }
+                
+                for key, value in trigger_config.items():
+                    if key not in metadata_fields and key not in trigger_specific_config:
+                        trigger_specific_config[key] = value
+                
                 success = await self._create_composio_trigger(
                     agent_id=agent_id,
                     account_id=account_id,
@@ -437,7 +457,8 @@ class InstallationService:
                     qualified_name=qualified_name,
                     agent_prompt=trigger_config.get('agent_prompt'),
                     profile_mappings=profile_mappings,
-                    trigger_profile_key=trigger_profile_key
+                    trigger_profile_key=trigger_profile_key,
+                    trigger_specific_config=trigger_specific_config
                 )
                 
                 if success:
@@ -522,7 +543,8 @@ class InstallationService:
         qualified_name: Optional[str],
         agent_prompt: Optional[str],
         profile_mappings: Dict[str, str],
-        trigger_profile_key: Optional[str] = None
+        trigger_profile_key: Optional[str] = None,
+        trigger_specific_config: Optional[Dict[str, Any]] = None
     ) -> bool:
         try:
             if not trigger_slug:
@@ -593,30 +615,28 @@ class InstallationService:
             if vercel_bypass:
                 webhook_headers["X-Vercel-Protection-Bypass"] = vercel_bypass
 
+            logger.info(f"Creating trigger {trigger_slug} with config: {trigger_specific_config}")
+            
             body = {
                 "user_id": composio_user_id,
-                "userId": composio_user_id,
-                "trigger_config": {},
-                "triggerConfig": {},
-                "webhook": {
-                    "url": f"{base_url}/api/composio/webhook",
-                    "headers": webhook_headers,
-                    "method": "POST",
-                },
+                "trigger_config": trigger_specific_config or {},
             }
-
+            
             if connected_account_id:
-                body["connectedAccountId"] = connected_account_id
                 body["connected_account_id"] = connected_account_id
-                body["connectedAccountIds"] = [connected_account_id]
-                body["connected_account_ids"] = [connected_account_id]
                 logger.debug(f"Adding connected_account_id to Composio trigger request: {connected_account_id}")
             else:
                 logger.warning("No connected_account_id found - trigger creation may fail for OAuth apps")
             
             logger.debug(f"Creating Composio trigger with URL: {url}")
+            logger.debug(f"Request body: {json.dumps(body, indent=2)}")
+            
             async with httpx.AsyncClient(timeout=20) as http_client:
                 resp = await http_client.post(url, headers=headers, json=body)
+                
+                if resp.status_code != 200:
+                    logger.error(f"Composio API error response: {resp.status_code} - {resp.text}")
+                    
                 resp.raise_for_status()
                 created = resp.json()
             def _extract_id(obj: Dict[str, Any]) -> Optional[str]:
@@ -657,6 +677,10 @@ class InstallationService:
                 "profile_id": profile_id,
                 "provider_id": "composio"
             }
+            
+            if trigger_specific_config:
+                config.update(trigger_specific_config)
+            
             if agent_prompt:
                 config["agent_prompt"] = agent_prompt
 
