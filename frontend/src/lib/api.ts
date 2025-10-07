@@ -9,8 +9,6 @@ const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 const nonRunningAgentRuns = new Set<string>();
 // Map to keep track of active EventSource streams
 const activeStreams = new Map<string, EventSource>();
-// Map to keep track of safety timeouts
-const safetyTimeouts = new Map<string, number>();
 
 /**
  * Helper function to safely cleanup EventSource connections
@@ -30,13 +28,6 @@ const cleanupEventSource = (agentRunId: string, reason?: string): void => {
     
     // Remove from active streams
     activeStreams.delete(agentRunId);
-  }
-
-  // Clear any associated safety timeout
-  const timeout = safetyTimeouts.get(agentRunId);
-  if (timeout) {
-    clearTimeout(timeout);
-    safetyTimeouts.delete(agentRunId);
   }
 };
 
@@ -1065,17 +1056,6 @@ export const streamAgent = (
       const eventSource = new EventSource(url.toString());
 
       activeStreams.set(agentRunId, eventSource);
-
-      // Safety timeout to prevent indefinite connections (30 minutes)
-      const safetyTimeout = setTimeout(() => {
-        console.warn(`[STREAM] Safety timeout reached for ${agentRunId}, cleaning up`);
-        cleanupEventSource(agentRunId, 'safety timeout');
-        callbacks.onError('Connection timeout - stream has been running too long');
-        callbacks.onClose();
-      }, 30 * 60 * 1000); // 30 minutes
-
-      // Store the timeout ID for cleanup
-      safetyTimeouts.set(agentRunId, safetyTimeout as unknown as number);
 
       eventSource.onopen = () => {
         console.log(`[STREAM] EventSource opened for ${agentRunId}`);
