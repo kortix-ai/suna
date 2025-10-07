@@ -900,10 +900,11 @@ async def start_trial(
             logger.info(f"[TRIAL API] Trial start failed for account {account_id}: {e.detail}")
         raise
     except Exception as e:
-        logger.error(f"[TRIAL API ERROR] Unexpected error creating trial for account {account_id}: {e}", exc_info=True)
+        error_msg = str(e)
+        error_type = type(e).__name__
+        logger.error(f"[TRIAL API ERROR] Unexpected error creating trial for account {account_id}: {error_type}: {error_msg}")
         # Don't expose internal errors to the client
         raise HTTPException(status_code=500, detail="An error occurred while processing your request")
-
 @router.post("/trial/create-checkout")
 async def create_trial_checkout(
     request: CreateCheckoutSessionRequest,
@@ -933,5 +934,7 @@ async def create_trial_checkout(
             logger.info(f"[TRIAL API] Trial checkout failed for account {account_id}: {e.detail}")
         raise
     except Exception as e:
-        logger.error(f"[TRIAL API ERROR] Unexpected error in trial checkout for account {account_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An error occurred while processing your request") 
+        error_msg = str(e)
+        error_type = type(e).__name__
+        logger.error(f"[TRIAL API ERROR] Unexpected error in trial checkout for account {account_id}: {error_type}: {error_msg}")
+        raise HTTPException(status_code=500, detail="An error occurred while processing your request")

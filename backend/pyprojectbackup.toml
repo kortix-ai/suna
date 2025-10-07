@@ -1,15 +1,12 @@
-[build-system]
-requires = ["setuptools>=75.3.0", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "suna"
 version = "1.0"
 description = "open source generalist AI Worker"
 authors = [{ name = "marko-kraemer", email = "mail@markokraemer.com" }]
 readme = "README.md"
-license = "Apache-2.0"
+license = { license = "Apache-2.0" }
 classifiers = [
+  "License :: OSI Approved :: Apache-2.0 License",
   "Programming Language :: Python :: 3.11",
 ]
 requires-python = ">=3.11"
@@ -98,9 +95,6 @@ repository = "https://github.com/kortix-ai/suna"
 
 [tool.uv]
 package = false
-
-[tool.setuptools.packages.find]
-include = ["core*", "supabase*"]
 
 [dependency-groups]
 dev = [
