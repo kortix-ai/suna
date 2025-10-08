@@ -50,6 +50,7 @@ import { useAgentVersionData } from '@/hooks/use-agent-version-data';
 import { useUpdateAgent, useAgents } from '@/hooks/react-query/agents/use-agents';
 import { useUpdateAgentMCPs } from '@/hooks/react-query/agents/use-update-agent-mcps';
 import { useExportAgent } from '@/hooks/react-query/agents/use-agent-export-import';
+import { agentKeys } from '@/hooks/react-query/agents/keys';
 import { ExpandableMarkdownEditor } from '@/components/ui/expandable-markdown-editor';
 import { AgentModelSelector } from './config/model-selector';
 import { AgentToolsConfiguration } from './agent-tools-configuration';
@@ -82,7 +83,11 @@ export function AgentConfigurationDialog({
   const queryClient = useQueryClient();
 
   const { agent, versionData, isViewingOldVersion, isLoading, error } = useAgentVersionData({ agentId });
-  const { data: agentsResponse } = useAgents({}, { enabled: !!onAgentChange });
+  const { data: agentsResponse, refetch: refetchAgents } = useAgents({}, { 
+    enabled: !!onAgentChange,
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always'
+  });
   const agents = agentsResponse?.agents || [];
 
   const updateAgentMutation = useUpdateAgent();
@@ -105,6 +110,29 @@ export function AgentConfigurationDialog({
       setActiveTab(initialTab);
     }
   }, [open, initialTab]);
+
+  // Listen for query invalidations and refetch when agent data changes
+  useEffect(() => {
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      // Check if the invalidation is for this agent's data
+      if (event?.type === 'updated' && event?.query?.queryKey) {
+        const queryKey = event.query.queryKey;
+        
+        // Check if it's an agent-related query for our agentId
+        if (
+          (Array.isArray(queryKey) && queryKey.includes(agentId)) ||
+          (Array.isArray(queryKey) && queryKey.includes('agents') && queryKey.includes('detail')) ||
+          (Array.isArray(queryKey) && queryKey.includes('versions'))
+        ) {
+          // Force a re-render by invalidating our specific queries
+          queryClient.invalidateQueries({ queryKey: agentKeys.detail(agentId) });
+          queryClient.invalidateQueries({ queryKey: ['versions', 'list', agentId] });
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, [agentId, queryClient]);
 
   const [formData, setFormData] = useState({
     name: '',

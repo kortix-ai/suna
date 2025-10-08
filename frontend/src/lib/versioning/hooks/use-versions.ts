@@ -36,6 +36,8 @@ export const useAgentVersions = (agentId: string) => {
     },
     enabled: !!agentId,
     staleTime: 30000,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   });
 };
 
@@ -50,6 +52,8 @@ export const useAgentVersion = (agentId: string, versionId: string | null | unde
     },
     enabled: !!agentId && !!versionId,
     staleTime: 30000,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   });
 };
 

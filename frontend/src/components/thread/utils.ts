@@ -399,10 +399,12 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['update_agent', 'Updating Agent'],
   ['get_current_agent_config', 'Getting Agent Config'],
   ['search_mcp_servers', 'Searching MCP Servers'],
-  ['get_mcp_server_tools', 'Getting MCP Server Tools'],
-  ['configure_mcp_server', 'Configuring MCP Server'],
   ['get_popular_mcp_servers', 'Getting Popular MCP Servers'],
   ['test_mcp_server_connection', 'Testing MCP Server Connection'],
+  ['discover-user-mcp-servers', 'Discovering tools'],
+  ['create-credential-profile', 'Creating profile'],
+  ['get-credential-profiles', 'Getting profiles'],
+  ['configure-profile-for-agent', 'Adding tools to agent'],
 
 
   ['create-new-agent', 'Creating New Agent'],
