@@ -745,105 +745,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
         ]
     ),
 
-    "sb_browser_tool": ToolGroup(
-        name="sb_browser_tool",
-        display_name="Browser Automation (Advanced)",
-        description="Advanced browser automation with full UI interaction capabilities",
-        tool_class="SandboxBrowserTool",
-        methods=[
-            ToolMethod(
-                name="browser_navigate_to",
-                display_name="Navigate To URL",
-                description="Navigate browser to specific URL",
-                enabled=True
-            ),
-            ToolMethod(
-                name="browser_go_back",
-                display_name="Go Back",
-                description="Navigate back in browser history",
-                enabled=True
-            ),
-            ToolMethod(
-                name="browser_wait",
-                display_name="Wait",
-                description="Wait for specified number of seconds",
-                enabled=True
-            ),
-            ToolMethod(
-                name="browser_click_element",
-                display_name="Click Element",
-                description="Click on an element by index",
-                enabled=True
-            ),
-            ToolMethod(
-                name="browser_input_text",
-                display_name="Input Text",
-                description="Input text into an element",
-                enabled=True
-            ),
-            ToolMethod(
-                name="browser_send_keys",
-                display_name="Send Keys",
-                description="Send keyboard keys (Enter, Escape, shortcuts)",
-                enabled=True
-            ),
-            ToolMethod(
-                name="browser_switch_tab",
-                display_name="Switch Tab",
-                description="Switch to a different browser tab",
-                enabled=True
-            ),
-            ToolMethod(
-                name="browser_close_tab",
-                display_name="Close Tab",
-                description="Close a browser tab",
-                enabled=True
-            ),
-            ToolMethod(
-                name="browser_scroll_down",
-                display_name="Scroll Down",
-                description="Scroll down the page",
-                enabled=True
-            ),
-            ToolMethod(
-                name="browser_scroll_up",
-                display_name="Scroll Up",
-                description="Scroll up the page",
-                enabled=True
-            ),
-            ToolMethod(
-                name="browser_scroll_to_text",
-                display_name="Scroll To Text",
-                description="Scroll to specific text on the page",
-                enabled=True
-            ),
-            ToolMethod(
-                name="browser_get_dropdown_options",
-                display_name="Get Dropdown Options",
-                description="Get all options from a dropdown element",
-                enabled=True
-            ),
-            ToolMethod(
-                name="browser_select_dropdown_option",
-                display_name="Select Dropdown Option",
-                description="Select an option from a dropdown by text",
-                enabled=True
-            ),
-            ToolMethod(
-                name="browser_drag_drop",
-                display_name="Drag and Drop",
-                description="Perform drag and drop operation",
-                enabled=True
-            ),
-            ToolMethod(
-                name="browser_click_coordinates",
-                display_name="Click Coordinates",
-                description="Click at specific X,Y coordinates",
-                enabled=True
-            ),
-        ]
-    ),
-
     "people_search_tool": ToolGroup(
         name="people_search_tool",
         display_name="People Search",
@@ -1016,12 +917,6 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
                 description="Ask users questions during task execution",
                 enabled=True,
                 is_core=True
-            ),
-            ToolMethod(
-                name="web_browser_takeover",
-                display_name="Request Browser Takeover",
-                description="Request user takeover of browser interaction",
-                enabled=True
             ),
             ToolMethod(
                 name="complete",

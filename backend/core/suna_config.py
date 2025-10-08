@@ -37,9 +37,8 @@ SUNA_CONFIG = {
         "people_search_tool": True,
         "company_search_tool": True,
         
-        # Browser automation (both variants)
+        # Browser automation
         "browser_tool": True,
-        "sb_browser_tool": True,
         
         # Web development tools
         "sb_web_dev_tool": False,

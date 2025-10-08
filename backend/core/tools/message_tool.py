@@ -4,9 +4,6 @@ from core.utils.logger import logger
 
 class MessageTool(Tool):
     """Tool for user communication and interaction.
-
-    This tool provides methods for asking questions, with support for
-    attachments and user takeover suggestions.
     """
 
     def __init__(self):

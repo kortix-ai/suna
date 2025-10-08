@@ -654,7 +654,7 @@ class AgentRunner:
             'sb_shell_tool', 'sb_files_tool', 'sb_deploy_tool', 'sb_expose_tool',
             'web_search_tool', 'image_search_tool', 'sb_vision_tool', 'sb_presentation_tool', 'sb_image_edit_tool',
             'sb_sheets_tool', 'sb_kb_tool', 'sb_design_tool', 'sb_presentation_outline_tool', 'sb_upload_file_tool',
-            'sb_docs_tool', 'sb_browser_tool', 'sb_templates_tool', 'computer_use_tool', 'sb_web_dev_tool', 
+            'sb_docs_tool', 'sb_templates_tool', 'computer_use_tool', 'sb_web_dev_tool', 
             'data_providers_tool', 'browser_tool', 'people_search_tool', 'company_search_tool', 
             'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'trigger_tool',
             'agent_creation_tool'
@@ -809,8 +809,6 @@ class AgentRunner:
                                             last_tool_call = 'ask'
                                         elif '</complete>' in assistant_text:
                                             last_tool_call = 'complete'
-                                        elif '</web-browser-takeover>' in assistant_text:
-                                            last_tool_call = 'web-browser-takeover'
                                 
                                 except (json.JSONDecodeError, Exception):
                                     pass
@@ -834,7 +832,7 @@ class AgentRunner:
                             generation.end(status_message="error_detected", level="ERROR")
                         break
                         
-                    if agent_should_terminate or last_tool_call in ['ask', 'complete', 'web-browser-takeover', 'present_presentation']:
+                    if agent_should_terminate or last_tool_call in ['ask', 'complete', 'present_presentation']:
                         if generation:
                             generation.end(status_message="agent_stopped")
                         continue_execution = False
