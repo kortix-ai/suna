@@ -69,23 +69,79 @@ class ImageContextManager:
                 }).execute()
                 result = db_result.data[0] if db_result.data and len(db_result.data) > 0 else None
             
-            if result:
-                logger.debug(f"Added image to context: {file_path}")
-                return result
-            else:
+            if not result:
                 logger.error("Failed to insert image message")
                 return None
+            
+            logger.debug(f"Added image to context: {file_path}")
+            
+            # ===== CRITICAL: Add image context management instruction =====
+            # This hardcoded instruction ensures images are properly managed and removed
+            context_instruction = {
+                "role": "user",
+                "content": """⚠️ IMPORTANT - IMAGE CONTEXT MANAGEMENT:
+
+                You are now viewing an image that has been loaded into context. Due to context window limitations, this image WILL BE AUTOMATICALLY REMOVED after you analyze it.
+
+                REQUIRED ACTIONS:
+                1. **Analyze the image thoroughly** - Look at all details, text, UI elements, colors, layout, etc.
+                2. **Write a DETAILED SUMMARY** - Describe what you see in comprehensive detail so you can reference it later. Include:
+                - All visible text and labels
+                - UI components and their states
+                - Colors, layout, and visual hierarchy
+                - Any errors, warnings, or important information
+                - Relationships between elements
+                3. **Call clear_images_from_context** - You MUST call this tool after your analysis to free up context tokens
+
+                WHY THIS MATTERS:
+                - Images consume significant context tokens
+                - You will NOT see this image again after it's cleared (unless explicitly reloaded with load_image)
+                - Your written summary is your only future reference to this image
+                - Failing to clear images will cause context overflow
+
+                REMEMBER: Be thorough in your summary - it's your permanent record of what you saw!"""
+            }
+            
+            context_instruction_metadata = {
+                "image_context": True,
+                "instruction_type": "context_management",
+                "related_file": file_path
+            }
+            
+            # Add the context management instruction
+            if self.thread_manager:
+                await self.thread_manager.add_message(
+                    thread_id=thread_id,
+                    type='user',
+                    content=context_instruction,
+                    is_llm_message=True,
+                    metadata=context_instruction_metadata
+                )
+            else:
+                # Fallback to direct DB access
+                client = await self.db.client
+                await client.table('messages').insert({
+                    'thread_id': thread_id,
+                    'type': 'user',
+                    'content': context_instruction,
+                    'is_llm_message': True,
+                    'metadata': context_instruction_metadata
+                }).execute()
+            
+            logger.debug(f"Added context management instruction for image: {file_path}")
+            
+            return result
                 
         except Exception as e:
             logger.error(f"Failed to add image to context: {str(e)}", exc_info=True)
             return None
     
     async def clear_images_from_context(self, thread_id: str) -> int:
-        """Remove all image context messages from a thread."""
+        """Remove all image context messages from a thread, including images and their management instructions."""
         try:
             client = await self.db.client
             
-            # Delete all messages with image_context metadata
+            # Delete all messages with image_context metadata (includes both images and instructions)
             result = await client.table('messages').delete().eq(
                 'thread_id', thread_id
             ).eq(
@@ -95,7 +151,7 @@ class ImageContextManager:
             ).execute()
             
             deleted_count = len(result.data) if result.data else 0
-            logger.debug(f"Cleared {deleted_count} images from context")
+            logger.debug(f"Cleared {deleted_count} image-related messages from context (images + instructions)")
             return deleted_count
             
         except Exception as e:
