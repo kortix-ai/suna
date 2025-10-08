@@ -78,10 +78,12 @@ export function getToolTitle(toolName: string): string {
     
     // Agent Creation Tools
     'create-new-agent': 'Create New Agent',
+    'update-agent': 'Update Agent',
     'search-mcp-servers-for-agent': 'Search MCP Servers for Agent',
     'get-mcp-server-details': 'Get MCP Server Details',
     'create-credential-profile-for-agent': 'Create Credential Profile for Agent',
     'discover-mcp-tools-for-agent': 'Discover MCP Tools for Agent',
+    'discover-user-mcp-servers': 'Discovering tools',
     'configure-agent-integration': 'Configure Agent Integration',
     'list-available-integrations': 'List Available Integrations',
     'create-agent-scheduled-trigger': 'Create Scheduled Trigger',
@@ -1306,6 +1308,10 @@ export function getToolComponent(toolName: string): string {
       return 'GetCredentialProfilesToolView';
     case 'get-current-agent-config':
       return 'GetCurrentAgentConfigToolView';
+    case 'update-agent':
+      return 'UpdateAgentToolView';
+    case 'discover-user-mcp-servers':
+      return 'DiscoverUserMcpServersToolView';
 
     //Deploy
     case 'deploy':

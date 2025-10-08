@@ -82,7 +82,11 @@ export function AgentConfigurationDialog({
   const queryClient = useQueryClient();
 
   const { agent, versionData, isViewingOldVersion, isLoading, error } = useAgentVersionData({ agentId });
-  const { data: agentsResponse } = useAgents({}, { enabled: !!onAgentChange });
+  const { data: agentsResponse, refetch: refetchAgents } = useAgents({}, { 
+    enabled: !!onAgentChange,
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always'
+  });
   const agents = agentsResponse?.agents || [];
 
   const updateAgentMutation = useUpdateAgent();
