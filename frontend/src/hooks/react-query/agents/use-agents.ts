@@ -32,6 +32,8 @@ export const useAgent = (agentId: string) => {
       enabled: !!agentId,
       staleTime: 5 * 60 * 1000,
       gcTime: 10 * 60 * 1000,
+      refetchOnMount: 'always',
+      refetchOnWindowFocus: true,
     }
   )();
 };

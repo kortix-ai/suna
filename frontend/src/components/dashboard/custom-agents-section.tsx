@@ -167,11 +167,9 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
         <TitleSection />
         <div className="grid gap-4 pb-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-            <div key={i} className="bg-muted/30 rounded-3xl p-4 h-[180px] w-full">
-              <Skeleton className="h-12 w-12 rounded-2xl mb-3" />
-              <Skeleton className="h-5 w-3/4 mb-2" />
-              <Skeleton className="h-10 w-full mb-3" />
-              <Skeleton className="h-8 w-full mt-auto" />
+            <div key={i} className="bg-muted/30 rounded-3xl p-4 h-auto w-full flex items-center">
+              <Skeleton className="w-12 h-12 rounded-xl" />
+              <Skeleton className="h-6 w-1/2 ml-4" />
             </div>
           ))}
         </div>
