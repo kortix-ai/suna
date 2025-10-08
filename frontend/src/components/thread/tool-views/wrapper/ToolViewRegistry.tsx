@@ -52,6 +52,8 @@ import { SearchMcpServersForAgentToolView } from '../search-mcp-servers-for-agen
 import { CreateCredentialProfileForAgentToolView } from '../create-credential-profile-for-agent/create-credential-profile-for-agent';
 import { DiscoverMcpToolsForAgentToolView } from '../discover-mcp-tools-for-agent/discover-mcp-tools-for-agent';
 import { DiscoverUserMcpServersToolView } from '../discover-user-mcp-servers/discover-user-mcp-servers';
+import { ListAppEventTriggersToolView } from '../list-app-event-triggers/list-app-event-triggers';
+import { CreateEventTriggerToolView } from '../create-event-trigger/create-event-trigger';
 import { ConfigureAgentIntegrationToolView } from '../configure-agent-integration/configure-agent-integration';
 import CreateAgentScheduledTriggerToolView from '../create-agent-scheduled-trigger/create-agent-scheduled-trigger';
 import { createPresentationViewerToolContent, parsePresentationSlidePath } from '../utils/presentation-utils';
@@ -196,6 +198,8 @@ const defaultRegistry: ToolViewRegistryType = {
   'create-credential-profile-for-agent': CreateCredentialProfileForAgentToolView,
   'discover-mcp-tools-for-agent': DiscoverMcpToolsForAgentToolView,
   'discover-user-mcp-servers': DiscoverUserMcpServersToolView,
+  'list-app-event-triggers': ListAppEventTriggersToolView,
+  'create-event-trigger': CreateEventTriggerToolView,
   'configure-agent-integration': ConfigureAgentIntegrationToolView,
   'create-agent-scheduled-trigger': CreateAgentScheduledTriggerToolView,
 };
