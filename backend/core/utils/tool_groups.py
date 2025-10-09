@@ -632,6 +632,12 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
                 enabled=True
             ),
             ToolMethod(
+                name="convert_to_pdf",
+                display_name="Convert to PDF",
+                description="Convert a document to PDF format",
+                enabled=True
+            ),
+            ToolMethod(
                 name="read_document",
                 display_name="Read Document",
                 description="Read the content of a document",

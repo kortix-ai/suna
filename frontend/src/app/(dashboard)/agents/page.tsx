@@ -333,7 +333,8 @@ export default function AgentsPage() {
     instanceName?: string, 
     profileMappings?: Record<string, string>, 
     customMcpConfigs?: Record<string, Record<string, any>>,
-    triggerConfigs?: Record<string, Record<string, any>>
+    triggerConfigs?: Record<string, Record<string, any>>,
+    triggerVariables?: Record<string, Record<string, string>>
   ) => {
     setInstallingItemId(item.id);
     
@@ -373,19 +374,37 @@ export default function AgentsPage() {
         return;
       }
 
+      console.log('Installing template with:', {
+        template_id: item.template_id,
+        instance_name: instanceName,
+        profile_mappings: profileMappings,
+        custom_mcp_configs: customMcpConfigs,
+        trigger_configs: triggerConfigs,
+        trigger_variables: triggerVariables
+      });
+      
       const result = await installTemplateMutation.mutateAsync({
         template_id: item.template_id,
         instance_name: instanceName,
         profile_mappings: profileMappings,
         custom_mcp_configs: customMcpConfigs,
-        trigger_configs: triggerConfigs
+        trigger_configs: triggerConfigs,
+        trigger_variables: triggerVariables
       });
+      
+      console.log('Installation result:', result);
 
       if (result.status === 'installed') {
         toast.success(`Agent "${instanceName}" installed successfully!`);
         setShowInstallDialog(false);
         handleTabChange('my-agents');
       } else if (result.status === 'configs_required') {
+        if (result.missing_trigger_variables && Object.keys(result.missing_trigger_variables).length > 0) {
+          toast.warning('Please provide values for template trigger variables.');
+          setInstallingItemId('');
+          return;
+        }
+        
         if (result.missing_regular_credentials && result.missing_regular_credentials.length > 0) {
           const updatedRequirements = [
             ...(item.mcp_requirements || []),
@@ -409,7 +428,12 @@ export default function AgentsPage() {
           
           toast.warning('Additional configurations required. Please complete the setup.');
           return;
+        } else if (result.missing_custom_configs && result.missing_custom_configs.length > 0) {
+          console.error('Missing custom configs:', result.missing_custom_configs);
+          toast.error('Please provide all required custom MCP configurations');
+          return;
         } else {
+          console.error('Unknown config required response:', result);
           toast.error('Please provide all required configurations');
           return;
         }

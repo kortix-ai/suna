@@ -1080,6 +1080,12 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
         enabled: true,
       },
       {
+        name: 'convert_to_pdf',
+        displayName: 'Convert to PDF',
+        description: 'Convert a document to PDF format',
+        enabled: true,
+      },
+      {
         name: 'read_document',
         displayName: 'Read Document',
         description: 'Read the content of a document',

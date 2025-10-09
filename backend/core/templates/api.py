@@ -48,6 +48,7 @@ class InstallTemplateRequest(BaseModel):
     profile_mappings: Optional[Dict[str, str]] = None
     custom_mcp_configs: Optional[Dict[str, Dict[str, Any]]] = None
     trigger_configs: Optional[Dict[str, Dict[str, Any]]] = None
+    trigger_variables: Optional[Dict[str, Dict[str, str]]] = None
 
 
 class PublishTemplateRequest(BaseModel):
@@ -83,6 +84,7 @@ class InstallationResponse(BaseModel):
     name: Optional[str] = None
     missing_regular_credentials: List[Dict[str, Any]] = []
     missing_custom_configs: List[Dict[str, Any]] = []
+    missing_trigger_variables: Optional[Dict[str, Dict[str, Any]]] = None
     template_info: Optional[Dict[str, Any]] = None
 
 
@@ -323,7 +325,8 @@ async def install_template(
             custom_system_prompt=request.custom_system_prompt,
             profile_mappings=request.profile_mappings,
             custom_mcp_configs=request.custom_mcp_configs,
-            trigger_configs=request.trigger_configs
+            trigger_configs=request.trigger_configs,
+            trigger_variables=request.trigger_variables
         )
         
         result = await installation_service.install_template(install_request)
@@ -336,6 +339,7 @@ async def install_template(
             name=result.name,
             missing_regular_credentials=result.missing_regular_credentials,
             missing_custom_configs=result.missing_custom_configs,
+            missing_trigger_variables=result.missing_trigger_variables,
             template_info=result.template_info
         )
         
