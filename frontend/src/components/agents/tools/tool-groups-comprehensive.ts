@@ -484,6 +484,12 @@ export const TOOL_GROUPS: Record<string, ToolGroup> = {
         description: 'Delete entire presentations',
         enabled: true,
       },
+      {
+        name: 'validate_slide',
+        displayName: 'Validate Slide',
+        description: 'Validate slide dimensions and content height',
+        enabled: true,
+      }
     ],
   },
 

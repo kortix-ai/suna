@@ -493,29 +493,21 @@ async def measure_slide_height():
         # Wait for page to load
         await page.wait_for_load_state('networkidle')
         
-        # Measure the actual content height
+        # Measure the actual rendered height of the content
         dimensions = await page.evaluate("""
             () => {{
-                const body = document.body;
-                const html = document.documentElement;
+                // Get the actual bounding box height of the body content
+                const bodyRect = document.body.getBoundingClientRect();
+                const actualHeight = Math.ceil(bodyRect.height);
                 
-                // Get the actual scroll height (total content height)
-                const scrollHeight = Math.max(
-                    body.scrollHeight, body.offsetHeight,
-                    html.clientHeight, html.scrollHeight, html.offsetHeight
-                );
-                
-                // Get viewport height
                 const viewportHeight = window.innerHeight;
-                
-                // Check if content overflows
-                const overflows = scrollHeight > 1080;
+                const overflows = actualHeight > 1080;
                 
                 return {{
-                    scrollHeight: scrollHeight,
+                    scrollHeight: actualHeight,
                     viewportHeight: viewportHeight,
                     overflows: overflows,
-                    excessHeight: scrollHeight - 1080
+                    excessHeight: Math.max(0, actualHeight - 1080)
                 }};
             }}
         """)
@@ -559,46 +551,25 @@ print(json.dumps(result))
                     pass
                 return self.fail_response(f"Failed to measure slide dimensions: {str(e)}")
             
-            # Analyze results
+            # Analyze results - simple pass/fail
+            validation_passed = not dimensions["overflows"]
+            
             validation_results = {
+                "presentation_name": presentation_name,
+                "presentation_path": presentation_path,
                 "slide_number": slide_number,
                 "slide_title": slide_info["title"],
                 "actual_content_height": dimensions["scrollHeight"],
                 "target_height": 1080,
-                "excess_height": dimensions["excessHeight"],
-                "validation_passed": not dimensions["overflows"],
-                "warnings": [],
-                "errors": [],
-                "recommendations": []
+                "validation_passed": validation_passed
             }
             
-            # Add errors or success messages based on actual measurements
-            if dimensions["overflows"]:
-                validation_results["validation_passed"] = False
-                validation_results["errors"].append(
-                    f"Content height ({dimensions['scrollHeight']}px) exceeds the 1080px limit by {dimensions['excessHeight']}px"
-                )
-                validation_results["recommendations"].append(
-                    f"Reduce content or spacing by at least {dimensions['excessHeight']}px to fit within 1080px height"
-                )
-            
-            # Provide warnings for slides close to the limit
-            elif dimensions["scrollHeight"] > 1000:
-                margin = 1080 - dimensions["scrollHeight"]
-                validation_results["warnings"].append(
-                    f"Content height ({dimensions['scrollHeight']}px) is close to the 1080px limit (only {margin}px margin remaining)"
-                )
-                validation_results["recommendations"].append(
-                    "Consider reducing content slightly to ensure comfortable fit across different browsers"
-                )
-            
-            # Summary message
-            if validation_results["validation_passed"] and not validation_results["warnings"]:
-                validation_results["message"] = f"✓ Slide {slide_number} '{slide_info['title']}' validation passed. Content height: {dimensions['scrollHeight']}px (within 1080px limit)"
-            elif validation_results["validation_passed"] and validation_results["warnings"]:
-                validation_results["message"] = f"⚠ Slide {slide_number} '{slide_info['title']}' validation passed with {len(validation_results['warnings'])} warning(s)"
+            # Add pass/fail message
+            if validation_passed:
+                validation_results["message"] = f"✓ Slide {slide_number} '{slide_info['title']}' validation passed. Content height: {dimensions['scrollHeight']}px"
             else:
-                validation_results["message"] = f"✗ Slide {slide_number} '{slide_info['title']}' validation failed. Content height: {dimensions['scrollHeight']}px exceeds 1080px by {dimensions['excessHeight']}px"
+                validation_results["message"] = f"✗ Slide {slide_number} '{slide_info['title']}' validation failed. Content height: {dimensions['scrollHeight']}px exceeds 1080px limit by {dimensions['excessHeight']}px"
+                validation_results["excess_height"] = dimensions["excessHeight"]
             
             return self.success_response(validation_results)
             
