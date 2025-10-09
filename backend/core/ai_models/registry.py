@@ -93,9 +93,9 @@ class ModelRegistry:
             priority=99,
             enabled=True,
             config=ModelConfig(
-                extra_headers={
-                    "anthropic-beta": "prompt-caching-2024-07-31"
-                },
+                # extra_headers={
+                #     "anthropic-beta": "prompt-caching-2024-07-31"
+                # },
             )
         ))
 
