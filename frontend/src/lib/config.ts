@@ -227,6 +227,7 @@ export const isStagingMode = (): boolean => {
 };
 
 
+
 const PROD_YEARLY_COMMITMENT_PLANS = {
   [PROD_TIERS.TIER_2_17_YEARLY_COMMITMENT.priceId]: { tier: 1, name: '2h/$17/month (yearly)' },
   [PROD_TIERS.TIER_6_42_YEARLY_COMMITMENT.priceId]: { tier: 2, name: '6h/$42.50/month (yearly)' },

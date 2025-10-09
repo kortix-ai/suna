@@ -448,7 +448,13 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
         : "flex-1 overflow-y-auto scrollbar-thin scrollbar-track-secondary/0 scrollbar-thumb-primary/10 scrollbar-thumb-rounded-full hover:scrollbar-thumb-primary/10 py-4 pb-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60";
 
     // In playback mode, we use visibleMessages instead of messages
-    const displayMessages = readOnly && visibleMessages ? visibleMessages : messages;
+    // Filter out image_context messages (they're for LLM only, not for display)
+    const allMessages = readOnly && visibleMessages ? visibleMessages : messages;
+    const displayMessages = useMemo(() => {
+        // Use includes check to avoid type narrowing issues
+        const displayableTypes = ['user', 'assistant', 'tool', 'system', 'status', 'browser_state'];
+        return allMessages.filter(msg => displayableTypes.includes(msg.type));
+    }, [allMessages]);
 
     // Helper function to get agent info robustly
     const getAgentInfo = useCallback(() => {
@@ -774,11 +780,32 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                             try {
                                                 const parsed = safeJsonParse<ParsedContent>(message.content, { content: message.content });
                                                 const content = parsed.content || message.content;
+                                                
+                                                // Handle array content (multi-modal messages with images)
+                                                if (Array.isArray(content)) {
+                                                    // Extract text parts from array content
+                                                    return content
+                                                        .filter((item: any) => item.type === 'text' || typeof item === 'string')
+                                                        .map((item: any) => typeof item === 'string' ? item : item.text || '')
+                                                        .join('\n');
+                                                }
+                                                
                                                 // Ensure we always return a string
-                                                return typeof content === 'string' ? content : String(content || '');
+                                                return typeof content === 'string' ? content : JSON.stringify(content || '');
                                             } catch {
                                                 // Ensure message.content is a string
-                                                return typeof message.content === 'string' ? message.content : String(message.content || '');
+                                                if (typeof message.content === 'string') {
+                                                    return message.content;
+                                                }
+                                                // Handle array content in fallback
+                                                const contentArray = message.content as any;
+                                                if (Array.isArray(contentArray)) {
+                                                    return contentArray
+                                                        .filter((item: any) => item.type === 'text' || typeof item === 'string')
+                                                        .map((item: any) => typeof item === 'string' ? item : item.text || '')
+                                                        .join('\n');
+                                                }
+                                                return JSON.stringify(message.content || '');
                                             }
                                         })();
 
@@ -955,14 +982,23 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                 detectedTag = 'function_calls';
                                                                                 tagStartIndex = functionCallsIndex;
                                                                             } else {
-                                                                                // Fall back to old format detection
-                                                                                for (const tag of HIDE_STREAMING_XML_TAGS) {
-                                                                                    const openingTagPattern = `<${tag}`;
-                                                                                    const index = textToRender.indexOf(openingTagPattern);
-                                                                                    if (index !== -1) {
-                                                                                        detectedTag = tag;
-                                                                                        tagStartIndex = index;
-                                                                                        break;
+                                                                                // Check for partial XML tags at the end (e.g., "<function", "<antml", "<", etc.)
+                                                                                // This prevents showing incomplete XML during streaming
+                                                                                const partialXmlMatch = textToRender.match(/<[a-zA-Z_:][a-zA-Z0-9_:]*$|<$/);
+                                                                                if (partialXmlMatch) {
+                                                                                    // Found a partial opening tag at the end
+                                                                                    detectedTag = 'partial';
+                                                                                    tagStartIndex = partialXmlMatch.index!;
+                                                                                } else {
+                                                                                    // Fall back to old format detection
+                                                                                    for (const tag of HIDE_STREAMING_XML_TAGS) {
+                                                                                        const openingTagPattern = `<${tag}`;
+                                                                                        const index = textToRender.indexOf(openingTagPattern);
+                                                                                        if (index !== -1) {
+                                                                                            detectedTag = tag;
+                                                                                            tagStartIndex = index;
+                                                                                            break;
+                                                                                        }
                                                                                     }
                                                                                 }
                                                                             }
@@ -993,7 +1029,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                     className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-wrap-anywhere"
                                                                                 />
 
-                                                                                {detectedTag && (
+                                                                                {detectedTag && detectedTag !== 'partial' && (
                                                                                     <ShowToolStream
                                                                                         content={textToRender.substring(tagStartIndex)}
                                                                                         messageId={visibleMessages && visibleMessages.length > 0 ? visibleMessages[visibleMessages.length - 1].message_id : "playback-streaming"}
@@ -1024,14 +1060,23 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                 detectedTag = 'function_calls';
                                                                                 tagStartIndex = functionCallsIndex;
                                                                             } else {
-                                                                                // Fall back to old format detection
-                                                                                for (const tag of HIDE_STREAMING_XML_TAGS) {
-                                                                                    const openingTagPattern = `<${tag}`;
-                                                                                    const index = textToRender.indexOf(openingTagPattern);
-                                                                                    if (index !== -1) {
-                                                                                        detectedTag = tag;
-                                                                                        tagStartIndex = index;
-                                                                                        break;
+                                                                                // Check for partial XML tags at the end (e.g., "<function", "<antml", "<", etc.)
+                                                                                // This prevents showing incomplete XML during streaming
+                                                                                const partialXmlMatch = textToRender.match(/<[a-zA-Z_:][a-zA-Z0-9_:]*$|<$/);
+                                                                                if (partialXmlMatch) {
+                                                                                    // Found a partial opening tag at the end
+                                                                                    detectedTag = 'partial';
+                                                                                    tagStartIndex = partialXmlMatch.index!;
+                                                                                } else {
+                                                                                    // Fall back to old format detection
+                                                                                    for (const tag of HIDE_STREAMING_XML_TAGS) {
+                                                                                        const openingTagPattern = `<${tag}`;
+                                                                                        const index = textToRender.indexOf(openingTagPattern);
+                                                                                        if (index !== -1) {
+                                                                                            detectedTag = tag;
+                                                                                            tagStartIndex = index;
+                                                                                            break;
+                                                                                        }
                                                                                     }
                                                                                 }
                                                                             }
@@ -1056,7 +1101,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                                             className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-wrap-anywhere"
                                                                                         />
 
-                                                                                        {detectedTag && (
+                                                                                        {detectedTag && detectedTag !== 'partial' && (
                                                                                             <ShowToolStream
                                                                                                 content={textToRender.substring(tagStartIndex)}
                                                                                                 messageId="streamingTextContent"

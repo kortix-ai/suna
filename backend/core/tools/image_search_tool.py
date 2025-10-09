@@ -1,6 +1,6 @@
 import httpx
 from dotenv import load_dotenv
-from core.agentpress.tool import ToolResult, openapi_schema
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.utils.config import config
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
@@ -8,6 +8,14 @@ import json
 import logging
 from typing import Union, List
 
+@tool_metadata(
+    display_name="Image Search",
+    description="Find images on the internet for any topic or subject",
+    icon="ImageSearch",
+    color="bg-fuchsia-100 dark:bg-fuchsia-800/50",
+    weight=130,
+    visible=True
+)
 class SandboxImageSearchTool(SandboxToolsBase):
     """Tool for performing image searches using SERPER API."""
 

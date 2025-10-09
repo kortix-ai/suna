@@ -5,7 +5,7 @@ import json
 from decimal import Decimal
 from exa_py import Exa
 from exa_py.websets.types import CreateWebsetParameters, CreateEnrichmentParameters
-from core.agentpress.tool import Tool, ToolResult, openapi_schema
+from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
 from core.utils.config import config, EnvMode
 from core.utils.logger import logger
 from core.agentpress.thread_manager import ThreadManager
@@ -13,7 +13,14 @@ from core.billing.credit_manager import CreditManager
 from core.billing.config import TOKEN_PRICE_MULTIPLIER
 from core.services.supabase import DBConnection
 
-
+@tool_metadata(
+    display_name="Research Papers",
+    description="Search and analyze academic papers and scientific research",
+    icon="FileText",
+    color="bg-emerald-100 dark:bg-emerald-800/50",
+    weight=270,
+    visible=False
+)
 class PaperSearchTool(Tool):
     def __init__(self, thread_manager: ThreadManager):
         super().__init__()

@@ -305,7 +305,7 @@ export function FileEditToolView({
   };
 
   return (
-    <Card className="flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
+    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <Tabs defaultValue={isMarkdown || isHtml || isCsv || isXlsx ? 'preview' : 'code'} className="w-full h-full">
         <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2 mb-0">
           <div className="flex flex-row items-center justify-between">
@@ -376,7 +376,7 @@ export function FileEditToolView({
           </div>
         </CardHeader>
 
-        <CardContent className="p-0 flex-1 overflow-auto">
+        <CardContent className="p-0 h-full flex-1 overflow-hidden relative">
           <TabsContent value="code" className="mt-0 p-0">
             {isStreaming && !updatedContent ? (
               <LoadingState

@@ -5,7 +5,7 @@ import json
 from decimal import Decimal
 from exa_py import Exa
 from exa_py.websets.types import CreateWebsetParameters, CreateEnrichmentParameters
-from core.agentpress.tool import Tool, ToolResult, openapi_schema
+from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
 from core.utils.config import config, EnvMode
 from core.utils.logger import logger
 from core.agentpress.thread_manager import ThreadManager
@@ -13,7 +13,14 @@ from core.billing.credit_manager import CreditManager
 from core.billing.config import TOKEN_PRICE_MULTIPLIER
 from core.services.supabase import DBConnection
 
-
+@tool_metadata(
+    display_name="Company Research",
+    description="Find and research companies with detailed business information",
+    icon="Building",
+    color="bg-slate-100 dark:bg-slate-800/50",
+    weight=260,
+    visible=True
+)
 class CompanySearchTool(Tool):
     def __init__(self, thread_manager: ThreadManager):
         super().__init__()
@@ -25,7 +32,7 @@ class CompanySearchTool(Tool):
         
         if self.api_key:
             self.exa_client = Exa(self.api_key)
-            logger.info("Company Search Tool initialized. Note: This requires an Exa Pro plan for Websets API access.")
+            logger.info("Company Search Tool initialized.")
         else:
             logger.warning("EXA_API_KEY not configured - Company Search Tool will not be available")
     
@@ -74,7 +81,7 @@ class CompanySearchTool(Tool):
         "type": "function",
         "function": {
             "name": "company_search",
-            "description": "Search for companies using natural language queries and enrich with company profiles. IMPORTANT: Requires Exa Pro plan and costs $0.54 per search (10 results).",
+            "description": "Search for companies using natural language queries and enrich with company profiles. IMPORTANT: This search costs $0.54 per search (10 results).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -147,7 +154,7 @@ class CompanySearchTool(Tool):
                 
                 if "401" in error_str:
                     return self.fail_response(
-                        "Authentication failed with Exa API. Please check your API key and Pro plan status."
+                        "Authentication failed with Exa API. Please check your API key configuration."
                     )
                 elif "400" in error_str:
                     return self.fail_response(

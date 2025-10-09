@@ -1,4 +1,4 @@
-from core.agentpress.tool import ToolResult, openapi_schema
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.utils.files_utils import should_exclude_file, clean_path
 from core.agentpress.thread_manager import ThreadManager
@@ -11,6 +11,15 @@ import openai
 import asyncio
 from typing import Optional
 
+@tool_metadata(
+    display_name="Files & Folders",
+    description="Create, edit, read, and organize files in your workspace",
+    icon="FolderOpen",
+    color="bg-blue-100 dark:bg-blue-800/50",
+    is_core=True,
+    weight=10,
+    visible=True
+)
 class SandboxFilesTool(SandboxToolsBase):
     """Tool for executing file system operations in a Daytona sandbox. All operations are performed relative to the /workspace directory."""
 

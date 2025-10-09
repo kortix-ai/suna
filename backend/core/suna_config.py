@@ -12,7 +12,6 @@ SUNA_CONFIG = {
         # Core file and shell operations
         "sb_shell_tool": True,
         "sb_files_tool": True,
-        "sb_deploy_tool": True,
         "sb_expose_tool": True,
         "sb_upload_file_tool": True,
         
@@ -28,25 +27,14 @@ SUNA_CONFIG = {
         
         # Document and content creation
         "sb_docs_tool": True,
-        "sb_presentation_outline_tool": False,
         "sb_presentation_tool": True,
-        "sb_sheets_tool": False,
         "sb_kb_tool": True,
 
         # search tools
         "people_search_tool": True,
         "company_search_tool": True,
-        
-        # Browser automation (both variants)
+
         "browser_tool": True,
-        "sb_browser_tool": True,
-        
-        # Web development tools
-        "sb_web_dev_tool": False,
-        "sb_templates_tool": False,
-        
-        # Computer automation
-        "computer_use_tool": True,
         
         # Agent builder tools
         "agent_config_tool": True,

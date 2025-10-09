@@ -1,4 +1,4 @@
-from core.agentpress.tool import ToolResult, openapi_schema
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.agentpress.thread_manager import ThreadManager
 from core.sandbox.tool_base import SandboxToolsBase
 from core.utils.logger import logger
@@ -11,6 +11,14 @@ import traceback
 from PIL import Image
 from core.utils.config import config
 
+@tool_metadata(
+    display_name="Web Browser",
+    description="Browse websites, click buttons, fill forms, and extract information from web pages",
+    icon="Globe",
+    color="bg-cyan-100 dark:bg-cyan-800/50",
+    weight=60,
+    visible=True
+)
 class BrowserTool(SandboxToolsBase):
     """
     Browser Tool for browser automation using local Stagehand API.

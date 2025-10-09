@@ -1,4 +1,4 @@
-from core.agentpress.tool import ToolResult, openapi_schema
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from typing import List, Dict, Optional, Union
@@ -8,6 +8,14 @@ from datetime import datetime
 import re
 import asyncio
 
+@tool_metadata(
+    display_name="Presentations",
+    description="Create and manage stunning presentation slides",
+    icon="Presentation",
+    color="bg-orange-100 dark:bg-orange-800/50",
+    weight=70,
+    visible=True
+)
 class SandboxPresentationTool(SandboxToolsBase):
     """
     Per-slide HTML presentation tool for creating presentation slides.

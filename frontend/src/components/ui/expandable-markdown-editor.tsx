@@ -53,11 +53,13 @@ export const ExpandableMarkdownEditor: React.FC<ExpandableMarkdownEditorProps> =
   };
 
   const openDialog = () => {
+    if (disabled) return;
     setIsDialogOpen(true);
     setIsEditing(false);
   };
 
   const startEditing = () => {
+    if (disabled) return;
     setIsEditing(true);
   };
 
@@ -117,7 +119,12 @@ export const ExpandableMarkdownEditor: React.FC<ExpandableMarkdownEditorProps> =
     <>
       <div className={cn('relative', className)}>
         <div 
-          className="group h-full relative pb-4 border rounded-2xl bg-muted/30 hover:opacity-80 transition-colors cursor-pointer overflow-hidden"
+          className={cn(
+            "group h-full relative pb-4 border rounded-2xl bg-muted/30 transition-colors overflow-hidden",
+            disabled 
+              ? "cursor-not-allowed opacity-60" 
+              : "hover:opacity-80 cursor-pointer"
+          )}
           onClick={openDialog}
         >
           <div className="p-4 h-full overflow-hidden">
@@ -136,18 +143,20 @@ export const ExpandableMarkdownEditor: React.FC<ExpandableMarkdownEditorProps> =
               .........
             </div>
           )}
-          <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
-            <Button
-              size="sm"
-              className="h-6 w-6 p-0 shadow-sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                openDialog();
-              }}
-            >
-              <Expand className="h-3 w-3" />
-            </Button>
-          </div>
+          {!disabled && (
+            <div className="absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity z-10">
+              <Button
+                size="sm"
+                className="h-6 w-6 p-0 shadow-sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openDialog();
+                }}
+              >
+                <Expand className="h-3 w-3" />
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -156,7 +165,7 @@ export const ExpandableMarkdownEditor: React.FC<ExpandableMarkdownEditorProps> =
           <DialogHeader>
             <DialogTitle className="flex items-center justify-between">
               <span className="text-lg font-semibold">{title}</span>
-              {!isEditing && (
+              {!isEditing && !disabled && (
                 <Button
                   size="sm"
                   variant="outline"

@@ -123,7 +123,7 @@ export const MCPConfigurationNew: React.FC<MCPConfigurationProps> = ({
             No integrations configured
           </h4>
           <p className="text-sm text-muted-foreground mb-6 max-w-sm mx-auto">
-            Browse the app registry to connect your apps through Composio or add custom MCP servers
+            Browse the app registry to connect your apps or add custom MCP servers
           </p>
         </div>
       )}

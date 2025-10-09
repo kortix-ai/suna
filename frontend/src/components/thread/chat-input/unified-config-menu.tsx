@@ -170,7 +170,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
         return found;
     }, [agents, selectedAgentId]);
 
-    const handleQuickAction = useCallback((action: 'instructions' | 'knowledge' | 'triggers') => {
+    const handleQuickAction = useCallback((action: 'instructions' | 'knowledge' | 'triggers' | 'tools') => {
         if (!selectedAgentId && !displayAgent?.agent_id) {
             return;
         }
@@ -311,6 +311,12 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                 onClick={() => handleQuickAction('instructions')}
                             >
                                 <span className="font-medium">Instructions</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                                className="text-sm px-3 py-2 mx-0 my-0.5 flex items-center gap-2 cursor-pointer rounded-lg"
+                                onClick={() => handleQuickAction('tools')}
+                            >
+                                <span className="font-medium">Tools</span>
                             </DropdownMenuItem>
                             <DropdownMenuItem
                                 className="text-sm px-3 py-2 mx-0 my-0.5 flex items-center gap-2 cursor-pointer rounded-lg"

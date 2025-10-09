@@ -1,7 +1,7 @@
 from tavily import AsyncTavilyClient
 import httpx
 from dotenv import load_dotenv
-from core.agentpress.tool import Tool, ToolResult, openapi_schema
+from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
 from core.utils.config import config
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
@@ -12,6 +12,14 @@ import logging
 
 # TODO: add subpages, etc... in filters as sometimes its necessary 
 
+@tool_metadata(
+    display_name="Web Search",
+    description="Search the internet for information, news, and research",
+    icon="Search",
+    color="bg-green-100 dark:bg-green-800/50",
+    weight=30,
+    visible=True
+)
 class SandboxWebSearchTool(SandboxToolsBase):
     """Tool for performing web searches using Tavily API and web scraping using Firecrawl."""
 

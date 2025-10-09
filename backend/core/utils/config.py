@@ -297,6 +297,9 @@ class Configuration:
     FIRECRAWL_URL: Optional[str] = "https://api.firecrawl.dev"
     EXA_API_KEY: Optional[str] = None
     
+    # Freestyle deployment configuration
+    FREESTYLE_API_KEY: Optional[str] = None
+    
     # Stripe configuration
     STRIPE_SECRET_KEY: Optional[str] = None
     STRIPE_WEBHOOK_SECRET: Optional[str] = None

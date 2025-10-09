@@ -145,9 +145,12 @@ export function TerminateCommandToolView({
     return processedOutput.split('\n');
   }, [output]);
 
-  const hasMoreLines = formattedOutput.length > 10;
-  const previewLines = formattedOutput.slice(0, 10);
-  const linesToShow = showFullOutput ? formattedOutput : previewLines;
+    const hasMoreLines = formattedOutput.length > 10;
+    const previewLines = formattedOutput.slice(0, 10);
+    const linesToShow = showFullOutput ? formattedOutput : previewLines;
+    
+    // Add empty lines for natural scrolling
+    const emptyLines = Array.from({ length: 30 }, () => '');
 
   return (
     <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
@@ -203,8 +206,8 @@ export function TerminateCommandToolView({
           </div>
         ) : finalSessionName ? (
           <ScrollArea className="h-full w-full">
-            <div className="p-4">
-              <div className="mb-4 bg-zinc-100 dark:bg-neutral-900 rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800">
+            <div>
+              <div className="p-4 bg-zinc-100 dark:bg-neutral-900 overflow-hidden border-b border-zinc-200 dark:border-zinc-800">
                 <div className="bg-zinc-200 dark:bg-zinc-800 px-4 py-2 flex items-center gap-2">
                   <Power className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
                   <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Session</span>
@@ -216,8 +219,8 @@ export function TerminateCommandToolView({
               </div>
 
               {output && (
-                <div className="mb-4">
-                  <div className="flex items-center justify-between mb-2">
+                <div>
+                  <div className="flex items-center justify-between px-4 pt-4 pb-2">
                     <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center">
                       <ArrowRight className="h-4 w-4 mr-2 text-zinc-500 dark:text-zinc-400" />
                       Result
@@ -234,7 +237,7 @@ export function TerminateCommandToolView({
                     </Badge>
                   </div>
 
-                  <div className="bg-zinc-100 dark:bg-neutral-900 rounded-lg overflow-hidden border border-zinc-200/20">
+                  <div className="bg-zinc-100 dark:bg-neutral-900 overflow-hidden">
                     <div className="bg-zinc-300 dark:bg-neutral-800 flex items-center justify-between dark:border-zinc-700/50">
                       <div className="bg-zinc-200 w-full dark:bg-zinc-800 px-4 py-2 flex items-center gap-2">
                         <TerminalIcon className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
@@ -247,29 +250,31 @@ export function TerminateCommandToolView({
                         </Badge>
                       )}
                     </div>
-                    <div className="p-4 max-h-96 overflow-auto scrollbar-hide">
+                    <div className="px-4 py-3 overflow-auto">
                       <pre className="text-xs text-zinc-600 dark:text-zinc-300 font-mono whitespace-pre-wrap break-all overflow-visible">
                         {linesToShow.map((line, index) => (
-                          <div
-                            key={index}
-                            className="py-0.5 bg-transparent"
-                          >
+                          <span key={index}>
                             {line || ' '}
-                          </div>
+                            {'\n'}
+                          </span>
                         ))}
-                        {!showFullOutput && hasMoreLines && (
-                          <div className="text-zinc-500 mt-2 border-t border-zinc-700/30 pt-2">
-                            + {formattedOutput.length - 10} more lines
-                          </div>
-                        )}
+                        {/* Add empty lines for natural scrolling */}
+                        {showFullOutput && emptyLines.map((_, idx) => (
+                          <span key={`empty-${idx}`}>{'\n'}</span>
+                        ))}
                       </pre>
+                      {!showFullOutput && hasMoreLines && (
+                        <div className="text-zinc-500 mt-2 border-t border-zinc-700/30 pt-2">
+                          + {formattedOutput.length - 10} more lines
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
               )}
 
               {!output && !isStreaming && (
-                <div className="bg-black rounded-lg overflow-hidden border border-zinc-700/20 shadow-md p-6 flex items-center justify-center">
+                <div className="bg-black overflow-hidden p-12 flex items-center justify-center">
                   <div className="text-center">
                     <CircleDashed className="h-8 w-8 text-zinc-500 mx-auto mb-2" />
                     <p className="text-zinc-400 text-sm">No output received</p>

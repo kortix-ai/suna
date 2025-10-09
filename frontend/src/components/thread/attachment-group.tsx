@@ -194,7 +194,8 @@ export function AttachmentGroup({
         const filename = path.split('/').pop() || '';
         const isImage = filename.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i) !== null;
         const isPreviewFile = isPreviewableFile(file);
-        const shouldSpanFull = (sortedFiles.length % 2 === 1 && sortedFiles.length > 1 && index === sortedFiles.length - 1);
+        // Don't span full width automatically - let grid handle layout naturally
+        const shouldSpanFull = false;
 
         return {
             file,
@@ -204,32 +205,34 @@ export function AttachmentGroup({
             shouldSpanFull,
             wrapperClassName: cn(
                 "relative group",
-                isImage ? "flex items-center justify-center h-full" : "",
-                isPreviewFile && !collapsed ? "w-full" : ""
+                isImage ? "flex items-start justify-center" : "" // Use items-start for images to align top
             ),
-            wrapperStyle: (shouldSpanFull || (isPreviewFile && !collapsed)) ? { gridColumn: '1 / -1' } : undefined
+            wrapperStyle: undefined // Let CSS grid handle the layout
         };
     });
 
     // Now continue with the fully conditional rendering but with pre-computed values
     const renderContent = () => {
         if (layout === 'grid') {
-            const shouldLastItemSpanFull = sortedFiles.length % 2 === 1 && sortedFiles.length > 1;
-
             return (
                 <div className={cn(
-                    "grid gap-3",
-                    // Force single column for standalone files to maximize width
-                    standalone && !collapsed ? "grid-cols-1 w-full min-w-[300px] sm:min-w-[500px] max-w-[1000px]" :
-                        uniqueFiles.length === 1 ? "grid-cols-1" :
-                            uniqueFiles.length > 4 ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3" :
-                                "grid-cols-1 sm:grid-cols-2",
+                    "grid gap-3 auto-rows-max items-start",
+                    // Responsive grid columns based on file count
+                    uniqueFiles.length === 1 ? "grid-cols-1" :
+                        uniqueFiles.length === 2 ? "grid-cols-1 sm:grid-cols-2" :
+                            uniqueFiles.length === 3 ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3" :
+                                uniqueFiles.length >= 4 ? "grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4" :
+                                    "grid-cols-1 sm:grid-cols-2",
                     className
                 )}>
                     {sortedFilesWithMeta.map((item, index) => (
                         <div
                             key={index}
-                            className={item.wrapperClassName}
+                            className={cn(
+                                item.wrapperClassName,
+                                // Let images keep their aspect ratio, only make non-images square
+                                item.isImage ? "w-full" : "aspect-square w-full"
+                            )}
                             style={item.wrapperStyle}
                         >
                             <FileAttachment
@@ -239,30 +242,23 @@ export function AttachmentGroup({
                                 showPreview={showPreviews}
                                 localPreviewUrl={getLocalPreviewUrl(item.file)}
                                 className={cn(
-                                    // Apply full width for all files in grid so they fill the cell
-                                    "w-full",
-                                    // Apply appropriate height based on file type
-                                    item.isImage ? "h-auto min-h-[54px]" :
-                                        (item.isPreviewFile && !collapsed) ? "min-h-[400px] max-h-[600px] overflow-auto" : "h-[54px]"
+                                    // For images, let them size naturally; for non-images fill the square
+                                    item.isImage ? "w-full" : "w-full h-full"
                                 )}
-                                // Pass customStyle for both images and previewable files
-                                customStyle={
-                                    item.isImage ? {
-                                        width: '100%', // Full width in grid
-                                        height: 'auto', // For compatibility
-                                        ...(({ '--attachment-height': `${item.shouldSpanFull ? Math.floor(gridImageHeight * 1.33) : gridImageHeight}px` }) as React.CSSProperties)
-                                    } :
-                                        (item.isPreviewFile && !collapsed) ? {
-                                            gridColumn: '1 / -1', // Explicit grid styling for previewable files
-                                            minWidth: '300px', // Reasonable minimum width for all previewable files
-                                            width: '100%'
-                                        } :
-                                            item.shouldSpanFull ? {
-                                                gridColumn: '1 / -1' // Explicit grid styling for last item if odd count
-                                            } : {
-                                                width: '100%' // Ensure non-image files take full width
-                                            }
-                                }
+                                // Pass customStyle for sizing
+                                customStyle={{
+                                    width: '100%',
+                                    ...(item.isImage ? 
+                                        { 
+                                            height: 'auto',
+                                            maxHeight: `${gridImageHeight}px`,
+                                            '--attachment-height': `${gridImageHeight}px`
+                                        } as React.CSSProperties : 
+                                        {
+                                            height: '100%',
+                                            objectFit: 'cover'
+                                        })
+                                }}
                                 collapsed={collapsed} // Pass collapsed prop
                                 project={project} // Pass project to FileAttachment
                                 isSingleItemGrid={uniqueFiles.length === 1} // Pass single item detection
@@ -389,7 +385,7 @@ export function AttachmentGroup({
                     </DialogHeader>
 
                     <div className={cn(
-                        "grid gap-3 sm:justify-start justify-center sm:mx-0",
+                        "grid gap-3 auto-rows-max items-start sm:justify-start justify-center sm:mx-0",
                         // Force single column for standalone files in modal too with better width constraints
                         standalone && !collapsed ? "grid-cols-1 w-full min-w-[300px] sm:min-w-[600px] max-w-[1200px] mx-auto" :
                             "sm:max-w-full max-w-[300px] mx-auto",
@@ -440,7 +436,7 @@ export function AttachmentGroup({
                                         originalIndex,
                                         wrapperClassName: cn(
                                             "relative group",
-                                            isImage ? "flex items-center justify-center h-full" : ""
+                                            isImage ? "flex items-start justify-center" : ""
                                         ),
                                         fileClassName: cn(
                                             "w-full",
@@ -449,8 +445,9 @@ export function AttachmentGroup({
                                         customStyle: isImage ? {
                                             width: '100%',
                                             height: 'auto',
-                                            ...(({ '--attachment-height': `${gridImageHeight}px` }) as React.CSSProperties)
-                                        } : {
+                                            maxHeight: `${gridImageHeight}px`,
+                                            '--attachment-height': `${gridImageHeight}px`
+                                        } as React.CSSProperties : {
                                             width: '100%'
                                         }
                                     };

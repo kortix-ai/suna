@@ -1,5 +1,5 @@
 from typing import Optional
-from core.agentpress.tool import ToolResult, openapi_schema
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 import httpx
@@ -8,7 +8,14 @@ import uuid
 from litellm import aimage_generation, aimage_edit
 import base64
 
-
+@tool_metadata(
+    display_name="Design & Graphics",
+    description="Generate images and graphics for social media, websites, and more",
+    icon="Palette",
+    color="bg-rose-100 dark:bg-rose-800/50",
+    weight=210,
+    visible=True
+)
 class SandboxDesignerTool(SandboxToolsBase):
     def __init__(self, project_id: str, thread_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)

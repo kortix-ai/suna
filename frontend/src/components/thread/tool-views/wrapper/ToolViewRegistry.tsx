@@ -22,7 +22,6 @@ import { CompleteToolView } from '../CompleteToolView';
 import { WaitToolView } from '../wait-tool/WaitToolView';
 import { ExecuteDataProviderCallToolView } from '../data-provider-tool/ExecuteDataProviderCallToolView';
 import { DataProviderEndpointsToolView } from '../data-provider-tool/DataProviderEndpointsToolView';
-import { DeployToolView } from '../DeployToolView';
 import { SearchMcpServersToolView } from '../search-mcp-servers/search-mcp-servers';
 import { GetAppDetailsToolView } from '../get-app-details/get-app-details';
 import { CreateCredentialProfileToolView } from '../create-credential-profile/create-credential-profile';
@@ -125,7 +124,6 @@ const defaultRegistry: ToolViewRegistryType = {
   'expand_message': ExpandMessageToolView,
   'expand-message': ExpandMessageToolView,
 
-  'deploy': DeployToolView,
 
   'create-presentation-outline': PresentationOutlineToolView,
   'list-presentation-templates': ListPresentationTemplatesToolView,

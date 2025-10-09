@@ -41,10 +41,12 @@ import {
   Brain,
   ChevronDown,
   Search,
+  Info,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 import { useAgentVersionData } from '@/hooks/use-agent-version-data';
 import { useUpdateAgent, useAgents } from '@/hooks/react-query/agents/use-agents';
@@ -52,7 +54,6 @@ import { useUpdateAgentMCPs } from '@/hooks/react-query/agents/use-update-agent-
 import { useExportAgent } from '@/hooks/react-query/agents/use-agent-export-import';
 import { ExpandableMarkdownEditor } from '@/components/ui/expandable-markdown-editor';
 import { AgentModelSelector } from './config/model-selector';
-import { AgentToolsConfiguration } from './agent-tools-configuration';
 import { GranularToolConfiguration } from './tools/granular-tool-configuration';
 import { AgentMCPConfiguration } from './agent-mcp-configuration';
 import { AgentKnowledgeBaseManager } from './knowledge-base/agent-kb-tree';
@@ -60,7 +61,6 @@ import { AgentTriggersConfiguration } from './triggers/agent-triggers-configurat
 import { AgentAvatar } from '../thread/content/agent-avatar';
 import { AgentIconEditorDialog } from './config/agent-icon-editor-dialog';
 import { AgentVersionSwitcher } from './agent-version-switcher';
-import { DEFAULT_AGENTPRESS_TOOLS, ensureCoreToolsEnabled } from './tools';
 
 interface AgentConfigurationDialogProps {
   open: boolean;
@@ -114,7 +114,7 @@ export function AgentConfigurationDialog({
     name: '',
     system_prompt: '',
     model: undefined as string | undefined,
-    agentpress_tools: DEFAULT_AGENTPRESS_TOOLS as Record<string, any>,
+    agentpress_tools: {} as Record<string, any>,
     configured_mcps: [] as any[],
     custom_mcps: [] as any[],
     is_default: false,
@@ -145,7 +145,7 @@ export function AgentConfigurationDialog({
       name: configSource.name || '',
       system_prompt: configSource.system_prompt || '',
       model: configSource.model || undefined,
-      agentpress_tools: ensureCoreToolsEnabled(configSource.agentpress_tools || DEFAULT_AGENTPRESS_TOOLS),
+      agentpress_tools: configSource.agentpress_tools || {},
       configured_mcps: configSource.configured_mcps || [],
       custom_mcps: configSource.custom_mcps || [],
       is_default: configSource.is_default || false,
@@ -271,8 +271,7 @@ export function AgentConfigurationDialog({
       return;
     }
 
-    const toolsWithCoreEnabled = ensureCoreToolsEnabled(tools);
-    setFormData(prev => ({ ...prev, agentpress_tools: toolsWithCoreEnabled }));
+    setFormData(prev => ({ ...prev, agentpress_tools: tools }));
   };
 
   const handleMCPChange = async (updates: { configured_mcps: any[]; custom_mcps: any[] }) => {
@@ -372,8 +371,8 @@ export function AgentConfigurationDialog({
 
   const tabItems = [
     // { id: 'general', label: 'General', icon: Settings, disabled: false },
-    { id: 'instructions', label: 'Instructions', icon: Brain, disabled: isSunaAgent },
-    { id: 'tools', label: 'Tools', icon: Wrench, disabled: isSunaAgent },
+    { id: 'instructions', label: 'Instructions', icon: Brain, disabled: false },
+    { id: 'tools', label: 'Tools', icon: Wrench, disabled: false },
     { id: 'integrations', label: 'Integrations', icon: Server, disabled: false },
     { id: 'knowledge', label: 'Knowledge', icon: BookOpen, disabled: false },
     { id: 'triggers', label: 'Triggers', icon: Zap, disabled: false },
@@ -636,6 +635,14 @@ export function AgentConfigurationDialog({
 
                 <TabsContent value="instructions" className="p-6 mt-0 flex flex-col h-full">
                   <div className="flex flex-col flex-1 min-h-0">
+                    {isSunaAgent && (
+                      <Alert className="mb-4 bg-blue-50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-900">
+                        <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        <AlertDescription className="text-sm text-blue-800 dark:text-blue-300">
+                          You can't edit the main Kortix Super Worker, but you can create a new AI Worker that you can modify as you wish.
+                        </AlertDescription>
+                      </Alert>
+                    )}
                     <Label className="text-base font-semibold mb-3 block flex-shrink-0">System Prompt</Label>
                     <ExpandableMarkdownEditor
                       value={formData.system_prompt}
@@ -649,6 +656,14 @@ export function AgentConfigurationDialog({
 
                 <TabsContent value="tools" className="p-6 mt-0 flex flex-col h-full">
                   <div className="flex flex-col flex-1 min-h-0 h-full">
+                    {isSunaAgent && (
+                      <Alert className="mb-4 bg-blue-50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-900">
+                        <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        <AlertDescription className="text-sm text-blue-800 dark:text-blue-300">
+                          You can't edit the main Kortix Super Worker, but you can create a new AI Worker that you can modify as you wish.
+                        </AlertDescription>
+                      </Alert>
+                    )}
                     <GranularToolConfiguration
                       tools={formData.agentpress_tools}
                       onToolsChange={handleToolsChange}

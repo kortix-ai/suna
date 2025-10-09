@@ -1,7 +1,15 @@
-from core.agentpress.tool import Tool, ToolResult, openapi_schema
+from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
 from core.agentpress.thread_manager import ThreadManager
 import json
 
+@tool_metadata(
+    display_name="Message Expander",
+    description="View the full content of truncated messages",
+    icon="Maximize",
+    color="bg-gray-100 dark:bg-gray-800/50",
+    weight=100,
+    visible=False
+)
 class ExpandMessageTool(Tool):
     """Tool for expanding a previous message to the user."""
 

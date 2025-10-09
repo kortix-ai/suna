@@ -148,9 +148,6 @@ export const getToolIcon = (toolName: string): ElementType => {
     case 'delete-file':
       return FileX;
 
-    // Deployment
-    case 'deploy-site':
-      return CloudUpload;
 
     // Tools and utilities
     case 'execute-code':
@@ -283,10 +280,6 @@ export const extractPrimaryParam = (
             ? match[1]
             : null;
 
-      // Deployment
-      case 'deploy-site':
-        match = content.match(/site_name=(?:"|')([^"|']+)(?:"|')/);
-        return match ? match[1] : null;
     }
 
     return null;
@@ -329,7 +322,6 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['execute_data-provider_call', 'Calling data provider'],
   ['get-data-provider-endpoints', 'Getting endpoints'],
   
-  ['deploy', 'Deploying'],
   ['ask', 'Ask'],
   ['wait', 'Wait'],
   ['create-tasks', 'Creating Tasks'],
@@ -387,7 +379,6 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['execute_data_provider_call', 'Calling data provider'],
   ['get_data_provider_endpoints', 'Getting endpoints'],
   
-  ['deploy', 'Deploying'],
   ['ask', 'Ask'],
   ['complete', 'Completing Task'],
   ['crawl_webpage', 'Crawling Website'],
@@ -514,7 +505,6 @@ export const HIDE_STREAMING_XML_TAGS = new Set([
   'browser-send-keys',
   'browser-switch-tab',
   'browser-wait',
-  'deploy',
   'ask',
   'complete',
   'crawl-webpage',

@@ -1,13 +1,20 @@
 import json
 from typing import Optional
-from core.agentpress.tool import ToolResult, openapi_schema
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.agentpress.thread_manager import ThreadManager
 from .base_tool import AgentBuilderBaseTool
 from core.composio_integration.toolkit_service import ToolkitService
 from core.composio_integration.composio_service import get_integration_service
 from core.utils.logger import logger
 
-
+@tool_metadata(
+    display_name="MCP Server Search",
+    description="Find and add external integrations and tools via MCP",
+    icon="Plug",
+    color="bg-blue-100 dark:bg-blue-800/50",
+    weight=170,
+    visible=True
+)
 class MCPSearchTool(AgentBuilderBaseTool):
     def __init__(self, thread_manager: ThreadManager, db_connection, agent_id: str):
         super().__init__(thread_manager, db_connection, agent_id)
