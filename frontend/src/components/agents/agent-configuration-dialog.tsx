@@ -41,10 +41,12 @@ import {
   Brain,
   ChevronDown,
   Search,
+  Info,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 
 import { useAgentVersionData } from '@/hooks/use-agent-version-data';
 import { useUpdateAgent, useAgents } from '@/hooks/react-query/agents/use-agents';
@@ -369,8 +371,8 @@ export function AgentConfigurationDialog({
 
   const tabItems = [
     // { id: 'general', label: 'General', icon: Settings, disabled: false },
-    { id: 'instructions', label: 'Instructions', icon: Brain, disabled: isSunaAgent },
-    { id: 'tools', label: 'Tools', icon: Wrench, disabled: isSunaAgent },
+    { id: 'instructions', label: 'Instructions', icon: Brain, disabled: false },
+    { id: 'tools', label: 'Tools', icon: Wrench, disabled: false },
     { id: 'integrations', label: 'Integrations', icon: Server, disabled: false },
     { id: 'knowledge', label: 'Knowledge', icon: BookOpen, disabled: false },
     { id: 'triggers', label: 'Triggers', icon: Zap, disabled: false },
@@ -633,6 +635,14 @@ export function AgentConfigurationDialog({
 
                 <TabsContent value="instructions" className="p-6 mt-0 flex flex-col h-full">
                   <div className="flex flex-col flex-1 min-h-0">
+                    {isSunaAgent && (
+                      <Alert className="mb-4 bg-blue-50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-900">
+                        <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        <AlertDescription className="text-sm text-blue-800 dark:text-blue-300">
+                          You can't edit the main Kortix Super Worker, but you can create a new AI Worker that you can modify as you wish.
+                        </AlertDescription>
+                      </Alert>
+                    )}
                     <Label className="text-base font-semibold mb-3 block flex-shrink-0">System Prompt</Label>
                     <ExpandableMarkdownEditor
                       value={formData.system_prompt}
@@ -646,6 +656,14 @@ export function AgentConfigurationDialog({
 
                 <TabsContent value="tools" className="p-6 mt-0 flex flex-col h-full">
                   <div className="flex flex-col flex-1 min-h-0 h-full">
+                    {isSunaAgent && (
+                      <Alert className="mb-4 bg-blue-50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-900">
+                        <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                        <AlertDescription className="text-sm text-blue-800 dark:text-blue-300">
+                          You can't edit the main Kortix Super Worker, but you can create a new AI Worker that you can modify as you wish.
+                        </AlertDescription>
+                      </Alert>
+                    )}
                     <GranularToolConfiguration
                       tools={formData.agentpress_tools}
                       onToolsChange={handleToolsChange}

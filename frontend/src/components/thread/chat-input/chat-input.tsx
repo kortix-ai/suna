@@ -326,7 +326,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       if (
         (!value.trim() && uploadedFiles.length === 0) ||
         loading ||
-        (disabled && !isAgentRunning)
+        (disabled && !isAgentRunning) ||
+        isUploading // Prevent submission while files are uploading
       )
         return;
 
@@ -358,7 +359,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       }
 
       setUploadedFiles([]);
-    }, [value, uploadedFiles, loading, disabled, isAgentRunning, onStopAgent, getActualModelId, selectedModel, onSubmit, selectedAgentId, isControlled]);
+    }, [value, uploadedFiles, loading, disabled, isAgentRunning, isUploading, onStopAgent, getActualModelId, selectedModel, onSubmit, selectedAgentId, isControlled]);
 
     const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newValue = e.target.value;
@@ -375,12 +376,13 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
         if (
           (value.trim() || uploadedFiles.length > 0) &&
           !loading &&
-          (!disabled || isAgentRunning)
+          (!disabled || isAgentRunning) &&
+          !isUploading // Prevent submission while files are uploading
         ) {
           handleSubmit(e as unknown as React.FormEvent);
         }
       }
-    }, [value, uploadedFiles, loading, disabled, isAgentRunning, handleSubmit]);
+    }, [value, uploadedFiles, loading, disabled, isAgentRunning, isUploading, handleSubmit]);
 
     const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
       if (!e.clipboardData) return;
@@ -635,35 +637,48 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
             disabled={loading || (disabled && !isAgentRunning)}
           />}
 
-          <Button
-            type="submit"
-            onClick={isAgentRunning && onStopAgent ? onStopAgent : handleSubmit}
-            size="sm"
-            className={cn(
-              'w-8 h-8 flex-shrink-0 self-end rounded-xl',
-              (!value.trim() && uploadedFiles.length === 0 && !isAgentRunning) ||
-                loading ||
-                (disabled && !isAgentRunning)
-                ? 'opacity-50'
-                : '',
-            )}
-            disabled={
-              (!value.trim() && uploadedFiles.length === 0 && !isAgentRunning) ||
-              loading ||
-              (disabled && !isAgentRunning)
-            }
-          >
-            {loading ? (
-              <Loader2 className="h-5 w-5 animate-spin" />
-            ) : isAgentRunning ? (
-              <div className="min-h-[14px] min-w-[14px] w-[14px] h-[14px] rounded-sm bg-current" />
-            ) : (
-              <ArrowUp className="h-5 w-5" />
-            )}
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="submit"
+                  onClick={isAgentRunning && onStopAgent ? onStopAgent : handleSubmit}
+                  size="sm"
+                  className={cn(
+                    'w-8 h-8 flex-shrink-0 self-end rounded-xl',
+                    (!value.trim() && uploadedFiles.length === 0 && !isAgentRunning) ||
+                      loading ||
+                      (disabled && !isAgentRunning) ||
+                      isUploading
+                      ? 'opacity-50'
+                      : '',
+                  )}
+                  disabled={
+                    (!value.trim() && uploadedFiles.length === 0 && !isAgentRunning) ||
+                    loading ||
+                    (disabled && !isAgentRunning) ||
+                    isUploading
+                  }
+                >
+                  {loading || isUploading ? (
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                  ) : isAgentRunning ? (
+                    <div className="min-h-[14px] min-w-[14px] w-[14px] h-[14px] rounded-sm bg-current" />
+                  ) : (
+                    <ArrowUp className="h-5 w-5" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              {isUploading && (
+                <TooltipContent side="top">
+                  <p>Uploading {pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''}...</p>
+                </TooltipContent>
+              )}
+            </Tooltip>
+          </TooltipProvider>
         </div>
       </div>
-    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, messages, isLoggedIn, renderConfigDropdown, billingModalOpen, setBillingModalOpen, handleTranscription, onStopAgent, handleSubmit, value, uploadedFiles, selectedMode, onModeDeselect, handleModeDeselect, isModeDismissing, isSunaAgent, agentMode]);
+    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, messages, isLoggedIn, renderConfigDropdown, billingModalOpen, setBillingModalOpen, handleTranscription, onStopAgent, handleSubmit, value, uploadedFiles, selectedMode, onModeDeselect, handleModeDeselect, isModeDismissing, isSunaAgent, agentMode, pendingFiles]);
 
 
 
@@ -718,14 +733,26 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           >
             <div className="w-full text-sm flex flex-col justify-between items-start rounded-lg">
               <CardContent className={`w-full p-1.5 pb-2 ${bgColor} border rounded-3xl`}>
-                <AttachmentGroup
-                  files={uploadedFiles || []}
-                  sandboxId={sandboxId}
-                  onRemove={removeUploadedFile}
-                  layout="inline"
-                  maxHeight="216px"
-                  showPreviews={true}
-                />
+                {(uploadedFiles.length > 0 || isUploading) && (
+                  <div className="relative">
+                    <AttachmentGroup
+                      files={uploadedFiles || []}
+                      sandboxId={sandboxId}
+                      onRemove={removeUploadedFile}
+                      layout="inline"
+                      maxHeight="216px"
+                      showPreviews={true}
+                    />
+                    {isUploading && pendingFiles.length > 0 && (
+                      <div className="absolute inset-0 bg-background/50 backdrop-blur-sm rounded-xl flex items-center justify-center">
+                        <div className="flex items-center gap-2 bg-background/90 px-3 py-2 rounded-lg border border-border">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="text-sm">Uploading {pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''}...</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="relative flex flex-col w-full h-full gap-2 justify-between">
                   {renderTextArea}
                   {renderControls}

@@ -349,25 +349,24 @@ export function FileAttachment({
                 <button
                     onClick={handleClick}
                     className={cn(
-                        "group relative min-h-[54px] min-w-fit rounded-xl cursor-pointer",
+                        "group relative rounded-xl cursor-pointer",
                         "border border-black/10 dark:border-white/10",
                         "bg-black/5 dark:bg-black/20",
                         "p-0 overflow-hidden",
                         "flex items-center justify-center",
-                        isGridLayout ? "w-full" : "min-w-[54px]",
+                        // Match the aspect ratio behavior
+                        isGridLayout ? "w-full" : "h-[54px] w-[54px]",
                         className
                     )}
                     style={{
-                        maxWidth: "100%",
-                        height: isSingleItemGrid && isGridLayout ? 'auto' : (isGridLayout ? imageHeight : 'auto'),
-                        maxHeight: isSingleItemGrid && isGridLayout ? '800px' : undefined,
-                        minHeight: isGridLayout ? imageHeight : '54px',
-                        ...customStyle
+                        ...customStyle,
+                        // For grid layout, use a reasonable min-height for loading state
+                        minHeight: isGridLayout ? '100px' : undefined
                     }}
                     title={filename}
                 >
                     <div className="absolute inset-0 flex items-center justify-center">
-                        <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                        <Loader2 className="h-6 w-6 text-primary animate-spin" />
                     </div>
                 </button>
             );
@@ -379,24 +378,24 @@ export function FileAttachment({
                 <button
                     onClick={handleClick}
                     className={cn(
-                        "group relative min-h-[54px] min-w-fit rounded-xl cursor-pointer",
+                        "group relative rounded-xl cursor-pointer",
                         "border border-black/10 dark:border-white/10",
                         "bg-black/5 dark:bg-black/20",
                         "p-0 overflow-hidden",
                         "flex flex-col items-center justify-center gap-1",
-                        isGridLayout ? "w-full" : "inline-block",
+                        // Match the aspect ratio behavior
+                        isGridLayout ? "w-full" : "h-[54px] w-[54px]",
                         className
                     )}
                     style={{
-                        maxWidth: "100%",
-                        height: isSingleItemGrid && isGridLayout ? 'auto' : (isGridLayout ? imageHeight : 'auto'),
-                        maxHeight: isSingleItemGrid && isGridLayout ? '800px' : undefined,
-                        ...customStyle
+                        ...customStyle,
+                        // For grid layout, use a reasonable min-height for error state
+                        minHeight: isGridLayout ? '100px' : undefined
                     }}
                     title={filename}
                 >
-                    <IconComponent className="h-6 w-6 text-red-500 mb-1" />
-                    <div className="text-xs text-red-500">Failed to load image</div>
+                    <IconComponent className="h-5 w-5 text-red-500" />
+                    <div className="text-[10px] text-red-500">Error</div>
                 </button>
             );
         }
@@ -405,33 +404,29 @@ export function FileAttachment({
             <button
                 onClick={handleClick}
                 className={cn(
-                    "group relative min-h-[54px] rounded-2xl cursor-pointer",
+                    "group relative rounded-2xl cursor-pointer",
                     "border border-black/10 dark:border-white/10",
                     "bg-black/5 dark:bg-black/20",
                     "p-0 overflow-hidden", // No padding, content touches borders
                     "flex items-center justify-center", // Center the image
-                    isGridLayout ? "w-full" : "inline-block", // Full width in grid
+                    // For grid, auto height; for inline, fixed height
+                    isGridLayout ? "w-full" : "h-[54px] inline-block",
                     className
                 )}
-                style={{
-                    maxWidth: "100%", // Ensure doesn't exceed container width
-                    height: isSingleItemGrid && isGridLayout ? 'auto' : (isGridLayout ? imageHeight : 'auto'),
-                    maxHeight: isSingleItemGrid && isGridLayout ? '800px' : undefined,
-                    ...customStyle
-                }}
+                style={customStyle}
                 title={filename}
             >
                 <img
                     src={sandboxId && session?.access_token ? imageUrl : (fileUrl || '')}
                     alt={filename}
                     className={cn(
-                        "max-h-full max-w-full", // Respect parent constraints
-                        isSingleItemGrid ? "object-contain" : isGridLayout ? "w-full h-full object-cover" : "w-auto"
+                        // Preserve aspect ratio
+                        isGridLayout ? "w-full h-auto" : "h-full w-auto",
+                        "object-contain"
                     )}
                     style={{
-                        height: isSingleItemGrid ? 'auto' : imageHeight,
                         objectPosition: "center",
-                        objectFit: isSingleItemGrid ? "contain" : isGridLayout ? "cover" : "contain"
+                        maxHeight: isGridLayout ? customStyle?.maxHeight : undefined
                     }}
                     onLoad={() => {
                     }}
@@ -674,43 +669,65 @@ export function FileAttachment({
     }
 
     // Regular files with details
-    const safeStyle = { ...customStyle };
-    delete safeStyle.height;
-    delete (safeStyle as any)['--attachment-height'];
+    const safeStyle = isGridLayout ? customStyle : { ...customStyle };
+    if (!isGridLayout) {
+        delete safeStyle.height;
+        delete (safeStyle as any)['--attachment-height'];
+    }
 
     const fileButton = (
         <button
             onClick={handleClick}
             className={cn(
-                "group flex rounded-xl transition-all duration-200 min-h-[54px] h-[54px] overflow-hidden cursor-pointer",
+                "group flex rounded-xl transition-all duration-200 overflow-hidden cursor-pointer",
                 "border border-black/10 dark:border-white/10",
                 "bg-sidebar",
                 "text-left",
                 "pr-7", // Right padding for X button
-                isInlineMode
+                // In grid layout, fill the square parent; otherwise use fixed height
+                isGridLayout ? "w-full h-full flex-col items-center justify-center p-3" : "min-h-[54px] h-[54px]",
+                isInlineMode && !isGridLayout
                     ? "min-w-[170px] w-full sm:max-w-[300px] sm:w-fit" // Full width on mobile, constrained on larger screens
-                    : "min-w-[170px] max-w-[300px] w-fit", // Original constraints for grid layout
+                    : !isGridLayout && "min-w-[170px] max-w-[300px] w-fit", // Original constraints for inline layout
                 className
             )}
             style={safeStyle}
             title={filename}
         >
-            <div className="relative min-w-[54px] w-[54px] h-full aspect-square flex-shrink-0 bg-black/5 dark:bg-white/5">
-                <div className="flex items-center justify-center h-full w-full">
-                    <IconComponent className="h-5 w-5 text-black/60 dark:text-white/60" />
-                </div>
-            </div>
+            {isGridLayout ? (
+                // Vertical layout for grid (square) items
+                <>
+                    <div className="w-12 h-12 rounded-lg bg-black/5 dark:bg-white/5 flex items-center justify-center mb-2">
+                        <IconComponent className="h-6 w-6 text-black/60 dark:text-white/60" />
+                    </div>
+                    <div className="text-xs font-medium text-foreground text-center truncate max-w-full px-2">
+                        {filename}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground text-center truncate mt-0.5">
+                        {typeLabel}
+                    </div>
+                </>
+            ) : (
+                // Horizontal layout for inline items
+                <>
+                    <div className="relative min-w-[54px] w-[54px] h-full aspect-square flex-shrink-0 bg-black/5 dark:bg-white/5">
+                        <div className="flex items-center justify-center h-full w-full">
+                            <IconComponent className="h-5 w-5 text-black/60 dark:text-white/60" />
+                        </div>
+                    </div>
 
-            <div className="flex-1 min-w-0 flex flex-col justify-center p-2 pl-3 overflow-hidden">
-                <div className="text-sm font-medium text-foreground truncate max-w-full">
-                    {filename}
-                </div>
-                <div className="text-xs text-muted-foreground flex items-center gap-1 truncate">
-                    <span className="text-black/60 dark:text-white/60 truncate">{typeLabel}</span>
-                    <span className="text-black/40 dark:text-white/40 flex-shrink-0">·</span>
-                    <span className="text-black/60 dark:text-white/60 flex-shrink-0">{fileSize}</span>
-                </div>
-            </div>
+                    <div className="flex-1 min-w-0 flex flex-col justify-center p-2 pl-3 overflow-hidden">
+                        <div className="text-sm font-medium text-foreground truncate max-w-full">
+                            {filename}
+                        </div>
+                        <div className="text-xs text-muted-foreground flex items-center gap-1 truncate">
+                            <span className="text-black/60 dark:text-white/60 truncate">{typeLabel}</span>
+                            <span className="text-black/40 dark:text-white/40 flex-shrink-0">·</span>
+                            <span className="text-black/60 dark:text-white/60 flex-shrink-0">{fileSize}</span>
+                        </div>
+                    </div>
+                </>
+            )}
         </button>
     );
 
@@ -756,6 +773,18 @@ export function FileAttachmentGrid({
     // For standalone rendering, always expand previews to show content
     const shouldCollapse = standalone ? false : collapsed;
 
+    // Calculate appropriate max image height based on number of files
+    // When there are multiple files, use smaller max heights to prevent taking up too much screen space
+    const getGridImageHeight = () => {
+        if (!standalone) return 200; // Default for non-standalone
+        
+        const fileCount = attachments.length;
+        if (fileCount === 1) return 600; // Large for single file - preserves aspect ratio better
+        if (fileCount === 2) return 400; // Medium for 2 files
+        if (fileCount <= 4) return 300; // Smaller for 3-4 files
+        return 250; // Even smaller for 5+ files
+    };
+
     const content = (
         <AttachmentGroup
             files={attachments}
@@ -764,7 +793,7 @@ export function FileAttachmentGrid({
             sandboxId={sandboxId}
             showPreviews={showPreviews}
             layout="grid"
-            gridImageHeight={standalone ? 500 : 150} // Larger height for standalone files
+            gridImageHeight={getGridImageHeight()}
             collapsed={shouldCollapse}
             project={project}
             standalone={standalone}

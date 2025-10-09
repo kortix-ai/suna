@@ -31,6 +31,7 @@ export function ImageRenderer({ url, className }: ImageRendererProps) {
     height: number;
     type: string;
   } | null>(null);
+  const [showControls, setShowControls] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
@@ -133,57 +134,59 @@ export function ImageRenderer({ url, className }: ImageRendererProps) {
   const [showInfo, setShowInfo] = useState(false);
 
   return (
-    <div className={cn('flex flex-col w-full h-full', className)}>
-      {/* Controls */}
-      <div className="flex items-center justify-between py-2 px-4 bg-muted/30 border-b mb-2 rounded-t-md">
-        <div className="flex items-center space-x-2">
+    <div 
+      className={cn('relative w-full h-full group', className)}
+      onMouseEnter={() => setShowControls(true)}
+      onMouseLeave={() => setShowControls(false)}
+    >
+      {/* Floating Controls - Only visible on hover */}
+      <div 
+        className={cn(
+          "absolute top-4 left-1/2 -translate-x-1/2 z-10 transition-all duration-200",
+          showControls || showInfo ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-2 pointer-events-none"
+        )}
+      >
+        <div className="flex items-center gap-1 bg-card border border-border rounded-xl px-2 py-1.5 shadow-lg">
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 w-8 p-0"
+            className="h-7 w-7 p-0 hover:bg-muted"
             onClick={handleZoomOut}
             title="Zoom out"
             disabled={imgError}
           >
             <ZoomOut className="h-4 w-4" />
           </Button>
-          <span className="text-xs font-medium">{Math.round(zoom * 100)}%</span>
+          <span className="text-xs font-medium px-2 min-w-[48px] text-center text-muted-foreground">
+            {Math.round(zoom * 100)}%
+          </span>
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 w-8 p-0"
+            className="h-7 w-7 p-0 hover:bg-muted"
             onClick={handleZoomIn}
             title="Zoom in"
             disabled={imgError}
           >
             <ZoomIn className="h-4 w-4" />
           </Button>
+          
+          <div className="w-px h-4 bg-border mx-1" />
+          
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 w-8 p-0"
+            className="h-7 w-7 p-0 hover:bg-muted"
             onClick={handleRotate}
             title="Rotate"
             disabled={imgError}
           >
             <RotateCw className="h-4 w-4" />
           </Button>
-        </div>
-
-        <div className="flex items-center space-x-2">
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 w-8 p-0"
-            onClick={() => setShowInfo(!showInfo)}
-            title="Image information"
-          >
-            <Info className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 w-8 p-0"
+            className="h-7 w-7 p-0 hover:bg-muted"
             onClick={toggleFitToScreen}
             title={isFitToScreen ? 'Actual size' : 'Fit to screen'}
             disabled={imgError}
@@ -194,36 +197,51 @@ export function ImageRenderer({ url, className }: ImageRendererProps) {
               <Minimize2 className="h-4 w-4" />
             )}
           </Button>
+          
+          <div className="w-px h-4 bg-border mx-1" />
+          
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 w-7 p-0 hover:bg-muted"
+            onClick={() => setShowInfo(!showInfo)}
+            title="Image information"
+          >
+            <Info className="h-4 w-4" />
+          </Button>
         </div>
       </div>
 
       {/* Image info overlay */}
       {showInfo && imgInfo && (
-        <div className="absolute top-16 right-4 z-50 bg-background/80 backdrop-blur-sm p-3 rounded-md shadow-md border border-border text-xs">
-          <p>
-            <strong>Type:</strong> {imgInfo.type}
-          </p>
-          <p>
-            <strong>Dimensions:</strong> {imgInfo.width} × {imgInfo.height}
-          </p>
+        <div className="absolute top-16 right-4 z-10 bg-card p-4 rounded-xl shadow-lg border border-border text-sm min-w-[180px]">
+          <div className="space-y-2">
+            <div className="flex justify-between gap-6">
+              <span className="text-muted-foreground">Type</span>
+              <span className="font-medium">{imgInfo.type}</span>
+            </div>
+            <div className="flex justify-between gap-6">
+              <span className="text-muted-foreground">Size</span>
+              <span className="font-medium">{imgInfo.width} × {imgInfo.height}</span>
+            </div>
+            <div className="flex justify-between gap-6">
+              <span className="text-muted-foreground">Zoom</span>
+              <span className="font-medium">{Math.round(zoom * 100)}%</span>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Image container */}
+      {/* Image container - Clean background */}
       <div
         ref={containerRef}
-        className="flex-1 overflow-hidden relative bg-grid-pattern rounded-b-md"
+        className="w-full h-full overflow-hidden relative bg-background"
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
         style={{
           cursor: isPanning ? 'grabbing' : zoom > 0.5 ? 'grab' : 'default',
-          backgroundColor: '#f5f5f5',
-          backgroundImage:
-            'linear-gradient(45deg, #e0e0e0 25%, transparent 25%), linear-gradient(-45deg, #e0e0e0 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e0e0e0 75%), linear-gradient(-45deg, transparent 75%, #e0e0e0 75%)',
-          backgroundSize: '20px 20px',
-          backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px',
         }}
       >
         {imgError ? (
@@ -237,7 +255,7 @@ export function ImageRenderer({ url, className }: ImageRendererProps) {
           </div>
         ) : (
           <div
-            className="absolute inset-0 flex items-center justify-center"
+            className="absolute inset-0 flex items-center justify-center p-8"
             style={{
               transform: isFitToScreen ? 'none' : translateTransform,
               transition: isPanning ? 'none' : 'transform 0.1s ease',
@@ -280,6 +298,7 @@ export function ImageRenderer({ url, className }: ImageRendererProps) {
                 style={{
                   transform: imageTransform,
                   transition: 'transform 0.2s ease',
+                  boxShadow: imgLoaded ? '0 8px 32px -4px rgba(0, 0, 0, 0.15)' : 'none',
                 }}
                 draggable={false}
                 onLoad={handleImageLoad}

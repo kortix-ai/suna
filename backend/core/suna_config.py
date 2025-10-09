@@ -34,7 +34,7 @@ SUNA_CONFIG = {
         # search tools
         "people_search_tool": False,
         "company_search_tool": False,
-        
+
         "browser_tool": True,
         
         # Agent builder tools

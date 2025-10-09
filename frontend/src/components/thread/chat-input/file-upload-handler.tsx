@@ -60,6 +60,7 @@ const uploadFiles = async (
   setIsUploading: React.Dispatch<React.SetStateAction<boolean>>,
   messages: any[] = [], // Add messages parameter to check for existing files
   queryClient?: any, // Add queryClient parameter for cache invalidation
+  setPendingFiles?: React.Dispatch<React.SetStateAction<File[]>>, // Add setPendingFiles to clear pending files after upload
 ) => {
   try {
     setIsUploading(true);
@@ -135,6 +136,11 @@ const uploadFiles = async (
     }
 
     setUploadedFiles((prev) => [...prev, ...newUploadedFiles]);
+    
+    // Clear pending files after successful upload
+    if (setPendingFiles) {
+      setPendingFiles([]);
+    }
   } catch (error) {
     console.error('File upload failed:', error);
     toast.error(
@@ -160,7 +166,7 @@ const handleFiles = async (
 ) => {
   if (sandboxId) {
     // If we have a sandboxId, upload files directly
-    await uploadFiles(files, sandboxId, setUploadedFiles, setIsUploading, messages, queryClient);
+    await uploadFiles(files, sandboxId, setUploadedFiles, setIsUploading, messages, queryClient, setPendingFiles);
   } else {
     // Otherwise, store files locally
     handleLocalFiles(files, setPendingFiles, setUploadedFiles);
