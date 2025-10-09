@@ -206,7 +206,10 @@ export const GranularToolConfiguration = ({
     const toolGroup = getToolGroup(toolName, toolsData);
     if (!toolGroup) return 0;
     
-    return toolGroup.methods.filter(method => isMethodEnabled(toolName, method.name)).length;
+    // Only count visible methods
+    return toolGroup.methods
+      .filter(method => method.visible !== false)
+      .filter(method => isMethodEnabled(toolName, method.name)).length;
   };
 
   const filteredGroups = getFilteredToolGroups();
@@ -251,7 +254,7 @@ export const GranularToolConfiguration = ({
             const isGroupEnabled = isToolGroupEnabled(toolGroup.name);
             const isExpanded = expandedGroups.has(toolGroup.name);
             const enabledMethodsCount = getEnabledMethodsCount(toolGroup.name);
-            const totalMethodsCount = toolGroup.methods.length;
+            const totalMethodsCount = toolGroup.methods.filter(m => m.visible !== false).length;
             const IconComponent = getIconComponent(toolGroup.icon);
             const hasGranular = hasGranularControl(toolGroup.name, toolsData);
 
@@ -323,7 +326,9 @@ export const GranularToolConfiguration = ({
                             </span>
                           </div>
                           
-                          {toolGroup.methods.map((method) => {
+                          {toolGroup.methods
+                            .filter(method => method.visible !== false) // Only show visible methods
+                            .map((method) => {
                             const isMethodEnabledState = isMethodEnabled(toolGroup.name, method.name);
                             
                             return (

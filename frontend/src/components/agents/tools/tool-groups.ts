@@ -57,13 +57,13 @@ export function normalizeToolGroup(apiToolGroup: any): ToolGroup {
       enabled: m.enabled ?? true,
       isCore: m.is_core || m.isCore,
       is_core: m.is_core,
-      visible: m.visible ?? false, // Default false - tools must explicitly set visible=True
+      visible: m.visible, // Use API value directly - backend controls visibility
     })) || [],
     enabled: apiToolGroup.enabled ?? true,
     isCore: apiToolGroup.is_core || apiToolGroup.isCore,
     is_core: apiToolGroup.is_core,
     weight: apiToolGroup.weight ?? 100,
-    visible: apiToolGroup.visible ?? false, // Default false - tools must explicitly set visible=True
+    visible: apiToolGroup.visible, // Use API value directly - backend controls visibility
   };
 }
 
@@ -91,7 +91,12 @@ export function getAllToolGroups(toolsData?: Record<string, any>): Record<string
 
 export function hasGranularControl(toolName: string, toolsData?: Record<string, any>): boolean {
   const group = getToolGroup(toolName, toolsData);
-  return group ? group.methods.length > 1 : false;
+  if (!group) return false;
+  
+  // Only count visible methods for granular control (visible=true or visible=undefined counts as visible)
+  const visibleMethods = group.methods.filter(m => m.visible !== false);
+  console.log(`[hasGranularControl] ${toolName}: ${group.methods.length} total methods, ${visibleMethods.length} visible`, group.methods.map(m => ({ name: m.name, visible: m.visible })));
+  return visibleMethods.length > 1;
 }
 
 export function getEnabledMethodsForTool(

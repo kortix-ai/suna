@@ -71,12 +71,12 @@ class MethodMetadata:
         display_name (str): Human-readable method name
         description (str): Method description
         is_core (bool): Whether this is a core method (always enabled)
-        visible (bool): Whether method is visible in frontend UI (default False)
+        visible (bool): Whether method is visible in frontend UI (default True)
     """
     display_name: str
     description: str
     is_core: bool = False
-    visible: bool = False
+    visible: bool = True
 
 class Tool(ABC):
     """Abstract base class for all tools.
@@ -254,7 +254,7 @@ def method_metadata(
     display_name: str,
     description: str,
     is_core: bool = False,
-    visible: bool = False
+    visible: bool = True
 ):
     """Decorator to add metadata to a tool method.
     

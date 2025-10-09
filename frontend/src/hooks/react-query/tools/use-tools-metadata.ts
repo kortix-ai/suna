@@ -37,11 +37,23 @@ export function useToolsMetadata() {
   return useQuery<ToolsMetadataResponse>({
     queryKey: ['tools', 'metadata'],
     queryFn: async () => {
-      const response = await backendApi.get<ToolsMetadataResponse>('/tools');
+      const response = await backendApi.get<{ success: boolean; tools: ToolMetadata[] }>('/tools');
       if (!response.success || !response.data) {
         throw new Error('Failed to fetch tools metadata');
       }
-      return response.data;
+      
+      // Backend returns array, convert to object keyed by tool name
+      const toolsArray = response.data.tools;
+      const toolsObject: Record<string, ToolMetadata> = {};
+      
+      for (const tool of toolsArray) {
+        toolsObject[tool.name] = tool;
+      }
+      
+      return {
+        success: response.data.success,
+        tools: toolsObject
+      };
     },
     staleTime: 1000 * 60 * 60, // Cache for 1 hour since tools don't change frequently
     gcTime: 1000 * 60 * 60 * 24, // Keep in cache for 24 hours

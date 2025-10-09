@@ -268,7 +268,9 @@ def ask(self, question: str):
 
 ## 👁️ Visible in UI
 
-**Default:** `visible = True` (both tool and method level)
+**Default:** 
+- **Tool level:** `visible = False` (tools hidden by default)
+- **Method level:** `visible = True` (methods visible by default)
 
 Controls whether a tool/method is shown in the frontend UI.
 

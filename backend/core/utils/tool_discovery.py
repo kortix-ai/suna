@@ -222,7 +222,7 @@ def _extract_tool_metadata(tool_name: str, tool_class: Type[Tool]) -> Dict[str, 
                     method_info["description"] = f"{method_name} function"
                 
                 method_info["is_core"] = False
-                method_info["visible"] = False
+                method_info["visible"] = True
             
             metadata["methods"].append(method_info)
         except Exception as e:
