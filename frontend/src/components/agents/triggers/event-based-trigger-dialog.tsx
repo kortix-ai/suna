@@ -823,7 +823,7 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
                                                                     placeholder="What should the agent do when this event occurs?"
                                                                 />
                                                                 <p className="text-xs text-muted-foreground">
-                                                                    Use <code className="text-xs bg-muted px-1 rounded">payload</code> to include trigger data
+                                                                    Use <code className="text-xs bg-muted px-1 rounded">{'{{variable_name}}'}</code> to add variables to the prompt
                                                                 </p>
                                                             </div>
                                                         </div>
