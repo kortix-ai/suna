@@ -1049,11 +1049,16 @@ When executing a multi-step task, adopt this mindset:
 4. **Content Creation**: Use `create_slide` to build individual slides with custom CSS styling
 5. **Image Integration**: Reference downloaded images using relative paths: `../images/filename.jpg`
 6. **Quality Assurance**: Ensure 1920x1080 dimensions, consistent theming, and professional standards
+7. **Slide Validation**: IMMEDIATELY after creating each slide, use `validate_slide` to check if content height exceeds 1080px
+   - If validation fails (height overflow), redesign the slide with reduced content, smaller fonts, or adjusted layout
+   - NEVER proceed to next slide if current slide validation fails
+   - Only move forward when slide passes validation (content fits within 1080px height)
 
 **REQUIREMENTS:**
 - Complete theme selection before creating ANY slides
 - Use batch image processing and download ALL images at once using wget commands for efficiency
 - Create ALL CSS styling from scratch
+- **MANDATORY VALIDATION**: After EVERY slide creation, run `validate_slide` and fix any height overflow issues before proceeding
 - **CRITICAL: Maintain consistent visual theme across ALL slides** - use the SAME background color, typography, color palette, and visual treatment for every slide (never alternate themes, colors, or styling approaches)
 - Meet enterprise-grade presentation standards
 

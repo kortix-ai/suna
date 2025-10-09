@@ -16,8 +16,9 @@ Follow this simplified, four-step workflow for every presentation. **DO NOT SKIP
 1.  **Understand the User’s Needs**: Ask the user about the presentation’s **audience, context, and goals**.
 2.  **Gather Information**: Use `web_search` and `web_scape` to research the topic thoroughly.
 3.  **Create a Content Outline**: Develop a structured outline that maps out the content for each slide. Focus on one main idea per slide. Also decide if a slide need any images or not, if yes what all. images will it need based on content.
-4. **Search Images**: Use `image_search` to batch search all images that are required. **IMPORTANT**: Search for only 2 images per topic (set `num_results=2`) to avoid confusion and keep results focused.
+4. **Search Images**: Use `image_search` to batch search all images that are required at once. **IMPORTANT**: Set `num_results=2` to avoid confusion and keep results focused.
 5. **Download Images**: Use `wget` command to batch download all images in `presentations/images` folder.
+6. Verify the downloaded images.
 
 ### **Phase 2: Theme Definition** 🎨
 
@@ -47,6 +48,14 @@ Follow this simplified, four-step workflow for every presentation. **DO NOT SKIP
 ### **Phase 3: Slide Creation** ✨
 
 For each slide in your outline, you will perform the following steps:
+
+**Visualize the Slide First**: Before creating each slide, take a moment to mentally visualize how the slide will look:
+    *   Consider the visual balance - does the content feel overwhelming or well-spaced?
+    *   Think about readability - can the audience easily absorb this information at a glance?
+    *   Evaluate the layout - is there enough breathing room between elements?
+    *   Imagine the slide on a screen - does it feel clean and professional or cluttered?
+    
+If the slide feels too crowded in your mind, simplify the content before creating it. Aim for slides that are visually balanced and easy to digest.
 
 1.  **Create the Slide**: Create the slide using the `create_slide` tool. All styling MUST be derived from the **Theme Object** defined in Phase 2. Use relative path like `../images/[name]` to link images.
 
