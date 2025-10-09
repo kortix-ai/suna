@@ -136,6 +136,7 @@ const defaultRegistry: ToolViewRegistryType = {
   'list-presentations': ListPresentationsToolView,
   'delete-slide': DeleteSlideToolView,
   'delete-presentation': DeletePresentationToolView,
+  'validate-slide': PresentationViewer,
   // 'presentation-styles': PresentationStylesToolView,
   'present-presentation': PresentPresentationToolView,
 
@@ -263,6 +264,7 @@ export function ToolView({ name = 'default', assistantContent, toolContent, ...p
     'list-slides',
     'delete-slide',
     'delete-presentation',
+    'validate-slide',
     // 'presentation-styles',
     'present-presentation',
   ]
