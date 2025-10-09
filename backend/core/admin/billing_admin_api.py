@@ -4,7 +4,7 @@ Handles all administrative billing operations: credits, refunds, transactions.
 User search has been moved to admin_api.py as it's user-focused, not billing-focused.
 """
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import Optional, List
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
@@ -185,31 +185,60 @@ async def get_user_billing_summary(
 @router.get("/user/{account_id}/transactions")
 async def get_user_transactions(
     account_id: str,
-    limit: int = 100,
-    offset: int = 0,
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
     type_filter: Optional[str] = None,
     admin: dict = Depends(require_admin)
 ):
-    """Get transaction history for a specific user."""
-    db = DBConnection()
-    client = await db.client
-    
-    query = client.from_('credit_ledger').select('*').eq('account_id', account_id).order('created_at', desc=True)
-    
-    if type_filter:
-        query = query.eq('type', type_filter)
-    
-    if offset:
-        query = query.range(offset, offset + limit - 1)
-    else:
-        query = query.limit(limit)
-    
-    transactions_result = await query.execute()
-    
-    return {
-        'account_id': account_id,
-        'transactions': transactions_result.data or [],
-        'count': len(transactions_result.data or [])
-    }
+    try:
+        from core.utils.pagination import PaginationService, PaginationParams
+        
+        db = DBConnection()
+        client = await db.client
+        
+        pagination_params = PaginationParams(page=page, page_size=page_size)
+        
+        # Get total count
+        count_query = client.from_('credit_ledger').select('*', count='exact').eq('account_id', account_id)
+        if type_filter:
+            count_query = count_query.eq('type', type_filter)
+        count_result = await count_query.execute()
+        total_count = count_result.count or 0
+        
+        # Get paginated transactions
+        offset = (pagination_params.page - 1) * pagination_params.page_size
+        transactions_query = client.from_('credit_ledger').select('*').eq('account_id', account_id)
+        
+        if type_filter:
+            transactions_query = transactions_query.eq('type', type_filter)
+            
+        transactions_result = await transactions_query.order('created_at', desc=True).range(
+            offset, offset + pagination_params.page_size - 1
+        ).execute()
+        
+        # Format transactions
+        transactions = []
+        for tx in transactions_result.data or []:
+            transactions.append({
+                'id': tx.get('id'),
+                'created_at': tx.get('created_at'),
+                'amount': float(tx.get('amount', 0)),
+                'balance_after': float(tx.get('balance_after', 0)),
+                'type': tx.get('type'),
+                'description': tx.get('description'),
+                'is_expiring': tx.get('is_expiring', False),
+                'expires_at': tx.get('expires_at'),
+                'metadata': tx.get('metadata', {})
+            })
+        
+        return await PaginationService.paginate_with_total_count(
+            items=transactions,
+            total_count=total_count,
+            params=pagination_params
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to get user transactions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve transactions")
 
 

@@ -314,6 +314,78 @@ async def get_user_stats_overview(
         logger.error(f"Failed to get user stats: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve user statistics")
 
+@router.get("/users/{user_id}/activity")
+async def get_user_activity(
+    user_id: str,
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    status_filter: Optional[str] = Query(None, description="Filter by status"),
+    admin: dict = Depends(require_admin)
+):
+    """Get paginated activity (agent runs) for a specific user."""
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        pagination_params = PaginationParams(page=page, page_size=page_size)
+        
+        # Build base query for agent runs with thread info
+        base_query = client.from_('agent_runs').select(
+            '*, threads!inner(account_id, thread_id)'
+        ).eq('threads.account_id', user_id)
+        
+        if status_filter:
+            base_query = base_query.eq('status', status_filter)
+        
+        # Get total count
+        count_result = await client.from_('agent_runs').select(
+            'id, threads!inner(account_id)', count='exact'
+        ).eq('threads.account_id', user_id).execute()
+        
+        total_count = count_result.count or 0
+        
+        # Get paginated activity
+        offset = (pagination_params.page - 1) * pagination_params.page_size
+        activity_query = client.from_('agent_runs').select(
+            '*, threads!inner(account_id, thread_id)'
+        ).eq('threads.account_id', user_id)
+        
+        if status_filter:
+            activity_query = activity_query.eq('status', status_filter)
+            
+        activity_result = await activity_query.order('created_at', desc=True).range(
+            offset, offset + pagination_params.page_size - 1
+        ).execute()
+        
+        # Format activity data
+        activities = []
+        for run in activity_result.data or []:
+            thread = run.get('threads', {})
+            
+            activities.append({
+                'id': run.get('id'),
+                'created_at': run.get('created_at'),
+                'updated_at': run.get('updated_at'),
+                'status': run.get('status'),
+                'thread_id': run.get('thread_id'),
+                'thread_name': f"Thread {run.get('thread_id', '').split('-')[0] if run.get('thread_id') else 'Unknown'}",
+                'agent_id': run.get('agent_id'),
+                'agent_name': 'Agent',  # We'll need to fetch agent names separately if needed
+                'credit_cost': float(run.get('credit_cost', 0) if run.get('credit_cost') else 0),
+                'error': run.get('error'),
+                'duration_ms': run.get('duration_ms')
+            })
+        
+        return await PaginationService.paginate_with_total_count(
+            items=activities,
+            total_count=total_count,
+            params=pagination_params
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to get user activity: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve user activity")
+
 @router.get("/users/threads/by-email")
 async def get_user_threads_by_email(
     email: str = Query(..., description="User email to fetch threads for"),
