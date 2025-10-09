@@ -384,11 +384,11 @@ export function DashboardContent() {
             )}
 
             {/* Centered content area */}
-            <div className="flex-1 flex items-center justify-center">
+            <div className="flex-1 flex items-start justify-center pt-[20vh]">
               {/* Super Worker View - Suna only */}
               {viewMode === 'super-worker' && (
                 <div className="w-full animate-in fade-in-0 duration-300">
-                  {/* Title and chat input */}
+                  {/* Title and chat input - Fixed position */}
                   <div className="px-4 py-8">
                     <div className="w-full max-w-3xl mx-auto flex flex-col items-center space-y-4 md:space-y-6">
                       <div className="flex flex-col items-center text-center w-full">
@@ -411,7 +411,7 @@ export function DashboardContent() {
                           hideAttachments={false}
                           selectedAgentId={selectedAgentId}
                           onAgentSelect={setSelectedAgent}
-                          enableAdvancedConfig={true}
+                          enableAdvancedConfig={false}
                           onConfigureAgent={(agentId) => {
                             setConfigAgentId(agentId);
                             setShowConfigDialog(true);
@@ -420,23 +420,23 @@ export function DashboardContent() {
                           onModeDeselect={() => setSelectedMode(null)}
                           animatePlaceholder={true}
                         />
-
-                        {/* Modes Panel */}
-                        {(isStagingMode() || isLocalMode()) && isSunaAgent && (
-                          <div className="px-4 pt-8">
-                            <div className="max-w-3xl mx-auto">
-                              <SunaModesPanel
-                                selectedMode={selectedMode}
-                                onModeSelect={setSelectedMode}
-                                onSelectPrompt={setInputValue}
-                                isMobile={isMobile}
-                              />
-                            </div>
-                          </div>
-                        )}
                       </div>
                     </div>
                   </div>
+
+                  {/* Modes Panel - Below chat input, doesn't affect its position */}
+                  {(isStagingMode() || isLocalMode()) && isSunaAgent && (
+                    <div className="px-4 pb-8">
+                      <div className="max-w-3xl mx-auto">
+                        <SunaModesPanel
+                          selectedMode={selectedMode}
+                          onModeSelect={setSelectedMode}
+                          onSelectPrompt={setInputValue}
+                          isMobile={isMobile}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
