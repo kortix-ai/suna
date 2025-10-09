@@ -151,6 +151,7 @@
     "react-pdf": "^9.2.1",
     "react-phone-number-input": "^3.4.12",
     "react-scan": "^0.0.44",
+    "recharts": "^3.2.1",
     "rehype-raw": "^7.0.0",
     "rehype-sanitize": "^6.0.0",
     "remark-gfm": "^4.0.1",

@@ -194,20 +194,18 @@ export function AttachmentGroup({
         const filename = path.split('/').pop() || '';
         const isImage = filename.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i) !== null;
         const isPreviewFile = isPreviewableFile(file);
-        // Don't span full width automatically - let grid handle layout naturally
-        const shouldSpanFull = false;
 
         return {
             file,
             path,
             isImage,
             isPreviewFile,
-            shouldSpanFull,
             wrapperClassName: cn(
                 "relative group",
-                isImage ? "flex items-start justify-center" : "" // Use items-start for images to align top
+                isImage ? "flex items-start justify-center" : "",
+                isPreviewFile ? "w-full" : "" // Previewable files span full width
             ),
-            wrapperStyle: undefined // Let CSS grid handle the layout
+            wrapperStyle: isPreviewFile ? { gridColumn: '1 / -1' } : undefined // Make previewable files span full width like in CompleteToolView
         };
     });
 
@@ -230,8 +228,8 @@ export function AttachmentGroup({
                             key={index}
                             className={cn(
                                 item.wrapperClassName,
-                                // Let images keep their aspect ratio, only make non-images square
-                                item.isImage ? "w-full" : "aspect-square w-full"
+                                // Images and previewable files span naturally, regular files are compact
+                                item.isImage || item.isPreviewFile ? "w-full" : ""
                             )}
                             style={item.wrapperStyle}
                         >
@@ -242,24 +240,24 @@ export function AttachmentGroup({
                                 showPreview={showPreviews}
                                 localPreviewUrl={getLocalPreviewUrl(item.file)}
                                 className={cn(
-                                    // For images, let them size naturally; for non-images fill the square
-                                    item.isImage ? "w-full" : "w-full h-full"
+                                    "w-full",
+                                    item.isImage ? "h-auto min-h-[54px]" :
+                                        item.isPreviewFile ? "min-h-[240px] max-h-[400px]" : "h-[54px]" // Regular files are compact 54px
                                 )}
-                                // Pass customStyle for sizing
-                                customStyle={{
-                                    width: '100%',
-                                    ...(item.isImage ? 
-                                        { 
-                                            height: 'auto',
-                                            maxHeight: `${gridImageHeight}px`,
-                                            '--attachment-height': `${gridImageHeight}px`
-                                        } as React.CSSProperties : 
-                                        {
-                                            height: '100%',
-                                            objectFit: 'cover'
-                                        })
-                                }}
-                                collapsed={collapsed} // Pass collapsed prop
+                                // Pass customStyle for sizing - MUST include gridColumn for previewable files to trigger preview
+                                customStyle={
+                                    item.isImage ? {
+                                        width: '100%',
+                                        height: 'auto',
+                                        maxHeight: `${gridImageHeight}px`,
+                                        '--attachment-height': `${gridImageHeight}px`
+                                    } as React.CSSProperties :
+                                        item.isPreviewFile ? {
+                                            gridColumn: '1 / -1', // This triggers isGridLayout and preview rendering!
+                                            width: '100%'
+                                        } : undefined // Regular files get no custom style
+                                }
+                                collapsed={false} // Always show previews in grid like in CompleteToolView
                                 project={project} // Pass project to FileAttachment
                                 isSingleItemGrid={uniqueFiles.length === 1} // Pass single item detection
                                 standalone={standalone} // Pass standalone prop
@@ -296,18 +294,39 @@ export function AttachmentGroup({
             // For inline layout with pre-computed data
             return (
                 <div className={cn("flex flex-wrap gap-3", className)}>
-                    {visibleFilesWithMeta.map((item, index) => (
-                        <div key={index} className={cn("relative group h-[54px]", item.wrapperClassName)}>
-                            <FileAttachment
-                                filepath={item.path}
-                                onClick={handleFileClick}
-                                sandboxId={sandboxId}
-                                showPreview={showPreviews}
-                                localPreviewUrl={getLocalPreviewUrl(item.file)}
-                                collapsed={true} // Always collapsed in inline mode
-                                alignRight={alignRight} // Pass alignRight prop
-                            />
-                            {onRemove && (
+                    {visibleFilesWithMeta.map((item, index) => {
+                        const isHtml = item.path.match(/\.(html|htm)$/i) !== null;
+                        const isPreviewable = item.path.match(/\.(html|htm|md|markdown|csv|tsv)$/i) !== null;
+                        
+                        return (
+                            <div 
+                                key={index} 
+                                className={cn(
+                                    "relative group",
+                                    isPreviewable ? "w-full" : "h-[54px]",
+                                    item.wrapperClassName
+                                )}
+                                style={isPreviewable ? { gridColumn: '1 / -1' } : undefined}
+                            >
+                                <FileAttachment
+                                    filepath={item.path}
+                                    onClick={handleFileClick}
+                                    sandboxId={sandboxId}
+                                    showPreview={showPreviews}
+                                    localPreviewUrl={getLocalPreviewUrl(item.file)}
+                                    collapsed={false} // Show previews like in CompleteToolView
+                                    alignRight={alignRight} // Pass alignRight prop
+                                    className={cn(
+                                        isPreviewable ? "min-h-[240px] max-h-[400px] overflow-auto" : ""
+                                    )}
+                                    customStyle={
+                                        isPreviewable ? {
+                                            gridColumn: '1 / -1',
+                                            width: '100%'
+                                        } : undefined
+                                    }
+                                />
+                                {onRemove && (
                                 <div
                                     className="absolute -top-1 -right-1 h-5 w-5 rounded-full
                                         bg-black dark:bg-white
@@ -331,7 +350,8 @@ export function AttachmentGroup({
                                 </div>
                             )}
                         </div>
-                    ))}
+                        );
+                    })}
 
                     {/* "More" button */}
                     {moreCount > 0 && (
@@ -428,28 +448,34 @@ export function AttachmentGroup({
                                     const path = getFilePath(file);
                                     const filename = path.split('/').pop() || '';
                                     const isImage = filename.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i) !== null;
+                                    const isPreviewFile = isPreviewableFile(file);
 
                                     return {
                                         file,
                                         path,
                                         isImage,
+                                        isPreviewFile,
                                         originalIndex,
                                         wrapperClassName: cn(
                                             "relative group",
-                                            isImage ? "flex items-start justify-center" : ""
+                                            isImage ? "flex items-start justify-center" : "",
+                                            isPreviewFile ? "w-full" : ""
                                         ),
                                         fileClassName: cn(
                                             "w-full",
-                                            isImage ? "h-auto min-h-[54px]" : "h-[54px]"
+                                            isImage ? "h-auto min-h-[54px]" :
+                                                isPreviewFile ? "min-h-[240px] max-h-[400px]" : "h-[54px]"
                                         ),
                                         customStyle: isImage ? {
                                             width: '100%',
                                             height: 'auto',
                                             maxHeight: `${gridImageHeight}px`,
                                             '--attachment-height': `${gridImageHeight}px`
-                                        } as React.CSSProperties : {
-                                            width: '100%'
-                                        }
+                                        } as React.CSSProperties :
+                                            isPreviewFile ? {
+                                                gridColumn: '1 / -1', // This triggers isGridLayout and preview rendering!
+                                                width: '100%'
+                                            } : undefined // Regular files get no custom style
                                     };
                                 });
                             })();
@@ -458,6 +484,7 @@ export function AttachmentGroup({
                                 <div
                                     key={item.originalIndex}
                                     className={item.wrapperClassName}
+                                    style={item.isPreviewFile ? { gridColumn: '1 / -1' } : undefined}
                                 >
                                     <FileAttachment
                                         filepath={item.path}
@@ -470,7 +497,7 @@ export function AttachmentGroup({
                                         localPreviewUrl={getLocalPreviewUrl(item.file)}
                                         className={item.fileClassName}
                                         customStyle={item.customStyle}
-                                        collapsed={true} // Force collapsed for all in modal
+                                        collapsed={false} // Show previews like in CompleteToolView
                                         project={project}
                                         isSingleItemGrid={uniqueFiles.length === 1} // Pass single item detection to modal too
                                         standalone={false} // Never standalone in modal
