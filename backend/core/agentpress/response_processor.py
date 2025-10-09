@@ -448,7 +448,12 @@ class ResponseProcessor:
                             # --- Buffer and Execute Complete Native Tool Calls ---
                             if not hasattr(tool_call_chunk, 'function'): continue
                             idx = tool_call_chunk.index if hasattr(tool_call_chunk, 'index') else 0
-                            # ... (buffer update logic remains same) ...
+                            # buffer update logic
+                            if tool_calls_buffer.get(idx):
+                                tool_calls_buffer[idx]['function']['arguments'] += tool_call_data_chunk['function']['arguments']
+                            else:
+                                tool_calls_buffer[idx] = tool_call_data_chunk
+                            
                             # ... (check complete logic remains same) ...
                             has_complete_tool_call = False # Placeholder
                             if (tool_calls_buffer.get(idx) and
@@ -612,7 +617,8 @@ class ResponseProcessor:
 
             should_auto_continue = (can_auto_continue and finish_reason == 'length')
 
-            if accumulated_content and not should_auto_continue:
+            # to cover the generation when there are tool_calls but no contents
+            if (accumulated_content and not should_auto_continue) or tool_calls_buffer:
                 # ... (Truncate accumulated_content logic) ...
                 if config.max_xml_tool_calls > 0 and xml_tool_call_count >= config.max_xml_tool_calls and xml_chunks_buffer:
                     last_xml_chunk = xml_chunks_buffer[-1]
