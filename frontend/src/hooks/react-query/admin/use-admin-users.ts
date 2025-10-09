@@ -184,6 +184,34 @@ export function useAdminUserThreads(params: UserThreadsParams) {
   });
 }
 
+interface UserActivityParams {
+  userId: string;
+  page?: number;
+  page_size?: number;
+  status_filter?: string;
+}
+
+export function useAdminUserActivity(params: UserActivityParams) {
+  return useQuery({
+    queryKey: ['admin', 'users', 'activity', params.userId, params.page, params.page_size, params.status_filter],
+    queryFn: async () => {
+      const searchParams = new URLSearchParams();
+      
+      if (params.page) searchParams.append('page', params.page.toString());
+      if (params.page_size) searchParams.append('page_size', params.page_size.toString());
+      if (params.status_filter) searchParams.append('status_filter', params.status_filter);
+      
+      const response = await backendApi.get(`/admin/users/${params.userId}/activity?${searchParams.toString()}`);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    enabled: !!params.userId,
+    staleTime: 30000,
+  });
+}
+
 export function useRefreshUserData() {
   const queryClient = useQueryClient();
   

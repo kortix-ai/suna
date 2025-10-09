@@ -100,7 +100,8 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
     instanceName: string, 
     profileMappings: Record<string, string>, 
     customServerConfigs: Record<string, any>,
-    triggerConfigs?: Record<string, Record<string, any>>
+    triggerConfigs?: Record<string, Record<string, any>>,
+    triggerVariables?: Record<string, Record<string, string>>
   ) => {
     if (!item) return;
 
@@ -113,6 +114,7 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
         profile_mappings: profileMappings,
         custom_mcp_configs: customServerConfigs,
         trigger_configs: triggerConfigs,
+        trigger_variables: triggerVariables,
       });
 
       if (result.status === 'installed' && result.instance_id) {
@@ -123,6 +125,11 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
           onAgentSelect(result.instance_id);
         }
       } else if (result.status === 'configs_required') {
+        if (result.missing_trigger_variables && Object.keys(result.missing_trigger_variables).length > 0) {
+          toast.warning('Please provide values for template trigger variables.');
+          setInstallingItemId('');
+          return;
+        }
         toast.error('Please provide all required configurations');
         return;
       } else {

@@ -429,7 +429,7 @@ IMPORTANT: All content must be wrapped in proper HTML tags. Do not use unsupport
             doc_info = all_metadata["documents"][doc_id]
             
             try:
-                await self.sandbox.fs.remove_file(doc_info["path"])
+                await self.sandbox.fs.delete_file(doc_info["path"])
             except:
                 pass
 
@@ -509,4 +509,400 @@ IMPORTANT: All content must be wrapped in proper HTML tags. Do not use unsupport
             "guide": guide,
             "message": "Use this guide to format HTML content for TipTap editor"
         })
+    
+    def _generate_pdf_html(self, title: str, content: str, metadata: Optional[Dict] = None) -> str:
+        css_styles = """
+        <style>
+            @page {
+                size: A4;
+                margin: 1in;
+            }
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            body {
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+                line-height: 1.6;
+                color: #333;
+                background: white;
+                max-width: 100%;
+            }
+            .header {
+                margin-bottom: 2rem;
+                padding-bottom: 1rem;
+                border-bottom: 2px solid #e5e7eb;
+            }
+            .title {
+                font-size: 2.5rem;
+                font-weight: 700;
+                color: #111827;
+                margin-bottom: 0.5rem;
+            }
+            .metadata {
+                display: flex;
+                gap: 1.5rem;
+                color: #6b7280;
+                font-size: 0.9rem;
+                margin-top: 0.5rem;
+            }
+            .metadata-item {
+                display: flex;
+                align-items: center;
+                gap: 0.25rem;
+            }
+            .tag {
+                display: inline-block;
+                padding: 0.125rem 0.5rem;
+                background: #eff6ff;
+                color: #1e40af;
+                border-radius: 0.25rem;
+                font-size: 0.875rem;
+                margin-right: 0.25rem;
+            }
+            .content {
+                margin-top: 2rem;
+            }
+            h1 { 
+                font-size: 2rem; 
+                font-weight: 700; 
+                margin: 1.5rem 0 0.75rem; 
+                color: #111827;
+                page-break-after: avoid;
+            }
+            h2 { 
+                font-size: 1.5rem; 
+                font-weight: 600; 
+                margin: 1.25rem 0 0.625rem; 
+                color: #374151;
+                page-break-after: avoid;
+            }
+            h3 { 
+                font-size: 1.25rem; 
+                font-weight: 600; 
+                margin: 1rem 0 0.5rem; 
+                color: #4b5563;
+                page-break-after: avoid;
+            }
+            p { 
+                margin-bottom: 1rem; 
+                text-align: justify;
+            }
+            ul, ol { 
+                margin: 0.75rem 0 0.75rem 1.5rem; 
+                page-break-inside: avoid;
+            }
+            li { 
+                margin-bottom: 0.25rem; 
+            }
+            blockquote {
+                border-left: 4px solid #3b82f6;
+                padding-left: 1rem;
+                margin: 1rem 0;
+                color: #4b5563;
+                font-style: italic;
+                background: #f9fafb;
+                padding: 0.75rem 1rem;
+                page-break-inside: avoid;
+            }
+            pre {
+                background: #1f2937;
+                color: #f3f4f6;
+                padding: 1rem;
+                margin: 1rem 0;
+                border-radius: 0.5rem;
+                overflow-x: auto;
+                font-family: 'Courier New', monospace;
+                font-size: 0.9rem;
+                page-break-inside: avoid;
+            }
+            code {
+                background: #f3f4f6;
+                color: #dc2626;
+                padding: 0.125rem 0.375rem;
+                border-radius: 0.25rem;
+                font-family: 'Courier New', monospace;
+                font-size: 0.9em;
+            }
+            pre code {
+                background: transparent;
+                color: inherit;
+                padding: 0;
+            }
+            table {
+                border-collapse: collapse;
+                width: 100%;
+                margin: 1rem 0;
+                page-break-inside: avoid;
+            }
+            th, td {
+                border: 1px solid #e5e7eb;
+                padding: 0.75rem;
+                text-align: left;
+            }
+            th {
+                background: #f9fafb;
+                font-weight: 600;
+                color: #374151;
+            }
+            img {
+                max-width: 100%;
+                height: auto;
+                display: block;
+                margin: 1rem 0;
+            }
+            a {
+                color: #2563eb;
+                text-decoration: none;
+                border-bottom: 1px solid transparent;
+            }
+            a:hover {
+                border-bottom-color: #2563eb;
+            }
+            hr {
+                border: none;
+                border-top: 1px solid #e5e7eb;
+                margin: 1.5rem 0;
+            }
+            .footer {
+                margin-top: 3rem;
+                padding-top: 1rem;
+                border-top: 1px solid #e5e7eb;
+                color: #6b7280;
+                font-size: 0.875rem;
+                text-align: center;
+            }
+        </style>
+        """
+        
+        current_time = datetime.now().strftime("%B %d, %Y at %I:%M %p")
+        
+        doc_html = f"""
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>{html.escape(title)}</title>
+            {css_styles}
+        </head>
+        <body>
+            <div class="header">
+                <div class="title">{html.escape(title)}</div>
+                <div class="metadata">
+                    <div class="metadata-item">
+                        <span>Generated on {current_time}</span>
+                    </div>
+        """
+        
+        if metadata:
+            if metadata.get("author"):
+                doc_html += f"""
+                    <div class="metadata-item">
+                        <span>Author: {html.escape(metadata["author"])}</span>
+                    </div>
+                """
+            
+            if metadata.get("tags"):
+                doc_html += """
+                    <div class="metadata-item">
+                        <span>Tags: </span>
+                """
+                for tag in metadata["tags"]:
+                    doc_html += f'<span class="tag">{html.escape(tag)}</span>'
+                doc_html += """
+                    </div>
+                """
+        
+        doc_html += f"""
+                </div>
+            </div>
+            <div class="content">
+                {content}
+            </div>
+        </body>
+        </html>
+        """
+        
+        return doc_html
+    
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "convert_to_pdf",
+            "description": "Convert a document to PDF format",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "doc_id": {
+                        "type": "string",
+                        "description": "ID of the document to convert to PDF"
+                    },
+                    "download": {
+                        "type": "boolean",
+                        "description": "If true, returns the PDF file for download. If false, saves it in the workspace",
+                        "default": False
+                    }
+                },
+                "required": ["doc_id"]
+            }
+        }
+    })
+    async def convert_to_pdf(self, doc_id: str, download: bool = False) -> ToolResult:
+        try:
+            await self._ensure_sandbox()
+            
+            all_metadata = await self._load_metadata()
+            
+            if doc_id not in all_metadata["documents"]:
+                return self.fail_response(f"Document with ID '{doc_id}' not found")
+            
+            doc_info = all_metadata["documents"][doc_id]
+            
+            content_raw = await self.sandbox.fs.download_file(doc_info["path"])
+            content_str = content_raw.decode()
+            
+            if doc_info.get("format") in ["tiptap", "html", "doc"] or doc_info.get("is_tiptap_doc") or doc_info.get("doc_type") == "tiptap_document":
+                try:
+                    document_wrapper = json.loads(content_str)
+                    if document_wrapper.get("type") == "tiptap_document":
+                        content = document_wrapper.get("content", "")
+                        title = document_wrapper.get("title", doc_info["title"])
+                        metadata = document_wrapper.get("metadata", doc_info.get("metadata", {}))
+                    else:
+                        content = content_str
+                        title = doc_info["title"]
+                        metadata = doc_info.get("metadata", {})
+                except json.JSONDecodeError:
+                    content = content_str
+                    title = doc_info["title"]
+                    metadata = doc_info.get("metadata", {})
+            else:
+                content = f"<pre>{html.escape(content_str)}</pre>"
+                title = doc_info["title"]
+                metadata = doc_info.get("metadata", {})
+            
+            complete_html = self._generate_pdf_html(title, content, metadata)
+            
+            temp_html_filename = f"temp_pdf_{doc_id}.html"
+            temp_html_path = f"/workspace/{temp_html_filename}"
+            await self.sandbox.fs.upload_file(complete_html.encode(), temp_html_path)
+            
+            logger.info(f"Creating PDF from document: {title}")
+            
+            pdf_generation_script = f"""
+import asyncio
+from playwright.async_api import async_playwright
+import sys
+
+async def html_to_pdf():
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=['--no-sandbox', '--disable-setuid-sandbox']
+            )
+            
+            page = await browser.new_page()
+            
+            await page.goto('file://{temp_html_path}', wait_until='networkidle')
+            
+            pdf_filename = '{self._sanitize_filename(title)}_{doc_id}.pdf'
+            pdf_path = f'/workspace/docs/{{pdf_filename}}'
+            
+            await page.pdf(
+                path=pdf_path,
+                format='A4',
+                print_background=True,
+                margin={{
+                    'top': '0.5in',
+                    'right': '0.5in',
+                    'bottom': '0.5in',
+                    'left': '0.5in'
+                }}
+            )
+            
+            await browser.close()
+            
+            print(pdf_path)
+            return pdf_path
+            
+    except Exception as e:
+        print(f"ERROR: {{str(e)}}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    pdf_path = asyncio.run(html_to_pdf())
+"""
+            
+            script_path = f"/workspace/temp_pdf_script_{doc_id}.py"
+            await self.sandbox.fs.upload_file(pdf_generation_script.encode(), script_path)
+            
+            response = await self.sandbox.process.exec(
+                f"cd /workspace && python {script_path}",
+                timeout=30
+            )
+            
+            await self.sandbox.fs.delete_file(temp_html_path)
+            await self.sandbox.fs.delete_file(script_path)
+            
+            if response.exit_code != 0:
+                logger.error(f"PDF generation failed: {response.result}")
+                return self.fail_response(f"Failed to generate PDF: {response.result}")
+            
+            pdf_path = response.result.strip()
+            pdf_filename = pdf_path.split('/')[-1]
+            
+            pdf_info = {
+                "doc_id": doc_id,
+                "title": title,
+                "pdf_filename": pdf_filename,
+                "pdf_path": pdf_path,
+                "created_at": datetime.now().isoformat(),
+                "source_document": doc_info
+            }
+            
+            all_metadata["documents"][doc_id]["last_pdf_export"] = {
+                "filename": pdf_filename,
+                "path": pdf_path,
+                "exported_at": datetime.now().isoformat()
+            }
+            await self._save_metadata(all_metadata)
+            
+            preview_url = None
+            download_url = None
+            if hasattr(self, '_sandbox_url') and self._sandbox_url:
+                preview_url = f"{self._sandbox_url}/docs/{pdf_filename}"
+                download_url = preview_url
+            
+            if download:
+                pdf_content = await self.sandbox.fs.download_file(pdf_path)
+                
+                import base64
+                pdf_base64 = base64.b64encode(pdf_content).decode('utf-8')
+                
+                return self.success_response({
+                    "success": True,
+                    "message": f"PDF generated successfully from document '{title}'",
+                    "pdf_info": pdf_info,
+                    "pdf_base64": pdf_base64,
+                    "pdf_filename": pdf_filename,
+                    "preview_url": preview_url,
+                    "download_url": download_url,
+                    "sandbox_id": self.sandbox_id
+                })
+            else:
+                return self.success_response({
+                    "success": True,
+                    "message": f"PDF saved successfully: {pdf_filename}",
+                    "pdf_info": pdf_info,
+                    "preview_url": preview_url,
+                    "download_url": download_url,
+                    "sandbox_id": self.sandbox_id
+                })
+                
+        except Exception as e:
+            logger.error(f"Error converting document to PDF: {str(e)}")
+            return self.fail_response(f"Error converting document to PDF: {str(e)}")
     

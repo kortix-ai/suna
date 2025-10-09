@@ -33,24 +33,31 @@ export function useUserBillingSummary(userId: string | null) {
   });
 }
 
-export function useUserTransactions(userId: string | null, limit = 100, offset = 0, typeFilter?: string) {
+interface TransactionParams {
+  userId: string;
+  page?: number;
+  page_size?: number;
+  type_filter?: string;
+}
+
+export function useAdminUserTransactions(params: TransactionParams) {
   return useQuery({
-    queryKey: ['admin', 'billing', 'transactions', userId, limit, offset, typeFilter],
+    queryKey: ['admin', 'billing', 'transactions', params.userId, params.page, params.page_size, params.type_filter],
     queryFn: async () => {
-      if (!userId) return null;
-      const params = new URLSearchParams({
-        limit: limit.toString(),
-        offset: offset.toString(),
-      });
-      if (typeFilter) params.append('type_filter', typeFilter);
+      const searchParams = new URLSearchParams();
       
-      const response = await backendApi.get(`/admin/billing/user/${userId}/transactions?${params}`);
+      if (params.page) searchParams.append('page', params.page.toString());
+      if (params.page_size) searchParams.append('page_size', params.page_size.toString());
+      if (params.type_filter) searchParams.append('type_filter', params.type_filter);
+      
+      const response = await backendApi.get(`/admin/billing/user/${params.userId}/transactions?${searchParams.toString()}`);
       if (response.error) {
         throw new Error(response.error.message);
       }
       return response.data;
     },
-    enabled: !!userId,
+    enabled: !!params.userId,
+    staleTime: 30000,
   });
 }
 

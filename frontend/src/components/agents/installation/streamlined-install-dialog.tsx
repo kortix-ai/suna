@@ -24,6 +24,8 @@ import { CustomServerStep } from './custom-server-step';
 import type { MarketplaceTemplate, SetupStep } from './types';
 import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 import { TriggerConfigStep } from './trigger-config-step';
+import { TriggerVariablesStep, type TriggerVariable } from './trigger-variables-step';
+import { toast } from 'sonner';
 
 interface StreamlinedInstallDialogProps {
   item: MarketplaceTemplate | null;
@@ -34,9 +36,11 @@ interface StreamlinedInstallDialogProps {
     instanceName: string, 
     profileMappings: Record<string, string>, 
     customMcpConfigs: Record<string, Record<string, any>>,
-    triggerConfigs?: Record<string, Record<string, any>>
+    triggerConfigs?: Record<string, Record<string, any>>,
+    triggerVariables?: Record<string, Record<string, string>>
   ) => Promise<void>;
   isInstalling: boolean;
+  onTriggerVariablesRequired?: (variables: Record<string, TriggerVariable>) => void;
 }
 
 export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> = ({
@@ -44,13 +48,16 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
   open,
   onOpenChange,
   onInstall,
-  isInstalling
+  isInstalling,
+  onTriggerVariablesRequired
 }) => {
   const [currentStep, setCurrentStep] = useState(0);
   const [instanceName, setInstanceName] = useState('');
   const [profileMappings, setProfileMappings] = useState<Record<string, string>>({});
   const [customMcpConfigs, setCustomMcpConfigs] = useState<Record<string, Record<string, any>>>({});
   const [triggerConfigs, setTriggerConfigs] = useState<Record<string, Record<string, any>>>({});
+  const [triggerVariables, setTriggerVariables] = useState<Record<string, Record<string, string>>>({});
+  const [missingTriggerVariables, setMissingTriggerVariables] = useState<Record<string, TriggerVariable>>({});
   const [setupSteps, setSetupSteps] = useState<SetupStep[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -150,10 +157,38 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
       setProfileMappings({});
       setCustomMcpConfigs({});
       setTriggerConfigs({});
+      setTriggerVariables({});
+      setMissingTriggerVariables({});
       setIsLoading(true);
       
       const steps = generateSetupSteps();
       setSetupSteps(steps);
+      
+      const triggers = item.config?.triggers || [];
+      const triggerVars: Record<string, TriggerVariable> = {};
+      
+      triggers.forEach((trigger, index) => {
+        const config = trigger.config || {};
+        const variables = config.trigger_variables || [];
+        const agent_prompt = config.agent_prompt || '';
+        let extractedVars = variables;
+        if (extractedVars.length === 0 && agent_prompt) {
+          const pattern = /\{\{(\w+)\}\}/g;
+          const matches = [...agent_prompt.matchAll(pattern)];
+          extractedVars = [...new Set(matches.map(m => m[1]))];
+        }
+        
+        if (extractedVars.length > 0) {
+          triggerVars[`trigger_${index}`] = {
+            trigger_name: trigger.name || `Trigger ${index + 1}`,
+            trigger_index: index,
+            variables: extractedVars,
+            agent_prompt: agent_prompt
+          };
+        }
+      });
+      
+      setMissingTriggerVariables(triggerVars);
       setIsLoading(false);
     }
   }, [open, item, generateSetupSteps]);
@@ -220,8 +255,39 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
     }
   }, [currentStep]);
 
+  const areAllTriggerVariablesFilled = useCallback((): boolean => {
+    if (Object.keys(missingTriggerVariables).length === 0) return true;
+    
+    for (const [triggerKey, triggerData] of Object.entries(missingTriggerVariables)) {
+      const triggerVars = triggerVariables[triggerKey] || {};
+      for (const varName of triggerData.variables) {
+        if (!triggerVars[varName] || triggerVars[varName].trim() === '') {
+          return false;
+        }
+      }
+    }
+    return true;
+  }, [missingTriggerVariables, triggerVariables]);
+
   const handleInstall = useCallback(async () => {
     if (!item || !instanceName.trim()) return;
+    
+    console.log('Dialog handleInstall - triggerVariables:', triggerVariables);
+    console.log('Dialog handleInstall - missingTriggerVariables:', missingTriggerVariables);
+    
+    // Validate trigger variables if they exist
+    if (Object.keys(missingTriggerVariables).length > 0) {
+      for (const [triggerKey, triggerData] of Object.entries(missingTriggerVariables)) {
+        const triggerVars = triggerVariables[triggerKey] || {};
+        for (const varName of triggerData.variables) {
+          if (!triggerVars[varName] || triggerVars[varName].trim() === '') {
+            toast.error(`Please provide all trigger variables for ${triggerData.trigger_name}`);
+            return;
+          }
+        }
+      }
+    }
+    
     const finalCustomConfigs = { ...customMcpConfigs };
     
     setupSteps.forEach(step => {
@@ -235,8 +301,8 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
       }
     });
 
-    await onInstall(item, instanceName, profileMappings, finalCustomConfigs, triggerConfigs);
-  }, [item, instanceName, profileMappings, customMcpConfigs, triggerConfigs, setupSteps, onInstall]);
+    await onInstall(item, instanceName, profileMappings, finalCustomConfigs, triggerConfigs, triggerVariables);
+  }, [item, instanceName, profileMappings, customMcpConfigs, triggerConfigs, triggerVariables, missingTriggerVariables, setupSteps, onInstall]);
 
   const currentStepData = setupSteps[currentStep];
   const isOnFinalStep = currentStep >= setupSteps.length;
@@ -277,17 +343,45 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
             </div>
           ) : (setupSteps.length === 0 || isOnFinalStep) ? (
             <div className="space-y-6">
-              <div className="flex items-center gap-3">
-                <div className="h-8 w-8 rounded-full bg-green-100 dark:bg-green-900/20 flex items-center justify-center">
-                  <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
-                </div>
-                <div>
-                  <h3 className="font-semibold">Ready to install!</h3>
-                  <p className="text-sm text-muted-foreground">
-                    Give your agent a name and we'll set everything up.
-                  </p>
-                </div>
-              </div>
+              {Object.keys(missingTriggerVariables).length > 0 ? (
+                <>
+                  <div className="flex items-center gap-3">
+                    <div className="h-8 w-8 rounded-full bg-orange-100 dark:bg-orange-900/20 flex items-center justify-center">
+                      <Zap className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold">Customize Trigger Variables</h3>
+                      <p className="text-sm text-muted-foreground">
+                        This template has triggers with variables that need your values.
+                      </p>
+                    </div>
+                  </div>
+                  <TriggerVariablesStep
+                    triggerVariables={missingTriggerVariables}
+                    values={triggerVariables}
+                    onValuesChange={(triggerKey, variables) => {
+                      setTriggerVariables(prev => ({
+                        ...prev,
+                        [triggerKey]: variables
+                      }));
+                    }}
+                  />
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3">
+                    <div className="h-8 w-8 rounded-full bg-green-100 dark:bg-green-900/20 flex items-center justify-center">
+                      <CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold">Ready to install!</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Give your agent a name and we'll set everything up.
+                      </p>
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="instance-name">Agent Name</Label>
@@ -397,7 +491,7 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
           {isOnFinalStep ? (
             <Button 
               onClick={handleInstall}
-              disabled={isInstalling || !instanceName.trim()}
+              disabled={isInstalling || !instanceName.trim() || !areAllTriggerVariablesFilled()}
               className="flex-1"
             >
               {isInstalling ? (
@@ -415,7 +509,7 @@ export const StreamlinedInstallDialog: React.FC<StreamlinedInstallDialogProps> =
           ) : setupSteps.length === 0 ? (
             <Button 
               onClick={handleInstall}
-              disabled={isInstalling || !instanceName.trim()}
+              disabled={isInstalling || !instanceName.trim() || !areAllTriggerVariablesFilled()}
               className="flex-1"
             >
               {isInstalling ? (

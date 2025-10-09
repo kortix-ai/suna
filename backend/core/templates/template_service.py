@@ -1,4 +1,5 @@
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
@@ -484,10 +485,24 @@ class TemplateService:
                 trigger_config = trigger.get('config', {})
                 provider_id = trigger_config.get('provider_id', '')
                 
+                agent_prompt = trigger_config.get('agent_prompt', '')
+                
                 sanitized_config = {
                     'provider_id': provider_id,
-                    'agent_prompt': trigger_config.get('agent_prompt', ''),
+                    'agent_prompt': agent_prompt,
                 }
+                
+                # Extract trigger variables if they exist in the prompt
+                trigger_variables = trigger_config.get('trigger_variables', [])
+                if not trigger_variables and agent_prompt:
+                    # Extract variables from the prompt using regex
+                    pattern = r'\{\{(\w+)\}\}'
+                    matches = re.findall(pattern, agent_prompt)
+                    if matches:
+                        trigger_variables = list(set(matches))
+                
+                if trigger_variables:
+                    sanitized_config['trigger_variables'] = trigger_variables
                 
                 if provider_id == 'schedule':
                     sanitized_config['cron_expression'] = trigger_config.get('cron_expression', '')
@@ -499,7 +514,7 @@ class TemplateService:
                     
                     excluded_fields = {
                         'profile_id', 'composio_trigger_id', 'provider_id', 
-                        'agent_prompt', 'trigger_slug', 'qualified_name'
+                        'agent_prompt', 'trigger_slug', 'qualified_name', 'trigger_variables'
                     }
                     
                     trigger_fields = {}

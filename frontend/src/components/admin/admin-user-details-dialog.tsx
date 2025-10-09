@@ -40,11 +40,12 @@ import {
   MessageSquare,
   ExternalLink,
 } from 'lucide-react';
-import { useAdminUserDetails, useAdminUserThreads } from '@/hooks/react-query/admin/use-admin-users';
+import { useAdminUserDetails, useAdminUserThreads, useAdminUserActivity } from '@/hooks/react-query/admin/use-admin-users';
 import {
   useUserBillingSummary,
   useAdjustCredits,
   useProcessRefund,
+  useAdminUserTransactions,
 } from '@/hooks/react-query/admin/use-admin-billing';
 import type { UserSummary } from '@/hooks/react-query/admin/use-admin-users';
 
@@ -68,12 +69,24 @@ export function AdminUserDetailsDialog({
   const [adjustIsExpiring, setAdjustIsExpiring] = useState(true);
   const [refundIsExpiring, setRefundIsExpiring] = useState(false);
   const [threadsPage, setThreadsPage] = useState(1);
+  const [transactionsPage, setTransactionsPage] = useState(1);
+  const [activityPage, setActivityPage] = useState(1);
 
   const { data: userDetails, isLoading } = useAdminUserDetails(user?.id || null);
   const { data: billingSummary, refetch: refetchBilling } = useUserBillingSummary(user?.id || null);
   const { data: userThreads, isLoading: threadsLoading } = useAdminUserThreads({
     email: user?.email || '',
     page: threadsPage,
+    page_size: 10,
+  });
+  const { data: userTransactions, isLoading: transactionsLoading } = useAdminUserTransactions({
+    userId: user?.id || '',
+    page: transactionsPage,
+    page_size: 10,
+  });
+  const { data: userActivity, isLoading: activityLoading } = useAdminUserActivity({
+    userId: user?.id || '',
+    page: activityPage,
     page_size: 10,
   });
   const adjustCreditsMutation = useAdjustCredits();
@@ -385,40 +398,73 @@ export function AdminUserDetailsDialog({
             </TabsContent>
 
             <TabsContent value="transactions" className="space-y-4">
-              {billingSummary && (
-                <Card className='border-0 shadow-none bg-transparent'>
-                  <CardContent className='p-0'>
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <DollarSign className="h-4 w-4" />
+                    Transactions
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {transactionsLoading ? (
                     <div className="space-y-2">
-                      {billingSummary.recent_transactions?.length > 0 ? (
-                        billingSummary.recent_transactions.map((transaction: any) => (
-                          <div
-                            key={transaction.id}
-                            className="flex items-center justify-between p-3 border rounded-lg"
-                          >
-                            <div>
-                              <p className="text-sm font-medium">{transaction.description}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {formatDate(transaction.created_at)}
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <p className={`font-semibold ${getTransactionColor(transaction.type)}`}>
-                                {transaction.amount > 0 ? '+' : ''}
-                                {formatCurrency(Math.abs(transaction.amount))}
-                              </p>
-                              <p className="text-xs text-muted-foreground">
-                                Balance: {formatCurrency(transaction.balance_after)}
-                              </p>
-                            </div>
+                      {[...Array(3)].map((_, i) => (
+                        <Skeleton key={i} className="h-16 w-full" />
+                      ))}
+                    </div>
+                  ) : userTransactions && userTransactions.data?.length > 0 ? (
+                    <div className="space-y-2">
+                      {userTransactions.data.map((transaction: any) => (
+                        <div
+                          key={transaction.id}
+                          className="flex items-center justify-between p-3 border rounded-lg"
+                        >
+                          <div>
+                            <p className="text-sm font-medium">{transaction.description}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatDate(transaction.created_at)}
+                            </p>
                           </div>
-                        ))
-                      ) : (
-                        <p className="text-sm text-muted-foreground">No recent transactions</p>
+                          <div className="text-right">
+                            <p className={`font-semibold ${getTransactionColor(transaction.type)}`}>
+                              {transaction.amount > 0 ? '+' : ''}
+                              {formatCurrency(Math.abs(transaction.amount))}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              Balance: {formatCurrency(transaction.balance_after)}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                      {userTransactions.pagination && userTransactions.pagination.total_pages > 1 && (
+                        <div className="flex items-center justify-between pt-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!userTransactions.pagination.has_prev}
+                            onClick={() => setTransactionsPage(p => Math.max(1, p - 1))}
+                          >
+                            Previous
+                          </Button>
+                          <span className="text-sm text-muted-foreground">
+                            Page {userTransactions.pagination.page} of {userTransactions.pagination.total_pages}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!userTransactions.pagination.has_next}
+                            onClick={() => setTransactionsPage(p => p + 1)}
+                          >
+                            Next
+                          </Button>
+                        </div>
                       )}
                     </div>
-                  </CardContent>
-                </Card>
-              )}
+                  ) : (
+                    <p className="text-sm text-muted-foreground">No transactions found</p>
+                  )}
+                </CardContent>
+              </Card>
             </TabsContent>
 
             <TabsContent value="activity" className="space-y-4">
@@ -426,33 +472,77 @@ export function AdminUserDetailsDialog({
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Activity className="h-4 w-4" />
-                    Recent Activity
+                    Activity
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {userDetails?.recent_activity?.length > 0 ? (
+                  {activityLoading ? (
                     <div className="space-y-2">
-                      {userDetails.recent_activity.map((activity) => (
+                      {[...Array(3)].map((_, i) => (
+                        <Skeleton key={i} className="h-16 w-full" />
+                      ))}
+                    </div>
+                  ) : userActivity && userActivity.data?.length > 0 ? (
+                    <div className="space-y-2">
+                      {userActivity.data.map((activity: any) => (
                         <div
                           key={activity.id}
                           className="flex items-center justify-between p-3 border rounded-lg"
                         >
-                          <div>
-                            <p className="text-sm font-medium">Agent Run</p>
-                            <p className="text-xs text-muted-foreground">
-                              {formatDate(activity.created_at)} • Thread {activity.thread_id.slice(-8)}
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-medium">{activity.agent_name}</p>
+                              <Badge
+                                variant={activity.status === 'completed' ? 'default' : activity.status === 'failed' ? 'destructive' : 'secondary'}
+                                className="text-xs"
+                              >
+                                {activity.status}
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {formatDate(activity.created_at)} • Thread: {activity.thread_name || activity.thread_id.slice(-8)}
                             </p>
+                            {activity.error && (
+                              <p className="text-xs text-red-600 mt-1 truncate">
+                                Error: {activity.error}
+                              </p>
+                            )}
                           </div>
-                          <Badge
-                            variant={activity.status === 'completed' ? 'default' : 'secondary'}
-                          >
-                            {activity.status}
-                          </Badge>
+                          {activity.credit_cost > 0 && (
+                            <div className="text-right ml-2">
+                              <p className="text-sm font-medium text-muted-foreground">
+                                {formatCurrency(activity.credit_cost)}
+                              </p>
+                            </div>
+                          )}
                         </div>
                       ))}
+                      {userActivity.pagination && userActivity.pagination.total_pages > 1 && (
+                        <div className="flex items-center justify-between pt-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!userActivity.pagination.has_prev}
+                            onClick={() => setActivityPage(p => Math.max(1, p - 1))}
+                          >
+                            Previous
+                          </Button>
+                          <span className="text-sm text-muted-foreground">
+                            Page {userActivity.pagination.page} of {userActivity.pagination.total_pages}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={!userActivity.pagination.has_next}
+                            onClick={() => setActivityPage(p => p + 1)}
+                          >
+                            Next
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   ) : (
-                    <p className="text-sm text-muted-foreground">No recent activity</p>
+                    <p className="text-sm text-muted-foreground">No activity found</p>
                   )}
                 </CardContent>
               </Card>
