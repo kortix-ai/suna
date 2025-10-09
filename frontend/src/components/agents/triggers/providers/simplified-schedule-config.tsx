@@ -1044,7 +1044,7 @@ export const SimplifiedScheduleConfig: React.FC<SimplifiedScheduleConfigProps> =
                           <p className="text-sm text-destructive">{errors.agent_prompt}</p>
                         )}
                         <p className="text-xs text-muted-foreground">
-                          Use <code className="text-xs bg-muted px-1 rounded">payload</code> to include trigger data
+                            Use <code className="text-xs bg-muted px-1 rounded">{'{{variable_name}}'}</code> to add variables to the prompt
                         </p>
                       </div>
                     </div>

@@ -1,4 +1,5 @@
 import json
+import re
 from typing import Optional, Dict, Any, List
 from core.agentpress.tool import ToolResult, openapi_schema
 from core.agentpress.thread_manager import ThreadManager
@@ -17,6 +18,17 @@ from core.composio_integration.composio_trigger_service import ComposioTriggerSe
 class TriggerTool(AgentBuilderBaseTool):
     def __init__(self, thread_manager: ThreadManager, db_connection, agent_id: str):
         super().__init__(thread_manager, db_connection, agent_id)
+    
+    def _extract_variables(self, text: str) -> List[str]:
+        """Extract variable names from a text containing {{variable}} patterns"""
+        pattern = r'\{\{(\w+)\}\}'
+        matches = re.findall(pattern, text)
+        return list(set(matches))
+    
+    def _has_variables(self, text: str) -> bool:
+        """Check if text contains any {{variable}} patterns"""
+        pattern = r'\{\{(\w+)\}\}'
+        return bool(re.search(pattern, text))
 
     async def _sync_triggers_to_version_config(self) -> None:
         try:
@@ -63,7 +75,7 @@ class TriggerTool(AgentBuilderBaseTool):
         "type": "function",
         "function": {
             "name": "create_scheduled_trigger",
-            "description": "Create a scheduled trigger for the agent to execute at specified times using cron expressions. This allows the agent to run automatically on a schedule.",
+            "description": "Create a scheduled trigger for the agent to execute at specified times using cron expressions. This allows the agent to run automatically on a schedule. TEMPLATE VARIABLES: Use {{variable_name}} syntax in prompts to create reusable templates. Example: Instead of 'Monitor Apple brand', use 'Monitor {{company_name}} brand'. Users will provide their own values when installing.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -81,7 +93,7 @@ class TriggerTool(AgentBuilderBaseTool):
                     },
                     "agent_prompt": {
                         "type": "string",
-                        "description": "Prompt to send to the agent when triggered"
+                        "description": "Prompt to send to the agent when triggered. Can include variables like {{variable_name}} that will be replaced when users install the template. For example: 'Monitor {{company_name}} brand across all platforms...'"
                     }
                 },
                 "required": ["name", "cron_expression", "agent_prompt"]
@@ -99,11 +111,19 @@ class TriggerTool(AgentBuilderBaseTool):
             if not agent_prompt:
                 return self.fail_response("agent_prompt is required")
             
+            # Extract variables from the prompt
+            variables = self._extract_variables(agent_prompt)
+            
             trigger_config = {
                 "cron_expression": cron_expression,
                 "provider_id": "schedule",
                 "agent_prompt": agent_prompt
             }
+            
+            # Add variables to config if any were found
+            if variables:
+                trigger_config["trigger_variables"] = variables
+                logger.debug(f"Found variables in trigger prompt: {variables}")
             
             trigger_svc = get_trigger_service(self.db)
             
@@ -120,6 +140,9 @@ class TriggerTool(AgentBuilderBaseTool):
                 result_message += f"**Schedule**: {cron_expression}\n"
                 result_message += f"**Type**: Agent execution\n"
                 result_message += f"**Prompt**: {agent_prompt}\n"
+                if variables:
+                    result_message += f"**Template Variables Detected**: {', '.join(['{{' + v + '}}' for v in variables])}\n"
+                    result_message += f"*Note: Users will be prompted to provide values for these variables when installing this agent as a template.*\n"
                 result_message += f"\nThe trigger is now active and will run according to the schedule."
                 
                 # Sync triggers to version config
@@ -134,7 +157,8 @@ class TriggerTool(AgentBuilderBaseTool):
                         "name": trigger.name,
                         "description": trigger.description,
                         "cron_expression": cron_expression,
-                        "is_active": trigger.is_active
+                        "is_active": trigger.is_active,
+                        "variables": variables if variables else []
                     }
                 })
             except ValueError as ve:
@@ -372,7 +396,7 @@ class TriggerTool(AgentBuilderBaseTool):
         "type": "function",
         "function": {
             "name": "create_event_trigger",
-            "description": "Create a Composio event-based trigger for this agent. First list apps and triggers, then pass the chosen trigger slug, profile_id, and trigger_config.",
+            "description": "Create a Composio event-based trigger for this agent. First list apps and triggers, then pass the chosen trigger slug, profile_id, and trigger_config. You can use variables in the prompt like {{company_name}} or {{brand_name}} to make templates reusable.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -380,7 +404,7 @@ class TriggerTool(AgentBuilderBaseTool):
                     "profile_id": {"type": "string", "description": "Composio profile_id to use (must be connected)"},
                     "trigger_config": {"type": "object", "description": "Trigger configuration object per trigger schema", "additionalProperties": True},
                     "name": {"type": "string", "description": "Optional friendly name for the trigger"},
-                    "agent_prompt": {"type": "string", "description": "Prompt to pass to the agent when triggered"},
+                    "agent_prompt": {"type": "string", "description": "Prompt to pass to the agent when triggered. Can include variables like {{variable_name}} that will be replaced when users install the template. For example: 'New email received for {{company_name}}...'"},
                     "connected_account_id": {"type": "string", "description": "Connected account id; if omitted we try to derive from profile"}
                 },
                 "required": ["slug", "profile_id", "agent_prompt"]
@@ -399,6 +423,9 @@ class TriggerTool(AgentBuilderBaseTool):
         try:
             if not agent_prompt:
                 return self.fail_response("agent_prompt is required")
+            
+            # Extract variables from the prompt
+            variables = self._extract_variables(agent_prompt)
 
             # Get profile config
             profile_service = ComposioProfileService(self.db)
@@ -528,6 +555,11 @@ class TriggerTool(AgentBuilderBaseTool):
                 "agent_prompt": agent_prompt
             }
             
+            # Add variables to config if any were found
+            if variables:
+                suna_config["trigger_variables"] = variables
+                logger.debug(f"Found variables in event trigger prompt: {variables}")
+            
             # Create Suna trigger
             trigger_svc = get_trigger_service(self.db)
             try:
@@ -550,13 +582,17 @@ class TriggerTool(AgentBuilderBaseTool):
 
             message = f"Event trigger '{trigger.name}' created successfully.\n"
             message += "Agent execution configured."
+            if variables:
+                message += f"\n**Template Variables Detected**: {', '.join(['{{' + v + '}}' for v in variables])}\n"
+                message += f"*Note: Users will be prompted to provide values for these variables when installing this agent as a template.*"
 
             return self.success_response({
                 "message": message,
                 "trigger": {
                     "provider": "composio",
                     "slug": slug,
-                    "is_active": trigger.is_active
+                    "is_active": trigger.is_active,
+                    "variables": variables if variables else []
                 }
             })
         except Exception as e:

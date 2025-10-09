@@ -76,7 +76,7 @@ export interface MCPRequirement {
   display_name: string;
   enabled_tools: string[];
   required_config: string[];
-  custom_type?: 'sse' | 'http'; // For custom MCP servers
+  custom_type?: 'sse' | 'http';
 }
 
 export interface InstallTemplateRequest {
@@ -86,11 +86,13 @@ export interface InstallTemplateRequest {
   profile_mappings?: Record<string, string>;
   custom_mcp_configs?: Record<string, Record<string, any>>;
   trigger_configs?: Record<string, Record<string, any>>;
+  trigger_variables?: Record<string, Record<string, string>>;
 }
 
 export interface InstallationResponse {
   status: 'installed' | 'configs_required';
   instance_id?: string;
+  name?: string;
   missing_regular_credentials?: {
     qualified_name: string;
     display_name: string;
@@ -102,6 +104,13 @@ export interface InstallationResponse {
     custom_type: string;
     required_config: string[];
   }[];
+  missing_trigger_variables?: Record<string, {
+    trigger_name: string;
+    trigger_index: number;
+    variables: string[];
+    agent_prompt: string;
+    missing_variables?: string[];
+  }>;
   template?: {
     template_id: string;
     name: string;
@@ -115,10 +124,6 @@ export interface CreateTemplateRequest {
   tags?: string[];
   usage_examples?: UsageExampleMessage[];
 }
-
-// =====================================================
-// CREDENTIAL MANAGEMENT HOOKS
-// =====================================================
 
 export function useUserCredentials() {
   return useQuery({
