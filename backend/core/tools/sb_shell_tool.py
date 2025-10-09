@@ -3,10 +3,19 @@ from typing import Optional, Dict, Any
 import time
 import asyncio
 from uuid import uuid4
-from core.agentpress.tool import ToolResult, openapi_schema
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 
+@tool_metadata(
+    display_name="Terminal & Commands",
+    description="Run commands, install packages, and execute scripts in your workspace",
+    icon="Terminal",
+    color="bg-gray-100 dark:bg-gray-800/50",
+    is_core=True,
+    weight=20,
+    visible=True
+)
 class SandboxShellTool(SandboxToolsBase):
     """Tool for executing tasks in a Daytona sandbox with browser-use capabilities. 
     Uses sessions for maintaining state between commands and provides comprehensive process management."""

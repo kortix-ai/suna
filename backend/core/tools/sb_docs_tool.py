@@ -1,7 +1,7 @@
 import json
 import os
 from typing import Optional, Dict, Any, List
-from core.agentpress.tool import openapi_schema
+from core.agentpress.tool import openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
@@ -13,6 +13,14 @@ from pathlib import Path
 from core.agentpress.tool import ToolResult
 import html
 
+@tool_metadata(
+    display_name="Document Creator",
+    description="Create and edit professional documents with rich formatting",
+    icon="FileText",
+    color="bg-violet-100 dark:bg-violet-800/50",
+    weight=220,
+    visible=True
+)
 class SandboxDocsTool(SandboxToolsBase):
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)

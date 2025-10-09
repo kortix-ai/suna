@@ -51,6 +51,7 @@ import {
   isFileType,
   hasLanguageHighlighting,
   splitContentIntoLines,
+  generateEmptyLines,
   type FileOperation,
   type OperationConfig,
 } from './_utils';
@@ -274,10 +275,14 @@ export function FileOperationToolView({
     }
 
     if (hasHighlighting) {
+      // Add empty lines to fill viewport
+      const emptyLines = generateEmptyLines(50); // Add 50 empty lines for natural scrolling
+      const allLines = [...contentLines, ...emptyLines];
+      
       return (
         <div className="relative">
           <div className="absolute left-0 top-0 bottom-0 w-12 border-r border-zinc-200 dark:border-zinc-800 z-10 flex flex-col bg-zinc-50 dark:bg-zinc-900">
-            {contentLines.map((_, idx) => (
+            {allLines.map((_, idx) => (
               <div
                 key={idx}
                 className="h-6 text-right pr-3 text-xs font-mono text-zinc-500 dark:text-zinc-500 select-none"
@@ -288,7 +293,7 @@ export function FileOperationToolView({
           </div>
           <div className="pl-12">
             <CodeBlockCode
-              code={processUnicodeContent(fileContent, true)}
+              code={processUnicodeContent(fileContent + '\n'.repeat(50), true)}
               language={language}
               className="text-xs"
             />
@@ -297,9 +302,13 @@ export function FileOperationToolView({
       );
     }
 
+    // Add empty lines to fill viewport
+    const emptyLines = generateEmptyLines(50); // Add 50 empty lines for natural scrolling
+    const allLines = [...contentLines, ...emptyLines];
+    
     return (
       <div className="min-w-full table">
-        {contentLines.map((line, idx) => (
+        {allLines.map((line, idx) => (
           <div
             key={idx}
             className={cn("table-row transition-colors", config.hoverColor)}
@@ -308,17 +317,16 @@ export function FileOperationToolView({
               {idx + 1}
             </div>
             <div className="table-cell pl-3 py-0.5 pr-4 text-xs font-mono whitespace-pre-wrap text-zinc-800 dark:text-zinc-300">
-              {processUnicodeContent(line, true) || ' '}
+              {line ? processUnicodeContent(line, true) : ' '}
             </div>
           </div>
         ))}
-        <div className="table-row h-4"></div>
       </div>
     );
   };
 
   return (
-    <Card className="flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
+    <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <Tabs defaultValue={isMarkdown || isHtml || isCsv || isXlsx ? 'preview' : 'code'} className="w-full h-full">
         <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2 mb-0">
           <div className="flex flex-row items-center justify-between">

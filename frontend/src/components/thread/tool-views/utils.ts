@@ -61,7 +61,6 @@ export function getToolTitle(toolName: string): string {
     'configure-profile-for-agent': 'Configure Profile For Agent',
     'get-credential-profiles': 'Get Credential Profiles',
     'get-current-agent-config': 'Get Current Agent Config',
-    'deploy': 'Deploy',
     'create-presentation': 'Create Presentation',
     'export-presentation': 'Export Presentation',
     'create-presentation-outline': 'Create Presentation Outline',
@@ -1313,9 +1312,6 @@ export function getToolComponent(toolName: string): string {
     case 'discover-user-mcp-servers':
       return 'DiscoverUserMcpServersToolView';
 
-    //Deploy
-    case 'deploy':
-      return 'DeployToolView';
 
     // Upload operations
     case 'upload-file':

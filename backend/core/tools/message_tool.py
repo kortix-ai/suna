@@ -1,15 +1,22 @@
 from typing import List, Optional, Union
-from core.agentpress.tool import Tool, ToolResult, openapi_schema
+from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
 from core.utils.logger import logger
 
+@tool_metadata(
+    display_name="Chat & Messages",
+    description="Talk with users, ask questions, and share updates about your work",
+    icon="MessageSquare",
+    color="bg-purple-100 dark:bg-purple-800/50",
+    is_core=True,
+    weight=310,
+    visible=True
+)
 class MessageTool(Tool):
     """Tool for user communication and interaction.
     """
 
     def __init__(self):
         super().__init__()
-
-    # Commented out as we are just doing this via prompt as there is no need to call it as a tool
 
     @openapi_schema({
         "type": "function",

@@ -1,7 +1,7 @@
 import json
 import re
 from typing import Optional, Dict, Any, List
-from core.agentpress.tool import ToolResult, openapi_schema
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.agentpress.thread_manager import ThreadManager
 from .base_tool import AgentBuilderBaseTool
 from core.utils.logger import logger
@@ -14,7 +14,14 @@ import httpx
 from core.composio_integration.composio_profile_service import ComposioProfileService
 from core.composio_integration.composio_trigger_service import ComposioTriggerService
 
-
+@tool_metadata(
+    display_name="Triggers & Automation",
+    description="Set up automatic triggers to run agents on a schedule or on events",
+    icon="Zap",
+    color="bg-yellow-100 dark:bg-yellow-800/50",
+    weight=160,
+    visible=True
+)
 class TriggerTool(AgentBuilderBaseTool):
     def __init__(self, thread_manager: ThreadManager, db_connection, agent_id: str):
         super().__init__(thread_manager, db_connection, agent_id)

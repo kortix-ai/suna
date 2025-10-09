@@ -87,6 +87,7 @@ dependencies = [
   "svglib==1.5.1",
   "chunkr-ai>=0.3.7",
   "reportlab>=4.0.0",
+  "freestyle>=0.0.17",
 ]
 
 [project.urls]

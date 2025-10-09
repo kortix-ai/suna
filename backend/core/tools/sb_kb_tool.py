@@ -1,12 +1,20 @@
 import asyncio
 from typing import Optional, List
-from core.agentpress.tool import ToolResult, openapi_schema
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from core.utils.config import config
 from core.knowledge_base.validation import FileNameValidator, ValidationError
 from core.utils.logger import logger
 
+@tool_metadata(
+    display_name="Knowledge Base",
+    description="Store and retrieve information from your personal knowledge library",
+    icon="Brain",
+    color="bg-yellow-100 dark:bg-yellow-800/50",
+    weight=200,
+    visible=True
+)
 class SandboxKbTool(SandboxToolsBase):
     """Tool for knowledge base operations using kb-fusion binary in a Daytona sandbox.
     Provides search capabilities and maintenance operations for knowledge bases."""

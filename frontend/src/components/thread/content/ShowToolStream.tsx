@@ -44,7 +44,6 @@ const STREAMABLE_TOOLS = {
     OTHER_STREAMABLE: new Set([
         'Calling data provider',
         'Getting endpoints',
-        'Deploying',
         'Creating Tasks',
         'Updating Tasks',
         'Viewing Image',

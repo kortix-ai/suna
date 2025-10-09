@@ -1,6 +1,6 @@
 from typing import Optional, List
 from uuid import uuid4
-from core.agentpress.tool import ToolResult, openapi_schema
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.agentpress.thread_manager import ThreadManager
 from .base_tool import AgentBuilderBaseTool
 from core.composio_integration.composio_service import get_integration_service
@@ -9,7 +9,14 @@ from core.mcp_module.mcp_service import mcp_service
 from .mcp_search_tool import MCPSearchTool
 from core.utils.logger import logger
 
-
+@tool_metadata(
+    display_name="Credentials Manager",
+    description="Manage API keys and authentication for external services",
+    icon="Key",
+    color="bg-red-100 dark:bg-red-800/50",
+    weight=180,
+    visible=True
+)
 class CredentialProfileTool(AgentBuilderBaseTool):
     def __init__(self, thread_manager: ThreadManager, db_connection, agent_id: str):
         super().__init__(thread_manager, db_connection, agent_id)

@@ -1,9 +1,17 @@
-from core.agentpress.tool import ToolResult, openapi_schema
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 import asyncio
 import time
 
+@tool_metadata(
+    display_name="Port Exposure",
+    description="Share your local development servers with preview URLs",
+    icon="Share",
+    color="bg-indigo-100 dark:bg-indigo-800/50",
+    weight=120,
+    visible=True
+)
 class SandboxExposeTool(SandboxToolsBase):
     """Tool for exposing and retrieving preview URLs for sandbox ports."""
 

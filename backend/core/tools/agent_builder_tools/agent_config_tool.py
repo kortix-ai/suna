@@ -1,14 +1,20 @@
 import json
 from typing import Optional, Dict, Any
-from core.agentpress.tool import ToolResult, openapi_schema
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.agentpress.thread_manager import ThreadManager
 from .base_tool import AgentBuilderBaseTool
 from core.utils.logger import logger
 from core.utils.core_tools_helper import ensure_core_tools_enabled, is_core_tool
-from core.utils.tool_groups import validate_tool_config
+from core.utils.tool_discovery import validate_tool_config
 
-
-
+@tool_metadata(
+    display_name="Agent Configuration",
+    description="Modify agent settings, tools, and behaviors",
+    icon="Settings",
+    color="bg-gray-100 dark:bg-gray-800/50",
+    weight=150,
+    visible=True
+)
 class AgentConfigTool(AgentBuilderBaseTool):
     def __init__(self, thread_manager: ThreadManager, db_connection, agent_id: str):
         super().__init__(thread_manager, db_connection, agent_id)

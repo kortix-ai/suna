@@ -52,7 +52,6 @@ import { useUpdateAgentMCPs } from '@/hooks/react-query/agents/use-update-agent-
 import { useExportAgent } from '@/hooks/react-query/agents/use-agent-export-import';
 import { ExpandableMarkdownEditor } from '@/components/ui/expandable-markdown-editor';
 import { AgentModelSelector } from './config/model-selector';
-import { AgentToolsConfiguration } from './agent-tools-configuration';
 import { GranularToolConfiguration } from './tools/granular-tool-configuration';
 import { AgentMCPConfiguration } from './agent-mcp-configuration';
 import { AgentKnowledgeBaseManager } from './knowledge-base/agent-kb-tree';
@@ -60,7 +59,6 @@ import { AgentTriggersConfiguration } from './triggers/agent-triggers-configurat
 import { AgentAvatar } from '../thread/content/agent-avatar';
 import { AgentIconEditorDialog } from './config/agent-icon-editor-dialog';
 import { AgentVersionSwitcher } from './agent-version-switcher';
-import { DEFAULT_AGENTPRESS_TOOLS, ensureCoreToolsEnabled } from './tools';
 
 interface AgentConfigurationDialogProps {
   open: boolean;
@@ -114,7 +112,7 @@ export function AgentConfigurationDialog({
     name: '',
     system_prompt: '',
     model: undefined as string | undefined,
-    agentpress_tools: DEFAULT_AGENTPRESS_TOOLS as Record<string, any>,
+    agentpress_tools: {} as Record<string, any>,
     configured_mcps: [] as any[],
     custom_mcps: [] as any[],
     is_default: false,
@@ -145,7 +143,7 @@ export function AgentConfigurationDialog({
       name: configSource.name || '',
       system_prompt: configSource.system_prompt || '',
       model: configSource.model || undefined,
-      agentpress_tools: ensureCoreToolsEnabled(configSource.agentpress_tools || DEFAULT_AGENTPRESS_TOOLS),
+      agentpress_tools: configSource.agentpress_tools || {},
       configured_mcps: configSource.configured_mcps || [],
       custom_mcps: configSource.custom_mcps || [],
       is_default: configSource.is_default || false,
@@ -271,8 +269,7 @@ export function AgentConfigurationDialog({
       return;
     }
 
-    const toolsWithCoreEnabled = ensureCoreToolsEnabled(tools);
-    setFormData(prev => ({ ...prev, agentpress_tools: toolsWithCoreEnabled }));
+    setFormData(prev => ({ ...prev, agentpress_tools: tools }));
   };
 
   const handleMCPChange = async (updates: { configured_mcps: any[]; custom_mcps: any[] }) => {

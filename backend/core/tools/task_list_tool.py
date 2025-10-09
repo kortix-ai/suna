@@ -1,4 +1,4 @@
-from core.agentpress.tool import ToolResult, openapi_schema
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.utils.logger import logger
 from typing import List, Dict, Any, Optional
@@ -22,6 +22,15 @@ class Task(BaseModel):
     status: TaskStatus = TaskStatus.PENDING
     section_id: str  # Reference to section ID instead of section name
 
+@tool_metadata(
+    display_name="Task Management",
+    description="Create and track your action plan with organized to-do lists",
+    icon="CheckSquare",
+    color="bg-amber-100 dark:bg-amber-800/50",
+    is_core=True,
+    weight=5,
+    visible=True
+)
 class TaskListTool(SandboxToolsBase):
     """Task management system for organizing and tracking tasks. It contains the action plan for the agent to follow.
     

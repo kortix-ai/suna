@@ -6,13 +6,20 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from pathlib import Path
 
-from core.agentpress.tool import ToolResult, openapi_schema
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
 from core.utils.config import config
 
-
+@tool_metadata(
+    display_name="File Upload",
+    description="Upload files to cloud storage and share them with secure links",
+    icon="Upload",
+    color="bg-teal-100 dark:bg-teal-800/50",
+    weight=230,
+    visible=True
+)
 class SandboxUploadFileTool(SandboxToolsBase):
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)

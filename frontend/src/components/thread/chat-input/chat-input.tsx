@@ -17,7 +17,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { handleFiles, FileUploadHandler } from './file-upload-handler';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
-import { Loader2, ArrowUp } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Loader2, ArrowUp, X, Image as ImageIcon, Presentation, BarChart3, FileText, Search, Users, Code2, Sparkles, Brain as BrainIcon, MessageSquare } from 'lucide-react';
 import { VoiceRecorder } from './voice-recorder';
 import { UnifiedConfigMenu } from './unified-config-menu';
 import { AttachmentGroup } from '../attachment-group';
@@ -34,10 +35,34 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { IntegrationsRegistry } from '@/components/agents/integrations-registry';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useSubscriptionData } from '@/contexts/SubscriptionContext';
-import { isLocalMode } from '@/lib/config';
+import { isStagingMode, isLocalMode } from '@/lib/config';
 import { BillingModal } from '@/components/billing/billing-modal';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
+
 import posthog from 'posthog-js';
+
+// Helper function to get the icon for each mode
+const getModeIcon = (mode: string) => {
+  const iconClass = "w-4 h-4";
+  switch (mode) {
+    case 'research':
+      return <Search className={iconClass} />;
+    case 'people':
+      return <Users className={iconClass} />;
+    case 'code':
+      return <Code2 className={iconClass} />;
+    case 'docs':
+      return <FileText className={iconClass} />;
+    case 'data':
+      return <BarChart3 className={iconClass} />;
+    case 'slides':
+      return <Presentation className={iconClass} />;
+    case 'image':
+      return <ImageIcon className={iconClass} />;
+    default:
+      return null;
+  }
+};
 
 export type SubscriptionStatus = 'no_subscription' | 'active';
 
@@ -80,11 +105,11 @@ export interface ChatInputProps {
   hideAgentSelection?: boolean;
   defaultShowSnackbar?: 'tokens' | 'upgrade' | false;
   showToLowCreditUsers?: boolean;
-  agentMetadata?: {
-    is_suna_default?: boolean;
-  };
   showScrollToBottomIndicator?: boolean;
   onScrollToBottom?: () => void;
+  selectedMode?: string | null;
+  onModeDeselect?: () => void;
+  animatePlaceholder?: boolean;
 }
 
 export interface UploadedFile {
@@ -127,9 +152,11 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       hideAgentSelection = false,
       defaultShowSnackbar = false,
       showToLowCreditUsers = true,
-      agentMetadata,
       showScrollToBottomIndicator = false,
       onScrollToBottom,
+      selectedMode,
+      onModeDeselect,
+      animatePlaceholder = false,
     },
     ref,
   ) => {
@@ -138,8 +165,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
 
     const [uncontrolledValue, setUncontrolledValue] = useState('');
     const value = isControlled ? controlledValue : uncontrolledValue;
-
-    const isSunaAgent = agentMetadata?.is_suna_default || false;
 
     const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
     const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -152,6 +177,9 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const [billingModalOpen, setBillingModalOpen] = useState(false);
     const [agentConfigDialog, setAgentConfigDialog] = useState<{ open: boolean; tab: 'instructions' | 'knowledge' | 'triggers' | 'tools' | 'integrations' }>({ open: false, tab: 'instructions' });
     const [mounted, setMounted] = useState(false);
+    const [animatedPlaceholder, setAnimatedPlaceholder] = useState('');
+    const [isModeDismissing, setIsModeDismissing] = useState(false);
+    const [agentMode, setAgentMode] = useState<'adaptive' | 'autonomous' | 'chat'>('adaptive');
 
     const {
       selectedModel,
@@ -208,6 +236,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const { data: agentsResponse } = useAgents({}, { enabled: isLoggedIn });
     const agents = agentsResponse?.agents || [];
 
+    // Check if selected agent is Suna based on agent data
+    const selectedAgent = agents.find(agent => agent.agent_id === selectedAgentId);
+    const isSunaAgent = selectedAgent?.metadata?.is_suna_default || false;
+
     const { initializeFromAgents } = useAgentSelection();
     useImperativeHandle(ref, () => ({
       getPendingFiles: () => pendingFiles,
@@ -223,6 +255,42 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     useEffect(() => {
       setMounted(true);
     }, []);
+
+    // Typewriter effect for placeholder
+    useEffect(() => {
+      if (!mounted || value || !animatePlaceholder) {
+        setAnimatedPlaceholder(placeholder);
+        return;
+      }
+
+      let currentIndex = 0;
+      setAnimatedPlaceholder('');
+
+      const typingInterval = setInterval(() => {
+        if (currentIndex < placeholder.length) {
+          setAnimatedPlaceholder(placeholder.slice(0, currentIndex + 1));
+          currentIndex++;
+        } else {
+          clearInterval(typingInterval);
+        }
+      }, 50); // 50ms per character
+
+      return () => clearInterval(typingInterval);
+    }, [mounted, placeholder, value, animatePlaceholder]);
+
+    // Reset mode dismissing state when selectedMode changes
+    useEffect(() => {
+      setIsModeDismissing(false);
+    }, [selectedMode]);
+
+    // Handle mode deselection with animation
+    const handleModeDeselect = useCallback(() => {
+      setIsModeDismissing(true);
+      setTimeout(() => {
+        onModeDeselect?.();
+        setIsModeDismissing(false);
+      }, 200); // Match animation duration
+    }, [onModeDeselect]);
 
     // Auto-resize textarea
     useEffect(() => {
@@ -427,16 +495,16 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
-          placeholder={placeholder}
+          placeholder={animatedPlaceholder}
           className={cn(
-            'w-full bg-transparent dark:bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 !text-[15px] min-h-[36px] max-h-[200px] overflow-y-auto resize-none',
+            'w-full bg-transparent dark:bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 !text-[15px] min-h-[72px] max-h-[200px] overflow-y-auto resize-none',
             isDraggingOver ? 'opacity-40' : '',
           )}
           disabled={loading || (disabled && !isAgentRunning)}
           rows={1}
         />
       </div>
-    ), [value, handleChange, handleKeyDown, handlePaste, placeholder, isDraggingOver, loading, disabled, isAgentRunning]);
+    ), [value, handleChange, handleKeyDown, handlePaste, animatedPlaceholder, isDraggingOver, loading, disabled, isAgentRunning]);
 
     const renderControls = useMemo(() => (
       <div className="flex items-center justify-between mt-0 mb-1 px-2">
@@ -455,6 +523,102 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
               messages={messages}
               isLoggedIn={isLoggedIn}
             />
+          )}
+          
+          {/* Agent Mode Switcher - Only for Suna */}
+          {(isStagingMode() || isLocalMode()) && isSunaAgent && (
+            <TooltipProvider>
+              <div className="flex items-center gap-1 p-0.5 bg-muted/50 rounded-lg">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => setAgentMode('adaptive')}
+                      className={cn(
+                        "p-1.5 rounded-md transition-all duration-200 cursor-pointer",
+                        agentMode === 'adaptive'
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                      )}
+                    >
+                      <Sparkles className="w-4 h-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    <div className="space-y-1">
+                      <p className="font-medium text-white">Adaptive</p>
+                      <p className="text-xs text-gray-200">Quick responses with smart context switching</p>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => setAgentMode('autonomous')}
+                      className={cn(
+                        "p-1.5 rounded-md transition-all duration-200 cursor-pointer",
+                        agentMode === 'autonomous'
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                      )}
+                    >
+                      <BrainIcon className="w-4 h-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    <div className="space-y-1">
+                      <p className="font-medium text-white">Autonomous</p>
+                      <p className="text-xs text-gray-200">Deep work mode for multi-step problem solving</p>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      onClick={() => setAgentMode('chat')}
+                      className={cn(
+                        "p-1.5 rounded-md transition-all duration-200 cursor-pointer",
+                        agentMode === 'chat'
+                          ? "bg-background text-foreground shadow-sm"
+                          : "text-muted-foreground hover:text-foreground hover:bg-background/50"
+                      )}
+                    >
+                      <MessageSquare className="w-4 h-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">
+                    <div className="space-y-1">
+                      <p className="font-medium text-white">Chat</p>
+                      <p className="text-xs text-gray-200">Simple back-and-forth conversation</p>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            </TooltipProvider>
+          )}
+          
+          {(selectedMode || isModeDismissing) && onModeDeselect && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!isModeDismissing) {
+                  handleModeDeselect();
+                }
+              }}
+              className={cn(
+                "h-8 px-3 py-2 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5 cursor-pointer transition-all duration-200",
+                !isModeDismissing && "animate-in fade-in-0 zoom-in-95",
+                isModeDismissing && "animate-out fade-out-0 zoom-out-95"
+              )}
+            >
+              {selectedMode && getModeIcon(selectedMode)}
+              <span className="text-sm">{selectedMode?.charAt(0).toUpperCase()}{selectedMode?.slice(1)}</span>
+              <X className="w-4 h-4" />
+            </Button>
           )}
         </div>
 
@@ -499,7 +663,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           </Button>
         </div>
       </div>
-    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, messages, isLoggedIn, renderConfigDropdown, billingModalOpen, setBillingModalOpen, handleTranscription, onStopAgent, handleSubmit, value, uploadedFiles]);
+    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, messages, isLoggedIn, renderConfigDropdown, billingModalOpen, setBillingModalOpen, handleTranscription, onStopAgent, handleSubmit, value, uploadedFiles, selectedMode, onModeDeselect, handleModeDeselect, isModeDismissing, isSunaAgent, agentMode]);
 
 
 

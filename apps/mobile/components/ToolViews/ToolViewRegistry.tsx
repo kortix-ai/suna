@@ -5,7 +5,6 @@ import { BrowserToolView } from './BrowserToolView';
 import { CommandToolView } from './CommandToolView';
 import { CompleteToolView } from './CompleteToolView';
 import { DataProviderEndpointsToolView } from './DataProviderEndpointsToolView';
-import { DeployToolView } from './DeployToolView';
 import { ExecuteDataProviderCallToolView } from './ExecuteDataProviderCallToolView';
 import { ExposePortToolView } from './ExposePortToolView';
 import { FileOperationToolView } from './FileOperationToolView';
@@ -74,7 +73,6 @@ const defaultRegistry: Record<string, ToolViewComponent> = {
 
     'web-search': WebSearchToolView,
     'crawl-webpage': WebCrawlToolView,
-    'deploy': DeployToolView,
     'scrape-webpage': WebScrapeToolView,
 
 };

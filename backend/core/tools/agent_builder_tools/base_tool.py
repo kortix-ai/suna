@@ -1,10 +1,17 @@
 import structlog
 from typing import Optional
-from core.agentpress.tool import Tool
+from core.agentpress.tool import Tool, tool_metadata
 from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
 
-
+@tool_metadata(
+    display_name="Agent Builder Base",
+    description="Base tool for agent building functionality",
+    icon="Wrench",
+    color="bg-gray-100 dark:bg-gray-800/50",
+    weight=900,
+    visible=False
+)
 class AgentBuilderBaseTool(Tool):
     def __init__(self, thread_manager: ThreadManager, db_connection, agent_id: str):
         super().__init__()

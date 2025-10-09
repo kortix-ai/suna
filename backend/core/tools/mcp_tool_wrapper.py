@@ -1,5 +1,5 @@
 from typing import Any, Dict, List, Optional
-from core.agentpress.tool import Tool, ToolResult, ToolSchema, SchemaType
+from core.agentpress.tool import Tool, ToolResult, ToolSchema, SchemaType, tool_metadata
 from core.mcp_module import mcp_service
 from core.utils.logger import logger
 import inspect
@@ -108,6 +108,14 @@ class MCPSchemaRedisCache:
 
 _redis_cache = MCPSchemaRedisCache(ttl_seconds=3600)
 
+@tool_metadata(
+    display_name="MCP Tool Wrapper",
+    description="Internal wrapper for MCP external tool integration",
+    icon="Package",
+    color="bg-gray-100 dark:bg-gray-800/50",
+    weight=1000,
+    visible=False
+)
 class MCPToolWrapper(Tool):
     def __init__(self, mcp_configs: Optional[List[Dict[str, Any]]] = None, use_cache: bool = True):
         self.mcp_manager = mcp_service

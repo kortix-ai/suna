@@ -25,8 +25,8 @@ import { useAgents } from '@/hooks/react-query/agents/use-agents';
 import { cn } from '@/lib/utils';
 import { BillingModal } from '@/components/billing/billing-modal';
 import { useAgentSelection } from '@/lib/stores/agent-selection-store';
-import { Examples } from './examples';
-import { AgentExamples } from './examples/agent-examples';
+import { SunaModesPanel } from './suna-modes-panel';
+import { AIWorkerTemplates } from './ai-worker-templates';
 import { useThreadQuery } from '@/hooks/react-query/threads/use-threads';
 import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
 import { KortixLogo } from '../sidebar/kortix-logo';
@@ -72,9 +72,11 @@ export function DashboardContent() {
   const [configAgentId, setConfigAgentId] = useState<string | null>(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [autoSubmit, setAutoSubmit] = useState(false);
-  const { 
-    selectedAgentId, 
-    setSelectedAgent, 
+  const [selectedMode, setSelectedMode] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'super-worker' | 'worker-templates'>('super-worker');
+  const {
+    selectedAgentId,
+    setSelectedAgent,
     initializeFromAgents,
     getCurrentAgent
   } = useAgentSelection();
@@ -126,8 +128,6 @@ export function DashboardContent() {
 
   const threadQuery = useThreadQuery(initiatedThreadId || '');
 
-  const enabledEnvironment = isStagingMode() || isLocalMode();
-
   React.useEffect(() => {
     if (agents.length > 0) {
       initializeFromAgents(agents, undefined, setSelectedAgent);
@@ -159,7 +159,7 @@ export function DashboardContent() {
 
   const handleTourCallback = useCallback((data: CallBackProps) => {
     const { status, type, index } = data;
-    
+
     if (status === STATUS.FINISHED || status === STATUS.SKIPPED) {
       stopTour();
     } else if (type === 'step:after') {
@@ -328,81 +328,166 @@ export function DashboardContent() {
           },
         }}
       />
-      
+
       <TourConfirmationDialog
         open={showWelcome}
         onAccept={handleWelcomeAccept}
         onDecline={handleWelcomeDecline}
       />
 
-      <BillingModal 
-        open={showPaymentModal} 
+      <BillingModal
+        open={showPaymentModal}
         onOpenChange={setShowPaymentModal}
         showUsageLimitAlert={true}
       />
-      
+
       <div className="flex flex-col h-screen w-full overflow-hidden">
+
+
+
         <div className="flex-1 overflow-y-auto">
           <div className="min-h-full flex flex-col">
-            <div className="flex-1 flex items-center justify-center px-4 py-8">
-              <div className="w-full max-w-[650px] flex flex-col items-center justify-center space-y-4 md:space-y-6">
-                <div className="flex flex-col items-center text-center w-full">
-                  <p 
-                    className="tracking-tight text-2xl md:text-3xl font-normal text-foreground/90"
-                    data-tour="dashboard-title"
-                  >
-                    What would you like to do today?
-                  </p>
-                </div>
-                <div className="w-full" data-tour="chat-input">
-                  <ChatInput
-                    ref={chatInputRef}
-                    onSubmit={handleSubmit}
-                    loading={isSubmitting || isRedirecting}
-                    placeholder="Describe what you need help with..."
-                    value={inputValue}
-                    onChange={setInputValue}
-                    hideAttachments={false}
-                    selectedAgentId={selectedAgentId}
-                    onAgentSelect={setSelectedAgent}
-                    enableAdvancedConfig={true}
-                    onConfigureAgent={(agentId) => {
-                      setConfigAgentId(agentId);
-                      setShowConfigDialog(true);
+            {/* Tabs at the top */}
+            {(isStagingMode() || isLocalMode()) && (
+              <div className="px-4 pt-4 pb-4">
+                <div className="flex items-center justify-center gap-2 p-1 bg-muted/50 rounded-xl w-fit mx-auto">
+                  <button
+                    onClick={() => {
+                      setViewMode('super-worker');
+                      setSelectedMode(null);
                     }}
-                  />
-                </div>
-                
-                {/* Examples section - right after chat input */}
-                <div className="w-full pt-2" data-tour="examples">
-                  <Examples 
-                    onSelectPrompt={setInputValue} 
-                    count={isMobile ? 2 : 4} 
-                  />
-                </div>
-                
-                {/* AgentExamples section - commented out */}
-                {/* <div className="w-full pt-2" data-tour="examples">
-                  <AgentExamples 
-                    selectedAgentId={selectedAgentId}
-                    onSelectPrompt={setInputValue} 
-                    count={isMobile ? 4 : 8} 
-                  />
-                </div> */}
-              </div>
-            </div>
-            {enabledEnvironment && (
-              <div className="w-full px-4 pb-8" data-tour="custom-agents">
-                <div className="max-w-7xl mx-auto">
-                  <CustomAgentsSection 
-                    onAgentSelect={setSelectedAgent}
-                  />
+                    className={cn(
+                      "px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200",
+                      viewMode === 'super-worker'
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Kortix Super Worker
+                  </button>
+                  <button
+                    onClick={() => {
+                      setViewMode('worker-templates');
+                      setSelectedMode(null);
+                    }}
+                    className={cn(
+                      "px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200",
+                      viewMode === 'worker-templates'
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Worker Templates
+                  </button>
                 </div>
               </div>
             )}
+
+            {/* Centered content area */}
+            <div className="flex-1 flex items-center justify-center">
+              {/* Super Worker View - Suna only */}
+              {viewMode === 'super-worker' && (
+                <div className="w-full animate-in fade-in-0 duration-300">
+                  {/* Title and chat input */}
+                  <div className="px-4 py-8">
+                    <div className="w-full max-w-3xl mx-auto flex flex-col items-center space-y-4 md:space-y-6">
+                      <div className="flex flex-col items-center text-center w-full">
+                        <p
+                          className="tracking-tight text-2xl md:text-3xl font-normal text-foreground/90"
+                          data-tour="dashboard-title"
+                        >
+                          What should Kortix Super Worker do for you today?
+                        </p>
+                      </div>
+
+                      <div className="w-full" data-tour="chat-input">
+                        <ChatInput
+                          ref={chatInputRef}
+                          onSubmit={handleSubmit}
+                          loading={isSubmitting || isRedirecting}
+                          placeholder="Describe what you need help with..."
+                          value={inputValue}
+                          onChange={setInputValue}
+                          hideAttachments={false}
+                          selectedAgentId={selectedAgentId}
+                          onAgentSelect={setSelectedAgent}
+                          enableAdvancedConfig={true}
+                          onConfigureAgent={(agentId) => {
+                            setConfigAgentId(agentId);
+                            setShowConfigDialog(true);
+                          }}
+                          selectedMode={selectedMode}
+                          onModeDeselect={() => setSelectedMode(null)}
+                          animatePlaceholder={true}
+                        />
+
+                        {/* Modes Panel */}
+                        {(isStagingMode() || isLocalMode()) && isSunaAgent && (
+                          <div className="px-4 pt-8">
+                            <div className="max-w-3xl mx-auto">
+                              <SunaModesPanel
+                                selectedMode={selectedMode}
+                                onModeSelect={setSelectedMode}
+                                onSelectPrompt={setInputValue}
+                                isMobile={isMobile}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Worker Templates View - Available for ALL agents */}
+              {(viewMode === 'worker-templates') && (
+                <div className="w-full animate-in fade-in-0 duration-300">
+                  {/* Title */}
+                  <div className="px-4 py-8">
+                    <div className="w-full max-w-5xl mx-auto flex flex-col items-center space-y-2">
+                      <div className="flex flex-col items-center text-center w-full">
+                        <p className="tracking-tight text-2xl md:text-3xl font-normal text-foreground/90">
+                          Workers & Workflows
+                        </p>
+                        <p className="text-sm text-muted-foreground mt-2">
+                          Configure and install AI workers from templates
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Templates Grid */}
+                  <div className="px-4 pb-8">
+                    <div className="max-w-5xl mx-auto">
+                      <AIWorkerTemplates
+                        onSelectWorker={(worker) => {
+                          setInputValue(`Create an AI worker: ${worker.name} - ${worker.description}`);
+                          if (isSunaAgent) {
+                            setViewMode('super-worker');
+                          }
+                          toast.success(`Selected ${worker.name} template`);
+                        }}
+                        isMobile={isMobile}
+                      />
+                    </div>
+                  </div>
+
+                  {(isStagingMode() || isLocalMode()) && (
+                    <div className="w-full px-4 pb-8" data-tour="custom-agents">
+                      <div className="max-w-7xl mx-auto">
+                        <CustomAgentsSection
+                          onAgentSelect={setSelectedAgent}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-        
+
         <BillingErrorAlert
           message={billingError?.message}
           currentUsage={billingError?.currentUsage}
@@ -422,7 +507,7 @@ export function DashboardContent() {
           projectId={undefined}
         />
       )}
-      
+
       {configAgentId && (
         <AgentConfigurationDialog
           open={showConfigDialog}

@@ -7,7 +7,7 @@ from typing import Optional, Tuple
 from io import BytesIO
 from PIL import Image
 from urllib.parse import urlparse
-from core.agentpress.tool import ToolResult, openapi_schema
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from core.tools.image_context_manager import ImageContextManager
@@ -36,6 +36,14 @@ DEFAULT_MAX_HEIGHT = 1080
 DEFAULT_JPEG_QUALITY = 85
 DEFAULT_PNG_COMPRESS_LEVEL = 6
 
+@tool_metadata(
+    display_name="Image Vision",
+    description="View and analyze images to understand their content",
+    icon="Eye",
+    color="bg-pink-100 dark:bg-pink-800/50",
+    weight=40,
+    visible=True
+)
 class SandboxVisionTool(SandboxToolsBase):
     """Tool for allowing the agent to 'see' images within the sandbox."""
 

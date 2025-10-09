@@ -6,9 +6,6 @@ from fastapi import APIRouter, HTTPException, Depends, Request, Body
 
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
-from core.sandbox.sandbox import get_or_start_sandbox
-from core.services.supabase import DBConnection
-from core.agentpress.thread_manager import ThreadManager
 
 from . import core_utils as utils
 from .core_utils import _get_version_service

@@ -1,13 +1,21 @@
 import json
 from typing import Union, Dict, Any
 
-from core.agentpress.tool import Tool, ToolResult, openapi_schema
+from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
 from core.tools.data_providers.LinkedinProvider import LinkedinProvider
 from core.tools.data_providers.YahooFinanceProvider import YahooFinanceProvider
 from core.tools.data_providers.AmazonProvider import AmazonProvider
 from core.tools.data_providers.ZillowProvider import ZillowProvider
 from core.tools.data_providers.TwitterProvider import TwitterProvider
 
+@tool_metadata(
+    display_name="Data Providers",
+    description="Access data from LinkedIn, Yahoo Finance, Amazon, Zillow, and Twitter",
+    icon="Database",
+    color="bg-lime-100 dark:bg-lime-800/50",
+    weight=140,
+    visible=True
+)
 class DataProvidersTool(Tool):
     """Tool for making requests to various data providers."""
 

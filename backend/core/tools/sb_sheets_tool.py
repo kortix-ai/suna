@@ -9,7 +9,7 @@ from statistics import mean
 from typing import Any, Dict, List, Optional, Tuple
 
 import chardet
-from core.agentpress.tool import ToolResult, openapi_schema
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.utils.logger import logger
 
@@ -28,7 +28,14 @@ class SheetData:
     headers: List[str]
     rows: List[List[Any]]
 
-
+@tool_metadata(
+    display_name="Spreadsheets",
+    description="Create, edit, and analyze spreadsheets with formulas and charts",
+    icon="Table",
+    color="bg-green-100 dark:bg-green-800/50",
+    weight=80,
+    visible=True
+)
 class SandboxSheetsTool(SandboxToolsBase):
     def __init__(self, project_id: str, thread_manager):
         super().__init__(project_id, thread_manager)

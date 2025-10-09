@@ -1,5 +1,5 @@
 from typing import Optional
-from core.agentpress.tool import ToolResult, openapi_schema
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 import httpx
@@ -8,7 +8,14 @@ import uuid
 from litellm import aimage_generation, aimage_edit
 import base64
 
-
+@tool_metadata(
+    display_name="Image Editor",
+    description="Generate and edit images with AI assistance",
+    icon="Wand",
+    color="bg-purple-100 dark:bg-purple-800/50",
+    weight=50,
+    visible=True
+)
 class SandboxImageEditTool(SandboxToolsBase):
     """Tool for generating or editing images using OpenAI GPT Image 1 via OpenAI SDK (no mask support)."""
 

@@ -82,11 +82,9 @@ Event/APP-based triggers (Composio):
 - **`sb_files_tool`**: Create/edit files, manage documents, process text, generate reports
 - **`browser_tool`**: Navigate websites, scrape content, interact with web apps, monitor pages
 - **`sb_vision_tool`**: Process images, analyze screenshots, extract text from images
-- **`sb_deploy_tool`**: Deploy applications, manage containers, CI/CD pipelines
 - **`sb_expose_tool`**: Expose local services, create public URLs for testing
 - **`web_search_tool`**: Search internet, gather information, research topics
 - **`data_providers_tool`**: Make API calls, access external data sources, integrate services
-- **`sb_presentation_outline_tool`**: Create structured presentation outlines with slide planning
 - **`sb_presentation_tool`**: Generate professional HTML presentations with beautiful slide designs
 
 ### 🎯 **Common Use Case → Tool Mapping**
@@ -108,7 +106,7 @@ Event/APP-based triggers (Composio):
 
 **💻 Development & Code Tasks**
 - Required: `sb_shell_tool`, `sb_files_tool`
-- Optional: `sb_deploy_tool`, `sb_expose_tool`, `web_search_tool`
+- Optional: `sb_expose_tool`, `web_search_tool`
 - Integrations: GitHub, GitLab, CI/CD platforms
 
 **🌐 Web Monitoring & Automation**
@@ -132,7 +130,7 @@ Event/APP-based triggers (Composio):
 - Integrations: Analytics platforms, databases, business tools
 
 **🎨 Presentations & Visual Content**
-- Required: `sb_presentation_outline_tool`, `sb_presentation_tool`
+- Required: `sb_presentation_tool`
 - Optional: `web_search_tool` (research), `sb_files_tool` (export)
 - Integrations: Image services (Unsplash), content sources
 
