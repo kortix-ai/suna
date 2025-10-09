@@ -219,6 +219,12 @@ TOOL_GROUPS: Dict[str, ToolGroup] = {
                 enabled=True
             ),
             ToolMethod(
+                name="validate_slide",
+                display_name="Validate Slide",
+                description="Validate slide dimensions and content height",
+                enabled=True
+            ),
+            ToolMethod(
                 name="present_presentation",
                 display_name="Present Presentation",
                 description="Present completed presentations to user",

@@ -6,6 +6,7 @@ import json
 import os
 from datetime import datetime
 import re
+import asyncio
 
 class SandboxPresentationTool(SandboxToolsBase):
     """
@@ -426,6 +427,183 @@ class SandboxPresentationTool(SandboxToolsBase):
         except Exception as e:
             return self.fail_response(f"Failed to delete presentation: {str(e)}")
 
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "validate_slide",
+            "description": "Validate a slide by reading its HTML code and checking if the content height exceeds 1080px. Use this tool to ensure slides fit within the standard presentation dimensions before finalizing them. This helps maintain proper slide formatting and prevents content overflow issues.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "presentation_name": {
+                        "type": "string",
+                        "description": "Name of the presentation containing the slide to validate"
+                    },
+                    "slide_number": {
+                        "type": "integer",
+                        "description": "Slide number to validate (1-based)"
+                    }
+                },
+                "required": ["presentation_name", "slide_number"]
+            }
+        }
+    })
+    async def validate_slide(self, presentation_name: str, slide_number: int) -> ToolResult:
+        """Validate a slide by rendering it in a browser and measuring actual content height"""
+        try:
+            await self._ensure_sandbox()
+            
+            if not presentation_name:
+                return self.fail_response("Presentation name is required.")
+            
+            if slide_number < 1:
+                return self.fail_response("Slide number must be 1 or greater.")
+            
+            safe_name = self._sanitize_filename(presentation_name)
+            presentation_path = f"{self.workspace_path}/{self.presentations_dir}/{safe_name}"
+            
+            # Load metadata to verify slide exists
+            metadata = await self._load_presentation_metadata(presentation_path)
+            
+            if not metadata.get("slides") or str(slide_number) not in metadata["slides"]:
+                return self.fail_response(f"Slide {slide_number} not found in presentation '{presentation_name}'")
+            
+            # Get slide info
+            slide_info = metadata["slides"][str(slide_number)]
+            slide_filename = slide_info["filename"]
+            
+            # Create a Python script to measure the actual rendered height using Playwright
+            measurement_script = f'''
+import asyncio
+import json
+from playwright.async_api import async_playwright
+
+async def measure_slide_height():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=['--no-sandbox', '--disable-setuid-sandbox']
+        )
+        page = await browser.new_page(viewport={{"width": 1920, "height": 1080}})
+        
+        # Load the HTML file
+        await page.goto('file:///workspace/{self.presentations_dir}/{safe_name}/{slide_filename}')
+        
+        # Wait for page to load
+        await page.wait_for_load_state('networkidle')
+        
+        # Measure the actual content height
+        dimensions = await page.evaluate("""
+            () => {{
+                const body = document.body;
+                const html = document.documentElement;
+                
+                // Get the actual scroll height (total content height)
+                const scrollHeight = Math.max(
+                    body.scrollHeight, body.offsetHeight,
+                    html.clientHeight, html.scrollHeight, html.offsetHeight
+                );
+                
+                // Get viewport height
+                const viewportHeight = window.innerHeight;
+                
+                // Check if content overflows
+                const overflows = scrollHeight > 1080;
+                
+                return {{
+                    scrollHeight: scrollHeight,
+                    viewportHeight: viewportHeight,
+                    overflows: overflows,
+                    excessHeight: scrollHeight - 1080
+                }};
+            }}
+        """)
+        
+        await browser.close()
+        return dimensions
+
+result = asyncio.run(measure_slide_height())
+print(json.dumps(result))
+'''
+            
+            # Write the script to a temporary file in the sandbox
+            script_path = f"{self.workspace_path}/.validate_slide_temp.py"
+            await self.sandbox.fs.upload_file(measurement_script.encode(), script_path)
+            
+            # Execute the script
+            try:
+                result = await self.sandbox.process.exec(
+                    f"/bin/sh -c 'cd /workspace && python3 .validate_slide_temp.py'",
+                    timeout=30
+                )
+                
+                # Parse the result
+                output = (getattr(result, "result", None) or getattr(result, "output", "") or "").strip()
+                if not output:
+                    raise Exception("No output from validation script")
+                
+                dimensions = json.loads(output)
+                
+                # Clean up the temporary script
+                try:
+                    await self.sandbox.fs.delete_file(script_path)
+                except:
+                    pass
+                
+            except Exception as e:
+                # Clean up on error
+                try:
+                    await self.sandbox.fs.delete_file(script_path)
+                except:
+                    pass
+                return self.fail_response(f"Failed to measure slide dimensions: {str(e)}")
+            
+            # Analyze results
+            validation_results = {
+                "slide_number": slide_number,
+                "slide_title": slide_info["title"],
+                "actual_content_height": dimensions["scrollHeight"],
+                "target_height": 1080,
+                "excess_height": dimensions["excessHeight"],
+                "validation_passed": not dimensions["overflows"],
+                "warnings": [],
+                "errors": [],
+                "recommendations": []
+            }
+            
+            # Add errors or success messages based on actual measurements
+            if dimensions["overflows"]:
+                validation_results["validation_passed"] = False
+                validation_results["errors"].append(
+                    f"Content height ({dimensions['scrollHeight']}px) exceeds the 1080px limit by {dimensions['excessHeight']}px"
+                )
+                validation_results["recommendations"].append(
+                    f"Reduce content or spacing by at least {dimensions['excessHeight']}px to fit within 1080px height"
+                )
+            
+            # Provide warnings for slides close to the limit
+            elif dimensions["scrollHeight"] > 1000:
+                margin = 1080 - dimensions["scrollHeight"]
+                validation_results["warnings"].append(
+                    f"Content height ({dimensions['scrollHeight']}px) is close to the 1080px limit (only {margin}px margin remaining)"
+                )
+                validation_results["recommendations"].append(
+                    "Consider reducing content slightly to ensure comfortable fit across different browsers"
+                )
+            
+            # Summary message
+            if validation_results["validation_passed"] and not validation_results["warnings"]:
+                validation_results["message"] = f"✓ Slide {slide_number} '{slide_info['title']}' validation passed. Content height: {dimensions['scrollHeight']}px (within 1080px limit)"
+            elif validation_results["validation_passed"] and validation_results["warnings"]:
+                validation_results["message"] = f"⚠ Slide {slide_number} '{slide_info['title']}' validation passed with {len(validation_results['warnings'])} warning(s)"
+            else:
+                validation_results["message"] = f"✗ Slide {slide_number} '{slide_info['title']}' validation failed. Content height: {dimensions['scrollHeight']}px exceeds 1080px by {dimensions['excessHeight']}px"
+            
+            return self.success_response(validation_results)
+            
+        except Exception as e:
+            return self.fail_response(f"Failed to validate slide: {str(e)}")
 
     @openapi_schema({
         "type": "function",
