@@ -37,9 +37,10 @@ def _ensure_tools_imported():
         
         try:
             importlib.import_module(module_name)
-            logger.debug(f"Imported tool module: {module_name}")
+            # logger.debug(f"Imported tool module: {module_name}")
         except Exception as e:
-            logger.debug(f"Could not import {module_name}: {e}")
+            # logger.debug(f"Could not import {module_name}: {e}")
+            pass
 
 
 def _get_all_tool_subclasses(base_class: Type[Tool] = None) -> List[Type[Tool]]:
@@ -133,7 +134,7 @@ def discover_tools() -> Dict[str, Type[Tool]]:
     for tool_class in tool_classes:
         tool_name = _generate_tool_name(tool_class.__name__)
         tools_map[tool_name] = tool_class
-        logger.debug(f"Discovered tool: {tool_name} ({tool_class.__name__})")
+        # logger.debug(f"Discovered tool: {tool_name} ({tool_class.__name__})")
     
     logger.info(f"Discovered {len(tools_map)} tools")
     return tools_map
@@ -226,7 +227,7 @@ def _extract_tool_metadata(tool_name: str, tool_class: Type[Tool]) -> Dict[str, 
             
             metadata["methods"].append(method_info)
         except Exception as e:
-            logger.debug(f"Could not extract metadata for method {method_name}: {e}")
+            # logger.debug(f"Could not extract metadata for method {method_name}: {e}")
             continue
     
     return metadata

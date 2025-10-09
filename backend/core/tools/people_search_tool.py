@@ -32,7 +32,7 @@ class PeopleSearchTool(Tool):
         
         if self.api_key:
             self.exa_client = Exa(self.api_key)
-            logger.info("People Search Tool initialized. Note: This requires an Exa Pro plan for Websets API access.")
+            logger.info("People Search Tool initialized.")
         else:
             logger.warning("EXA_API_KEY not configured - People Search Tool will not be available")
     
@@ -81,7 +81,7 @@ class PeopleSearchTool(Tool):
         "type": "function",
         "function": {
             "name": "people_search",
-            "description": "Search for people using natural language queries and enrich with LinkedIn profiles. IMPORTANT: Requires Exa Pro plan and costs $0.54 per search (10 results).",
+            "description": "Search for people using natural language queries and enrich with LinkedIn profiles. IMPORTANT: This search costs $0.54 per search (10 results).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -154,7 +154,7 @@ class PeopleSearchTool(Tool):
                 
                 if "401" in error_str:
                     return self.fail_response(
-                        "Authentication failed with Exa API. Please check your API key and Pro plan status."
+                        "Authentication failed with Exa API. Please check your API key configuration."
                     )
                 elif "400" in error_str:
                     return self.fail_response(

@@ -28,12 +28,11 @@ SUNA_CONFIG = {
         # Document and content creation
         "sb_docs_tool": True,
         "sb_presentation_tool": True,
-        "sb_sheets_tool": False,
         "sb_kb_tool": True,
 
         # search tools
-        "people_search_tool": False,
-        "company_search_tool": False,
+        "people_search_tool": True,
+        "company_search_tool": True,
 
         "browser_tool": True,
         

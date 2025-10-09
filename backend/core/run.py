@@ -37,7 +37,6 @@ from langfuse.client import StatefulTraceClient
 from core.tools.mcp_tool_wrapper import MCPToolWrapper
 from core.tools.task_list_tool import TaskListTool
 from core.agentpress.tool import SchemaType
-from core.tools.sb_sheets_tool import SandboxSheetsTool
 from core.tools.sb_upload_file_tool import SandboxUploadFileTool
 from core.tools.sb_docs_tool import SandboxDocsTool
 from core.tools.people_search_tool import PeopleSearchTool
@@ -116,7 +115,6 @@ class ToolManager:
             ('sb_kb_tool', SandboxKbTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
             ('sb_design_tool', SandboxDesignerTool, {'project_id': self.project_id, 'thread_id': self.thread_id, 'thread_manager': self.thread_manager}),
             ('sb_presentation_tool', SandboxPresentationTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
-            ('sb_sheets_tool', SandboxSheetsTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
             ('sb_upload_file_tool', SandboxUploadFileTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
             ('sb_docs_tool', SandboxDocsTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
         ]
@@ -593,7 +591,7 @@ class AgentRunner:
         all_tools = [
             'sb_shell_tool', 'sb_files_tool', 'sb_expose_tool',
             'web_search_tool', 'image_search_tool', 'sb_vision_tool', 'sb_presentation_tool', 'sb_image_edit_tool',
-            'sb_sheets_tool', 'sb_kb_tool', 'sb_design_tool', 'sb_upload_file_tool',
+            'sb_kb_tool', 'sb_design_tool', 'sb_upload_file_tool',
             'sb_docs_tool',
             'data_providers_tool', 'browser_tool', 'people_search_tool', 'company_search_tool', 
             'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'trigger_tool',
