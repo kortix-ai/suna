@@ -230,15 +230,4 @@ class MCPServerService:
             
         except Exception as e:
             logger.error(f"Failed to list MCP servers: {e}", exc_info=True)
-            raise
-    
-    async def delete_mcp_server(self, server_id: str) -> bool:
-        try:
-            logger.debug(f"Deleting MCP server: {server_id}")
-            
-            logger.warning(f"Delete MCP server not implemented in SDK for ID: {server_id}")
-            return False
-            
-        except Exception as e:
-            logger.error(f"Failed to delete MCP server {server_id}: {e}", exc_info=True)
             raise 

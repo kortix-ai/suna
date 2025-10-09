@@ -1,9 +1,17 @@
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 import asyncio
 import time
 
+@tool_metadata(
+    display_name="Port Exposure",
+    description="Share your local development servers with preview URLs",
+    icon="Share",
+    color="bg-indigo-100 dark:bg-indigo-800/50",
+    weight=120,
+    visible=True
+)
 class SandboxExposeTool(SandboxToolsBase):
     """Tool for exposing and retrieving preview URLs for sandbox ports."""
 
@@ -29,28 +37,6 @@ class SandboxExposeTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <!-- Example 1: Expose a web server running on port 8000 -->
-        <function_calls>
-        <invoke name="expose_port">
-        <parameter name="port">8000</parameter>
-        </invoke>
-        </function_calls>
-
-        <!-- Example 2: Expose an API service running on port 3000 -->
-        <function_calls>
-        <invoke name="expose_port">
-        <parameter name="port">3000</parameter>
-        </invoke>
-        </function_calls>
-
-        <!-- Example 3: Expose a development server running on port 5173 -->
-        <function_calls>
-        <invoke name="expose_port">
-        <parameter name="port">5173</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def expose_port(self, port: int) -> ToolResult:
         try:
             # Ensure sandbox is initialized

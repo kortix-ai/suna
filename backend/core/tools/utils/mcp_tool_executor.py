@@ -67,8 +67,6 @@ class MCPToolExecutor:
                 logger.error(f"Failed to resolve Composio profile {profile_id}: {str(e)}")
                 return self._create_error_result(f"Failed to resolve Composio profile: {str(e)}")
                 
-        elif custom_type == 'pipedream':
-            return await self._execute_pipedream_tool(tool_name, arguments, tool_info)
         elif custom_type == 'sse':
             return await self._execute_sse_tool(tool_name, arguments, tool_info)
         elif custom_type == 'http':
@@ -77,53 +75,6 @@ class MCPToolExecutor:
             return await self._execute_json_tool(tool_name, arguments, tool_info)
         else:
             return self._create_error_result(f"Unsupported custom MCP type: {custom_type}")
-    
-    async def _execute_pipedream_tool(self, tool_name: str, arguments: Dict[str, Any], tool_info: Dict[str, Any]) -> ToolResult:
-        custom_config = tool_info['custom_config']
-        original_tool_name = tool_info['original_name']
-        
-        external_user_id = await self._resolve_external_user_id(custom_config)
-        if not external_user_id:
-            return self._create_error_result("No external_user_id available")
-        
-        app_slug = custom_config.get('app_slug')
-        oauth_app_id = custom_config.get('oauth_app_id')
-        
-        try:
-            import os
-            from pipedream import connection_service
-            
-            access_token = await connection_service._ensure_access_token()
-            
-            project_id = os.getenv("PIPEDREAM_PROJECT_ID")
-            environment = os.getenv("PIPEDREAM_X_PD_ENVIRONMENT", "development")
-            
-            headers = {
-                "Authorization": f"Bearer {access_token}",
-                "x-pd-project-id": project_id,
-                "x-pd-environment": environment,
-                "x-pd-external-user-id": external_user_id,
-                "x-pd-app-slug": app_slug,
-            }
-            
-            if hasattr(connection_service, 'rate_limit_token') and connection_service.rate_limit_token:
-                headers["x-pd-rate-limit"] = connection_service.rate_limit_token
-            
-            if oauth_app_id:
-                headers["x-pd-oauth-app-id"] = oauth_app_id
-            
-            url = "https://remote.mcp.pipedream.net"
-            
-            async with asyncio.timeout(30):
-                async with streamablehttp_client(url, headers=headers) as (read_stream, write_stream, _):
-                    async with ClientSession(read_stream, write_stream) as session:
-                        await session.initialize()
-                        result = await session.call_tool(original_tool_name, arguments)
-                        return self._create_success_result(self._extract_content(result))
-                        
-        except Exception as e:
-            logger.error(f"Error executing Pipedream MCP tool: {str(e)}")
-            return self._create_error_result(f"Error executing Pipedream tool: {str(e)}")
     
     async def _execute_sse_tool(self, tool_name: str, arguments: Dict[str, Any], tool_info: Dict[str, Any]) -> ToolResult:
         custom_config = tool_info['custom_config']

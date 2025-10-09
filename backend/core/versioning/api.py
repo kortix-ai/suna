@@ -16,7 +16,7 @@ from .version_service import (
     VersionConflictError
 )
 
-router = APIRouter()
+router = APIRouter(tags=["agent-versions"])
 
 class CreateVersionRequest(BaseModel):
     system_prompt: str
@@ -58,7 +58,7 @@ class VersionComparisonResponse(BaseModel):
     differences: List[Dict[str, Any]]
 
 
-@router.get("/agents/{agent_id}/versions", response_model=List[VersionResponse])
+@router.get("/agents/{agent_id}/versions", response_model=List[VersionResponse], summary="List Agent Versions", operation_id="list_agent_versions")
 async def get_versions(
     agent_id: str,
     user_id: str = Depends(verify_and_get_user_id_from_jwt),
@@ -76,7 +76,7 @@ async def get_versions(
         raise HTTPException(status_code=500, detail="Failed to fetch versions")
 
 
-@router.post("/agents/{agent_id}/versions", response_model=VersionResponse)
+@router.post("/agents/{agent_id}/versions", response_model=VersionResponse, summary="Create Agent Version", operation_id="create_agent_version")
 async def create_version(
     agent_id: str,
     request: CreateVersionRequest,
@@ -108,7 +108,7 @@ async def create_version(
         raise HTTPException(status_code=500, detail=f"Failed to create version: {str(e)}")
 
 
-@router.get("/agents/{agent_id}/versions/{version_id}", response_model=VersionResponse)
+@router.get("/agents/{agent_id}/versions/{version_id}", response_model=VersionResponse, summary="Get Agent Version", operation_id="get_agent_version")
 async def get_version(
     agent_id: str,
     version_id: str,
@@ -127,7 +127,7 @@ async def get_version(
         raise HTTPException(status_code=500, detail="Failed to get version")
 
 
-@router.put("/agents/{agent_id}/versions/{version_id}/activate")
+@router.put("/agents/{agent_id}/versions/{version_id}/activate", summary="Activate Agent Version", operation_id="activate_agent_version")
 async def activate_version(
     agent_id: str,
     version_id: str,
@@ -148,7 +148,7 @@ async def activate_version(
         raise HTTPException(status_code=500, detail="Failed to activate version")
 
 
-@router.get("/agents/{agent_id}/versions/{version1_id}/compare/{version2_id}", response_model=VersionComparisonResponse)
+@router.get("/agents/{agent_id}/versions/{version1_id}/compare/{version2_id}", response_model=VersionComparisonResponse, summary="Compare Agent Versions", operation_id="compare_agent_versions")
 async def compare_versions(
     agent_id: str,
     version1_id: str,
@@ -175,7 +175,7 @@ async def compare_versions(
         raise HTTPException(status_code=500, detail="Failed to compare versions")
 
 
-@router.post("/agents/{agent_id}/versions/{version_id}/rollback", response_model=VersionResponse)
+@router.post("/agents/{agent_id}/versions/{version_id}/rollback", response_model=VersionResponse, summary="Rollback to Agent Version", operation_id="rollback_to_agent_version")
 async def rollback_to_version(
     agent_id: str,
     version_id: str,
@@ -197,7 +197,7 @@ async def rollback_to_version(
         raise HTTPException(status_code=500, detail="Failed to rollback version")
 
 
-@router.put("/agents/{agent_id}/versions/{version_id}/details", response_model=VersionResponse)
+@router.put("/agents/{agent_id}/versions/{version_id}/details", response_model=VersionResponse, summary="Update Agent Version Details", operation_id="update_agent_version_details")
 async def update_version_details(
     agent_id: str,
     version_id: str,

@@ -9,8 +9,6 @@ const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 const nonRunningAgentRuns = new Set<string>();
 // Map to keep track of active EventSource streams
 const activeStreams = new Map<string, EventSource>();
-// Map to keep track of safety timeouts
-const safetyTimeouts = new Map<string, number>();
 
 /**
  * Helper function to safely cleanup EventSource connections
@@ -30,13 +28,6 @@ const cleanupEventSource = (agentRunId: string, reason?: string): void => {
     
     // Remove from active streams
     activeStreams.delete(agentRunId);
-  }
-
-  // Clear any associated safety timeout
-  const timeout = safetyTimeouts.get(agentRunId);
-  if (timeout) {
-    clearTimeout(timeout);
-    safetyTimeouts.delete(agentRunId);
   }
 };
 
@@ -243,65 +234,6 @@ export interface FileInfo {
   mod_time: string;
   permissions?: string;
 }
-
-export type WorkflowExecution = {
-  id: string;
-  workflow_id: string;
-  workflow_name: string;
-  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
-  started_at: string | null;
-  completed_at: string | null;
-  result: any;
-  error: string | null;
-};
-
-export type WorkflowExecutionLog = {
-  id: string;
-  execution_id: string;
-  node_id: string;
-  node_name: string;
-  node_type: string;
-  started_at: string;
-  completed_at: string | null;
-  status: 'running' | 'completed' | 'failed';
-  input_data: any;
-  output_data: any;
-  error: string | null;
-};
-
-// Workflow Types
-export type Workflow = {
-  id: string;
-  name: string;
-  description: string;
-  status: 'draft' | 'active' | 'paused' | 'disabled' | 'archived';
-  project_id: string;
-  account_id: string;
-  definition: {
-    name: string;
-    description: string;
-    nodes: any[];
-    edges: any[];
-    variables?: Record<string, any>;
-  };
-  created_at: string;
-  updated_at: string;
-};
-
-export type WorkflowNode = {
-  id: string;
-  type: string;
-  position: { x: number; y: number };
-  data: any;
-};
-
-export type WorkflowEdge = {
-  id: string;
-  source: string;
-  target: string;
-  sourceHandle?: string;
-  targetHandle?: string;
-};
 
 // Project APIs
 export const getProjects = async (): Promise<Project[]> => {
@@ -1124,17 +1056,6 @@ export const streamAgent = (
       const eventSource = new EventSource(url.toString());
 
       activeStreams.set(agentRunId, eventSource);
-
-      // Safety timeout to prevent indefinite connections (30 minutes)
-      const safetyTimeout = setTimeout(() => {
-        console.warn(`[STREAM] Safety timeout reached for ${agentRunId}, cleaning up`);
-        cleanupEventSource(agentRunId, 'safety timeout');
-        callbacks.onError('Connection timeout - stream has been running too long');
-        callbacks.onClose();
-      }, 30 * 60 * 1000); // 30 minutes
-
-      // Store the timeout ID for cleanup
-      safetyTimeouts.set(agentRunId, safetyTimeout as unknown as number);
 
       eventSource.onopen = () => {
         console.log(`[STREAM] EventSource opened for ${agentRunId}`);

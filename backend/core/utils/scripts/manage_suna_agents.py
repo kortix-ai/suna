@@ -137,10 +137,6 @@ async def main():
     replace_user_parser = subparsers.add_parser('replace-user', help='Replace Suna agent for specific user (if corrupted)')
     replace_user_parser.add_argument('account_id', help='Account ID to replace Suna for')
     
-    # Legacy commands (deprecated but still functional)
-    subparsers.add_parser('sync', help='[DEPRECATED] No longer needed - config is always current')
-    subparsers.add_parser('update-all', help='[DEPRECATED] No longer needed - config is always current')
-    
     args = parser.parse_args()
     
     if not args.command:
@@ -160,12 +156,6 @@ async def main():
             await manager.install_user(args.account_id)
         elif args.command == 'replace-user':
             await manager.replace_user_agent(args.account_id)
-        elif args.command == 'sync':
-            print("⚠️  DEPRECATED: Sync is no longer needed!")
-            await manager.update_config_info()
-        elif args.command == 'update-all':
-            print("⚠️  DEPRECATED: Update-all is no longer needed!")
-            await manager.update_config_info()
         else:
             parser.print_help()
             

@@ -18,6 +18,7 @@ import { Cpu, Search, Check, ChevronDown, Plus, ExternalLink, Loader2, Plug, Bra
 import { useAgents } from '@/hooks/react-query/agents/use-agents';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import type { ModelOption } from '@/hooks/use-model-selection';
+import { ModelProviderIcon } from '@/lib/model-provider-icons';
 
 export type SubscriptionStatus = 'no_subscription' | 'active';
 
@@ -27,8 +28,6 @@ import { IntegrationsRegistry } from '@/components/agents/integrations-registry'
 import { useComposioToolkitIcon } from '@/hooks/react-query/composio/use-composio';
 import { Skeleton } from '@/components/ui/skeleton';
 import { NewAgentDialog } from '@/components/agents/new-agent-dialog';
-import { useAgentWorkflows } from '@/hooks/react-query/agents/use-agent-workflows';
-import { PlaybookExecuteDialog } from '@/components/playbooks/playbook-execute-dialog';
 import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 import { AgentModelSelector } from '@/components/agents/config/model-selector';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
@@ -70,8 +69,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
     const [integrationsOpen, setIntegrationsOpen] = useState(false);
     const [showNewAgentDialog, setShowNewAgentDialog] = useState(false);
     const searchInputRef = useRef<HTMLInputElement>(null);
-    const [execDialog, setExecDialog] = useState<{ open: boolean; playbook: any | null; agentId: string | null }>({ open: false, playbook: null, agentId: null });
-    const [agentConfigDialog, setAgentConfigDialog] = useState<{ open: boolean; tab: 'instructions' | 'knowledge' | 'triggers' | 'playbooks' | 'tools' | 'integrations' }>({ open: false, tab: 'instructions' });
+    const [agentConfigDialog, setAgentConfigDialog] = useState<{ open: boolean; tab: 'instructions' | 'knowledge' | 'triggers' | 'tools' | 'integrations' }>({ open: false, tab: 'instructions' });
 
     // Debounce search query
     useEffect(() => {
@@ -173,7 +171,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
         return found;
     }, [agents, selectedAgentId]);
 
-    const handleQuickAction = useCallback((action: 'instructions' | 'knowledge' | 'triggers' | 'playbooks') => {
+    const handleQuickAction = useCallback((action: 'instructions' | 'knowledge' | 'triggers') => {
         if (!selectedAgentId && !displayAgent?.agent_id) {
             return;
         }
@@ -185,20 +183,14 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
         return <AgentAvatar agentId={agent?.agent_id} size={32} className="flex-shrink-0 !border-0 !bg-transparent" fallbackName={agent?.name} iconColor='#' />;
     }, []);
 
-    const currentAgentIdForPlaybooks = isLoggedIn ? displayAgent?.agent_id || '' : '';
-    const { data: playbooks = [], isLoading: playbooksLoading } = useAgentWorkflows(currentAgentIdForPlaybooks);
-    const [playbooksExpanded, setPlaybooksExpanded] = useState(true);
-
     return (
         <>
-            {/* Reusable list of workflows to avoid re-fetch storms; each instance fetches scoped to agentId */}
-
             <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
                 <DropdownMenuTrigger asChild>
                     <Button
                         variant="outline"
                         size="sm"
-                        className="h-[42px] px-2 bg-transparent rounded-[1rem] text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5"
+                        className="h-[42px] px-2 bg-border rounded-[1rem] text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5"
                         aria-label="Config menu"
                     >
                         {onAgentSelect ? (
@@ -229,7 +221,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
                                 onKeyDown={handleSearchInputKeyDown}
-                                className="w-full h-11 pl-10 pr-4 rounded-2xl text-sm font-medium bg-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
+                                className="w-full h-11 pl-10 pr-4 rounded-2xl text-sm font-medium bg-border focus:outline-none focus:ring-2 focus:ring-primary/50"
                             />
                         </div>
                     </div>
@@ -305,7 +297,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                         </div>
                     )}
 
-                    {onAgentSelect && <div className="h-px bg-border -mx-3 my-3" />}
+                    {onAgentSelect && <div className="h-px bg-border/50 -mx-3 my-3" />}
 
                     {/* Models */}
                     <div className="">
@@ -319,9 +311,11 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                     className="flex items-center gap-3 h-8 text-sm cursor-pointer"
                                     onClick={() => onModelChange(model.id)}
                                 >
-                                    <div className="flex items-center justify-center w-8 h-8 bg-muted/60 border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
-                                        <Cpu className="h-4 w-4" />
-                                    </div>
+                                    <ModelProviderIcon
+                                        modelId={model.id}
+                                        size={32}
+                                        className="flex-shrink-0"
+                                    />
                                     <span className="flex-1 truncate font-medium">{model.label}</span>
                                     {selectedModel === model.id && (
                                         <Check className="h-4 w-4 text-primary flex-shrink-0" />
@@ -330,7 +324,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                             ))}
                         </div>
                     </div>
-                    <div className="h-px bg-border -mx-3 my-3" />
+                    <div className="h-px bg-border/50 -mx-3 my-3" />
                     {onAgentSelect && (selectedAgentId || displayAgent?.agent_id) && (
                         <div className="">
                             <div className="mb-3">
@@ -349,7 +343,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                         variant="ghost"
                                         size="icon"
                                         className="h-8 w-12 p-0 cursor-pointer hover:bg-muted/60 border-[1.5px] border-border rounded-2xl"
-                                        onClick={() => action === 'integrations' ? setIntegrationsOpen(true) : handleQuickAction(action)}
+                                        onClick={() => action === 'integrations' ? setIntegrationsOpen(true) : handleQuickAction(action as any)}
                                     >
                                         <Icon className="h-4 w-4" />
                                     </Button>
@@ -380,12 +374,6 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                     onAgentSelect?.(agentId);
                 }}
             />
-            <PlaybookExecuteDialog
-                open={execDialog.open}
-                onOpenChange={(open) => setExecDialog((s) => ({ ...s, open }))}
-                playbook={execDialog.playbook as any}
-                agentId={execDialog.agentId || ''}
-            />
             {(selectedAgentId || displayAgent?.agent_id) && agentConfigDialog.open && (
                 <AgentConfigurationDialog
                     open={agentConfigDialog.open}
@@ -409,7 +397,7 @@ const GuestMenu: React.FC<UnifiedConfigMenuProps> = memo(function GuestMenu() {
                         <Button
                             variant="ghost"
                             size="sm"
-                            className="h-8 px-2 bg-transparent border-0 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5 cursor-not-allowed opacity-80 pointer-events-none"
+                            className="h-8 px-2 bg-border border-0 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5 cursor-not-allowed opacity-80 pointer-events-none"
                             disabled
                         >
                             <div className="flex items-center gap-2 min-w-0 max-w-[180px]">

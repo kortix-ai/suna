@@ -23,15 +23,22 @@ from .installation_service import (
 )
 from .utils import format_template_for_response
 
-router = APIRouter()
+router = APIRouter(tags=["templates"])
 
 db: Optional[DBConnection] = None
+
+
+class UsageExampleMessage(BaseModel):
+    role: str
+    content: str
+    tool_calls: Optional[List[Dict[str, Any]]] = None
 
 
 class CreateTemplateRequest(BaseModel):
     agent_id: str
     make_public: bool = False
     tags: Optional[List[str]] = None
+    usage_examples: Optional[List[UsageExampleMessage]] = None
 
 
 class InstallTemplateRequest(BaseModel):
@@ -40,10 +47,13 @@ class InstallTemplateRequest(BaseModel):
     custom_system_prompt: Optional[str] = None
     profile_mappings: Optional[Dict[str, str]] = None
     custom_mcp_configs: Optional[Dict[str, Dict[str, Any]]] = None
+    trigger_configs: Optional[Dict[str, Dict[str, Any]]] = None
+    trigger_variables: Optional[Dict[str, Dict[str, str]]] = None
 
 
 class PublishTemplateRequest(BaseModel):
     tags: Optional[List[str]] = None
+    usage_examples: Optional[List[UsageExampleMessage]] = None
 
 
 class TemplateResponse(BaseModel):
@@ -65,7 +75,8 @@ class TemplateResponse(BaseModel):
     icon_background: Optional[str] = None
     metadata: Dict[str, Any]
     creator_name: Optional[str] = None
-
+    usage_examples: Optional[List[UsageExampleMessage]] = None
+    config: Optional[Dict[str, Any]] = None
 
 class InstallationResponse(BaseModel):
     status: str
@@ -73,6 +84,7 @@ class InstallationResponse(BaseModel):
     name: Optional[str] = None
     missing_regular_credentials: List[Dict[str, Any]] = []
     missing_custom_configs: List[Dict[str, Any]] = []
+    missing_trigger_variables: Optional[Dict[str, Dict[str, Any]]] = None
     template_info: Optional[Dict[str, Any]] = None
 
 
@@ -138,11 +150,16 @@ async def create_template_from_agent(
         
         template_service = get_template_service(db)
         
+        usage_examples = None
+        if request.usage_examples:
+            usage_examples = [msg.dict() for msg in request.usage_examples]
+        
         template_id = await template_service.create_from_agent(
             agent_id=request.agent_id,
             creator_id=user_id,
             make_public=request.make_public,
-            tags=request.tags
+            tags=request.tags,
+            usage_examples=usage_examples
         )
         
         logger.debug(f"Successfully created template {template_id} from agent {request.agent_id}")
@@ -181,7 +198,15 @@ async def publish_template(
         
         template_service = get_template_service(db)
         
-        success = await template_service.publish_template(template_id, user_id)
+        usage_examples = None
+        if request.usage_examples:
+            usage_examples = [msg.dict() for msg in request.usage_examples]
+        
+        success = await template_service.publish_template(
+            template_id, 
+            user_id,
+            usage_examples=usage_examples
+        )
         
         if not success:
             logger.warning(f"Failed to publish template {template_id} for user {user_id}")
@@ -291,13 +316,17 @@ async def install_template(
         
         installation_service = get_installation_service(db)
         
+        logger.info(f"Installing template with trigger_configs: {request.trigger_configs}")
+        
         install_request = TemplateInstallationRequest(
             template_id=request.template_id,
             account_id=user_id,
             instance_name=request.instance_name,
             custom_system_prompt=request.custom_system_prompt,
             profile_mappings=request.profile_mappings,
-            custom_mcp_configs=request.custom_mcp_configs
+            custom_mcp_configs=request.custom_mcp_configs,
+            trigger_configs=request.trigger_configs,
+            trigger_variables=request.trigger_variables
         )
         
         result = await installation_service.install_template(install_request)
@@ -310,6 +339,7 @@ async def install_template(
             name=result.name,
             missing_regular_credentials=result.missing_regular_credentials,
             missing_custom_configs=result.missing_custom_configs,
+            missing_trigger_variables=result.missing_trigger_variables,
             template_info=result.template_info
         )
         
@@ -344,6 +374,56 @@ class MarketplaceTemplatesResponse(BaseModel):
     templates: List[TemplateResponse]
     pagination: MarketplacePaginationInfo
 
+@router.get("/kortix-all", response_model=MarketplaceTemplatesResponse)
+async def get_all_kortix_templates(
+    request: Request = None
+):
+    try:
+        from core.templates.services.marketplace_service import MarketplaceService, MarketplaceFilters
+        
+        pagination_params = PaginationParams(
+            page=1,
+            page_size=1000
+        )
+        
+        filters = MarketplaceFilters(
+            is_kortix_team=True,
+            sort_by="download_count",
+            sort_order="desc"
+        )
+        
+        client = await db.client
+        marketplace_service = MarketplaceService(client)
+        paginated_result = await marketplace_service.get_marketplace_templates_paginated(
+            pagination_params=pagination_params,
+            filters=filters
+        )
+        
+        template_responses = []
+        for template_data in paginated_result.data:
+            template_response = TemplateResponse(**template_data)
+            template_responses.append(template_response)
+        
+        return MarketplaceTemplatesResponse(
+            templates=template_responses,
+            pagination=MarketplacePaginationInfo(
+                current_page=1,
+                page_size=len(template_responses),
+                total_items=len(template_responses),
+                total_pages=1,
+                has_next=False,
+                has_previous=False
+            )
+        )
+        
+    except Exception as e:
+        try:
+            error_str = str(e)
+        except Exception:
+            error_str = f"Error of type {type(e).__name__}"
+        logger.error(f"Error getting all Kortix templates: {error_str}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
 @router.get("/marketplace", response_model=MarketplaceTemplatesResponse)
 async def get_marketplace_templates(
     page: Optional[int] = Query(1, ge=1, description="Page number (1-based)"),
@@ -357,7 +437,7 @@ async def get_marketplace_templates(
     request: Request = None
 ):
     try:
-        from core.templates.services.template_service import TemplateService, MarketplaceFilters
+        from core.templates.services.marketplace_service import MarketplaceService, MarketplaceFilters
         creator_id_filter = None
         if mine:
             try:
@@ -387,8 +467,8 @@ async def get_marketplace_templates(
         )
         
         client = await db.client
-        template_service = TemplateService(client)
-        paginated_result = await template_service.get_marketplace_templates_paginated(
+        marketplace_service = MarketplaceService(client)
+        paginated_result = await marketplace_service.get_marketplace_templates_paginated(
             pagination_params=pagination_params,
             filters=filters
         )
@@ -429,7 +509,7 @@ async def get_my_templates(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        from core.templates.services.template_service import TemplateService, MarketplaceFilters
+        from core.templates.services.marketplace_service import MarketplaceService, MarketplaceFilters
         
         pagination_params = PaginationParams(
             page=page,
@@ -444,9 +524,9 @@ async def get_my_templates(
         )
         
         client = await db.client
-        template_service = TemplateService(client)
+        marketplace_service = MarketplaceService(client)
         
-        paginated_result = await template_service.get_user_templates_paginated(
+        paginated_result = await marketplace_service.get_user_templates_paginated(
             pagination_params=pagination_params,
             filters=filters
         )

@@ -7,7 +7,7 @@ from typing import Optional, Tuple
 from io import BytesIO
 from PIL import Image
 from urllib.parse import urlparse
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from core.tools.image_context_manager import ImageContextManager
@@ -36,6 +36,14 @@ DEFAULT_MAX_HEIGHT = 1080
 DEFAULT_JPEG_QUALITY = 85
 DEFAULT_PNG_COMPRESS_LEVEL = 6
 
+@tool_metadata(
+    display_name="Image Vision",
+    description="View and analyze images to understand their content",
+    icon="Eye",
+    color="bg-pink-100 dark:bg-pink-800/50",
+    weight=40,
+    visible=True
+)
 class SandboxVisionTool(SandboxToolsBase):
     """Tool for allowing the agent to 'see' images within the sandbox."""
 
@@ -165,11 +173,9 @@ class SandboxVisionTool(SandboxToolsBase):
                             os.unlink(temp_svg_path)
                             
                     except ImportError:
-                        print(f"[SeeImage] SVG conversion not available - using original SVG file '{file_path}'")
-                        return image_bytes, mime_type
+                        raise Exception(f"SVG conversion libraries not available. Cannot display SVG file '{file_path}'. Please convert to PNG manually.")
                     except Exception as e:
-                        print(f"[SeeImage] SVG conversion failed - using original SVG file '{file_path}': {str(e)}")
-                        return image_bytes, mime_type
+                        raise Exception(f"SVG conversion failed for '{file_path}': {str(e)}. Please convert to PNG manually.")
             
             # Open image from bytes
             img = Image.open(BytesIO(image_bytes))
@@ -220,8 +226,14 @@ class SandboxVisionTool(SandboxToolsBase):
             return compressed_bytes, output_mime
             
         except Exception as e:
-            print(f"[SeeImage] Failed to compress image: {str(e)}. Using original.")
-            return image_bytes, mime_type
+            # CRITICAL: Never return unsupported formats
+            # If compression fails, we need to ensure we still return a supported format
+            if mime_type in ['image/jpeg', 'image/png', 'image/gif', 'image/webp']:
+                print(f"[SeeImage] Failed to compress image: {str(e)}. Using original (format is supported).")
+                return image_bytes, mime_type
+            else:
+                # Unsupported format and compression failed - must fail
+                raise Exception(f"Failed to process image '{file_path}' with unsupported format '{mime_type}': {str(e)}")
 
     def is_url(self, file_path: str) -> bool:
         """check if the file path is url"""
@@ -265,7 +277,7 @@ class SandboxVisionTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "load_image",
-            "description": "Loads an image file into conversation context from the /workspace directory or from a URL. Provide either a relative path to a local image or the URL to an image. The image will be compressed before sending to reduce token usage. IMPORTANT: If you previously loaded an image but cleared context, you can load it again by calling this tool with the same file path - no need to ask user to re-upload.",
+            "description": "Loads an image file into conversation context from the /workspace directory or from a URL. CRITICAL: After loading, you MUST analyze the image thoroughly, write a detailed summary, and then call clear_images_from_context to free context tokens. Images consume significant tokens and must be actively managed. You can reload any image later with the same file path if needed.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -278,21 +290,6 @@ class SandboxVisionTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <!-- Example: Load a local image named 'diagram.png' inside the 'docs' folder into context -->
-        <function_calls>
-        <invoke name="load_image">
-        <parameter name="file_path">docs/diagram.png</parameter>
-        </invoke>
-        </function_calls>
-
-        <!-- Example: Load an image from a URL into context -->
-        <function_calls>
-        <invoke name="load_image">
-        <parameter name="file_path">https://example.com/image.jpg</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def load_image(self, file_path: str) -> ToolResult:
         """Loads an image file from local file system or from a URL, compresses it, converts it to base64, and adds it to conversation context."""
         try:
@@ -368,6 +365,15 @@ class SandboxVisionTool(SandboxToolsBase):
                     print(f"[SeeImage] Warning: Could not save converted PNG to sandbox: {e}")
                     # Continue with original path if save fails
 
+            # CRITICAL: Validate MIME type before upload - Anthropic only accepts 4 formats
+            SUPPORTED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+            if compressed_mime_type not in SUPPORTED_MIME_TYPES:
+                return self.fail_response(
+                    f"Invalid image format '{compressed_mime_type}' after compression. "
+                    f"Only {', '.join(SUPPORTED_MIME_TYPES)} are supported for viewing by the AI. "
+                    f"Original file: '{cleaned_path}'. Please convert the image to a supported format."
+                )
+
             # Upload to Supabase Storage instead of base64
             try:
                 # Generate unique filename
@@ -433,7 +439,7 @@ class SandboxVisionTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "clear_images_from_context",
-            "description": "Clears all images from conversation memory. Use when done analyzing images or to free up context tokens. IMPORTANT: Files remain accessible - use load_image with the same path to load any image again instead of asking user to re-upload.",
+            "description": "REQUIRED after viewing images: Removes all images and their instructions from context to free up tokens. You MUST call this after analyzing images. The image files remain accessible in the sandbox - you can reload them later with load_image if needed. This is critical for context management.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -441,13 +447,6 @@ class SandboxVisionTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <!-- Example: Clear all images from conversation context -->
-        <function_calls>
-        <invoke name="clear_images_from_context">
-        </invoke>
-        </function_calls>
-        ''')
     async def clear_images_from_context(self) -> ToolResult:
         """Removes all image_context messages from the current thread to free up tokens."""
         try:
@@ -457,7 +456,13 @@ class SandboxVisionTool(SandboxToolsBase):
             deleted_count = await self.image_context_manager.clear_images_from_context(self.thread_id)
             
             if deleted_count > 0:
-                return self.success_response(f"Successfully cleared {deleted_count} image(s) from conversation context. Visual memory has been reset.")
+                # Typically 2 messages per image: the image itself + the context instruction
+                image_count = deleted_count // 2
+                return self.success_response(
+                    f"Successfully cleared approximately {image_count} image(s) and their instructions from conversation context "
+                    f"({deleted_count} total messages removed). Context tokens freed up. "
+                    f"You can reload any image again using load_image if needed."
+                )
             else:
                 return self.success_response("No images found in conversation context to clear.")
                 
@@ -476,13 +481,6 @@ class SandboxVisionTool(SandboxToolsBase):
     #         }
     #     }
     # })
-    # @usage_example('''
-    #     <!-- Example: List all images currently in conversation context -->
-    #     <function_calls>
-    #     <invoke name="list_images_in_context">
-    #     </invoke>
-    #     </function_calls>
-    #     ''')
     # async def list_images_in_context(self) -> ToolResult:
     #     """Lists all images currently in the conversation context."""
     #     try:

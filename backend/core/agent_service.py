@@ -1,7 +1,7 @@
 from typing import List, Dict, Any, Optional
 from core.utils.pagination import PaginationService, PaginationParams, PaginatedResponse
 from core.utils.logger import logger
-from .config_helper import extract_agent_config
+from .agent_loader import AgentLoader
 from core.utils.query_utils import batch_query_in
 
 
@@ -30,6 +30,7 @@ class AgentFilters:
 class AgentService:
     def __init__(self, db_client):
         self.db = db_client
+        self.loader = AgentLoader(db_client)
 
     async def get_agents_paginated(
         self,
@@ -168,10 +169,11 @@ class AgentService:
             count_query=count_query
         )
         
-        agent_responses = []
-        for agent_data in paginated_result.data:
-            agent_response = await self._transform_agent_data(agent_data)
-            agent_responses.append(agent_response)
+        # Transform without loading full configs (list operation)
+        agent_responses = [
+            await self._transform_agent_data(row, load_config=False)
+            for row in paginated_result.data
+        ]
         
         return PaginatedResponse(
             data=agent_responses,
@@ -213,11 +215,8 @@ class AgentService:
         elif filters.sort_order == "desc":
             filtered_agents.reverse()
         
-        # Transform to proper response format
-        agent_responses = []
-        for agent_data in filtered_agents:
-            agent_response = await self._transform_agent_data(agent_data, version_map.get(agent_data['agent_id']))
-            agent_responses.append(agent_response)
+        # Transform with configs loaded
+        agent_responses = await self._load_agents_with_configs(filtered_agents, version_map)
         
         return await PaginationService.paginate_filtered_dataset(
             all_items=agent_responses,
@@ -265,15 +264,25 @@ class AgentService:
 
     async def _passes_complex_filters(
         self, 
-        agent_data: Dict[str, Any], 
+        agent_row: Dict[str, Any], 
         version_map: Dict[str, Dict[str, Any]], 
         filters: AgentFilters
     ) -> bool:
-        version_data = version_map.get(agent_data['agent_id'])
-        agent_config = extract_agent_config(agent_data, version_data)
+        # Load agent with config
+        agent = self.loader._row_to_agent_data(agent_row)
+        version_data = version_map.get(agent.agent_id)
         
-        configured_mcps = agent_config['configured_mcps']
-        agentpress_tools = agent_config['agentpress_tools']
+        if version_data:
+            self.loader._apply_version_config(agent, version_data)
+        elif agent.is_suna_default:
+            self.loader._load_suna_config(agent)
+        else:
+            # No config available, use empty defaults for filtering
+            agent.configured_mcps = []
+            agent.agentpress_tools = {}
+        
+        configured_mcps = agent.configured_mcps or []
+        agentpress_tools = agent.agentpress_tools or {}
         
         if filters.has_mcp_tools is not None:
             has_mcp = bool(configured_mcps and len(configured_mcps) > 0)
@@ -309,12 +318,17 @@ class AgentService:
         agents: List[Dict[str, Any]], 
         version_map: Dict[str, Dict[str, Any]]
     ) -> List[Dict[str, Any]]:
-        def get_tools_count(agent_data):
-            version_data = version_map.get(agent_data['agent_id'])
-            agent_config = extract_agent_config(agent_data, version_data)
+        def get_tools_count(agent_row):
+            agent = self.loader._row_to_agent_data(agent_row)
+            version_data = version_map.get(agent.agent_id)
             
-            configured_mcps = agent_config['configured_mcps']
-            agentpress_tools = agent_config['agentpress_tools']
+            if version_data:
+                self.loader._apply_version_config(agent, version_data)
+            elif agent.is_suna_default:
+                self.loader._load_suna_config(agent)
+            
+            configured_mcps = agent.configured_mcps or []
+            agentpress_tools = agent.agentpress_tools or {}
             
             mcp_count = len(configured_mcps) if configured_mcps else 0
             agentpress_count = sum(
@@ -325,113 +339,79 @@ class AgentService:
             return mcp_count + agentpress_count
         
         return sorted(agents, key=get_tools_count, reverse=True)
+    
+    async def _load_agents_with_configs(
+        self,
+        agent_rows: List[Dict[str, Any]],
+        version_map: Dict[str, Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Load agents and apply their configurations from version_map.
+        
+        Args:
+            agent_rows: List of agent database rows
+            version_map: Pre-fetched version data by agent_id
+            
+        Returns:
+            List of API response dictionaries
+        """
+        agent_datas = []
+        for row in agent_rows:
+            agent = self.loader._row_to_agent_data(row)
+            
+            # Apply config if available
+            version_data = version_map.get(agent.agent_id)
+            if version_data:
+                self.loader._apply_version_config(agent, version_data)
+                agent.config_loaded = True
+            elif agent.is_suna_default:
+                self.loader._load_suna_config(agent)
+                agent.config_loaded = True
+            
+            agent_datas.append(agent.to_dict())
+        
+        return agent_datas
 
     async def _transform_agent_data(
         self, 
-        agent_data: Dict[str, Any], 
-        version_data: Optional[Dict[str, Any]] = None
+        agent_row: Dict[str, Any], 
+        load_config: bool = False
     ) -> Dict[str, Any]:
-        agent_config = extract_agent_config(agent_data, version_data)
+        """
+        Transform agent database row to API response.
         
-        system_prompt = agent_config['system_prompt']
-        configured_mcps = agent_config['configured_mcps']
-        custom_mcps = agent_config['custom_mcps']
-        agentpress_tools = agent_config['agentpress_tools']
-        current_version = agent_config.get('current_version')
+        Args:
+            agent_row: Raw agent database row
+            load_config: Whether to include full configuration
+            
+        Returns:
+            API response dictionary
+        """
+        # Use unified loader for consistent transformation
+        agent_data = self.loader._row_to_agent_data(agent_row)
         
-        return {
-            "agent_id": agent_data['agent_id'],
-            "name": agent_data['name'],
-            "system_prompt": system_prompt,
-            "configured_mcps": configured_mcps,
-            "custom_mcps": custom_mcps,
-            "agentpress_tools": agentpress_tools,
-            "is_default": agent_data.get('is_default', False),
-            "is_public": agent_data.get('is_public', False),
-            "tags": agent_data.get('tags', []),
-            "icon_name": agent_config.get('icon_name'),
-            "icon_color": agent_config.get('icon_color'),
-            "icon_background": agent_config.get('icon_background'),
-            "created_at": agent_data['created_at'],
-            "updated_at": agent_data['updated_at'],
-            "current_version_id": agent_data.get('current_version_id'),
-            "version_count": agent_data.get('version_count', 1),
-            "current_version": current_version,
-            "metadata": agent_data.get('metadata')
-        }
+        # Load config if needed and version exists
+        if load_config and agent_data.current_version_id:
+            # Note: For list operations, we typically don't load individual configs
+            # Instead, use batch loading via _load_agents_with_configs
+            pass
+        
+        return agent_data.to_dict()
 
     async def _transform_template_to_agent_format(self, template_data: Dict[str, Any]) -> Dict[str, Any]:
-        try:
-            creator_name = None
-            if template_data.get('creator_id'):
-                try:
-                    creator_result = await self.db.schema('basejump').from_('accounts').select('name, slug').eq('id', template_data['creator_id']).single().execute()
-                    if creator_result.data:
-                        creator_name = creator_result.data.get('name') or creator_result.data.get('slug')
-                except Exception as e:
-                    logger.warning(f"Failed to fetch creator name for template {template_data.get('template_id')}: {e}")
-
-            return {
-                "agent_id": template_data.get('template_id', ''),
-                "name": template_data.get('name', ''),
-                "system_prompt": template_data.get('system_prompt', ''),
-                "configured_mcps": template_data.get('mcp_requirements', []),
-                "custom_mcps": [],
-                "agentpress_tools": template_data.get('agentpress_tools', {}),
-                "is_default": False,
-                "icon_name": template_data.get('icon_name'),
-                "icon_color": template_data.get('icon_color'),
-                "icon_background": template_data.get('icon_background'),
-                "created_at": template_data.get('created_at', ''),
-                "updated_at": template_data.get('updated_at'),
-                "is_public": template_data.get('is_public', False),
-                "tags": template_data.get('tags', []),
-                "current_version_id": None,
-                "version_count": 0,
-                "current_version": None,
-                "metadata": {
-                    **(template_data.get('metadata', {})),
-                    "is_template": True,
-                    "creator_name": creator_name
-                },
-                
-                "template_id": template_data.get('template_id'),
-                "mcp_requirements": template_data.get('mcp_requirements', []),
-                "model": template_data.get('metadata', {}).get('model'),
-                "marketplace_published_at": template_data.get('marketplace_published_at'),
-                "download_count": template_data.get('download_count', 0),
-                "creator_name": creator_name,
-                "creator_id": template_data.get('creator_id'),
-                "is_kortix_team": template_data.get('is_kortix_team', False)
-            }
-        except Exception as e:
-            logger.error(f"Error transforming template data: {e}", exc_info=True)
-            return {
-                "agent_id": template_data.get('template_id', 'unknown'),
-                "name": template_data.get('name', 'Unknown Template'),
-                "system_prompt": template_data.get('system_prompt', ''),
-                "configured_mcps": [],
-                "custom_mcps": [],
-                "agentpress_tools": {},
-                "is_default": False,
-                "icon_name": None,
-                "icon_color": None,
-                "icon_background": None,
-                "created_at": template_data.get('created_at', ''),
-                "updated_at": template_data.get('updated_at'),
-                "is_public": template_data.get('is_public', False),
-                "tags": [],
-                "current_version_id": None,
-                "version_count": 0,
-                "current_version": None,
-                "metadata": {"is_template": True, "transform_error": True},
-                
-                "template_id": template_data.get('template_id', 'unknown'),
-                "mcp_requirements": [],
-                "model": None,
-                "marketplace_published_at": template_data.get('marketplace_published_at'),
-                "download_count": 0,
-                "creator_name": None,
-                "creator_id": template_data.get('creator_id'),
-                "is_kortix_team": False
-            } 
+        """Transform template to agent format using unified loader."""
+        agent_data = await self.loader.load_template(template_data, fetch_creator_name=True)
+        result = agent_data.to_dict()
+        
+        # Add template-specific fields
+        result.update({
+            "template_id": template_data.get('template_id'),
+            "mcp_requirements": template_data.get('mcp_requirements', []),
+            "marketplace_published_at": template_data.get('marketplace_published_at'),
+            "download_count": template_data.get('download_count', 0),
+            "creator_name": agent_data.metadata.get('creator_name'),
+            "creator_id": template_data.get('creator_id'),
+            "is_kortix_team": template_data.get('is_kortix_team', False)
+        })
+        
+        return result 

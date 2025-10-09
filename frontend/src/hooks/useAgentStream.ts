@@ -16,7 +16,6 @@ import {
 import { safeJsonParse } from '@/components/thread/utils';
 import { agentKeys } from '@/hooks/react-query/agents/keys';
 import { composioKeys } from '@/hooks/react-query/composio/keys';
-import { workflowKeys } from '@/hooks/react-query/agents/workflow-keys';
 import { knowledgeBaseKeys } from '@/hooks/react-query/knowledge-base/keys';
 import { fileQueryKeys } from '@/hooks/react-query/files/use-file-queries';
 
@@ -264,35 +263,35 @@ export function useAgentStream(
       });
 
       if (agentId) {
+        // Core agent data
+        queryClient.invalidateQueries({ queryKey: agentKeys.all });
         queryClient.invalidateQueries({ queryKey: agentKeys.detail(agentId) });
         queryClient.invalidateQueries({ queryKey: agentKeys.lists() });
+        queryClient.invalidateQueries({ queryKey: agentKeys.details() });
+        
+        // Agent tools and integrations
         queryClient.invalidateQueries({ queryKey: ['agent-tools', agentId] });
-
-        queryClient.invalidateQueries({
-          queryKey: ['custom-mcp-tools', agentId],
-        });
+        queryClient.invalidateQueries({ queryKey: ['agent-tools'] });
+        
+        // MCP configurations
+        queryClient.invalidateQueries({ queryKey: ['custom-mcp-tools', agentId] });
+        queryClient.invalidateQueries({ queryKey: ['custom-mcp-tools'] });
         queryClient.invalidateQueries({ queryKey: composioKeys.mcpServers() });
-
-        queryClient.invalidateQueries({
-          queryKey: composioKeys.profiles.all(),
-        });
-        queryClient.invalidateQueries({
-          queryKey: composioKeys.profiles.credentials(),
-        });
-
+        queryClient.invalidateQueries({ queryKey: composioKeys.profiles.all() });
+        queryClient.invalidateQueries({ queryKey: composioKeys.profiles.credentials() });
+        
+        // Triggers
         queryClient.invalidateQueries({ queryKey: ['triggers', agentId] });
-
-        queryClient.invalidateQueries({
-          queryKey: workflowKeys.agent(agentId),
-        });
-
-        queryClient.invalidateQueries({
-          queryKey: knowledgeBaseKeys.agent(agentId),
-        });
-
-        // Invalidate versioning queries for agent config page
+        queryClient.invalidateQueries({ queryKey: ['triggers'] });
+        
+        // Knowledge base
+        queryClient.invalidateQueries({ queryKey: knowledgeBaseKeys.agent(agentId) });
+        queryClient.invalidateQueries({ queryKey: knowledgeBaseKeys.all });
+        
+        queryClient.invalidateQueries({ queryKey: ['versions'] });
+        queryClient.invalidateQueries({ queryKey: ['versions', 'list'] });
         queryClient.invalidateQueries({ queryKey: ['versions', 'list', agentId] });
-        // Invalidate current version details if available
+        queryClient.invalidateQueries({ queryKey: ['versions', 'detail'] });
         queryClient.invalidateQueries({ 
           queryKey: ['versions', 'detail'], 
           predicate: (query) => {
@@ -300,7 +299,14 @@ export function useAgentStream(
           }
         });
         
-        console.log(`[useAgentStream] Invalidated agent queries for refetch instead of page reload - Agent ID: ${agentId}`);
+        // Invalidate any version store cache
+        queryClient.invalidateQueries({ queryKey: ['version-store'] });
+        
+        // Force refetch of agent configuration data
+        queryClient.refetchQueries({ queryKey: agentKeys.detail(agentId) });
+        queryClient.refetchQueries({ queryKey: ['versions', 'list', agentId] });
+        
+        console.log(`[useAgentStream] Comprehensively invalidated and refetched all agent queries for Agent ID: ${agentId}`);
       }
 
       if (

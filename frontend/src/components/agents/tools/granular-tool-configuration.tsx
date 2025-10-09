@@ -7,15 +7,17 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Search, ChevronDown, ChevronRight, Settings2, Wrench } from 'lucide-react';
+import { Search, ChevronDown, ChevronRight, Settings2, Wrench, Loader2 } from 'lucide-react';
 import { icons } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { useToolsMetadata } from '@/hooks/react-query/tools/use-tools-metadata';
 import { 
-  TOOL_GROUPS, 
   getToolGroup, 
   hasGranularControl, 
   validateToolConfig,
+  getAllToolGroups,
+  sortToolsByWeight,
   type ToolGroup,
   type ToolMethod 
 } from './tool-groups';
@@ -38,7 +40,13 @@ export const GranularToolConfiguration = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
-  const getIconComponent = (iconName: string) => {
+  // Fetch tools metadata from API
+  const { data: toolsMetadata, isLoading: isLoadingTools } = useToolsMetadata();
+  const toolsData = toolsMetadata?.success ? toolsMetadata.tools : undefined;
+  const TOOL_GROUPS = getAllToolGroups(toolsData);
+
+  const getIconComponent = (iconName?: string) => {
+    if (!iconName) return Wrench;
     const IconComponent = (icons as any)[iconName];
     return IconComponent || Wrench;
   };
@@ -68,7 +76,7 @@ export const GranularToolConfiguration = ({
       }
       
       // Default to method's default enabled state from tool group
-      const toolGroup = getToolGroup(toolName);
+      const toolGroup = getToolGroup(toolName, toolsData);
       const method = toolGroup?.methods.find(m => m.name === methodName);
       return method?.enabled ?? true;
     }
@@ -76,14 +84,7 @@ export const GranularToolConfiguration = ({
   };
 
   const handleToolGroupToggle = (toolName: string, enabled: boolean) => {
-    const toolGroup = getToolGroup(toolName);
-    
-    if (toolGroup?.isCore) {
-      toast.error("Core tool cannot be modified", {
-        description: "This tool is essential for agent functionality and cannot be disabled.",
-      });
-      return;
-    }
+    const toolGroup = getToolGroup(toolName, toolsData);
     
     if (disabled && isSunaAgent) {
       toast.error("Tools cannot be modified", {
@@ -96,7 +97,7 @@ export const GranularToolConfiguration = ({
 
     const updatedTools = { ...tools };
     
-    if (hasGranularControl(toolName)) {
+    if (hasGranularControl(toolName, toolsData)) {
       // For tools with granular control, maintain method configuration
       const currentConfig = tools[toolName];
       if (typeof currentConfig === 'object' && currentConfig !== null) {
@@ -106,7 +107,7 @@ export const GranularToolConfiguration = ({
         };
       } else {
         // Convert to granular format
-        const toolGroup = getToolGroup(toolName);
+        const toolGroup = getToolGroup(toolName, toolsData);
         updatedTools[toolName] = {
           enabled,
           methods: toolGroup?.methods.reduce((acc, method) => {
@@ -124,15 +125,8 @@ export const GranularToolConfiguration = ({
   };
 
   const handleMethodToggle = (toolName: string, methodName: string, enabled: boolean) => {
-    const toolGroup = getToolGroup(toolName);
+    const toolGroup = getToolGroup(toolName, toolsData);
     const method = toolGroup?.methods.find(m => m.name === methodName);
-    
-    if (method?.isCore) {
-      toast.error("Core method cannot be modified", {
-        description: "This method is essential for tool functionality and cannot be disabled.",
-      });
-      return;
-    }
     
     if (disabled && isSunaAgent) {
       toast.error("Methods cannot be modified", {
@@ -181,7 +175,14 @@ export const GranularToolConfiguration = ({
   };
 
   const getFilteredToolGroups = (): ToolGroup[] => {
-    return Object.values(TOOL_GROUPS).filter(group => {
+    // Sort tools by weight (lower weight = higher priority)
+    const sortedTools = sortToolsByWeight(TOOL_GROUPS);
+    
+    // Filter only visible tools
+    const visibleTools = sortedTools.filter(group => group.visible !== false);
+    
+    // Apply search filter
+    return visibleTools.filter(group => {
       if (!searchQuery) return true;
       const query = searchQuery.toLowerCase();
       return (
@@ -202,13 +203,26 @@ export const GranularToolConfiguration = ({
   };
 
   const getEnabledMethodsCount = (toolName: string): number => {
-    const toolGroup = getToolGroup(toolName);
+    const toolGroup = getToolGroup(toolName, toolsData);
     if (!toolGroup) return 0;
     
-    return toolGroup.methods.filter(method => isMethodEnabled(toolName, method.name)).length;
+    // Only count visible methods
+    return toolGroup.methods
+      .filter(method => method.visible !== false)
+      .filter(method => isMethodEnabled(toolName, method.name)).length;
   };
 
   const filteredGroups = getFilteredToolGroups();
+
+  // Show loading state while fetching tools
+  if (isLoadingTools) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        <span className="ml-2 text-muted-foreground">Loading tools...</span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-full space-y-6">
@@ -240,9 +254,9 @@ export const GranularToolConfiguration = ({
             const isGroupEnabled = isToolGroupEnabled(toolGroup.name);
             const isExpanded = expandedGroups.has(toolGroup.name);
             const enabledMethodsCount = getEnabledMethodsCount(toolGroup.name);
-            const totalMethodsCount = toolGroup.methods.length;
+            const totalMethodsCount = toolGroup.methods.filter(m => m.visible !== false).length;
             const IconComponent = getIconComponent(toolGroup.icon);
-            const hasGranular = hasGranularControl(toolGroup.name);
+            const hasGranular = hasGranularControl(toolGroup.name, toolsData);
 
             return (
               <div key={toolGroup.name} className="border rounded-lg">
@@ -296,7 +310,7 @@ export const GranularToolConfiguration = ({
                       <Switch
                         checked={isGroupEnabled}
                         onCheckedChange={(enabled) => handleToolGroupToggle(toolGroup.name, enabled)}
-                        disabled={disabled || toolGroup.isCore || isLoading}
+                        disabled={disabled || isLoading}
                       />
                     </div>
                   </div>
@@ -312,7 +326,9 @@ export const GranularToolConfiguration = ({
                             </span>
                           </div>
                           
-                          {toolGroup.methods.map((method) => {
+                          {toolGroup.methods
+                            .filter(method => method.visible !== false) // Only show visible methods
+                            .map((method) => {
                             const isMethodEnabledState = isMethodEnabled(toolGroup.name, method.name);
                             
                             return (
@@ -336,7 +352,7 @@ export const GranularToolConfiguration = ({
                                   onCheckedChange={(enabled) => 
                                     handleMethodToggle(toolGroup.name, method.name, enabled)
                                   }
-                                  disabled={disabled || method.isCore || isLoading}
+                                  disabled={disabled || isLoading}
                                 />
                               </div>
                             );

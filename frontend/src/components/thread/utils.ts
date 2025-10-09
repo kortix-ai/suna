@@ -148,9 +148,6 @@ export const getToolIcon = (toolName: string): ElementType => {
     case 'delete-file':
       return FileX;
 
-    // Deployment
-    case 'deploy-site':
-      return CloudUpload;
 
     // Tools and utilities
     case 'execute-code':
@@ -283,10 +280,6 @@ export const extractPrimaryParam = (
             ? match[1]
             : null;
 
-      // Deployment
-      case 'deploy-site':
-        match = content.match(/site_name=(?:"|')([^"|']+)(?:"|')/);
-        return match ? match[1] : null;
     }
 
     return null;
@@ -329,7 +322,6 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['execute_data-provider_call', 'Calling data provider'],
   ['get-data-provider-endpoints', 'Getting endpoints'],
   
-  ['deploy', 'Deploying'],
   ['ask', 'Ask'],
   ['wait', 'Wait'],
   ['create-tasks', 'Creating Tasks'],
@@ -387,7 +379,6 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['execute_data_provider_call', 'Calling data provider'],
   ['get_data_provider_endpoints', 'Getting endpoints'],
   
-  ['deploy', 'Deploying'],
   ['ask', 'Ask'],
   ['complete', 'Completing Task'],
   ['crawl_webpage', 'Crawling Website'],
@@ -399,10 +390,12 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['update_agent', 'Updating Agent'],
   ['get_current_agent_config', 'Getting Agent Config'],
   ['search_mcp_servers', 'Searching MCP Servers'],
-  ['get_mcp_server_tools', 'Getting MCP Server Tools'],
-  ['configure_mcp_server', 'Configuring MCP Server'],
   ['get_popular_mcp_servers', 'Getting Popular MCP Servers'],
   ['test_mcp_server_connection', 'Testing MCP Server Connection'],
+  ['discover-user-mcp-servers', 'Discovering tools'],
+  ['create-credential-profile', 'Creating profile'],
+  ['get-credential-profiles', 'Getting profiles'],
+  ['configure-profile-for-agent', 'Adding tools to agent'],
 
 
   ['create-new-agent', 'Creating New Agent'],
@@ -410,10 +403,7 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['create-credential-profile-for-agent', 'Creating Credential Profile'],
   ['discover-mcp-tools-for-agent', 'Discovering MCP Tools'],
   ['configure-agent-integration', 'Configuring Agent Integration'],
-  ['create-agent-workflow', 'Creating Agent Workflow'],
-  ['activate-agent-workflow', 'Activating Agent Workflow'],
   ['create-agent-scheduled-trigger', 'Creating Scheduled Trigger'],
-  ['list-agent-workflows', 'Listing Agent Workflows'],
   ['list-agent-scheduled-triggers', 'Listing Agent Scheduled Triggers'],
 ]);
 
@@ -515,7 +505,6 @@ export const HIDE_STREAMING_XML_TAGS = new Set([
   'browser-send-keys',
   'browser-switch-tab',
   'browser-wait',
-  'deploy',
   'ask',
   'complete',
   'crawl-webpage',

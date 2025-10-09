@@ -419,7 +419,7 @@ app.post('/api/init', async (req, res) => {
     const {api_key} = req.body;
     const result = await browserAutomation.init(api_key);
     
-    if (result.status === "initialized") {
+    if (result.status === "initialized" || result.status === "healthy") {
         res.status(200).json({
             "status": "healthy",
             "service": "browserApi"

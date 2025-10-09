@@ -178,13 +178,6 @@ class VersionService:
                     mcp_copy['toolkit_slug'] = config.get('toolkit_slug') or mcp_name.lower().replace(' ', '_')
                 
                 mcp_copy['config'] = {k: v for k, v in config.items() if k == 'profile_id'}
-                
-            elif mcp_type == 'pipedream':
-                if 'qualifiedName' not in mcp_copy:
-                    app_slug = config.get('headers', {}).get('x-pd-app-slug') or mcp_name.lower().replace(' ', '')
-                    mcp_copy['qualifiedName'] = f"pipedream:{app_slug}"
-                if 'app_slug' not in mcp_copy:
-                    mcp_copy['app_slug'] = config.get('headers', {}).get('x-pd-app-slug') or mcp_name.lower().replace(' ', '')
             
             normalized.append(mcp_copy)
         return normalized
@@ -224,10 +217,7 @@ class VersionService:
         
         if not version_name:
             version_name = f"v{version_number}"
-        
-        workflows_result = await client.table('agent_workflows').select('*').eq('agent_id', agent_id).execute()
-        workflows = workflows_result.data if workflows_result.data else []
-        
+                
         triggers_result = await client.table('agent_triggers').select('*').eq('agent_id', agent_id).execute()
         triggers = []
         if triggers_result.data:
@@ -281,7 +271,6 @@ class VersionService:
                     'mcp': version.configured_mcps,
                     'custom_mcp': normalized_custom_mcps
                 },
-                'workflows': workflows,
                 'triggers': triggers
             }
         }

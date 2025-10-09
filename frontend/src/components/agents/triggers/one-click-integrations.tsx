@@ -43,7 +43,6 @@ export const OneClickIntegrations: React.FC<OneClickIntegrationsProps> = ({
   // Schedule trigger form state
   const [scheduleConfig, setScheduleConfig] = useState<ScheduleTriggerConfig>({
     cron_expression: '',
-    execution_type: 'agent',
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
   });
   const [scheduleName, setScheduleName] = useState('');
@@ -69,7 +68,6 @@ export const OneClickIntegrations: React.FC<OneClickIntegrationsProps> = ({
       // Reset form state when opening
       setScheduleConfig({
         cron_expression: '',
-        execution_type: 'agent',
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
       });
       setScheduleName('');

@@ -250,7 +250,7 @@ export const FileUploadHandler = forwardRef<
                 <Button
                   type="button"
                   onClick={handleFileUpload}
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
                   className="h-[42px] !px-4 py-2 bg-transparent border-0 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-2"
                   disabled={
@@ -262,7 +262,7 @@ export const FileUploadHandler = forwardRef<
                   ) : (
                     <Paperclip className="h-4 w-4" />
                   )}
-                  <span className="text-sm">Attach</span>
+                  Attach
                 </Button>
               </span>
             </TooltipTrigger>

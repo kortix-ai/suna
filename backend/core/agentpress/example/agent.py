@@ -1,6 +1,6 @@
 import asyncio
 from core.agentpress.thread_manager import ThreadManager
-from core.agentpress.tool import Tool, ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import Tool, ToolResult, openapi_schema
 from core.agentpress.response_processor import ProcessorConfig
 
 class CalculatorTool(Tool):
@@ -30,16 +30,6 @@ class CalculatorTool(Tool):
             }
         }
     })
-    @usage_example("""
-<function_calls>
-<invoke name="calculate">
-<parameter name="operation">add</parameter>
-<parameter name="a">15</parameter>
-<parameter name="b">27</parameter>
-</invoke>
-</function_calls>
-
-This will add 15 and 27 to get 42.""")
     async def calculate(self, operation: str, a: float, b: float) -> ToolResult:
         if operation == "add":
             result = a + b
@@ -161,7 +151,6 @@ Available tools:
                 execute_tools=True,
                 tool_execution_strategy="sequential"
             ),
-            include_xml_examples=True
         )        
 
         async for chunk in response_stream:

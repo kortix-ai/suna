@@ -1,12 +1,21 @@
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 import json
 import os
 from datetime import datetime
 import re
+import asyncio
 
+@tool_metadata(
+    display_name="Presentations",
+    description="Create and manage stunning presentation slides",
+    icon="Presentation",
+    color="bg-orange-100 dark:bg-orange-800/50",
+    weight=70,
+    visible=True
+)
 class SandboxPresentationTool(SandboxToolsBase):
     """
     Per-slide HTML presentation tool for creating presentation slides.
@@ -16,7 +25,6 @@ class SandboxPresentationTool(SandboxToolsBase):
     
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
-        self.workspace_path = "/workspace"
         self.presentations_dir = "presentations"
 
 
@@ -85,6 +93,9 @@ class SandboxPresentationTool(SandboxToolsBase):
         metadata_path = f"{presentation_path}/metadata.json"
         await self.sandbox.fs.upload_file(json.dumps(metadata, indent=2).encode(), metadata_path)
 
+
+
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -119,71 +130,6 @@ class SandboxPresentationTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-    Create clean, professional presentation slides:
-
-    # Example 1: Simple Title Slide
-    <function_calls>
-    <invoke name="create_slide">
-    <parameter name="presentation_name">product_launch_2024</parameter>
-    <parameter name="slide_number">1</parameter>
-    <parameter name="slide_title">Product Launch Title</parameter>
-    <parameter name="presentation_title">Product Launch 2024</parameter>
-    <parameter name="content">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        
-        .slide-container {
-            width: 1920px;
-            height: 1080px;
-            background: #ffffff;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-family: 'Arial', sans-serif;
-            color: #333333;
-        }
-        
-        .content {
-            text-align: center;
-            padding: 40px;
-        }
-        
-        .main-title {
-            font-size: 64px;
-            font-weight: 700;
-            margin-bottom: 30px;
-            color: #2563eb;
-            line-height: 1.2;
-        }
-        
-        .subtitle {
-            font-size: 28px;
-            margin-bottom: 40px;
-            color: #666666;
-            font-weight: 400;
-        }
-        
-        .accent-line {
-            width: 100px;
-            height: 4px;
-            background: #2563eb;
-            margin: 30px auto;
-            border-radius: 2px;
-        }
-    </style>
-
-    <div class="slide-container">
-        <div class="content">
-            <h1 class="main-title">Product Launch 2024</h1>
-            <div class="accent-line"></div>
-            <p class="subtitle">Introducing our latest innovation</p>
-        </div>
-    </div>
-    </parameter>
-    </invoke>
-    </function_calls>
-    ''')
     async def create_slide(
         self,
         presentation_name: str,
@@ -488,3 +434,241 @@ class SandboxPresentationTool(SandboxToolsBase):
                 
         except Exception as e:
             return self.fail_response(f"Failed to delete presentation: {str(e)}")
+
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "validate_slide",
+            "description": "Validate a slide by reading its HTML code and checking if the content height exceeds 1080px. Use this tool to ensure slides fit within the standard presentation dimensions before finalizing them. This helps maintain proper slide formatting and prevents content overflow issues.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "presentation_name": {
+                        "type": "string",
+                        "description": "Name of the presentation containing the slide to validate"
+                    },
+                    "slide_number": {
+                        "type": "integer",
+                        "description": "Slide number to validate (1-based)"
+                    }
+                },
+                "required": ["presentation_name", "slide_number"]
+            }
+        }
+    })
+    async def validate_slide(self, presentation_name: str, slide_number: int) -> ToolResult:
+        """Validate a slide by rendering it in a browser and measuring actual content height"""
+        try:
+            await self._ensure_sandbox()
+            
+            if not presentation_name:
+                return self.fail_response("Presentation name is required.")
+            
+            if slide_number < 1:
+                return self.fail_response("Slide number must be 1 or greater.")
+            
+            safe_name = self._sanitize_filename(presentation_name)
+            presentation_path = f"{self.workspace_path}/{self.presentations_dir}/{safe_name}"
+            
+            # Load metadata to verify slide exists
+            metadata = await self._load_presentation_metadata(presentation_path)
+            
+            if not metadata.get("slides") or str(slide_number) not in metadata["slides"]:
+                return self.fail_response(f"Slide {slide_number} not found in presentation '{presentation_name}'")
+            
+            # Get slide info
+            slide_info = metadata["slides"][str(slide_number)]
+            slide_filename = slide_info["filename"]
+            
+            # Create a Python script to measure the actual rendered height using Playwright
+            measurement_script = f'''
+import asyncio
+import json
+from playwright.async_api import async_playwright
+
+async def measure_slide_height():
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(
+            headless=True,
+            args=['--no-sandbox', '--disable-setuid-sandbox']
+        )
+        page = await browser.new_page(viewport={{"width": 1920, "height": 1080}})
+        
+        # Load the HTML file
+        await page.goto('file:///workspace/{self.presentations_dir}/{safe_name}/{slide_filename}')
+        
+        # Wait for page to load
+        await page.wait_for_load_state('networkidle')
+        
+        # Measure the actual rendered height of the content
+        dimensions = await page.evaluate("""
+            () => {{
+                // Get the actual bounding box height of the body content
+                const bodyRect = document.body.getBoundingClientRect();
+                const actualHeight = Math.ceil(bodyRect.height);
+                
+                const viewportHeight = window.innerHeight;
+                const overflows = actualHeight > 1080;
+                
+                return {{
+                    scrollHeight: actualHeight,
+                    viewportHeight: viewportHeight,
+                    overflows: overflows,
+                    excessHeight: Math.max(0, actualHeight - 1080)
+                }};
+            }}
+        """)
+        
+        await browser.close()
+        return dimensions
+
+result = asyncio.run(measure_slide_height())
+print(json.dumps(result))
+'''
+            
+            # Write the script to a temporary file in the sandbox
+            script_path = f"{self.workspace_path}/.validate_slide_temp.py"
+            await self.sandbox.fs.upload_file(measurement_script.encode(), script_path)
+            
+            # Execute the script
+            try:
+                result = await self.sandbox.process.exec(
+                    f"/bin/sh -c 'cd /workspace && python3 .validate_slide_temp.py'",
+                    timeout=30
+                )
+                
+                # Parse the result
+                output = (getattr(result, "result", None) or getattr(result, "output", "") or "").strip()
+                if not output:
+                    raise Exception("No output from validation script")
+                
+                dimensions = json.loads(output)
+                
+                # Clean up the temporary script
+                try:
+                    await self.sandbox.fs.delete_file(script_path)
+                except:
+                    pass
+                
+            except Exception as e:
+                # Clean up on error
+                try:
+                    await self.sandbox.fs.delete_file(script_path)
+                except:
+                    pass
+                return self.fail_response(f"Failed to measure slide dimensions: {str(e)}")
+            
+            # Analyze results - simple pass/fail
+            validation_passed = not dimensions["overflows"]
+            
+            validation_results = {
+                "presentation_name": presentation_name,
+                "presentation_path": presentation_path,
+                "slide_number": slide_number,
+                "slide_title": slide_info["title"],
+                "actual_content_height": dimensions["scrollHeight"],
+                "target_height": 1080,
+                "validation_passed": validation_passed
+            }
+            
+            # Add pass/fail message
+            if validation_passed:
+                validation_results["message"] = f"✓ Slide {slide_number} '{slide_info['title']}' validation passed. Content height: {dimensions['scrollHeight']}px"
+            else:
+                validation_results["message"] = f"✗ Slide {slide_number} '{slide_info['title']}' validation failed. Content height: {dimensions['scrollHeight']}px exceeds 1080px limit by {dimensions['excessHeight']}px"
+                validation_results["excess_height"] = dimensions["excessHeight"]
+            
+            return self.success_response(validation_results)
+            
+        except Exception as e:
+            return self.fail_response(f"Failed to validate slide: {str(e)}")
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "present_presentation",
+            "description": "Present the final presentation to the user. Use this tool when: 1) All slides have been created and formatted, 2) The presentation is ready for user review, 3) You want to show the user the complete presentation with all files, 4) The presentation creation process is finished and you want to deliver the final result. IMPORTANT: This tool is specifically for presenting completed presentations, not for intermediate steps. Include the presentation name, slide count, and all relevant file attachments. This tool provides a special UI for presentation delivery.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "presentation_name": {
+                        "type": "string",
+                        "description": "The identifier/folder name of the presentation (e.g., 'test_presentation'). This should match the presentation_name used in create_slide."
+                    },
+                    "presentation_title": {
+                        "type": "string",
+                        "description": "The human-readable title of the presentation (e.g., 'Test Presentation'). This will be displayed prominently to the user."
+                    },
+                    "presentation_path": {
+                        "type": "string",
+                        "description": "The file path where the presentation is located (e.g., 'presentations/my-presentation/'). This helps users locate the files."
+                    },
+                    "slide_count": {
+                        "type": "integer",
+                        "description": "The total number of slides in the presentation. This gives users a quick overview of the presentation size."
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "A summary or description of the presentation to present to the user. Include: 1) What the presentation covers, 2) Key highlights or features, 3) Any important notes about the presentation, 4) How to use or view the presentation."
+                    },
+                    "attachments": {
+                        "anyOf": [
+                            {"type": "string"},
+                            {"items": {"type": "string"}, "type": "array"}
+                        ],
+                        "description": "List of presentation files to attach. Include: 1) All HTML slide files (e.g., 'presentations/my-presentation/slide_01.html'), 2) Any additional presentation files (PDF exports, etc.), 3) Supporting files if relevant. Always use relative paths to /workspace directory."
+                    },
+                    "presentation_url": {
+                        "type": "string",
+                        "description": "(Optional) A direct URL to view the presentation if available. This could be a hosted version or a specific viewing link."
+                    }
+                },
+                "required": ["presentation_name", "presentation_title", "presentation_path", "slide_count", "text", "attachments"]
+            }
+        }
+    })
+    async def present_presentation(
+        self, 
+        presentation_name: str,
+        presentation_title: str,
+        presentation_path: str,
+        slide_count: int,
+        text: str,
+        attachments: Union[str, List[str]],
+        presentation_url: Optional[str] = None
+    ) -> ToolResult:
+        """Present the final presentation to the user.
+
+        Args:
+            presentation_name: The identifier/folder name of the presentation
+            presentation_title: The human-readable title of the presentation
+            presentation_path: The file path where the presentation is located
+            slide_count: The total number of slides in the presentation
+            text: A summary or description of the presentation
+            attachments: List of presentation files to attach
+            presentation_url: Optional direct URL to view the presentation
+
+        Returns:
+            ToolResult indicating successful presentation delivery
+        """
+        try:
+            # Convert single attachment to list for consistent handling
+            if attachments and isinstance(attachments, str):
+                attachments = [attachments]
+
+            # Create a structured response with all presentation data
+            result_data = {
+                "presentation_name": presentation_name,
+                "presentation_title": presentation_title,
+                "presentation_path": presentation_path,
+                "slide_count": slide_count,
+                "text": text,
+                "attachments": attachments,
+                "presentation_url": presentation_url,
+                "status": "presentation_delivered"
+            }
+                
+            return self.success_response(result_data)
+        except Exception as e:
+            return self.fail_response(f"Error presenting presentation: {str(e)}")

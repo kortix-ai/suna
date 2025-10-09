@@ -25,6 +25,7 @@ class AgentUpdateRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     system_prompt: Optional[str] = None
+    model: Optional[str] = None
     configured_mcps: Optional[List[Dict[str, Any]]] = None
     custom_mcps: Optional[List[Dict[str, Any]]] = None
     agentpress_tools: Optional[Dict[str, Any]] = None
@@ -65,21 +66,25 @@ class AgentResponse(BaseModel):
     """Response model for agent information."""
     agent_id: str
     name: str
-    system_prompt: str
+    description: Optional[str] = None
+    system_prompt: Optional[str] = None  # Optional for list operations where config not loaded
+    model: Optional[str] = None
     configured_mcps: List[Dict[str, Any]]
     custom_mcps: List[Dict[str, Any]]
     agentpress_tools: Dict[str, Any]
     is_default: bool
+    is_public: Optional[bool] = False
+    tags: Optional[List[str]] = []
     icon_name: Optional[str] = None
     icon_color: Optional[str] = None
     icon_background: Optional[str] = None
     created_at: str
     updated_at: Optional[str] = None
-    is_public: Optional[bool] = False
     current_version_id: Optional[str] = None
     version_count: Optional[int] = 1
     current_version: Optional[AgentVersionResponse] = None
     metadata: Optional[Dict[str, Any]] = None
+    account_id: Optional[str] = None  # Internal field, may not always be needed in response
 
 
 class AgentsResponse(BaseModel):

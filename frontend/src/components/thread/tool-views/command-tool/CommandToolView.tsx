@@ -144,6 +144,9 @@ export function CommandToolView({
   const hasMoreLines = formattedOutput.length > 10;
   const previewLines = formattedOutput.slice(0, 10);
   const linesToShow = showFullOutput ? formattedOutput : previewLines;
+  
+  // Add empty lines for natural scrolling
+  const emptyLines = Array.from({ length: 30 }, () => '');
 
   return (
     <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
@@ -195,11 +198,9 @@ export function CommandToolView({
           />
         ) : displayText ? (
           <ScrollArea className="h-full w-full">
-            <div className="p-4">
-              <div className="mb-4">
-                <div className="bg-zinc-100 dark:bg-neutral-900 rounded-lg overflow-hidden border border-zinc-200/20">
-                  <div className="bg-zinc-300 dark:bg-neutral-800 flex items-center justify-between dark:border-zinc-700/50">
-                    <div className="bg-zinc-200 w-full dark:bg-zinc-800 px-4 py-2 flex items-center gap-2">
+            <div className="bg-zinc-100 dark:bg-neutral-900 overflow-hidden">
+              <div className="bg-zinc-300 dark:bg-neutral-800 flex items-center justify-between dark:border-zinc-700/50">
+                <div className="bg-zinc-200 w-full dark:bg-zinc-800 px-4 py-2 flex items-center gap-2">
                       <TerminalIcon className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
                       <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Terminal</span>
                     </div>
@@ -209,10 +210,10 @@ export function CommandToolView({
                         Error
                       </Badge>
                     )}
-                  </div>
-                  <div className="p-4 max-h-96 overflow-auto scrollbar-hide">
-                    {/* Command line */}
-                    <div className="py-0.5 bg-transparent font-mono text-xs">
+                </div>
+                <div className="px-4 py-3 overflow-auto">
+                  {/* Command line */}
+                  <div className="py-0.5 bg-transparent font-mono text-xs">
                       {command && (
                         <>
                           <span className="text-green-500 dark:text-green-400 font-semibold">{displayPrefix} </span>
@@ -230,38 +231,40 @@ export function CommandToolView({
                             {'\n'}
                           </span>
                         ))}
+                        {/* Add empty lines for natural scrolling */}
+                        {showFullOutput && emptyLines.map((_, idx) => (
+                          <span key={`empty-${idx}`}>{'\n'}</span>
+                        ))}
                       </pre>
                     )}
 
-                    {!showFullOutput && hasMoreLines && (
-                      <div className="text-zinc-500 mt-2 border-t border-zinc-700/30 pt-2 text-xs font-mono">
-                        + {formattedOutput.length - 10} more lines
-                      </div>
-                    )}
-                  </div>
+                  {!showFullOutput && hasMoreLines && (
+                    <div className="text-zinc-500 mt-2 border-t border-zinc-700/30 pt-2 text-xs font-mono">
+                      + {formattedOutput.length - 10} more lines
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {/* Show status message for non-blocking commands */}
-              {isNonBlockingCommand && output && (
-                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 border border-blue-200 dark:border-blue-800">
-                  <div className="flex items-center gap-2 mb-2">
-                    <CircleDashed className="h-4 w-4 text-blue-500" />
-                    <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Command Status</span>
-                  </div>
-                  <p className="text-sm text-blue-600 dark:text-blue-400">{output}</p>
+            {/* Show status message for non-blocking commands */}
+            {isNonBlockingCommand && output && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-4 border-t border-blue-200 dark:border-blue-800">
+                <div className="flex items-center gap-2 mb-2">
+                  <CircleDashed className="h-4 w-4 text-blue-500" />
+                  <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Command Status</span>
                 </div>
-              )}
+                <p className="text-sm text-blue-600 dark:text-blue-400">{output}</p>
+              </div>
+            )}
 
-              {!output && !isStreaming && !isNonBlockingCommand && (
-                <div className="bg-black rounded-lg overflow-hidden border border-zinc-700/20 shadow-md p-6 flex items-center justify-center">
-                  <div className="text-center">
-                    <CircleDashed className="h-8 w-8 text-zinc-500 mx-auto mb-2" />
-                    <p className="text-zinc-400 text-sm">No output received</p>
-                  </div>
+            {!output && !isStreaming && !isNonBlockingCommand && (
+              <div className="bg-black overflow-hidden p-12 flex items-center justify-center">
+                <div className="text-center">
+                  <CircleDashed className="h-8 w-8 text-zinc-500 mx-auto mb-2" />
+                  <p className="text-zinc-400 text-sm">No output received</p>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </ScrollArea>
         ) : (
           <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">

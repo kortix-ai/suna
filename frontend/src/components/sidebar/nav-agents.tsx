@@ -12,11 +12,19 @@ import {
   ExternalLink,
   X,
   Check,
-  History
+  History,
+  ChevronRight,
+  Zap,
+  Folder
 } from "lucide-react"
 import { ThreadIcon } from "./thread-icon"
 import { toast } from "sonner"
 import { usePathname, useRouter } from "next/navigation"
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 
 import {
   DropdownMenu,
@@ -172,7 +180,12 @@ export function NavAgents() {
     !isProjectsLoading && !isThreadsLoading ?
       processThreadsWithProjects(threads, projects) : [];
 
-  const groupedThreads: GroupedThreads = groupThreadsByDate(combinedThreads);
+  // Separate trigger threads from regular threads
+  const regularThreads = combinedThreads.filter(thread => !thread.projectName?.startsWith('Trigger: '));
+  const triggerThreads = combinedThreads.filter(thread => thread.projectName?.startsWith('Trigger: '));
+
+  const groupedThreads: GroupedThreads = groupThreadsByDate(regularThreads);
+  const groupedTriggerThreads: GroupedThreads = groupThreadsByDate(triggerThreads);
 
   const handleDeletionProgress = (completed: number, total: number) => {
     const percentage = (completed / total) * 100;

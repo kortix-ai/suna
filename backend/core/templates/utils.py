@@ -110,6 +110,10 @@ def is_suna_default_agent(agent_data: Dict[str, Any]) -> bool:
 
 
 def format_template_for_response(template: AgentTemplate) -> Dict[str, Any]:
+    from core.utils.logger import logger
+    
+    logger.debug(f"Formatting template {template.template_id}: usage_examples = {template.usage_examples}")
+    
     response = {
         'template_id': template.template_id,
         'creator_id': template.creator_id,
@@ -129,8 +133,13 @@ def format_template_for_response(template: AgentTemplate) -> Dict[str, Any]:
         'icon_color': template.icon_color,
         'icon_background': template.icon_background,
         'metadata': template.metadata,
-        'creator_name': template.creator_name
+        'creator_name': template.creator_name,
+        'usage_examples': template.usage_examples,
+        'config': template.config,
     }
+    
+    logger.debug(f"Response for {template.template_id} includes usage_examples: {response.get('usage_examples')}")
+    
     return response
 
 
@@ -202,18 +211,9 @@ def sanitize_config_for_security(config: Dict[str, Any]) -> Dict[str, Any]:
                 'name': mcp.get('name'),
                 'type': mcp.get('type'),
                 'display_name': mcp.get('display_name') or mcp.get('name'),
-                'enabledTools': mcp.get('enabledTools', [])
+                'enabledTools': mcp.get('enabledTools', []),
+                'config': {}
             }
-            
-            if mcp.get('type') == 'pipedream':
-                original_config = mcp.get('config', {})
-                sanitized_mcp['config'] = {
-                    'url': original_config.get('url'),
-                    'headers': {k: v for k, v in original_config.get('headers', {}).items() 
-                              if k != 'profile_id'}
-                }
-            else:
-                sanitized_mcp['config'] = {}
             
             sanitized['tools']['custom_mcp'].append(sanitized_mcp)
     

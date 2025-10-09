@@ -61,7 +61,6 @@ export function getToolTitle(toolName: string): string {
     'configure-profile-for-agent': 'Configure Profile For Agent',
     'get-credential-profiles': 'Get Credential Profiles',
     'get-current-agent-config': 'Get Current Agent Config',
-    'deploy': 'Deploy',
     'create-presentation': 'Create Presentation',
     'export-presentation': 'Export Presentation',
     'create-presentation-outline': 'Create Presentation Outline',
@@ -78,18 +77,16 @@ export function getToolTitle(toolName: string): string {
     
     // Agent Creation Tools
     'create-new-agent': 'Create New Agent',
+    'update-agent': 'Update Agent',
     'search-mcp-servers-for-agent': 'Search MCP Servers for Agent',
     'get-mcp-server-details': 'Get MCP Server Details',
     'create-credential-profile-for-agent': 'Create Credential Profile for Agent',
     'discover-mcp-tools-for-agent': 'Discover MCP Tools for Agent',
+    'discover-user-mcp-servers': 'Discovering tools',
     'configure-agent-integration': 'Configure Agent Integration',
     'list-available-integrations': 'List Available Integrations',
-    'create-agent-workflow': 'Create Agent Workflow',
-    'list-agent-workflows': 'List Agent Workflows',
-    'activate-agent-workflow': 'Activate Agent Workflow',
     'create-agent-scheduled-trigger': 'Create Scheduled Trigger',
     'list-agent-scheduled-triggers': 'List Scheduled Triggers',
-    'delete-agent-workflow': 'Delete Agent Workflow',
     'delete-agent-scheduled-trigger': 'Delete Scheduled Trigger',
     'toggle-agent-scheduled-trigger': 'Toggle Scheduled Trigger',
 
@@ -1310,10 +1307,11 @@ export function getToolComponent(toolName: string): string {
       return 'GetCredentialProfilesToolView';
     case 'get-current-agent-config':
       return 'GetCurrentAgentConfigToolView';
+    case 'update-agent':
+      return 'UpdateAgentToolView';
+    case 'discover-user-mcp-servers':
+      return 'DiscoverUserMcpServersToolView';
 
-    //Deploy
-    case 'deploy':
-      return 'DeployToolView';
 
     // Upload operations
     case 'upload-file':

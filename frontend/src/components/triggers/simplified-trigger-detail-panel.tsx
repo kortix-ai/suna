@@ -27,7 +27,6 @@ import Link from 'next/link';
 import { TriggerWithAgent } from '@/hooks/react-query/triggers/use-all-triggers';
 import { useDeleteTrigger, useToggleTrigger, useUpdateTrigger } from '@/hooks/react-query/triggers';
 import { TriggerCreationDialog } from './trigger-creation-dialog';
-import { useAgentWorkflows } from '@/hooks/react-query/agents/use-agent-workflows';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { AgentAvatar } from '@/components/thread/content/agent-avatar';
@@ -74,8 +73,6 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
   const toggleMutation = useToggleTrigger();
   const updateMutation = useUpdateTrigger();
 
-  const { data: workflows = [] } = useAgentWorkflows(trigger.agent_id);
-  const workflowName = workflows.find(w => w.id === trigger.config?.workflow_id)?.name;
 
   const isScheduled = trigger.trigger_type.toLowerCase() === 'schedule' || trigger.trigger_type.toLowerCase() === 'scheduled';
   const scheduleDisplay = getScheduleDisplay(trigger.config?.cron_expression);
@@ -248,39 +245,19 @@ export function SimplifiedTriggerDetailPanel({ trigger, onClose }: SimplifiedTri
         <div className="border rounded-lg p-6 bg-card">
           <div className="flex items-start gap-4 mb-4">
             <div className="p-2 rounded-lg bg-muted">
-              {trigger.config?.execution_type === 'agent' ? (
-                <Sparkles className="h-5 w-5 text-muted-foreground" />
-              ) : (
-                <Activity className="h-5 w-5 text-muted-foreground" />
-              )}
+              <Sparkles className="h-5 w-5 text-muted-foreground" />
             </div>
             <div className="flex-1">
-              <h3 className="font-medium text-foreground mb-1">
-                {trigger.config?.execution_type === 'agent' ? 'Agent Instructions' : 'Workflow Execution'}
-              </h3>
-              <p className="text-sm text-muted-foreground">
-                {trigger.config?.execution_type === 'agent'
-                  ? 'Custom prompt for the agent'
-                  : `Runs workflow: ${workflowName || 'Unknown'}`
-                }
-              </p>
+              <h3 className="font-medium text-foreground mb-1">Agent Instructions</h3>
+              <p className="text-sm text-muted-foreground">Custom prompt for the agent</p>
             </div>
           </div>
 
-          {trigger.config?.execution_type === 'agent' && trigger.config.agent_prompt && (
+          {trigger.config.agent_prompt && (
             <div className="mt-4 p-4 rounded-lg bg-muted border">
               <p className="text-sm font-mono text-foreground whitespace-pre-wrap leading-relaxed">
                 {trigger.config.agent_prompt}
               </p>
-            </div>
-          )}
-
-          {trigger.config?.execution_type === 'workflow' && trigger.config.workflow_input && (
-            <div className="mt-4 p-4 rounded-lg bg-muted border">
-              <p className="text-xs text-muted-foreground mb-2 font-medium">Workflow Input:</p>
-              <pre className="text-xs font-mono text-foreground overflow-x-auto">
-                {JSON.stringify(trigger.config.workflow_input, null, 2)}
-              </pre>
             </div>
           )}
         </div>

@@ -87,7 +87,46 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
             },
         },
     ]
-    provider_router = Router(model_list=model_list)
+    
+    # Configure fallbacks: Bedrock models -> Direct Anthropic API
+    fallbacks = [
+        # Bedrock Sonnet 4.5 -> Anthropic Sonnet 4.5
+        # {
+        #     "bedrock/converse/arn:aws:bedrock:eu-north-1:737973863695:inference-profile/eu.anthropic.claude-sonnet-4-5-20250929-v1:0": [
+        #         "anthropic/claude-sonnet-4-5-20250929"  # Fallback to direct Anthropic API
+        #     ]
+        # },
+        {
+            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0": [
+                "anthropic/claude-sonnet-4-5-20250929"
+            ]
+        },
+        # Bedrock Sonnet 4 -> Anthropic Sonnet 4
+        # {
+        #     "bedrock/converse/arn:aws:bedrock:eu-north-1:737973863695:inference-profile/eu.anthropic.claude-sonnet-4-20250929-v1:0": [
+        #         "anthropic/claude-sonnet-4-20250514"
+        #     ]
+        # },
+        {
+            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0": [
+                "anthropic/claude-sonnet-4-20250514"
+            ]
+        },
+        # Bedrock Sonnet 3.7 -> Anthropic Sonnet 3.7
+        {
+            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0": [
+                "anthropic/claude-3-7-sonnet-latest"
+            ]
+        }
+    ]
+    
+    provider_router = Router(
+        model_list=model_list,
+        retry_after=15,
+        fallbacks=fallbacks,
+    )
+    
+    logger.info(f"Configured LiteLLM Router with {len(fallbacks)} fallback rules")
 
 def _configure_openai_compatible(params: Dict[str, Any], model_name: str, api_key: Optional[str], api_base: Optional[str]) -> None:
     """Configure OpenAI-compatible provider setup."""

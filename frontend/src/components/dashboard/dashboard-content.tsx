@@ -25,8 +25,8 @@ import { useAgents } from '@/hooks/react-query/agents/use-agents';
 import { cn } from '@/lib/utils';
 import { BillingModal } from '@/components/billing/billing-modal';
 import { useAgentSelection } from '@/lib/stores/agent-selection-store';
-import { Examples } from './examples';
-import { AgentExamples } from './examples/agent-examples';
+import { SunaModesPanel } from './suna-modes-panel';
+import { AIWorkerTemplates } from './ai-worker-templates';
 import { useThreadQuery } from '@/hooks/react-query/threads/use-threads';
 import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
 import { KortixLogo } from '../sidebar/kortix-logo';
@@ -125,8 +125,6 @@ export function DashboardContent() {
   const isSunaAgent = selectedAgent?.metadata?.is_suna_default || false;
 
   const threadQuery = useThreadQuery(initiatedThreadId || '');
-
-  const enabledEnvironment = isStagingMode() || isLocalMode();
 
   React.useEffect(() => {
     if (agents.length > 0) {
@@ -342,6 +340,9 @@ export function DashboardContent() {
       />
 
       <div className="flex flex-col h-screen w-full overflow-hidden">
+
+
+
         <div className="flex-1 overflow-y-auto">
           <div className="min-h-full flex flex-col">
             {/* {(

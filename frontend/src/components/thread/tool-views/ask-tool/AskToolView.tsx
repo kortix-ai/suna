@@ -113,7 +113,7 @@ export function AskToolView({
         </div>
       </CardHeader>
 
-      <CardContent className="p-0 flex-1 overflow-hidden relative">
+      <CardContent className="p-0 h-full flex-1 overflow-hidden relative">
         <ScrollArea className="h-full w-full">
           <div className="p-4 space-y-6">
             {attachments && attachments.length > 0 ? (

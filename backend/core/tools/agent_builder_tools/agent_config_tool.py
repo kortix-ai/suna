@@ -1,14 +1,20 @@
 import json
 from typing import Optional, Dict, Any
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.agentpress.thread_manager import ThreadManager
 from .base_tool import AgentBuilderBaseTool
 from core.utils.logger import logger
 from core.utils.core_tools_helper import ensure_core_tools_enabled, is_core_tool
-from core.utils.tool_groups import validate_tool_config
+from core.utils.tool_discovery import validate_tool_config
 
-
-
+@tool_metadata(
+    display_name="Agent Configuration",
+    description="Modify agent settings, tools, and behaviors",
+    icon="Settings",
+    color="bg-gray-100 dark:bg-gray-800/50",
+    weight=150,
+    visible=True
+)
 class AgentConfigTool(AgentBuilderBaseTool):
     def __init__(self, thread_manager: ThreadManager, db_connection, agent_id: str):
         super().__init__(thread_manager, db_connection, agent_id)
@@ -57,15 +63,6 @@ class AgentConfigTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="update_agent">
-        <parameter name="name">Research Assistant</parameter>
-        <parameter name="system_prompt">Act as a research analyst. Always verify sources</parameter>
-        <parameter name="agentpress_tools">{"web_search_tool": true, "sb_files_tool": true, "sb_shell_tool": false}</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def update_agent(
         self,
         name: Optional[str] = None,
@@ -100,7 +97,7 @@ class AgentConfigTool(AgentBuilderBaseTool):
                 if restricted_fields:
                     return self.fail_response(
                         f"Cannot modify {', '.join(restricted_fields)} for Suna. "
-                        f"Suna's core identity is centrally managed. You can still add MCPs, workflows, and triggers."
+                        f"Suna's core identity is centrally managed. You can still add MCPs and triggers."
                     )
 
             agent_update_fields = {}
@@ -246,12 +243,6 @@ class AgentConfigTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="get_current_agent_config">
-        </invoke>
-        </function_calls>
-        ''')
     async def get_current_agent_config(self) -> ToolResult:
         try:
             agent_data = await self._get_agent_data()

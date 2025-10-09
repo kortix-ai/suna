@@ -1,6 +1,7 @@
 import json
+import re
 from typing import Optional, Dict, Any, List
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.agentpress.thread_manager import ThreadManager
 from .base_tool import AgentBuilderBaseTool
 from core.utils.logger import logger
@@ -13,12 +14,30 @@ import httpx
 from core.composio_integration.composio_profile_service import ComposioProfileService
 from core.composio_integration.composio_trigger_service import ComposioTriggerService
 
-
+@tool_metadata(
+    display_name="Triggers & Automation",
+    description="Set up automatic triggers to run agents on a schedule or on events",
+    icon="Zap",
+    color="bg-yellow-100 dark:bg-yellow-800/50",
+    weight=160,
+    visible=True
+)
 class TriggerTool(AgentBuilderBaseTool):
     def __init__(self, thread_manager: ThreadManager, db_connection, agent_id: str):
         super().__init__(thread_manager, db_connection, agent_id)
+    
+    def _extract_variables(self, text: str) -> List[str]:
+        """Extract variable names from a text containing {{variable}} patterns"""
+        pattern = r'\{\{(\w+)\}\}'
+        matches = re.findall(pattern, text)
+        return list(set(matches))
+    
+    def _has_variables(self, text: str) -> bool:
+        """Check if text contains any {{variable}} patterns"""
+        pattern = r'\{\{(\w+)\}\}'
+        return bool(re.search(pattern, text))
 
-    async def _sync_workflows_to_version_config(self) -> None:
+    async def _sync_triggers_to_version_config(self) -> None:
         try:
             client = await self.db.client
             
@@ -28,9 +47,6 @@ class TriggerTool(AgentBuilderBaseTool):
                 return
             
             current_version_id = agent_result.data['current_version_id']
-            
-            workflows_result = await client.table('agent_workflows').select('*').eq('agent_id', self.agent_id).execute()
-            workflows = workflows_result.data if workflows_result.data else []
             
             triggers_result = await client.table('agent_triggers').select('*').eq('agent_id', self.agent_id).execute()
             triggers = []
@@ -53,21 +69,20 @@ class TriggerTool(AgentBuilderBaseTool):
             
             config = version_result.data.get('config', {})
             
-            config['workflows'] = workflows
             config['triggers'] = triggers
             
             await client.table('agent_versions').update({'config': config}).eq('version_id', current_version_id).execute()
             
-            logger.debug(f"Synced {len(workflows)} workflows and {len(triggers)} triggers to version config for agent {self.agent_id}")
+            logger.debug(f"Synced {len(triggers)} triggers to version config for agent {self.agent_id}")
             
         except Exception as e:
-            logger.error(f"Failed to sync workflows and triggers to version config: {e}")
+            logger.error(f"Failed to sync triggers to version config: {e}")
 
     @openapi_schema({
         "type": "function",
         "function": {
             "name": "create_scheduled_trigger",
-            "description": "Create a scheduled trigger for the agent to execute workflows or direct agent runs using cron expressions. This allows the agent to run automatically at specified times.",
+            "description": "Create a scheduled trigger for the agent to execute at specified times using cron expressions. This allows the agent to run automatically on a schedule. TEMPLATE VARIABLES: Use {{variable_name}} syntax in prompts to create reusable templates. Example: Instead of 'Monitor Apple brand', use 'Monitor {{company_name}} brand'. Users will provide their own values when installing.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -83,84 +98,39 @@ class TriggerTool(AgentBuilderBaseTool):
                         "type": "string",
                         "description": "Cron expression defining when to run (e.g., '0 9 * * *' for daily at 9am, '*/30 * * * *' for every 30 minutes)"
                     },
-                    "execution_type": {
-                        "type": "string",
-                        "enum": ["workflow", "agent"],
-                        "description": "Whether to execute a workflow or run the agent directly",
-                        "default": "agent"
-                    },
-                    "workflow_id": {
-                        "type": "string",
-                        "description": "ID of the workflow to execute (required if execution_type is 'workflow')"
-                    },
-                    "workflow_input": {
-                        "type": "object",
-                        "description": "Input data to pass to the workflow (optional, only for workflow execution)",
-                        "additionalProperties": True
-                    },
                     "agent_prompt": {
                         "type": "string",
-                        "description": "Prompt to send to the agent when triggered (required if execution_type is 'agent')"
+                        "description": "Prompt to send to the agent when triggered. Can include variables like {{variable_name}} that will be replaced when users install the template. For example: 'Monitor {{company_name}} brand across all platforms...'"
                     }
                 },
-                "required": ["name", "cron_expression", "execution_type"]
+                "required": ["name", "cron_expression", "agent_prompt"]
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="create_scheduled_trigger">
-        <parameter name="name">Daily Report Generation</parameter>
-        <parameter name="description">Generates daily reports every morning at 9 AM</parameter>
-        <parameter name="cron_expression">0 9 * * *</parameter>
-        <parameter name="execution_type">workflow</parameter>
-        <parameter name="workflow_id">workflow-123</parameter>
-        <parameter name="workflow_input">{"report_type": "daily", "include_charts": true}</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def create_scheduled_trigger(
         self,
         name: str,
         cron_expression: str,
-        execution_type: str = "agent",
-        description: Optional[str] = None,
-        workflow_id: Optional[str] = None,
-        workflow_input: Optional[Dict[str, Any]] = None,
-        agent_prompt: Optional[str] = None
+        agent_prompt: str,
+        description: Optional[str] = None
     ) -> ToolResult:
         try:
-            if execution_type not in ["workflow", "agent"]:
-                return self.fail_response("execution_type must be either 'workflow' or 'agent'")
+            if not agent_prompt:
+                return self.fail_response("agent_prompt is required")
             
-            if execution_type == "workflow" and not workflow_id:
-                return self.fail_response("workflow_id is required when execution_type is 'workflow'")
-            
-            if execution_type == "agent" and not agent_prompt:
-                return self.fail_response("agent_prompt is required when execution_type is 'agent'")
-            
-            if execution_type == "workflow":
-                client = await self.db.client
-                workflow_result = await client.table('agent_workflows').select('*').eq('id', workflow_id).eq('agent_id', self.agent_id).execute()
-                if not workflow_result.data:
-                    return self.fail_response(f"Workflow {workflow_id} not found or doesn't belong to this agent")
-                
-                workflow = workflow_result.data[0]
-                if workflow['status'] != 'active':
-                    return self.fail_response(f"Workflow '{workflow['name']}' is not active. Please activate it first.")
+            # Extract variables from the prompt
+            variables = self._extract_variables(agent_prompt)
             
             trigger_config = {
                 "cron_expression": cron_expression,
-                "execution_type": execution_type,
-                "provider_id": "schedule"
+                "provider_id": "schedule",
+                "agent_prompt": agent_prompt
             }
             
-            if execution_type == "workflow":
-                trigger_config["workflow_id"] = workflow_id
-                if workflow_input:
-                    trigger_config["workflow_input"] = workflow_input
-            else:
-                trigger_config["agent_prompt"] = agent_prompt
+            # Add variables to config if any were found
+            if variables:
+                trigger_config["trigger_variables"] = variables
+                logger.debug(f"Found variables in trigger prompt: {variables}")
             
             trigger_svc = get_trigger_service(self.db)
             
@@ -175,20 +145,16 @@ class TriggerTool(AgentBuilderBaseTool):
                 
                 result_message = f"Scheduled trigger '{name}' created successfully!\n\n"
                 result_message += f"**Schedule**: {cron_expression}\n"
-                result_message += f"**Type**: {execution_type.capitalize()} execution\n"
-                
-                if execution_type == "workflow":
-                    result_message += f"**Workflow**: {workflow['name']}\n"
-                    if workflow_input:
-                        result_message += f"**Input Data**: {json.dumps(workflow_input, indent=2)}\n"
-                else:
-                    result_message += f"**Prompt**: {agent_prompt}\n"
-                
+                result_message += f"**Type**: Agent execution\n"
+                result_message += f"**Prompt**: {agent_prompt}\n"
+                if variables:
+                    result_message += f"**Template Variables Detected**: {', '.join(['{{' + v + '}}' for v in variables])}\n"
+                    result_message += f"*Note: Users will be prompted to provide values for these variables when installing this agent as a template.*\n"
                 result_message += f"\nThe trigger is now active and will run according to the schedule."
                 
                 # Sync triggers to version config
                 try:
-                    await self._sync_workflows_to_version_config()
+                    await self._sync_triggers_to_version_config()
                 except Exception as e:
                     logger.warning(f"Failed to sync triggers to version config: {e}")
                 
@@ -198,8 +164,8 @@ class TriggerTool(AgentBuilderBaseTool):
                         "name": trigger.name,
                         "description": trigger.description,
                         "cron_expression": cron_expression,
-                        "execution_type": execution_type,
-                        "is_active": trigger.is_active
+                        "is_active": trigger.is_active,
+                        "variables": variables if variables else []
                     }
                 })
             except ValueError as ve:
@@ -224,12 +190,6 @@ class TriggerTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="get_scheduled_triggers">
-        </invoke>
-        </function_calls>
-        ''')
     async def get_scheduled_triggers(self) -> ToolResult:
         try:
             from core.triggers import TriggerType
@@ -246,32 +206,15 @@ class TriggerTool(AgentBuilderBaseTool):
                     "triggers": []
                 })
             
-            client = await self.db.client
-            workflows = {}
-            for trigger in schedule_triggers:
-                if trigger.config.get("execution_type") == "workflow" and trigger.config.get("workflow_id"):
-                    workflow_id = trigger.config["workflow_id"]
-                    if workflow_id not in workflows:
-                        workflow_result = await client.table('agent_workflows').select('name').eq('id', workflow_id).execute()
-                        if workflow_result.data:
-                            workflows[workflow_id] = workflow_result.data[0]['name']
-            
             formatted_triggers = []
             for trigger in schedule_triggers:
                 formatted = {
                     "name": trigger.name,
                     "description": trigger.description,
                     "cron_expression": trigger.config.get("cron_expression"),
-                    "execution_type": trigger.config.get("execution_type", "agent"),
+                    "agent_prompt": trigger.config.get("agent_prompt"),
                     "is_active": trigger.is_active
                 }
-                
-                if trigger.config.get("execution_type") == "workflow":
-                    workflow_id = trigger.config.get("workflow_id")
-                    formatted["workflow_name"] = workflows.get(workflow_id, "Unknown Workflow")
-                    formatted["workflow_input"] = trigger.config.get("workflow_input")
-                else:
-                    formatted["agent_prompt"] = trigger.config.get("agent_prompt")
                 
                 formatted_triggers.append(formatted)
             
@@ -301,13 +244,6 @@ class TriggerTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="delete_scheduled_trigger">
-        <parameter name="trigger_id">trigger-123</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def delete_scheduled_trigger(self, trigger_id: str) -> ToolResult:
         try:
             trigger_svc = get_trigger_service(self.db)
@@ -325,7 +261,7 @@ class TriggerTool(AgentBuilderBaseTool):
             if success:
                 # Sync triggers to version config
                 try:
-                    await self._sync_workflows_to_version_config()
+                    await self._sync_triggers_to_version_config()
                 except Exception as e:
                     logger.warning(f"Failed to sync triggers to version config: {e}")
                 
@@ -360,14 +296,6 @@ class TriggerTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="toggle_scheduled_trigger">
-        <parameter name="trigger_id">trigger-123</parameter>
-        <parameter name="is_active">false</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def toggle_scheduled_trigger(self, trigger_id: str, is_active: bool) -> ToolResult:
         try:
             trigger_svc = get_trigger_service(self.db)
@@ -390,7 +318,7 @@ class TriggerTool(AgentBuilderBaseTool):
                 
                 # Sync triggers to version config
                 try:
-                    await self._sync_workflows_to_version_config()
+                    await self._sync_triggers_to_version_config()
                 except Exception as e:
                     logger.warning(f"Failed to sync triggers to version config: {e}")
                 
@@ -423,11 +351,6 @@ class TriggerTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="list_event_trigger_apps"></invoke>
-        </function_calls>
-    ''')
     async def list_event_trigger_apps(self) -> ToolResult:
         try:
             trigger_service = ComposioTriggerService()
@@ -460,13 +383,6 @@ class TriggerTool(AgentBuilderBaseTool):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="list_app_event_triggers">
-        <parameter name="toolkit_slug">gmail</parameter>
-        </invoke>
-        </function_calls>
-    ''')
     async def list_app_event_triggers(self, toolkit_slug: str) -> ToolResult:
         try:
             trigger_service = ComposioTriggerService()
@@ -487,59 +403,36 @@ class TriggerTool(AgentBuilderBaseTool):
         "type": "function",
         "function": {
             "name": "create_event_trigger",
-            "description": "Create a Composio event-based trigger for this agent. First list apps and triggers, then pass the chosen trigger slug, profile_id, and trigger_config. Optionally route to a workflow.",
+            "description": "Create a Composio event-based trigger for this agent. First list apps and triggers, then pass the chosen trigger slug, profile_id, and trigger_config. You can use variables in the prompt like {{company_name}} or {{brand_name}} to make templates reusable.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "slug": {"type": "string", "description": "Trigger type slug, e.g. 'GMAIL_NEW_GMAIL_MESSAGE'"},
                     "profile_id": {"type": "string", "description": "Composio profile_id to use (must be connected)"},
                     "trigger_config": {"type": "object", "description": "Trigger configuration object per trigger schema", "additionalProperties": True},
-                    "route": {"type": "string", "enum": ["agent", "workflow"], "default": "agent", "description": "Execute agent directly or run a workflow"},
                     "name": {"type": "string", "description": "Optional friendly name for the trigger"},
-                    "agent_prompt": {"type": "string", "description": "Prompt to pass to the agent when route is 'agent'"},
-                    "workflow_id": {"type": "string", "description": "Workflow ID when route is 'workflow'"},
-                    "workflow_input": {"type": "object", "description": "Workflow input variables when route is 'workflow'", "additionalProperties": True},
+                    "agent_prompt": {"type": "string", "description": "Prompt to pass to the agent when triggered. Can include variables like {{variable_name}} that will be replaced when users install the template. For example: 'New email received for {{company_name}}...'"},
                     "connected_account_id": {"type": "string", "description": "Connected account id; if omitted we try to derive from profile"}
                 },
-                "required": ["slug", "profile_id"]
+                "required": ["slug", "profile_id", "agent_prompt"]
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="list_event_trigger_apps"></invoke>
-        <invoke name="list_app_event_triggers"><parameter name="toolkit_slug">gmail</parameter></invoke>
-        <invoke name="get_credential_profiles">
-        <parameter name="toolkit_slug">[toolkit_slug]</parameter>
-        </invoke>        
-        <invoke name="create_event_trigger">
-          <parameter name="slug">GMAIL_NEW_GMAIL_MESSAGE</parameter>
-          <parameter name="profile_id">profile_123</parameter>
-          <parameter name="trigger_config">{"interval": 1, "userId": "me", "labelIds": "INBOX"}</parameter>
-          <parameter name="route">agent</parameter>
-          <parameter name="agent_prompt">Read this</parameter>
-        </invoke>
-        </function_calls>
-    ''')
     async def create_event_trigger(
         self,
         slug: str,
         profile_id: str,
+        agent_prompt: str,
         trigger_config: Optional[Dict[str, Any]] = None,
-        route: str = "agent",
         name: Optional[str] = None,
-        agent_prompt: Optional[str] = None,
-        workflow_id: Optional[str] = None,
-        workflow_input: Optional[Dict[str, Any]] = None,
         connected_account_id: Optional[str] = None
     ) -> ToolResult:
         try:
-            if route not in ("agent", "workflow"):
-                return self.fail_response("route must be either 'agent' or 'workflow'")
-            if route == "workflow" and not workflow_id:
-                return self.fail_response("workflow_id is required when route is 'workflow'")
-            if route == "agent" and not agent_prompt:
-                return self.fail_response("agent_prompt is required when route is 'agent'")
+            if not agent_prompt:
+                return self.fail_response("agent_prompt is required")
+            
+            # Extract variables from the prompt
+            variables = self._extract_variables(agent_prompt)
 
             # Get profile config
             profile_service = ComposioProfileService(self.db)
@@ -665,18 +558,14 @@ class TriggerTool(AgentBuilderBaseTool):
                 "composio_trigger_id": composio_trigger_id,
                 "trigger_slug": slug,
                 "qualified_name": qualified_name,
-                "execution_type": route if route in ("agent", "workflow") else "agent",
                 "profile_id": profile_id,
+                "agent_prompt": agent_prompt
             }
-            if suna_config["execution_type"] == "agent":
-                if agent_prompt:
-                    suna_config["agent_prompt"] = agent_prompt
-            else:
-                if not workflow_id:
-                    return self.fail_response("workflow_id is required for workflow route")
-                suna_config["workflow_id"] = workflow_id
-                if workflow_input:
-                    suna_config["workflow_input"] = workflow_input
+            
+            # Add variables to config if any were found
+            if variables:
+                suna_config["trigger_variables"] = variables
+                logger.debug(f"Found variables in event trigger prompt: {variables}")
             
             # Create Suna trigger
             trigger_svc = get_trigger_service(self.db)
@@ -694,23 +583,23 @@ class TriggerTool(AgentBuilderBaseTool):
 
             # Sync triggers to version config
             try:
-                await self._sync_workflows_to_version_config()
+                await self._sync_triggers_to_version_config()
             except Exception as e:
                 logger.warning(f"Failed to sync triggers to version config: {e}")
 
             message = f"Event trigger '{trigger.name}' created successfully.\n"
-            message += f"Route: {route}. "
-            if route == "workflow":
-                message += f"Workflow: {workflow_id}."
-            else:
-                message += "Agent execution configured."
+            message += "Agent execution configured."
+            if variables:
+                message += f"\n**Template Variables Detected**: {', '.join(['{{' + v + '}}' for v in variables])}\n"
+                message += f"*Note: Users will be prompted to provide values for these variables when installing this agent as a template.*"
 
             return self.success_response({
                 "message": message,
                 "trigger": {
                     "provider": "composio",
                     "slug": slug,
-                    "is_active": trigger.is_active
+                    "is_active": trigger.is_active,
+                    "variables": variables if variables else []
                 }
             })
         except Exception as e:

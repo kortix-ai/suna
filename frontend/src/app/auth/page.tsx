@@ -270,7 +270,6 @@ function LoginContent() {
           <div className="relative flex-1 flex items-center justify-center p-4 lg:p-8">
             <div className="w-full max-w-sm">
               <div className="mb-4 flex items-center flex-col gap-3 sm:gap-4 justify-center">
-                {/* <ReleaseBadge className='mb-2 sm:mb-4' text="Custom Agents, Playbooks, and more!" /> */}
                 <h1 className="text-xl sm:text-2xl font-semibold text-foreground text-center leading-tight">
                   {isSignUp ? 'Create your account' : 'Log into your account'}
                 </h1>

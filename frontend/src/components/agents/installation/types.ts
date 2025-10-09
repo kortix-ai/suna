@@ -1,8 +1,18 @@
+export interface UsageExampleMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  tool_calls?: Array<{
+    name: string;
+    arguments?: Record<string, any>;
+  }>;
+}
+
 export interface MarketplaceTemplate {
   id: string;
   creator_id: string;
   name: string;
   description: string;
+  system_prompt?: string;
   tags: string[];
   download_count: number;
   creator_name: string;
@@ -26,10 +36,20 @@ export interface MarketplaceTemplate {
     source?: 'trigger' | 'tool';
     trigger_index?: number;
   }>;
+  usage_examples?: UsageExampleMessage[];
   metadata?: {
     source_agent_id?: string;
     source_version_id?: string;
     source_version_name?: string;
+  };
+  config?: {
+    triggers?: Array<{
+      name: string;
+      description?: string;
+      trigger_type: string;
+      is_active: boolean;
+      config: Record<string, any>;
+    }>;
   };
 }
 
@@ -51,4 +71,8 @@ export interface SetupStep {
     description?: string;
   }>;
   source?: 'trigger' | 'tool';
+  trigger_slug?: string;
+  trigger_index?: number;
+  trigger_fields?: Record<string, { type: string; required: boolean }>;
+  required_config?: string[];
 }

@@ -44,6 +44,30 @@ def _decode_jwt_safely(token: str) -> dict:
         }
     )
 
+async def get_account_id_from_thread(thread_id: str, db: "DBConnection") -> str:
+    """
+    Get account_id from thread_id.
+    
+    Raises:
+        ValueError: If thread not found or has no account_id
+    """
+    try:
+        client = await db.client
+        thread_result = await client.table('threads').select('account_id').eq('thread_id', thread_id).limit(1).execute()
+        
+        if not thread_result.data:
+            raise ValueError(f"Could not find thread with ID: {thread_id}")
+        
+        account_id = thread_result.data[0]['account_id']
+        if not account_id:
+            raise ValueError("Thread has no associated account_id")
+        
+        return account_id
+    except Exception as e:
+        structlog.get_logger().error(f"Error getting account_id from thread: {e}")
+        raise
+
+
 async def _get_user_id_from_account_cached(account_id: str) -> Optional[str]:
     cache_key = f"account_user:{account_id}"
     
@@ -170,7 +194,6 @@ async def verify_and_get_user_id_from_jwt(request: Request) -> str:
             detail="Invalid token",
             headers={"WWW-Authenticate": "Bearer"}
         )
-
     
 async def get_user_id_from_stream_auth(
     request: Request,
@@ -256,7 +279,20 @@ async def verify_and_get_agent_authorization(client, agent_id: str, user_id: str
         raise HTTPException(status_code=500, detail="Failed to verify agent access")
 
 async def verify_and_authorize_thread_access(client, thread_id: str, user_id: str):
+    
     try:
+        # Check if user is an admin first (admins have access to all threads)
+        admin_result = await client.table('user_roles').select('role').eq('user_id', user_id).execute()
+        if admin_result.data and len(admin_result.data) > 0:
+            role = admin_result.data[0].get('role')
+            if role in ('admin', 'super_admin'):
+                structlog.get_logger().debug(f"Admin access granted for thread {thread_id}", user_role=role)
+                # Just verify thread exists
+                thread_check = await client.table('threads').select('thread_id').eq('thread_id', thread_id).execute()
+                if not thread_check.data:
+                    raise HTTPException(status_code=404, detail="Thread not found")
+                return True
+        
         thread_result = await client.table('threads').select('*').eq('thread_id', thread_id).execute()
 
         if not thread_result.data or len(thread_result.data) == 0:

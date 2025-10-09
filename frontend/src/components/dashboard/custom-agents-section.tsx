@@ -36,7 +36,7 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
   const router = useRouter();
   const { data: templates, isLoading, error } = useKortixTeamTemplates();
   const installTemplate = useInstallTemplate();
-  
+
   const [selectedTemplate, setSelectedTemplate] = React.useState<MarketplaceTemplate | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = React.useState(false);
   const [showInstallDialog, setShowInstallDialog] = React.useState(false);
@@ -51,6 +51,7 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
       creator_id: template.creator_id,
       name: template.name,
       description: template.description,
+      system_prompt: template.system_prompt,
       tags: template.tags || [],
       download_count: template.download_count || 0,
       is_kortix_team: template.is_kortix_team || false,
@@ -63,8 +64,10 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
       agentpress_tools: template.agentpress_tools || {},
       model: template.metadata?.model,
       marketplace_published_at: template.marketplace_published_at,
+      usage_examples: template.usage_examples,
+      config: template.config,
     };
-    
+
     setSelectedTemplate(marketplaceTemplate);
     setIsPreviewOpen(true);
   };
@@ -92,12 +95,13 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
     setShowInstallDialog(true);
   };
 
-  // Handle the actual installation from the streamlined dialog
   const handleInstall = async (
     item: MarketplaceTemplate, 
     instanceName: string, 
     profileMappings: Record<string, string>, 
-    customServerConfigs: Record<string, any>
+    customServerConfigs: Record<string, any>,
+    triggerConfigs?: Record<string, Record<string, any>>,
+    triggerVariables?: Record<string, Record<string, string>>
   ) => {
     if (!item) return;
 
@@ -109,6 +113,8 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
         instance_name: instanceName,
         profile_mappings: profileMappings,
         custom_mcp_configs: customServerConfigs,
+        trigger_configs: triggerConfigs,
+        trigger_variables: triggerVariables,
       });
 
       if (result.status === 'installed' && result.instance_id) {
@@ -119,6 +125,11 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
           onAgentSelect(result.instance_id);
         }
       } else if (result.status === 'configs_required') {
+        if (result.missing_trigger_variables && Object.keys(result.missing_trigger_variables).length > 0) {
+          toast.warning('Please provide values for template trigger variables.');
+          setInstallingItemId('');
+          return;
+        }
         toast.error('Please provide all required configurations');
         return;
       } else {
@@ -163,11 +174,9 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
         <TitleSection />
         <div className="grid gap-4 pb-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-            <div key={i} className="bg-muted/30 rounded-3xl p-4 h-[180px] w-full">
-              <Skeleton className="h-12 w-12 rounded-2xl mb-3" />
-              <Skeleton className="h-5 w-3/4 mb-2" />
-              <Skeleton className="h-10 w-full mb-3" />
-              <Skeleton className="h-8 w-full mt-auto" />
+            <div key={i} className="bg-muted/30 rounded-3xl p-4 h-auto w-full flex items-center">
+              <Skeleton className="w-12 h-12 rounded-xl" />
+              <Skeleton className="h-6 w-1/2 ml-4" />
             </div>
           ))}
         </div>

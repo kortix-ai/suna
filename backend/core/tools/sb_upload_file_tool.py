@@ -6,19 +6,25 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from pathlib import Path
 
-from core.agentpress.tool import ToolResult, openapi_schema, usage_example
+from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
-from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.utils.config import config
 
-
+@tool_metadata(
+    display_name="File Upload",
+    description="Upload files to cloud storage and share them with secure links",
+    icon="Upload",
+    color="bg-teal-100 dark:bg-teal-800/50",
+    weight=230,
+    visible=True
+)
 class SandboxUploadFileTool(SandboxToolsBase):
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
-        self.workspace_path = "/workspace"
-        self.db = DBConnection()
+        from core.utils.db_helpers import get_initialized_db
+        self.db = get_initialized_db()
         
     @openapi_schema({
         "type": "function",
@@ -46,13 +52,6 @@ class SandboxUploadFileTool(SandboxToolsBase):
             }
         }
     })
-    @usage_example('''
-        <function_calls>
-        <invoke name="upload_file">
-        <parameter name="file_path">report.pdf</parameter>
-        </invoke>
-        </function_calls>
-        ''')
     async def upload_file(
         self,
         file_path: str,
@@ -145,28 +144,15 @@ class SandboxUploadFileTool(SandboxToolsBase):
             return self.fail_response(f"Unexpected error during secure file upload: {str(e)}")
     
     async def _get_current_account_id(self) -> str:
-        try:
-            context_vars = structlog.contextvars.get_contextvars()
-            thread_id = context_vars.get('thread_id')
-            
-            if not thread_id:
-                raise ValueError("No thread_id available from execution context")
-            
-            client = await self.db.client
-            
-            thread_result = await client.table('threads').select('account_id').eq('thread_id', thread_id).limit(1).execute()
-            if not thread_result.data:
-                raise ValueError(f"Could not find thread with ID: {thread_id}")
-            
-            account_id = thread_result.data[0]['account_id']
-            if not account_id:
-                raise ValueError("Thread has no associated account_id")
-            
-            return account_id
-            
-        except Exception as e:
-            logger.error(f"Error getting current account_id: {e}")
-            raise
+        """Get account_id from current thread context."""
+        context_vars = structlog.contextvars.get_contextvars()
+        thread_id = context_vars.get('thread_id')
+        
+        if not thread_id:
+            raise ValueError("No thread_id available from execution context")
+        
+        from core.utils.auth_utils import get_account_id_from_thread
+        return await get_account_id_from_thread(thread_id, self.db)
     
     async def _track_upload(
         self,

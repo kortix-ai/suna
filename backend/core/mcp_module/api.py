@@ -6,7 +6,7 @@ from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
 from .mcp_service import mcp_service, MCPException
 
-router = APIRouter()
+router = APIRouter(tags=["mcp"])
 
 
 class CustomMCPConnectionRequest(BaseModel):
@@ -29,7 +29,7 @@ class CustomMCPDiscoverRequest(BaseModel):
     config: Dict[str, Any]
 
 
-@router.post("/mcp/discover-custom-tools")
+@router.post("/mcp/discover-custom-tools", summary="Discover Custom MCP Tools", operation_id="discover_custom_mcp_tools")
 async def discover_custom_mcp_tools(request: CustomMCPDiscoverRequest):
     try:
         result = await mcp_service.discover_custom_tools(request.type, request.config)

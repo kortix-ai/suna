@@ -65,7 +65,6 @@ const areAllTourTargetsReady = (): boolean => {
     '[data-tour="tools-section"]',
     '[data-tour="integrations-section"]',
     '[data-tour="knowledge-section"]',
-    '[data-tour="playbooks-section"]',
     '[data-tour="triggers-section"]',
     '[data-tour="preview-agent"]',
   ];
