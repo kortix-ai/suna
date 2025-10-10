@@ -88,9 +88,9 @@ export const MCPConfigurationNew: React.FC<MCPConfigurationProps> = ({
 
   const handleCustomToolsUpdate = (enabledTools: string[]) => {
     if (!selectedMCPForTools) return;
-    
-    const updatedMCPs = configuredMCPs.map(mcp => 
-      mcp === selectedMCPForTools 
+
+    const updatedMCPs = configuredMCPs.map(mcp =>
+      mcp === selectedMCPForTools
         ? { ...mcp, enabledTools }
         : mcp
     );
@@ -113,10 +113,10 @@ export const MCPConfigurationNew: React.FC<MCPConfigurationProps> = ({
           </Button>
         </div>
       </div>
-      
+
       {configuredMCPs.length === 0 && (
-        <div className="text-center py-12 px-6 bg-muted/30 rounded-xl border-2 border-dashed border-border">
-          <div className="mx-auto w-12 h-12 bg-muted rounded-full flex items-center justify-center mb-4 border">
+        <div className="text-center py-12 px-6 ">
+          <div className="mx-auto w-12 h-12">
             <Server className="h-6 w-6 text-muted-foreground" />
           </div>
           <h4 className="text-sm font-semibold text-foreground mb-2">
@@ -127,7 +127,7 @@ export const MCPConfigurationNew: React.FC<MCPConfigurationProps> = ({
           </p>
         </div>
       )}
-      
+
       {configuredMCPs.length > 0 && (
         <div className="space-y-4">
           <ConfiguredMcpList
@@ -138,16 +138,16 @@ export const MCPConfigurationNew: React.FC<MCPConfigurationProps> = ({
           />
         </div>
       )}
-      
+
       <Dialog open={showRegistryDialog} onOpenChange={setShowRegistryDialog}>
         <DialogContent className="p-0 max-w-6xl h-[90vh] overflow-hidden">
           <DialogHeader className="sr-only">
             <DialogTitle>Select Integration</DialogTitle>
           </DialogHeader>
-          <ComposioRegistry 
-            showAgentSelector={false} 
-            selectedAgentId={selectedAgentId} 
-            onAgentChange={handleAgentChange} 
+          <ComposioRegistry
+            showAgentSelector={false}
+            selectedAgentId={selectedAgentId}
+            onAgentChange={handleAgentChange}
             onToolsSelected={handleToolsSelected}
             onClose={() => {
               setShowRegistryDialog(false);

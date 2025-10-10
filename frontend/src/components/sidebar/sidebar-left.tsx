@@ -228,7 +228,7 @@ export function SidebarLeft({
       className="border-r border-border/50 bg-background [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']"
       {...props}
     >
-      <SidebarHeader className={cn("px-[34px] py-3", state === 'collapsed' && "px-6")}>
+      <SidebarHeader className={cn("px-[34px] pt-7", state === 'collapsed' && "px-6")}>
         <div className={cn("flex h-[32px] items-center", state === 'collapsed' ? "justify-center" : "justify-between")}>
           <Link href="/dashboard" className="flex-shrink-0" onClick={() => isMobile && setOpenMobile(false)}>
             <KortixLogo size={24} />
@@ -327,7 +327,7 @@ export function SidebarLeft({
                     size="icon"
                     className={cn(
                       "h-12 w-12 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border",
-                      activeView === view ? 'bg-muted/60 border-[1.5px] border-border' : ''
+                      activeView === view ? 'bg-card border-[1.5px] border-border' : ''
                     )}
                     onClick={() => setActiveView(view)}
                   >

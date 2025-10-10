@@ -73,7 +73,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
     return (
       <div
         className={cn(
-          "flex items-center justify-center bg-muted border",
+          "flex items-center justify-center bg-card border",
           className
         )}
         style={{ width: size, height: size, ...borderRadiusStyle }}
@@ -109,7 +109,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   return (
     <div
       className={cn(
-        "flex items-center justify-center bg-muted border",
+        "flex items-center justify-center bg-card border",
         className
       )}
       style={{ width: size, height: size, ...borderRadiusStyle }}

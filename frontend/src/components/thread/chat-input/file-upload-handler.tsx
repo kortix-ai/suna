@@ -262,7 +262,7 @@ export const FileUploadHandler = forwardRef<
                   ) : (
                     <Paperclip className="h-4 w-4" />
                   )}
-                  Attach
+                  <span className='sm:block hidden'>Attach</span>
                 </Button>
               </span>
             </TooltipTrigger>

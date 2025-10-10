@@ -190,7 +190,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                     <Button
                         variant="outline"
                         size="sm"
-                        className="h-[42px] px-2 bg-border rounded-[1rem] text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5"
+                        className="h-[42px] px-2 bg-card rounded-[1rem] text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5"
                         aria-label="Config menu"
                     >
                         {onAgentSelect ? (
@@ -234,7 +234,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                 <Button
                                     size="sm"
                                     variant="ghost"
-                                    className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground hover:bg-muted/60 rounded-2xl border-[1.5px] border-border"
+                                    className="h-5 w-5 p-0 text-muted-foreground cursor-pointer hover:text-foreground hover:bg-card rounded-2xl"
                                     onClick={() => { setIsOpen(false); setShowNewAgentDialog(true); }}
                                 >
                                     <Plus className="h-4 w-4" />
@@ -262,12 +262,12 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                                 className="flex items-center gap-3 h-8 text-sm cursor-pointer"
                                                 onClick={() => handleAgentClick(agent.agent_id)}
                                             >
-                                                <div className="flex items-center justify-center w-8 h-8 bg-muted/60 border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
+                                                <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
                                                     {renderAgentIcon(agent)}
                                                 </div>
                                                 <span className="flex-1 truncate font-medium">{agent.name}</span>
                                                 {selectedAgentId === agent.agent_id && (
-                                                    <Check className="h-4 w-4 text-primary flex-shrink-0" />
+                                                    <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
                                                 )}
                                             </div>
                                         ))}
@@ -318,7 +318,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                     />
                                     <span className="flex-1 truncate font-medium">{model.label}</span>
                                     {selectedModel === model.id && (
-                                        <Check className="h-4 w-4 text-primary flex-shrink-0" />
+                                        <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
                                     )}
                                 </div>
                             ))}
