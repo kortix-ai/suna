@@ -204,16 +204,80 @@ class ToolkitService:
             raise
     
     async def get_toolkit_by_slug(self, slug: str) -> Optional[ToolkitInfo]:
-        try:
-            toolkits_response = await self.list_toolkits()
-            toolkits = toolkits_response.get("items", [])
-            for toolkit in toolkits:
-                if toolkit.slug == slug:
-                    return toolkit
+    try:
+        toolkit_response = self.client.toolkits.retrieve(slug)
+        
+        if hasattr(toolkit_response, 'model_dump'):
+            toolkit_dict = toolkit_response.model_dump()
+        elif hasattr(toolkit_response, '__dict__'):
+            toolkit_dict = toolkit_response.__dict__
+        else:
+            toolkit_dict = dict(toolkit_response)
+        
+        # Fallback logic: if no auth_schemes, use composio_managed_auth_schemes
+        auth_schemes = toolkit_dict.get("auth_schemes", [])
+        composio_managed_auth_schemes = toolkit_dict.get("composio_managed_auth_schemes", [])
+        
+        # If auth_schemes is empty, use composio_managed_auth_schemes as fallback
+        if not auth_schemes:
+            auth_schemes = composio_managed_auth_schemes
+        
+        if "OAUTH2" not in auth_schemes or "OAUTH2" not in composio_managed_auth_schemes:
+            logger.warning(f"Toolkit {slug} does not have required OAUTH2 auth schemes")
             return None
-        except Exception as e:
-            logger.error(f"Failed to get toolkit {slug}: {e}", exc_info=True)
-            raise
+        
+        # Parse toolkit data (same logic as in list_toolkits)
+        logo_url = None
+        meta = toolkit_dict.get("meta", {})
+        if isinstance(meta, dict):
+            logo_url = meta.get("logo")
+        elif hasattr(meta, '__dict__'):
+            logo_url = meta.__dict__.get("logo")
+        
+        if not logo_url:
+            logo_url = toolkit_dict.get("logo")
+        
+        tags = []
+        categories = []
+        if isinstance(meta, dict) and "categories" in meta:
+            category_list = meta.get("categories", [])
+            for cat in category_list:
+                if isinstance(cat, dict):
+                    cat_name = cat.get("name", "")
+                    cat_id = cat.get("id", "")
+                    tags.append(cat_name)
+                    categories.append(cat_id)
+                elif hasattr(cat, '__dict__'):
+                    cat_name = cat.__dict__.get("name", "")
+                    cat_id = cat.__dict__.get("id", "")
+                    tags.append(cat_name)
+                    categories.append(cat_id)
+        
+        description = None
+        if isinstance(meta, dict):
+            description = meta.get("description")
+        elif hasattr(meta, '__dict__'):
+            description = meta.__dict__.get("description")
+        
+        if not description:
+            description = toolkit_dict.get("description")
+        
+        toolkit = ToolkitInfo(
+            slug=toolkit_dict.get("slug", ""),
+            name=toolkit_dict.get("name", ""),
+            description=description,
+            logo=logo_url,
+            tags=tags,
+            auth_schemes=auth_schemes,
+            categories=categories
+        )
+        
+        logger.info(f"Successfully retrieved toolkit {slug} directly from API")
+        return toolkit
+        
+    except Exception as e:
+        logger.error(f"Failed to get toolkit {slug}: {e}", exc_info=True)
+        raise
     
     async def search_toolkits(self, query: str, category: Optional[str] = None, limit: int = 100, cursor: Optional[str] = None) -> Dict[str, Any]:
         try:
