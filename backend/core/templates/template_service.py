@@ -38,6 +38,7 @@ class AgentTemplate:
     name: str
     config: ConfigType
     tags: List[str] = field(default_factory=list)
+    categories: List[str] = field(default_factory=list)
     is_public: bool = False
     is_kortix_team: bool = False
     marketplace_published_at: Optional[datetime] = None
@@ -209,6 +210,7 @@ class TemplateService:
             name=agent['name'],
             config=sanitized_config,
             tags=tags or [],
+            categories=[],
             is_public=make_public,
             marketplace_published_at=datetime.now(timezone.utc) if make_public else None,
             icon_name=agent.get('icon_name'),
@@ -622,6 +624,7 @@ class TemplateService:
             'name': template.name,
             'config': template.config,
             'tags': template.tags,
+            'categories': template.categories,
             'is_public': template.is_public,
             'marketplace_published_at': template.marketplace_published_at.isoformat() if template.marketplace_published_at else None,
             'download_count': template.download_count,
@@ -649,6 +652,7 @@ class TemplateService:
             name=data['name'],
             config=data.get('config', {}),
             tags=data.get('tags', []),
+            categories=data.get('categories', []),
             is_public=data.get('is_public', False),
             is_kortix_team=data.get('is_kortix_team', False),
             marketplace_published_at=datetime.fromisoformat(data['marketplace_published_at'].replace('Z', '+00:00')) if data.get('marketplace_published_at') else None,

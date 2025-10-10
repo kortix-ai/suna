@@ -491,7 +491,7 @@ export function DashboardContent() {
 
                   {(isStagingMode() || isLocalMode()) && (
                     <div className="w-full px-4 pb-8" data-tour="custom-agents">
-                      <div className="max-w-7xl mx-auto">
+                      <div className="max-w-5xl mx-auto">
                         <CustomAgentsSection
                           onAgentSelect={setSelectedAgent}
                         />
