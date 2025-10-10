@@ -74,6 +74,16 @@ export function DashboardContent() {
   const [autoSubmit, setAutoSubmit] = useState(false);
   const [selectedMode, setSelectedMode] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'super-worker' | 'worker-templates'>('super-worker');
+  const [selectedCharts, setSelectedCharts] = useState<string[]>([]);
+  const [selectedOutputFormat, setSelectedOutputFormat] = useState<string | null>(null);
+  
+  // Reset data selections when mode changes
+  React.useEffect(() => {
+    if (selectedMode !== 'data') {
+      setSelectedCharts([]);
+      setSelectedOutputFormat(null);
+    }
+  }, [selectedMode]);
   const {
     selectedAgentId,
     setSelectedAgent,
@@ -419,6 +429,8 @@ export function DashboardContent() {
                           selectedMode={selectedMode}
                           onModeDeselect={() => setSelectedMode(null)}
                           animatePlaceholder={true}
+                          selectedCharts={selectedCharts}
+                          selectedOutputFormat={selectedOutputFormat}
                         />
                       </div>
                     </div>
@@ -433,6 +445,10 @@ export function DashboardContent() {
                           onModeSelect={setSelectedMode}
                           onSelectPrompt={setInputValue}
                           isMobile={isMobile}
+                          selectedCharts={selectedCharts}
+                          onChartsChange={setSelectedCharts}
+                          selectedOutputFormat={selectedOutputFormat}
+                          onOutputFormatChange={setSelectedOutputFormat}
                         />
                       </div>
                     </div>

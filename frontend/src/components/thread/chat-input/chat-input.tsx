@@ -110,6 +110,8 @@ export interface ChatInputProps {
   selectedMode?: string | null;
   onModeDeselect?: () => void;
   animatePlaceholder?: boolean;
+  selectedCharts?: string[];
+  selectedOutputFormat?: string | null;
 }
 
 export interface UploadedFile {
@@ -157,6 +159,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       selectedMode,
       onModeDeselect,
       animatePlaceholder = false,
+      selectedCharts = [],
+      selectedOutputFormat = null,
     },
     ref,
   ) => {
@@ -179,7 +183,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const [mounted, setMounted] = useState(false);
     const [animatedPlaceholder, setAnimatedPlaceholder] = useState('');
     const [isModeDismissing, setIsModeDismissing] = useState(false);
-    const [agentMode, setAgentMode] = useState<'adaptive' | 'autonomous' | 'chat'>('adaptive');
+    
+    // Suna Agent Modes feature flag
+    const ENABLE_SUNA_AGENT_MODES = false;
+    const [sunaAgentModes, setSunaAgentModes] = useState<'adaptive' | 'autonomous' | 'chat'>('adaptive');
 
     const {
       selectedModel,
@@ -283,6 +290,28 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       setIsModeDismissing(false);
     }, [selectedMode]);
 
+    // Generate Markdown for selected data options
+    const generateDataOptionsMarkdown = useCallback(() => {
+      if (selectedMode !== 'data' || (selectedCharts.length === 0 && !selectedOutputFormat)) {
+        return '';
+      }
+      
+      let markdown = '\n\n----\n\n**Data Visualization Requirements:**\n';
+      
+      if (selectedOutputFormat) {
+        markdown += `\n- **Output Format:** ${selectedOutputFormat}`;
+      }
+      
+      if (selectedCharts.length > 0) {
+        markdown += '\n- **Preferred Charts:**';
+        selectedCharts.forEach(chartId => {
+          markdown += `\n  - ${chartId}`;
+        });
+      }
+      
+      return markdown;
+    }, [selectedMode, selectedCharts, selectedOutputFormat]);
+
     // Handle mode deselection with animation
     const handleModeDeselect = useCallback(() => {
       setIsModeDismissing(true);
@@ -344,6 +373,12 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           .join('\n');
         message = message ? `${message}\n\n${fileInfo}` : fileInfo;
       }
+      
+      // Append Markdown for data visualization options
+      const dataOptionsMarkdown = generateDataOptionsMarkdown();
+      if (dataOptionsMarkdown) {
+        message = message + dataOptionsMarkdown;
+      }
 
       const baseModelName = getActualModelId(selectedModel);
 
@@ -359,7 +394,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       }
 
       setUploadedFiles([]);
-    }, [value, uploadedFiles, loading, disabled, isAgentRunning, isUploading, onStopAgent, getActualModelId, selectedModel, onSubmit, selectedAgentId, isControlled]);
+    }, [value, uploadedFiles, loading, disabled, isAgentRunning, isUploading, onStopAgent, generateDataOptionsMarkdown, getActualModelId, selectedModel, onSubmit, selectedAgentId, isControlled]);
 
     const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newValue = e.target.value;
@@ -528,16 +563,16 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           )}
           
           {/* Agent Mode Switcher - Only for Suna */}
-          {(isStagingMode() || isLocalMode()) && isSunaAgent && (
+          {ENABLE_SUNA_AGENT_MODES && (isStagingMode() || isLocalMode()) && isSunaAgent && (
             <TooltipProvider>
               <div className="flex items-center gap-1 p-0.5 bg-muted/50 rounded-lg">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
-                      onClick={() => setAgentMode('adaptive')}
+                      onClick={() => setSunaAgentModes('adaptive')}
                       className={cn(
                         "p-1.5 rounded-md transition-all duration-200 cursor-pointer",
-                        agentMode === 'adaptive'
+                        sunaAgentModes === 'adaptive'
                           ? "bg-background text-foreground shadow-sm"
                           : "text-muted-foreground hover:text-foreground hover:bg-background/50"
                       )}
@@ -556,10 +591,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
-                      onClick={() => setAgentMode('autonomous')}
+                      onClick={() => setSunaAgentModes('autonomous')}
                       className={cn(
                         "p-1.5 rounded-md transition-all duration-200 cursor-pointer",
-                        agentMode === 'autonomous'
+                        sunaAgentModes === 'autonomous'
                           ? "bg-background text-foreground shadow-sm"
                           : "text-muted-foreground hover:text-foreground hover:bg-background/50"
                       )}
@@ -578,10 +613,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
-                      onClick={() => setAgentMode('chat')}
+                      onClick={() => setSunaAgentModes('chat')}
                       className={cn(
                         "p-1.5 rounded-md transition-all duration-200 cursor-pointer",
-                        agentMode === 'chat'
+                        sunaAgentModes === 'chat'
                           ? "bg-background text-foreground shadow-sm"
                           : "text-muted-foreground hover:text-foreground hover:bg-background/50"
                       )}
@@ -678,7 +713,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           </TooltipProvider>
         </div>
       </div>
-    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, messages, isLoggedIn, renderConfigDropdown, billingModalOpen, setBillingModalOpen, handleTranscription, onStopAgent, handleSubmit, value, uploadedFiles, selectedMode, onModeDeselect, handleModeDeselect, isModeDismissing, isSunaAgent, agentMode, pendingFiles]);
+    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, messages, isLoggedIn, renderConfigDropdown, billingModalOpen, setBillingModalOpen, handleTranscription, onStopAgent, handleSubmit, value, uploadedFiles, selectedMode, onModeDeselect, handleModeDeselect, isModeDismissing, isSunaAgent, sunaAgentModes, pendingFiles]);
 
 
 

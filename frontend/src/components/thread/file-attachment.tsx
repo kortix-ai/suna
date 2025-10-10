@@ -486,7 +486,11 @@ export function FileAttachment({
     };
 
     // HTML/MD/CSV/PDF preview when not collapsed and in grid layout
-    if (shouldShowPreview && isGridLayout) {
+    // Only show preview if we have actual content or it's loading
+    const hasContent = fileContent || pdfBlobUrl || xlsxBlobUrl;
+    const isLoadingContent = fileContentLoading || pdfLoading || xlsxLoading;
+    
+    if (shouldShowPreview && isGridLayout && (hasContent || isLoadingContent || hasError)) {
         // Determine the renderer component
         const Renderer = rendererMap[extension as keyof typeof rendererMap];
 
@@ -679,55 +683,32 @@ export function FileAttachment({
         <button
             onClick={handleClick}
             className={cn(
-                "group flex rounded-xl transition-all duration-200 overflow-hidden cursor-pointer",
+                "group flex items-center rounded-xl transition-all duration-200 overflow-hidden cursor-pointer",
                 "border border-black/10 dark:border-white/10",
-                "bg-sidebar",
+                "bg-sidebar hover:bg-accent/5",
                 "text-left",
-                "pr-7", // Right padding for X button
-                // In grid layout, fill the square parent; otherwise use fixed height
-                isGridLayout ? "w-full h-full flex-col items-center justify-center p-3" : "min-h-[54px] h-[54px]",
-                isInlineMode && !isGridLayout
-                    ? "min-w-[170px] w-full sm:max-w-[300px] sm:w-fit" // Full width on mobile, constrained on larger screens
-                    : !isGridLayout && "min-w-[170px] max-w-[300px] w-fit", // Original constraints for inline layout
+                "h-[54px] w-fit min-w-[200px] max-w-[300px]",
                 className
             )}
             style={safeStyle}
             title={filename}
         >
-            {isGridLayout ? (
-                // Vertical layout for grid (square) items
-                <>
-                    <div className="w-12 h-12 rounded-lg bg-black/5 dark:bg-white/5 flex items-center justify-center mb-2">
-                        <IconComponent className="h-6 w-6 text-black/60 dark:text-white/60" />
-                    </div>
-                    <div className="text-xs font-medium text-foreground text-center truncate max-w-full px-2">
-                        {filename}
-                    </div>
-                    <div className="text-[10px] text-muted-foreground text-center truncate mt-0.5">
-                        {typeLabel}
-                    </div>
-                </>
-            ) : (
-                // Horizontal layout for inline items
-                <>
-                    <div className="relative min-w-[54px] w-[54px] h-full aspect-square flex-shrink-0 bg-black/5 dark:bg-white/5">
-                        <div className="flex items-center justify-center h-full w-full">
-                            <IconComponent className="h-5 w-5 text-black/60 dark:text-white/60" />
-                        </div>
-                    </div>
+            {/* Icon container */}
+            <div className="w-[54px] h-full flex items-center justify-center flex-shrink-0 bg-black/5 dark:bg-white/5">
+                <IconComponent className="h-5 w-5 text-black/60 dark:text-white/60" />
+            </div>
 
-                    <div className="flex-1 min-w-0 flex flex-col justify-center p-2 pl-3 overflow-hidden">
-                        <div className="text-sm font-medium text-foreground truncate max-w-full">
-                            {filename}
-                        </div>
-                        <div className="text-xs text-muted-foreground flex items-center gap-1 truncate">
-                            <span className="text-black/60 dark:text-white/60 truncate">{typeLabel}</span>
-                            <span className="text-black/40 dark:text-white/40 flex-shrink-0">·</span>
-                            <span className="text-black/60 dark:text-white/60 flex-shrink-0">{fileSize}</span>
-                        </div>
-                    </div>
-                </>
-            )}
+            {/* Text content */}
+            <div className="flex-1 min-w-0 flex flex-col justify-center px-3 py-2 overflow-hidden">
+                <div className="text-sm font-medium text-foreground truncate">
+                    {filename}
+                </div>
+                <div className="text-xs text-muted-foreground flex items-center gap-1 truncate">
+                    <span className="truncate">{typeLabel}</span>
+                    <span className="flex-shrink-0">·</span>
+                    <span className="flex-shrink-0">{fileSize}</span>
+                </div>
+            </div>
         </button>
     );
 
@@ -771,7 +752,8 @@ export function FileAttachmentGrid({
     if (!attachments || attachments.length === 0) return null;
 
     // For standalone rendering, always expand previews to show content
-    const shouldCollapse = standalone ? false : collapsed;
+    // Always show previews for HTML files
+    const shouldCollapse = false; // Always show previews like in CompleteToolView
 
     // Calculate appropriate max image height based on number of files
     // When there are multiple files, use smaller max heights to prevent taking up too much screen space

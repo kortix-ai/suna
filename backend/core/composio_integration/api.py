@@ -532,7 +532,7 @@ async def discover_composio_tools(
         if not result.success:
             raise HTTPException(status_code=500, detail=f"Failed to discover tools: {result.message}")
         
-        logger.debug(f"Discovered {len(result.tools)} tools from Composio profile {profile_id}")
+        # logger.debug(f"Discovered {len(result.tools)} tools from Composio profile {profile_id}")
         
         return {
             "success": True,

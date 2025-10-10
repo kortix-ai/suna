@@ -136,7 +136,7 @@ def discover_tools() -> Dict[str, Type[Tool]]:
         tools_map[tool_name] = tool_class
         # logger.debug(f"Discovered tool: {tool_name} ({tool_class.__name__})")
     
-    logger.info(f"Discovered {len(tools_map)} tools")
+    # logger.info(f"Discovered {len(tools_map)} tools")
     return tools_map
 
 

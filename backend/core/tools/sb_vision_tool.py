@@ -422,16 +422,20 @@ Images remain in the sandbox and can be loaded again anytime. SVG files are auto
             
             # Add the image to the thread as an image_context message with multi-modal content
             # This allows the LLM to actually "see" the image
-            message_content = [
-                {"type": "text", "text": f"[Image loaded from '{cleaned_path}']"},
-                {"type": "image_url", "image_url": {"url": public_url}}
-            ]
+            message_content = {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": f"[Image loaded from '{cleaned_path}']"},
+                    {"type": "image_url", "image_url": {"url": public_url}}
+                ]
+            }
             
-            # Add message to thread - message_type is "image_context" to distinguish from user messages
+            # Add message to thread - type is "image_context" to distinguish from user messages
             await self.thread_manager.add_message(
                 thread_id=self.thread_id,
-                message_type="image_context",
+                type="image_context",
                 content=message_content,
+                is_llm_message=True,
                 metadata={
                     "file_path": cleaned_path,
                     "mime_type": compressed_mime_type,

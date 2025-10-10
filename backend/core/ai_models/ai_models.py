@@ -52,6 +52,9 @@ class ModelConfig:
     headers: Optional[Dict[str, str]] = None
     extra_headers: Optional[Dict[str, str]] = None
     
+    # === Bedrock-Specific Configuration ===
+    performanceConfig: Optional[Dict[str, str]] = None  # e.g., {"latency": "optimized"}
+    
 
 
 @dataclass
@@ -127,6 +130,8 @@ class Model:
                 params["headers"] = self.config.headers.copy()
             if self.config.extra_headers:
                 params["extra_headers"] = self.config.extra_headers.copy()
+            if self.config.performanceConfig:
+                params["performanceConfig"] = self.config.performanceConfig.copy()
         
         
         # Apply any runtime overrides
