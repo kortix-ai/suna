@@ -63,6 +63,14 @@ class SandboxPresentationTool(SandboxToolsBase):
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {{
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }}
+    </style>
 </head>
 <body>
     {slide_content}
