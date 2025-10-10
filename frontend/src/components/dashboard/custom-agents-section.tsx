@@ -37,80 +37,80 @@ const CATEGORY_CONFIG: Record<string, { icon: any; icon_color: string; tagline: 
   'Engineering': {
     icon: Code2,
     tagline: 'Less context-switching, more coding.',
-    icon_color: 'text-rose-500 dark:text-rose-600',
-    color: 'from-blue-500/10 to-purple-500/10'
+    icon_color: 'text-blue-500 dark:text-blue-600',
+    color: 'from-blue-500/20 to-purple-500/10'
   },
   'Office Suite': {
     icon: FileText,
     tagline: 'Create and edit documents, with extreme efficiency.',
     icon_color: 'text-green-500 dark:text-green-600',
-    color: 'from-green-500/10 to-green-500/10'
+    color: 'from-green-500/20 to-green-500/10'
   },
   'Design': {
     icon: Palette,
     tagline: 'Create and edit designs, like a pro.',
     icon_color: 'text-purple-500 dark:text-purple-600',
-    color: 'from-purple-500/10 to-purple-500/10'
+    color: 'from-purple-500/20 to-purple-500/10'
   },
   'Personal Help': {
     icon: User,
     tagline: 'A personal assistant, that never sleeps.',
     icon_color: 'text-amber-500 dark:text-amber-600',
-    color: 'from-amber-500/10 to-amber-500/10'
+    color: 'from-amber-500/20 to-amber-500/10'
   },
   'Product': {
     icon: Calculator,
     tagline: 'Manage everything about your product, till launch.',
     icon_color: 'text-indigo-500 dark:text-indigo-600',
-    color: 'from-indigo-500/10 to-indigo-500/10'
+    color: 'from-indigo-500/20 to-indigo-500/10'
   },
   'Utilities': {
     icon: Wrench,
     tagline: 'Tools to help you with your daily tasks.',
     icon_color: 'text-orange-500 dark:text-orange-600',
-    color: 'from-orange-500/10 to-orange-500/10'
+    color: 'from-orange-500/20 to-orange-500/10'
   },
   'Marketing': {
     icon: ShoppingCart,
     tagline: 'Create campaigns, analyze results, grow faster.',
     icon_color: 'text-pink-500 dark:text-pink-600',
-    color: 'from-pink-500/10 to-rose-500/10'
+    color: 'from-pink-500/20 to-rose-500/10'
   },
   'Human Resources': {
     icon: Users,
     tagline: 'Simplify hiring, onboarding, and team management.',
     icon_color: 'text-indigo-500 dark:text-indigo-600',
-    color: 'from-indigo-500/10 to-violet-500/10'
+    color: 'from-indigo-500/20 to-violet-500/10'
   },
   'Finance': {
     icon: DollarSign,
     tagline: 'Manage your finances, with AI.',
     icon_color: 'text-green-500 dark:text-green-600',
-    color: 'from-green-500/10 to-green-500/10'
+    color: 'from-green-500/20 to-green-500/10'
   },
   'Document AI': {
     icon: ScrollText,
     tagline: 'Create and edit documents, using AI.',
     icon_color: 'text-violet-500 dark:text-violet-600',
-    color: 'from-violet-500/10 to-violet-500/10'
+    color: 'from-violet-500/20 to-violet-500/10'
   },
   'Sales': {
     icon: Target,
     tagline: 'Sell more, with AI.',
     icon_color: 'text-rose-500 dark:text-rose-600',
-    color: 'from-rose-500/10 to-rose-500/10'
+    color: 'from-rose-500/20 to-rose-500/10'
   },
   'Research': {
     icon: BookOpen,
     tagline: 'Research, with AI.',
     icon_color: 'text-blue-500 dark:text-blue-600',
-    color: 'from-blue-500/10 to-blue-500/10'
+    color: 'from-blue-500/20 to-blue-500/10'
   },
   'Other': {
     icon: Home,
     tagline: 'Specialized agents for unique needs.',
     icon_color: 'text-gray-500 dark:text-gray-600',
-    color: 'from-gray-500/10 to-slate-500/10'
+    color: 'from-gray-500/20 to-slate-500/10'
   }
 };
 
