@@ -430,7 +430,6 @@ Images remain in the sandbox and can be loaded again anytime. SVG files are auto
                 ]
             }
             
-            # Add message to thread - type is "image_context" to distinguish from user messages
             await self.thread_manager.add_message(
                 thread_id=self.thread_id,
                 type="image_context",

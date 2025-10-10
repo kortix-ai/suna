@@ -219,6 +219,44 @@ async def stop_agent(agent_run_id: str, user_id: str = Depends(verify_and_get_us
     await stop_agent_run(agent_run_id)
     return {"status": "stopped"}
 
+@router.get("/agent-runs/active", summary="List All Active Agent Runs", operation_id="list_active_agent_runs")
+async def get_active_agent_runs(user_id: str = Depends(verify_and_get_user_id_from_jwt)):
+    """Get all active (running) agent runs for the current user across all threads."""
+    logger.debug(f"Fetching all active agent runs for user: {user_id}")
+    client = await utils.db.client
+    
+    # Query all running agent runs where the thread belongs to the user
+    # Join with threads table to filter by account_id
+    agent_runs = await client.table('agent_runs').select('id, thread_id, status, started_at').eq('status', 'running').execute()
+    
+    if not agent_runs.data:
+        return {"active_runs": []}
+    
+    # Filter agent runs to only include those from threads the user has access to
+    # Get thread_ids and check access
+    thread_ids = [run['thread_id'] for run in agent_runs.data]
+    
+    # Get threads that belong to the user
+    threads = await client.table('threads').select('thread_id, account_id').in_('thread_id', thread_ids).eq('account_id', user_id).execute()
+    
+    # Create a set of accessible thread IDs
+    accessible_thread_ids = {thread['thread_id'] for thread in threads.data}
+    
+    # Filter agent runs to only include accessible ones
+    accessible_runs = [
+        {
+            'id': run['id'],
+            'thread_id': run['thread_id'],
+            'status': run['status'],
+            'started_at': run['started_at']
+        }
+        for run in agent_runs.data
+        if run['thread_id'] in accessible_thread_ids
+    ]
+    
+    logger.debug(f"Found {len(accessible_runs)} active agent runs for user: {user_id}")
+    return {"active_runs": accessible_runs}
+
 @router.get("/thread/{thread_id}/agent-runs", summary="List Thread Agent Runs", operation_id="list_thread_agent_runs")
 async def get_agent_runs(thread_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
     """Get all agent runs for a thread."""
