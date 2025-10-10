@@ -459,7 +459,11 @@ export function KnowledgeBaseManager({
                 }
             } else {
                 toast.success('Folder renamed successfully');
-                refetchFolders();
+                // Update local state immediately to reflect changes (including emojis)
+                setTreeData(prev => prev.map(item =>
+                    item.id === editingFolder ? { ...item, name: trimmedName } : item
+                ));
+                await refetchFolders();
             }
         } catch (error) {
             console.error('Error renaming folder:', error);
