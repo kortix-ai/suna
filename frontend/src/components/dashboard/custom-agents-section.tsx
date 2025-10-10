@@ -127,8 +127,19 @@ const FeaturedCategoryCard = ({ category }: FeaturedCategoryCardProps) => {
       "relative overflow-hidden rounded-3xl p-8 h-38 col-span-1 sm:col-span-2",
       "bg-gradient-to-br",
       config.color,
-      "border border-border/50"
+      "border border-border/50",
+      "backdrop-blur-xl"
     )}>
+      <div className="absolute inset-0 bg-gradient-to-tr from-background/80 via-transparent to-background/40" />
+      
+      <div className="absolute right-0 top-0 w-48 h-48 opacity-30">
+        <div className={cn(
+          "absolute inset-0 bg-gradient-to-br",
+          config.color,
+          "blur-2xl"
+        )} />
+      </div>
+
       <div className="relative z-10">
         <h3 className="text-2xl font-medium text-foreground/90 mb-2">
           {config.tagline.split(',')[0]}
@@ -137,8 +148,20 @@ const FeaturedCategoryCard = ({ category }: FeaturedCategoryCardProps) => {
           {config.tagline.split(',')[1]}
         </p>
       </div>
-      <div className="absolute right-8 top-8 opacity-20">
-        <Icon className={cn("w-32 h-32", config.icon_color)} strokeWidth={2} />
+      
+      <div className="absolute right-8 top-8">
+        <div className="relative">
+          <div className={cn(
+            "absolute inset-0 blur-xl opacity-40",
+            config.icon_color
+          )}>
+            <Icon className="w-32 h-32" strokeWidth={2} />
+          </div>
+          <Icon className={cn(
+            "relative w-32 h-32 opacity-30",
+            config.icon_color
+          )} strokeWidth={2} />
+        </div>
       </div>
     </div>
   );
@@ -168,7 +191,7 @@ const CategorySection = ({
   return (
     <div className="mb-8">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-2xl font-semibold text-foreground">{category}</h2>
+        <h2 className="text-2xl font-semibold text-muted-foreground">{category}</h2>
         {hasMore && (
           <Button
             variant="ghost"
