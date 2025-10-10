@@ -123,6 +123,7 @@ def format_template_for_response(template: AgentTemplate) -> Dict[str, Any]:
         'mcp_requirements': format_mcp_requirements_for_response(template.mcp_requirements),
         'agentpress_tools': template.agentpress_tools,
         'tags': template.tags,
+        'categories': template.categories,
         'is_public': template.is_public,
         'is_kortix_team': template.is_kortix_team,
         'marketplace_published_at': template.marketplace_published_at.isoformat() if template.marketplace_published_at else None,

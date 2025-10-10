@@ -44,6 +44,7 @@ export interface AgentTemplate {
   mcp_requirements: MCPRequirement[];
   agentpress_tools: Record<string, any>;
   tags: string[];
+  categories: string[];
   is_public: boolean;
   download_count: number;
   marketplace_published_at?: string;

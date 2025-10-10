@@ -64,6 +64,7 @@ class TemplateResponse(BaseModel):
     mcp_requirements: List[Dict[str, Any]]
     agentpress_tools: Dict[str, Any]
     tags: List[str]
+    categories: List[str]
     is_public: bool
     is_kortix_team: Optional[bool] = False
     marketplace_published_at: Optional[str] = None

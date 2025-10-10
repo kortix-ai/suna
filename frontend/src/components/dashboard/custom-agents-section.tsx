@@ -16,6 +16,7 @@ import type { MarketplaceTemplate } from '@/components/agents/installation/types
 import { AgentCountLimitError } from '@/lib/api';
 import { UnifiedAgentCard } from '@/components/ui/unified-agent-card';
 import type { BaseAgentData } from '@/components/ui/unified-agent-card';
+import { ChevronRight, Code2, Calendar, MessageSquare, Briefcase, ShoppingCart, Users, Wrench, GraduationCap, Heart, Home, ScrollText, Calculator, FileText, Palette, User, DollarSign, Target, BookOpen } from 'lucide-react';
 
 interface CustomAgentsSectionProps {
   onAgentSelect?: (templateId: string) => void;
@@ -32,6 +33,171 @@ const TitleSection = () => (
   </div>
 );
 
+const CATEGORY_CONFIG: Record<string, { icon: any; icon_color: string; tagline: string; color: string }> = {
+  'Engineering': {
+    icon: Code2,
+    tagline: 'Less context-switching, more coding.',
+    icon_color: 'text-rose-500 dark:text-rose-600',
+    color: 'from-blue-500/10 to-purple-500/10'
+  },
+  'Office Suite': {
+    icon: FileText,
+    tagline: 'Create and edit documents, with extreme efficiency.',
+    icon_color: 'text-green-500 dark:text-green-600',
+    color: 'from-green-500/10 to-green-500/10'
+  },
+  'Design': {
+    icon: Palette,
+    tagline: 'Create and edit designs, like a pro.',
+    icon_color: 'text-purple-500 dark:text-purple-600',
+    color: 'from-purple-500/10 to-purple-500/10'
+  },
+  'Personal Help': {
+    icon: User,
+    tagline: 'A personal assistant, that never sleeps.',
+    icon_color: 'text-amber-500 dark:text-amber-600',
+    color: 'from-amber-500/10 to-amber-500/10'
+  },
+  'Product': {
+    icon: Calculator,
+    tagline: 'Manage everything about your product, till launch.',
+    icon_color: 'text-indigo-500 dark:text-indigo-600',
+    color: 'from-indigo-500/10 to-indigo-500/10'
+  },
+  'Utilities': {
+    icon: Wrench,
+    tagline: 'Tools to help you with your daily tasks.',
+    icon_color: 'text-orange-500 dark:text-orange-600',
+    color: 'from-orange-500/10 to-orange-500/10'
+  },
+  'Marketing': {
+    icon: ShoppingCart,
+    tagline: 'Create campaigns, analyze results, grow faster.',
+    icon_color: 'text-pink-500 dark:text-pink-600',
+    color: 'from-pink-500/10 to-rose-500/10'
+  },
+  'Human Resources': {
+    icon: Users,
+    tagline: 'Simplify hiring, onboarding, and team management.',
+    icon_color: 'text-indigo-500 dark:text-indigo-600',
+    color: 'from-indigo-500/10 to-violet-500/10'
+  },
+  'Finance': {
+    icon: DollarSign,
+    tagline: 'Manage your finances, with AI.',
+    icon_color: 'text-green-500 dark:text-green-600',
+    color: 'from-green-500/10 to-green-500/10'
+  },
+  'Document AI': {
+    icon: ScrollText,
+    tagline: 'Create and edit documents, using AI.',
+    icon_color: 'text-violet-500 dark:text-violet-600',
+    color: 'from-violet-500/10 to-violet-500/10'
+  },
+  'Sales': {
+    icon: Target,
+    tagline: 'Sell more, with AI.',
+    icon_color: 'text-rose-500 dark:text-rose-600',
+    color: 'from-rose-500/10 to-rose-500/10'
+  },
+  'Research': {
+    icon: BookOpen,
+    tagline: 'Research, with AI.',
+    icon_color: 'text-blue-500 dark:text-blue-600',
+    color: 'from-blue-500/10 to-blue-500/10'
+  },
+  'Other': {
+    icon: Home,
+    tagline: 'Specialized agents for unique needs.',
+    icon_color: 'text-gray-500 dark:text-gray-600',
+    color: 'from-gray-500/10 to-slate-500/10'
+  }
+};
+
+interface FeaturedCategoryCardProps {
+  category: string;
+}
+
+const FeaturedCategoryCard = ({ category }: FeaturedCategoryCardProps) => {
+  const config = CATEGORY_CONFIG[category] || CATEGORY_CONFIG['Other'];
+  const Icon = config.icon;
+
+  return (
+    <div className={cn(
+      "relative overflow-hidden rounded-3xl p-8 h-38 col-span-1 sm:col-span-2",
+      "bg-gradient-to-br",
+      config.color,
+      "border border-border/50"
+    )}>
+      <div className="relative z-10">
+        <h3 className="text-2xl font-medium text-foreground/90 mb-2">
+          {config.tagline.split(',')[0]}
+        </h3>
+        <p className="text-2xl font-medium text-foreground/90">
+          {config.tagline.split(',')[1]}
+        </p>
+      </div>
+      <div className="absolute right-8 top-8 opacity-20">
+        <Icon className={cn("w-32 h-32", config.icon_color)} strokeWidth={2} />
+      </div>
+    </div>
+  );
+};
+
+interface CategorySectionProps {
+  category: string;
+  templates: any[];
+  onCardClick: (template: any) => void;
+  convertTemplateToAgentData: (template: any) => BaseAgentData;
+  expandedCategories: Set<string>;
+  onToggleExpand: (category: string) => void;
+}
+
+const CategorySection = ({ 
+  category, 
+  templates, 
+  onCardClick, 
+  convertTemplateToAgentData,
+  expandedCategories,
+  onToggleExpand
+}: CategorySectionProps) => {
+  const isExpanded = expandedCategories.has(category);
+  const displayTemplates = isExpanded ? templates : templates.slice(0, 4);
+  const hasMore = templates.length > 3;
+
+  return (
+    <div className="mb-8">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-2xl font-semibold text-foreground">{category}</h2>
+        {hasMore && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => onToggleExpand(category)}
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            {isExpanded ? 'Show less' : 'See all'}
+            <ChevronRight className="ml-1 h-4 w-4" />
+          </Button>
+        )}
+      </div>
+      <div className="grid gap-4 pb-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3">
+        <FeaturedCategoryCard category={category} />
+        {displayTemplates.map((template) => (
+          <UnifiedAgentCard
+            key={template.template_id}
+            variant="dashboard"
+            data={convertTemplateToAgentData(template)}
+            actions={{
+              onClick: () => onCardClick(template)
+            }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+};
+
 export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps) {
   const router = useRouter();
   const { data: templates, isLoading, error } = useKortixTeamTemplates();
@@ -43,6 +209,45 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
   const [showAgentLimitDialog, setShowAgentLimitDialog] = React.useState(false);
   const [agentLimitError, setAgentLimitError] = React.useState<any>(null);
   const [installingItemId, setInstallingItemId] = React.useState<string | null>(null);
+  const [expandedCategories, setExpandedCategories] = React.useState<Set<string>>(new Set());
+
+  const toggleCategoryExpand = (category: string) => {
+    setExpandedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(category)) {
+        next.delete(category);
+      } else {
+        next.add(category);
+      }
+      return next;
+    });
+  };
+
+  const groupTemplatesByCategory = React.useMemo(() => {
+    if (!templates?.templates) return {};
+    
+    const categorized: Record<string, any[]> = {};
+    const uncategorized: any[] = [];
+    
+    templates.templates.forEach((template) => {
+      if (template.categories && template.categories.length > 0) {
+        template.categories.forEach((category: string) => {
+          if (!categorized[category]) {
+            categorized[category] = [];
+          }
+          categorized[category].push(template);
+        });
+      } else {
+        uncategorized.push(template);
+      }
+    });
+    
+    if (uncategorized.length > 0) {
+      categorized['Other'] = uncategorized;
+    }
+    
+    return categorized;
+  }, [templates]);
 
   const handleCardClick = (template: any) => {
     const marketplaceTemplate: MarketplaceTemplate = {
@@ -72,7 +277,6 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
     setIsPreviewOpen(true);
   };
 
-  // Convert template to BaseAgentData
   const convertTemplateToAgentData = (template: any): BaseAgentData => ({
     id: template.template_id,
     name: template.name,
@@ -87,6 +291,8 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
     is_kortix_team: template.is_kortix_team || false,
     download_count: template.download_count || 0,
     marketplace_published_at: template.marketplace_published_at,
+    mcp_requirements: template.mcp_requirements || [],
+    agentpress_tools: template.agentpress_tools || {},
   });
 
   const handlePreviewInstall = (agent: MarketplaceTemplate) => {
@@ -196,7 +402,9 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
     );
   }
 
-  // No agents found
+  const categorizedTemplates = groupTemplatesByCategory;
+  const hasCategories = Object.keys(categorizedTemplates).length > 0;
+
   if (!templates || !templates.templates || templates.templates.length === 0) {
     return (
       <div className="w-full">
@@ -212,18 +420,32 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
     <>
       <div className="w-full">
         <TitleSection />
-        <div className="grid gap-4 pb-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {templates.templates.map((template) => (
-            <UnifiedAgentCard
-              key={template.template_id}
-              variant="dashboard"
-              data={convertTemplateToAgentData(template)}
-              actions={{
-                onClick: () => handleCardClick(template)
-              }}
+        {hasCategories ? (
+          Object.entries(categorizedTemplates).map(([category, categoryTemplates]) => (
+            <CategorySection
+              key={category}
+              category={category}
+              templates={categoryTemplates}
+              onCardClick={handleCardClick}
+              convertTemplateToAgentData={convertTemplateToAgentData}
+              expandedCategories={expandedCategories}
+              onToggleExpand={toggleCategoryExpand}
             />
-          ))}
-        </div>
+          ))
+        ) : (
+          <div className="grid gap-4 pb-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {templates.templates.map((template) => (
+              <UnifiedAgentCard
+                key={template.template_id}
+                variant="dashboard"
+                data={convertTemplateToAgentData(template)}
+                actions={{
+                  onClick: () => handleCardClick(template)
+                }}
+              />
+            ))}
+          </div>
+        )}
       </div>
       <MarketplaceAgentPreviewDialog
         agent={selectedTemplate}
