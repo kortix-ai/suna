@@ -24,7 +24,10 @@ import {
   ListTodo,
   List,
   Computer,
+  Phone,
+  PhoneOff,
 } from 'lucide-react';
+import { StopwatchIcon } from '@radix-ui/react-icons';
 
 // Flag to control whether tool result messages are rendered
 export const SHOULD_RENDER_TOOL_RESULTS = false;
@@ -152,6 +155,22 @@ export const getToolIcon = (toolName: string): ElementType => {
     // Tools and utilities
     case 'execute-code':
       return Code;
+
+    // VAPI Call
+    case 'make-phone-call':
+      return Phone;
+    case 'end-call':
+      return PhoneOff;
+    case 'get-call-details':
+      return Phone;
+    case 'list-calls':
+      return Phone;
+    case 'monitor-call':
+      return Phone;
+    case 'wait-for-call-completion':
+      return StopwatchIcon;
+    case 'wait_for_call_completion':
+      return StopwatchIcon;
 
     // User interaction
     case 'ask':
@@ -405,6 +424,19 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['configure-agent-integration', 'Configuring Agent Integration'],
   ['create-agent-scheduled-trigger', 'Creating Scheduled Trigger'],
   ['list-agent-scheduled-triggers', 'Listing Agent Scheduled Triggers'],
+
+  ['make-phone-call', 'Making Phone Call'],
+  ['make_phone_call', 'Making Phone Call'],
+  ['end-call', 'Ending Call'],
+  ['end_call', 'Ending Call'],
+  ['get-call-details', 'Getting Call Details'],
+  ['get_call_details', 'Getting Call Details'],
+  ['list-calls', 'Listing Calls'],
+  ['list_calls', 'Listing Calls'],
+  ['monitor-call', 'Monitoring Call'],
+  ['monitor_call', 'Monitoring Call'],
+  ['wait-for-call-completion', 'Waiting for Completion'],
+  ['wait_for_call_completion', 'Waiting for Completion'],
 ]);
 
 

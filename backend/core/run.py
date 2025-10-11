@@ -153,6 +153,13 @@ class ToolManager:
                 self.thread_manager.add_tool(PaperSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager)
                 if enabled_methods:
                     logger.debug(f"✅ Registered paper_search_tool with methods: {enabled_methods}")
+        
+        if config.VAPI_PRIVATE_KEY and 'vapi_voice_tool' not in disabled_tools:
+            from core.tools.vapi_voice_tool import VapiVoiceTool
+            enabled_methods = self._get_enabled_methods_for_tool('vapi_voice_tool')
+            self.thread_manager.add_tool(VapiVoiceTool, function_names=enabled_methods, thread_manager=self.thread_manager)
+            if enabled_methods:
+                logger.debug(f"✅ Registered vapi_voice_tool with methods: {enabled_methods}")
     
     def _register_agent_builder_tools(self, agent_id: str, disabled_tools: List[str]):
         """Register agent builder tools with proper initialization."""
