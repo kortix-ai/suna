@@ -19,6 +19,7 @@ import { useAgents } from '@/hooks/react-query/agents/use-agents';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import type { ModelOption } from '@/hooks/use-model-selection';
 import { ModelProviderIcon } from '@/lib/model-provider-icons';
+import { SpotlightCard } from '@/components/ui/spotlight-card';
 
 export type SubscriptionStatus = 'no_subscription' | 'active';
 
@@ -255,22 +256,32 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                 </div>
                             ) : (
                                 <>
-                                    <div className="max-h-[240px] overflow-y-auto space-y-3 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
-                                        {orderedAgents.map((agent) => (
-                                            <div
-                                                key={agent.agent_id}
-                                                className="flex items-center gap-3 h-8 text-sm cursor-pointer"
-                                                onClick={() => handleAgentClick(agent.agent_id)}
-                                            >
-                                                <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
-                                                    {renderAgentIcon(agent)}
-                                                </div>
-                                                <span className="flex-1 truncate font-medium">{agent.name}</span>
-                                                {selectedAgentId === agent.agent_id && (
-                                                    <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
-                                                )}
-                                            </div>
-                                        ))}
+                                    <div className="max-h-[240px] overflow-y-auto space-y-0.5 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+                                        {orderedAgents.map((agent) => {
+                                            const isActive = selectedAgentId === agent.agent_id;
+                                            return (
+                                                <SpotlightCard
+                                                    key={agent.agent_id}
+                                                    className={cn(
+                                                        "transition-colors cursor-pointer",
+                                                        isActive ? "bg-muted" : "bg-transparent"
+                                                    )}
+                                                >
+                                                    <div
+                                                        className="flex items-center gap-3 text-sm cursor-pointer px-3 py-1"
+                                                        onClick={() => handleAgentClick(agent.agent_id)}
+                                                    >
+                                                        <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
+                                                            {renderAgentIcon(agent)}
+                                                        </div>
+                                                        <span className="flex-1 truncate font-medium">{agent.name}</span>
+                                                        {isActive && (
+                                                            <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                                                        )}
+                                                    </div>
+                                                </SpotlightCard>
+                                            );
+                                        })}
                                     </div>
                                     {canLoadMore && (
                                         <div className="pt-2">
@@ -304,24 +315,85 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                         <div className="mb-3">
                             <span className="text-xs font-medium text-muted-foreground">Models</span>
                         </div>
-                        <div className="space-y-3">
-                            {modelOptions.slice(0, 4).map((model) => (
-                                <div
-                                    key={model.id}
-                                    className="flex items-center gap-3 h-8 text-sm cursor-pointer"
-                                    onClick={() => onModelChange(model.id)}
-                                >
-                                    <ModelProviderIcon
-                                        modelId={model.id}
-                                        size={32}
-                                        className="flex-shrink-0"
-                                    />
-                                    <span className="flex-1 truncate font-medium">{model.label}</span>
-                                    {selectedModel === model.id && (
-                                        <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
-                                    )}
-                                </div>
-                            ))}
+                        <div className="space-y-0.5">
+                            {modelOptions.slice(0, 2).map((model) => {
+                                const isActive = selectedModel === model.id;
+                                return (
+                                    <SpotlightCard
+                                        key={model.id}
+                                        className={cn(
+                                            "transition-colors cursor-pointer",
+                                            isActive ? "bg-muted" : "bg-transparent"
+                                        )}
+                                    >
+                                        <div
+                                            className="flex items-center gap-3 text-sm cursor-pointer px-3 py-1"
+                                            onClick={() => onModelChange(model.id)}
+                                        >
+                                            <ModelProviderIcon
+                                                modelId={model.id}
+                                                size={32}
+                                                className="flex-shrink-0"
+                                            />
+                                            <span className="flex-1 truncate font-medium">{model.label}</span>
+                                            {isActive && (
+                                                <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                                            )}
+                                        </div>
+                                    </SpotlightCard>
+                                );
+                            })}
+                            <SpotlightCard
+                                className={cn(
+                                    "transition-colors cursor-pointer",
+                                    "bg-transparent"
+                                )}
+                            >
+                                <DropdownMenuSub>
+                                    <DropdownMenuSubTrigger className="flex items-center gap-3 text-sm cursor-pointer px-3 py-1 hover:bg-transparent focus:bg-transparent data-[state=open]:bg-transparent">
+                                        <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
+                                            <Cpu className="h-4 w-4" />
+                                        </div>
+                                        <span className="flex-1 truncate font-medium">All models</span>
+                                    </DropdownMenuSubTrigger>
+                                    <DropdownMenuPortal>
+                                        <DropdownMenuSubContent className="w-[280px] p-3 border-[1.5px] border-border rounded-2xl max-h-[400px] overflow-y-auto">
+                                            <div className="space-y-0.5">
+                                                {modelOptions.map((model) => {
+                                                    const isActive = selectedModel === model.id;
+                                                    return (
+                                                        <SpotlightCard
+                                                            key={model.id}
+                                                            className={cn(
+                                                                "transition-colors cursor-pointer",
+                                                                isActive ? "bg-muted" : "bg-transparent"
+                                                            )}
+                                                        >
+                                                            <div
+                                                                className="flex items-center gap-3 text-sm cursor-pointer px-3 py-1"
+                                                                onClick={() => {
+                                                                    onModelChange(model.id);
+                                                                    setIsOpen(false);
+                                                                }}
+                                                            >
+                                                                <ModelProviderIcon
+                                                                    modelId={model.id}
+                                                                    size={32}
+                                                                    className="flex-shrink-0"
+                                                                />
+                                                                <span className="flex-1 truncate font-medium">{model.label}</span>
+                                                                {isActive && (
+                                                                    <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                                                                )}
+                                                            </div>
+                                                        </SpotlightCard>
+                                                    );
+                                                })}
+                                            </div>
+                                        </DropdownMenuSubContent>
+                                    </DropdownMenuPortal>
+                                </DropdownMenuSub>
+                            </SpotlightCard>
                         </div>
                     </div>
                     <div className="h-px bg-border/50 -mx-3 my-3" />
