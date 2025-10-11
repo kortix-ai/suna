@@ -44,7 +44,7 @@ export function SpotlightCard({
             onMouseLeave={() => setIsHovered(false)}
             className={cn('relative overflow-hidden rounded-2xl', className)}
             style={{
-                // @ts-ignore
+                // @ts-expect-error - CSS custom properties are not in CSSProperties type
                 '--mouse-x': `${mousePosition.x}px`,
                 '--mouse-y': `${mousePosition.y}px`,
             }}
