@@ -1,5 +1,5 @@
 import React from 'react';
-import { Phone, Clock, MessageSquare, DollarSign, CheckCircle, AlertTriangle } from 'lucide-react';
+import { Phone, Clock, MessageSquare, DollarSign, CheckCircle, AlertTriangle, Bot, User } from 'lucide-react';
 import { ToolViewProps } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -31,23 +31,18 @@ export function CallStatusToolView({
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-xl bg-gradient-to-br from-indigo-500/20 to-indigo-600/10 border border-indigo-500/20">
-              <Phone className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
+            <div className="relative p-2 rounded-xl bg-gradient-to-br from-green-500/20 to-green-600/10 border border-green-500/20">
+              <Phone className="w-5 h-5 text-green-500" />
             </div>
             <div>
-              <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
+              <CardTitle className="text-base font-medium text-foreground">
                 {toolTitle}
               </CardTitle>
             </div>
           </div>
           {!isStreaming && (
             <Badge
-              variant="secondary"
-              className={
-                isSuccess
-                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                  : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-              }
+              variant={isSuccess ? "default" : "destructive"}
             >
               {isSuccess ? (
                 <CheckCircle className="h-3.5 w-3.5 mr-1" />
@@ -130,19 +125,29 @@ export function CallStatusToolView({
               <MessageSquare className="h-3 w-3" />
               Conversation Transcript
             </div>
-            <div className="space-y-2 bg-muted/30 rounded-lg p-3 border border-border max-h-64 overflow-y-auto">
+            <div className="space-y-3 bg-muted/50 rounded-lg p-3 border border-border max-h-64 overflow-y-auto scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent hover:scrollbar-thumb-muted-foreground/50">
               {callData.transcript!.map((msg, idx) => (
                 <div
                   key={idx}
                   className={cn(
-                    "text-sm p-2 rounded",
+                    "text-sm p-3 rounded-2xl relative",
                     msg.role === 'assistant'
-                      ? "bg-primary/5 border-l-2 border-primary/20"
-                      : "bg-secondary/50 border-l-2 border-secondary/20"
+                      ? "bg-muted-foreground/20 border border-border ml-4"
+                      : "bg-muted/80 border border-border mr-4"
                   )}
                 >
-                  <div className="font-medium text-xs text-muted-foreground mb-1">
-                    {msg.role === 'assistant' ? '🤖 AI Assistant' : '👤 Caller'}
+                  <div className="font-medium text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                    {msg.role === 'assistant' ? (
+                      <>
+                        <Bot className="w-3 h-3 text-primary" />
+                        AI Assistant
+                      </>
+                    ) : (
+                      <>
+                        <User className="w-3 h-3 text-muted-foreground" />
+                        Caller
+                      </>
+                    )}
                   </div>
                   <div className="text-foreground">{msg.message}</div>
                 </div>

@@ -2,6 +2,9 @@ from typing import Dict, Any, Optional, List
 from fastapi import Request, HTTPException
 from core.utils.logger import logger
 from core.services.supabase import DBConnection
+from core.billing.config import TOKEN_PRICE_MULTIPLIER
+from core.vapi_config import vapi_config
+from decimal import Decimal
 import json
 import hmac
 import hashlib
@@ -215,13 +218,44 @@ class VapiWebhookHandler:
         duration = message_data.get("durationSeconds", 0)
         cost = message_data.get("cost", 0)
         
+        thread_id = await self._get_thread_id_for_call(call_id)
+        user_id = None
+        credit_deducted = False
+        actual_cost_deducted = 0
+        
+        if thread_id:
+            user_id = await self._get_user_id_from_thread(thread_id)
+            
+            if user_id and cost > 0:
+                try:
+                    from core.billing.credit_manager import CreditManager
+                    credit_manager = CreditManager()
+                    
+                    cost_in_credits = Decimal(str(cost)) * TOKEN_PRICE_MULTIPLIER
+                    
+                    deduct_result = await credit_manager.use_credits(
+                        account_id=user_id,
+                        amount=cost_in_credits,
+                        description=f"Vapi voice call ({duration}s)",
+                        thread_id=thread_id
+                    )
+                    
+                    if deduct_result.get('success'):
+                        credit_deducted = True
+                        actual_cost_deducted = float(cost_in_credits)
+                        logger.info(f"Successfully deducted {cost_in_credits} credits for call {call_id}")
+                    else:
+                        logger.warning(f"Failed to deduct credits for call {call_id}: {deduct_result.get('error', 'Unknown error')}")
+                except Exception as e:
+                    logger.error(f"Error deducting credits for call {call_id}: {e}")
+        
         update_data = {
             "status": "completed",
             "duration_seconds": int(duration) if duration else None,
             "transcript": transcript_data,
             "started_at": message_data.get("startedAt"),
             "ended_at": message_data.get("endedAt"),
-            "cost": cost,
+            "cost": actual_cost_deducted if credit_deducted else cost,
             "updated_at": "now()"
         }
         
@@ -239,7 +273,7 @@ class VapiWebhookHandler:
         except Exception as e:
             logger.error(f"Failed to update call {call_id}: {e}")
         
-        await self._notify_call_completion(call_id, duration, cost)
+        await self._notify_call_completion(call_id, duration, actual_cost_deducted if credit_deducted else cost)
         
         return {"status": "success"}
     
@@ -267,18 +301,19 @@ class VapiWebhookHandler:
         thread_manager = ThreadManager()
         
         duration_text = f"{duration}s" if duration else "unknown"
-        cost_text = f"${cost:.4f}" if cost else "$0.00"
+        cost_text = f"${cost:.4f}" if cost and cost > 0 else "$0.00"
         
         await thread_manager.add_message(
             thread_id=thread_id,
             type="assistant",
-            content=f"📞 **Call Completed** - Duration: {duration_text}, Cost: {cost_text}",
+            content=f"📞 **Call Completed** - Duration: {duration_text}, Credits Used: {cost_text}",
             is_llm_message=False,
             metadata={
                 "call_id": call_id,
                 "type": "call_completed",
                 "duration": duration,
                 "cost": cost,
+                "credits_deducted": cost,
                 "source": "vapi_webhook"
             }
         )
@@ -346,19 +381,49 @@ class VapiWebhookHandler:
         
         transcript_data = call.get("transcript", [])
         duration = call.get("duration") or call.get("durationSeconds")
-        cost = call.get("cost")
+        cost = call.get("cost", 0)
+        
+        thread_id = await self._get_thread_id_for_call(call_id)
+        user_id = None
+        credit_deducted = False
+        actual_cost_deducted = 0
+        
+        if thread_id:
+            user_id = await self._get_user_id_from_thread(thread_id)
+            
+            if user_id and cost > 0:
+                try:
+                    from core.billing.credit_manager import CreditManager
+                    credit_manager = CreditManager()
+                    
+                    cost_in_credits = Decimal(str(cost)) * TOKEN_PRICE_MULTIPLIER
+                    
+                    deduct_result = await credit_manager.use_credits(
+                        account_id=user_id,
+                        amount=cost_in_credits,
+                        description=f"Vapi voice call ({duration}s)",
+                        thread_id=thread_id
+                    )
+                    
+                    if deduct_result.get('success'):
+                        credit_deducted = True
+                        actual_cost_deducted = float(cost_in_credits)
+                        logger.info(f"Successfully deducted {cost_in_credits} credits for call {call_id}")
+                    else:
+                        logger.warning(f"Failed to deduct credits for call {call_id}: {deduct_result.get('error', 'Unknown error')}")
+                except Exception as e:
+                    logger.error(f"Error deducting credits for call {call_id}: {e}")
         
         update_data = {
             "status": "ended",
             "ended_at": call.get("endedAt") or call.get("endTime") or "now()",
             "duration_seconds": int(duration) if duration else None,
             "transcript": transcript_data if transcript_data else None,
-            "cost": cost
+            "cost": actual_cost_deducted if credit_deducted else cost
         }
         
         await client.table("vapi_calls").update(update_data).eq("call_id", call_id).execute()
         
-        thread_id = await self._get_thread_id_for_call(call_id)
         if thread_id and transcript_data:
             await self._save_transcript_to_thread(thread_id, call_id, transcript_data)
         
@@ -381,23 +446,7 @@ class VapiWebhookHandler:
     
     async def _handle_assistant_request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         return {
-            "assistant": {
-                "firstMessage": "Hello! How can I help you today?",
-                "model": {
-                    "provider": "openai",
-                    "model": "gpt-3.5-turbo",
-                    "messages": [
-                        {
-                            "role": "system",
-                            "content": "You are a helpful AI assistant on a phone call. Be concise and natural in your responses."
-                        }
-                    ]
-                },
-                "voice": {
-                    "provider": "playht",
-                    "voiceId": "jennifer-playht"
-                }
-            }
+            "assistant": vapi_config.get_assistant_config()
         }
     
     async def _get_thread_id_for_call(self, call_id: str) -> Optional[str]:
@@ -407,6 +456,15 @@ class VapiWebhookHandler:
             return result.data.get("thread_id") if result.data else None
         except Exception as e:
             logger.error(f"Error getting thread_id for call {call_id}: {e}")
+            return None
+    
+    async def _get_user_id_from_thread(self, thread_id: str) -> Optional[str]:
+        try:
+            client = await self.db.client
+            result = await client.table("threads").select("account_id").eq("thread_id", thread_id).single().execute()
+            return result.data.get("account_id") if result.data else None
+        except Exception as e:
+            logger.error(f"Error getting user_id for thread {thread_id}: {e}")
             return None
     
     async def _stream_transcript_to_thread(self, call_id: str, transcript_data: List[Dict[str, Any]]) -> None:

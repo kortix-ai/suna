@@ -109,57 +109,6 @@ export function MakeCallToolView({
   const statusInfo = statusConfig[status as keyof typeof statusConfig] || statusConfig.queued;
   const isActive = status === 'ringing' || status === 'in-progress' || status === 'queued';
 
-  // Animated sine wave component with higher amplitude and frequency
-  const SineWave = ({ delay = 0, index = 0 }: { delay?: number; index?: number }) => (
-    <motion.div
-      className="absolute inset-0"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 0.15 + index * 0.05 }}
-      transition={{ delay, duration: 0.5 }}
-    >
-      <svg className="w-full h-full" viewBox="0 0 400 200" preserveAspectRatio="none">
-        <motion.path
-          d="M0,100 Q50,20 100,100 T200,100 Q250,20 300,100 T400,100"
-          stroke="currentColor"
-          strokeWidth="3"
-          fill="none"
-          className="text-indigo-500 dark:text-indigo-400"
-          initial={{ pathLength: 0, opacity: 0 }}
-          animate={{ 
-            pathLength: 1, 
-            opacity: [0.3, 0.6, 0.3],
-            d: [
-              "M0,100 Q50,20 100,100 T200,100 Q250,20 300,100 T400,100",
-              "M0,100 Q50,180 100,100 T200,100 Q250,180 300,100 T400,100",
-              "M0,100 Q50,20 100,100 T200,100 Q250,20 300,100 T400,100"
-            ]
-          }}
-          transition={{
-            pathLength: { duration: 2, repeat: Infinity, ease: "linear", delay },
-            opacity: { duration: 2, repeat: Infinity, ease: "easeInOut", delay },
-            d: { duration: 3 + index * 0.5, repeat: Infinity, ease: "easeInOut", delay }
-          }}
-        />
-        <motion.path
-          d="M0,100 Q50,180 100,100 T200,100 Q250,180 300,100 T400,100"
-          stroke="currentColor"
-          strokeWidth="2"
-          fill="none"
-          className="text-purple-500 dark:text-purple-400"
-          initial={{ pathLength: 0, opacity: 0 }}
-          animate={{ 
-            pathLength: 1, 
-            opacity: [0.2, 0.4, 0.2]
-          }}
-          transition={{
-            pathLength: { duration: 1.5, repeat: Infinity, ease: "linear", delay: delay + 0.5 },
-            opacity: { duration: 2.5, repeat: Infinity, ease: "easeInOut", delay: delay + 0.5 }
-          }}
-        />
-      </svg>
-    </motion.div>
-  );
-
   const MessageBubble = React.memo(({ msg, index, isNew }: { msg: any; index: number; isNew: boolean }) => (
     <motion.div
       initial={isNew ? { opacity: 0, y: 20, scale: 0.9 } : { opacity: 1, y: 0, scale: 1 }}
@@ -172,15 +121,15 @@ export function MakeCallToolView({
       className={cn(
         "text-sm p-3 rounded-2xl relative mb-3",
         msg.role === 'assistant'
-          ? "bg-gradient-to-br from-indigo-500/10 to-indigo-600/5 border border-indigo-500/20 ml-4"
-          : "bg-gradient-to-br from-gray-500/10 to-gray-600/5 border border-gray-500/20 mr-4"
+          ? "bg-accent/50 border border-border ml-4"
+          : "bg-muted/80 border border-border mr-4"
       )}
     >
       <div className="font-medium text-xs text-muted-foreground mb-1 flex items-center gap-1">
         {msg.role === 'assistant' ? (
           <>
             <motion.div 
-              className="w-2 h-2 rounded-full bg-indigo-500"
+              className="w-2 h-2 rounded-full bg-primary"
               animate={isNew ? { scale: [1, 1.2, 1] } : {}}
               transition={{ repeat: isNew ? 2 : 0, duration: 0.5 }}
             />
@@ -188,7 +137,7 @@ export function MakeCallToolView({
           </>
         ) : (
           <>
-            <div className="w-2 h-2 rounded-full bg-gray-500" />
+            <div className="w-2 h-2 rounded-full bg-muted-foreground" />
             Caller
           </>
         )}
@@ -211,13 +160,13 @@ export function MakeCallToolView({
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
             <div className={cn(
-              "relative p-2 rounded-xl bg-gradient-to-br from-indigo-500/20 to-indigo-600/10 border border-indigo-500/20",
+              "relative p-2 rounded-xl bg-gradient-to-br from-green-500/20 to-green-600/10 border border-green-500/20",
               isActive && "animate-pulse"
             )}>
               {isActive ? (
-                <Loader2 className="w-5 h-5 text-indigo-500 dark:text-indigo-400 animate-spin" />
+                <Loader2 className="w-5 h-5 text-green-500 animate-spin" />
               ) : (
-                <Phone className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
+                <Phone className="w-5 h-5 text-green-500" />
               )}
             </div>
             <div className="flex items-center gap-2">
@@ -234,12 +183,7 @@ export function MakeCallToolView({
           </div>
           {!isStreaming && (
             <Badge
-              variant="secondary"
-              className={
-                isSuccess
-                  ? "bg-gradient-to-b from-emerald-200 to-emerald-100 text-emerald-700 dark:from-emerald-800/50 dark:to-emerald-900/60 dark:text-emerald-300"
-                  : "bg-gradient-to-b from-rose-200 to-rose-100 text-rose-700 dark:from-rose-800/50 dark:to-rose-900/60 dark:text-rose-300"
-              }
+              variant={isSuccess ? "default" : "destructive"}
             >
               {isSuccess ? (
                 <CheckCircle className="h-3.5 w-3.5 mr-1" />
@@ -273,12 +217,6 @@ export function MakeCallToolView({
                 animate={{ height: 128 }}
                 transition={{ duration: 0.5, type: "spring", stiffness: 300 }}
               >
-                {/* Animated sine waves in background with high amplitude and frequency */}
-                <SineWave delay={0} index={0} />
-                <SineWave delay={0.3} index={1} />
-                <SineWave delay={0.6} index={2} />
-                
-                {/* Animated mic in red circle */}
                 <motion.div
                   className="relative z-10"
                   initial={{ scale: 0, rotate: -180 }}
@@ -291,12 +229,9 @@ export function MakeCallToolView({
                   }}
                 >
                   <motion.div 
-                    className="w-20 h-20 rounded-full bg-gradient-to-br from-red-500 to-red-600 flex items-center justify-center shadow-2xl"
+                    className="w-20 h-20 rounded-full bg-destructive flex items-center justify-center"
                     animate={{ 
-                      boxShadow: [
-                        "0 0 0 0 rgba(239, 68, 68, 0.4)",
-                        "0 0 0 20px rgba(239, 68, 68, 0)",
-                      ]
+                      scale: [1, 1.05, 1]
                     }}
                     transition={{
                       duration: 1.5,
@@ -304,10 +239,8 @@ export function MakeCallToolView({
                       ease: "easeOut"
                     }}
                   >
-                    <Mic className="w-10 h-10 text-white" />
+                    <Mic className="w-10 h-10 text-destructive-foreground" />
                   </motion.div>
-                  
-                  {/* Live indicator text */}
                   <motion.div
                     className="absolute -bottom-6 left-1/2 transform -translate-x-1/2"
                     initial={{ opacity: 0, y: -10 }}
@@ -321,8 +254,6 @@ export function MakeCallToolView({
                   </motion.div>
                 </motion.div>
               </motion.div>
-
-              {/* Phone number and call info */}
               <motion.div 
                 className="flex justify-center"
                 initial={{ opacity: 0, y: 20 }}
@@ -338,9 +269,8 @@ export function MakeCallToolView({
                   </Badge>
                 </div>
               </motion.div>
-
               <motion.div 
-                className="h-64 overflow-y-auto rounded-lg bg-gradient-to-b from-gray-50/50 to-white/50 dark:from-zinc-900/50 dark:to-zinc-800/50 p-3 border border-gray-200 dark:border-zinc-700 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-zinc-600 scrollbar-track-transparent hover:scrollbar-thumb-gray-400 dark:hover:scrollbar-thumb-zinc-500"
+                className="h-64 overflow-y-auto rounded-lg bg-muted/50 p-3 border border-border scrollbar-thin scrollbar-thumb-muted-foreground/30 scrollbar-track-transparent hover:scrollbar-thumb-muted-foreground/50"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.4 }}
@@ -423,16 +353,6 @@ export function MakeCallToolView({
                   </div>
                 </div>
               )}
-
-              {callData?.system_prompt && (
-                <div className="space-y-2">
-                  <div className="text-xs font-medium text-muted-foreground">System Prompt</div>
-                  <div className="text-sm text-foreground bg-muted/50 rounded-lg p-3 border border-border">
-                    {callData.system_prompt}
-                  </div>
-                </div>
-              )}
-
               {isActive && liveTranscript.length === 0 && (
                 <div className="text-center py-8">
                   <Loader2 className="h-6 w-6 mx-auto mb-2 text-muted-foreground animate-spin" />

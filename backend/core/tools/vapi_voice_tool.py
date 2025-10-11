@@ -9,6 +9,8 @@ from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
 from core.utils.config import config
 from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
+from core.vapi_config import vapi_config, DEFAULT_SYSTEM_PROMPT, DEFAULT_FIRST_MESSAGE
+from core.billing.config import TOKEN_PRICE_MULTIPLIER
 
 def normalize_phone_number(raw_number: str, default_region: str = "US") -> tuple[str, str, str]:
     if not raw_number or not raw_number.strip():
@@ -146,7 +148,7 @@ class VapiVoiceTool(Tool):
         "type": "function",
         "function": {
             "name": "make_phone_call",
-            "description": "Initiate an outbound phone call using AI voice agent. The agent will call the specified phone number and have a conversation based on the provided configuration. This tool returns immediately after initiating the call. Use wait_for_call_completion to monitor the call until it ends.",
+            "description": "Initiate an outbound phone call using AI voice agent. The agent will call the specified phone number and have a conversation based on the provided configuration. This tool returns immediately after initiating the call. ALWAYS Use wait_for_call_completion to monitor the call until it ends.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -178,9 +180,6 @@ class VapiVoiceTool(Tool):
         system_prompt: Optional[str] = None,
     ) -> ToolResult:
         
-        model = "gpt-3.5-turbo"
-        voice = "jennifer-playht"
-        
         if not isinstance(phone_number, str):
             phone_number = str(phone_number)
         
@@ -196,25 +195,12 @@ class VapiVoiceTool(Tool):
             if system_prompt:
                 enhanced_system_prompt = system_prompt + country_context
             else:
-                enhanced_system_prompt = f"You are an AI assistant making a call.{country_context}"
+                enhanced_system_prompt = DEFAULT_SYSTEM_PROMPT + country_context
             
-            assistant_config = {
-                "firstMessage": first_message,
-                "model": {
-                    "provider": "openai" if "gpt" in model else "anthropic",
-                    "model": model,
-                    "messages": []
-                },
-                "voice": {
-                    "provider": "playht",
-                    "voiceId": voice
-                }
-            }
-            
-            assistant_config["model"]["messages"].append({
-                "role": "system",
-                "content": enhanced_system_prompt
-            })
+            assistant_config = vapi_config.get_assistant_config(
+                system_prompt=enhanced_system_prompt,
+                first_message=first_message or DEFAULT_FIRST_MESSAGE
+            )
             
             payload = {
                 "phoneNumberId": config.VAPI_PHONE_NUMBER_ID,
@@ -438,7 +424,7 @@ class VapiVoiceTool(Tool):
         "type": "function",
         "function": {
             "name": "wait_for_call_completion",
-            "description": "Monitor an active call until it completes, streaming the real-time conversation to the thread. This tool will continuously check the call status and display live transcription. Use this immediately after make_call to monitor the conversation.",
+            "description": "Monitor an active call until it completes, streaming the real-time conversation to the thread. This tool will continuously check the call status and display live transcription. Use this immediately after make_call to monitor the conversation. ALWAYS Use get_call_details after calling this tool to get the full transcript and details of the call.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -531,12 +517,13 @@ class VapiVoiceTool(Tool):
                             try:
                                 duration = result.data.get("duration_seconds", 0)
                                 cost = result.data.get("cost", 0)
+                                credits_deducted = float(cost) * float(TOKEN_PRICE_MULTIPLIER) if cost else 0
                                 
                                 summary_msg = f"""📞 **Call Completed**
 
 **Status**: {status}
 **Duration**: {duration} seconds
-**Cost**: ${cost:.4f if cost else 0.00}
+**Credits Used**: ${credits_deducted:.4f}
 **Call ID**: `{call_id[:8]}...`
 
 The voice call has ended. You can continue with any follow-up actions."""
