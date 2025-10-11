@@ -16,20 +16,30 @@ import type { MarketplaceTemplate } from '@/components/agents/installation/types
 import { AgentCountLimitError } from '@/lib/api';
 import { UnifiedAgentCard } from '@/components/ui/unified-agent-card';
 import type { BaseAgentData } from '@/components/ui/unified-agent-card';
-import { ChevronRight, Code2, Calendar, MessageSquare, Briefcase, ShoppingCart, Users, Wrench, GraduationCap, Heart, Home, ScrollText, Calculator, FileText, Palette, User, DollarSign, Target, BookOpen } from 'lucide-react';
+import { ChevronRight, Code2, Calendar, MessageSquare, Briefcase, ShoppingCart, Users, Wrench, GraduationCap, Heart, Home, ScrollText, Calculator, FileText, Palette, User, DollarSign, Target, BookOpen, ChevronDown } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface CustomAgentsSectionProps {
   onAgentSelect?: (templateId: string) => void;
 }
 
 const TitleSection = () => (
-  <div className="mb-6 mt-6 text-center">
-    <h3 className="text-lg font-medium text-foreground/90 mb-1">
-      Choose specialised agent
-    </h3>
-    <p className="text-sm text-muted-foreground/70">
-      Ready-to-use AI agents for specific tasks
-    </p>
+  <div className="px-4 py-8">
+    <div className="w-full max-w-5xl mx-auto flex flex-col items-center space-y-2">
+      <div className="flex flex-col items-center text-center w-full">
+        <p className="tracking-tight text-2xl md:text-3xl font-normal text-foreground/90">
+          Workers & Workflows
+        </p>
+        <p className="text-sm text-muted-foreground mt-2">
+          Configure and install AI workers from templates
+        </p>
+      </div>
+    </div>
   </div>
 );
 
@@ -186,16 +196,15 @@ const CategorySection = ({
 }: CategorySectionProps) => {
   const isExpanded = expandedCategories.has(category);
   const displayTemplates = isExpanded ? templates : templates.slice(0, 4);
-  const hasMore = templates.length > 3;
+  const hasMore = templates.length > 4;
 
   return (
     <div className="mb-8">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-2xl font-semibold text-muted-foreground">{category}</h2>
+        <h2 className="text-xl font-medium text-muted-foreground">{category}</h2>
         {hasMore && (
           <Button
-            variant="ghost"
-            size="sm"
+            variant="link"
             onClick={() => onToggleExpand(category)}
             className="text-sm text-muted-foreground hover:text-foreground"
           >
@@ -233,6 +242,7 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
   const [agentLimitError, setAgentLimitError] = React.useState<any>(null);
   const [installingItemId, setInstallingItemId] = React.useState<string | null>(null);
   const [expandedCategories, setExpandedCategories] = React.useState<Set<string>>(new Set());
+  const [selectedFilter, setSelectedFilter] = React.useState<string | null>(null);
 
   const toggleCategoryExpand = (category: string) => {
     setExpandedCategories(prev => {
@@ -427,6 +437,11 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
 
   const categorizedTemplates = groupTemplatesByCategory;
   const hasCategories = Object.keys(categorizedTemplates).length > 0;
+  const categories = Object.keys(categorizedTemplates);
+
+  const filteredCategories = selectedFilter 
+    ? { [selectedFilter]: categorizedTemplates[selectedFilter] }
+    : categorizedTemplates;
 
   if (!templates || !templates.templates || templates.templates.length === 0) {
     return (
@@ -443,8 +458,80 @@ export function CustomAgentsSection({ onAgentSelect }: CustomAgentsSectionProps)
     <>
       <div className="w-full">
         <TitleSection />
+        {hasCategories && (
+          <div className="pb-12">
+            <div className="w-full max-w-5xl mx-auto">
+              <div className="flex items-center gap-2 pb-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedFilter(null)}
+                  className={cn(
+                    "flex-1 text-muted-foreground whitespace-nowrap",
+                    selectedFilter === null && "bg-accent text-foreground"
+                  )}
+                >
+                  All
+                </Button>
+                {categories.slice(0, 7).map((category) => {
+                  const config = CATEGORY_CONFIG[category] || CATEGORY_CONFIG['Other'];
+                  const Icon = config.icon;
+                  return (
+                    <Button
+                      key={category}
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelectedFilter(category)}
+                      className={cn(
+                        "flex-1 gap-2 text-muted-foreground whitespace-nowrap",
+                        selectedFilter === category && "bg-accent text-foreground"
+                      )}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {category}
+                    </Button>
+                  );
+                })}
+                {categories.length > 7 && (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="flex-1 gap-1 text-muted-foreground whitespace-nowrap"
+                      >
+                        +{categories.length - 7} more
+                        <ChevronDown className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                      {categories.slice(7).map((category) => {
+                        const config = CATEGORY_CONFIG[category] || CATEGORY_CONFIG['Other'];
+                        const Icon = config.icon;
+                        return (
+                          <DropdownMenuItem
+                            key={category}
+                            onClick={() => setSelectedFilter(category)}
+                            className={cn(
+                              "gap-2 cursor-pointer",
+                              selectedFilter === category && "bg-accent"
+                            )}
+                          >
+                            <Icon className="h-4 w-4" />
+                            {category}
+                          </DropdownMenuItem>
+                        );
+                      })}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {hasCategories ? (
-          Object.entries(categorizedTemplates).map(([category, categoryTemplates]) => (
+          Object.entries(filteredCategories).map(([category, categoryTemplates]) => (
             <CategorySection
               key={category}
               category={category}
