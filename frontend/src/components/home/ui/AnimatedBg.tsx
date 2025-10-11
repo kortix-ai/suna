@@ -217,9 +217,13 @@ interface AnimatedBgProps {
     variant?: 'hero' | 'header';
     blurMultiplier?: number; // 0.5 = half blur, 2 = double blur
     sizeMultiplier?: number; // 0.8 = 80% size, 1.5 = 150% size
+    customArcs?: {
+        left?: Partial<ArcCfg>[];
+        right?: Partial<ArcCfg>[];
+    };
 }
 
-export function AnimatedBg({ variant = 'hero', blurMultiplier = 1, sizeMultiplier = 1 }: AnimatedBgProps) {
+export function AnimatedBg({ variant = 'hero', blurMultiplier = 1, sizeMultiplier = 1, customArcs }: AnimatedBgProps) {
     const [mounted, setMounted] = useState(false);
     useEffect(() => setMounted(true), []);
     if (!mounted) return null;
@@ -339,8 +343,31 @@ export function AnimatedBg({ variant = 'hero', blurMultiplier = 1, sizeMultiplie
         },
     ];
 
-    const left = variant === 'header' ? headerLeft : heroLeft;
-    const right = variant === 'header' ? headerRight : heroRight;
+    // Helper function to merge custom arcs with defaults
+    const mergeArcs = (defaultArcs: ArcCfg[], customArcs?: Partial<ArcCfg>[]): ArcCfg[] => {
+        if (!customArcs || customArcs.length === 0) return defaultArcs;
+
+        return customArcs.map((customArc, i) => {
+            const defaultArc = defaultArcs[i] || defaultArcs[0];
+            return {
+                pos: customArc.pos || defaultArc.pos,
+                size: customArc.size || defaultArc.size,
+                tone: customArc.tone || defaultArc.tone,
+                opacity: customArc.opacity !== undefined ? customArc.opacity : defaultArc.opacity,
+                delay: customArc.delay !== undefined ? customArc.delay : defaultArc.delay,
+                x: customArc.x || defaultArc.x,
+                y: customArc.y || defaultArc.y,
+                scale: customArc.scale || defaultArc.scale,
+                blur: customArc.blur || defaultArc.blur,
+            } as ArcCfg;
+        });
+    };
+
+    const baseLeft = variant === 'header' ? headerLeft : heroLeft;
+    const baseRight = variant === 'header' ? headerRight : heroRight;
+
+    const left = customArcs?.left ? mergeArcs(baseLeft, customArcs.left) : baseLeft;
+    const right = customArcs?.right ? mergeArcs(baseRight, customArcs.right) : baseRight;
 
     return (
         <div className={`absolute inset-0 overflow-hidden pointer-events-none ${variant === 'header' ? 'z-0' : '-z-10'}`}>
