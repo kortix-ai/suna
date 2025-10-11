@@ -25,6 +25,7 @@ interface TriggerCreationDialogProps {
   isEditMode?: boolean;
   existingTrigger?: any; // TriggerConfiguration for edit mode
   onTriggerUpdated?: (triggerId: string) => void;
+  agentId?: string; // Pre-selected agent ID (e.g., from agent config page)
 }
 
 export function TriggerCreationDialog({
@@ -34,10 +35,11 @@ export function TriggerCreationDialog({
   onTriggerCreated,
   isEditMode = false,
   existingTrigger,
-  onTriggerUpdated
+  onTriggerUpdated,
+  agentId
 }: TriggerCreationDialogProps) {
-  const [selectedAgent, setSelectedAgent] = useState<string>('');
-  const [step, setStep] = useState<'agent' | 'config'>('agent');
+  const [selectedAgent, setSelectedAgent] = useState<string>(agentId || '');
+  const [step, setStep] = useState<'agent' | 'config'>(agentId ? 'config' : 'agent');
   const [name, setName] = useState<string>('');
   const [description, setDescription] = useState<string>('');
   const [config, setConfig] = useState<ScheduleTriggerConfig>({
@@ -46,17 +48,26 @@ export function TriggerCreationDialog({
   const createTriggerMutation = useCreateTrigger();
   const updateTriggerMutation = useUpdateTrigger();
 
-  // Initialize form for edit mode
+  // Initialize form for edit mode or pre-selected agent
   React.useEffect(() => {
-    if (isEditMode && existingTrigger && open) {
-      setSelectedAgent(existingTrigger.agent_id || '');
-      setName(existingTrigger.name || '');
-      setDescription(existingTrigger.description || '');
-      setConfig(existingTrigger.config || { cron_expression: '' });
-      // Skip agent selection step in edit mode
-      setStep('config');
+    if (open) {
+      if (isEditMode && existingTrigger) {
+        setSelectedAgent(existingTrigger.agent_id || agentId || '');
+        setName(existingTrigger.name || '');
+        setDescription(existingTrigger.description || '');
+        setConfig(existingTrigger.config || { cron_expression: '' });
+        // Skip agent selection step in edit mode
+        setStep('config');
+      } else if (agentId) {
+        // Pre-selected agent, skip to config step
+        setSelectedAgent(agentId);
+        setStep('config');
+      } else {
+        // No pre-selected agent, start at agent selection
+        setStep('agent');
+      }
     }
-  }, [isEditMode, existingTrigger, open]);
+  }, [isEditMode, existingTrigger, open, agentId]);
 
   const scheduleProvider = {
     provider_id: 'schedule',
@@ -111,8 +122,14 @@ export function TriggerCreationDialog({
   };
 
   const handleClose = () => {
-    setSelectedAgent('');
-    setStep('agent');
+    if (!agentId) {
+      setSelectedAgent('');
+      setStep('agent');
+    } else {
+      // Keep the pre-selected agent
+      setSelectedAgent(agentId);
+      setStep('config');
+    }
     onOpenChange(false);
   };
 

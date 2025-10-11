@@ -1,10 +1,26 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { Zap, Search, Plus, Play, Pause, Settings } from 'lucide-react';
+import { Zap, Search, Plus, Play, Pause, Settings, Trash2, Clock, PlugZap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 import {
     useAgentTriggers,
@@ -22,11 +38,12 @@ interface TriggersScreenProps {
 
 export function TriggersScreen({ agentId }: TriggersScreenProps) {
     const [searchQuery, setSearchQuery] = useState('');
-    const [configuringProvider, setConfiguringProvider] = useState<any>(null);
+    const [triggerDialogType, setTriggerDialogType] = useState<'schedule' | 'event' | null>(null);
     const [editingTrigger, setEditingTrigger] = useState<any>(null);
+    const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    const [triggerToDelete, setTriggerToDelete] = useState<any>(null);
 
     const { data: triggers = [], isLoading } = useAgentTriggers(agentId);
-    const { data: providers = [] } = useTriggerProviders();
     const createTriggerMutation = useCreateTrigger();
     const updateTriggerMutation = useUpdateTrigger();
     const deleteTriggerMutation = useDeleteTrigger();
@@ -56,71 +73,43 @@ export function TriggersScreen({ agentId }: TriggersScreenProps) {
 
     const handleEditTrigger = (trigger: any) => {
         setEditingTrigger(trigger);
-
-        const provider = providers.find(p => p.provider_id === trigger.provider_id);
-        if (provider) {
-            setConfiguringProvider(provider);
-        } else {
-            setConfiguringProvider({
-                provider_id: trigger.provider_id,
-                name: trigger.trigger_type,
-                description: '',
-                trigger_type: trigger.trigger_type,
-                webhook_enabled: !!trigger.webhook_url,
-                config_schema: {}
-            });
-        }
+        // Determine if it's a schedule or event type trigger
+        const isSchedule = trigger.provider_id === 'schedule' || trigger.trigger_type === 'schedule';
+        setTriggerDialogType(isSchedule ? 'schedule' : 'event');
     };
 
-    const handleDeleteTrigger = async (trigger: any) => {
+    const handleDeleteClick = (trigger: any) => {
+        setTriggerToDelete(trigger);
+        setDeleteDialogOpen(true);
+    };
+
+    const confirmDelete = async () => {
+        if (!triggerToDelete) return;
+
         try {
             await deleteTriggerMutation.mutateAsync({
-                triggerId: trigger.trigger_id,
-                agentId: trigger.agent_id
+                triggerId: triggerToDelete.trigger_id,
+                agentId: triggerToDelete.agent_id
             });
             toast.success('Trigger deleted successfully');
         } catch (error) {
             toast.error('Failed to delete trigger');
+        } finally {
+            setTriggerToDelete(null);
+            setDeleteDialogOpen(false);
         }
     };
 
-    const handleSaveTrigger = async (config: any) => {
-        try {
-            if (editingTrigger) {
-                await updateTriggerMutation.mutateAsync({
-                    triggerId: editingTrigger.trigger_id,
-                    name: config.name,
-                    description: config.description,
-                    config: config.config,
-                    is_active: config.is_active,
-                });
-                toast.success('Trigger updated successfully');
-            } else {
-                await createTriggerMutation.mutateAsync({
-                    agentId,
-                    provider_id: configuringProvider!.provider_id,
-                    name: config.name,
-                    description: config.description,
-                    config: config.config,
-                });
-                toast.success('Trigger created successfully');
-            }
-        } catch (error: any) {
-            toast.error(error.message || 'Failed to save trigger');
-        }
-        setConfiguringProvider(null);
+    const handleTriggerCreated = (triggerId: string) => {
+        setTriggerDialogType(null);
         setEditingTrigger(null);
+        toast.success('Trigger created successfully');
     };
 
-    const handleCreateNew = () => {
-        // For now, open with a default provider (schedule)
-        // In the future, you might want to show a provider selection dialog first
-        const defaultProvider = providers.find(p => p.provider_id === 'schedule') || providers[0];
-        if (defaultProvider) {
-            setConfiguringProvider(defaultProvider);
-        } else {
-            toast.error('No trigger providers available');
-        }
+    const handleTriggerUpdated = (triggerId: string) => {
+        setTriggerDialogType(null);
+        setEditingTrigger(null);
+        toast.success('Trigger updated successfully');
     };
 
     return (
@@ -141,15 +130,38 @@ export function TriggersScreen({ agentId }: TriggersScreenProps) {
                         </div>
                     </div>
                 </div>
-                <Button
-                    variant="default"
-                    size="sm"
-                    onClick={handleCreateNew}
-                    className="h-10 px-4 rounded-xl gap-2"
-                >
-                    <Plus className="h-4 w-4" />
-                    Create new
-                </Button>
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button
+                            variant="default"
+                            size="sm"
+                            className="h-10 px-4 rounded-xl gap-2"
+                        >
+                            <Plus className="h-4 w-4" />
+                            Create new
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-72">
+                        <DropdownMenuItem onClick={() => setTriggerDialogType('schedule')} className='rounded-lg'>
+                            <Clock className="h-4 w-4 text-muted-foreground" />
+                            <div className="flex flex-col">
+                                <span>Scheduled Trigger</span>
+                                <span className="text-xs text-muted-foreground">
+                                    Schedule a trigger to run at a specific time
+                                </span>
+                            </div>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => setTriggerDialogType('event')} className='rounded-lg'>
+                            <PlugZap className="h-4 w-4 text-muted-foreground" />
+                            <div className="flex flex-col">
+                                <span>Event-based Trigger</span>
+                                <span className="text-xs text-muted-foreground">
+                                    Make a trigger to run when an event occurs
+                                </span>
+                            </div>
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
             </div>
 
             {/* Triggers Content */}
@@ -179,7 +191,7 @@ export function TriggersScreen({ agentId }: TriggersScreenProps) {
                                             trigger={trigger}
                                             onToggle={() => handleToggleTrigger(trigger)}
                                             onEdit={() => handleEditTrigger(trigger)}
-                                            onDelete={() => handleDeleteTrigger(trigger)}
+                                            onDelete={() => handleDeleteClick(trigger)}
                                         />
                                     ))}
                                 </div>
@@ -197,7 +209,7 @@ export function TriggersScreen({ agentId }: TriggersScreenProps) {
                                             trigger={trigger}
                                             onToggle={() => handleToggleTrigger(trigger)}
                                             onEdit={() => handleEditTrigger(trigger)}
-                                            onDelete={() => handleDeleteTrigger(trigger)}
+                                            onDelete={() => handleDeleteClick(trigger)}
                                         />
                                     ))}
                                 </div>
@@ -208,20 +220,44 @@ export function TriggersScreen({ agentId }: TriggersScreenProps) {
             </div>
 
             {/* Creation/Edit Dialog */}
-            {configuringProvider && (
+            {triggerDialogType && (
                 <TriggerCreationDialog
-                    open={!!configuringProvider}
-                    onOpenChange={() => {
-                        setConfiguringProvider(null);
-                        setEditingTrigger(null);
+                    open={!!triggerDialogType}
+                    onOpenChange={(open) => {
+                        if (!open) {
+                            setTriggerDialogType(null);
+                            setEditingTrigger(null);
+                        }
                     }}
-                    type={configuringProvider.provider_id === 'schedule' ? 'schedule' : 'event'}
+                    type={triggerDialogType}
+                    agentId={agentId}
                     isEditMode={!!editingTrigger}
                     existingTrigger={editingTrigger}
-                    onTriggerCreated={handleSaveTrigger}
-                    onTriggerUpdated={handleSaveTrigger}
+                    onTriggerCreated={handleTriggerCreated}
+                    onTriggerUpdated={handleTriggerUpdated}
                 />
             )}
+
+            {/* Delete Confirmation Dialog */}
+            <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete Trigger</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            Are you sure you want to delete "{triggerToDelete?.name}"? This action cannot be undone and will stop all automated runs from this trigger.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={confirmDelete}
+                            className="bg-destructive hover:bg-destructive/90 text-white"
+                        >
+                            Delete Trigger
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }
@@ -271,6 +307,15 @@ function TriggerCard({ trigger, onToggle, onEdit, onDelete }: TriggerCardProps) 
                         className="h-12 w-12 bg-card border border-border hover:bg-muted"
                     >
                         <Settings className="h-5 w-5" />
+                    </Button>
+
+                    <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={onDelete}
+                        className="h-12 w-12 bg-card border border-border hover:bg-muted text-muted-foreground hover:text-destructive"
+                    >
+                        <Trash2 className="h-5 w-5" />
                     </Button>
                 </div>
             </div>

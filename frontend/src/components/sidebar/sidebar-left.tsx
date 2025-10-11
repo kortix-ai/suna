@@ -6,6 +6,8 @@ import { Bot, Menu, Plus, Zap, ChevronRight, BookOpen, Code, Star, Package, Spar
 
 import { NavAgents } from '@/components/sidebar/nav-agents';
 import { NavAgentsView } from '@/components/sidebar/nav-agents-view';
+import { NavGlobalConfig } from '@/components/sidebar/nav-global-config';
+import { NavTriggerRuns } from '@/components/sidebar/nav-trigger-runs';
 import { NavUserWithTeams } from '@/components/sidebar/nav-user-with-teams';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { CTACard } from '@/components/sidebar/cta';
@@ -107,7 +109,7 @@ function UserProfileSection({ user }: { user: any }) {
 }
 
 function FloatingMobileMenuButton() {
-  const { setOpenMobile, openMobile } = useSidebar();
+  const { setOpenMobile, openMobile, setOpen } = useSidebar();
   const isMobile = useIsMobile();
 
   if (!isMobile || openMobile) return null;
@@ -117,7 +119,10 @@ function FloatingMobileMenuButton() {
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
-            onClick={() => setOpenMobile(true)}
+            onClick={() => {
+              setOpen(true);
+              setOpenMobile(true);
+            }}
             size="icon"
             className="h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 transition-all duration-200 hover:scale-105 active:scale-95 touch-manipulation"
             aria-label="Open menu"
@@ -158,6 +163,13 @@ export function SidebarLeft({
   const searchParams = useSearchParams();
   const [showNewAgentDialog, setShowNewAgentDialog] = useState(false);
   const { isOpen: isDocumentModalOpen } = useDocumentModalStore();
+
+  // Update active view based on pathname
+  useEffect(() => {
+    if (pathname?.includes('/triggers') || pathname?.includes('/knowledge')) {
+      setActiveView('starred');
+    }
+  }, [pathname]);
 
   // Logout handler
   const handleLogout = async () => {
@@ -279,7 +291,10 @@ export function SidebarLeft({
                   "h-12 w-12 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border",
                   activeView === view ? 'bg-muted/60 border-[1.5px] border-border' : ''
                 )}
-                onClick={() => setActiveView(view)}
+                onClick={() => {
+                  setActiveView(view);
+                  setOpen(true); // Expand sidebar when clicking state button
+                }}
               >
                 <Icon className="!h-5 !w-5" />
               </Button>
@@ -342,10 +357,10 @@ export function SidebarLeft({
               {activeView === 'chats' && <NavAgents />}
               {activeView === 'agents' && <NavAgentsView />}
               {activeView === 'starred' && (
-                <div className="text-center py-8 text-muted-foreground">
-                  <Star className="h-8 w-8 mx-auto mb-2" />
-                  <p className="text-sm">No starred items yet</p>
-                </div>
+                <>
+                  <NavGlobalConfig />
+                  <NavTriggerRuns />
+                </>
               )}
             </div>
           </>

@@ -2,6 +2,7 @@ import React from 'react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { Settings, X, Sparkles, Key, AlertTriangle, Trash2 } from 'lucide-react';
 import {
   AlertDialog,
@@ -31,7 +32,7 @@ const extractAppSlug = (mcp: MCPConfiguration): { type: 'composio', slug: string
     if (slug) {
       return { type: 'composio', slug };
     }
-    
+
     const qualifiedName = mcp.mcp_qualified_name || mcp.qualifiedName;
     if (qualifiedName && qualifiedName.startsWith('composio.')) {
       const extractedSlug = qualifiedName.substring(9);
@@ -40,18 +41,18 @@ const extractAppSlug = (mcp: MCPConfiguration): { type: 'composio', slug: string
       }
     }
   }
-  
+
   return null;
 };
 
 const MCPLogo: React.FC<{ mcp: MCPConfiguration }> = ({ mcp }) => {
   const appInfo = extractAppSlug(mcp);
-  
+
   const { data: composioToolkits } = useComposioToolkits(
     appInfo?.type === 'composio' ? appInfo.slug : undefined,
     undefined
   );
-  
+
   let logoUrl: string | undefined;
   if (appInfo?.type === 'composio' && composioToolkits?.toolkits?.[0]) {
     logoUrl = composioToolkits.toolkits[0].logo;
@@ -60,7 +61,7 @@ const MCPLogo: React.FC<{ mcp: MCPConfiguration }> = ({ mcp }) => {
   const firstLetter = mcp.name.charAt(0).toUpperCase();
 
   return (
-    <div className="w-4 h-4 flex items-center justify-center flex-shrink-0 overflow-hidden">
+    <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden">
       {logoUrl ? (
         <img
           src={logoUrl}
@@ -73,7 +74,7 @@ const MCPLogo: React.FC<{ mcp: MCPConfiguration }> = ({ mcp }) => {
           }}
         />
       ) : null}
-      <div className={logoUrl ? "hidden" : "flex w-full h-full items-center justify-center bg-muted rounded-md text-xs font-medium text-muted-foreground"}>
+      <div className={logoUrl ? "hidden" : "flex w-full h-full items-center justify-center bg-muted rounded-md text-sm font-medium text-muted-foreground"}>
         {firstLetter}
       </div>
     </div>
@@ -87,63 +88,65 @@ const MCPConfigurationItem: React.FC<{
   onRemove: (index: number) => void;
   onConfigureTools?: (index: number) => void;
 }> = ({ mcp, index, onEdit, onRemove, onConfigureTools }) => {
-  const qualifiedNameForLookup = (mcp.customType === 'composio' || mcp.isComposio) 
+  const qualifiedNameForLookup = (mcp.customType === 'composio' || mcp.isComposio)
     ? mcp.mcp_qualified_name || mcp.config?.mcp_qualified_name || mcp.qualifiedName
     : mcp.qualifiedName;
   const { data: profiles = [] } = useCredentialProfilesForMcp(qualifiedNameForLookup);
   const profileId = mcp.selectedProfileId || mcp.config?.profile_id;
   const selectedProfile = profiles.find(p => p.profile_id === profileId);
-  
+
   const hasCredentialProfile = !!profileId && !!selectedProfile;
 
   return (
-    <div className="flex items-center justify-between p-4 rounded-lg border bg-card hover:bg-muted/50 transition-colors">
-      <div className="flex items-center space-x-4 flex-1">
-        <div className="p-2 rounded-lg bg-muted border">
-          <MCPLogo mcp={mcp} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center space-x-2 mb-1">
-            <h4 className="text-sm font-medium truncate">{mcp.name}</h4>
+    <SpotlightCard className="bg-card border border-border">
+      <div className="flex items-center justify-between p-5">
+        <div className="flex items-center gap-4 flex-1">
+          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-card border border-border/50">
+            <MCPLogo mcp={mcp} />
           </div>
-          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span>{mcp.enabledTools?.length || 0} tools enabled</span>
-            {hasCredentialProfile && (
-              <div className="flex items-center gap-1">
-                <Key className="h-3 w-3 text-green-600" />
-                <span className="text-green-600 font-medium truncate max-w-24">
-                  {selectedProfile.profile_name}
-                </span>
-              </div>
-            )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-1">
+              <h4 className="text-sm font-medium text-foreground truncate">{mcp.name}</h4>
+            </div>
+            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <span>{mcp.enabledTools?.length || 0} tools enabled</span>
+              {hasCredentialProfile && (
+                <div className="flex items-center gap-1">
+                  <Key className="h-3 w-3 text-green-600" />
+                  <span className="text-green-600 font-medium truncate max-w-24">
+                    {selectedProfile.profile_name}
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
         </div>
-      </div>
-      <div className="flex items-center space-x-2 flex-shrink-0">
-        {onConfigureTools && (
+        <div className="flex items-center gap-2 ml-4">
+          {onConfigureTools && (
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-12 w-12 bg-card border border-border hover:bg-muted"
+              onClick={() => onConfigureTools(index)}
+              title="Configure tools"
+              type="button"
+            >
+              <Settings className="h-5 w-5" />
+            </Button>
+          )}
           <Button
-            size="sm"
-            variant="ghost"
-            className="h-8 w-8 p-0"
-            onClick={() => onConfigureTools(index)}
-            title="Configure tools"
+            variant="outline"
+            size="icon"
+            className="h-12 w-12 bg-card border border-border hover:bg-muted text-muted-foreground hover:text-destructive"
+            onClick={() => onRemove(index)}
+            title="Remove integration"
             type="button"
           >
-            <Settings className="h-4 w-4" />
+            <Trash2 className="h-5 w-5" />
           </Button>
-        )}
-        <Button
-          size="sm"
-          variant="ghost"
-          className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-          onClick={() => onRemove(index)}
-          title="Remove integration"
-          type="button"
-        >
-          <Trash2 className="h-4 w-4" />
-        </Button>
+        </div>
       </div>
-    </div>
+    </SpotlightCard>
   );
 };
 
@@ -185,7 +188,7 @@ export const ConfiguredMcpList: React.FC<ConfiguredMcpListProps> = ({
           />
         ))}
       </div>
-      
+
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>

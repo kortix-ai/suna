@@ -12,7 +12,7 @@ interface SpotlightCardProps {
 export function SpotlightCard({
     children,
     className,
-    spotlightColor = 'rgba(255, 255, 255, 0.1)',
+    spotlightColor,
 }: SpotlightCardProps) {
     const cardRef = useRef<HTMLDivElement>(null);
     const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
@@ -27,6 +27,15 @@ export function SpotlightCard({
         });
     };
 
+    // Use custom color if provided, otherwise use CSS variables for light/dark mode
+    const spotlightBg = spotlightColor
+        ? `radial-gradient(600px circle at var(--mouse-x) var(--mouse-y), ${spotlightColor}, transparent 40%)`
+        : undefined;
+
+    const borderGlowBg = spotlightColor
+        ? `radial-gradient(400px circle at var(--mouse-x) var(--mouse-y), ${spotlightColor.replace('0.1', '0.2')}, transparent 40%)`
+        : undefined;
+
     return (
         <div
             ref={cardRef}
@@ -38,16 +47,18 @@ export function SpotlightCard({
                 // @ts-ignore
                 '--mouse-x': `${mousePosition.x}px`,
                 '--mouse-y': `${mousePosition.y}px`,
-                '--spotlight-color': spotlightColor,
             }}
         >
             {/* Spotlight effect */}
             {isHovered && (
                 <div
-                    className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300"
+                    className={cn(
+                        'pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300',
+                        !spotlightColor && 'bg-[radial-gradient(600px_circle_at_var(--mouse-x)_var(--mouse-y),rgba(0,0,0,0.06),transparent_40%)] dark:bg-[radial-gradient(600px_circle_at_var(--mouse-x)_var(--mouse-y),rgba(255,255,255,0.1),transparent_40%)]'
+                    )}
                     style={{
                         opacity: isHovered ? 1 : 0,
-                        background: `radial-gradient(600px circle at var(--mouse-x) var(--mouse-y), var(--spotlight-color), transparent 40%)`,
+                        ...(spotlightBg && { background: spotlightBg }),
                     }}
                 />
             )}
@@ -55,10 +66,13 @@ export function SpotlightCard({
             {/* Border glow */}
             {isHovered && (
                 <div
-                    className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-300"
+                    className={cn(
+                        'pointer-events-none absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-300',
+                        !spotlightColor && 'bg-[radial-gradient(400px_circle_at_var(--mouse-x)_var(--mouse-y),rgba(0,0,0,0.1),transparent_40%)] dark:bg-[radial-gradient(400px_circle_at_var(--mouse-x)_var(--mouse-y),rgba(255,255,255,0.2),transparent_40%)]'
+                    )}
                     style={{
                         opacity: isHovered ? 1 : 0,
-                        background: `radial-gradient(400px circle at var(--mouse-x) var(--mouse-y), rgba(255, 255, 255, 0.2), transparent 40%)`,
+                        ...(borderGlowBg && { background: borderGlowBg }),
                         mask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
                         WebkitMask: 'linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)',
                         maskComposite: 'exclude',

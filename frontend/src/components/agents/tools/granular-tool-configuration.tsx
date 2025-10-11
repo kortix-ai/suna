@@ -5,6 +5,7 @@ import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Search, ChevronDown, ChevronRight, Settings2, Wrench, Loader2 } from 'lucide-react';
 import { icons } from 'lucide-react';
@@ -224,15 +225,15 @@ export const GranularToolConfiguration = ({
   }
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between flex-shrink-0 mb-4">
+    <div className="flex flex-col h-full w-full min-w-0">
+      <div className="flex items-center justify-between flex-shrink-0 mb-4 w-full">
         <div>
           <h3 className="text-lg font-semibold">Tool Configuration</h3>
           <p className="text-sm text-muted-foreground">
             Configure tools and their individual capabilities for your agent
           </p>
         </div>
-        <Badge variant="secondary" className="text-xs">
+        <Badge variant="default" className="text-xs">
           {getEnabledToolsCount()} / {Object.keys(TOOL_GROUPS).length} tools enabled
         </Badge>
       </div>
@@ -247,8 +248,8 @@ export const GranularToolConfiguration = ({
         />
       </div>
 
-      <div className="flex-1 overflow-auto pr-1">
-        <div className="space-y-2 pb-4">
+      <div className="flex-1 overflow-auto pr-1 w-full min-w-0">
+        <div className="space-y-2 pb-4 w-full">
           {filteredGroups.map((toolGroup) => {
             const isGroupEnabled = isToolGroupEnabled(toolGroup.name);
             const isExpanded = expandedGroups.has(toolGroup.name);
@@ -258,27 +259,24 @@ export const GranularToolConfiguration = ({
             const hasGranular = hasGranularControl(toolGroup.name, toolsData);
 
             return (
-              <div key={toolGroup.name} className="border rounded-lg">
-                <div className="p-4">
+              <SpotlightCard key={toolGroup.name} className="bg-card border border-border w-full min-w-0 max-w-full overflow-hidden">
+                <div className="p-5 w-full box-border" style={{ maxWidth: '100%' }}>
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3 flex-1 min-w-0">
-                      <div className={cn(
-                        "flex items-center justify-center w-8 h-8 rounded-md flex-shrink-0",
-                        toolGroup.color
-                      )}>
-                        <IconComponent className="h-4 w-4" />
+                    <div className="flex items-center gap-4 flex-1 min-w-0">
+                      <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-card border border-border/50 flex-shrink-0">
+                        <IconComponent className="h-5 w-5 text-foreground" />
                       </div>
 
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <h4 className="font-medium text-sm truncate">
+                          <h4 className="font-medium text-foreground truncate">
                             {toolGroup.displayName}
                           </h4>
                           {toolGroup.isCore && (
                             <Badge variant="outline" className="text-xs">Core</Badge>
                           )}
                         </div>
-                        <p className="text-xs text-muted-foreground truncate">
+                        <p className="text-sm text-muted-foreground truncate">
                           {toolGroup.description}
                         </p>
                         {hasGranular && isGroupEnabled && (
@@ -289,38 +287,46 @@ export const GranularToolConfiguration = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 ml-4 flex-shrink-0">
                       {hasGranular && (
                         <Button
-                          variant="ghost"
-                          size="sm"
+                          variant="outline"
+                          size="icon"
                           onClick={() => toggleGroupExpansion(toolGroup.name)}
-                          className="p-1 h-auto"
+                          className="h-12 w-12 bg-card border border-border hover:bg-muted"
                           disabled={!isGroupEnabled}
                         >
                           {isExpanded ? (
-                            <ChevronDown className="h-4 w-4" />
+                            <ChevronDown className="h-5 w-5" />
                           ) : (
-                            <ChevronRight className="h-4 w-4" />
+                            <ChevronRight className="h-5 w-5" />
                           )}
                         </Button>
                       )}
 
-                      <Switch
-                        checked={isGroupEnabled}
-                        onCheckedChange={(enabled) => handleToolGroupToggle(toolGroup.name, enabled)}
-                        disabled={disabled || isLoading}
-                      />
+                      <div
+                        className={cn(
+                          "inline-flex items-center justify-center h-12 w-12 bg-card border border-border rounded-2xl",
+                          disabled || isLoading ? "opacity-50 cursor-not-allowed" : ""
+                        )}
+                      >
+                        <Switch
+                          checked={isGroupEnabled}
+                          onCheckedChange={(enabled) => handleToolGroupToggle(toolGroup.name, enabled)}
+                          disabled={disabled || isLoading}
+                          className="data-[state=checked]:bg-primary data-[state=unchecked]:bg-input"
+                        />
+                      </div>
                     </div>
                   </div>
 
                   {hasGranular && isExpanded && isGroupEnabled && (
-                    <Collapsible open={isExpanded}>
-                      <CollapsibleContent className="mt-4 pt-4 border-t">
-                        <div className="space-y-3">
-                          <div className="flex items-center gap-2 mb-3">
-                            <Settings2 className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-sm font-medium text-muted-foreground">
+                    <div className="w-full overflow-hidden">
+                      <div className="mt-4 pt-4 border-t w-full">
+                        <div className="space-y-3 w-full">
+                          <div className="flex items-center gap-2 mb-3 w-full">
+                            <Settings2 className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                            <span className="text-sm font-medium text-muted-foreground truncate">
                               Individual Capabilities
                             </span>
                           </div>
@@ -331,17 +337,17 @@ export const GranularToolConfiguration = ({
                               const isMethodEnabledState = isMethodEnabled(toolGroup.name, method.name);
 
                               return (
-                                <div key={method.name} className="flex items-center justify-between pl-6">
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
+                                <div key={method.name} className="flex items-center gap-3 pl-6 pr-2 w-full">
+                                  <div className="flex-1 min-w-0 overflow-hidden" style={{ maxWidth: 'calc(100% - 4rem)' }}>
+                                    <div className="flex items-center gap-2 w-full overflow-hidden">
                                       <h5 className="text-sm font-medium truncate">
                                         {method.displayName}
                                       </h5>
                                       {method.isCore && (
-                                        <Badge variant="outline" className="text-xs">Core</Badge>
+                                        <Badge variant="outline" className="text-xs flex-shrink-0">Core</Badge>
                                       )}
                                     </div>
-                                    <p className="text-xs text-muted-foreground truncate">
+                                    <p className="text-xs text-muted-foreground truncate w-full">
                                       {method.description}
                                     </p>
                                   </div>
@@ -352,16 +358,17 @@ export const GranularToolConfiguration = ({
                                       handleMethodToggle(toolGroup.name, method.name, enabled)
                                     }
                                     disabled={disabled || isLoading}
+                                    className="flex-shrink-0 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input"
                                   />
                                 </div>
                               );
                             })}
                         </div>
-                      </CollapsibleContent>
-                    </Collapsible>
+                      </div>
+                    </div>
                   )}
                 </div>
-              </div>
+              </SpotlightCard>
             );
           })}
         </div>

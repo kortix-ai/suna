@@ -75,7 +75,6 @@ export default function AgentConfigPage() {
                   "transition-colors cursor-pointer",
                   isActive ? "bg-muted" : "bg-transparent"
                 )}
-                spotlightColor={isActive ? "rgba(255, 255, 255, 0.15)" : "rgba(255, 255, 255, 0.08)"}
               >
                 <button
                   onClick={() => setActiveView(item.id)}
@@ -96,9 +95,9 @@ export default function AgentConfigPage() {
       </div>
 
       {/* Right Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden pl-1 pr-1">
+      <div className="flex-1 flex flex-col overflow-hidden pl-1 pr-1 w-0 min-w-0">
         {/* Agent Header - inline with content */}
-        <div className="flex items-center justify-between pt-12 pb-6">
+        <div className="flex items-center justify-between pt-12 pb-6 w-full">
           <div className="flex items-center gap-3">
             <AgentAvatar
               agent={agent}

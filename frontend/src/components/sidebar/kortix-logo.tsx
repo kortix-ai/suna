@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
+import { isLocalMode } from '@/lib/config';
 
 interface KortixLogoProps {
   size?: number;
@@ -22,12 +23,12 @@ export function KortixLogo({ size = 24 }: KortixLogoProps) {
 
   return (
     <Image
-        src="/kortix-symbol.svg"
-        alt="Kortix"
-        width={size}
-        height={size}
-        className={`${shouldInvert ? 'invert' : ''} flex-shrink-0`}
-        style={{ width: size, height: size, minWidth: size, minHeight: size }}
-      />
+      src={isLocalMode() ? "/kortix-symbol.svg" : "/kortix-symbol-old.svg"}
+      alt="Kortix"
+      width={size}
+      height={size}
+      className={`${shouldInvert ? 'invert' : ''} flex-shrink-0`}
+      style={{ width: size, height: size, minWidth: size, minHeight: size }}
+    />
   );
 }
