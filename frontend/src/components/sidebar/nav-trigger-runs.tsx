@@ -8,6 +8,8 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useSidebar } from '@/components/ui/sidebar';
 import { ThreadWithProject, GroupedThreads } from '@/hooks/react-query/sidebar/use-sidebar';
 import { processThreadsWithProjects, useProjects, useThreads, groupThreadsByDate } from '@/hooks/react-query/sidebar/use-sidebar';
+import { cn } from '@/lib/utils';
+import { SpotlightCard } from '@/components/ui/spotlight-card';
 
 // Component for date group headers
 const DateGroupHeader: React.FC<{ dateGroup: string; count: number }> = ({ dateGroup, count }) => {
@@ -42,16 +44,18 @@ const TriggerRunItem: React.FC<{
     };
 
     return (
-        <div className="">
+        <SpotlightCard
+            className={cn(
+                "transition-colors cursor-pointer",
+                isActive ? "bg-muted" : "bg-transparent"
+            )}
+        >
             <a
                 href={thread.url}
                 onClick={(e) => handleThreadClick(e, thread.threadId, thread.url)}
                 className="block"
             >
-                <div
-                    className={`flex items-center gap-3 p-2.5 rounded-2xl text-sm transition-colors hover:bg-accent/50 cursor-pointer ${isActive ? 'bg-accent text-accent-foreground' : ''
-                        }`}
-                >
+                <div className="flex items-center gap-3 p-2.5 text-sm">
                     <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
                         {isThreadLoading ? (
                             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -69,7 +73,7 @@ const TriggerRunItem: React.FC<{
                     </span>
                 </div>
             </a>
-        </div>
+        </SpotlightCard>
     );
 };
 

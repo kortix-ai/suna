@@ -15,7 +15,7 @@ export function KnowledgeBasePage() {
                     <div className="w-full min-h-[calc(100vh-300px)]">
                         <KnowledgeBaseManager
                             showHeader={true}
-                            showRecentFiles={true}
+                            showRecentFiles={false}
                             enableAssignments={false}
                         />
                     </div>

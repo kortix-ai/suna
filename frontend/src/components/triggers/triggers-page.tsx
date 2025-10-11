@@ -29,6 +29,7 @@ import {
   Repeat
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { TriggerCreationDialog } from './trigger-creation-dialog';
 import { SimplifiedTriggerDetailPanel } from './simplified-trigger-detail-panel';
 import { TriggersPageHeader } from './triggers-page-header';
@@ -103,39 +104,44 @@ const TriggerListItem = ({
   const isScheduled = getTriggerCategory(trigger.trigger_type) === 'scheduled';
 
   return (
-    <div
-      onClick={onClick}
+    <SpotlightCard
       className={cn(
-        "rounded-xl border group flex items-center justify-between px-4 py-3 cursor-pointer transition-all",
-        isSelected ? "bg-muted border-foreground/20" : "dark:bg-card hover:bg-muted/50"
+        "transition-colors cursor-pointer",
+        isSelected ? "bg-muted" : "bg-card"
       )}
     >
-      <div className="flex items-center gap-3 flex-1 min-w-0">
-        <Icon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-sm truncate">{trigger.name}</span>
-            <Badge
-              variant={trigger.is_active ? "highlight" : "secondary"}
-              className="text-xs"
-            >
-              {trigger.is_active ? "Active" : "Inactive"}
-            </Badge>
+      <div
+        onClick={onClick}
+        className="flex items-center justify-between p-5"
+      >
+        <div className="flex items-center gap-4 flex-1 min-w-0">
+          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-card border border-border/50 flex-shrink-0">
+            <Icon className="h-5 w-5 text-foreground" />
           </div>
-          {trigger.description && (
-            <p className="text-xs text-muted-foreground truncate mt-0.5">
-              {trigger.description}
-            </p>
-          )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-0.5">
+              <h3 className="font-medium text-foreground truncate">{trigger.name}</h3>
+              <Badge
+                variant={trigger.is_active ? "highlight" : "secondary"}
+                className="text-xs"
+              >
+                {trigger.is_active ? "Active" : "Inactive"}
+              </Badge>
+            </div>
+            {trigger.description && (
+              <p className="text-sm text-muted-foreground truncate">
+                {trigger.description}
+              </p>
+            )}
+          </div>
         </div>
-      </div>
-      <div className="flex items-center gap-4 text-xs text-muted-foreground">
         {isScheduled && trigger.config?.cron_expression && (
-          <span className="hidden sm:block">{formatCronExpression(trigger.config.cron_expression)}</span>
+          <div className="ml-4 text-xs text-muted-foreground hidden sm:block">
+            {formatCronExpression(trigger.config.cron_expression)}
+          </div>
         )}
-        <Repeat className="h-3 w-3" />
       </div>
-    </div>
+    </SpotlightCard>
   );
 };
 
@@ -242,82 +248,82 @@ export function TriggersPage() {
             )}>
               <div className="flex items-center justify-between py-10">
                 <h1 className="text-xl font-semibold">Triggers</h1>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
-                    <Plus className="h-4 w-4" />
-                    New trigger
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-72">
-                  <DropdownMenuItem onClick={() => setTriggerDialogType('schedule')} className='rounded-lg'>
-                    <Clock className="h-4 w-4 text-muted-foreground" />
-                    <div className="flex flex-col">
-                      <span>Scheduled Trigger</span>
-                      <span className="text-xs text-muted-foreground">
-                        Schedule a trigger to run at a specific time
-                      </span>
-                    </div>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setTriggerDialogType('event')} className='rounded-lg'>
-                    <PlugZap className="h-4 w-4 text-muted-foreground" />
-                    <div className="flex flex-col">
-                      <span>Event-based Trigger</span>
-                      <span className="text-xs text-muted-foreground">
-                        Make a trigger to run when an event occurs
-                      </span>
-                    </div>
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <Plus className="h-4 w-4" />
+                      New trigger
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-72">
+                    <DropdownMenuItem onClick={() => setTriggerDialogType('schedule')} className='rounded-lg'>
+                      <Clock className="h-4 w-4 text-muted-foreground" />
+                      <div className="flex flex-col">
+                        <span>Scheduled Trigger</span>
+                        <span className="text-xs text-muted-foreground">
+                          Schedule a trigger to run at a specific time
+                        </span>
+                      </div>
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setTriggerDialogType('event')} className='rounded-lg'>
+                      <PlugZap className="h-4 w-4 text-muted-foreground" />
+                      <div className="flex flex-col">
+                        <span>Event-based Trigger</span>
+                        <span className="text-xs text-muted-foreground">
+                          Make a trigger to run when an event occurs
+                        </span>
+                      </div>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700 scrollbar-track-transparent">
+            <div className="flex justify-center">
+              <div className={cn(
+                "w-full px-4 pb-8 transition-all duration-300 ease-in-out",
+                selectedTrigger ? "max-w-2xl" : "max-w-4xl"
+              )}>
+                {isLoading ? (
+                  <LoadingSkeleton />
+                ) : sortedTriggers.length === 0 ? (
+                  <EmptyState />
+                ) : (
+                  <div className="space-y-4">
+                    {sortedTriggers.map(trigger => (
+                      <TriggerListItem
+                        key={trigger.trigger_id}
+                        trigger={trigger}
+                        isSelected={selectedTrigger?.trigger_id === trigger.trigger_id}
+                        onClick={() => {
+                          if (selectedTrigger?.trigger_id === trigger.trigger_id) {
+                            setSelectedTrigger(null);
+                          } else {
+                            setSelectedTrigger(trigger);
+                          }
+                        }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
-        <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700 scrollbar-track-transparent">
-          <div className="flex justify-center">
-            <div className={cn(
-              "w-full px-4 pb-8 transition-all duration-300 ease-in-out",
-              selectedTrigger ? "max-w-2xl" : "max-w-4xl"
-            )}>
-              {isLoading ? (
-                <LoadingSkeleton />
-              ) : sortedTriggers.length === 0 ? (
-                <EmptyState />
-              ) : (
-                <div className="space-y-4">
-                  {sortedTriggers.map(trigger => (
-                    <TriggerListItem
-                      key={trigger.trigger_id}
-                      trigger={trigger}
-                      isSelected={selectedTrigger?.trigger_id === trigger.trigger_id}
-                      onClick={() => {
-                        if (selectedTrigger?.trigger_id === trigger.trigger_id) {
-                          setSelectedTrigger(null);
-                        } else {
-                          setSelectedTrigger(trigger);
-                        }
-                      }}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+        <div className={cn(
+          "h-screen transition-all duration-300 ease-in-out overflow-hidden border-l",
+          selectedTrigger
+            ? "w-full sm:w-[440px] xl:w-2xl"
+            : "w-0"
+        )}>
+          {selectedTrigger && (
+            <SimplifiedTriggerDetailPanel
+              trigger={selectedTrigger}
+              onClose={handleClosePanel}
+            />
+          )}
         </div>
-      </div>
-      <div className={cn(
-        "h-screen transition-all duration-300 ease-in-out overflow-hidden border-l",
-        selectedTrigger
-          ? "w-full sm:w-[440px] xl:w-2xl"
-          : "w-0"
-      )}>
-        {selectedTrigger && (
-          <SimplifiedTriggerDetailPanel
-            trigger={selectedTrigger}
-            onClose={handleClosePanel}
-          />
-        )}
-      </div>
         {/* Trigger Creation Dialog */}
         {triggerDialogType && (
           <TriggerCreationDialog

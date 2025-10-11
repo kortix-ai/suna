@@ -25,6 +25,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
+import { SpotlightCard } from '@/components/ui/spotlight-card';
+import { cn } from '@/lib/utils';
 
 import {
   DropdownMenu,
@@ -108,17 +110,19 @@ const ThreadItem: React.FC<{
     };
 
     return (
-      <div className="">
+      <SpotlightCard
+        className={cn(
+          "transition-colors cursor-pointer",
+          isActive ? "bg-muted" : "bg-transparent"
+        )}
+      >
         <Link
           href={thread.url}
           onClick={(e) => handleThreadClick(e, thread.threadId, thread.url)}
           prefetch={false}
           className="block"
         >
-          <div
-            className={`flex items-center gap-3 p-2.5 rounded-2xl text-sm transition-colors hover:bg-accent/50 cursor-pointer ${isActive ? 'bg-accent text-accent-foreground' : ''
-              }`}
-          >
+          <div className="flex items-center gap-3 p-2.5 text-sm">
             <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
               {isThreadLoading ? (
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -136,7 +140,7 @@ const ThreadItem: React.FC<{
             </span>
           </div>
         </Link>
-      </div>
+      </SpotlightCard>
     );
   };
 
