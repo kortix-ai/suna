@@ -53,7 +53,11 @@ const drawerMenuVariants = {
   visible: { opacity: 1 },
 };
 
-export function Navbar() {
+interface NavbarProps {
+  tabs?: string[];
+}
+
+export function Navbar({ tabs }: NavbarProps = {}) {
   const { scrollY } = useScroll();
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -65,13 +69,20 @@ export function Navbar() {
   const router = useRouter();
   const pathname = usePathname();
 
+  // Filter nav links based on tabs prop
+  const filteredNavLinks = tabs
+    ? siteConfig.nav.links.filter(link =>
+      tabs.includes(link.name.toLowerCase())
+    )
+    : siteConfig.nav.links;
+
   useEffect(() => {
     setMounted(true);
   }, []);
 
   useEffect(() => {
     const handleScroll = () => {
-      const sections = siteConfig.nav.links.map((item) =>
+      const sections = filteredNavLinks.map((item) =>
         item.href.substring(1),
       );
 
@@ -91,7 +102,7 @@ export function Navbar() {
     handleScroll();
 
     return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [filteredNavLinks]);
 
   useEffect(() => {
     const unsubscribe = scrollY.on('change', (latest) => {
@@ -140,13 +151,13 @@ export function Navbar() {
                   height={14}
                   className="md:w-[100px] md:h-[18px]"
                   priority
-                /> 
+                />
               </Link>
             </div>
 
             {/* Center Section - Navigation Menu */}
             <div className="hidden md:flex items-center justify-center flex-grow">
-              <NavMenu />
+              <NavMenu links={filteredNavLinks} />
             </div>
 
             {/* Right Section - Actions */}
@@ -247,7 +258,7 @@ export function Navbar() {
                   variants={drawerMenuContainerVariants}
                 >
                   <AnimatePresence>
-                    {siteConfig.nav.links.map((item) => (
+                    {filteredNavLinks.map((item) => (
                       <motion.li
                         key={item.id}
                         className="p-2.5 border-b border-border last:border-b-0"
@@ -261,27 +272,26 @@ export function Navbar() {
                               setIsDrawerOpen(false);
                               return;
                             }
-                            
+
                             e.preventDefault();
-                            
+
                             // If we're not on the homepage, redirect to homepage with the section
                             if (pathname !== '/') {
                               router.push(`/${item.href}`);
                               setIsDrawerOpen(false);
                               return;
                             }
-                            
+
                             const element = document.getElementById(
                               item.href.substring(1),
                             );
                             element?.scrollIntoView({ behavior: 'smooth' });
                             setIsDrawerOpen(false);
                           }}
-                          className={`underline-offset-4 hover:text-primary/80 transition-colors ${
-                            (item.href.startsWith('#') && pathname === '/' && activeSection === item.href.substring(1)) || (item.href === pathname)
+                          className={`underline-offset-4 hover:text-primary/80 transition-colors ${(item.href.startsWith('#') && pathname === '/' && activeSection === item.href.substring(1)) || (item.href === pathname)
                               ? 'text-primary font-medium'
                               : 'text-primary/60'
-                          }`}
+                            }`}
                         >
                           {item.name}
                         </a>
@@ -331,5 +341,5 @@ export function Navbar() {
         )}
       </AnimatePresence>
     </header>
-  ); 
+  );
 }

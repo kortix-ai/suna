@@ -214,6 +214,16 @@ export function TriggersPage() {
     setSelectedTrigger(null);
   };
 
+  const handleTriggerClick = (trigger: TriggerWithAgent) => {
+    if (selectedTrigger?.trigger_id === trigger.trigger_id) {
+      setSelectedTrigger(null);
+    } else {
+      setSelectedTrigger(trigger);
+      const headerHeight = document.querySelector('.container')?.clientHeight || 120;
+      window.scrollTo({ top: headerHeight, behavior: 'smooth' }); //for smooth brain
+    }
+  };
+
   const handleTriggerCreated = (triggerId: string) => {
     setTriggerDialogType(null);
     setPendingTriggerId(triggerId);
@@ -296,13 +306,7 @@ export function TriggersPage() {
                         key={trigger.trigger_id}
                         trigger={trigger}
                         isSelected={selectedTrigger?.trigger_id === trigger.trigger_id}
-                        onClick={() => {
-                          if (selectedTrigger?.trigger_id === trigger.trigger_id) {
-                            setSelectedTrigger(null);
-                          } else {
-                            setSelectedTrigger(trigger);
-                          }
-                        }}
+                        onClick={() => handleTriggerClick(trigger)}
                       />
                     ))}
                   </div>
