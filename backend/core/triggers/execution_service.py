@@ -70,14 +70,7 @@ class SessionManager:
             "created_at": datetime.now(timezone.utc).isoformat()
         }).execute()
         
-        # Try to create sandbox, but don't fail if it doesn't work
-        # Trigger runs can operate without sandboxes
-        try:
-            await self._create_sandbox_for_project(project_id)
-            logger.debug(f"Created sandbox for trigger run project: {project_id}")
-        except Exception as e:
-            logger.warning(f"Failed to create sandbox for trigger run (project will continue without it): {e}")
-            # Don't delete the project - trigger runs can work without sandboxes
+        await self._create_sandbox_for_project(project_id)
         
         await client.table('threads').insert({
             "thread_id": thread_id,
@@ -90,13 +83,7 @@ class SessionManager:
         return thread_id, project_id
     
     async def _create_sandbox_for_project(self, project_id: str) -> None:
-        """
-        Try to create a sandbox for the project.
-        Raises an exception if it fails, but the caller should handle it gracefully
-        since trigger runs can operate without sandboxes.
-        """
         client = await self._db.client
-        sandbox_id = None
         
         try:
             from core.sandbox.sandbox import create_sandbox, delete_sandbox
@@ -122,20 +109,11 @@ class SessionManager:
             }).eq('project_id', project_id).execute()
             
             if not update_result.data:
-                # Clean up sandbox but don't delete the project
-                if sandbox_id:
-                    await delete_sandbox(sandbox_id)
+                await delete_sandbox(sandbox_id)
                 raise Exception("Database update failed")
                 
         except Exception as e:
-            # Clean up sandbox if it was created
-            if sandbox_id:
-                try:
-                    from core.sandbox.sandbox import delete_sandbox
-                    await delete_sandbox(sandbox_id)
-                except Exception as cleanup_error:
-                    logger.error(f"Failed to clean up sandbox {sandbox_id}: {cleanup_error}")
-            # Re-raise the exception so caller knows sandbox creation failed
+            await client.table('projects').delete().eq('project_id', project_id).execute()
             raise Exception(f"Failed to create sandbox: {str(e)}")
     
     def _extract_url(self, link) -> str:
