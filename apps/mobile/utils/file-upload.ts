@@ -247,7 +247,8 @@ export const uploadFilesToSandbox = async (
 
     const fileName = file.name || file.fileName || 'unknown_file';
     const normalizedName = normalizeFilenameToNFC(fileName);
-    const uploadPath = `/workspace/${normalizedName}`;
+    // Backend will handle path to /workspace/uploads/ and unique naming
+    const uploadPath = `/workspace/uploads/${normalizedName}`;
 
     try {
       // Create FormData
@@ -284,12 +285,17 @@ export const uploadFilesToSandbox = async (
         throw new Error(`Upload failed: ${response.status} ${errorText}`);
       }
 
+      // Parse response to get actual path used by server
+      const responseData = await response.json();
+      const actualPath = responseData.path || uploadPath;
+      const finalFilename = responseData.final_filename || normalizedName;
+
       // Update file status to success
-      updateFileStatus(uploadPath, { isUploading: false });
+      updateFileStatus(actualPath, { isUploading: false });
 
       const uploadedFile: UploadedFile = {
-        name: normalizedName,
-        path: uploadPath,
+        name: finalFilename,
+        path: actualPath,
         size: file.size || 0,
         type: file.mimeType || file.type || 'application/octet-stream',
         localUri: file.uri,

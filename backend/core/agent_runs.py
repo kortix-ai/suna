@@ -15,6 +15,7 @@ from core.billing.billing_integration import billing_integration
 from core.utils.config import config, EnvMode
 from core.services import redis
 from core.sandbox.sandbox import create_sandbox, delete_sandbox
+from core.utils.sandbox_utils import generate_unique_filename, get_uploads_directory
 from run_agent_background import run_agent_background
 from core.ai_models import model_manager
 
@@ -801,11 +802,17 @@ async def initiate_agent_with_files(
         if files:
             successful_uploads = []
             failed_uploads = []
+            uploads_dir = get_uploads_directory()
+            
             for file in files:
                 if file.filename:
                     try:
                         safe_filename = file.filename.replace('/', '_').replace('\\', '_')
-                        target_path = f"/workspace/{safe_filename}"
+                        
+                        # Generate unique filename to avoid conflicts
+                        unique_filename = await generate_unique_filename(sandbox, uploads_dir, safe_filename)
+                        target_path = f"{uploads_dir}/{unique_filename}"
+                        
                         logger.debug(f"Attempting to upload {safe_filename} to {target_path} in sandbox {sandbox_id}")
                         content = await file.read()
                         upload_successful = False
@@ -822,14 +829,13 @@ async def initiate_agent_with_files(
                         if upload_successful:
                             try:
                                 await asyncio.sleep(0.2)
-                                parent_dir = os.path.dirname(target_path)
-                                files_in_dir = await sandbox.fs.list_files(parent_dir)
+                                files_in_dir = await sandbox.fs.list_files(uploads_dir)
                                 file_names_in_dir = [f.name for f in files_in_dir]
-                                if safe_filename in file_names_in_dir:
+                                if unique_filename in file_names_in_dir:
                                     successful_uploads.append(target_path)
-                                    logger.debug(f"Successfully uploaded and verified file {safe_filename} to sandbox path {target_path}")
+                                    logger.debug(f"Successfully uploaded and verified file {safe_filename} as {unique_filename} to sandbox path {target_path}")
                                 else:
-                                    logger.error(f"Verification failed for {safe_filename}: File not found in {parent_dir} after upload attempt.")
+                                    logger.error(f"Verification failed for {safe_filename}: File not found in {uploads_dir} after upload attempt.")
                                     failed_uploads.append(safe_filename)
                             except Exception as verify_error:
                                 logger.error(f"Error verifying file {safe_filename} after upload: {str(verify_error)}", exc_info=True)

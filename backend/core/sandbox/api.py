@@ -11,6 +11,7 @@ from core.sandbox.sandbox import get_or_start_sandbox, delete_sandbox
 from core.utils.logger import logger
 from core.utils.auth_utils import get_optional_user_id, verify_and_get_user_id_from_jwt, verify_sandbox_access, verify_sandbox_access_optional
 from core.services.supabase import DBConnection
+from core.utils.sandbox_utils import generate_unique_filename, get_uploads_directory
 
 # Initialize shared resources
 router = APIRouter(tags=["sandbox"])
@@ -125,14 +126,34 @@ async def create_file(
         # Get sandbox using the safer method
         sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
         
+        # Extract filename from the provided path
+        from pathlib import Path as PathLib
+        original_filename = PathLib(path).name
+        
+        # Always use /workspace/uploads/ as the base directory
+        uploads_dir = get_uploads_directory()
+        
+        # Generate a unique filename to avoid conflicts
+        unique_filename = await generate_unique_filename(sandbox, uploads_dir, original_filename)
+        
+        # Construct the final path
+        final_path = f"{uploads_dir}/{unique_filename}"
+        
         # Read file content directly from the uploaded file
         content = await file.read()
         
         # Create file using raw binary content
-        await sandbox.fs.upload_file(content, path)
-        logger.debug(f"File created at {path} in sandbox {sandbox_id}")
+        await sandbox.fs.upload_file(content, final_path)
+        logger.info(f"File uploaded successfully: {final_path} in sandbox {sandbox_id}")
         
-        return {"status": "success", "created": True, "path": path}
+        return {
+            "status": "success", 
+            "created": True, 
+            "path": final_path,
+            "original_filename": original_filename,
+            "final_filename": unique_filename,
+            "renamed": original_filename != unique_filename
+        }
     except Exception as e:
         logger.error(f"Error creating file in sandbox {sandbox_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
