@@ -263,8 +263,8 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                                 <SpotlightCard
                                                     key={agent.agent_id}
                                                     className={cn(
-                                                        "transition-colors cursor-pointer",
-                                                        isActive ? "bg-muted" : "bg-transparent"
+                                                        "transition-colors cursor-pointer bg-transparent",
+                                                        // isActive ? "bg-muted" : "bg-transparent"
                                                     )}
                                                 >
                                                     <div
@@ -322,8 +322,8 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                     <SpotlightCard
                                         key={model.id}
                                         className={cn(
-                                            "transition-colors cursor-pointer",
-                                            isActive ? "bg-muted" : "bg-transparent"
+                                            "transition-colors cursor-pointer bg-transparent",
+                                            // isActive ? "bg-muted" : ""
                                         )}
                                     >
                                         <div
@@ -365,8 +365,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                                         <SpotlightCard
                                                             key={model.id}
                                                             className={cn(
-                                                                "transition-colors cursor-pointer",
-                                                                isActive ? "bg-muted" : "bg-transparent"
+                                                                "transition-colors cursor-pointer bg-transparent",
                                                             )}
                                                         >
                                                             <div

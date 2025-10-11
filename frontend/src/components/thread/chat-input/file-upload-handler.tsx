@@ -146,7 +146,7 @@ const uploadFiles = async (
     }
 
     setUploadedFiles((prev) => [...prev, ...newUploadedFiles]);
-    
+
     // Clear pending files after successful upload
     if (setPendingFiles) {
       setPendingFiles([]);
@@ -268,7 +268,7 @@ export const FileUploadHandler = forwardRef<
                   onClick={handleFileUpload}
                   variant="ghost"
                   size="sm"
-                  className="h-[42px] !px-4 py-2 bg-transparent border-0 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-2"
+                  className="h-[42px] !px-4 py-2 bg-muted/50 border-0 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-2"
                   disabled={
                     !isLoggedIn || loading || (disabled && !isAgentRunning) || isUploading
                   }

@@ -356,7 +356,7 @@ export function SharedTreeItem({
 
                     {/* Files (when expanded) */}
                     {item.expanded && (
-                        <div className="flex flex-col">
+                        <div className="flex flex-col mt-2">
                             {isLoadingEntries ? (
                                 <div className="flex items-center gap-3 px-4 py-4 text-sm text-muted-foreground bg-muted/20 rounded-lg mx-4 mb-2" style={{ paddingLeft: `${level * 20 + 32}px` }}>
                                     <Loader2 className="h-4 w-4 animate-spin text-primary" />

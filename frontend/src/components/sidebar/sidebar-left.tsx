@@ -216,6 +216,7 @@ export function SidebarLeft({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isDocumentModalOpen) return;
 
+      // CMD+B to toggle sidebar
       if ((event.metaKey || event.ctrlKey) && event.key === 'b') {
         event.preventDefault();
         setOpen(!state.startsWith('expanded'));
@@ -225,11 +226,21 @@ export function SidebarLeft({
           }),
         );
       }
+
+      // CMD+K to open new chat
+      if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+        event.preventDefault();
+        posthog.capture('new_task_clicked', { source: 'keyboard_shortcut' });
+        router.push('/dashboard');
+        if (isMobile) {
+          setOpenMobile(false);
+        }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [state, setOpen, isDocumentModalOpen]);
+  }, [state, setOpen, isDocumentModalOpen, router, isMobile, setOpenMobile]);
 
 
 
