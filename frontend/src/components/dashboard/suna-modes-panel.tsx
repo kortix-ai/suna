@@ -395,6 +395,477 @@ const OutputFormatIcon = ({ type, className }: { type: string; className?: strin
   }
 };
 
+// Slide template icon component
+const SlideTemplateIcon = ({ type, className }: { type: string; className?: string }) => {
+  const baseClasses = cn('w-full h-full', className);
+  
+  switch (type) {
+    case 'modern':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <rect x="15" y="20" width="70" height="50" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
+          <rect x="20" y="28" width="30" height="4" fill="currentColor" opacity="0.8" rx="1"/>
+          <rect x="20" y="36" width="20" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
+          <line x1="20" y1="44" x2="38" y2="44" stroke="currentColor" strokeWidth="1" opacity="0.3"/>
+          <rect x="20" y="48" width="25" height="2" fill="currentColor" opacity="0.3" rx="0.5"/>
+          <rect x="20" y="52" width="22" height="2" fill="currentColor" opacity="0.3" rx="0.5"/>
+          <rect x="55" y="28" width="25" height="25" fill="currentColor" opacity="0.15" rx="2"/>
+          <circle cx="67.5" cy="40.5" r="8" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.5"/>
+          <rect x="25" y="75" width="50" height="3" fill="currentColor" opacity="0.2" rx="1"/>
+        </svg>
+      );
+    
+    case 'bold':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <rect x="10" y="15" width="80" height="55" fill="currentColor" opacity="0.15" rx="4"/>
+          <rect x="15" y="22" width="35" height="8" fill="currentColor" opacity="0.9" rx="2"/>
+          <rect x="15" y="35" width="28" height="4" fill="currentColor" opacity="0.7" rx="1"/>
+          <rect x="15" y="43" width="32" height="4" fill="currentColor" opacity="0.7" rx="1"/>
+          <rect x="15" y="51" width="30" height="4" fill="currentColor" opacity="0.7" rx="1"/>
+          <rect x="55" y="22" width="30" height="18" fill="currentColor" opacity="0.8" rx="2"/>
+          <circle cx="70" cy="31" r="5" fill="var(--background)" opacity="0.9"/>
+          <rect x="10" y="75" width="80" height="8" fill="currentColor" opacity="0.9" rx="2"/>
+        </svg>
+      );
+    
+    case 'elegant':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <line x1="30" y1="25" x2="70" y2="25" stroke="currentColor" strokeWidth="0.5" opacity="0.3"/>
+          <rect x="35" y="32" width="30" height="5" fill="currentColor" opacity="0.7" rx="1"/>
+          <rect x="40" y="42" width="20" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
+          <circle cx="50" cy="55" r="1" fill="currentColor" opacity="0.5"/>
+          <rect x="30" y="60" width="40" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          <rect x="32" y="64" width="36" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          <rect x="34" y="68" width="32" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          <line x1="30" y1="78" x2="70" y2="78" stroke="currentColor" strokeWidth="0.5" opacity="0.3"/>
+          <path d="M 48,25 L 50,20 L 52,25" stroke="currentColor" strokeWidth="0.5" fill="none" opacity="0.4"/>
+        </svg>
+      );
+    
+    case 'tech':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <rect x="15" y="20" width="70" height="50" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.4" rx="2"/>
+          <path d="M 15,30 L 85,30" stroke="currentColor" strokeWidth="1" opacity="0.3"/>
+          <circle cx="20" cy="25" r="1.5" fill="currentColor" opacity="0.6"/>
+          <circle cx="26" cy="25" r="1.5" fill="currentColor" opacity="0.6"/>
+          <circle cx="32" cy="25" r="1.5" fill="currentColor" opacity="0.6"/>
+          <rect x="20" y="36" width="25" height="3" fill="currentColor" opacity="0.7" rx="0.5"/>
+          <rect x="20" y="42" width="18" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
+          <path d="M 55,38 L 60,43 L 55,48" stroke="currentColor" strokeWidth="1.5" fill="none" opacity="0.6"/>
+          <path d="M 65,38 L 75,38 L 75,58 L 65,58" stroke="currentColor" strokeWidth="1.5" fill="none" opacity="0.5"/>
+          <rect x="20" y="52" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5"/>
+          <path d="M 20,58 L 32,58 M 26,52 L 26,64" stroke="currentColor" strokeWidth="1" opacity="0.5"/>
+        </svg>
+      );
+    
+    case 'creative':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <path d="M 20,25 Q 25,20 35,25 L 40,35 Q 30,30 20,35 Z" opacity="0.6"/>
+          <circle cx="70" cy="30" r="8" opacity="0.5"/>
+          <path d="M 15,45 L 45,45 L 42,55 L 18,55 Z" opacity="0.7"/>
+          <rect x="50" y="48" width="35" height="2" fill="currentColor" opacity="0.4" rx="1" transform="rotate(-5 67.5 49)"/>
+          <rect x="50" y="54" width="30" height="2" fill="currentColor" opacity="0.4" rx="1" transform="rotate(3 65 55)"/>
+          <circle cx="25" cy="68" r="3" opacity="0.6"/>
+          <circle cx="40" cy="65" r="5" opacity="0.5"/>
+          <circle cx="60" cy="70" r="4" opacity="0.7"/>
+          <path d="M 70,65 L 80,70 L 75,75 Z" opacity="0.6"/>
+        </svg>
+      );
+    
+    case 'minimal':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <rect x="30" y="35" width="40" height="3" fill="currentColor" opacity="0.8" rx="0.5"/>
+          <rect x="35" y="45" width="30" height="1.5" fill="currentColor" opacity="0.4" rx="0.5"/>
+          <rect x="35" y="50" width="30" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          <rect x="35" y="55" width="30" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          <circle cx="50" cy="68" r="1.5" fill="currentColor" opacity="0.5"/>
+        </svg>
+      );
+    
+    case 'corporate':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <rect x="10" y="15" width="80" height="60" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="2"/>
+          <rect x="10" y="15" width="80" height="12" fill="currentColor" opacity="0.15"/>
+          <rect x="18" y="35" width="30" height="4" fill="currentColor" opacity="0.7" rx="1"/>
+          <rect x="18" y="42" width="25" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
+          <rect x="18" y="47" width="28" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
+          <rect x="18" y="52" width="26" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
+          <rect x="55" y="35" width="28" height="20" fill="currentColor" opacity="0.2" rx="2"/>
+          <rect x="60" y="45" width="5" height="8" fill="currentColor" opacity="0.6" rx="0.5"/>
+          <rect x="68" y="42" width="5" height="11" fill="currentColor" opacity="0.7" rx="0.5"/>
+          <rect x="76" y="40" width="5" height="13" fill="currentColor" opacity="0.8" rx="0.5"/>
+          <rect x="35" y="80" width="30" height="3" fill="currentColor" opacity="0.5" rx="1"/>
+        </svg>
+      );
+    
+    case 'vibrant':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <rect x="15" y="20" width="70" height="50" fill="currentColor" opacity="0.12" rx="4"/>
+          <circle cx="30" cy="35" r="8" fill="currentColor" opacity="0.7"/>
+          <circle cx="50" cy="32" r="10" fill="currentColor" opacity="0.8"/>
+          <circle cx="70" cy="36" r="7" fill="currentColor" opacity="0.6"/>
+          <rect x="20" y="50" width="15" height="3" fill="currentColor" opacity="0.9" rx="1"/>
+          <rect x="40" y="50" width="20" height="3" fill="currentColor" opacity="0.85" rx="1"/>
+          <rect x="65" y="50" width="12" height="3" fill="currentColor" opacity="0.8" rx="1"/>
+          <rect x="22" y="58" width="10" height="2" fill="currentColor" opacity="0.5" rx="0.5"/>
+          <rect x="42" y="58" width="15" height="2" fill="currentColor" opacity="0.5" rx="0.5"/>
+          <rect x="67" y="58" width="8" height="2" fill="currentColor" opacity="0.5" rx="0.5"/>
+        </svg>
+      );
+    
+    case 'startup':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <path d="M 50,25 L 55,35 L 45,35 Z" opacity="0.8"/>
+          <rect x="48" y="35" width="4" height="15" opacity="0.7"/>
+          <circle cx="35" cy="55" r="3" opacity="0.4"/>
+          <circle cx="50" cy="50" r="5" opacity="0.6"/>
+          <circle cx="65" cy="55" r="3" opacity="0.4"/>
+          <path d="M 30,60 Q 50,50 70,60" stroke="currentColor" strokeWidth="2" fill="none" opacity="0.5"/>
+          <rect x="32" y="65" width="36" height="2" fill="currentColor" opacity="0.6" rx="1"/>
+          <rect x="35" y="70" width="30" height="2" fill="currentColor" opacity="0.4" rx="1"/>
+          <circle cx="25" cy="40" r="1.5" opacity="0.3"/>
+          <circle cx="75" cy="42" r="1.5" opacity="0.3"/>
+          <circle cx="28" cy="32" r="1" opacity="0.25"/>
+        </svg>
+      );
+    
+    case 'professional':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <rect x="20" y="22" width="60" height="48" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.35" rx="2"/>
+          <rect x="25" y="28" width="25" height="4" fill="currentColor" opacity="0.8" rx="1"/>
+          <rect x="25" y="36" width="20" height="2" fill="currentColor" opacity="0.5" rx="0.5"/>
+          <rect x="25" y="40" width="22" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
+          <rect x="25" y="44" width="18" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
+          <line x1="25" y1="52" x2="75" y2="52" stroke="currentColor" strokeWidth="1" opacity="0.25"/>
+          <rect x="25" y="56" width="15" height="2" fill="currentColor" opacity="0.5" rx="0.5"/>
+          <rect x="25" y="60" width="18" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
+          <rect x="55" y="28" width="20" height="15" fill="currentColor" opacity="0.2" rx="1"/>
+          <rect x="60" y="56" width="8" height="10" fill="currentColor" opacity="0.6" rx="0.5"/>
+          <rect x="70" y="60" width="8" height="6" fill="currentColor" opacity="0.5" rx="0.5"/>
+        </svg>
+      );
+    
+    case 'dark':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <rect x="15" y="20" width="70" height="50" fill="currentColor" opacity="0.9" rx="3"/>
+          <rect x="20" y="26" width="25" height="4" fill="var(--background)" opacity="0.8" rx="1"/>
+          <rect x="20" y="34" width="18" height="2" fill="var(--background)" opacity="0.5" rx="0.5"/>
+          <rect x="20" y="38" width="20" height="2" fill="var(--background)" opacity="0.4" rx="0.5"/>
+          <rect x="20" y="42" width="16" height="2" fill="var(--background)" opacity="0.4" rx="0.5"/>
+          <circle cx="65" cy="38" r="10" fill="var(--background)" opacity="0.3"/>
+          <circle cx="65" cy="38" r="6" fill="currentColor" opacity="0.9"/>
+          <rect x="20" y="55" width="60" height="10" fill="var(--background)" opacity="0.2" rx="1"/>
+        </svg>
+      );
+    
+    case 'playful':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <circle cx="30" cy="30" r="8" opacity="0.7"/>
+          <rect x="45" y="25" width="30" height="4" opacity="0.8" rx="2" transform="rotate(-3 60 27)"/>
+          <rect x="48" y="33" width="25" height="2" opacity="0.5" rx="1" transform="rotate(2 60.5 34)"/>
+          <path d="M 20,45 Q 25,50 30,45 T 40,45" stroke="currentColor" strokeWidth="2" fill="none" opacity="0.6"/>
+          <circle cx="55" cy="48" r="4" opacity="0.6"/>
+          <circle cx="68" cy="46" r="5" opacity="0.7"/>
+          <path d="M 20,60 L 35,58 L 33,68 L 22,65 Z" opacity="0.65"/>
+          <rect x="45" y="60" width="20" height="3" opacity="0.6" rx="1.5" transform="rotate(-2 55 61.5)"/>
+          <rect x="48" y="67" width="15" height="2" opacity="0.5" rx="1" transform="rotate(3 55.5 68)"/>
+          <circle cx="75" cy="65" r="3" opacity="0.5"/>
+        </svg>
+      );
+    
+    case 'sophisticated':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <rect x="25" y="25" width="50" height="40" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.3" rx="1"/>
+          <line x1="25" y1="35" x2="75" y2="35" stroke="currentColor" strokeWidth="0.5" opacity="0.25"/>
+          <circle cx="30" cy="30" r="2" opacity="0.6"/>
+          <rect x="35" y="29" width="15" height="2" fill="currentColor" opacity="0.5" rx="0.5"/>
+          <line x1="28" y1="40" x2="72" y2="40" stroke="currentColor" strokeWidth="0.5" opacity="0.2"/>
+          <line x1="28" y1="45" x2="72" y2="45" stroke="currentColor" strokeWidth="0.5" opacity="0.2"/>
+          <line x1="28" y1="50" x2="72" y2="50" stroke="currentColor" strokeWidth="0.5" opacity="0.2"/>
+          <line x1="28" y1="55" x2="72" y2="55" stroke="currentColor" strokeWidth="0.5" opacity="0.2"/>
+          <rect x="52" y="42" width="18" height="18" fill="currentColor" opacity="0.15" rx="1"/>
+          <path d="M 30,70 L 35,75 L 40,70" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.4"/>
+          <path d="M 60,70 L 65,75 L 70,70" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.4"/>
+        </svg>
+      );
+    
+    case 'gradient':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <defs>
+            <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" style={{ stopColor: 'currentColor', stopOpacity: 0.8 }} />
+              <stop offset="100%" style={{ stopColor: 'currentColor', stopOpacity: 0.3 }} />
+            </linearGradient>
+          </defs>
+          <rect x="15" y="20" width="70" height="50" fill="url(#grad1)" rx="3"/>
+          <rect x="22" y="28" width="28" height="5" fill="var(--background)" opacity="0.9" rx="1"/>
+          <rect x="22" y="37" width="20" height="2" fill="var(--background)" opacity="0.6" rx="0.5"/>
+          <rect x="22" y="42" width="22" height="2" fill="var(--background)" opacity="0.5" rx="0.5"/>
+          <circle cx="65" cy="40" r="12" fill="var(--background)" opacity="0.4"/>
+          <rect x="22" y="55" width="56" height="8" fill="var(--background)" opacity="0.3" rx="1"/>
+        </svg>
+      );
+    
+    case 'monochrome':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <rect x="20" y="25" width="60" height="45" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.8" rx="1"/>
+          <rect x="25" y="32" width="25" height="5" fill="currentColor" opacity="0.9" rx="0.5"/>
+          <rect x="25" y="40" width="20" height="2" fill="currentColor" opacity="0.6" rx="0.5"/>
+          <rect x="25" y="44" width="22" height="2" fill="currentColor" opacity="0.5" rx="0.5"/>
+          <rect x="25" y="48" width="18" height="2" fill="currentColor" opacity="0.5" rx="0.5"/>
+          <rect x="55" y="32" width="20" height="20" fill="currentColor" opacity="0.8" rx="1"/>
+          <rect x="60" y="37" width="10" height="10" fill="var(--background)" opacity="0.9"/>
+          <rect x="25" y="58" width="50" height="8" fill="currentColor" opacity="0.3" rx="0.5"/>
+        </svg>
+      );
+    
+    case 'futuristic':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <path d="M 20,25 L 80,25 L 75,65 L 25,65 Z" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.4"/>
+          <path d="M 25,30 L 75,30" stroke="currentColor" strokeWidth="1" opacity="0.3"/>
+          <rect x="28" y="35" width="20" height="3" fill="currentColor" opacity="0.8" rx="0.5" transform="skewX(-5)"/>
+          <rect x="28" y="42" width="15" height="2" fill="currentColor" opacity="0.5" rx="0.5" transform="skewX(-5)"/>
+          <path d="M 55,38 L 68,38 L 66,48 L 53,48 Z" fill="currentColor" opacity="0.6"/>
+          <circle cx="60" cy="43" r="3" fill="var(--background)" opacity="0.8"/>
+          <path d="M 28,52 L 50,52 M 32,56 L 48,56" stroke="currentColor" strokeWidth="1.5" opacity="0.4"/>
+          <circle cx="30" cy="38" r="1.5" fill="currentColor" opacity="0.7"/>
+          <circle cx="70" cy="52" r="1.5" fill="currentColor" opacity="0.6"/>
+          <path d="M 30,72 L 35,68 L 40,72 L 35,76 Z" fill="currentColor" opacity="0.5"/>
+          <path d="M 60,72 L 65,68 L 70,72 L 65,76 Z" fill="currentColor" opacity="0.5"/>
+        </svg>
+      );
+    
+    default:
+      return <Presentation className="w-6 h-6" />;
+  }
+};
+
+// Docs template icon component
+const DocsTemplateIcon = ({ type, className }: { type: string; className?: string }) => {
+  const baseClasses = cn('w-full h-full', className);
+  
+  switch (type) {
+    case 'prd':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
+          <rect x="25" y="22" width="30" height="5" fill="currentColor" opacity="0.8" rx="1"/>
+          <rect x="25" y="30" width="20" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
+          
+          <rect x="25" y="38" width="15" height="3" fill="currentColor" opacity="0.7" rx="0.5"/>
+          <rect x="25" y="44" width="48" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          <rect x="25" y="48" width="45" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          
+          <rect x="25" y="55" width="18" height="3" fill="currentColor" opacity="0.7" rx="0.5"/>
+          <rect x="28" y="60" width="3" height="3" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5"/>
+          <path d="M 29,61 L 30,62.5 L 31.5,60.5" stroke="currentColor" strokeWidth="0.8" fill="none" opacity="0.7"/>
+          <rect x="33" y="61" width="20" height="1.5" fill="currentColor" opacity="0.4" rx="0.5"/>
+          <rect x="28" y="65" width="3" height="3" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5"/>
+          <rect x="33" y="66" width="18" height="1.5" fill="currentColor" opacity="0.4" rx="0.5"/>
+          
+          <rect x="25" y="73" width="15" height="3" fill="currentColor" opacity="0.7" rx="0.5"/>
+          <rect x="25" y="78" width="30" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+        </svg>
+      );
+    
+    case 'technical':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
+          <rect x="25" y="22" width="25" height="4" fill="currentColor" opacity="0.8" rx="1"/>
+          <rect x="25" y="29" width="18" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
+          
+          <rect x="25" y="37" width="48" height="15" fill="currentColor" opacity="0.1" rx="2"/>
+          <text x="28" y="44" fontSize="6" opacity="0.5" fontFamily="monospace">{'<code>'}</text>
+          <rect x="30" y="46" width="20" height="1" fill="currentColor" opacity="0.4" rx="0.3"/>
+          <rect x="32" y="49" width="18" height="1" fill="currentColor" opacity="0.4" rx="0.3"/>
+          
+          <rect x="25" y="57" width="15" height="2.5" fill="currentColor" opacity="0.7" rx="0.5"/>
+          <rect x="25" y="62" width="48" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          <rect x="25" y="66" width="45" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          <rect x="25" y="70" width="40" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          
+          <circle cx="72" cy="25" r="3" fill="currentColor" opacity="0.6"/>
+          <path d="M 70,25 L 71,26 L 74,23" stroke="var(--background)" strokeWidth="1" fill="none"/>
+        </svg>
+      );
+    
+    case 'proposal':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
+          
+          <circle cx="50" cy="28" r="6" fill="currentColor" opacity="0.6"/>
+          <path d="M 50,34 L 50,40" stroke="currentColor" strokeWidth="2" opacity="0.6"/>
+          <path d="M 50,40 L 46,45 M 50,40 L 54,45" stroke="currentColor" strokeWidth="2" opacity="0.6"/>
+          
+          <rect x="30" y="50" width="40" height="3" fill="currentColor" opacity="0.8" rx="1"/>
+          <rect x="32" y="56" width="36" height="2" fill="currentColor" opacity="0.5" rx="0.5"/>
+          
+          <rect x="25" y="63" width="22" height="15" fill="currentColor" opacity="0.15" rx="2"/>
+          <rect x="29" y="68" width="5" height="6" fill="currentColor" opacity="0.6" rx="0.5"/>
+          <rect x="36" y="70" width="5" height="4" fill="currentColor" opacity="0.5" rx="0.5"/>
+          
+          <rect x="52" y="63" width="22" height="15" fill="currentColor" opacity="0.15" rx="2"/>
+          <circle cx="63" cy="70" r="4" stroke="currentColor" strokeWidth="1.5" fill="none" opacity="0.6"/>
+          <path d="M 66,73 L 69,76" stroke="currentColor" strokeWidth="1.5" opacity="0.6"/>
+        </svg>
+      );
+    
+    case 'report':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
+          <rect x="25" y="22" width="35" height="4" fill="currentColor" opacity="0.8" rx="1"/>
+          <rect x="25" y="29" width="25" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
+          
+          <line x1="25" y1="37" x2="75" y2="37" stroke="currentColor" strokeWidth="1" opacity="0.2"/>
+          
+          <rect x="25" y="42" width="48" height="18" fill="currentColor" opacity="0.08" rx="2"/>
+          <rect x="30" y="52" width="5" height="6" fill="currentColor" opacity="0.6" rx="0.5"/>
+          <rect x="37" y="50" width="5" height="8" fill="currentColor" opacity="0.7" rx="0.5"/>
+          <rect x="44" y="48" width="5" height="10" fill="currentColor" opacity="0.8" rx="0.5"/>
+          <rect x="51" y="50" width="5" height="8" fill="currentColor" opacity="0.7" rx="0.5"/>
+          <rect x="58" y="53" width="5" height="5" fill="currentColor" opacity="0.6" rx="0.5"/>
+          <line x1="25" y1="58" x2="73" y2="58" stroke="currentColor" strokeWidth="0.5" opacity="0.3"/>
+          
+          <rect x="25" y="66" width="48" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          <rect x="25" y="70" width="45" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          <rect x="25" y="74" width="40" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          <rect x="25" y="78" width="43" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+        </svg>
+      );
+    
+    case 'guide':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
+          <rect x="25" y="22" width="28" height="4" fill="currentColor" opacity="0.8" rx="1"/>
+          <rect x="25" y="29" width="20" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
+          
+          <circle cx="30" cy="41" r="4" fill="currentColor" opacity="0.7"/>
+          <text x="28" y="44" fontSize="6" fill="var(--background)" fontWeight="bold">1</text>
+          <rect x="37" y="38" width="15" height="2.5" fill="currentColor" opacity="0.6" rx="0.5"/>
+          <rect x="37" y="42" width="30" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          
+          <circle cx="30" cy="53" r="4" fill="currentColor" opacity="0.7"/>
+          <text x="28" y="56" fontSize="6" fill="var(--background)" fontWeight="bold">2</text>
+          <rect x="37" y="50" width="18" height="2.5" fill="currentColor" opacity="0.6" rx="0.5"/>
+          <rect x="37" y="54" width="32" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          
+          <circle cx="30" cy="65" r="4" fill="currentColor" opacity="0.7"/>
+          <text x="28" y="68" fontSize="6" fill="var(--background)" fontWeight="bold">3</text>
+          <rect x="37" y="62" width="16" height="2.5" fill="currentColor" opacity="0.6" rx="0.5"/>
+          <rect x="37" y="66" width="28" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          
+          <circle cx="30" cy="77" r="4" fill="currentColor" opacity="0.7"/>
+          <text x="28" y="80" fontSize="6" fill="var(--background)" fontWeight="bold">4</text>
+          <rect x="37" y="74" width="20" height="2.5" fill="currentColor" opacity="0.6" rx="0.5"/>
+        </svg>
+      );
+    
+    case 'wiki':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
+          
+          <path d="M 30,23 L 35,32 L 40,23 L 45,32 L 50,23" stroke="currentColor" strokeWidth="2" fill="none" opacity="0.6" strokeLinecap="round"/>
+          
+          <rect x="25" y="38" width="25" height="3" fill="currentColor" opacity="0.8" rx="1"/>
+          <rect x="25" y="44" width="48" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          <rect x="25" y="48" width="45" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          <rect x="25" y="52" width="40" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          
+          <rect x="25" y="59" width="20" height="3" fill="currentColor" opacity="0.7" rx="0.5"/>
+          <rect x="25" y="65" width="35" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          <rect x="25" y="69" width="38" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          
+          <rect x="55" y="38" width="18" height="14" fill="currentColor" opacity="0.12" rx="2"/>
+          <circle cx="64" cy="45" r="3" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.5"/>
+          <path d="M 57,49 L 60,46 L 64,48 L 71,43" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.5"/>
+          
+          <path d="M 30,78 L 35,75 L 40,78" stroke="currentColor" strokeWidth="1.5" fill="none" opacity="0.4" strokeLinecap="round"/>
+          <path d="M 45,78 L 50,75 L 55,78" stroke="currentColor" strokeWidth="1.5" fill="none" opacity="0.4" strokeLinecap="round"/>
+        </svg>
+      );
+    
+    case 'policy':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
+          
+          <path d="M 48,20 L 50,25 L 52,20" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.4"/>
+          <circle cx="50" cy="30" r="5" stroke="currentColor" strokeWidth="1.5" fill="none" opacity="0.6"/>
+          <path d="M 50,35 L 50,38" stroke="currentColor" strokeWidth="1.5" opacity="0.6"/>
+          <circle cx="50" cy="39" r="1" fill="currentColor" opacity="0.6"/>
+          
+          <rect x="30" y="45" width="40" height="3" fill="currentColor" opacity="0.8" rx="1"/>
+          <rect x="32" y="51" width="36" height="2" fill="currentColor" opacity="0.5" rx="0.5"/>
+          
+          <line x1="28" y1="58" x2="72" y2="58" stroke="currentColor" strokeWidth="0.5" opacity="0.2"/>
+          
+          <rect x="25" y="62" width="48" height="1.5" fill="currentColor" opacity="0.4" rx="0.5"/>
+          <rect x="25" y="66" width="45" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          <rect x="25" y="70" width="48" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          <rect x="25" y="74" width="40" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          <rect x="25" y="78" width="45" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          
+          <rect x="60" y="80" width="15" height="3" fill="currentColor" opacity="0.15" rx="1"/>
+          <text x="62" y="83" fontSize="5" opacity="0.5">Sign</text>
+        </svg>
+      );
+    
+    case 'meeting-notes':
+      return (
+        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
+          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
+          
+          <circle cx="28" cy="23" r="2" fill="currentColor" opacity="0.6"/>
+          <circle cx="35" cy="23" r="2" fill="currentColor" opacity="0.6"/>
+          <circle cx="42" cy="23" r="2" fill="currentColor" opacity="0.6"/>
+          
+          <rect x="25" y="30" width="30" height="3.5" fill="currentColor" opacity="0.8" rx="1"/>
+          <rect x="58" y="30" width="15" height="3" fill="currentColor" opacity="0.5" rx="1"/>
+          
+          <rect x="25" y="38" width="12" height="2.5" fill="currentColor" opacity="0.7" rx="0.5"/>
+          <rect x="25" y="43" width="3" height="3" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5"/>
+          <rect x="30" y="44" width="25" height="1.5" fill="currentColor" opacity="0.4" rx="0.5"/>
+          <rect x="25" y="48" width="3" height="3" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5"/>
+          <path d="M 26,49 L 27,50.5 L 28.5,48.5" stroke="currentColor" strokeWidth="0.8" fill="none" opacity="0.7"/>
+          <rect x="30" y="49" width="28" height="1.5" fill="currentColor" opacity="0.4" rx="0.5"/>
+          <rect x="25" y="53" width="3" height="3" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5"/>
+          <rect x="30" y="54" width="22" height="1.5" fill="currentColor" opacity="0.4" rx="0.5"/>
+          
+          <rect x="25" y="62" width="15" height="2.5" fill="currentColor" opacity="0.7" rx="0.5"/>
+          <rect x="25" y="67" width="35" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          <rect x="25" y="71" width="40" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          <rect x="25" y="75" width="32" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
+          
+          <circle cx="72" cy="78" r="4" fill="currentColor" opacity="0.6"/>
+          <path d="M 70,78 L 71.5,79.5 L 74,77" stroke="var(--background)" strokeWidth="1" fill="none"/>
+        </svg>
+      );
+    
+    default:
+      return <FileText className="w-6 h-6" />;
+  }
+};
+
 // Chart icon component
 const ChartIcon = ({ type, className }: { type: string; className?: string }) => {
   const baseClasses = cn('w-full h-full', className);
@@ -845,8 +1316,11 @@ export function SunaModesPanel({
                       )
                     }
                   >
-                    <div className="w-full aspect-[4/3] bg-gradient-to-br from-muted/50 to-muted rounded-lg border border-border/50 flex items-center justify-center">
-                      <Presentation className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
+                    <div className="w-full aspect-[4/3] bg-gradient-to-br from-muted/50 to-muted rounded-lg border border-border/50 flex items-center justify-center p-3">
+                      <SlideTemplateIcon 
+                        type={item.id} 
+                        className="text-foreground/50 group-hover:text-primary/70 transition-colors duration-200" 
+                      />
                     </div>
                     <div className="space-y-0.5">
                       <p className="text-xs font-medium text-foreground group-hover:text-primary transition-colors duration-200">
@@ -878,8 +1352,11 @@ export function SunaModesPanel({
                       )
                     }
                   >
-                    <div className="w-full aspect-[3/4] bg-gradient-to-br from-muted/50 to-muted rounded-lg border border-border/50 flex items-center justify-center">
-                      <FileText className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
+                    <div className="w-full aspect-[3/4] bg-gradient-to-br from-muted/50 to-muted rounded-lg border border-border/50 flex items-center justify-center p-3">
+                      <DocsTemplateIcon 
+                        type={item.id} 
+                        className="text-foreground/50 group-hover:text-primary/70 transition-colors duration-200" 
+                      />
                     </div>
                     <div className="space-y-0.5">
                       <p className="text-xs font-medium text-foreground group-hover:text-primary transition-colors duration-200">
