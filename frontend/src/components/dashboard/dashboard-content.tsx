@@ -72,6 +72,18 @@ export function DashboardContent() {
   const [configAgentId, setConfigAgentId] = useState<string | null>(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [autoSubmit, setAutoSubmit] = useState(false);
+  const [selectedMode, setSelectedMode] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'super-worker' | 'worker-templates'>('super-worker');
+  const [selectedCharts, setSelectedCharts] = useState<string[]>([]);
+  const [selectedOutputFormat, setSelectedOutputFormat] = useState<string | null>(null);
+
+  // Reset data selections when mode changes
+  React.useEffect(() => {
+    if (selectedMode !== 'data') {
+      setSelectedCharts([]);
+      setSelectedOutputFormat(null);
+    }
+  }, [selectedMode]);
   const {
     selectedAgentId,
     setSelectedAgent,
@@ -131,6 +143,15 @@ export function DashboardContent() {
       initializeFromAgents(agents, undefined, setSelectedAgent);
     }
   }, [agents, initializeFromAgents, setSelectedAgent]);
+
+  React.useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'worker-templates') {
+      setViewMode('worker-templates');
+    } else {
+      setViewMode('super-worker');
+    }
+  }, [searchParams]);
 
   React.useEffect(() => {
     const agentIdFromUrl = searchParams.get('agent_id');
@@ -345,78 +366,131 @@ export function DashboardContent() {
 
         <div className="flex-1 overflow-y-auto">
           <div className="min-h-full flex flex-col">
-            {/* {(
-              <div className="flex justify-center px-4 pt-4 md:pt-8">
-                <ReleaseBadge className='hover:cursor-pointer' text="Custom Agents, Playbooks, and more!" link="/agents?tab=my-agents" />
-              </div>
-            )} */}
-            <div className="flex-1 flex items-center justify-center px-4 py-8">
-              <div className="w-full max-w-[850px] flex flex-col items-center justify-center space-y-4 md:space-y-6">
-                <div className="flex flex-col items-center text-center w-full">
-                  <p
-                    className="tracking-tight text-2xl md:text-4xl font-medium text-foreground/90"
-                    data-tour="dashboard-title"
-                  >
-                    What would you like to do today?
-                  </p>
-                </div>
-                <div className="w-full" data-tour="chat-input">
-                  <ChatInput
-                    ref={chatInputRef}
-                    onSubmit={handleSubmit}
-                    loading={isSubmitting || isRedirecting}
-                    placeholder="Describe what you need help with..."
-                    value={inputValue}
-                    onChange={setInputValue}
-                    hideAttachments={false}
-                    selectedAgentId={selectedAgentId}
-                    onAgentSelect={setSelectedAgent}
-                    enableAdvancedConfig={true}
-                    onConfigureAgent={(agentId) => {
-                      setConfigAgentId(agentId);
-                      setShowConfigDialog(true);
+            {/* Tabs at the top */}
+            {(isStagingMode() || isLocalMode()) && (
+              <div className="px-4 pt-4 pb-4">
+                <div className="flex items-center justify-center gap-2 p-1 bg-muted/50 rounded-xl w-fit mx-auto">
+                  <button
+                    onClick={() => {
+                      setViewMode('super-worker');
+                      setSelectedMode(null);
+                      router.push('/dashboard');
                     }}
-                  />
+                    className={cn(
+                      "px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200",
+                      viewMode === 'super-worker'
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    Kortix Super Worker
+                  </button>
+                  <button
+                    onClick={() => {
+                      setViewMode('worker-templates');
+                      setSelectedMode(null);
+                      router.push('/dashboard?tab=worker-templates');
+                    }}
+                    className={cn(
+                      "px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200",
+                      viewMode === 'worker-templates'
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    AI Worker Templates
+                  </button>
                 </div>
-
-                {/* Examples section - right after chat input */}
-                {/* <div className="w-full pt-2" data-tour="examples">
-                  <Examples
-                    onSelectPrompt={setInputValue}
-                    count={isMobile ? 2 : 4}
-                  />
-                </div> */}
-
-                {/* AgentExamples section - commented out */}
-                {/* <div className="w-full pt-2" data-tour="examples">
-                  <AgentExamples 
-                    selectedAgentId={selectedAgentId}
-                    onSelectPrompt={setInputValue} 
-                    count={isMobile ? 4 : 8} 
-                  />
-                </div> */}
               </div>
+            )}
+
+            {/* Centered content area */}
+            <div className="flex-1 flex items-start justify-center pt-[20vh]">
+              {/* Super Worker View - Suna only */}
+              {viewMode === 'super-worker' && (
+                <div className="w-full animate-in fade-in-0 duration-300">
+                  {/* Title and chat input - Fixed position */}
+                  <div className="px-4 py-8">
+                    <div className="w-full max-w-3xl mx-auto flex flex-col items-center space-y-4 md:space-y-6">
+                      <div className="flex flex-col items-center text-center w-full">
+                        <p
+                          className="tracking-tight text-2xl md:text-3xl font-normal text-foreground/90"
+                          data-tour="dashboard-title"
+                        >
+                          What should Kortix Super Worker do for you today?
+                        </p>
+                      </div>
+
+                      <div className="w-full" data-tour="chat-input">
+                        <ChatInput
+                          ref={chatInputRef}
+                          onSubmit={handleSubmit}
+                          loading={isSubmitting || isRedirecting}
+                          placeholder="Describe what you need help with..."
+                          value={inputValue}
+                          onChange={setInputValue}
+                          hideAttachments={false}
+                          selectedAgentId={selectedAgentId}
+                          onAgentSelect={setSelectedAgent}
+                          enableAdvancedConfig={!isStagingMode() && !isLocalMode()}
+                          onConfigureAgent={(agentId) => {
+                            setConfigAgentId(agentId);
+                            setShowConfigDialog(true);
+                          }}
+                          selectedMode={selectedMode}
+                          onModeDeselect={() => setSelectedMode(null)}
+                          animatePlaceholder={true}
+                          selectedCharts={selectedCharts}
+                          selectedOutputFormat={selectedOutputFormat}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Modes Panel - Below chat input, doesn't affect its position */}
+                  {(isStagingMode() || isLocalMode()) && isSunaAgent && (
+                    <div className="px-4 pb-8">
+                      <div className="max-w-3xl mx-auto">
+                        <SunaModesPanel
+                          selectedMode={selectedMode}
+                          onModeSelect={setSelectedMode}
+                          onSelectPrompt={setInputValue}
+                          isMobile={isMobile}
+                          selectedCharts={selectedCharts}
+                          onChartsChange={setSelectedCharts}
+                          selectedOutputFormat={selectedOutputFormat}
+                          onOutputFormatChange={setSelectedOutputFormat}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              {(viewMode === 'worker-templates') && (
+                <div className="w-full animate-in fade-in-0 duration-300">
+                  {(isStagingMode() || isLocalMode()) && (
+                    <div className="w-full px-4 pb-8" data-tour="custom-agents">
+                      <div className="max-w-5xl mx-auto">
+                        <CustomAgentsSection
+                          onAgentSelect={setSelectedAgent}
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-            {/* {enabledEnvironment && (
-              <div className="w-full px-4 pb-8" data-tour="custom-agents">
-                <div className="max-w-7xl mx-auto">
-                  <CustomAgentsSection
-                    onAgentSelect={setSelectedAgent}
-                  />
-                </div>
-              </div>
-            )} */}
           </div>
-        </div>
 
-        <BillingErrorAlert
-          message={billingError?.message}
-          currentUsage={billingError?.currentUsage}
-          limit={billingError?.limit}
-          accountId={personalAccount?.account_id}
-          onDismiss={clearBillingError}
-          isOpen={!!billingError}
-        />
+          <BillingErrorAlert
+            message={billingError?.message}
+            currentUsage={billingError?.currentUsage}
+            limit={billingError?.limit}
+            accountId={personalAccount?.account_id}
+            onDismiss={clearBillingError}
+            isOpen={!!billingError}
+          />
+        </div>
       </div>
 
       {agentLimitData && (

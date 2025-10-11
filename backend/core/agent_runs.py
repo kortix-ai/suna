@@ -15,6 +15,7 @@ from core.billing.billing_integration import billing_integration
 from core.utils.config import config, EnvMode
 from core.services import redis
 from core.sandbox.sandbox import create_sandbox, delete_sandbox
+from core.utils.sandbox_utils import generate_unique_filename, get_uploads_directory
 from run_agent_background import run_agent_background
 from core.ai_models import model_manager
 
@@ -218,6 +219,44 @@ async def stop_agent(agent_run_id: str, user_id: str = Depends(verify_and_get_us
     await _get_agent_run_with_access_check(client, agent_run_id, user_id)
     await stop_agent_run(agent_run_id)
     return {"status": "stopped"}
+
+@router.get("/agent-runs/active", summary="List All Active Agent Runs", operation_id="list_active_agent_runs")
+async def get_active_agent_runs(user_id: str = Depends(verify_and_get_user_id_from_jwt)):
+    """Get all active (running) agent runs for the current user across all threads."""
+    logger.debug(f"Fetching all active agent runs for user: {user_id}")
+    client = await utils.db.client
+    
+    # Query all running agent runs where the thread belongs to the user
+    # Join with threads table to filter by account_id
+    agent_runs = await client.table('agent_runs').select('id, thread_id, status, started_at').eq('status', 'running').execute()
+    
+    if not agent_runs.data:
+        return {"active_runs": []}
+    
+    # Filter agent runs to only include those from threads the user has access to
+    # Get thread_ids and check access
+    thread_ids = [run['thread_id'] for run in agent_runs.data]
+    
+    # Get threads that belong to the user
+    threads = await client.table('threads').select('thread_id, account_id').in_('thread_id', thread_ids).eq('account_id', user_id).execute()
+    
+    # Create a set of accessible thread IDs
+    accessible_thread_ids = {thread['thread_id'] for thread in threads.data}
+    
+    # Filter agent runs to only include accessible ones
+    accessible_runs = [
+        {
+            'id': run['id'],
+            'thread_id': run['thread_id'],
+            'status': run['status'],
+            'started_at': run['started_at']
+        }
+        for run in agent_runs.data
+        if run['thread_id'] in accessible_thread_ids
+    ]
+    
+    logger.debug(f"Found {len(accessible_runs)} active agent runs for user: {user_id}")
+    return {"active_runs": accessible_runs}
 
 @router.get("/thread/{thread_id}/agent-runs", summary="List Thread Agent Runs", operation_id="list_thread_agent_runs")
 async def get_agent_runs(thread_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
@@ -763,11 +802,17 @@ async def initiate_agent_with_files(
         if files:
             successful_uploads = []
             failed_uploads = []
+            uploads_dir = get_uploads_directory()
+            
             for file in files:
                 if file.filename:
                     try:
                         safe_filename = file.filename.replace('/', '_').replace('\\', '_')
-                        target_path = f"/workspace/{safe_filename}"
+                        
+                        # Generate unique filename to avoid conflicts
+                        unique_filename = await generate_unique_filename(sandbox, uploads_dir, safe_filename)
+                        target_path = f"{uploads_dir}/{unique_filename}"
+                        
                         logger.debug(f"Attempting to upload {safe_filename} to {target_path} in sandbox {sandbox_id}")
                         content = await file.read()
                         upload_successful = False
@@ -784,14 +829,13 @@ async def initiate_agent_with_files(
                         if upload_successful:
                             try:
                                 await asyncio.sleep(0.2)
-                                parent_dir = os.path.dirname(target_path)
-                                files_in_dir = await sandbox.fs.list_files(parent_dir)
+                                files_in_dir = await sandbox.fs.list_files(uploads_dir)
                                 file_names_in_dir = [f.name for f in files_in_dir]
-                                if safe_filename in file_names_in_dir:
+                                if unique_filename in file_names_in_dir:
                                     successful_uploads.append(target_path)
-                                    logger.debug(f"Successfully uploaded and verified file {safe_filename} to sandbox path {target_path}")
+                                    logger.debug(f"Successfully uploaded and verified file {safe_filename} as {unique_filename} to sandbox path {target_path}")
                                 else:
-                                    logger.error(f"Verification failed for {safe_filename}: File not found in {parent_dir} after upload attempt.")
+                                    logger.error(f"Verification failed for {safe_filename}: File not found in {uploads_dir} after upload attempt.")
                                     failed_uploads.append(safe_filename)
                             except Exception as verify_error:
                                 logger.error(f"Error verifying file {safe_filename} after upload: {str(verify_error)}", exc_info=True)

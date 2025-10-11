@@ -63,6 +63,14 @@ class SandboxPresentationTool(SandboxToolsBase):
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {{
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }}
+    </style>
 </head>
 <body>
     {slide_content}
@@ -118,7 +126,7 @@ class SandboxPresentationTool(SandboxToolsBase):
                     },
                     "content": {
                         "type": "string",
-                        "description": "Complete HTML content including inline CSS or <style> blocks. Design for 1920x1080 resolution. Include all necessary styling as no external CSS frameworks are automatically loaded."
+                        "description": "HTML body content only (DO NOT include <!DOCTYPE>, <html>, <head>, or <body> tags - these are added automatically). Include your content with inline CSS or <style> blocks. Design for 1920x1080 resolution. D3.js, Font Awesome, and Chart.js are pre-loaded and available to use."
                     },
                     "presentation_title": {
                                     "type": "string",
@@ -501,21 +509,29 @@ async def measure_slide_height():
         # Wait for page to load
         await page.wait_for_load_state('networkidle')
         
-        # Measure the actual rendered height of the content
+        # Measure the actual content height
         dimensions = await page.evaluate("""
             () => {{
-                // Get the actual bounding box height of the body content
-                const bodyRect = document.body.getBoundingClientRect();
-                const actualHeight = Math.ceil(bodyRect.height);
+                const body = document.body;
+                const html = document.documentElement;
                 
+                // Get the actual scroll height (total content height)
+                const scrollHeight = Math.max(
+                    body.scrollHeight, body.offsetHeight,
+                    html.clientHeight, html.scrollHeight, html.offsetHeight
+                );
+                
+                // Get viewport height
                 const viewportHeight = window.innerHeight;
-                const overflows = actualHeight > 1080;
+                
+                // Check if content overflows
+                const overflows = scrollHeight > 1080;
                 
                 return {{
-                    scrollHeight: actualHeight,
+                    scrollHeight: scrollHeight,
                     viewportHeight: viewportHeight,
                     overflows: overflows,
-                    excessHeight: Math.max(0, actualHeight - 1080)
+                    excessHeight: scrollHeight - 1080
                 }};
             }}
         """)

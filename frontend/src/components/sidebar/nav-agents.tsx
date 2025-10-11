@@ -36,6 +36,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
   SidebarGroup,
   SidebarGroupLabel,
   SidebarMenu,
@@ -44,11 +49,6 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger
-} from "@/components/ui/tooltip"
 import Link from "next/link"
 import { ShareModal } from "./share-modal"
 import { DeleteConfirmationDialog } from "@/components/thread/DeleteConfirmationDialog"
@@ -58,6 +58,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { ThreadWithProject, GroupedThreads } from '@/hooks/react-query/sidebar/use-sidebar';
 import { processThreadsWithProjects, useDeleteMultipleThreads, useDeleteThread, useProjects, useThreads, groupThreadsByDate } from '@/hooks/react-query/sidebar/use-sidebar';
 import { projectKeys, threadKeys } from '@/hooks/react-query/sidebar/keys';
+import { useThreadAgentStatuses } from '@/hooks/use-thread-agent-status';
 
 // Component for date group headers
 const DateGroupHeader: React.FC<{ dateGroup: string; count: number }> = ({ dateGroup, count }) => {
@@ -80,6 +81,7 @@ const ThreadItem: React.FC<{
   loadingThreadId: string | null;
   pathname: string | null;
   isMobile: boolean;
+  isAgentRunning?: boolean;
   handleThreadClick: (e: React.MouseEvent<HTMLAnchorElement>, threadId: string, url: string) => void;
   toggleThreadSelection: (threadId: string, e?: React.MouseEvent) => void;
   handleDeleteThread: (threadId: string, threadName: string) => void;
@@ -190,6 +192,10 @@ export function NavAgents() {
 
   const groupedThreads: GroupedThreads = groupThreadsByDate(regularThreads);
   const groupedTriggerThreads: GroupedThreads = groupThreadsByDate(triggerThreads);
+
+  // Track agent running status for all threads
+  const threadIds = combinedThreads.map(thread => thread.threadId);
+  const agentStatusMap = useThreadAgentStatuses(threadIds);
 
   const handleDeletionProgress = (completed: number, total: number) => {
     const percentage = (completed / total) * 100;

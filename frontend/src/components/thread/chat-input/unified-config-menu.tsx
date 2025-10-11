@@ -171,7 +171,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
         return found;
     }, [agents, selectedAgentId]);
 
-    const handleQuickAction = useCallback((action: 'instructions' | 'knowledge' | 'triggers') => {
+    const handleQuickAction = useCallback((action: 'instructions' | 'knowledge' | 'triggers' | 'tools') => {
         if (!selectedAgentId && !displayAgent?.agent_id) {
             return;
         }

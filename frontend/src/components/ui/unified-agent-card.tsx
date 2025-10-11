@@ -26,6 +26,7 @@ import {
 import { cn } from '@/lib/utils';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { AgentAvatar } from '@/components/thread/content/agent-avatar';
+import { useComposioToolkitIcon } from '@/hooks/react-query/composio/use-composio';
 
 // Unified agent card variants
 export type AgentCardVariant = 
@@ -77,6 +78,15 @@ export interface BaseAgentData {
     centrally_managed?: boolean;
     restrictions?: Record<string, boolean>;
   };
+
+  mcp_requirements?: Array<{
+    qualified_name: string;
+    display_name: string;
+    custom_type?: string;
+    toolkit_slug?: string;
+    source?: string;
+  }>;
+  agentpress_tools?: Record<string, any>;
 }
 
 // Action handlers
@@ -240,6 +250,103 @@ const TagList: React.FC<{ tags?: string[]; maxTags?: number }> = ({ tags, maxTag
   </div>
 );
 
+// Integration logo component
+const extractAppInfo = (qualifiedName: string, customType?: string) => {
+  if (qualifiedName?.startsWith('composio.')) {
+    const extractedSlug = qualifiedName.substring(9);
+    if (extractedSlug) {
+      return { type: 'composio', slug: extractedSlug };
+    }
+  }
+  
+  if (customType === 'composio') {
+    if (qualifiedName?.startsWith('composio.')) {
+      const extractedSlug = qualifiedName.substring(9);
+      if (extractedSlug) {
+        return { type: 'composio', slug: extractedSlug };
+      }
+    }
+  }
+  
+  return null;
+};
+
+const IntegrationLogo: React.FC<{ 
+  qualifiedName: string; 
+  displayName: string; 
+  customType?: string;
+  toolkitSlug?: string;
+}> = ({ qualifiedName, displayName, customType, toolkitSlug }) => {
+  let appInfo = extractAppInfo(qualifiedName, customType);
+  
+  if (!appInfo && toolkitSlug) {
+    appInfo = { type: 'composio', slug: toolkitSlug };
+  }
+  
+  const { data: composioIconData } = useComposioToolkitIcon(
+    appInfo?.type === 'composio' ? appInfo.slug : '',
+    { enabled: appInfo?.type === 'composio' }
+  );
+  
+  let logoUrl: string | undefined;
+  if (appInfo?.type === 'composio') {
+    logoUrl = composioIconData?.icon_url;
+  }
+
+  const firstLetter = displayName.charAt(0).toUpperCase();
+
+  return (
+    <div className="w-5 h-5 flex items-center justify-center flex-shrink-0 overflow-hidden rounded-md">
+      {logoUrl ? (
+        <img
+          src={logoUrl}
+          alt={displayName}
+          className="w-full h-full object-cover"
+          onError={(e) => {
+            const target = e.target as HTMLImageElement;
+            target.style.display = 'none';
+            target.nextElementSibling?.classList.remove('hidden');
+          }}
+        />
+      ) : null}
+      <div className={logoUrl ? "hidden" : "flex w-full h-full items-center justify-center bg-muted rounded-md text-xs font-medium text-muted-foreground"}>
+        {firstLetter}
+      </div>
+    </div>
+  );
+};
+
+// Integration logos display
+const IntegrationLogos: React.FC<{ data: BaseAgentData; maxLogos?: number }> = ({ data, maxLogos = 4 }) => {
+  const tools = data.mcp_requirements || [];
+  const toolRequirements = tools.filter(req => req.source === 'tool' || !req.source);
+  const integrations = toolRequirements.filter(tool => !tool.custom_type || tool.custom_type !== 'sse');
+  
+  if (integrations.length === 0) return null;
+  
+  const displayIntegrations = integrations.slice(0, maxLogos);
+  const remainingCount = integrations.length - maxLogos;
+  
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap">
+      {displayIntegrations.map((integration, index) => (
+        <IntegrationLogo
+          key={`int-${index}`}
+          qualifiedName={integration.qualified_name}
+          displayName={integration.display_name}
+          customType={integration.custom_type}
+          toolkitSlug={integration.toolkit_slug}
+        />
+      ))}
+      {remainingCount > 0 && (
+        <div className="w-5 h-5 rounded-md bg-muted flex items-center justify-center">
+          <span className="text-[10px] font-medium text-muted-foreground">+{remainingCount}</span>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Capabilities list for onboarding
 const CapabilitiesList: React.FC<{ capabilities?: string[]; maxCapabilities?: number }> = ({ 
   capabilities, 
@@ -307,7 +414,7 @@ export const UnifiedAgentCard: React.FC<UnifiedAgentCardProps> = ({
   
   // Render different variants
   const renderShowcaseCard = () => (
-    <motion.div className="flex flex-col items-start justify-end min-h-[400px] relative group cursor-pointer hover:bg-accent/30 transition-colors duration-300">
+    <motion.div className="flex flex-col items-start justify-end relative group cursor-pointer hover:bg-accent/30 transition-colors duration-300">
       <div className="relative flex size-full items-center justify-center h-full overflow-hidden">
         <div className="pointer-events-none absolute bottom-0 left-0 h-20 w-full bg-gradient-to-t from-background to-transparent z-20"></div>
         
@@ -343,14 +450,14 @@ export const UnifiedAgentCard: React.FC<UnifiedAgentCardProps> = ({
   const renderDashboardCard = () => (
     <div
       className={cn(
-        'group relative bg-muted/30 rounded-3xl overflow-hidden transition-all duration-300 border cursor-pointer flex flex-col w-full border-border/50',
+        'group h-38 relative bg-muted/80 dark:bg-muted/20 rounded-3xl overflow-hidden transition-all duration-300 border cursor-pointer flex flex-col w-full border-border/50',
         'hover:border-primary/20',
         className
       )}
       onClick={() => onClick?.(data)}
     >
       <div className="absolute inset-0 bg-gradient-to-br from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-      <div className="h-full relative flex flex-col overflow-hidden w-full p-4">
+      <div className="h-full relative flex flex-col overflow-hidden w-full p-4 gap-2">
         <div className="flex items-center gap-3">
           <div className="flex-shrink-0">
             <CardAvatar data={data} size={40} variant={variant} />
@@ -359,6 +466,9 @@ export const UnifiedAgentCard: React.FC<UnifiedAgentCardProps> = ({
             {data.name}
           </h3>
         </div>
+      </div>
+      <div className='p-4'>
+      <IntegrationLogos data={data} maxLogos={6} />
       </div>
     </div>
   );

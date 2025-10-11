@@ -1105,7 +1105,8 @@ export function FileViewerModal({
       try {
         // Normalize filename to NFC
         const normalizedName = normalizeFilenameToNFC(file.name);
-        const uploadPath = `${currentPath}/${normalizedName}`;
+        // Use uploads directory - backend will handle unique naming
+        const uploadPath = `/workspace/uploads/${normalizedName}`;
 
         const formData = new FormData();
         // If the filename was normalized, append with the normalized name in the field name
@@ -1138,10 +1139,19 @@ export function FileViewerModal({
           throw new Error(error || 'Upload failed');
         }
 
+        // Parse response to get the actual filename used
+        const responseData = await response.json();
+        const finalFilename = responseData.final_filename || normalizedName;
+        const wasRenamed = responseData.renamed || false;
+
         // Reload the file list using React Query
         await refetchFiles();
 
-        toast.success(`Uploaded: ${normalizedName}`);
+        if (wasRenamed) {
+          toast.success(`Uploaded as: ${finalFilename} (renamed to avoid conflict)`);
+        } else {
+          toast.success(`Uploaded: ${finalFilename}`);
+        }
       } catch (error) {
         toast.error(
           `Upload failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -1151,7 +1161,7 @@ export function FileViewerModal({
         if (event.target) event.target.value = '';
       }
     },
-    [currentPath, sandboxId, refetchFiles],
+    [sandboxId, refetchFiles],
   );
 
   // Reset file list mode when modal opens without filePathList
@@ -1166,7 +1176,8 @@ export function FileViewerModal({
     <>
       <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[90vw] md:max-w-[1200px] w-[95vw] h-[90vh] max-h-[900px] flex flex-col p-0 gap-0 overflow-hidden">
-        <DialogHeader className="px-4 py-2 border-b flex-shrink-0 flex flex-row gap-4 items-center">
+        {/* Header */}
+        <DialogHeader className="px-4 py-3 flex-shrink-0 flex flex-row gap-4 items-center border-b">
           <DialogTitle className="text-lg font-semibold">
             Workspace Files
           </DialogTitle>
@@ -1174,8 +1185,8 @@ export function FileViewerModal({
           {/* Download progress display */}
           {downloadProgress && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <div className="flex items-center gap-1">
-                <Loader className="h-3 w-3 animate-spin" />
+              <div className="flex items-center gap-1.5">
+                <Loader className="h-4 w-4 animate-spin" />
                 <span>
                   {downloadProgress.total > 0
                     ? `${downloadProgress.current}/${downloadProgress.total}`
@@ -1189,7 +1200,7 @@ export function FileViewerModal({
             </div>
           )}
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 ml-auto">
             {/* Navigation arrows for file list mode */}
             {(() => {
               return isFileListMode && selectedFilePath && filePathList && filePathList.length > 1 && currentFileIndex >= 0;
@@ -1205,7 +1216,7 @@ export function FileViewerModal({
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
-                  <div className="text-xs text-muted-foreground px-1">
+                  <div className="text-xs text-muted-foreground px-2">
                     {currentFileIndex + 1} / {(filePathList?.length || 0)}
                   </div>
                   <Button
@@ -1223,8 +1234,8 @@ export function FileViewerModal({
           </div>
         </DialogHeader>
 
-        {/* Navigation Bar */}
-        <div className="px-4 py-2 border-b flex items-center gap-2">
+        {/* Breadcrumb Navigation */}
+        <div className="px-4 py-2 flex items-center gap-2 border-b">
           <Button
             variant="ghost"
             size="icon"
@@ -1249,7 +1260,7 @@ export function FileViewerModal({
               <>
                 {getBreadcrumbSegments(currentPath).map((segment) => (
                   <Fragment key={segment.path}>
-                    <ChevronRight className="h-4 w-4 mx-1 text-muted-foreground opacity-50 flex-shrink-0" />
+                    <ChevronRight className="h-4 w-4 mx-1 text-muted-foreground flex-shrink-0" />
                     <Button
                       variant="ghost"
                       size="sm"
@@ -1265,7 +1276,7 @@ export function FileViewerModal({
 
             {selectedFilePath && (
               <>
-                <ChevronRight className="h-4 w-4 mx-1 text-muted-foreground opacity-50 flex-shrink-0" />
+                <ChevronRight className="h-4 w-4 mx-1 text-muted-foreground flex-shrink-0" />
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium truncate">
                     {selectedFilePath.split('/').pop()}
@@ -1422,28 +1433,28 @@ export function FileViewerModal({
                 <div className="h-full w-full flex flex-col items-center justify-center">
                   <Loader className="h-8 w-8 animate-spin text-primary mb-3" />
                   <p className="text-sm text-muted-foreground">
-                    Loading file{selectedFilePath ? `: ${selectedFilePath.split('/').pop()}` : '...'}
+                    Loading {selectedFilePath ? selectedFilePath.split('/').pop() : 'file'}
                   </p>
-                  <p className="text-xs text-muted-foreground/70 mt-1">
-                    {(() => {
-                      // Normalize the path for consistent cache checks
-                      if (!selectedFilePath) return "Preparing...";
+                  <p className="text-xs text-muted-foreground mt-1">
+                        {(() => {
+                          // Normalize the path for consistent cache checks
+                          if (!selectedFilePath) return "Preparing...";
 
-                      let normalizedPath = selectedFilePath;
-                      if (!normalizedPath.startsWith('/workspace')) {
-                        normalizedPath = `/workspace/${normalizedPath.startsWith('/') ? normalizedPath.substring(1) : normalizedPath}`;
-                      }
+                          let normalizedPath = selectedFilePath;
+                          if (!normalizedPath.startsWith('/workspace')) {
+                            normalizedPath = `/workspace/${normalizedPath.startsWith('/') ? normalizedPath.substring(1) : normalizedPath}`;
+                          }
 
-                      // Detect the appropriate content type based on file extension
-                      const detectedContentType = FileCache.getContentTypeFromPath(normalizedPath);
+                          // Detect the appropriate content type based on file extension
+                          const detectedContentType = FileCache.getContentTypeFromPath(normalizedPath);
 
-                      // Check for cache with the correct content type
-                      const isCached = FileCache.has(`${sandboxId}:${normalizedPath}:${detectedContentType}`);
+                          // Check for cache with the correct content type
+                          const isCached = FileCache.has(`${sandboxId}:${normalizedPath}:${detectedContentType}`);
 
-                      return isCached
-                        ? "Using cached version"
-                        : "Fetching from server";
-                    })()}
+                          return isCached
+                            ? "Using cached version"
+                            : "Fetching from server";
+                        })()}
                   </p>
                 </div>
               ) : contentError ? (

@@ -988,6 +988,48 @@ export const getAgentRuns = async (threadId: string): Promise<AgentRun[]> => {
   }
 };
 
+export interface ActiveAgentRun {
+  id: string;
+  thread_id: string;
+  status: 'running';
+  started_at: string;
+}
+
+export const getActiveAgentRuns = async (): Promise<ActiveAgentRun[]> => {
+  try {
+    const supabase = createClient();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    if (!session?.access_token) {
+      throw new NoAccessTokenAvailableError();
+    }
+
+    const response = await fetch(`${API_URL}/agent-runs/active`, {
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      cache: 'no-store',
+    });
+
+    if (!response.ok) {
+      throw new Error(`Error getting active agent runs: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.active_runs || [];
+  } catch (error) {
+    if (error instanceof NoAccessTokenAvailableError) {
+      throw error;
+    }
+
+    console.error('Failed to get active agent runs:', error);
+    handleApiError(error, { operation: 'get active agent runs', resource: 'active agent runs', silent: true });
+    throw error;
+  }
+};
+
 export const streamAgent = (
   agentRunId: string,
   callbacks: {

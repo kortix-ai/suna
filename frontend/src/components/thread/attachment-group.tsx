@@ -194,42 +194,43 @@ export function AttachmentGroup({
         const filename = path.split('/').pop() || '';
         const isImage = filename.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i) !== null;
         const isPreviewFile = isPreviewableFile(file);
-        const shouldSpanFull = (sortedFiles.length % 2 === 1 && sortedFiles.length > 1 && index === sortedFiles.length - 1);
 
         return {
             file,
             path,
             isImage,
             isPreviewFile,
-            shouldSpanFull,
             wrapperClassName: cn(
                 "relative group",
-                isImage ? "flex items-center justify-center h-full" : "",
-                isPreviewFile && !collapsed ? "w-full" : ""
+                isImage ? "flex items-start justify-center" : "",
+                isPreviewFile ? "w-full" : "" // Previewable files span full width
             ),
-            wrapperStyle: (shouldSpanFull || (isPreviewFile && !collapsed)) ? { gridColumn: '1 / -1' } : undefined
+            wrapperStyle: isPreviewFile ? { gridColumn: '1 / -1' } : undefined // Make previewable files span full width like in CompleteToolView
         };
     });
 
     // Now continue with the fully conditional rendering but with pre-computed values
     const renderContent = () => {
         if (layout === 'grid') {
-            const shouldLastItemSpanFull = sortedFiles.length % 2 === 1 && sortedFiles.length > 1;
-
             return (
                 <div className={cn(
-                    "grid gap-3",
-                    // Force single column for standalone files to maximize width
-                    standalone && !collapsed ? "grid-cols-1 w-full min-w-[300px] sm:min-w-[500px] max-w-[1000px]" :
-                        uniqueFiles.length === 1 ? "grid-cols-1" :
-                            uniqueFiles.length > 4 ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3" :
-                                "grid-cols-1 sm:grid-cols-2",
+                    "grid gap-3 auto-rows-max items-start",
+                    // Responsive grid columns based on file count
+                    uniqueFiles.length === 1 ? "grid-cols-1" :
+                        uniqueFiles.length === 2 ? "grid-cols-1 sm:grid-cols-2" :
+                            uniqueFiles.length === 3 ? "grid-cols-1 sm:grid-cols-2 md:grid-cols-3" :
+                                uniqueFiles.length >= 4 ? "grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4" :
+                                    "grid-cols-1 sm:grid-cols-2",
                     className
                 )}>
                     {sortedFilesWithMeta.map((item, index) => (
                         <div
                             key={index}
-                            className={item.wrapperClassName}
+                            className={cn(
+                                item.wrapperClassName,
+                                // Images and previewable files span naturally, regular files are compact
+                                item.isImage || item.isPreviewFile ? "w-full" : ""
+                            )}
                             style={item.wrapperStyle}
                         >
                             <FileAttachment
@@ -239,31 +240,24 @@ export function AttachmentGroup({
                                 showPreview={showPreviews}
                                 localPreviewUrl={getLocalPreviewUrl(item.file)}
                                 className={cn(
-                                    // Apply full width for all files in grid so they fill the cell
                                     "w-full",
-                                    // Apply appropriate height based on file type
                                     item.isImage ? "h-auto min-h-[54px]" :
-                                        (item.isPreviewFile && !collapsed) ? "min-h-[400px] max-h-[600px] overflow-auto" : "h-[54px]"
+                                        item.isPreviewFile ? "min-h-[240px] max-h-[400px]" : "h-[54px]" // Regular files are compact 54px
                                 )}
-                                // Pass customStyle for both images and previewable files
+                                // Pass customStyle for sizing - MUST include gridColumn for previewable files to trigger preview
                                 customStyle={
                                     item.isImage ? {
-                                        width: '100%', // Full width in grid
-                                        height: 'auto', // For compatibility
-                                        ...(({ '--attachment-height': `${item.shouldSpanFull ? Math.floor(gridImageHeight * 1.33) : gridImageHeight}px` }) as React.CSSProperties)
-                                    } :
-                                        (item.isPreviewFile && !collapsed) ? {
-                                            gridColumn: '1 / -1', // Explicit grid styling for previewable files
-                                            minWidth: '300px', // Reasonable minimum width for all previewable files
+                                        width: '100%',
+                                        height: 'auto',
+                                        maxHeight: `${gridImageHeight}px`,
+                                        '--attachment-height': `${gridImageHeight}px`
+                                    } as React.CSSProperties :
+                                        item.isPreviewFile ? {
+                                            gridColumn: '1 / -1', // This triggers isGridLayout and preview rendering!
                                             width: '100%'
-                                        } :
-                                            item.shouldSpanFull ? {
-                                                gridColumn: '1 / -1' // Explicit grid styling for last item if odd count
-                                            } : {
-                                                width: '100%' // Ensure non-image files take full width
-                                            }
+                                        } : undefined // Regular files get no custom style
                                 }
-                                collapsed={collapsed} // Pass collapsed prop
+                                collapsed={false} // Always show previews in grid like in CompleteToolView
                                 project={project} // Pass project to FileAttachment
                                 isSingleItemGrid={uniqueFiles.length === 1} // Pass single item detection
                                 standalone={standalone} // Pass standalone prop
@@ -300,18 +294,39 @@ export function AttachmentGroup({
             // For inline layout with pre-computed data
             return (
                 <div className={cn("flex flex-wrap gap-3", className)}>
-                    {visibleFilesWithMeta.map((item, index) => (
-                        <div key={index} className={cn("relative group h-[54px]", item.wrapperClassName)}>
-                            <FileAttachment
-                                filepath={item.path}
-                                onClick={handleFileClick}
-                                sandboxId={sandboxId}
-                                showPreview={showPreviews}
-                                localPreviewUrl={getLocalPreviewUrl(item.file)}
-                                collapsed={true} // Always collapsed in inline mode
-                                alignRight={alignRight} // Pass alignRight prop
-                            />
-                            {onRemove && (
+                    {visibleFilesWithMeta.map((item, index) => {
+                        const isHtml = item.path.match(/\.(html|htm)$/i) !== null;
+                        const isPreviewable = item.path.match(/\.(html|htm|md|markdown|csv|tsv)$/i) !== null;
+                        
+                        return (
+                            <div 
+                                key={index} 
+                                className={cn(
+                                    "relative group",
+                                    isPreviewable ? "w-full" : "h-[54px]",
+                                    item.wrapperClassName
+                                )}
+                                style={isPreviewable ? { gridColumn: '1 / -1' } : undefined}
+                            >
+                                <FileAttachment
+                                    filepath={item.path}
+                                    onClick={handleFileClick}
+                                    sandboxId={sandboxId}
+                                    showPreview={showPreviews}
+                                    localPreviewUrl={getLocalPreviewUrl(item.file)}
+                                    collapsed={false} // Show previews like in CompleteToolView
+                                    alignRight={alignRight} // Pass alignRight prop
+                                    className={cn(
+                                        isPreviewable ? "min-h-[240px] max-h-[400px] overflow-auto" : ""
+                                    )}
+                                    customStyle={
+                                        isPreviewable ? {
+                                            gridColumn: '1 / -1',
+                                            width: '100%'
+                                        } : undefined
+                                    }
+                                />
+                                {onRemove && (
                                 <div
                                     className="absolute -top-1 -right-1 h-5 w-5 rounded-full
                                         bg-black dark:bg-white
@@ -335,7 +350,8 @@ export function AttachmentGroup({
                                 </div>
                             )}
                         </div>
-                    ))}
+                        );
+                    })}
 
                     {/* "More" button */}
                     {moreCount > 0 && (
@@ -389,7 +405,7 @@ export function AttachmentGroup({
                     </DialogHeader>
 
                     <div className={cn(
-                        "grid gap-3 sm:justify-start justify-center sm:mx-0",
+                        "grid gap-3 auto-rows-max items-start sm:justify-start justify-center sm:mx-0",
                         // Force single column for standalone files in modal too with better width constraints
                         standalone && !collapsed ? "grid-cols-1 w-full min-w-[300px] sm:min-w-[600px] max-w-[1200px] mx-auto" :
                             "sm:max-w-full max-w-[300px] mx-auto",
@@ -432,27 +448,34 @@ export function AttachmentGroup({
                                     const path = getFilePath(file);
                                     const filename = path.split('/').pop() || '';
                                     const isImage = filename.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i) !== null;
+                                    const isPreviewFile = isPreviewableFile(file);
 
                                     return {
                                         file,
                                         path,
                                         isImage,
+                                        isPreviewFile,
                                         originalIndex,
                                         wrapperClassName: cn(
                                             "relative group",
-                                            isImage ? "flex items-center justify-center h-full" : ""
+                                            isImage ? "flex items-start justify-center" : "",
+                                            isPreviewFile ? "w-full" : ""
                                         ),
                                         fileClassName: cn(
                                             "w-full",
-                                            isImage ? "h-auto min-h-[54px]" : "h-[54px]"
+                                            isImage ? "h-auto min-h-[54px]" :
+                                                isPreviewFile ? "min-h-[240px] max-h-[400px]" : "h-[54px]"
                                         ),
                                         customStyle: isImage ? {
                                             width: '100%',
                                             height: 'auto',
-                                            ...(({ '--attachment-height': `${gridImageHeight}px` }) as React.CSSProperties)
-                                        } : {
-                                            width: '100%'
-                                        }
+                                            maxHeight: `${gridImageHeight}px`,
+                                            '--attachment-height': `${gridImageHeight}px`
+                                        } as React.CSSProperties :
+                                            isPreviewFile ? {
+                                                gridColumn: '1 / -1', // This triggers isGridLayout and preview rendering!
+                                                width: '100%'
+                                            } : undefined // Regular files get no custom style
                                     };
                                 });
                             })();
@@ -461,6 +484,7 @@ export function AttachmentGroup({
                                 <div
                                     key={item.originalIndex}
                                     className={item.wrapperClassName}
+                                    style={item.isPreviewFile ? { gridColumn: '1 / -1' } : undefined}
                                 >
                                     <FileAttachment
                                         filepath={item.path}
@@ -473,7 +497,7 @@ export function AttachmentGroup({
                                         localPreviewUrl={getLocalPreviewUrl(item.file)}
                                         className={item.fileClassName}
                                         customStyle={item.customStyle}
-                                        collapsed={true} // Force collapsed for all in modal
+                                        collapsed={false} // Show previews like in CompleteToolView
                                         project={project}
                                         isSingleItemGrid={uniqueFiles.length === 1} // Pass single item detection to modal too
                                         standalone={false} // Never standalone in modal
