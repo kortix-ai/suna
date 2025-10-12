@@ -145,6 +145,15 @@ export function DashboardContent() {
   }, [agents, initializeFromAgents, setSelectedAgent]);
 
   React.useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'worker-templates') {
+      setViewMode('worker-templates');
+    } else {
+      setViewMode('super-worker');
+    }
+  }, [searchParams]);
+
+  React.useEffect(() => {
     const agentIdFromUrl = searchParams.get('agent_id');
     if (agentIdFromUrl && agentIdFromUrl !== selectedAgentId) {
       setSelectedAgent(agentIdFromUrl);
@@ -365,6 +374,7 @@ export function DashboardContent() {
                     onClick={() => {
                       setViewMode('super-worker');
                       setSelectedMode(null);
+                      router.push('/dashboard');
                     }}
                     className={cn(
                       "px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200",
@@ -379,6 +389,7 @@ export function DashboardContent() {
                     onClick={() => {
                       setViewMode('worker-templates');
                       setSelectedMode(null);
+                      router.push('/dashboard?tab=worker-templates');
                     }}
                     className={cn(
                       "px-4 py-2 text-sm font-medium rounded-lg transition-all duration-200",
@@ -455,40 +466,8 @@ export function DashboardContent() {
                   )}
                 </div>
               )}
-
-              {/* Worker Templates View - Available for ALL agents */}
               {(viewMode === 'worker-templates') && (
                 <div className="w-full animate-in fade-in-0 duration-300">
-                  {/* Title */}
-                  <div className="px-4 py-8">
-                    <div className="w-full max-w-5xl mx-auto flex flex-col items-center space-y-2">
-                      <div className="flex flex-col items-center text-center w-full">
-                        <p className="tracking-tight text-2xl md:text-3xl font-normal text-foreground/90">
-                          Workers & Workflows
-                        </p>
-                        <p className="text-sm text-muted-foreground mt-2">
-                          Configure and install AI workers from templates
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Templates Grid */}
-                  <div className="px-4 pb-8">
-                    <div className="max-w-5xl mx-auto">
-                      <AIWorkerTemplates
-                        onSelectWorker={(worker) => {
-                          setInputValue(`Create an AI worker: ${worker.name} - ${worker.description}`);
-                          if (isSunaAgent) {
-                            setViewMode('super-worker');
-                          }
-                          toast.success(`Selected ${worker.name} template`);
-                        }}
-                        isMobile={isMobile}
-                      />
-                    </div>
-                  </div>
-
                   {(isStagingMode() || isLocalMode()) && (
                     <div className="w-full px-4 pb-8" data-tour="custom-agents">
                       <div className="max-w-5xl mx-auto">

@@ -193,6 +193,7 @@ export function FileAttachment({
 
     // Simplified state management
     const [hasError, setHasError] = React.useState(false);
+    const [imageLoaded, setImageLoaded] = React.useState(false);
 
     // XLSX sheet management
     const [xlsxSheetIndex, setXlsxSheetIndex] = React.useState(0);
@@ -267,6 +268,11 @@ export function FileAttachment({
             setHasError(true);
         }
     }, [fileContentError, imageError, pdfError, xlsxError]);
+
+    // Reset image loaded state when URL changes
+    React.useEffect(() => {
+        setImageLoaded(false);
+    }, [imageUrl, localPreviewUrl, filepath]);
 
     // Parse XLSX to get sheet names when blob URL is available
     React.useEffect(() => {
@@ -343,34 +349,7 @@ export function FileAttachment({
             ? (customStyle as any)['--attachment-height'] as string
             : '54px';
 
-        // Show loading state for images
-        if (imageLoading && sandboxId) {
-            return (
-                <button
-                    onClick={handleClick}
-                    className={cn(
-                        "group relative rounded-xl cursor-pointer",
-                        "border border-black/10 dark:border-white/10",
-                        "bg-black/5 dark:bg-black/20",
-                        "p-0 overflow-hidden",
-                        "flex items-center justify-center",
-                        // Match the aspect ratio behavior
-                        isGridLayout ? "w-full" : "h-[54px] w-[54px]",
-                        className
-                    )}
-                    style={{
-                        ...customStyle,
-                        // For grid layout, use a reasonable min-height for loading state
-                        minHeight: isGridLayout ? '100px' : undefined
-                    }}
-                    title={filename}
-                >
-                    <div className="absolute inset-0 flex items-center justify-center">
-                        <Loader2 className="h-6 w-6 text-primary animate-spin" />
-                    </div>
-                </button>
-            );
-        }
+        // No separate loading state needed - we handle it inline in the main render
 
         // Check for errors
         if (imageError || hasError) {
@@ -379,23 +358,25 @@ export function FileAttachment({
                     onClick={handleClick}
                     className={cn(
                         "group relative rounded-xl cursor-pointer",
-                        "border border-black/10 dark:border-white/10",
-                        "bg-black/5 dark:bg-black/20",
+                        "border border-red-500/20 dark:border-red-500/30",
+                        "bg-red-500/5 dark:bg-red-500/10",
                         "p-0 overflow-hidden",
-                        "flex flex-col items-center justify-center gap-1",
+                        "flex flex-col items-center justify-center gap-2",
                         // Match the aspect ratio behavior
-                        isGridLayout ? "w-full" : "h-[54px] w-[54px]",
+                        isGridLayout ? "w-full aspect-[4/3]" : "h-[54px] w-[54px]",
                         className
                     )}
                     style={{
                         ...customStyle,
-                        // For grid layout, use a reasonable min-height for error state
-                        minHeight: isGridLayout ? '100px' : undefined
+                        // For grid layout, ensure proper minimum dimensions
+                        minHeight: isGridLayout ? '200px' : undefined,
+                        height: isGridLayout ? 'auto' : undefined
                     }}
                     title={filename}
                 >
-                    <IconComponent className="h-5 w-5 text-red-500" />
-                    <div className="text-[10px] text-red-500">Error</div>
+                    <IconComponent className="h-6 w-6 text-red-500" />
+                    <div className="text-xs text-red-500 font-medium">Failed to load</div>
+                    <div className="text-[10px] text-red-500/70">Click to open</div>
                 </button>
             );
         }
@@ -409,26 +390,48 @@ export function FileAttachment({
                     "bg-black/5 dark:bg-black/20",
                     "p-0 overflow-hidden", // No padding, content touches borders
                     "flex items-center justify-center", // Center the image
-                    // For grid, auto height; for inline, fixed height
+                    // For grid, full width with auto height; for inline, fixed height
                     isGridLayout ? "w-full" : "h-[54px] inline-block",
                     className
                 )}
-                style={customStyle}
+                style={{
+                    ...customStyle,
+                    // Only apply minHeight if image hasn't loaded yet (prevents thin line)
+                    minHeight: isGridLayout && !imageLoaded ? '200px' : undefined,
+                    // Use aspect ratio placeholder until image loads
+                    aspectRatio: isGridLayout && !imageLoaded ? '4/3' : undefined,
+                    height: isGridLayout ? 'auto' : customStyle?.height
+                }}
                 title={filename}
             >
+                {/* Show loading spinner overlay while image is loading */}
+                {!imageLoaded && isGridLayout && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-black/5 to-black/10 dark:from-white/5 dark:to-white/10 z-10">
+                        <Loader2 className="h-8 w-8 text-primary animate-spin" />
+                    </div>
+                )}
+                
                 <img
                     src={sandboxId && session?.access_token ? imageUrl : (fileUrl || '')}
                     alt={filename}
                     className={cn(
-                        // Preserve aspect ratio
+                        // Preserve natural aspect ratio - let image dictate dimensions
                         isGridLayout ? "w-full h-auto" : "h-full w-auto",
-                        "object-contain"
+                        "object-contain",
+                        // Hide image until it loads (prevents layout shift)
+                        !imageLoaded && isGridLayout ? "opacity-0" : "opacity-100"
                     )}
                     style={{
                         objectPosition: "center",
                         maxHeight: isGridLayout ? customStyle?.maxHeight : undefined
                     }}
-                    onLoad={() => {
+                    onLoad={(e) => {
+                        console.log(`Image loaded: ${filename}`, {
+                            naturalWidth: (e.target as HTMLImageElement)?.naturalWidth,
+                            naturalHeight: (e.target as HTMLImageElement)?.naturalHeight,
+                            src: (e.target as HTMLImageElement)?.src?.substring(0, 50) + '...'
+                        });
+                        setImageLoaded(true);
                     }}
                     onError={(e) => {
                         // Avoid logging the error for all instances of the same image
@@ -464,6 +467,7 @@ export function FileAttachment({
                         }
 
                         setHasError(true);
+                        setImageLoaded(true); // Consider it "loaded" even on error
                         // If the image failed to load and we have a localPreviewUrl that's a blob URL, try using it directly
                         if (localPreviewUrl && typeof localPreviewUrl === 'string' && localPreviewUrl.startsWith('blob:')) {
                             (e.target as HTMLImageElement).src = localPreviewUrl;

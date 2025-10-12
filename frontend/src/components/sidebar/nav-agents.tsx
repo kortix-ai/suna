@@ -34,6 +34,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import {
   SidebarGroup,
   SidebarGroupLabel,
   SidebarMenu,
@@ -42,11 +47,6 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger
-} from "@/components/ui/tooltip"
 import Link from "next/link"
 import { ShareModal } from "./share-modal"
 import { DeleteConfirmationDialog } from "@/components/thread/DeleteConfirmationDialog"
@@ -56,6 +56,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { ThreadWithProject, GroupedThreads } from '@/hooks/react-query/sidebar/use-sidebar';
 import { processThreadsWithProjects, useDeleteMultipleThreads, useDeleteThread, useProjects, useThreads, groupThreadsByDate } from '@/hooks/react-query/sidebar/use-sidebar';
 import { projectKeys, threadKeys } from '@/hooks/react-query/sidebar/keys';
+import { useThreadAgentStatuses } from '@/hooks/use-thread-agent-status';
 
 // Component for date group headers
 const DateGroupHeader: React.FC<{ dateGroup: string; count: number }> = ({ dateGroup, count }) => {
@@ -78,6 +79,7 @@ const ThreadItem: React.FC<{
   loadingThreadId: string | null;
   pathname: string | null;
   isMobile: boolean;
+  isAgentRunning?: boolean;
   handleThreadClick: (e: React.MouseEvent<HTMLAnchorElement>, threadId: string, url: string) => void;
   toggleThreadSelection: (threadId: string, e?: React.MouseEvent) => void;
   handleDeleteThread: (threadId: string, threadName: string) => void;
@@ -88,6 +90,7 @@ const ThreadItem: React.FC<{
   isActive, 
   isThreadLoading, 
   isSelected, 
+  isAgentRunning = false,
   handleThreadClick, 
   toggleThreadSelection, 
   handleDeleteThread, 
@@ -126,6 +129,18 @@ const ThreadItem: React.FC<{
             )}
             <span className="truncate">{thread.projectName}</span>
           </Link>
+          
+          {/* Running status indicator */}
+          {isAgentRunning && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div className="mr-1 flex-shrink-0 w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              </TooltipTrigger>
+              <TooltipContent>
+                Agent is running
+              </TooltipContent>
+            </Tooltip>
+          )}
           
           {/* Checkbox - only visible on hover of this specific area */}
           <div
@@ -243,6 +258,10 @@ export function NavAgents() {
   
   const groupedThreads: GroupedThreads = groupThreadsByDate(regularThreads);
   const groupedTriggerThreads: GroupedThreads = groupThreadsByDate(triggerThreads);
+
+  // Track agent running status for all threads
+  const threadIds = combinedThreads.map(thread => thread.threadId);
+  const agentStatusMap = useThreadAgentStatuses(threadIds);
 
   const handleDeletionProgress = (completed: number, total: number) => {
     const percentage = (completed / total) * 100;
@@ -589,6 +608,7 @@ export function NavAgents() {
                                   loadingThreadId={loadingThreadId}
                                   pathname={pathname}
                                   isMobile={isMobile}
+                                  isAgentRunning={agentStatusMap.get(thread.threadId) || false}
                                   handleThreadClick={handleThreadClick}
                                   toggleThreadSelection={toggleThreadSelection}
                                   handleDeleteThread={handleDeleteThread}
@@ -622,6 +642,7 @@ export function NavAgents() {
                             loadingThreadId={loadingThreadId}
                             pathname={pathname}
                             isMobile={isMobile}
+                            isAgentRunning={agentStatusMap.get(thread.threadId) || false}
                             handleThreadClick={handleThreadClick}
                             toggleThreadSelection={toggleThreadSelection}
                             handleDeleteThread={handleDeleteThread}
