@@ -134,6 +134,13 @@ class ToolManager:
             if enabled_methods:
                 logger.debug(f"✅ Registered data_providers_tool with methods: {enabled_methods}")
         
+        if config.SEMANTIC_SCHOLAR_API_KEY and 'paper_search_tool' not in disabled_tools:
+            if 'paper_search_tool' not in disabled_tools:
+                enabled_methods = self._get_enabled_methods_for_tool('paper_search_tool')
+                self.thread_manager.add_tool(PaperSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager)
+                if enabled_methods:
+                    logger.debug(f"✅ Registered paper_search_tool with methods: {enabled_methods}")
+        
         # Register search tools if EXA API key is available
         if config.EXA_API_KEY:
             if 'people_search_tool' not in disabled_tools:
@@ -148,11 +155,6 @@ class ToolManager:
                 if enabled_methods:
                     logger.debug(f"✅ Registered company_search_tool with methods: {enabled_methods}")
             
-            if 'paper_search_tool' not in disabled_tools:
-                enabled_methods = self._get_enabled_methods_for_tool('paper_search_tool')
-                self.thread_manager.add_tool(PaperSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager)
-                if enabled_methods:
-                    logger.debug(f"✅ Registered paper_search_tool with methods: {enabled_methods}")
     
     def _register_agent_builder_tools(self, agent_id: str, disabled_tools: List[str]):
         """Register agent builder tools with proper initialization."""

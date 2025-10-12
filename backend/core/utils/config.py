@@ -296,6 +296,7 @@ class Configuration:
     FIRECRAWL_API_KEY: str
     FIRECRAWL_URL: Optional[str] = "https://api.firecrawl.dev"
     EXA_API_KEY: Optional[str] = None
+    SEMANTIC_SCHOLAR_API_KEY: Optional[str] = None
     
     # Freestyle deployment configuration
     FREESTYLE_API_KEY: Optional[str] = None
