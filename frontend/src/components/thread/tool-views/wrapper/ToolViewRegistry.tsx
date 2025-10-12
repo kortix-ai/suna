@@ -14,6 +14,12 @@ import { WebSearchToolView } from '../web-search-tool/WebSearchToolView';
 import { PeopleSearchToolView } from '../people-search-tool/PeopleSearchToolView';
 import { CompanySearchToolView } from '../company-search-tool/CompanySearchToolView';
 import { PaperSearchToolView } from '../paper-search-tool/PaperSearchToolView';
+import { PaperDetailsToolView } from '../paper-details-tool/PaperDetailsToolView';
+import { AuthorSearchToolView } from '../author-search-tool/AuthorSearchToolView';
+import { AuthorDetailsToolView } from '../author-details-tool/AuthorDetailsToolView';
+import { AuthorPapersToolView } from '../author-papers-tool/AuthorPapersToolView';
+import { PaperCitationsToolView } from '../paper-citations-tool/PaperCitationsToolView';
+import { PaperReferencesToolView } from '../paper-references-tool/PaperReferencesToolView';
 import { DocumentParserToolView } from '../document-parser-tool/DocumentParserToolView';
 import { SeeImageToolView } from '../see-image-tool/SeeImageToolView';
 import { TerminateCommandToolView } from '../command-tool/TerminateCommandToolView';
@@ -88,6 +94,12 @@ const defaultRegistry: ToolViewRegistryType = {
   'people-search': PeopleSearchToolView,
   'company-search': CompanySearchToolView,
   'paper-search': PaperSearchToolView,
+  'get-paper-details': PaperDetailsToolView,
+  'search-authors': AuthorSearchToolView,
+  'get-author-details': AuthorDetailsToolView,
+  'get-author-papers': AuthorPapersToolView,
+  'get-paper-citations': PaperCitationsToolView,
+  'get-paper-references': PaperReferencesToolView,
   'crawl-webpage': WebCrawlToolView,
   'scrape-webpage': WebScrapeToolView,
   'image-search': WebSearchToolView,
