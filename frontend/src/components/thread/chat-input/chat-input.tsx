@@ -18,7 +18,7 @@ import { handleFiles, FileUploadHandler } from './file-upload-handler';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Loader2, ArrowUp, X, Image as ImageIcon, Presentation, BarChart3, FileText, Search, Users, Code2, Sparkles, Brain as BrainIcon, MessageSquare } from 'lucide-react';
+import { Loader2, ArrowUp, X, Image as ImageIcon, Presentation, BarChart3, FileText, Search, Users, Code2, Sparkles, Brain as BrainIcon, MessageSquare, CornerDownLeft } from 'lucide-react';
 import { VoiceRecorder } from './voice-recorder';
 import { UnifiedConfigMenu } from './unified-config-menu';
 import { AttachmentGroup } from '../attachment-group';
@@ -183,7 +183,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const [mounted, setMounted] = useState(false);
     const [animatedPlaceholder, setAnimatedPlaceholder] = useState('');
     const [isModeDismissing, setIsModeDismissing] = useState(false);
-    
+
     // Suna Agent Modes feature flag
     const ENABLE_SUNA_AGENT_MODES = false;
     const [sunaAgentModes, setSunaAgentModes] = useState<'adaptive' | 'autonomous' | 'chat'>('adaptive');
@@ -213,7 +213,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     // - For paid users, only show when they're at 70% or more of their cost limit (30% or below remaining)
     const shouldShowUsage = useMemo(() => {
       if (!subscriptionData || !showToLowCreditUsers || isLocalMode()) return false;
-      
+
       // Free users: always show
       if (subscriptionStatus === 'no_subscription') {
         return true;
@@ -295,20 +295,20 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       if (selectedMode !== 'data' || (selectedCharts.length === 0 && !selectedOutputFormat)) {
         return '';
       }
-      
+
       let markdown = '\n\n----\n\n**Data Visualization Requirements:**\n';
-      
+
       if (selectedOutputFormat) {
         markdown += `\n- **Output Format:** ${selectedOutputFormat}`;
       }
-      
+
       if (selectedCharts.length > 0) {
         markdown += '\n- **Preferred Charts:**';
         selectedCharts.forEach(chartId => {
           markdown += `\n  - ${chartId}`;
         });
       }
-      
+
       return markdown;
     }, [selectedMode, selectedCharts, selectedOutputFormat]);
 
@@ -373,7 +373,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           .join('\n');
         message = message ? `${message}\n\n${fileInfo}` : fileInfo;
       }
-      
+
       // Append Markdown for data visualization options
       const dataOptionsMarkdown = generateDataOptionsMarkdown();
       if (dataOptionsMarkdown) {
@@ -534,9 +534,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           onPaste={handlePaste}
           placeholder={animatedPlaceholder}
           className={cn(
-            'w-full bg-transparent dark:bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 !text-[15px] min-h-[72px] max-h-[200px] overflow-y-auto resize-none',
+            'w-full bg-transparent dark:bg-transparent border-none shadow-none focus-visible:ring-0 px-0.5 pb-6 pt-4 min-h-[36px] max-h-[200px] overflow-y-auto resize-none',
             isDraggingOver ? 'opacity-40' : '',
           )}
+          style={{ fontSize: '15px' }}
           disabled={loading || (disabled && !isAgentRunning)}
           rows={1}
         />
@@ -561,7 +562,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
               isLoggedIn={isLoggedIn}
             />
           )}
-          
+
           {/* Agent Mode Switcher - Only for Suna */}
           {ENABLE_SUNA_AGENT_MODES && (isStagingMode() || isLocalMode()) && isSunaAgent && (
             <TooltipProvider>
@@ -634,7 +635,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
               </div>
             </TooltipProvider>
           )}
-          
+
           {(selectedMode || isModeDismissing) && onModeDeselect && (
             <Button
               variant="outline"
@@ -671,46 +672,32 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
             onTranscription={handleTranscription}
             disabled={loading || (disabled && !isAgentRunning)}
           />}
-
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="submit"
-                  onClick={isAgentRunning && onStopAgent ? onStopAgent : handleSubmit}
-                  size="sm"
-                  className={cn(
-                    'w-8 h-8 flex-shrink-0 self-end rounded-xl',
-                    (!value.trim() && uploadedFiles.length === 0 && !isAgentRunning) ||
-                      loading ||
-                      (disabled && !isAgentRunning) ||
-                      isUploading
-                      ? 'opacity-50'
-                      : '',
-                  )}
-                  disabled={
-                    (!value.trim() && uploadedFiles.length === 0 && !isAgentRunning) ||
-                    loading ||
-                    (disabled && !isAgentRunning) ||
-                    isUploading
-                  }
-                >
-                  {loading || isUploading ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  ) : isAgentRunning ? (
-                    <div className="min-h-[14px] min-w-[14px] w-[14px] h-[14px] rounded-sm bg-current" />
-                  ) : (
-                    <ArrowUp className="h-5 w-5" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              {isUploading && (
-                <TooltipContent side="top">
-                  <p>Uploading {pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''}...</p>
-                </TooltipContent>
-              )}
-            </Tooltip>
-          </TooltipProvider>
+          <Button
+            type="submit"
+            onClick={isAgentRunning && onStopAgent ? onStopAgent : handleSubmit}
+            size="sm"
+            className={cn(
+              'w-[34px] h-[34px] flex-shrink-0 rounded-full',
+              (!value.trim() && uploadedFiles.length === 0 && !isAgentRunning) ||
+                loading ||
+                (disabled && !isAgentRunning)
+                ? 'opacity-50'
+                : '',
+            )}
+            disabled={
+              (!value.trim() && uploadedFiles.length === 0 && !isAgentRunning) ||
+              loading ||
+              (disabled && !isAgentRunning)
+            }
+          >
+            {loading ? (
+              <Loader2 className="h-5 w-5 animate-spin" />
+            ) : isAgentRunning ? (
+              <div className="min-h-[14px] min-w-[14px] w-[14px] h-[14px] rounded-sm bg-current" />
+            ) : (
+              <CornerDownLeft className="h-5 w-5" />
+            )}
+          </Button>
         </div>
       </div>
     ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, messages, isLoggedIn, renderConfigDropdown, billingModalOpen, setBillingModalOpen, handleTranscription, onStopAgent, handleSubmit, value, uploadedFiles, selectedMode, onModeDeselect, handleModeDeselect, isModeDismissing, isSunaAgent, sunaAgentModes, pendingFiles]);
@@ -767,27 +754,15 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
             }}
           >
             <div className="w-full text-sm flex flex-col justify-between items-start rounded-lg">
-              <CardContent className={`w-full p-1.5 pb-2 ${bgColor} border rounded-3xl`}>
-                {(uploadedFiles.length > 0 || isUploading) && (
-                  <div className="relative">
-                    <AttachmentGroup
-                      files={uploadedFiles || []}
-                      sandboxId={sandboxId}
-                      onRemove={removeUploadedFile}
-                      layout="inline"
-                      maxHeight="216px"
-                      showPreviews={true}
-                    />
-                    {isUploading && pendingFiles.length > 0 && (
-                      <div className="absolute inset-0 bg-background/50 backdrop-blur-sm rounded-xl flex items-center justify-center">
-                        <div className="flex items-center gap-2 bg-background/90 px-3 py-2 rounded-lg border border-border">
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          <span className="text-sm">Uploading {pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''}...</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+              <CardContent className={`w-full p-1.5 pb-2 ${bgColor} border rounded-3xl h-[148px]`}>
+                <AttachmentGroup
+                  files={uploadedFiles || []}
+                  sandboxId={sandboxId}
+                  onRemove={removeUploadedFile}
+                  layout="inline"
+                  maxHeight="216px"
+                  showPreviews={true}
+                />
                 <div className="relative flex flex-col w-full h-full gap-2 justify-between">
                   {renderTextArea}
                   {renderControls}
@@ -842,7 +817,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                   >
                     <Wrench className="h-3.5 w-3.5 flex-shrink-0" />
                     <span className="text-xs font-medium">Tools</span>
-                  </button>                  
+                  </button>
                   <button
                     onClick={() => setAgentConfigDialog({ open: true, tab: 'instructions' })}
                     className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-lg hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"

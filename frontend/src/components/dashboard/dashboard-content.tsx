@@ -76,7 +76,7 @@ export function DashboardContent() {
   const [viewMode, setViewMode] = useState<'super-worker' | 'worker-templates'>('super-worker');
   const [selectedCharts, setSelectedCharts] = useState<string[]>([]);
   const [selectedOutputFormat, setSelectedOutputFormat] = useState<string | null>(null);
-  
+
   // Reset data selections when mode changes
   React.useEffect(() => {
     if (selectedMode !== 'data') {
@@ -398,7 +398,7 @@ export function DashboardContent() {
                         : "text-muted-foreground hover:text-foreground"
                     )}
                   >
-                    Worker Templates
+                    AI Worker Templates
                   </button>
                 </div>
               </div>
@@ -481,16 +481,16 @@ export function DashboardContent() {
               )}
             </div>
           </div>
-        </div>
 
-        <BillingErrorAlert
-          message={billingError?.message}
-          currentUsage={billingError?.currentUsage}
-          limit={billingError?.limit}
-          accountId={personalAccount?.account_id}
-          onDismiss={clearBillingError}
-          isOpen={!!billingError}
-        />
+          <BillingErrorAlert
+            message={billingError?.message}
+            currentUsage={billingError?.currentUsage}
+            limit={billingError?.limit}
+            accountId={personalAccount?.account_id}
+            onDismiss={clearBillingError}
+            isOpen={!!billingError}
+          />
+        </div>
       </div>
 
       {agentLimitData && (

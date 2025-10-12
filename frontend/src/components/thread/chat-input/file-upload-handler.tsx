@@ -146,7 +146,7 @@ const uploadFiles = async (
     }
 
     setUploadedFiles((prev) => [...prev, ...newUploadedFiles]);
-    
+
     // Clear pending files after successful upload
     if (setPendingFiles) {
       setPendingFiles([]);
@@ -266,9 +266,9 @@ export const FileUploadHandler = forwardRef<
                 <Button
                   type="button"
                   onClick={handleFileUpload}
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  className="h-8 w-8 p-0 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
+                  className="h-[42px] !px-4 py-2 bg-muted/50 border-0 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-2"
                   disabled={
                     !isLoggedIn || loading || (disabled && !isAgentRunning) || isUploading
                   }
@@ -278,6 +278,7 @@ export const FileUploadHandler = forwardRef<
                   ) : (
                     <Paperclip className="h-4 w-4" />
                   )}
+                  <span className='sm:block hidden'>Attach</span>
                 </Button>
               </span>
             </TooltipTrigger>
