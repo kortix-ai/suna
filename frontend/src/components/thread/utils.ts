@@ -398,6 +398,14 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['execute_data_provider_call', 'Calling data provider'],
   ['get_data_provider_endpoints', 'Getting endpoints'],
   
+  ['get-paper-details', 'Getting Paper Details'],
+  ['search-authors', 'Searching Authors'],
+  ['get-author-details', 'Getting Author Details'],
+  ['get-author-papers', 'Getting Author Papers'],
+  ['get-paper-citations', 'Getting Paper Citations'],
+  ['get-paper-references', 'Getting Paper References'],
+  ['paper-search', 'Searching for Papers'],
+  
   ['ask', 'Ask'],
   ['complete', 'Completing Task'],
   ['crawl_webpage', 'Crawling Website'],
