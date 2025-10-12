@@ -5,6 +5,7 @@ import httpx
 import phonenumbers
 from phonenumbers import NumberParseException, geocoder
 import structlog
+import re
 from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
 from core.utils.config import config
 from core.agentpress.thread_manager import ThreadManager
@@ -13,71 +14,266 @@ from core.vapi_config import vapi_config, DEFAULT_SYSTEM_PROMPT, DEFAULT_FIRST_M
 from core.billing.config import TOKEN_PRICE_MULTIPLIER
 
 def normalize_phone_number(raw_number: str, default_region: str = "US") -> tuple[str, str, str]:
-    if not raw_number or not raw_number.strip():
-        raise ValueError("Empty number provided")
+    import re
     
+    if not raw_number or not isinstance(raw_number, str) or not raw_number.strip():
+        raise ValueError("Empty or invalid phone number provided")
+    
+    original_input = raw_number
     raw_number = raw_number.strip()
     
-    common_country_codes = {
-        '1': 'US',      # USA/Canada
-        '44': 'GB',     # UK
-        '91': 'IN',     # India
-        '86': 'CN',     # China
-        '81': 'JP',     # Japan
-        '49': 'DE',     # Germany
-        '33': 'FR',     # France
-        '39': 'IT',     # Italy
-        '34': 'ES',     # Spain
-        '61': 'AU',     # Australia
-        '55': 'BR',     # Brazil
-        '52': 'MX',     # Mexico
-        '971': 'AE',    # UAE
-        '966': 'SA',    # Saudi Arabia
-        '65': 'SG',     # Singapore
-        '82': 'KR',     # South Korea
-        '7': 'RU',      # Russia
-        '27': 'ZA',     # South Africa
-        '31': 'NL',     # Netherlands
-        '46': 'SE',     # Sweden
-    }
+    cleaned = re.sub(r'[^\d+]', '', raw_number)
     
-    if not raw_number.startswith('+'):
-        for code, region in sorted(common_country_codes.items(), key=lambda x: len(x[0]), reverse=True):
-            if raw_number.startswith(code):
-                raw_number = '+' + raw_number
-                default_region = region
-                logger.info(f"Detected country code {code} ({region}), adding + prefix")
+    if not cleaned or (cleaned == '+' and len(cleaned) == 1):
+        raise ValueError(f"Phone number '{original_input}' contains no valid digits")
+    
+    if cleaned.count('+') > 1:
+        raise ValueError(f"Phone number '{original_input}' contains multiple '+' symbols")
+    
+    if '+' in cleaned and not cleaned.startswith('+'):
+        raise ValueError(f"Phone number '{original_input}' has '+' in wrong position (must be at start)")
+    
+    max_length = 17
+    if len(cleaned) > max_length:
+        raise ValueError(f"Phone number '{original_input}' is too long ({len(cleaned)} digits, max {max_length})")
+    
+    min_length = 4
+    digits_only = cleaned.replace('+', '')
+    if len(digits_only) < min_length:
+        raise ValueError(f"Phone number '{original_input}' is too short (minimum {min_length} digits required)")
+    
+    parsing_strategies = []
+    
+    if cleaned.startswith('+'):
+        parsing_strategies.append(("With explicit + prefix", cleaned, None))
+    else:
+        all_regions = list(phonenumbers.SUPPORTED_REGIONS)
+        priority_regions = [
+            'US', 'GB', 'IN', 'CN', 'JP', 'DE', 'FR', 'IT', 'ES', 'AU',
+            'CA', 'BR', 'MX', 'RU', 'KR', 'ID', 'TR', 'SA', 'AE', 'SG',
+            'MY', 'TH', 'PH', 'VN', 'PK', 'BD', 'EG', 'NG', 'ZA', 'AR',
+            'CO', 'CL', 'PE', 'VE', 'PL', 'UA', 'RO', 'NL', 'BE', 'GR',
+            'PT', 'CZ', 'HU', 'SE', 'AT', 'CH', 'DK', 'FI', 'NO', 'IE',
+            'NZ', 'IL', 'HK', 'TW', 'KZ', 'DZ', 'MA', 'KE', 'ET', 'GH'
+        ]
+        
+        sorted_regions = []
+        if default_region and default_region in all_regions:
+            sorted_regions.append(default_region)
+        
+        for region in priority_regions:
+            if region not in sorted_regions and region in all_regions:
+                sorted_regions.append(region)
+        
+        for region in all_regions:
+            if region not in sorted_regions:
+                sorted_regions.append(region)
+        
+        parsing_strategies.append((f"With {default_region} as region", cleaned, default_region))
+        
+        if cleaned.startswith('00'):
+            cleaned_alt = '+' + cleaned[2:]
+            parsing_strategies.append(("Converting 00 prefix to +", cleaned_alt, None))
+        
+        for length in range(1, 5):
+            if len(digits_only) > length:
+                test_with_plus = '+' + digits_only
+                parsing_strategies.append((f"Testing with + prefix added", test_with_plus, None))
                 break
+        
+        for region in sorted_regions[:50]:
+            parsing_strategies.append((f"Trying region {region}", cleaned, region))
+    
+    parsed_number = None
+    successful_strategy = None
+    parsing_errors = []
+    
+    for strategy_name, number_to_parse, region in parsing_strategies:
+        try:
+            if region:
+                parsed = phonenumbers.parse(number_to_parse, region)
+            else:
+                parsed = phonenumbers.parse(number_to_parse, None)
+            
+            if phonenumbers.is_possible_number(parsed) and phonenumbers.is_valid_number(parsed):
+                parsed_number = parsed
+                successful_strategy = strategy_name
+                logger.info(f"Successfully parsed using strategy: {strategy_name}")
+                break
+            elif phonenumbers.is_possible_number(parsed):
+                if parsed_number is None:
+                    parsed_number = parsed
+                    successful_strategy = f"{strategy_name} (possible but not fully validated)"
+                    
+        except phonenumbers.NumberParseException as e:
+            parsing_errors.append(f"{strategy_name}: {str(e)}")
+            continue
+        except Exception as e:
+            parsing_errors.append(f"{strategy_name}: Unexpected error - {str(e)}")
+            continue
+    
+    if parsed_number is None:
+        error_context = f"Phone number '{original_input}' could not be parsed.\n"
+        error_context += f"Cleaned format tried: '{cleaned}'\n"
+        error_context += "\nSuggestions:\n"
+        error_context += "1. Include country code with + prefix (e.g., +1 for US/Canada, +44 for UK, +91 for India)\n"
+        error_context += "2. Use E.164 format: +[country code][number] (e.g., +14155552671)\n"
+        error_context += "3. Check for typos or invalid digits\n"
+        if len(parsing_errors) <= 5:
+            error_context += f"\nParsing attempts:\n" + "\n".join(f"  - {err}" for err in parsing_errors[:5])
+        raise ValueError(error_context)
+    
+    if not phonenumbers.is_valid_number(parsed_number):
+        logger.warning(f"Number '{original_input}' parsed but may not be fully valid (using: {successful_strategy})")
     
     try:
-        if raw_number.startswith('+'):
-            parsed = phonenumbers.parse(raw_number, None)
-        else:
-            parsed = phonenumbers.parse(raw_number, default_region)
-    except phonenumbers.NumberParseException as e:
-        if not raw_number.startswith('+'):
-            try:
-                parsed = phonenumbers.parse(raw_number, default_region)
-            except phonenumbers.NumberParseException:
-                raise ValueError(f"Cannot parse number '{raw_number}'. Please include country code (e.g., +1 for US, +91 for India)")
-        else:
-            raise ValueError(f"Invalid phone number format: '{raw_number}'")
+        region_code = geocoder.region_code_for_number(parsed_number)
+        if not region_code:
+            region_code = phonenumbers.region_code_for_number(parsed_number)
+        
+        country_name = geocoder.description_for_number(parsed_number, "en")
+        if not country_name and region_code:
+            country_name = region_code
+        elif not country_name:
+            country_name = "Unknown"
+            
+        country_code = str(parsed_number.country_code)
+        
+        formatted = phonenumbers.format_number(parsed_number, phonenumbers.PhoneNumberFormat.E164)
+        
+        validation_status = "valid" if phonenumbers.is_valid_number(parsed_number) else "possible"
+        logger.info(
+            f"Normalized ({validation_status}): {original_input} -> {formatted} "
+            f"(Country: {country_name}, Code: +{country_code}, Strategy: {successful_strategy})"
+        )
+        
+        return formatted, country_code, country_name
+        
+    except Exception as e:
+        logger.error(f"Error extracting phone number details: {e}")
+        formatted = phonenumbers.format_number(parsed_number, phonenumbers.PhoneNumberFormat.E164)
+        country_code = str(parsed_number.country_code)
+        return formatted, country_code, "Unknown"
 
-    if not phonenumbers.is_possible_number(parsed):
-        raise ValueError(f"Number '{raw_number}' is not a possible valid number")
-    if not phonenumbers.is_valid_number(parsed):
-        raise ValueError(f"Number '{raw_number}' is not valid")
+EMERGENCY_NUMBERS = {
+    '911', '999', '112', '000', '110', '108', '119', '113', '100', '101', '102',
+    '15', '17', '18', '191', '192', '193', '194', '190', '123', '144', '1122',
+    '933', '117', '118', '1669', '1691', '995', '03', '114', '115', '122',
+    '+1911', '+44999', '+112', '+61000', '+86110', '+81110', '+49112', 
+    '+33112', '+39112', '+34112', '+61000', '+86119', '+81119', '+91112',
+    '+911911', '+44999', '+61000', '+86110'
+}
 
-    region_code = geocoder.region_code_for_number(parsed)
-    country_name = geocoder.description_for_number(parsed, "en") or region_code
-    
-    country_code = str(parsed.country_code)
+EMERGENCY_PATTERNS = [
+    r'^9+1+1+$',
+    r'^[0-9]{0,3}911$',
+    r'^[0-9]{0,3}999$',
+    r'^[0-9]{0,3}112$',
+    r'^[0-9]{0,3}000$',
+    r'^[0-9]{0,3}110$',
+    r'^[0-9]{0,3}108$',
+]
 
-    formatted = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
+PROHIBITED_KEYWORDS = [
+    'emergency', 'ambulance', 'fire', 'police', 'suicide', 'bomb', 'threat',
+    'ransom', 'extortion', 'blackmail', 'hack', 'steal', 'fraud', 'scam',
+    'illegal', 'money laundering', 'drug', 'weapon', 'explosive', 'terrorism',
+    'attack', 'kill', 'murder', 'kidnap', 'hostage', 'swat', 'harassment',
+    'phishing', 'identity theft', 'credit card fraud', 'pyramid scheme',
+    'ponzi scheme', 'rob', 'burglary', 'assault', 'threaten', 'intimidate',
+    'coerce', 'bribe', 'corrupt', 'smuggle', 'traffick', 'launder',
+    'counterfeit', 'forge', 'fake document', 'fake id', 'social security fraud',
+    'tax evasion', 'insider trading', 'market manipulation', 'price fixing'
+]
+
+SENSITIVE_KEYWORDS = [
+    'payment', 'credit card', 'bank account', 'ssn', 'social security',
+    'password', 'pin', 'account number', 'routing number', 'cvv',
+    'medicare', 'medicaid', 'insurance claim', 'refund', 'prize',
+    'lottery', 'inheritance', 'investment opportunity', 'irs', 'tax debt'
+]
+
+def is_emergency_number(phone_number: str) -> tuple[bool, Optional[str]]:
+    cleaned = re.sub(r'[^\d+]', '', phone_number.strip())
     
-    logger.info(f"Normalized: {raw_number} -> {formatted} (Country: {country_name}, Code: +{country_code})")
+    if cleaned in EMERGENCY_NUMBERS:
+        return True, f"Direct emergency number detected: {phone_number}"
     
-    return formatted, country_code, country_name
+    digits_only = cleaned.replace('+', '')
+    if digits_only in EMERGENCY_NUMBERS:
+        return True, f"Emergency number detected: {phone_number}"
+    
+    for pattern in EMERGENCY_PATTERNS:
+        if re.match(pattern, digits_only):
+            return True, f"Emergency number pattern detected: {phone_number}"
+    
+    if len(digits_only) == 3 and digits_only in ['911', '999', '112', '000', '110', '108', '119']:
+        return True, f"3-digit emergency number detected: {phone_number}"
+    
+    return False, None
+
+def check_content_safety(text: str, context: str = "content") -> tuple[bool, Optional[str]]:
+    if not text:
+        return True, None
+    
+    text_lower = text.lower()
+    
+    found_prohibited = []
+    for keyword in PROHIBITED_KEYWORDS:
+        if keyword in text_lower:
+            found_prohibited.append(keyword)
+    
+    if found_prohibited:
+        logger.warning(f"Prohibited keywords detected in {context}: {', '.join(found_prohibited)}")
+        return False, f"Content contains prohibited keywords related to illegal, unethical, or emergency activities: {', '.join(found_prohibited[:3])}"
+    
+    found_sensitive = []
+    for keyword in SENSITIVE_KEYWORDS:
+        if keyword in text_lower:
+            found_sensitive.append(keyword)
+    
+    if len(found_sensitive) >= 2:
+        logger.warning(f"Multiple sensitive keywords detected in {context}: {', '.join(found_sensitive)}")
+        return False, f"Content appears to request sensitive personal or financial information, which may indicate a scam or fraud attempt: {', '.join(found_sensitive[:3])}"
+    
+    scam_patterns = [
+        (r'\b(urgent|immediate|act now|limited time)\b.*\b(payment|bank|account|money)\b', 
+         "urgency combined with financial requests"),
+        (r'\b(verify|confirm|update)\b.*\b(account|payment|credit card|social security)\b',
+         "verification requests for sensitive information"),
+        (r'\b(suspended|locked|frozen|compromised)\b.*\b(account|card|access)\b',
+         "account threat combined with action request"),
+        (r'\b(won|prize|lottery|inheritance|refund)\b.*\b(claim|collect|receive|pay)\b',
+         "prize/refund claim requests"),
+        (r'\b(irs|tax|government|federal)\b.*\b(owe|debt|arrest|warrant|legal action)\b',
+         "government impersonation with threats")
+    ]
+    
+    for pattern, description in scam_patterns:
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            logger.warning(f"Potential scam pattern detected in {context}: {description}")
+            return False, f"Content matches common scam patterns: {description}"
+    
+    return True, None
+
+def validate_call_safety(phone_number: str, first_message: str, system_prompt: Optional[str]) -> tuple[bool, Optional[str]]:
+    is_emergency, emergency_reason = is_emergency_number(phone_number)
+    if is_emergency:
+        logger.error(f"BLOCKED: Attempted call to emergency number - {emergency_reason}")
+        return False, f"❌ CALL BLOCKED: {emergency_reason}. Emergency numbers cannot be called through this system. For emergencies, dial directly from your phone."
+    
+    is_safe, safety_reason = check_content_safety(first_message, "first message")
+    if not is_safe:
+        logger.error(f"BLOCKED: Unsafe content in first message - {safety_reason}")
+        return False, f"❌ CALL BLOCKED: {safety_reason}"
+    
+    if system_prompt:
+        is_safe, safety_reason = check_content_safety(system_prompt, "system prompt")
+        if not is_safe:
+            logger.error(f"BLOCKED: Unsafe content in system prompt - {safety_reason}")
+            return False, f"❌ CALL BLOCKED: {safety_reason}"
+    
+    return True, None
 
 @tool_metadata(
     display_name="Voice Calls",
@@ -148,7 +344,7 @@ class VapiVoiceTool(Tool):
         "type": "function",
         "function": {
             "name": "make_phone_call",
-            "description": "Initiate an outbound phone call using AI voice agent. The agent will call the specified phone number and have a conversation based on the provided configuration. This tool returns immediately after initiating the call. ALWAYS Use wait_for_call_completion to monitor the call until it ends.",
+            "description": "Initiate an outbound phone call using AI voice agent. The agent will call the specified phone number and have a conversation based on the provided configuration. This tool returns immediately after initiating the call. ALWAYS Use wait_for_call_completion to monitor the call until it ends.\n\nSAFETY RESTRICTIONS: This tool will automatically block calls to emergency numbers (911, 999, 112, etc.) and calls with content indicating illegal, unethical, or fraudulent activities. The AI assistant is programmed to never request sensitive personal or financial information.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -186,16 +382,26 @@ class VapiVoiceTool(Tool):
         if not self.api_key:
             return self.fail_response("VAPI_PRIVATE_KEY not configured. Please add your Vapi API key to the configuration.")
         
+        is_safe, safety_message = validate_call_safety(phone_number, first_message, system_prompt)
+        if not is_safe:
+            return self.fail_response(safety_message)
+        
         try:
             normalized_phone, country_code, country_name = normalize_phone_number(phone_number)
             
+            is_safe_normalized, safety_message_normalized = validate_call_safety(normalized_phone, first_message, system_prompt)
+            if not is_safe_normalized:
+                return self.fail_response(safety_message_normalized)
+            
             thread_id, user_id, agent_id = await self._get_current_thread_and_user()
+            safety_guidelines = "\n\nETHICAL GUIDELINES (MANDATORY):\n- NEVER request sensitive personal information (SSN, passwords, credit card numbers, bank accounts, PINs)\n- NEVER discuss illegal activities, threats, or emergency services\n- NEVER impersonate government agencies, law enforcement, or financial institutions\n- NEVER create urgency to manipulate the recipient into taking immediate action\n- NEVER request payments, transfers, or financial transactions\n- Be respectful, honest, and transparent about being an AI assistant"
+            
             country_context = f"\n\nIMPORTANT: You are calling a phone number in {country_name} (country code +{country_code}). Please be aware of potential cultural differences, time zones, and language preferences."
             
             if system_prompt:
-                enhanced_system_prompt = system_prompt + country_context
+                enhanced_system_prompt = system_prompt + country_context + safety_guidelines
             else:
-                enhanced_system_prompt = DEFAULT_SYSTEM_PROMPT + country_context
+                enhanced_system_prompt = DEFAULT_SYSTEM_PROMPT + country_context + safety_guidelines
             
             assistant_config = vapi_config.get_assistant_config(
                 system_prompt=enhanced_system_prompt,
@@ -621,4 +827,3 @@ The voice call has ended. You can continue with any follow-up actions."""
         except Exception as e:
             logger.error(f"Error listing calls: {str(e)}")
             return self.fail_response(f"Error listing calls: {str(e)}")
-
