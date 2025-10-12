@@ -15,7 +15,7 @@ END $$;
 
 -- Agent triggers table
 CREATE TABLE IF NOT EXISTS agent_triggers (
-    trigger_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    trigger_id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     agent_id UUID NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,
     trigger_type agent_trigger_type NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS agent_triggers (
 
 -- Trigger events log table for auditing
 CREATE TABLE IF NOT EXISTS trigger_events (
-    event_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    event_id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     trigger_id UUID NOT NULL REFERENCES agent_triggers(trigger_id) ON DELETE CASCADE,
     agent_id UUID NOT NULL REFERENCES agents(agent_id) ON DELETE CASCADE,
     trigger_type agent_trigger_type NOT NULL,
@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS custom_trigger_providers (
 
 -- OAuth installations table for storing OAuth integration data
 CREATE TABLE IF NOT EXISTS oauth_installations (
-    installation_id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    installation_id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     trigger_id UUID NOT NULL REFERENCES agent_triggers(trigger_id) ON DELETE CASCADE,
     provider VARCHAR(50) NOT NULL, -- slack, discord, teams, etc.
     access_token TEXT NOT NULL,

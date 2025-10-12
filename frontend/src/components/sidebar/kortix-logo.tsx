@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
-import { isLocalMode } from '@/lib/config';
+import { isLocalMode, isStagingMode } from '@/lib/config';
 
 interface KortixLogoProps {
   size?: number;
@@ -23,7 +23,7 @@ export function KortixLogo({ size = 24 }: KortixLogoProps) {
 
   return (
     <Image
-      src={isLocalMode() ? "/kortix-symbol.svg" : "/kortix-symbol-old.svg"}
+      src={(isLocalMode() || isStagingMode()) ? "/kortix-symbol.svg" : "/kortix-symbol-old.svg"}
       alt="Kortix"
       width={size}
       height={size}
