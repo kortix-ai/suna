@@ -33,6 +33,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { NewAgentDialog } from '@/components/agents/new-agent-dialog';
+import { ThreadSearchModal } from '@/components/sidebar/thread-search-modal';
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useTheme } from 'next-themes';
@@ -163,6 +164,7 @@ export function SidebarLeft({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [showNewAgentDialog, setShowNewAgentDialog] = useState(false);
+  const [showSearchModal, setShowSearchModal] = useState(false);
   const { isOpen: isDocumentModalOpen } = useDocumentModalStore();
 
   // Update active view based on pathname
@@ -228,8 +230,14 @@ export function SidebarLeft({
         );
       }
 
-      // CMD+K to open new chat
+      // CMD+K to open search modal
       if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+        event.preventDefault();
+        setShowSearchModal(true);
+      }
+
+      // CMD+J to open new chat
+      if ((event.metaKey || event.ctrlKey) && event.key === 'j') {
         event.preventDefault();
         posthog.capture('new_task_clicked', { source: 'keyboard_shortcut' });
         router.push('/dashboard');
@@ -353,7 +361,7 @@ export function SidebarLeft({
                   </div>
                   <div className="flex items-center gap-1">
                     <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-base leading-0 cursor-pointer">⌘</kbd>
-                    <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-xs cursor-pointer">K</kbd>
+                    <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-xs cursor-pointer">J</kbd>
                   </div>
                 </Link>
               </Button>
@@ -400,6 +408,7 @@ export function SidebarLeft({
 
             {/* Content area */}
             <div className="px-6 flex-1 overflow-hidden">
+
               {activeView === 'chats' && <NavAgents />}
               {activeView === 'agents' && <NavAgentsView />}
               {activeView === 'starred' && (
@@ -414,33 +423,35 @@ export function SidebarLeft({
       </SidebarContent>
 
       {/* Enterprise Demo Card - Only show when expanded */}
-      {state !== 'collapsed' && showEnterpriseCard && (
-        <div className="absolute bottom-[86px] left-6 right-6 z-10">
-          <div className="rounded-2xl p-5 backdrop-blur-[12px] border-[1.5px] bg-gradient-to-br from-white/25 to-gray-300/25 dark:from-gray-600/25 dark:to-gray-800/25 border-gray-300/50 dark:border-gray-600/50">
-            <div className="flex items-center gap-2 mb-3">
-              <Sparkles className="h-4 w-4" />
-              <span className="text-sm font-medium text-foreground">Enterprise Demo</span>
+      {
+        state !== 'collapsed' && showEnterpriseCard && (
+          <div className="absolute bottom-[86px] left-6 right-6 z-10">
+            <div className="rounded-2xl p-5 backdrop-blur-[12px] border-[1.5px] bg-gradient-to-br from-white/25 to-gray-300/25 dark:from-gray-600/25 dark:to-gray-800/25 border-gray-300/50 dark:border-gray-600/50">
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles className="h-4 w-4" />
+                <span className="text-sm font-medium text-foreground">Enterprise Demo</span>
 
-              <Button
-                variant="ghost"
-                size="sm"
-                className="ml-auto h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
-                onClick={() => setShowEnterpriseCard(false)}
-              >
-                <X className="h-4 w-4" />
-              </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowEnterpriseCard(false)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mb-4">
+                Request custom AI Workers implementation
+              </p>
+              <KortixProcessModal>
+                <Button size="sm" className="w-full text-xs h-8">
+                  Learn More
+                </Button>
+              </KortixProcessModal>
             </div>
-            <p className="text-xs text-muted-foreground mb-4">
-              Request custom AI Workers implementation
-            </p>
-            <KortixProcessModal>
-              <Button size="sm" className="w-full text-xs h-8">
-                Learn More
-              </Button>
-            </KortixProcessModal>
           </div>
-        </div>
-      )}
+        )
+      }
 
       <div className={cn("pb-4", state === 'collapsed' ? "px-6" : "px-6")}>
         {state === 'collapsed' && (
@@ -570,7 +581,11 @@ export function SidebarLeft({
         open={showNewAgentDialog}
         onOpenChange={setShowNewAgentDialog}
       />
-    </Sidebar>
+      <ThreadSearchModal
+        open={showSearchModal}
+        onOpenChange={setShowSearchModal}
+      />
+    </Sidebar >
   );
 }
 

@@ -457,6 +457,17 @@ export function NavAgents() {
 
   return (
     <div>
+      {/* Search hint */}
+      {(state !== 'collapsed' || isMobile) && (
+        <div className="px-2.5 py-2 mb-1 flex items-center justify-between text-xs text-muted-foreground">
+          <span>Chats</span>
+          <div className="flex items-center gap-1">
+            <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-base leading-0 cursor-pointer">⌘</kbd>
+            <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-xs cursor-pointer">K</kbd>
+            <span className="text-[10px] ml-0.5">to search</span>
+          </div>
+        </div>
+      )}
 
       <div className="overflow-y-auto max-h-[calc(100vh-280px)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] pb-10">
         {(state !== 'collapsed' || isMobile) && (
