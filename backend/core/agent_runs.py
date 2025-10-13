@@ -225,25 +225,14 @@ async def get_active_agent_runs(user_id: str = Depends(verify_and_get_user_id_fr
     """Get all active (running) agent runs for the current user across all threads."""
     logger.debug(f"Fetching all active agent runs for user: {user_id}")
     client = await utils.db.client
-    
-    # Query all running agent runs where the thread belongs to the user
-    # Join with threads table to filter by account_id
-    agent_runs = await client.table('agent_runs').select('id, thread_id, status, started_at').eq('status', 'running').execute()
-    
+
+    agent_runs = await client.table('agent_runs').select(
+        'id, thread_id, status, started_at, threads!inner(account_id)'
+    ).eq('status', 'running').eq('threads.account_id', user_id).execute()
+
     if not agent_runs.data:
         return {"active_runs": []}
-    
-    # Filter agent runs to only include those from threads the user has access to
-    # Get thread_ids and check access
-    thread_ids = [run['thread_id'] for run in agent_runs.data]
-    
-    # Get threads that belong to the user
-    threads = await client.table('threads').select('thread_id, account_id').in_('thread_id', thread_ids).eq('account_id', user_id).execute()
-    
-    # Create a set of accessible thread IDs
-    accessible_thread_ids = {thread['thread_id'] for thread in threads.data}
-    
-    # Filter agent runs to only include accessible ones
+
     accessible_runs = [
         {
             'id': run['id'],
@@ -252,9 +241,8 @@ async def get_active_agent_runs(user_id: str = Depends(verify_and_get_user_id_fr
             'started_at': run['started_at']
         }
         for run in agent_runs.data
-        if run['thread_id'] in accessible_thread_ids
     ]
-    
+
     logger.debug(f"Found {len(accessible_runs)} active agent runs for user: {user_id}")
     return {"active_runs": accessible_runs}
 
