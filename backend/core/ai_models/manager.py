@@ -65,7 +65,7 @@ class ModelManager:
             logger.warning(f"Model '{model_id}' not found in registry, using basic params")
             return {
                 "model": model_id,
-                "num_retries": 3,
+                "num_retries": 5,
                 **override_params
             }
         
