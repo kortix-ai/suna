@@ -108,7 +108,7 @@ class Model:
         # Start with intelligent defaults
         params = {
             "model": self.id,
-            "num_retries": 3,
+            "num_retries": 5,
         }
         
     
