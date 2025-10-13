@@ -56,14 +56,14 @@ const TriggerRunItem: React.FC<{
                 className="block"
             >
                 <div className="flex items-center gap-3 p-2.5 text-sm">
-                    <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
+                    <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
                         {isThreadLoading ? (
                             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                         ) : (
                             <ThreadIcon
                                 iconName={thread.iconName}
                                 className="text-muted-foreground"
-                                size={20}
+                                size={16}
                             />
                         )}
                     </div>
@@ -172,7 +172,7 @@ export function NavTriggerRuns() {
                             <div className="space-y-1">
                                 {Array.from({ length: 3 }).map((_, index) => (
                                     <div key={`skeleton-${index}`} className="flex items-center gap-3 px-2 py-2">
-                                        <div className="h-12 w-12 bg-muted/10 border-[1.5px] border-border rounded-2xl animate-pulse"></div>
+                                        <div className="h-10 w-10 bg-muted/10 border-[1.5px] border-border rounded-2xl animate-pulse"></div>
                                         <div className="h-4 bg-muted rounded flex-1 animate-pulse"></div>
                                         <div className="h-3 w-8 bg-muted rounded animate-pulse"></div>
                                     </div>

@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Bot, Menu, Plus, Zap, ChevronRight, BookOpen, Code, Star, Package, Sparkle, Sparkles, X, MessageCircle, PanelLeftOpen, Settings, LogOut, User, CreditCard, Key, Plug, Shield, DollarSign, KeyRound, Sun, Moon } from 'lucide-react';
+import { Bot, Menu, Plus, Zap, ChevronRight, BookOpen, Code, Star, Package, Sparkle, Sparkles, X, MessageCircle, PanelLeftOpen, Settings, LogOut, User, CreditCard, Key, Plug, Shield, DollarSign, KeyRound, Sun, Moon, Book, Database } from 'lucide-react';
 
 import { NavAgents } from '@/components/sidebar/nav-agents';
 import { NavAgentsView } from '@/components/sidebar/nav-agents-view';
@@ -65,6 +65,7 @@ import { useSubscriptionData } from '@/contexts/SubscriptionContext';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import Image from 'next/image';
 import { isLocalMode } from '@/lib/config';
+import { KortixProcessModal } from './kortix-enterprise-modal';
 
 // Helper function to get plan icon
 function getPlanIcon(planName: string, isLocal: boolean = false) {
@@ -124,7 +125,7 @@ function FloatingMobileMenuButton() {
               setOpenMobile(true);
             }}
             size="icon"
-            className="h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 transition-all duration-200 hover:scale-105 active:scale-95 touch-manipulation"
+            className="h-10 w-10 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 transition-all duration-200 hover:scale-105 active:scale-95 touch-manipulation"
             aria-label="Open menu"
           >
             <Menu className="h-5 w-5" />
@@ -251,10 +252,10 @@ export function SidebarLeft({
       className="border-r border-border/50 bg-background [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']"
       {...props}
     >
-      <SidebarHeader className={cn("px-[34px] pt-7", state === 'collapsed' && "px-6")}>
+      <SidebarHeader className={cn("px-[30px] pt-7", state === 'collapsed' && "px-6")}>
         <div className={cn("flex h-[32px] items-center", state === 'collapsed' ? "justify-center" : "justify-between")}>
           <Link href="/dashboard" className="flex-shrink-0" onClick={() => isMobile && setOpenMobile(false)}>
-            <KortixLogo size={24} />
+            <KortixLogo size={20} />
           </Link>
           {state !== 'collapsed' && !isMobile && (
             <Tooltip>
@@ -268,13 +269,13 @@ export function SidebarLeft({
       </SidebarHeader>
       <SidebarContent className="[&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
         {state === 'collapsed' ? (
-          /* Collapsed layout: + button and 3 state buttons only */
+          /* Collapsed layout: + button and 4 state buttons only */
           <div className="px-6 pt-4 space-y-3 flex flex-col items-center">
             {/* + button */}
             <Button
               variant="outline"
               size="icon"
-              className="h-12 w-12 p-0 shadow-none"
+              className="h-10 w-10 p-0 shadow-none"
               asChild
             >
               <Link
@@ -288,18 +289,18 @@ export function SidebarLeft({
               </Link>
             </Button>
 
-            {/* 3 state buttons vertically */}
+            {/* State buttons vertically */}
             {[
               { view: 'chats' as const, icon: MessageCircle },
               { view: 'agents' as const, icon: Bot },
-              { view: 'starred' as const, icon: Zap }
+              { view: 'starred' as const, icon: Zap },
             ].map(({ view, icon: Icon }) => (
               <Button
                 key={view}
                 variant="ghost"
                 size="icon"
                 className={cn(
-                  "h-12 w-12 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border",
+                  "h-10 w-10 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border",
                   activeView === view ? 'bg-muted/60 border-[1.5px] border-border' : ''
                 )}
                 onClick={() => {
@@ -307,19 +308,36 @@ export function SidebarLeft({
                   setOpen(true); // Expand sidebar when clicking state button
                 }}
               >
-                <Icon className="!h-5 !w-5" />
+                <Icon className="!h-4 !w-4" />
               </Button>
             ))}
+
+            {/* Knowledge button - redirects to knowledge page */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-10 w-10 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border"
+              asChild
+            >
+              <Link
+                href="/knowledge"
+                onClick={() => {
+                  if (isMobile) setOpenMobile(false);
+                }}
+              >
+                <BookOpen className="!h-4 !w-4" />
+              </Link>
+            </Button>
           </div>
         ) : (
           /* Expanded layout */
           <>
-            <div className="px-[34px] pt-4 space-y-4">
+            <div className="px-[30px] pt-4 space-y-4">
               {/* New Chat button */}
               <Button
                 variant="outline"
                 size="sm"
-                className="w-full shadow-none justify-between h-12 px-4"
+                className="w-full shadow-none justify-between h-10 px-4"
                 asChild
               >
                 <Link
@@ -352,14 +370,31 @@ export function SidebarLeft({
                     variant="ghost"
                     size="icon"
                     className={cn(
-                      "h-12 w-12 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border",
+                      "h-10 w-10 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border",
                       activeView === view ? 'bg-card border-[1.5px] border-border' : ''
                     )}
                     onClick={() => setActiveView(view)}
                   >
-                    <Icon className="!h-5 !w-5" />
+                    <Icon className="!h-4 !w-4" />
                   </Button>
                 ))}
+
+                {/* Knowledge button - redirects to knowledge page */}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-10 w-10 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border"
+                  asChild
+                >
+                  <Link
+                    href="/knowledge"
+                    onClick={() => {
+                      if (isMobile) setOpenMobile(false);
+                    }}
+                  >
+                    <BookOpen className="!h-4 !w-4" />
+                  </Link>
+                </Button>
               </div>
             </div>
 
@@ -380,11 +415,12 @@ export function SidebarLeft({
 
       {/* Enterprise Demo Card - Only show when expanded */}
       {state !== 'collapsed' && showEnterpriseCard && (
-        <div className="absolute bottom-[96px] left-6 right-6 z-10">
+        <div className="absolute bottom-[86px] left-6 right-6 z-10">
           <div className="rounded-2xl p-5 backdrop-blur-[12px] border-[1.5px] bg-gradient-to-br from-white/25 to-gray-300/25 dark:from-gray-600/25 dark:to-gray-800/25 border-gray-300/50 dark:border-gray-600/50">
             <div className="flex items-center gap-2 mb-3">
               <Sparkles className="h-4 w-4" />
               <span className="text-sm font-medium text-foreground">Enterprise Demo</span>
+
               <Button
                 variant="ghost"
                 size="sm"
@@ -397,9 +433,11 @@ export function SidebarLeft({
             <p className="text-xs text-muted-foreground mb-4">
               Request custom AI Workers implementation
             </p>
-            <Button size="sm" className="w-full text-xs h-8">
-              Learn More
-            </Button>
+            <KortixProcessModal>
+              <Button size="sm" className="w-full text-xs h-8">
+                Learn More
+              </Button>
+            </KortixProcessModal>
           </div>
         </div>
       )}
@@ -415,14 +453,14 @@ export function SidebarLeft({
                   className="h-8 w-8"
                   onClick={() => setOpen(true)}
                 >
-                  <PanelLeftOpen className="!h-5.5 !w-5.5" />
+                  <PanelLeftOpen className="!h-5 !w-5" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Expand sidebar (CMD+B)</TooltipContent>
             </Tooltip>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Avatar className="h-12 w-12 cursor-pointer">
+                <Avatar className="h-10 w-10 cursor-pointer">
                   <AvatarImage src={user.avatar} alt={user.name} />
                   <AvatarFallback className="text-xs">
                     {getInitials(user.name)}

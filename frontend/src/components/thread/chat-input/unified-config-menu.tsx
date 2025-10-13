@@ -189,15 +189,15 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
             <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
                 <DropdownMenuTrigger asChild>
                     <Button
-                        variant="outline"
+                        variant="ghost"
                         size="sm"
-                        className="h-[42px] px-2 bg-card rounded-[1rem] text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5"
+                        className="h-8 px-2 bg-transparent border-0 rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center gap-1.5"
                         aria-label="Config menu"
                     >
                         {onAgentSelect ? (
                             <div className="flex items-center gap-2 min-w-0 max-w-[180px]">
                                 {renderAgentIcon(displayAgent)}
-                                <span className="truncate text-[15px] font-medium">
+                                <span className="truncate text-sm font-medium">
                                     {displayAgent?.name || 'Suna'}
                                 </span>
                                 <ChevronDown size={12} className="opacity-60 flex-shrink-0" />

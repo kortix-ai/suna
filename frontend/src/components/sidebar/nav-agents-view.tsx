@@ -49,13 +49,13 @@ const AgentItem: React.FC<{
                 onClick={() => onAgentClick(agent.agent_id)}
             >
                 <div
-                    className="flex items-center justify-center w-12 h-12 rounded-2xl border-[1.5px] border-border flex-shrink-0"
+                    className="flex items-center justify-center w-10 h-10 rounded-2xl border-[1.5px] border-border flex-shrink-0"
                     style={{
                         backgroundColor: agent.icon_background || '#f3f4f6',
                         color: agent.icon_color || '#6b7280'
                     }}
                 >
-                    <Bot className="h-5 w-5" />
+                    <Bot className="h-4 w-4" />
                 </div>
                 <span className="flex-1 truncate">{agent.name}</span>
                 <span className="text-xs text-muted-foreground flex-shrink-0">
@@ -99,7 +99,7 @@ export function NavAgentsView() {
                             <div className="space-y-1">
                                 {Array.from({ length: 3 }).map((_, index) => (
                                     <div key={`skeleton-${index}`} className="flex items-center gap-3 px-2 py-2">
-                                        <div className="h-12 w-12 bg-muted/10 border-[1.5px] border-border rounded-2xl animate-pulse"></div>
+                                        <div className="h-10 w-10 bg-muted/10 border-[1.5px] border-border rounded-2xl animate-pulse"></div>
                                         <div className="h-4 bg-muted rounded flex-1 animate-pulse"></div>
                                         <div className="h-3 w-8 bg-muted rounded animate-pulse"></div>
                                     </div>

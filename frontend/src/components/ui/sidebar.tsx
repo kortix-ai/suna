@@ -28,9 +28,9 @@ import {
 
 const SIDEBAR_COOKIE_NAME = 'sidebar_state';
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
-const SIDEBAR_WIDTH = '320px';
-const SIDEBAR_WIDTH_MOBILE = '18rem';
-const SIDEBAR_WIDTH_ICON = '5.875rem';
+const SIDEBAR_WIDTH = '288px';
+const SIDEBAR_WIDTH_MOBILE = '16.2rem';
+const SIDEBAR_WIDTH_ICON = '5.2875rem';
 const SIDEBAR_KEYBOARD_SHORTCUT = 'b';
 
 type SidebarContextProps = {
@@ -280,7 +280,7 @@ function SidebarTrigger({
       }}
       {...props}
     >
-      <PanelLeftClose className='!h-5.5 !w-5.5' />
+      <PanelLeftClose className='!h-5 !w-5' />
       <span className="sr-only">Toggle Sidebar</span>
     </Button>
   );
