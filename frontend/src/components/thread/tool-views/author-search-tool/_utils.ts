@@ -1,43 +1,24 @@
 import { extractToolData } from '../utils';
 
-export interface PaperSearchResult {
+export interface AuthorSearchResult {
   rank: number;
-  id?: string;
-  paper_id?: string;
-  webset_id?: string;
-  source?: string;
-  source_id?: string;
+  author_id: string;
+  name: string;
   url: string;
-  type?: string;
-  description?: string;
-  title?: string;
-  abstract?: string;
-  year?: number;
-  authors?: Array<{ name: string; author_id: string }>;
-  venue?: string;
-  venue_type?: string;
-  citation_count?: number;
-  reference_count?: number;
-  influential_citation_count?: number;
-  is_open_access?: boolean;
-  pdf_url?: string | null;
-  fields_of_study?: string[];
-  publication_types?: string[];
-  publication_date?: string;
-  journal?: string;
-  paper_details?: string;
-  evaluations?: string;
-  created_at?: string;
-  updated_at?: string;
+  affiliations: string[];
+  homepage?: string;
+  paper_count: number;
+  citation_count: number;
+  h_index: number;
+  external_ids?: Record<string, any>;
 }
 
-export interface PaperSearchData {
+export interface AuthorSearchData {
   query: string | null;
   total_results: number;
   total_available?: number;
   results_returned?: number;
-  enrichment_type?: string;
-  results: PaperSearchResult[];
+  results: AuthorSearchResult[];
   success?: boolean;
   timestamp?: string;
 }
@@ -47,23 +28,22 @@ const parseContent = (content: any): any => {
     try {
       return JSON.parse(content);
     } catch (e) {
-      return content; 
+      return content;
     }
   }
   return content;
 };
 
-const extractFromNewFormat = (content: any): PaperSearchData => {
+const extractFromNewFormat = (content: any): AuthorSearchData => {
   const parsedContent = parseContent(content);
   
   if (!parsedContent || typeof parsedContent !== 'object') {
-    return { 
-      query: null, 
-      total_results: 0, 
-      enrichment_type: '',
-      results: [], 
-      success: undefined, 
-      timestamp: undefined 
+    return {
+      query: null,
+      total_results: 0,
+      results: [],
+      success: undefined,
+      timestamp: undefined
     };
   }
 
@@ -85,36 +65,17 @@ const extractFromNewFormat = (content: any): PaperSearchData => {
       total_results: parsedOutput?.total_available || parsedOutput?.total_results || 0,
       total_available: parsedOutput?.total_available,
       results_returned: parsedOutput?.results_returned,
-      enrichment_type: args.enrichment_description || parsedOutput?.enrichment_type,
       results: parsedOutput?.results?.map((result: any) => ({
         rank: result.rank || 0,
-        id: result.id || result.paper_id || '',
-        paper_id: result.paper_id,
-        webset_id: result.webset_id,
-        source: result.source,
-        source_id: result.source_id,
+        author_id: result.author_id || '',
+        name: result.name || '',
         url: result.url || '',
-        type: result.type || 'paper',
-        description: result.description || result.title || '',
-        title: result.title,
-        abstract: result.abstract,
-        year: result.year,
-        authors: result.authors,
-        venue: result.venue,
-        venue_type: result.venue_type,
-        citation_count: result.citation_count,
-        reference_count: result.reference_count,
-        influential_citation_count: result.influential_citation_count,
-        is_open_access: result.is_open_access,
-        pdf_url: result.pdf_url,
-        fields_of_study: result.fields_of_study,
-        publication_types: result.publication_types,
-        publication_date: result.publication_date,
-        journal: result.journal,
-        paper_details: result.paper_details || result.abstract,
-        evaluations: result.evaluations,
-        created_at: result.created_at,
-        updated_at: result.updated_at
+        affiliations: result.affiliations || [],
+        homepage: result.homepage,
+        paper_count: result.paper_count || 0,
+        citation_count: result.citation_count || 0,
+        h_index: result.h_index || 0,
+        external_ids: result.external_ids
       })) || [],
       success: toolExecution.result?.success,
       timestamp: toolExecution.execution_details?.timestamp
@@ -128,36 +89,17 @@ const extractFromNewFormat = (content: any): PaperSearchData => {
       total_results: parsedContent.total_available || parsedContent.total_results || 0,
       total_available: parsedContent.total_available,
       results_returned: parsedContent.results_returned,
-      enrichment_type: parsedContent.enrichment_type,
       results: parsedContent.results?.map((result: any) => ({
         rank: result.rank || 0,
-        id: result.id || result.paper_id || '',
-        paper_id: result.paper_id,
-        webset_id: result.webset_id,
-        source: result.source,
-        source_id: result.source_id,
+        author_id: result.author_id || '',
+        name: result.name || '',
         url: result.url || '',
-        type: result.type || 'paper',
-        description: result.description || result.title || '',
-        title: result.title,
-        abstract: result.abstract,
-        year: result.year,
-        authors: result.authors,
-        venue: result.venue,
-        venue_type: result.venue_type,
-        citation_count: result.citation_count,
-        reference_count: result.reference_count,
-        influential_citation_count: result.influential_citation_count,
-        is_open_access: result.is_open_access,
-        pdf_url: result.pdf_url,
-        fields_of_study: result.fields_of_study,
-        publication_types: result.publication_types,
-        publication_date: result.publication_date,
-        journal: result.journal,
-        paper_details: result.paper_details || result.abstract,
-        evaluations: result.evaluations,
-        created_at: result.created_at,
-        updated_at: result.updated_at
+        affiliations: result.affiliations || [],
+        homepage: result.homepage,
+        paper_count: result.paper_count || 0,
+        citation_count: result.citation_count || 0,
+        h_index: result.h_index || 0,
+        external_ids: result.external_ids
       })) || [],
       success: true,
       timestamp: undefined
@@ -168,17 +110,16 @@ const extractFromNewFormat = (content: any): PaperSearchData => {
     return extractFromNewFormat(parsedContent.content);
   }
 
-  return { 
-    query: null, 
-    total_results: 0, 
-    enrichment_type: '',
-    results: [], 
-    success: undefined, 
-    timestamp: undefined 
+  return {
+    query: null,
+    total_results: 0,
+    results: [],
+    success: undefined,
+    timestamp: undefined
   };
 };
 
-const extractFromLegacyFormat = (content: any): Omit<PaperSearchData, 'success' | 'timestamp'> => {
+const extractFromLegacyFormat = (content: any): Omit<AuthorSearchData, 'success' | 'timestamp'> => {
   const toolData = extractToolData(content);
   
   if (toolData.toolResult) {
@@ -186,7 +127,6 @@ const extractFromLegacyFormat = (content: any): Omit<PaperSearchData, 'success' 
     return {
       query: toolData.query || args.query || null,
       total_results: 0,
-      enrichment_type: args.enrichment_description || '',
       results: []
     };
   }
@@ -194,12 +134,11 @@ const extractFromLegacyFormat = (content: any): Omit<PaperSearchData, 'success' 
   return {
     query: null,
     total_results: 0,
-    enrichment_type: '',
     results: []
   };
 };
 
-export function extractPaperSearchData(
+export function extractAuthorSearchData(
   assistantContent: any,
   toolContent: any,
   isSuccess: boolean,
@@ -208,16 +147,14 @@ export function extractPaperSearchData(
 ): {
   query: string | null;
   total_results: number;
-  enrichment_type: string;
-  results: PaperSearchResult[];
+  results: AuthorSearchResult[];
   actualIsSuccess: boolean;
   actualToolTimestamp?: string;
   actualAssistantTimestamp?: string;
 } {
-  let data: PaperSearchData = {
+  let data: AuthorSearchData = {
     query: null,
     total_results: 0,
-    enrichment_type: '',
     results: []
   };
   let actualIsSuccess = isSuccess;
@@ -259,7 +196,6 @@ export function extractPaperSearchData(
   return {
     query: data.query,
     total_results: data.total_results,
-    enrichment_type: data.enrichment_type,
     results: data.results,
     actualIsSuccess,
     actualToolTimestamp,

@@ -10,7 +10,7 @@ from core.tools.sb_expose_tool import SandboxExposeTool
 from core.tools.web_search_tool import SandboxWebSearchTool
 from core.tools.image_search_tool import SandboxImageSearchTool
 from dotenv import load_dotenv
-from core.utils.config import config
+from core.utils.config import config, EnvMode
 from core.prompts.agent_builder_prompt import get_agent_builder_prompt
 from core.agentpress.thread_manager import ThreadManager
 from core.agentpress.response_processor import ProcessorConfig
@@ -43,6 +43,8 @@ from core.tools.people_search_tool import PeopleSearchTool
 from core.tools.company_search_tool import CompanySearchTool
 from core.tools.paper_search_tool import PaperSearchTool
 from core.ai_models.manager import model_manager
+from core.tools.vapi_voice_tool import VapiVoiceTool
+
 
 load_dotenv()
 
@@ -134,6 +136,13 @@ class ToolManager:
             if enabled_methods:
                 logger.debug(f"✅ Registered data_providers_tool with methods: {enabled_methods}")
         
+        if config.SEMANTIC_SCHOLAR_API_KEY and 'paper_search_tool' not in disabled_tools:
+            if 'paper_search_tool' not in disabled_tools:
+                enabled_methods = self._get_enabled_methods_for_tool('paper_search_tool')
+                self.thread_manager.add_tool(PaperSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager)
+                if enabled_methods:
+                    logger.debug(f"✅ Registered paper_search_tool with methods: {enabled_methods}")
+        
         # Register search tools if EXA API key is available
         if config.EXA_API_KEY:
             if 'people_search_tool' not in disabled_tools:
@@ -147,12 +156,13 @@ class ToolManager:
                 self.thread_manager.add_tool(CompanySearchTool, function_names=enabled_methods, thread_manager=self.thread_manager)
                 if enabled_methods:
                     logger.debug(f"✅ Registered company_search_tool with methods: {enabled_methods}")
+        
+        if config.ENV_MODE != EnvMode.PRODUCTION and config.VAPI_PRIVATE_KEY and 'vapi_voice_tool' not in disabled_tools:
+            enabled_methods = self._get_enabled_methods_for_tool('vapi_voice_tool')
+            self.thread_manager.add_tool(VapiVoiceTool, function_names=enabled_methods, thread_manager=self.thread_manager)
+            if enabled_methods:
+                logger.debug(f"✅ Registered vapi_voice_tool with methods: {enabled_methods}")
             
-            if 'paper_search_tool' not in disabled_tools:
-                enabled_methods = self._get_enabled_methods_for_tool('paper_search_tool')
-                self.thread_manager.add_tool(PaperSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager)
-                if enabled_methods:
-                    logger.debug(f"✅ Registered paper_search_tool with methods: {enabled_methods}")
     
     def _register_agent_builder_tools(self, agent_id: str, disabled_tools: List[str]):
         """Register agent builder tools with proper initialization."""

@@ -14,6 +14,12 @@ import { WebSearchToolView } from '../web-search-tool/WebSearchToolView';
 import { PeopleSearchToolView } from '../people-search-tool/PeopleSearchToolView';
 import { CompanySearchToolView } from '../company-search-tool/CompanySearchToolView';
 import { PaperSearchToolView } from '../paper-search-tool/PaperSearchToolView';
+import { PaperDetailsToolView } from '../paper-details-tool/PaperDetailsToolView';
+import { AuthorSearchToolView } from '../author-search-tool/AuthorSearchToolView';
+import { AuthorDetailsToolView } from '../author-details-tool/AuthorDetailsToolView';
+import { AuthorPapersToolView } from '../author-papers-tool/AuthorPapersToolView';
+import { PaperCitationsToolView } from '../paper-citations-tool/PaperCitationsToolView';
+import { PaperReferencesToolView } from '../paper-references-tool/PaperReferencesToolView';
 import { DocumentParserToolView } from '../document-parser-tool/DocumentParserToolView';
 import { SeeImageToolView } from '../see-image-tool/SeeImageToolView';
 import { TerminateCommandToolView } from '../command-tool/TerminateCommandToolView';
@@ -53,6 +59,12 @@ import { DiscoverMcpToolsForAgentToolView } from '../discover-mcp-tools-for-agen
 import { DiscoverUserMcpServersToolView } from '../discover-user-mcp-servers/discover-user-mcp-servers';
 import { ConfigureAgentIntegrationToolView } from '../configure-agent-integration/configure-agent-integration';
 import CreateAgentScheduledTriggerToolView from '../create-agent-scheduled-trigger/create-agent-scheduled-trigger';
+import { MakeCallToolView } from '../vapi-call/MakeCallToolView';
+import { CallStatusToolView } from '../vapi-call/CallStatusToolView';
+import { EndCallToolView } from '../vapi-call/EndCallToolView';
+import { ListCallsToolView } from '../vapi-call/ListCallsToolView';
+import { MonitorCallToolView } from '../vapi-call/MonitorCallToolView';
+import { WaitForCallCompletionToolView } from '../vapi-call/WaitForCallCompletionToolView';
 import { createPresentationViewerToolContent, parsePresentationSlidePath } from '../utils/presentation-utils';
 import { extractToolData } from '../utils';
 import { KbToolView } from '../KbToolView';
@@ -88,6 +100,12 @@ const defaultRegistry: ToolViewRegistryType = {
   'people-search': PeopleSearchToolView,
   'company-search': CompanySearchToolView,
   'paper-search': PaperSearchToolView,
+  'get-paper-details': PaperDetailsToolView,
+  'search-authors': AuthorSearchToolView,
+  'get-author-details': AuthorDetailsToolView,
+  'get-author-papers': AuthorPapersToolView,
+  'get-paper-citations': PaperCitationsToolView,
+  'get-paper-references': PaperReferencesToolView,
   'crawl-webpage': WebCrawlToolView,
   'scrape-webpage': WebScrapeToolView,
   'image-search': WebSearchToolView,
@@ -197,14 +215,25 @@ const defaultRegistry: ToolViewRegistryType = {
   'discover-user-mcp-servers': DiscoverUserMcpServersToolView,
   'configure-agent-integration': ConfigureAgentIntegrationToolView,
   'create-agent-scheduled-trigger': CreateAgentScheduledTriggerToolView,
+
+  'make_phone_call': MakeCallToolView,
+  'make-phone-call': MakeCallToolView,
+  'end_call': EndCallToolView,
+  'end-call': EndCallToolView,
+  'get_call_details': CallStatusToolView,
+  'get-call-details': CallStatusToolView,
+  'list_calls': ListCallsToolView,
+  'list-calls': ListCallsToolView,
+  'monitor_call': MonitorCallToolView,
+  'monitor-call': MonitorCallToolView,
+  'wait_for_call_completion': WaitForCallCompletionToolView,
+  'wait-for-call-completion': WaitForCallCompletionToolView,
 };
 
 class ToolViewRegistry {
   private registry: ToolViewRegistryType;
-
   constructor(initialRegistry: Partial<ToolViewRegistryType> = {}) {
     this.registry = { ...defaultRegistry };
-
     Object.entries(initialRegistry).forEach(([key, value]) => {
       if (value !== undefined) {
         this.registry[key] = value;

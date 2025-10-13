@@ -139,6 +139,7 @@ def load_existing_env_vars():
             "FIRECRAWL_API_KEY": backend_env.get("FIRECRAWL_API_KEY", ""),
             "FIRECRAWL_URL": backend_env.get("FIRECRAWL_URL", ""),
             "EXA_API_KEY": backend_env.get("EXA_API_KEY", ""),
+            "SEMANTIC_SCHOLAR_API_KEY": backend_env.get("SEMANTIC_SCHOLAR_API_KEY", ""),
         },
         "rapidapi": {
             "RAPID_API_KEY": backend_env.get("RAPID_API_KEY", ""),
@@ -849,10 +850,10 @@ class SetupWizard:
             )
         else:
             print_info(
-                "Suna uses Tavily for search, Firecrawl for web scraping, and Exa for people search.")
+                "Suna uses Tavily for search, Firecrawl for web scraping, Exa for people/company search, and Semantic Scholar for academic papers.")
             print_info(
                 "Get a Tavily key at https://tavily.com, a Firecrawl key at https://firecrawl.dev, "
-                "and an Exa key at https://exa.ai"
+                "an Exa key at https://exa.ai, and a Semantic Scholar key at https://www.semanticscholar.org/product/api"
             )
             input("Press Enter to continue once you have your keys...")
 
@@ -882,6 +883,21 @@ class SetupWizard:
             "Invalid API key.",
             allow_empty=True,
             default_value=self.env_vars["search"]["EXA_API_KEY"],
+        )
+        
+        # Semantic Scholar API key (optional for academic paper search)
+        print_info(
+            "\nSemantic Scholar API enables searching and analyzing academic papers and research."
+        )
+        print_info(
+            "This is optional but required for the Research Papers tool. Leave blank to skip."
+        )
+        self.env_vars["search"]["SEMANTIC_SCHOLAR_API_KEY"] = self._get_input(
+            "Enter your Semantic Scholar API key (optional): ",
+            validate_api_key,
+            "Invalid API key.",
+            allow_empty=True,
+            default_value=self.env_vars["search"]["SEMANTIC_SCHOLAR_API_KEY"],
         )
 
         # Handle Firecrawl URL configuration
