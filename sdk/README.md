@@ -2,6 +2,11 @@
 
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 
+> [!WARNING]
+> **This SDK is currently in early development and is NOT ready for production use.**
+> 
+> The API is subject to breaking changes, features may be incomplete, and documentation may be outdated. Use at your own risk.
+
 A Python SDK that enables you to create, manage, and interact with AI Workers on [Suna](https://suna.so).
 
 ## 📦 Installation
