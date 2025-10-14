@@ -17,12 +17,28 @@ class CreditManager:
         is_expiring: bool = True,
         description: str = "Credit added",
         expires_at: Optional[datetime] = None,
-        type: Optional[str] = None
+        type: Optional[str] = None,
+        stripe_event_id: Optional[str] = None
     ) -> Dict:
         client = await self.db.client
         amount = Decimal(str(amount))
         
-        recent_window = datetime.now(timezone.utc) - timedelta(seconds=20)
+        if stripe_event_id:
+            existing_event = await client.from_('credit_ledger').select(
+                'id, amount, balance_after'
+            ).eq('stripe_event_id', stripe_event_id).execute()
+            
+            if existing_event.data:
+                logger.warning(f"[IDEMPOTENCY] Duplicate Stripe event {stripe_event_id} prevented for {account_id}")
+                return {
+                    'success': True,
+                    'message': 'Credit already added (Stripe event already processed)',
+                    'amount': float(existing_event.data[0]['amount']),
+                    'balance_after': float(existing_event.data[0]['balance_after']),
+                    'duplicate_prevented': True
+                }
+        
+        recent_window = datetime.now(timezone.utc) - timedelta(seconds=5)
         recent_entries = await client.from_('credit_ledger').select(
             'id, created_at, amount, description'
         ).eq('account_id', account_id).eq('amount', float(amount)).eq(
@@ -32,7 +48,7 @@ class CreditManager:
         if recent_entries.data:
             logger.warning(f"[IDEMPOTENCY] Potential duplicate credit add detected for {account_id}: "
                          f"amount={amount}, description='{description}', "
-                         f"found {len(recent_entries.data)} similar entries in last 20 seconds")
+                         f"found {len(recent_entries.data)} similar entries in last 5 seconds")
             return {
                 'success': True,
                 'message': 'Credit already added (duplicate prevented)',
@@ -109,6 +125,10 @@ class CreditManager:
             'is_expiring': is_expiring,
             'expires_at': expires_at.isoformat() if expires_at else None
         }
+        
+        if stripe_event_id:
+            ledger_entry['stripe_event_id'] = stripe_event_id
+        
         await client.from_('credit_ledger').insert(ledger_entry).execute()
         
         await Cache.invalidate(f"credit_balance:{account_id}")
@@ -218,7 +238,8 @@ class CreditManager:
         self,
         account_id: str,
         new_credits: Decimal,
-        description: str = "Monthly credit renewal"
+        description: str = "Monthly credit renewal",
+        stripe_event_id: Optional[str] = None
     ) -> Dict:
         client = await self.db.client
 
@@ -252,7 +273,7 @@ class CreditManager:
         expires_at = datetime.now(timezone.utc).replace(day=1) + timedelta(days=32)
         expires_at = expires_at.replace(day=1)
         
-        await client.from_('credit_ledger').insert({
+        ledger_entry = {
             'account_id': account_id,
             'amount': float(new_credits),
             'balance_after': float(new_total),
@@ -265,7 +286,12 @@ class CreditManager:
                 'non_expiring_preserved': float(actual_non_expiring),
                 'previous_balance': float(current_balance)
             }
-        }).execute()
+        }
+        
+        if stripe_event_id:
+            ledger_entry['stripe_event_id'] = stripe_event_id
+        
+        await client.from_('credit_ledger').insert(ledger_entry).execute()
         
         await Cache.invalidate(f"credit_balance:{account_id}")
         await Cache.invalidate(f"credit_summary:{account_id}")
