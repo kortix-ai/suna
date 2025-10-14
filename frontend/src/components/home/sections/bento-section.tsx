@@ -9,23 +9,23 @@ export function BentoSection() {
     {
       id: 1,
       content: <FirstBentoAnimation />,
-      title: 'Describe your needs',
+      title: 'Define your marketing goals',
       description:
-        'Tell Adentic what you need and customize your AI worker for your use cases.',
+        'Configure your automation workflows for campaigns, content, and analytics.',
     },
     {
       id: 2,
       content: <SecondBentoAnimation />,
-      title: 'Connect 100s of tools',
+      title: 'Connect 100+ marketing tools',
       description:
-        'Connect to your favorite tools and services with our extensive library of integrations.',
+        'Integrate with your CRM, email platform, social media, and analytics tools seamlessly.',
     },
     {
       id: 3,
       content: <ThirdBentoAnimation />,
-      title: 'Deploy and personalize',
+      title: 'Launch and optimize campaigns',
       description:
-        'Watch your agent handle complex tasks and workflows with advanced AI reasoning.',
+        'Deploy AI-powered campaigns that learn and improve performance automatically.',
     },
   ];
 

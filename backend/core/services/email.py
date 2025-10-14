@@ -153,7 +153,7 @@ class EmailService:
 
     <p>Let us know if you need help getting started or have questions — we're always here, and join our <a href="https://discord.com/invite/FjD644cfcs">Discord community</a>.</p>
 
-    <p><strong>For your business:</strong> if you want to automate manual and ordinary tasks for your company, book a call with us <a href="https://cal.com/team/adentic/enterprise-demo">here</a></p>
+    <p><strong>For your business:</strong> if you want to automate manual and ordinary tasks for your company, book a call with us <a href="https://cal.com/adentic/30min">here</a></p>
 
     <p>Thanks again, and welcome to the Adentic community!</p>
 
@@ -177,7 +177,7 @@ To celebrate your arrival, here's a 15% discount for your first month to get mor
 
 Let us know if you need help getting started or have questions — we're always here, and join our Discord community: https://discord.com/invite/FjD644cfcs
 
-For your business: if you want to automate manual and ordinary tasks for your company, book a call with us here: https://cal.com/team/adentic/enterprise-demo
+For your business: if you want to automate manual and ordinary tasks for your company, book a call with us here: https://cal.com/adentic/30min
 
 Thanks again, and welcome to the Adentic community!
 

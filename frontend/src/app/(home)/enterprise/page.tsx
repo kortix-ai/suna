@@ -37,39 +37,39 @@ const CustomHeroSection = () => {
             
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/20">
               <Sparkles className="w-4 h-4 text-primary" />
-              <span className="text-sm font-medium text-primary">Enterprise Implementation Services</span>
+              <span className="text-sm font-medium text-primary">Marketing Automation Implementation</span>
             </div>
             
             <h1 className="text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-medium tracking-tighter text-balance text-center">
-              <span className="text-primary">Enterprise AI Workers.</span>
+              <span className="text-primary">Enterprise Marketing Automation.</span>
               <br />
-              <span className="text-secondary">Delivered in days.</span>
+              <span className="text-secondary">Deployed in days.</span>
             </h1>
             
             <p className="text-lg md:text-xl text-center text-muted-foreground font-medium text-balance leading-relaxed tracking-tight max-w-3xl">
-              Skip the learning curve. Our AI specialists design, develop and deploy enterprise-grade AI workers that integrate seamlessly with your operations.
+              Transform your marketing operations with custom AI automation. Our specialists design, develop and deploy enterprise-grade marketing solutions that integrate seamlessly with your existing tech stack.
             </p>
             
             <div className="flex flex-col items-center gap-6 pt-6">
               <AdenticEnterpriseModal>
                 <Button size="lg">
                   <Calendar className="w-4 h-4 mr-2" />
-                  Schedule Strategy Call
+                  Book Marketing Strategy Call
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </Button>
               </AdenticEnterpriseModal>
               <div className="flex flex-col sm:flex-row items-center gap-4 text-sm text-muted-foreground">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-primary"></div>
-                  <span>Free consultation</span>
+                  <span>Free marketing audit</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-primary"></div>
-                  <span>Custom solution design</span>
+                  <span>Custom automation design</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-primary"></div>
-                  <span>Tailored pricing</span>
+                  <span>ROI-focused pricing</span>
                 </div>
               </div>
             </div>
@@ -89,10 +89,10 @@ const ValuePropSection = () => {
         <div className="max-w-6xl mx-auto border-l border-r border-border">
           <SectionHeader>
             <h2 className="text-3xl md:text-4xl font-medium tracking-tighter text-center text-balance pb-1">
-              When Standard Solutions Fall Short
+              When Off-the-Shelf Marketing Tools Fall Short
             </h2>
             <p className="text-muted-foreground text-center text-balance font-medium">
-              Professional implementation services designed for organizations with unique requirements and mission-critical automation needs.
+              Custom marketing automation solutions designed for enterprise teams with complex workflows, multi-channel campaigns, and mission-critical marketing operations.
             </p>
           </SectionHeader>
 
@@ -103,9 +103,9 @@ const ValuePropSection = () => {
                   <Clock className="w-6 h-6 text-primary" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-semibold mb-3">Accelerate Time-to-Value</h3>
+                  <h3 className="text-xl font-semibold mb-3">Accelerate Marketing ROI</h3>
                   <p className="text-muted-foreground leading-relaxed">
-                    Bypass months of development cycles. Our proven methodology delivers enterprise-ready AI workers in a fraction of the time, letting you focus on strategy instead of implementation.
+                    Bypass months of campaign setup and optimization cycles. Our proven methodology delivers enterprise-ready marketing automation in weeks, letting you focus on strategy instead of technical implementation.
                   </p>
                 </div>
               </div>
@@ -117,9 +117,9 @@ const ValuePropSection = () => {
                   <Settings className="w-6 h-6 text-secondary" />
                 </div>
                 <div>
-                  <h3 className="text-xl font-semibold mb-3">Enterprise Integration</h3>
+                  <h3 className="text-xl font-semibold mb-3">Marketing Stack Integration</h3>
                   <p className="text-muted-foreground leading-relaxed">
-                    Designed for sophisticated business processes requiring seamless integration with legacy systems, compliance frameworks, and industry-specific requirements.
+                    Designed for complex marketing ecosystems requiring seamless integration with CRM systems, email platforms, social media tools, analytics platforms, and compliance frameworks.
                   </p>
                 </div>
               </div>
@@ -136,20 +136,20 @@ const ProcessSection = () => {
   const steps = [
     {
       icon: <Users className="w-8 h-8" />,
-      title: "Strategic Analysis",
-      description: "Solution architects conduct comprehensive business analysis, workflow mapping, and technical requirements gathering to design optimal AI worker architecture for your organization.",
+      title: "Marketing Strategy Analysis",
+      description: "Marketing specialists conduct comprehensive campaign analysis, workflow mapping, and technical requirements gathering to design optimal automation architecture for your marketing operations.",
       phase: "Discovery"
     },
     {
       icon: <Zap className="w-8 h-8" />,
-      title: "Engineering Excellence", 
-      description: "Full-stack development with enterprise security, scalability design, comprehensive testing, performance optimization, and seamless integration with existing systems.",
+      title: "Automation Development", 
+      description: "Full-stack marketing automation development with enterprise security, scalability design, comprehensive testing, performance optimization, and seamless integration with your marketing stack.",
       phase: "Build"
     },
     {
       icon: <Shield className="w-8 h-8" />,
-      title: "Enterprise Support",
-      description: "Dedicated success management, comprehensive training programs, continuous performance monitoring, optimization services, and satisfaction guarantee with full accountability.",
+      title: "Marketing Success Management",
+      description: "Dedicated marketing success management, comprehensive team training programs, continuous campaign monitoring, optimization services, and ROI guarantee with full accountability.",
       phase: "Scale"
     }
   ];
@@ -160,10 +160,10 @@ const ProcessSection = () => {
         <div className="max-w-6xl mx-auto border-l border-r border-border">
           <SectionHeader>
             <h2 className="text-3xl md:text-4xl font-medium tracking-tighter text-center text-balance pb-1">
-              Our Implementation Methodology
+              Our Marketing Automation Methodology
             </h2>
             <p className="text-muted-foreground text-center text-balance font-medium">
-              A proven three-phase approach that transforms your vision into production-ready AI workers
+              A proven three-phase approach that transforms your marketing vision into production-ready automation systems
             </p>
           </SectionHeader>
 
@@ -206,12 +206,12 @@ const ProcessSection = () => {
 // Benefits Section
 const BenefitsSection = () => {
   const benefits = [
-    "Dedicated solution architect and technical lead for your project",
-    "Enterprise-grade AI worker design with scalability considerations",
-    "White-glove support with dedicated success manager", 
-    "Comprehensive team training and knowledge transfer",
-    "Quarterly business reviews and performance optimization",
-    "Deep integration with existing technology stack and workflows"
+    "Dedicated marketing automation specialist and technical lead for your project",
+    "Enterprise-grade marketing automation design with scalability considerations",
+    "White-glove support with dedicated marketing success manager", 
+    "Comprehensive marketing team training and knowledge transfer",
+    "Quarterly marketing performance reviews and campaign optimization",
+    "Deep integration with existing marketing stack and campaign workflows"
   ];
 
   return (
@@ -220,10 +220,10 @@ const BenefitsSection = () => {
         <div className="max-w-6xl mx-auto border-l border-r border-border">
           <SectionHeader>
             <h2 className="text-3xl md:text-4xl font-medium tracking-tighter text-center text-balance pb-1">
-              Enterprise-Grade Implementation
+              Enterprise Marketing Automation
             </h2>
             <p className="text-muted-foreground text-center text-balance font-medium">
-              Premium service tier with dedicated resources and tailored solutions for complex organizational needs
+              Premium service tier with dedicated marketing resources and tailored automation solutions for complex marketing operations
             </p>
           </SectionHeader>
 
@@ -256,27 +256,27 @@ const BenefitsSection = () => {
 const TestimonialsSection = () => {
   const testimonials = [
     {
-      quote: "The implementation team transformed our entire workflow. Their expertise in enterprise AI deployment is unmatched.",
+      quote: "The marketing automation team transformed our entire campaign workflow. Their expertise in enterprise marketing deployment is unmatched.",
       author: "Sarah Chen",
-      company: "TechFlow Industries",
+      company: "TechFlow Marketing",
       avatar: "🚀"
     },
     {
-      quote: "ROI was evident within the first month. The AI workers handle our most complex processes flawlessly.",
+      quote: "Marketing ROI was evident within the first month. The automation handles our most complex campaigns flawlessly.",
       author: "Marcus Rodriguez", 
-      company: "Global Manufacturing Corp",
+      company: "Global Marketing Corp",
       avatar: "💡"
     },
     {
-      quote: "Outstanding technical depth and business understanding. They delivered exactly what we envisioned.",
+      quote: "Outstanding marketing expertise and technical depth. They delivered exactly what our marketing team envisioned.",
       author: "Dr. Amanda Foster",
-      company: "Research Dynamics LLC",
+      company: "Research Marketing LLC",
       avatar: "⭐"
     },
     {
-      quote: "Professional, reliable, and innovative. The custom solution exceeded our expectations completely.",
+      quote: "Professional, reliable, and innovative. The custom marketing solution exceeded our expectations completely.",
       author: "James Wellington",
-      company: "Strategic Ventures Group", 
+      company: "Strategic Marketing Group", 
       avatar: "🎯"
     }
   ];
@@ -287,10 +287,10 @@ const TestimonialsSection = () => {
         <div className="max-w-6xl mx-auto border-l border-r border-border">
           <SectionHeader>
             <h2 className="text-3xl md:text-4xl font-medium tracking-tighter text-center text-balance pb-1">
-              Client Success Stories
+              Marketing Success Stories
             </h2>
             <p className="text-muted-foreground text-center text-balance font-medium">
-              Organizations that have transformed their operations with our enterprise implementation services
+              Marketing teams that have transformed their operations with our enterprise automation services
             </p>
           </SectionHeader>
 
@@ -398,10 +398,10 @@ const FinalCTASection = () => {
         <div className="max-w-6xl mx-auto border-l border-r border-border">
           <SectionHeader>
             <h2 className="text-3xl md:text-4xl font-medium tracking-tighter text-center text-balance pb-1">
-              Ready to Transform Your Operations?
+              Ready to Transform Your Marketing Operations?
             </h2>
             <p className="text-muted-foreground text-center text-balance font-medium">
-              Let's discuss your specific requirements and design a custom AI implementation strategy for your organization.
+              Let's discuss your specific marketing requirements and design a custom automation strategy for your marketing team.
             </p>
           </SectionHeader>
 
@@ -412,25 +412,25 @@ const FinalCTASection = () => {
                   <AdenticEnterpriseModal>
                     <Button size="lg">
                       <Calendar className="w-4 h-4 mr-2" />
-                      Book Your Strategy Session
+                      Book Your Marketing Strategy Session
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
                   </AdenticEnterpriseModal>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center max-w-2xl mx-auto">
                     <div className="flex flex-col items-center gap-2 p-4 rounded-lg bg-accent/20">
                       <Shield className="w-6 h-6 text-primary" />
-                      <span className="text-sm font-medium">100% Satisfaction</span>
-                      <span className="text-xs text-muted-foreground">Guarantee</span>
+                      <span className="text-sm font-medium">ROI Guarantee</span>
+                      <span className="text-xs text-muted-foreground">Marketing results</span>
                     </div>
                     <div className="flex flex-col items-center gap-2 p-4 rounded-lg bg-accent/20">
                       <Users className="w-6 h-6 text-primary" />
-                      <span className="text-sm font-medium">Enterprise Support</span>
+                      <span className="text-sm font-medium">Marketing Support</span>
                       <span className="text-xs text-muted-foreground">Dedicated team</span>
                     </div>
                     <div className="flex flex-col items-center gap-2 p-4 rounded-lg bg-accent/20">
                       <Settings className="w-6 h-6 text-primary" />
                       <span className="text-sm font-medium">Custom Pricing</span>
-                      <span className="text-xs text-muted-foreground">Tailored to needs</span>
+                      <span className="text-xs text-muted-foreground">Based on ROI</span>
                     </div>
                   </div>
                 </div>

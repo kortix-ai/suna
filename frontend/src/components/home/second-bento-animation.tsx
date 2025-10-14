@@ -48,10 +48,10 @@ export function SecondBentoAnimation() {
               <img src="https://upload.wikimedia.org/wikipedia/commons/6/6b/WhatsApp.svg" alt="WhatsApp" className="size-8" />
             </div>
             <div className="size-12 bg-white rounded-full flex items-center justify-center shadow-lg border border-gray-100">
-              <img src="https://upload.wikimedia.org/wikipedia/commons/a/ab/Logo_TV_2015.svg" alt="Trello" className="size-8" />
+              <img src="https://upload.wikimedia.org/wikipedia/commons/c/c7/Google_Ads_logo.svg" alt="Trello" className="size-8" />
             </div>
             <div className="size-12 bg-white rounded-full flex items-center justify-center shadow-lg border border-gray-100">
-              <img src="https://upload.wikimedia.org/wikipedia/commons/0/05/Google_Sheets_icon_%282020%29.svg" alt="Google Sheets" className="size-8" />
+              <img src="https://upload.wikimedia.org/wikipedia/commons/7/7b/Meta_Platforms_Inc._logo.svg" alt="Google Sheets" className="size-8" />
             </div>
           </OrbitingCircles>
 

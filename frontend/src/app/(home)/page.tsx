@@ -34,7 +34,7 @@ export default function Home() {
             <BentoSection />
             
             {/* <AgentShowcaseSection /> */}
-            <OpenSourceSection />
+            {/* <OpenSourceSection /> */}
             <PricingSection />
             {/* <TestimonialSection /> */}
             {/* <FAQSection /> */}

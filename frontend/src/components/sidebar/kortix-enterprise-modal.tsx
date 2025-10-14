@@ -33,7 +33,7 @@ export function AdenticEnterpriseModal({
 
   useEffect(() => {
     (async function () {
-      const cal = await getCalApi({ namespace: 'enterprise-demo' });
+      const cal = await getCalApi({ namespace: 'marketing-strategy' });
       cal('ui', { hideEventTypeDetails: true, layout: 'month_view' });
     })();
   }, []);
@@ -118,8 +118,8 @@ export function AdenticEnterpriseModal({
           <div className="bg-white dark:bg-[#171717] h-full overflow-hidden">
             <div className="h-full overflow-auto">
               <Cal
-                namespace="enterprise-demo"
-                calLink="team/kortix/enterprise-demo"
+                namespace="marketing-strategy"
+                calLink="adentic/30min"
                 style={{ width: '100%', height: '100%' }}
                 config={{
                   layout: 'month_view',

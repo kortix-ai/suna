@@ -58,24 +58,22 @@ export interface PricingTier {
 }
 
 export const siteConfig = {
-  name: 'Adentic Adentic',
-  description: 'The Generalist AI Worker that can act on your behalf.',
-  cta: 'Start Free',
+  name: 'Adentic',
+  description: 'AI-Powered Marketing Automation Platform for High-Performance Teams',
+  cta: 'Start Free Trial',
   url: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
-  keywords: ['AI Worker', 'Generalist AI', 'Open Source AI', 'Autonomous Agent'],
+  keywords: ['Marketing Automation', 'AI Marketing', 'Campaign Management', 'Marketing Analytics'],
   links: {
-    email: 'support@kortix.ai',
-    twitter: 'https://x.com/kortixai',
-    // discord: 'https://discord.gg/kortixai',
-    github: 'https://github.com/Adentic-ai/Adentic',
-    instagram: 'https://instagram.com/kortixai',
+    email: 'aditya.p@tryadentic.com',
+    twitter: 'https://x.com/adenticai',
+    // discord: 'https://discord.gg/adenticai',
+    instagram: 'https://instagram.com/adenticai',
   },
   nav: {
     links: [
       { id: 1, name: 'Home', href: '#hero' },
-      { id: 2, name: 'Process', href: '#process' },
+      { id: 2, name: 'Features', href: '#process' },
       // { id: 3, name: 'Use Cases', href: '#use-cases' },
-      { id: 4, name: 'Open Source', href: '#open-source' },
       { id: 5, name: 'Pricing', href: '#pricing' },
       { id: 6, name: 'Enterprise', href: '/enterprise' },
     ],
@@ -107,12 +105,11 @@ export const siteConfig = {
         />
       </svg>
     ),
-    badge: '100% OPEN SOURCE',
-    githubUrl: 'https://github.com/kortix-ai/suna',
-    title: 'Adentic – Build, manage and train your AI Workforce.',
+    badge: 'ENTERPRISE READY',
+    title: 'Marketing automation that scales with your growth',
     description:
-      'Adentic – open-source platform to build, manage and train your AI Workforce.',
-    inputPlaceholder: 'Ask Adentic to...',
+      'AI-powered platform designed for marketing teams and agencies who need enterprise-grade automation without the complexity.',
+    inputPlaceholder: 'What marketing task can we automate for you?',
   },
   cloudPricingItems: [
     {
@@ -1221,21 +1218,21 @@ export const siteConfig = {
   },
   ctaSection: {
     id: 'cta',
-    title: 'Launch Your First AI Worker Today',
+    title: 'Transform Your Marketing Operations Today',
     backgroundImage: '/holo.png',
     button: {
-      text: 'Get Started for free',
+      text: 'Start Your Free Trial',
       href: '/auth',
     },
-    subtext: 'Build, manage and train your AI Workforce',
+    subtext: 'Automate campaigns, boost ROI, scale your team',
   },
   footerLinks: [
     {
       title: 'Adentic',
       links: [
-        { id: 1, title: 'About', url: 'https://kortix.ai' },
-        { id: 3, title: 'Contact', url: 'mailto:hey@kortix.ai' },
-        { id: 4, title: 'Careers', url: 'https://kortix.ai/careers' },
+        { id: 1, title: 'About', url: 'https://tryadenti.com' },
+        { id: 3, title: 'Contact', url: 'mailto:aditya.p@tryadentic.com' },
+        { id: 4, title: 'Careers', url: 'https://tryadentic.com' },
       ],
     },
     {
@@ -1244,10 +1241,9 @@ export const siteConfig = {
         {
           id: 5,
           title: 'Documentation',
-          url: 'https://github.com/Adentic-ai/Adentic',
+          url: '/docs',
         },
-        { id: 7, title: 'Discord', url: 'https://discord.gg/Py6pCBUUPw' },
-        { id: 8, title: 'GitHub', url: 'https://github.com/Adentic-ai/Adentic' },
+        { id: 7, title: 'Support', url: 'mailto:aditya.p@tryadentic.com' },
       ],
     },
     {
@@ -1256,17 +1252,12 @@ export const siteConfig = {
         {
           id: 9,
           title: 'Privacy Policy',
-          url: 'https://suna.so/legal?tab=privacy',
+          url: 'https://tryadentic.com',
         },
         {
           id: 10,
           title: 'Terms of Service',
-          url: 'https://suna.so/legal?tab=terms',
-        },
-        {
-          id: 11,
-          title: 'License Apache 2.0',
-          url: 'https://github.com/Adentic-ai/Adentic/blob/main/LICENSE',
+          url: 'https://tryadentic.com',
         },
       ],
     },

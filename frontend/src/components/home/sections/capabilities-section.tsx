@@ -16,43 +16,43 @@ import {
 
 const capabilities = [
   {
-    title: 'Create Professional Documents',
-    description: 'Generate reports, proposals, contracts, and presentations that look like they came from a top agency. PDF, Word, PowerPoint - any format you need.',
+    title: 'Automate Campaign Workflows',
+    description: 'Set up multi-channel marketing campaigns that run automatically across email, social media, and advertising platforms with intelligent optimization.',
     icon: <FileText className="size-6" />,
   },
   {
-    title: 'Design Graphics & Visuals',
-    description: 'Create logos, social media graphics, infographics, and custom images from just a text description. No design skills required.',
+    title: 'Generate Marketing Content',
+    description: 'Create compelling copy, social media posts, email campaigns, and landing pages that convert. AI-powered content that matches your brand voice.',
     icon: <Image className="size-6" />,
   },
   {
-    title: 'Build Stunning Presentations',
-    description: 'Turn your ideas into polished slide decks with professional layouts, charts, and images sourced automatically.',
+    title: 'Build Performance Dashboards',
+    description: 'Transform your marketing data into actionable insights with real-time dashboards, automated reports, and predictive analytics.',
     icon: <Presentation className="size-6" />,
   },
   {
-    title: 'Research Anything Online',
-    description: 'Get comprehensive research reports on competitors, markets, trends, or any topic with verified sources and current data.',
+    title: 'Research Competitors & Markets',
+    description: 'Get comprehensive competitive intelligence, market analysis, and trend reports to stay ahead of the competition.',
     icon: <Globe className="size-6" />,
   },
   {
-    title: 'Analyze Your Data',
-    description: 'Upload spreadsheets, sales data, or any files and get insights, trends, forecasts, and beautiful charts in minutes.',
+    title: 'Analyze Marketing Data',
+    description: 'Turn campaign performance data into actionable insights with automated analysis, attribution modeling, and ROI optimization.',
     icon: <BarChart3 className="size-6" />,
   },
   {
-    title: 'Automate Online Tasks',
-    description: 'Fill out forms, collect data from websites, monitor prices, schedule posts, and handle repetitive web tasks while you sleep.',
+    title: 'Manage Multi-Channel Campaigns',
+    description: 'Coordinate campaigns across email, social media, paid advertising, and content marketing with unified automation and tracking.',
     icon: <ShoppingCart className="size-6" />,
   },
   {
-    title: 'Manage Your Workflows',
-    description: 'Set up automated processes for lead generation, customer follow-ups, content creation, and daily business operations.',
+    title: 'Optimize Marketing Operations',
+    description: 'Streamline your marketing processes with automated lead scoring, nurturing sequences, and performance optimization.',
     icon: <Users className="size-6" />,
   },
   {
-    title: 'Work Around the Clock',
-    description: 'Adentic never sleeps. Schedule tasks to run overnight, on weekends, or whenever you need work done without being there.',
+    title: 'Scale Team Productivity',
+    description: 'Multiply your marketing team\'s output with AI-powered automation that works 24/7, handling routine tasks while your team focuses on strategy.',
     icon: <Clock className="size-6" />,
   },
 ];
