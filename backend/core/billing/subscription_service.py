@@ -79,8 +79,7 @@ class SubscriptionService:
             'account_id': account_id,
             'email': email
         }).execute()
-        
-        logger.info(f"Created Stripe customer {customer.id} for account {account_id} with email {email}")
+    
         return customer.id
 
     async def get_subscription(self, account_id: str) -> Dict:
@@ -92,7 +91,6 @@ class SubscriptionService:
             try:
                 credit_result_fallback = await client.from_('credit_accounts').select('*').eq('user_id', account_id).execute()
                 if credit_result_fallback.data:
-                    logger.info(f"[SUBSCRIPTION] Using user_id fallback for account {account_id}")
                     credit_result = credit_result_fallback
             except Exception as e:
                 logger.debug(f"[SUBSCRIPTION] Fallback query failed: {e}")
@@ -427,8 +425,7 @@ class SubscriptionService:
                 cancel_at_period_end=True,
                 metadata={'cancellation_feedback': feedback} if feedback else {}
             )
-            
-            # Log cancellation in commitment history if applicable
+                
             if commitment_type:
                 await client.from_('commitment_history').insert({
                     'account_id': account_id,
@@ -512,6 +509,7 @@ class SubscriptionService:
         ).eq('account_id', account_id).execute()
 
         is_renewal = False
+        is_upgrade = False
         
         if subscription.get('id'):
             try:
@@ -524,7 +522,6 @@ class SubscriptionService:
                 current_period_end = subscription.get('current_period_end')
                 
                 for invoice in invoices.data:
-                    # Check if this invoice is for the current billing period
                     invoice_period_start = invoice.get('period_start')
                     invoice_period_end = invoice.get('period_end')
                     
@@ -532,20 +529,30 @@ class SubscriptionService:
                         invoice_period_end == current_period_end):
                         
                         invoice_status = invoice.get('status')
-                        logger.warning(f"[RENEWAL DETECTION] Found invoice {invoice['id']} for current period")
-                        logger.warning(f"[RENEWAL DETECTION] Invoice status: {invoice_status}, created: {invoice.get('created')}")
+                        billing_reason = invoice.get('billing_reason')
                         
-                        # If there's ANY invoice for this period (even draft), it's a renewal
-                        if invoice_status in ['draft', 'open', 'paid', 'uncollectible']:
+                        is_upgrade_invoice = False
+                        if billing_reason == 'subscription_update':
+                            is_upgrade_invoice = True
+                            logger.info(f"[RENEWAL DETECTION] Invoice {invoice['id']} is a subscription_update - likely an upgrade")
+                        
+                        logger.warning(f"[RENEWAL DETECTION] Found invoice {invoice['id']} for current period")
+                        logger.warning(f"[RENEWAL DETECTION] Invoice status: {invoice_status}, billing_reason: {billing_reason}")
+                        
+                        if not is_upgrade_invoice and invoice_status in ['draft', 'open', 'paid', 'uncollectible']:
                             is_renewal = True
                             logger.warning(f"[RENEWAL DETECTION] Invoice exists (status: {invoice_status}) - this is a RENEWAL")
                             logger.warning(f"[RENEWAL DETECTION] Credits will be handled by invoice.payment_succeeded - BLOCKING")
+                            break
+                        elif is_upgrade_invoice:
+                            logger.info(f"[RENEWAL DETECTION] Upgrade invoice detected - NOT blocking credits")
+                            is_upgrade = True
                             break
                         
             except Exception as e:
                 logger.error(f"[RENEWAL DETECTION] Error checking invoices: {e}")
 
-        if not is_renewal:
+        if not is_renewal and not is_upgrade:
             now = datetime.now(timezone.utc)
             seconds_since_period_start = (now - billing_anchor).total_seconds()
             
@@ -554,17 +561,29 @@ class SubscriptionService:
                 logger.warning(f"[RENEWAL DETECTION] We're only {seconds_since_period_start:.0f}s after period start")
                 logger.warning(f"[RENEWAL DETECTION] This is almost certainly a renewal - BLOCKING subscription.updated credits")
         
-        # Also check if period explicitly changed
-        if not is_renewal and previous_attributes and 'current_period_start' in previous_attributes:
+        if not is_renewal and not is_upgrade and previous_attributes and 'current_period_start' in previous_attributes:
             prev_period_start = previous_attributes.get('current_period_start')
             current_period_start = subscription.get('current_period_start')
             
-            if prev_period_start != current_period_start:
+            prev_price_id = previous_attributes.get('items', {}).get('data', [{}])[0].get('price', {}).get('id') if previous_attributes.get('items') else None
+            current_price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
+            
+            is_tier_change = False
+            if prev_price_id and current_price_id and prev_price_id != current_price_id:
+                prev_tier = get_tier_by_price_id(prev_price_id)
+                current_tier = get_tier_by_price_id(current_price_id)
+                if prev_tier and current_tier and prev_tier.name != current_tier.name:
+                    is_tier_change = True
+                    logger.info(f"[RENEWAL DETECTION] Tier changed from {prev_tier.name} to {current_tier.name}")
+            
+            if prev_period_start != current_period_start and not is_tier_change:
                 is_renewal = True
                 logger.info(f"[RENEWAL DETECTION] Period changed from {prev_period_start} to {current_period_start} - this is a RENEWAL")
                 logger.info(f"[RENEWAL DETECTION] SKIPPING credit grant - will be handled by invoice.payment_succeeded webhook")
+            elif prev_period_start != current_period_start and is_tier_change:
+                logger.info(f"[RENEWAL DETECTION] Period changed but tier also changed - treating as UPGRADE, not renewal")
         
-        if not is_renewal and current_account.data:
+        if not is_renewal and not is_upgrade and current_account.data:
             last_renewal_period_start = current_account.data[0].get('last_renewal_period_start')
             if last_renewal_period_start and last_renewal_period_start == subscription.get('current_period_start'):
                 is_renewal = True
@@ -593,7 +612,9 @@ class SubscriptionService:
                 except Exception as e:
                     logger.warning(f"Error checking last grant date: {e}")
         
-        if is_renewal:
+        if is_upgrade:
+            logger.info(f"[UPGRADE] Upgrade detected - will grant credits for tier change")
+        elif is_renewal:
             logger.info(f"[RENEWAL BLOCK] Subscription {subscription['id']} identified as renewal - NO CREDITS will be granted")
             logger.info(f"[RENEWAL BLOCK] Credits for renewals are handled exclusively by invoice.payment_succeeded webhook")
             
@@ -711,6 +732,7 @@ class SubscriptionService:
             should_grant_credits = self._should_grant_credits(current_tier_name, current_tier, new_tier, subscription, old_subscription_id, is_renewal)
             
             if should_grant_credits:
+                logger.info(f"[UPGRADE] Granting upgrade credits but NOT setting last_renewal_period_start (renewal tracking is for invoices only)")
                 await client.from_('credit_accounts').update({
                     'last_grant_date': billing_anchor.isoformat()
                 }).eq('account_id', account_id).execute()
@@ -743,6 +765,14 @@ class SubscriptionService:
                 return
             elif current_status == 'none':
                 logger.info(f"[WEBHOOK] Activating trial for account {account_id}")
+        
+        recent_trial_credits = await client.from_('credit_ledger').select('*').eq(
+            'account_id', account_id
+        ).eq('description', f'{TRIAL_DURATION_DAYS}-day free trial credits').execute()
+        
+        if recent_trial_credits.data:
+            logger.warning(f"[WEBHOOK] Trial credits already granted for account {account_id} (found in ledger), skipping duplicate")
+            return
             
         trial_ends_at = datetime.fromtimestamp(subscription.trial_end, tz=timezone.utc)
         
@@ -836,15 +866,6 @@ class SubscriptionService:
         }).eq('account_id', account_id).execute()
 
     async def get_user_subscription_tier(self, account_id: str) -> Dict:
-        """
-        Get the subscription tier information for a user.
-        
-        Args:
-            account_id: The user's account ID
-            
-        Returns:
-            Dictionary containing tier information
-        """
         cache_key = f"subscription_tier:{account_id}"
         cached = await Cache.get(cache_key)
         if cached:
@@ -880,39 +901,24 @@ class SubscriptionService:
         return tier_info
 
     async def get_allowed_models_for_user(self, user_id: str, client=None) -> List[str]:
-        """
-        Get the list of model IDs allowed for a user based on their subscription tier.
-        
-        Args:
-            user_id: The user's account ID
-            client: Optional Supabase client (for compatibility with old API)
-            
-        Returns:
-            List of model IDs allowed for the user's subscription tier.
-        """
         try:
             from core.ai_models import model_manager
-            
-            # Get user's subscription tier
+
             tier_info = await self.get_user_subscription_tier(user_id)
             tier_name = tier_info['name']
             
             logger.debug(f"[ALLOWED_MODELS] User {user_id} tier: {tier_name}")
-            
-            # If user has 'all' models access
+
             if 'all' in tier_info.get('models', []):
-                # Get all available models from the model manager
                 all_models = model_manager.list_available_models(include_disabled=False)
                 allowed_model_ids = [model_data["id"] for model_data in all_models]
                 logger.debug(f"[ALLOWED_MODELS] User {user_id} has access to all {len(allowed_model_ids)} models")
                 return allowed_model_ids
             
-            # If user has specific models listed
             elif tier_info.get('models'):
                 logger.debug(f"[ALLOWED_MODELS] User {user_id} has specific models: {tier_info['models']}")
                 return tier_info['models']
             
-            # If user has no access (free/none tier)
             else:
                 logger.debug(f"[ALLOWED_MODELS] User {user_id} has no model access (tier: {tier_name})")
                 return []
@@ -945,7 +951,6 @@ class SubscriptionService:
             'can_cancel_after': end_date.isoformat()
         }).eq('account_id', account_id).execute()
         
-        # Insert commitment history record
         await client.from_('commitment_history').insert({
             'account_id': account_id,
             'commitment_type': 'yearly_commitment',
@@ -958,7 +963,6 @@ class SubscriptionService:
         logger.info(f"[COMMITMENT] Tracked yearly commitment for account {account_id}, subscription {subscription['id']}, ends {end_date.date()}")
     
     async def get_commitment_status(self, account_id: str) -> Dict:
-        """Get the commitment status for an account"""
         db = DBConnection()
         client = await db.client
         
@@ -980,7 +984,6 @@ class SubscriptionService:
         now = datetime.now(timezone.utc)
         
         if now >= end_date:
-            # Commitment has expired, clear it
             await client.from_('credit_accounts').update({
                 'commitment_type': None,
                 'commitment_start_date': None,

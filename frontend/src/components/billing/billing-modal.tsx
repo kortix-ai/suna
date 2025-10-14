@@ -157,6 +157,8 @@ export function BillingModal({ open, onOpenChange, returnUrl = typeof window !==
 
             if (response.success) {
                 toast.success(response.message);
+                // Invalidate cancellation status query to update UI
+                queryClient.invalidateQueries({ queryKey: ['subscription', 'cancellation-status'] });
             } else {
                 setSubscriptionData(originalState);
                 toast.error(response.message);
@@ -194,6 +196,8 @@ export function BillingModal({ open, onOpenChange, returnUrl = typeof window !==
 
             if (response.success) {
                 toast.success(response.message);
+                // Invalidate cancellation status query to update UI
+                queryClient.invalidateQueries({ queryKey: ['subscription', 'cancellation-status'] });
             } else {
                 setSubscriptionData(originalState);
                 toast.error(response.message);
