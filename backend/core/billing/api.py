@@ -433,6 +433,54 @@ async def get_subscription(
             }
         }
 
+@router.get("/subscription-cancellation-status")
+async def get_subscription_cancellation_status(
+    account_id: str = Depends(verify_and_get_user_id_from_jwt)
+) -> Dict:
+    try:
+        subscription_info = await subscription_service.get_subscription(account_id)
+        subscription_data = subscription_info.get('subscription')
+
+        if not subscription_data or not subscription_data.get('id'):
+            return {
+                'has_subscription': False,
+                'is_cancelled': False,
+                'cancel_at': None,
+                'cancel_at_period_end': False,
+                'current_period_end': None,
+                'status': None
+            }
+        
+        try:
+            stripe_subscription = stripe.Subscription.retrieve(subscription_data['id'])
+            is_cancelled = stripe_subscription.cancel_at_period_end or stripe_subscription.cancel_at is not None
+            
+            return {
+                'has_subscription': True,
+                'subscription_id': stripe_subscription.id,
+                'is_cancelled': is_cancelled,
+                'cancel_at': stripe_subscription.cancel_at,
+                'cancel_at_period_end': stripe_subscription.cancel_at_period_end,
+                'canceled_at': stripe_subscription.canceled_at,
+                'current_period_end': stripe_subscription.current_period_end,
+                'status': stripe_subscription.status,
+                'cancellation_details': stripe_subscription.cancellation_details if hasattr(stripe_subscription, 'cancellation_details') else None
+            }
+        except stripe.error.StripeError as e:
+            return {
+                'has_subscription': True,
+                'subscription_id': subscription_data.get('id'),
+                'is_cancelled': False,
+                'cancel_at': None,
+                'cancel_at_period_end': False,
+                'current_period_end': subscription_data.get('current_period_end'),
+                'status': subscription_data.get('status'),
+                'error': 'Could not retrieve cancellation status from Stripe'
+            }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/create-checkout-session")
 async def create_checkout_session(
     request: CreateCheckoutSessionRequest,

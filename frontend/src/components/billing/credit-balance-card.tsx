@@ -172,7 +172,7 @@ export function CreditBalanceCard({
             </div>
           </div>
           {showPurchaseButton && balance.can_purchase_credits && (
-            <div className="pt-2">
+            <div className="pt-2 pb-4">
               <Button 
                 onClick={() => setShowPurchaseModal(true)} 
                 className="w-full"
