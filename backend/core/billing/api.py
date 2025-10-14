@@ -505,8 +505,12 @@ async def cancel_subscription(
         await Cache.invalidate(f"subscription_tier:{account_id}")
         return result
         
+    except HTTPException as e:
+        raise e
     except Exception as e:
-        logger.error(f"Error canceling subscription: {e}", exc_info=True)
+        logger.error(f"Error canceling subscription: {str(e)}")
+        if "commitment period" in str(e).lower():
+            raise HTTPException(status_code=403, detail=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/reactivate-subscription")
@@ -518,8 +522,11 @@ async def reactivate_subscription(
         await Cache.invalidate(f"subscription_tier:{account_id}")
         return result
         
+    except HTTPException as e:
+        # Re-raise HTTP exceptions as-is
+        raise e
     except Exception as e:
-        logger.error(f"Error reactivating subscription: {e}", exc_info=True)
+        logger.error(f"Error reactivating subscription: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/transactions")
