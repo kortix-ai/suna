@@ -116,13 +116,22 @@ class TrialService:
                 'converted_to_paid': False
             }, on_conflict='account_id').execute()
             
-            await client.from_('credit_ledger').insert({
-                'account_id': account_id,
-                'amount': -20.00,
-                'balance_after': 0.00,
-                'type': 'adjustment',
-                'description': 'Trial cancelled by user'
-            }).execute()
+            current_balance_result = await client.from_('credit_accounts').select(
+                'balance'
+            ).eq('account_id', account_id).execute()
+            
+            current_balance = 0
+            if current_balance_result.data:
+                current_balance = float(current_balance_result.data[0].get('balance', 0))
+            
+            if current_balance > 0:
+                await client.from_('credit_ledger').insert({
+                    'account_id': account_id,
+                    'amount': -current_balance,
+                    'balance_after': 0.00,
+                    'type': 'adjustment',
+                    'description': 'Trial cancelled by user - credits removed'
+                }).execute()
             
             logger.info(f"[TRIAL CANCEL] Successfully cancelled trial for account {account_id}")
             
