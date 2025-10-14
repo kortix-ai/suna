@@ -33,7 +33,6 @@ const drawerVariants = {
       type: 'spring',
       damping: 15,
       stiffness: 200,
-      staggerChildren: 0.03,
     },
   },
   exit: {
