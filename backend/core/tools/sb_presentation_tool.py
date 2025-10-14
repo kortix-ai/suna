@@ -126,7 +126,40 @@ class SandboxPresentationTool(SandboxToolsBase):
                     },
                     "content": {
                         "type": "string",
-                        "description": "HTML body content only (DO NOT include <!DOCTYPE>, <html>, <head>, or <body> tags - these are added automatically). Include your content with inline CSS or <style> blocks. Design for 1920x1080 resolution. D3.js, Font Awesome, and Chart.js are pre-loaded and available to use."
+                        "description": """HTML body content only (DO NOT include <!DOCTYPE>, <html>, <head>, or <body> tags - these are added automatically). Include your content with inline CSS or <style> blocks. Design for 1920x1080 resolution. D3.js, Font Awesome, and Chart.js are pre-loaded and available to use.
+                        
+                        ## 📐 **Design and Layout Rules**
+
+                        ### **Dimensions & Spacing**
+                        *   **Slide Size**: 1920x1080 pixels (16:9)
+                        *   **Padding**: 80px on all edges (minimum 60px)
+                        *   **Section Gaps**: 40-60px between major sections  
+                        *   **Element Gaps**: 20-30px between related items
+                        *   **List Spacing**: Use `gap: 25px` in flex/grid layouts
+                        *   **Line Height**: 1.5-1.8 for readability
+
+                        ### **Typography**
+                        Use `font_family` from **Theme Object**:
+                        *   **Titles**: 48-72px (bold)
+                        *   **Subtitles**: 32-42px (semi-bold)  
+                        *   **Headings**: 28-36px (semi-bold)
+                        *   **Body**: 20-24px (normal)
+                        *   **Small**: 16-18px (light)
+
+                        ### **Color Usage**
+                        Use ONLY **Theme Object** colors:
+                        *   **Primary**: Backgrounds, main elements
+                        *   **Secondary**: Subtle backgrounds
+                        *   **Accent**: Highlights, CTAs
+                        *   **Text**: All text content
+
+                        ### **Layout Principles**
+                        *   Focus on 1-2 main ideas per slide
+                        *   Limit to 3-5 bullet points max
+                        *   Use `overflow: hidden` on containers
+                        *   Grid columns: Use `gap: 50-60px`
+                        *   Embrace whitespace - don't fill every pixel
+                        """
                     },
                     "presentation_title": {
                                     "type": "string",
