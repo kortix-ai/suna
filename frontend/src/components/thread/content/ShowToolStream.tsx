@@ -16,7 +16,7 @@ const STREAMABLE_TOOLS = {
         'Editing File',
         'Deleting File',
     ]),
-    
+
     // Command tools - show command output streaming
     COMMAND_TOOLS: new Set([
         'Executing Command',
@@ -24,7 +24,7 @@ const STREAMABLE_TOOLS = {
         'Terminating Command',
         'Listing Commands',
     ]),
-    
+
     // Browser tools - show action details streaming
     BROWSER_TOOLS: new Set([
         'Navigating to Page',
@@ -32,14 +32,14 @@ const STREAMABLE_TOOLS = {
         'Extracting Content',
         'Taking Screenshot',
     ]),
-    
+
     // Web tools - show search/crawl results streaming
     WEB_TOOLS: new Set([
         'Searching Web',
         'Crawling Website',
         'Scraping Website',
     ]),
-    
+
     // Other tools that benefit from content streaming
     OTHER_STREAMABLE: new Set([
         'Calling data provider',
@@ -100,14 +100,14 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     // Clean function call XML content but preserve other HTML/XML
     const cleanXMLContent = (rawContent: string): { html: string; plainText: string } => {
         if (!rawContent || typeof rawContent !== 'string') return { html: '', plainText: '' };
-        
+
         // Remove only function call related XML tags: function_calls, invoke, parameter
         const cleaned = rawContent
             .replace(/<function_calls[^>]*>/gi, '')
             .replace(/<\/function_calls>/gi, '')
             .replace(/<invoke[^>]*>/gi, '')
             .replace(/<\/invoke>/gi, '');
-        
+
         // Extract all parameter content with names
         const parameterMatches = cleaned.match(/<parameter\s+name=["'][^"']*["']>([\\s\\S]*?)(<\/parameter>|$)/gi);
         if (parameterMatches) {
@@ -116,7 +116,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                 if (fullMatch) {
                     const paramName = fullMatch[1];
                     const paramValue = fullMatch[2].trim();
-                    
+
                     if (paramValue) {
                         return {
                             name: paramName,
@@ -128,7 +128,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                 }
                 return null;
             }).filter(entry => entry !== null);
-            
+
             if (paramEntries.length > 0) {
                 return {
                     html: paramEntries.map(entry => entry.html).join('\n\n'),
@@ -136,7 +136,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                 };
             }
         }
-        
+
         // Fallback: remove only parameter tags but preserve other HTML/XML
         const cleanText = cleaned.replace(/<\/?parameter[^>]*>/gi, '').trim();
         return { html: cleanText, plainText: cleanText };
@@ -145,7 +145,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     // Extract streaming content with parameter names
     const streamingContent = React.useMemo(() => {
         if (!content) return { html: '', plainText: '' };
-        
+
         // For file operations, prioritize showing just the content without param names for cleaner code display
         if (STREAMABLE_TOOLS.FILE_OPERATIONS.has(toolName || '')) {
             let paramName: string | null = null;
@@ -168,26 +168,26 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                 }
             }
         }
-        
+
         // For other tools, show parameter names with values
         // Command tools - extract command parameter with name
         if (STREAMABLE_TOOLS.COMMAND_TOOLS.has(toolName || '')) {
             const commandMatch = content.match(/<parameter\s+name=["']command["']>([\\s\\S]*?)(<\/parameter>|$)/i);
             if (commandMatch && commandMatch[1]) {
                 const value = commandMatch[1].trim();
-                return { 
-                    html: `<strong>command:</strong> ${value}`, 
-                    plainText: `command: ${value}` 
+                return {
+                    html: `<strong>command:</strong> ${value}`,
+                    plainText: `command: ${value}`
                 };
             }
         }
-        
+
         // Browser tools - extract parameters with names
         if (STREAMABLE_TOOLS.BROWSER_TOOLS.has(toolName || '')) {
             const urlMatch = content.match(/<parameter\s+name=["']url["']>([\\s\\S]*?)(<\/parameter>|$)/i);
             const actionMatch = content.match(/<parameter\s+name=["']action["']>([\\s\\S]*?)(<\/parameter>|$)/i);
             const instructionMatch = content.match(/<parameter\s+name=["']instruction["']>([\\s\\S]*?)(<\/parameter>|$)/i);
-            
+
             if (urlMatch && urlMatch[1]) {
                 const value = urlMatch[1].trim();
                 return { html: `<strong>url:</strong> ${value}`, plainText: `url: ${value}` };
@@ -201,12 +201,12 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                 return { html: `<strong>instruction:</strong> ${value}`, plainText: `instruction: ${value}` };
             }
         }
-        
+
         // Web tools - extract parameters with names
         if (STREAMABLE_TOOLS.WEB_TOOLS.has(toolName || '')) {
             const queryMatch = content.match(/<parameter\s+name=["']query["']>([\\s\\S]*?)(<\/parameter>|$)/i);
             const urlMatch = content.match(/<parameter\s+name=["']url["']>([\\s\\S]*?)(<\/parameter>|$)/i);
-            
+
             if (queryMatch && queryMatch[1]) {
                 const value = queryMatch[1].trim();
                 return { html: `<strong>query:</strong> ${value}`, plainText: `query: ${value}` };
@@ -216,7 +216,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                 return { html: `<strong>url:</strong> ${value}`, plainText: `url: ${value}` };
             }
         }
-        
+
         // For other streamable tools, try to extract with parameter names
         if (STREAMABLE_TOOLS.OTHER_STREAMABLE.has(toolName || '')) {
             const commonParams = ['text', 'content', 'data', 'config', 'description', 'prompt'];
@@ -228,7 +228,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                 }
             }
         }
-        
+
         // Fallback: clean all XML and return with parameter names
         return cleanXMLContent(content);
     }, [content, toolName, isEditFile, isCreateFile, isFullFileRewrite]);
@@ -282,35 +282,31 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
         return (
             <div className="my-1">
                 {/* Always render the container for smooth transitions */}
-                <div className={`border border-neutral-200 dark:border-neutral-700/50 rounded-2xl overflow-hidden transition-all duration-500 ease-in-out transform-gpu ${
-                    shouldShowContent ? 'bg-zinc-100 dark:bg-neutral-900' : 'bg-muted scale-95 opacity-80'
-                }`}>
+                <div className={`border border-neutral-200 dark:border-neutral-700/50 rounded-2xl overflow-hidden transition-all duration-500 ease-in-out transform-gpu ${shouldShowContent ? 'bg-zinc-100 dark:bg-neutral-900' : 'bg-muted scale-95 opacity-80'
+                    }`}>
                     {/* Tool name header */}
                     <button
                         onClick={() => onToolClick?.(messageId, toolName)}
-                        className={`w-full flex items-center gap-1.5 py-1 px-2 text-xs text-muted-foreground hover:bg-muted/80 transition-all duration-400 ease-in-out cursor-pointer ${
-                            shouldShowContent ? 'bg-muted' : 'bg-muted rounded-2xl'
-                        }`}
+                        className={`w-full flex items-center gap-1.5 py-1 px-2 text-xs text-muted-foreground hover:bg-muted/80 transition-all duration-400 ease-in-out cursor-pointer ${shouldShowContent ? 'bg-muted' : 'bg-muted rounded-2xl'
+                            }`}
                     >
                         <div className=' flex items-center justify-center p-1 rounded-sm'>
                             <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000" />
                         </div>
-                        <span className="font-mono text-xs text-foreground">{displayName}</span>
+                        <span className="text-xs text-foreground">{displayName}</span>
                         {paramDisplay && <span className="ml-1 text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
                     </button>
 
                     {/* Streaming content below - smooth height transition */}
-                    <div className={`transition-all duration-500 ease-in-out overflow-hidden transform-gpu ${
-                        shouldShowContent ? 'max-h-[350px] border-t border-neutral-200 dark:border-neutral-700/50 opacity-100' : 'max-h-0 border-t-0 opacity-0 scale-y-95'
-                    }`}>
+                    <div className={`transition-all duration-500 ease-in-out overflow-hidden transform-gpu ${shouldShowContent ? 'max-h-[350px] border-t border-neutral-200 dark:border-neutral-700/50 opacity-100' : 'max-h-0 border-t-0 opacity-0 scale-y-95'
+                        }`}>
                         <div className="relative">
                             <div
                                 ref={containerRef}
-                                className={`max-h-[300px] overflow-y-auto scrollbar-none text-xs text-foreground transition-all duration-400 ease-in-out transform-gpu ${
-                                    STREAMABLE_TOOLS.FILE_OPERATIONS.has(toolName || '') || STREAMABLE_TOOLS.COMMAND_TOOLS.has(toolName || '') 
-                                        ? 'font-mono whitespace-pre-wrap' 
-                                        : 'whitespace-pre-wrap'
-                                } ${shouldShowContent ? 'opacity-100 translate-y-0 p-3' : 'opacity-0 translate-y-3 scale-95 p-0'}`}
+                                className={`max-h-[300px] overflow-y-auto scrollbar-none text-xs text-foreground transition-all duration-400 ease-in-out transform-gpu ${STREAMABLE_TOOLS.FILE_OPERATIONS.has(toolName || '') || STREAMABLE_TOOLS.COMMAND_TOOLS.has(toolName || '')
+                                    ? 'font-mono whitespace-pre-wrap'
+                                    : 'whitespace-pre-wrap'
+                                    } ${shouldShowContent ? 'opacity-100 translate-y-0 p-3' : 'opacity-0 translate-y-3 scale-95 p-0'}`}
                                 style={{
                                     maskImage: shouldShowContent ? 'linear-gradient(to bottom, transparent 0%, black 8%, black 92%, transparent 100%)' : 'none',
                                     WebkitMaskImage: shouldShowContent ? 'linear-gradient(to bottom, transparent 0%, black 8%, black 92%, transparent 100%)' : 'none'
@@ -320,7 +316,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                                     // Get the content to display
                                     const contentToDisplay = typeof streamingContent === 'string' ? streamingContent : streamingContent.plainText;
                                     const htmlContent = typeof streamingContent === 'string' ? streamingContent : streamingContent.html;
-                                    
+
                                     // Format content based on tool type with prefixes
                                     if (STREAMABLE_TOOLS.COMMAND_TOOLS.has(toolName || '')) {
                                         const prefix = '$ ';
@@ -365,17 +361,15 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                                 })()}
                             </div>
                             {/* Top gradient */}
-                            <div className={`absolute top-0 left-0 right-0 h-8 pointer-events-none transition-all duration-400 ease-in-out ${
-                                shouldShowContent
-                                    ? 'opacity-100 bg-gradient-to-b from-zinc-100 dark:from-neutral-900 via-zinc-100/80 dark:via-neutral-900/80 to-transparent'
-                                    : 'opacity-0 bg-gradient-to-b from-muted via-muted/80 to-transparent'
-                            }`} />
+                            <div className={`absolute top-0 left-0 right-0 h-8 pointer-events-none transition-all duration-400 ease-in-out ${shouldShowContent
+                                ? 'opacity-100 bg-gradient-to-b from-zinc-100 dark:from-neutral-900 via-zinc-100/80 dark:via-neutral-900/80 to-transparent'
+                                : 'opacity-0 bg-gradient-to-b from-muted via-muted/80 to-transparent'
+                                }`} />
                             {/* Bottom gradient */}
-                            <div className={`absolute bottom-0 left-0 right-0 h-8 pointer-events-none transition-all duration-400 ease-in-out ${
-                                shouldShowContent
-                                    ? 'opacity-100 bg-gradient-to-t from-zinc-100 dark:from-neutral-900 via-zinc-100/80 dark:via-neutral-900/80 to-transparent'
-                                    : 'opacity-0 bg-gradient-to-t from-muted via-muted/80 to-transparent'
-                            }`} />
+                            <div className={`absolute bottom-0 left-0 right-0 h-8 pointer-events-none transition-all duration-400 ease-in-out ${shouldShowContent
+                                ? 'opacity-100 bg-gradient-to-t from-zinc-100 dark:from-neutral-900 via-zinc-100/80 dark:via-neutral-900/80 to-transparent'
+                                : 'opacity-0 bg-gradient-to-t from-muted via-muted/80 to-transparent'
+                                }`} />
                         </div>
                     </div>
                 </div>
@@ -393,7 +387,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                 <div className='border-2 bg-gradient-to-br from-neutral-200 to-neutral-300 dark:from-neutral-700 dark:to-neutral-800 flex items-center justify-center p-0.5 rounded-sm border-neutral-400/20 dark:border-neutral-600'>
                     <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000" />
                 </div>
-                <span className="font-mono text-xs text-foreground">{displayName}</span>
+                <span className="text-xs text-foreground">{displayName}</span>
                 {paramDisplay && <span className="ml-1 text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
             </button>
         </div>

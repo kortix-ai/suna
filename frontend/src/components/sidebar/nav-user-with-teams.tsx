@@ -189,7 +189,7 @@ export function NavUserWithTeams({
             <DropdownMenuTrigger asChild>
               <SidebarMenuButton
                 size="lg"
-                className="bg-transparent hover:bg-transparent data-[state=open]:bg-transparent border-[1.5px] border-border h-[64px] p-3"
+                className="bg-transparent hover:bg-transparent data-[state=open]:bg-transparent border-[1.5px] border-border h-[64px] p-3 group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:!h-10 group-data-[collapsible=icon]:!w-10 group-data-[collapsible=icon]:border-0"
               >
                 <Avatar className="h-10 w-10 rounded-full flex-shrink-0">
                   <AvatarImage src={user.avatar} alt={user.name} />
@@ -197,7 +197,7 @@ export function NavUserWithTeams({
                     {getInitials(user.name)}
                   </AvatarFallback>
                 </Avatar>
-                <div className="flex flex-col justify-center flex-1 min-w-0 py-2">
+                <div className="flex flex-col justify-center flex-1 min-w-0 py-2 group-data-[collapsible=icon]:hidden">
                   <span className="truncate font-medium text-base">{user.name}</span>
                   {user.planName && user.planIcon ? (
                     <div className="flex items-center mt-1">
@@ -220,7 +220,7 @@ export function NavUserWithTeams({
                     <span className="truncate text-sm text-muted-foreground mt-1">{user.email}</span>
                   )}
                 </div>
-                <ChevronsUpDown className="ml-auto size-4 flex-shrink-0" />
+                <ChevronsUpDown className="ml-auto size-4 flex-shrink-0 group-data-[collapsible=icon]:hidden" />
               </SidebarMenuButton>
             </DropdownMenuTrigger>
             <DropdownMenuContent
@@ -337,6 +337,16 @@ export function NavUserWithTeams({
                     <Settings className="h-4 w-4" />
                     <span>Settings</span>
                   </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+                  className="gap-2 p-2"
+                >
+                  <div className="relative h-4 w-4">
+                    <Sun className="h-4 w-4 absolute rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+                    <Moon className="h-4 w-4 absolute rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+                  </div>
+                  <span>Theme</span>
                 </DropdownMenuItem>
               </DropdownMenuGroup>
 

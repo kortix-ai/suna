@@ -367,7 +367,7 @@ export function DashboardContent() {
         <div className="flex-1 overflow-y-auto">
           <div className="min-h-full flex flex-col">
             {/* Tabs at the top */}
-            {(isStagingMode() || isLocalMode()) && (
+            {/* {(isStagingMode() || isLocalMode()) && (
               <div className="px-4 pt-4 pb-4">
                 <div className="flex items-center justify-center gap-2 p-1 bg-muted/50 rounded-xl w-fit mx-auto">
                   <button
@@ -402,10 +402,10 @@ export function DashboardContent() {
                   </button>
                 </div>
               </div>
-            )}
+            )} */}
 
             {/* Centered content area */}
-            <div className="flex-1 flex items-start justify-center pt-[20vh]">
+            <div className="flex-1 flex items-start justify-center pt-[30vh]">
               {/* Super Worker View - Suna only */}
               {viewMode === 'super-worker' && (
                 <div className="w-full animate-in fade-in-0 duration-300">

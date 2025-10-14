@@ -50,6 +50,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
 
   // Determine values from props or agent data
   const iconName = propIconName ?? agent?.icon_name;
+  const iconColor = propIconColor ?? agent?.icon_color ?? '#6B7280';
   const backgroundColor = propBackgroundColor ?? agent?.icon_background ?? '#F3F4F6';
   const isSuna = propIsSunaDefault ?? agent?.metadata?.is_suna_default;
 
@@ -100,6 +101,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
         <DynamicIcon
           name={iconName as any}
           size={size * 0.5}
+          color={iconColor}
         />
       </div>
     );

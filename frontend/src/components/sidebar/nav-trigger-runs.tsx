@@ -10,6 +10,7 @@ import { ThreadWithProject, GroupedThreads } from '@/hooks/react-query/sidebar/u
 import { processThreadsWithProjects, useProjects, useThreads, groupThreadsByDate } from '@/hooks/react-query/sidebar/use-sidebar';
 import { cn } from '@/lib/utils';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
+import { formatDateForList } from '@/lib/utils/date-formatting';
 
 // Component for date group headers
 const DateGroupHeader: React.FC<{ dateGroup: string; count: number }> = ({ dateGroup, count }) => {
@@ -31,18 +32,6 @@ const TriggerRunItem: React.FC<{
     isMobile: boolean;
     handleThreadClick: (e: React.MouseEvent<HTMLAnchorElement>, threadId: string, url: string) => void;
 }> = ({ thread, isActive, isThreadLoading, handleThreadClick, isMobile }) => {
-    // Format date for display
-    const formatDate = (dateString: string) => {
-        const date = new Date(dateString);
-        const now = new Date();
-        const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 3600 * 24));
-
-        if (diffDays === 0) return 'Today';
-        if (diffDays === 1) return 'Yesterday';
-        if (diffDays < 7) return `${diffDays}d`;
-        return date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
-    };
-
     return (
         <SpotlightCard
             className={cn(
@@ -69,7 +58,7 @@ const TriggerRunItem: React.FC<{
                     </div>
                     <span className="flex-1 truncate">{thread.projectName}</span>
                     <span className="text-xs text-muted-foreground flex-shrink-0">
-                        {formatDate(thread.updatedAt)}
+                        {formatDateForList(thread.updatedAt)}
                     </span>
                 </div>
             </a>

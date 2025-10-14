@@ -2,12 +2,15 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bot, Loader2 } from 'lucide-react';
+import { Bot, Loader2, Plus } from 'lucide-react';
 import { useSidebar } from '@/components/ui/sidebar';
 import { useAgents } from '@/hooks/react-query/agents/use-agents';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
+import { formatDateForList } from '@/lib/utils/date-formatting';
+import { Button } from '@/components/ui/button';
+import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 
 // Component for date group headers (reusing the style from nav-agents)
 const DateGroupHeader: React.FC<{ title: string; count: number }> = ({ title, count }) => {
@@ -26,17 +29,6 @@ const AgentItem: React.FC<{
     isActive: boolean;
     onAgentClick: (agentId: string) => void;
 }> = ({ agent, isActive, onAgentClick }) => {
-    const formatDate = (dateString: string) => {
-        const date = new Date(dateString);
-        const now = new Date();
-        const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 3600 * 24));
-
-        if (diffDays === 0) return 'Today';
-        if (diffDays === 1) return 'Yesterday';
-        if (diffDays < 7) return `${diffDays}d`;
-        return date.toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
-    };
-
     return (
         <SpotlightCard
             className={cn(
@@ -48,18 +40,16 @@ const AgentItem: React.FC<{
                 className="flex items-center gap-3 p-2.5 text-sm"
                 onClick={() => onAgentClick(agent.agent_id)}
             >
-                <div
-                    className="flex items-center justify-center w-10 h-10 rounded-2xl border-[1.5px] border-border flex-shrink-0"
-                    style={{
-                        backgroundColor: agent.icon_background || '#f3f4f6',
-                        color: agent.icon_color || '#6b7280'
-                    }}
-                >
-                    <Bot className="h-4 w-4" />
+                <div className="flex-shrink-0">
+                    <AgentAvatar
+                        agent={agent}
+                        agentId={agent.agent_id}
+                        size={40}
+                    />
                 </div>
                 <span className="flex-1 truncate">{agent.name}</span>
                 <span className="text-xs text-muted-foreground flex-shrink-0">
-                    {formatDate(agent.updated_at || agent.created_at)}
+                    {formatDateForList(agent.updated_at || agent.created_at)}
                 </span>
             </div>
         </SpotlightCard>
@@ -91,9 +81,13 @@ export function NavAgentsView() {
 
     return (
         <div>
+
             <div className="overflow-y-auto max-h-[calc(100vh-280px)] [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] pb-32">
                 {(state !== 'collapsed' || isMobile) && (
                     <>
+                        {/* Always show header */}
+                        <DateGroupHeader title="My Workforce" count={agents.length} />
+
                         {isAgentsLoading ? (
                             // Show skeleton loaders while loading
                             <div className="space-y-1">
@@ -108,7 +102,6 @@ export function NavAgentsView() {
                         ) : agents.length > 0 ? (
                             // Show agents list
                             <>
-                                <DateGroupHeader title="My Workforce" count={agents.length} />
                                 {agents.map((agent) => (
                                     <AgentItem
                                         key={agent.agent_id}
@@ -119,10 +112,28 @@ export function NavAgentsView() {
                                 ))}
                             </>
                         ) : (
-                            <div className="py-2 text-sm text-muted-foreground">
+                            <div className="py-2 px-2 text-sm text-muted-foreground">
                                 No agents yet
                             </div>
                         )}
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full shadow-none justify-center items-center h-10 px-4 bg-background"
+                            asChild
+                        >
+                            <Link
+                                href="/dashboard?tab=worker-templates"
+                                onClick={() => {
+                                    if (isMobile) setOpenMobile(false);
+                                }}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <Plus className="h-4 w-4" />
+                                    Add Workers
+                                </div>
+                            </Link>
+                        </Button>
                     </>
                 )}
             </div>
