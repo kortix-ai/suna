@@ -564,22 +564,29 @@ class SubscriptionService:
                 logger.info(f"[RENEWAL DETECTION] Period changed from {prev_period_start} to {current_period_start} - this is a RENEWAL")
                 logger.info(f"[RENEWAL DETECTION] SKIPPING credit grant - will be handled by invoice.payment_succeeded webhook")
         
-        # Secondary checks if not already marked as renewal
         if not is_renewal and current_account.data:
-            # Check if invoice webhook already processed this period
             last_renewal_period_start = current_account.data[0].get('last_renewal_period_start')
             if last_renewal_period_start and last_renewal_period_start == subscription.get('current_period_start'):
                 is_renewal = True
                 logger.info(f"[RENEWAL DETECTION] Invoice webhook already processed this renewal - skipping")
             
-            # Check if we recently granted credits (within last hour to be safe)
+            if not is_renewal:
+                last_grant_date = current_account.data[0].get('last_grant_date')
+                if last_grant_date:
+                    try:
+                        last_grant_dt = datetime.fromisoformat(last_grant_date.replace('Z', '+00:00'))
+                        if abs((billing_anchor - last_grant_dt).total_seconds()) < 120:
+                            is_renewal = True
+                            logger.info(f"[RENEWAL DETECTION] Grant at period start detected - treating as renewal")
+                    except:
+                        pass
+            
             last_grant_date = current_account.data[0].get('last_grant_date')
             if last_grant_date:
                 try:
                     last_grant_dt = datetime.fromisoformat(last_grant_date.replace('Z', '+00:00'))
                     time_since_grant = (datetime.now(timezone.utc) - last_grant_dt).total_seconds()
                     
-                    # If credits were granted in the last hour and it's the same tier, skip
                     if time_since_grant < 3600 and current_account.data[0].get('tier') == new_tier['name']:
                         is_renewal = True
                         logger.info(f"[RENEWAL DETECTION] Credits recently granted {time_since_grant:.0f}s ago for same tier - skipping")
@@ -637,11 +644,24 @@ class SubscriptionService:
 
             last_processed_invoice = existing_data.get('last_processed_invoice_id')
             last_renewal_period_start = existing_data.get('last_renewal_period_start')
-
+            
+            # Check if invoice webhook already handled this period
             if last_renewal_period_start and last_renewal_period_start == subscription.get('current_period_start'):
                 logger.warning(f"[DOUBLE CREDIT BLOCK] Invoice webhook already processed period {subscription.get('current_period_start')}")
                 logger.warning(f"[DOUBLE CREDIT BLOCK] NO credits will be granted via subscription.updated - RETURNING")
                 return
+            
+            # Additional check using last_grant_date as fallback
+            if not last_renewal_period_start and last_grant_date:
+                try:
+                    last_grant_dt = datetime.fromisoformat(last_grant_date.replace('Z', '+00:00'))
+                    # If grant was within 60 seconds of period start, it's likely the same renewal
+                    if abs((billing_anchor - last_grant_dt).total_seconds()) < 60:
+                        logger.warning(f"[DOUBLE CREDIT BLOCK] Credits recently granted at period start - likely duplicate")
+                        logger.warning(f"[DOUBLE CREDIT BLOCK] Last grant: {last_grant_dt}, Period: {billing_anchor}")
+                        return
+                except:
+                    pass
             
             if last_grant_date:
                 try:
