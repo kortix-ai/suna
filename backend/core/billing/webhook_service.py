@@ -837,13 +837,20 @@ class WebhookService:
             elif trial_status == 'converted':
                 logger.info(f"[WEBHOOK] Processing first payment after trial conversion for account {account_id}")
             
-            # IMMEDIATELY mark this period as processed to prevent race conditions
-            await client.from_('credit_accounts').update({
-                'last_renewal_period_start': period_start,
-                'last_processed_invoice_id': invoice_id
-            }).eq('account_id', account_id).execute()
-            
-            logger.info(f"[RENEWAL] Pre-emptively marked period {period_start} as processed to prevent duplicates")
+            try:
+                await client.from_('credit_accounts').update({
+                    'last_renewal_period_start': period_start,
+                    'last_processed_invoice_id': invoice_id,
+                    'last_grant_date': period_start_dt.isoformat()
+                }).eq('account_id', account_id).execute()
+                logger.info(f"[RENEWAL] Marked period {period_start} as processed")
+            except Exception as e:
+                logger.warning(f"[RENEWAL] Could not update last_renewal_period_start: {e}")
+                await client.from_('credit_accounts').update({
+                    'last_processed_invoice_id': invoice_id,
+                    'last_grant_date': period_start_dt.isoformat()
+                }).eq('account_id', account_id).execute()
+                logger.info(f"[RENEWAL] Updated last_grant_date as fallback tracking")
             
             monthly_credits = get_monthly_credits(tier)
             if monthly_credits > 0:
@@ -874,9 +881,14 @@ class WebhookService:
                 update_data = {
                     'last_grant_date': period_start_dt.isoformat(),
                     'next_credit_grant': next_grant.isoformat(),
-                    'last_processed_invoice_id': invoice_id,
-                    'last_renewal_period_start': period_start
+                    'last_processed_invoice_id': invoice_id
                 }
+                
+                # Try to add renewal tracking if column exists
+                try:
+                    update_data['last_renewal_period_start'] = period_start
+                except:
+                    pass
 
                 if trial_status == 'converted':
                     update_data['trial_status'] = 'none'
