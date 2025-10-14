@@ -5,6 +5,7 @@ import {
   HydrationBoundary,
   QueryClient,
   QueryClientProvider,
+  DehydratedState,
 } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { handleApiError } from '@/lib/error-handler';
@@ -16,7 +17,7 @@ export function ReactQueryProvider({
   dehydratedState,
 }: {
   children: React.ReactNode;
-  dehydratedState?: unknown;
+  dehydratedState?: DehydratedState;
 }) {
   const [queryClient] = useState(
     () =>
@@ -39,7 +40,7 @@ export function ReactQueryProvider({
               if (error?.status >= 400 && error?.status < 500) return false;
               return failureCount < 1;
             },
-            onError: (error: any, variables: any, context: any) => {
+            onError: (error: any, variables: any, context: any, meta: any) => {
               // Don't globally handle errors that are expected to be handled by components
               if (error instanceof BillingError || error instanceof AgentRunLimitError) {
                 return; // Let components handle these specific errors
