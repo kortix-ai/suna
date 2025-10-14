@@ -39,7 +39,7 @@ async def get_or_start_sandbox(sandbox_id: str) -> AsyncSandbox:
         sandbox = await daytona.get(sandbox_id)
         
         # Check if sandbox needs to be started
-        if sandbox.state == SandboxState.ARCHIVED or sandbox.state == SandboxState.STOPPED:
+        if sandbox.state in [SandboxState.ARCHIVED, SandboxState.STOPPED, SandboxState.ARCHIVING]:
             logger.info(f"Sandbox is in {sandbox.state} state. Starting...")
             try:
                 await daytona.start(sandbox)
