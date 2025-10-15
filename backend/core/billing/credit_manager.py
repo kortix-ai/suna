@@ -4,11 +4,13 @@ from datetime import datetime, timezone, timedelta
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.utils.cache import Cache
+import uuid
 
 
 class CreditManager:
     def __init__(self):
         self.db = DBConnection()
+        self.use_atomic_functions = True
     
     async def add_credits(
         self,
@@ -22,6 +24,42 @@ class CreditManager:
     ) -> Dict:
         client = await self.db.client
         amount = Decimal(str(amount))
+        
+        if self.use_atomic_functions:
+            try:
+                idempotency_key = f"{account_id}_{description}_{amount}_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M')}"
+                
+                result = await client.rpc('atomic_add_credits', {
+                    'p_account_id': account_id,
+                    'p_amount': float(amount),
+                    'p_is_expiring': is_expiring,
+                    'p_description': description,
+                    'p_expires_at': expires_at.isoformat() if expires_at else None,
+                    'p_type': type,
+                    'p_stripe_event_id': stripe_event_id,
+                    'p_idempotency_key': idempotency_key
+                }).execute()
+                
+                if result.data:
+                    data = result.data
+                    logger.info(f"[ATOMIC] Added ${amount} credits to {account_id} atomically")
+                    
+                    await Cache.invalidate(f"credit_balance:{account_id}")
+                    await Cache.invalidate(f"credit_summary:{account_id}")
+                    
+                    return {
+                        'success': data.get('success', False),
+                        'expiring_credits': data.get('expiring_credits', 0),
+                        'non_expiring_credits': data.get('non_expiring_credits', 0),
+                        'total_balance': data.get('total_balance', 0),
+                        'duplicate_prevented': data.get('duplicate_prevented', False)
+                    }
+                else:
+                    logger.error(f"[ATOMIC] No data returned from atomic_add_credits")
+                    
+            except Exception as e:
+                logger.error(f"[ATOMIC] Failed to use atomic function, falling back to legacy: {e}")
+                self.use_atomic_functions = False
         
         if stripe_event_id:
             existing_event = await client.from_('credit_ledger').select(
@@ -151,6 +189,44 @@ class CreditManager:
     ) -> Dict:
         client = await self.db.client
         
+        if self.use_atomic_functions:
+            try:
+                result = await client.rpc('atomic_use_credits', {
+                    'p_account_id': account_id,
+                    'p_amount': float(amount),
+                    'p_description': description or 'Credit usage',
+                    'p_thread_id': thread_id,
+                    'p_message_id': message_id
+                }).execute()
+                
+                if result.data:
+                    data = result.data
+                    
+                    if data.get('success'):
+                        logger.info(f"[ATOMIC] Deducted ${amount} credits from {account_id} atomically")
+                        await Cache.invalidate(f"credit_balance:{account_id}")
+                        
+                        return {
+                            'success': True,
+                            'amount_deducted': data.get('amount_deducted', 0),
+                            'from_expiring': data.get('from_expiring', 0),
+                            'from_non_expiring': data.get('from_non_expiring', 0),
+                            'new_expiring': data.get('new_expiring', 0),
+                            'new_non_expiring': data.get('new_non_expiring', 0),
+                            'new_total': data.get('new_total', 0)
+                        }
+                    else:
+                        return {
+                            'success': False,
+                            'error': data.get('error', 'Unknown error'),
+                            'required': data.get('required', 0),
+                            'available': data.get('available', 0)
+                        }
+                        
+            except Exception as e:
+                logger.error(f"[ATOMIC] Failed to use atomic function for deduction: {e}")
+                self.use_atomic_functions = False
+        
         result = await client.from_('credit_accounts').select(
             'expiring_credits, non_expiring_credits, balance'
         ).eq('account_id', account_id).execute()
@@ -242,6 +318,36 @@ class CreditManager:
         stripe_event_id: Optional[str] = None
     ) -> Dict:
         client = await self.db.client
+        if self.use_atomic_functions:
+            try:
+                result = await client.rpc('atomic_reset_expiring_credits', {
+                    'p_account_id': account_id,
+                    'p_new_credits': float(new_credits),
+                    'p_description': description,
+                    'p_stripe_event_id': stripe_event_id
+                }).execute()
+                
+                if result.data:
+                    data = result.data
+                    
+                    if data.get('success'):
+                        logger.info(f"[ATOMIC] Reset expiring credits to ${new_credits} for {account_id} atomically")
+                        
+                        await Cache.invalidate(f"credit_balance:{account_id}")
+                        await Cache.invalidate(f"credit_summary:{account_id}")
+                        
+                        return {
+                            'success': True,
+                            'new_expiring': data.get('new_expiring', 0),
+                            'non_expiring': data.get('non_expiring', 0),
+                            'total_balance': data.get('total_balance', 0)
+                        }
+                    else:
+                        logger.error(f"[ATOMIC] Failed to reset credits: {data.get('error')}")
+                        
+            except Exception as e:
+                logger.error(f"[ATOMIC] Failed to use atomic function for reset: {e}")
+                self.use_atomic_functions = False
 
         result = await client.from_('credit_accounts').select(
             'balance, expiring_credits, non_expiring_credits'
