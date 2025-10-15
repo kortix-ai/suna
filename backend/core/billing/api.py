@@ -200,7 +200,7 @@ async def check_status(
         }
         
     except Exception as e:
-        logger.error(f"Error checking billing status: {e}", exc_info=True)
+        logger.error(f"Error checking billing status: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/project-limits")
@@ -402,7 +402,7 @@ async def get_subscription(
         }
         
     except Exception as e:
-        logger.error(f"Error getting subscription: {e}", exc_info=True)
+        logger.error(f"Error getting subscription: {str(e)}")
         no_tier = TIERS['none']
         tier_info = {
             'name': no_tier.name,
@@ -498,7 +498,7 @@ async def create_checkout_session(
         return result
             
     except Exception as e:
-        logger.error(f"Error creating checkout session: {e}", exc_info=True)
+        logger.error(f"Error creating checkout session: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/create-portal-session")
@@ -513,7 +513,7 @@ async def create_portal_session(
         )
         return result
     except Exception as e:
-        logger.error(f"Error creating portal session: {e}", exc_info=True)
+        logger.error(f"Error creating portal session: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/sync-subscription")
@@ -534,7 +534,7 @@ async def sync_subscription(
         return result
         
     except Exception as e:
-        logger.error(f"Error syncing subscription: {e}", exc_info=True)
+        logger.error(f"Error syncing subscription: {str(e)}")
         return {
             'success': False,
             'message': f'Failed to sync subscription: {str(e)}'
@@ -635,7 +635,7 @@ async def get_my_transactions(
         }
         
     except Exception as e:
-        logger.error(f"Failed to get transactions for account {account_id}: {e}", exc_info=True)
+        logger.error(f"Failed to get transactions for account {account_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve transactions")
 
 @router.get("/transactions/summary")
@@ -693,7 +693,7 @@ async def get_transactions_summary(
         }
         
     except Exception as e:
-        logger.error(f"Failed to get transaction summary for account {account_id}: {e}", exc_info=True)
+        logger.error(f"Failed to get transaction summary for account {account_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve transaction summary")
 
 @router.get("/credit-breakdown")
@@ -783,7 +783,7 @@ async def get_usage_history(
         }
         
     except Exception as e:
-        logger.error(f"Error getting usage history: {e}", exc_info=True)
+        logger.error(f"Error getting usage history: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e)) 
 
 
@@ -870,7 +870,7 @@ async def get_available_models(
         }
         
     except Exception as e:
-        logger.error(f"Error getting available models: {e}", exc_info=True)
+        logger.error(f"Error getting available models: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/subscription-commitment/{subscription_id}")
@@ -904,7 +904,7 @@ async def get_trial_status(
         return result
         
     except Exception as e:
-        logger.error(f"Error checking trial status: {e}", exc_info=True)
+        logger.error(f"Error checking trial status: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/trial/cancel")
@@ -918,7 +918,7 @@ async def cancel_trial(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error cancelling trial for account {account_id}: {e}", exc_info=True)
+        logger.error(f"Error cancelling trial for account {account_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/trial/start")
@@ -956,7 +956,7 @@ async def start_trial(
             logger.info(f"[TRIAL API] Trial start failed for account {account_id}: {e.detail}")
         raise
     except Exception as e:
-        logger.error(f"[TRIAL API ERROR] Unexpected error creating trial for account {account_id}: {e}", exc_info=True)
+        logger.error(f"[TRIAL API ERROR] Unexpected error creating trial for account {account_id}: {str(e)}")
         # Don't expose internal errors to the client
         raise HTTPException(status_code=500, detail="An error occurred while processing your request")
 
@@ -989,7 +989,7 @@ async def create_trial_checkout(
             logger.info(f"[TRIAL API] Trial checkout failed for account {account_id}: {e.detail}")
         raise
     except Exception as e:
-        logger.error(f"[TRIAL API ERROR] Unexpected error in trial checkout for account {account_id}: {e}", exc_info=True)
+        logger.error(f"[TRIAL API ERROR] Unexpected error in trial checkout for account {account_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="An error occurred while processing your request")
 
 @router.get("/proration-preview")

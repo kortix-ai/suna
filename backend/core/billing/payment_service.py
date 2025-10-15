@@ -4,6 +4,7 @@ from decimal import Decimal
 import stripe
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
+from .idempotency import generate_credit_purchase_idempotency_key
 
 
 class PaymentService:
@@ -30,6 +31,8 @@ class PaymentService:
         if not customer_result.data or len(customer_result.data) == 0:
             raise HTTPException(status_code=400, detail="No billing customer found")
         
+        idempotency_key = generate_credit_purchase_idempotency_key(account_id, float(amount))
+        
         session = await stripe.checkout.Session.create_async(
             customer=customer_result.data[0]['id'],
             payment_method_types=['card'],
@@ -48,15 +51,22 @@ class PaymentService:
                 'type': 'credit_purchase',
                 'account_id': account_id,
                 'credit_amount': str(amount)
-            }
+            },
+            idempotency_key=idempotency_key
         )
+        
+        payment_intent_id = session.payment_intent if session.payment_intent else None
+        
+        if not payment_intent_id:
+            logger.warning(f"[PAYMENT] No payment_intent in session {session.id} for account {account_id} - will track by session_id")
         
         await client.table('credit_purchases').insert({
             'account_id': account_id,
             'amount_dollars': float(amount),
-            'stripe_payment_intent_id': session.payment_intent,
+            'stripe_payment_intent_id': payment_intent_id,
+            'stripe_checkout_session_id': session.id,
             'status': 'pending',
-            'metadata': {'session_id': session.id}
+            'metadata': {'session_id': session.id, 'amount': float(amount)}
         }).execute()
         
         return {'checkout_url': session.url}

@@ -12,6 +12,7 @@ from .config import (
     TRIAL_CREDITS,
 )
 from .credit_manager import credit_manager
+from .idempotency import generate_trial_idempotency_key
 
 class TrialService:
     def __init__(self):
@@ -99,6 +100,14 @@ class TrialService:
             )
         
         try:
+            current_balance_result = await client.from_('credit_accounts').select(
+                'balance, expiring_credits, non_expiring_credits'
+            ).eq('account_id', account_id).execute()
+            
+            current_balance = 0
+            if current_balance_result.data:
+                current_balance = float(current_balance_result.data[0].get('balance', 0))
+            
             cancelled_subscription = stripe.Subscription.cancel(stripe_subscription_id)
             logger.info(f"[TRIAL CANCEL] Cancelled Stripe subscription {stripe_subscription_id} for account {account_id}")
             
@@ -106,6 +115,8 @@ class TrialService:
                 'trial_status': 'cancelled',
                 'tier': 'none',
                 'balance': 0.00,
+                'expiring_credits': 0.00,
+                'non_expiring_credits': 0.00,
                 'stripe_subscription_id': None
             }).eq('account_id', account_id).execute()
             
@@ -115,14 +126,6 @@ class TrialService:
                 'ended_at': datetime.now(timezone.utc).isoformat(),
                 'converted_to_paid': False
             }, on_conflict='account_id').execute()
-            
-            current_balance_result = await client.from_('credit_accounts').select(
-                'balance'
-            ).eq('account_id', account_id).execute()
-            
-            current_balance = 0
-            if current_balance_result.data:
-                current_balance = float(current_balance_result.data[0].get('balance', 0))
             
             if current_balance > 0:
                 await client.from_('credit_ledger').insert({
@@ -238,6 +241,9 @@ class TrialService:
             from .subscription_service import subscription_service
             customer_id = await subscription_service.get_or_create_stripe_customer(account_id)
             logger.info(f"[TRIAL] Creating checkout session for account {account_id} - all security checks passed")
+            
+            idempotency_key = generate_trial_idempotency_key(account_id, TRIAL_DURATION_DAYS)
+            
             session = await stripe.checkout.Session.create_async(
                 customer=customer_id,
                 payment_method_types=['card'],
@@ -268,7 +274,8 @@ class TrialService:
                         'account_id': account_id,
                         'trial_start': 'true'
                     }
-                }
+                },
+                idempotency_key=idempotency_key
             )
             logger.info(f"[TRIAL SUCCESS] Checkout session created for account {account_id}: {session.id}")
             return {'checkout_url': session.url}
