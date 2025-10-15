@@ -207,42 +207,32 @@ class TrialService:
                     logger.error(f"[TRIAL SECURITY] Error checking existing subscription: {e}")
         
         ledger_check = await client.from_('credit_ledger')\
-            .select('id, description')\
+            .select('id, description, type')\
             .eq('account_id', account_id)\
             .or_(
                 'description.ilike.%trial credits%,'
                 'description.ilike.%free trial%,'
-                'description.ilike.%day trial%,'
                 'type.eq.trial_grant'
             )\
             .execute()
         
         if ledger_check.data:
-            has_actual_trial = False
-            for entry in ledger_check.data:
-                desc = entry.get('description', '').lower()
-                if 'trial credits' in desc or 'free trial' in desc or 'day trial' in desc:
-                    has_actual_trial = True
-                    break
-                elif 'start a trial' in desc or 'please start a trial' in desc:
-                    continue
-                else:
-                    has_actual_trial = True
-                    break
-            
-            if has_actual_trial:
-                logger.warning(f"[TRIAL SECURITY] Trial attempt rejected - account {account_id} has trial-related ledger entries")
-                await client.from_('trial_history').upsert({
+            try:
+                await client.from_('trial_history').insert({
                     'account_id': account_id,
                     'started_at': datetime.now(timezone.utc).isoformat(),
                     'ended_at': datetime.now(timezone.utc).isoformat(),
-                    'note': 'Created from credit_ledger detection during blocked trial attempt'
-                }, on_conflict='account_id').execute()
-                
-                raise HTTPException(
-                    status_code=403,
-                    detail="Trial history detected. Each account is limited to one free trial."
-                )
+                    'converted_to_paid': False,
+                    'note': 'Blocked trial attempt - ledger history found'
+                }).execute()
+            except Exception as e:
+                if 'unique' not in str(e).lower() and 'duplicate' not in str(e).lower():
+                    logger.error(f"[TRIAL SECURITY] Failed to record blocked trial attempt: {e}")
+            
+            raise HTTPException(
+                status_code=403,
+                detail="Trial history detected. Each account is limited to one free trial."
+            )
         
         try:
             from .subscription_service import subscription_service

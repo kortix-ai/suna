@@ -7,6 +7,7 @@ from core.services.supabase import DBConnection
 from core.utils.config import config
 from core.utils.logger import logger
 from core.utils.cache import Cache
+from core.utils.distributed_lock import WebhookLock, RenewalLock
 from .config import (
     get_tier_by_price_id, 
     get_tier_by_name,
@@ -25,6 +26,7 @@ class WebhookService:
         self.stripe = stripe
         
     async def process_stripe_webhook(self, request: Request) -> Dict:
+        event = None
         try:
             payload = await request.body()
             sig_header = request.headers.get('stripe-signature')
@@ -42,14 +44,21 @@ class WebhookService:
             except ValueError as e:
                 raise HTTPException(status_code=400, detail="Invalid payload")
             
-            db = DBConnection()
-            client = await db.client
+            can_process, reason = await WebhookLock.check_and_mark_webhook_processing(
+                event.id, 
+                event.type,
+                payload=event.to_dict() if hasattr(event, 'to_dict') else None
+            )
+            
+            if not can_process:
+                logger.info(f"[WEBHOOK] Skipping event {event.id}: {reason}")
+                return {'status': 'success', 'message': f'Event already processed or in progress: {reason}'}
             
             cache_key = f"stripe_event:{event.id}"
-            if await Cache.get(cache_key):
-                return {'status': 'success', 'message': 'Event already processed'}
+            await Cache.set(cache_key, True, ttl=7200)
             
-            await Cache.set(cache_key, True, ttl=3600)
+            db = DBConnection()
+            client = await db.client
             
             if event.type == 'checkout.session.completed':
                 await self._handle_checkout_session_completed(event, client)
@@ -69,12 +78,20 @@ class WebhookService:
             elif event.type == 'customer.subscription.trial_will_end':
                 await self._handle_trial_will_end(event, client)
             
+            elif event.type in ['charge.refunded', 'payment_intent.refunded']:
+                await self._handle_refund(event, client)
+            
             else:
                 logger.info(f"[WEBHOOK] Unhandled event type: {event.type}")
+            
+            await WebhookLock.mark_webhook_completed(event.id)
             
             return {'status': 'success'}
         
         except Exception as e:
+            logger.error(f"[WEBHOOK] Error processing webhook: {e}")
+            if event and hasattr(event, 'id'):
+                await WebhookLock.mark_webhook_failed(event.id, str(e))
             raise HTTPException(status_code=400, detail=str(e))
     
     async def _handle_checkout_session_completed(self, event, client):
@@ -682,187 +699,280 @@ class WebhookService:
             if not period_start or not period_end:
                 return
             
-            is_prorated_upgrade = False
-            has_full_cycle_charge = False
-            
-            if invoice.get('lines', {}).get('data'):
-                for line in invoice['lines']['data']:
-                    if line.get('proration', False):
-                        is_prorated_upgrade = True
-                    
-                    line_period_start = line.get('period', {}).get('start')
-                    line_period_end = line.get('period', {}).get('end')
-                    if line_period_start and line_period_end:
-                        period_days = (line_period_end - line_period_start) / 86400
-                        if period_days >= 28:
-                            has_full_cycle_charge = True
-            
-            if billing_reason == 'subscription_cycle':
-                is_prorated_upgrade = False
-                has_full_cycle_charge = True
-                
-            elif billing_reason == 'subscription_update':
-                if is_prorated_upgrade:
-                    customer_result = await client.schema('basejump').from_('billing_customers')\
-                        .select('account_id')\
-                        .eq('id', invoice['customer'])\
-                        .execute()
-                    
-                    if not customer_result.data:
-                        return
-                    
-                    account_id = customer_result.data[0]['account_id']
-                    
-                    subscription = await stripe.Subscription.retrieve_async(subscription_id)
-                    price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
-                    
-                    if price_id:
-                        tier_info = get_tier_by_price_id(price_id) 
-                        existing_tier_result = await client.from_('credit_accounts').select('tier').eq('account_id', account_id).execute()
-                        
-                        if tier_info and existing_tier_result.data:
-                            existing_tier_name = existing_tier_result.data[0].get('tier')
-                            existing_tier = get_tier_by_name(existing_tier_name)
-                            
-                            if existing_tier and tier_info.name != existing_tier.name and float(tier_info.monthly_credits) > float(existing_tier.monthly_credits):
-                                await credit_manager.add_credits(
-                                    account_id=account_id,
-                                    amount=tier_info.monthly_credits,
-                                    is_expiring=True,
-                                    description=f"Upgrade to {tier_info.display_name} tier",
-                                    stripe_event_id=stripe_event_id
-                                )
-                                
-                                await client.from_('credit_accounts').update({
-                                    'tier': tier_info.name,
-                                    'last_processed_invoice_id': invoice_id,
-                                    'last_grant_date': datetime.fromtimestamp(period_start, tz=timezone.utc).isoformat()
-                                }).eq('account_id', account_id).execute()
-                                
-                                return
-                    return
-                if not has_full_cycle_charge:
-                    return
-                return
-            
-            customer_result = await client.schema('basejump').from_('billing_customers')\
+            customer_result_early = await client.schema('basejump').from_('billing_customers')\
                 .select('account_id')\
                 .eq('id', invoice['customer'])\
                 .execute()
             
-            if not customer_result.data:
+            if not customer_result_early.data:
+                logger.error(f"[RENEWAL] No account found for customer {invoice['customer']}")
                 return
             
-            account_id = customer_result.data[0]['account_id']
+            account_id = customer_result_early.data[0]['account_id']
             
-            account_result = await client.from_('credit_accounts')\
-                .select('tier, last_grant_date, next_credit_grant, billing_cycle_anchor, last_processed_invoice_id, trial_status, last_renewal_period_start')\
-                .eq('account_id', account_id)\
-                .execute()
-            
-            if not account_result.data:
+            lock = await RenewalLock.lock_renewal_processing(account_id, period_start)
+            acquired = await lock.acquire(wait=True, wait_timeout=60)
+            if not acquired:
+                logger.error(f"[RENEWAL] Failed to acquire lock for {account_id} period {period_start}")
                 return
-            
-            account = account_result.data[0]
-            tier = account['tier']
-            trial_status = account.get('trial_status')
-            period_start_dt = datetime.fromtimestamp(period_start, tz=timezone.utc)
-            
-            if account.get('last_processed_invoice_id') == invoice_id:
-                return
-            
-            if trial_status == 'active' and billing_reason == 'subscription_create':
-                await client.from_('credit_accounts').update({
-                    'last_processed_invoice_id': invoice_id
-                }).eq('account_id', account_id).execute()
-                return
-                
-            last_renewal_period = account.get('last_renewal_period_start')
-
-            if last_renewal_period:
-                if last_renewal_period == period_end:
-                    return
-                elif last_renewal_period > period_end:
-                    return
-                else:
-                    days_since_last = (period_end - last_renewal_period) / 86400
-            
-            if account.get('billing_cycle_anchor'):
-                try:
-                    anchor_dt = datetime.fromisoformat(account['billing_cycle_anchor'].replace('Z', '+00:00'))
-                    
-                    months_since_anchor = 0
-                    check_dt = anchor_dt
-                    while check_dt < period_start_dt:
-                        check_dt = check_dt.replace(month=check_dt.month + 1) if check_dt.month < 12 else check_dt.replace(year=check_dt.year + 1, month=1)
-                        months_since_anchor += 1
-
-                except Exception as e:
-                    logger.warning(f"[RENEWAL CHECK] Could not calculate months since anchor: {e}")
-            elif trial_status == 'converted':
-                logger.info(f"[WEBHOOK] Processing first payment after trial conversion for account {account_id}")
             
             try:
-                await client.from_('credit_accounts').update({
-                    'last_renewal_period_start': period_end,
-                    'last_processed_invoice_id': invoice_id,
-                    'last_grant_date': datetime.fromtimestamp(period_end, tz=timezone.utc).isoformat()
-                }).eq('account_id', account_id).execute()
-
-            except Exception as e:
-                await client.from_('credit_accounts').update({
-                    'last_processed_invoice_id': invoice_id,
-                    'last_grant_date': period_start_dt.isoformat()
-                }).eq('account_id', account_id).execute()
-            
-            monthly_credits = get_monthly_credits(tier)
-            if monthly_credits > 0:
-                current_state = await client.from_('credit_accounts').select(
-                    'balance, expiring_credits, non_expiring_credits'
-                ).eq('account_id', account_id).execute()
+                db_check = DBConnection()
+                client_check = await db_check.client
+                already_exists = await client_check.from_('renewal_processing').select('id, processed_by, credits_granted').eq(
+                    'account_id', account_id
+                ).eq('period_start', period_start).execute()
                 
-                result = await credit_manager.reset_expiring_credits(
-                    account_id=account_id,
-                    new_credits=monthly_credits,
-                    description=f"Monthly {tier} tier credits renewal",
-                    stripe_event_id=stripe_event_id
-                )
+                if already_exists.data:
+                    logger.warning(
+                        f"[RENEWAL BLOCK] Period {period_start} for account {account_id} "
+                        f"already processed by {already_exists.data[0]['processed_by']} "
+                        f"(granted ${already_exists.data[0]['credits_granted']})"
+                    )
+                    return
                 
-                if result['success']:
-                    logger.info(f"[RENEWAL] Renewal complete: Expiring=${result['new_expiring']:.2f}, "
-                               f"Non-expiring=${result['non_expiring']:.2f}, Total=${result['total_balance']:.2f}")
-                
-                next_grant = datetime.fromtimestamp(period_end, tz=timezone.utc)
-                
-                update_data = {
-                    'last_grant_date': period_start_dt.isoformat(),
-                    'next_credit_grant': next_grant.isoformat(),
-                    'last_processed_invoice_id': invoice_id
-                }
-
                 try:
-                    update_data['last_renewal_period_start'] = period_end
-                except:
-                    pass
+                    await client_check.from_('renewal_processing').insert({
+                        'account_id': account_id,
+                        'period_start': period_start,
+                        'period_end': period_end,
+                        'subscription_id': subscription_id,
+                        'processed_by': 'webhook_invoice',
+                        'credits_granted': 0,
+                        'stripe_event_id': stripe_event_id
+                    }).execute()
+                    logger.info(f"[RENEWAL] Claimed processing slot for period {period_start}, account {account_id}")
+                except Exception as claim_error:
+                    if 'unique' in str(claim_error).lower() or 'duplicate' in str(claim_error).lower():
+                        logger.warning(f"[RENEWAL BLOCK] Another process claimed this renewal first (race caught by DB)")
+                        return
+                    else:
+                        raise
+                
+                logger.info(f"[RENEWAL DEBUG] Starting renewal logic for account {account_id}, billing_reason={billing_reason}")
+                
+                is_prorated_upgrade = False
+                has_full_cycle_charge = False
+                
+                if invoice.get('lines', {}).get('data'):
+                    for line in invoice['lines']['data']:
+                        if line.get('proration', False):
+                            is_prorated_upgrade = True
+                        
+                        line_period_start = line.get('period', {}).get('start')
+                        line_period_end = line.get('period', {}).get('end')
+                        if line_period_start and line_period_end:
+                            period_days = (line_period_end - line_period_start) / 86400
+                            if period_days >= 28:
+                                has_full_cycle_charge = True
+                
+                logger.info(f"[RENEWAL DEBUG] is_prorated={is_prorated_upgrade}, has_full_cycle={has_full_cycle_charge}")
+                
+                if billing_reason == 'subscription_cycle':
+                    is_prorated_upgrade = False
+                    has_full_cycle_charge = True
+                    logger.info(f"[RENEWAL DEBUG] Billing reason is subscription_cycle, forcing has_full_cycle=True")
+                    
+                elif billing_reason == 'subscription_update':
+                    logger.info(f"[RENEWAL DEBUG] Billing reason is subscription_update")
+                    if is_prorated_upgrade:
+                        customer_result = await client.schema('basejump').from_('billing_customers')\
+                            .select('account_id')\
+                            .eq('id', invoice['customer'])\
+                            .execute()
+                        
+                        if not customer_result.data:
+                            logger.info(f"[RENEWAL DEBUG] No customer data found, returning")
+                            return
+                        
+                        account_id = customer_result.data[0]['account_id']
+                        logger.info(f"[RENEWAL DEBUG] Processing prorated upgrade for account {account_id}")
+                        
+                        subscription = await stripe.Subscription.retrieve_async(subscription_id)
+                        price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
+                        
+                        if price_id:
+                            tier_info = get_tier_by_price_id(price_id) 
+                            existing_tier_result = await client.from_('credit_accounts').select('tier').eq('account_id', account_id).execute()
+                            
+                            if tier_info and existing_tier_result.data:
+                                existing_tier_name = existing_tier_result.data[0].get('tier')
+                                existing_tier = get_tier_by_name(existing_tier_name)
+                                
+                                if existing_tier and tier_info.name != existing_tier.name and float(tier_info.monthly_credits) > float(existing_tier.monthly_credits):
+                                    await credit_manager.add_credits(
+                                        account_id=account_id,
+                                        amount=tier_info.monthly_credits,
+                                        is_expiring=True,
+                                        description=f"Upgrade to {tier_info.display_name} tier",
+                                        stripe_event_id=stripe_event_id
+                                    )
+                                    
+                                    await client.from_('credit_accounts').update({
+                                        'tier': tier_info.name,
+                                        'last_processed_invoice_id': invoice_id,
+                                        'last_grant_date': datetime.fromtimestamp(period_start, tz=timezone.utc).isoformat()
+                                    }).eq('account_id', account_id).execute()
+                                    
+                                    logger.info(f"[RENEWAL DEBUG] Upgrade credits granted, returning")
+                                    return
+                        logger.info(f"[RENEWAL DEBUG] No price_id found, returning")
+                        return
+                    if not has_full_cycle_charge:
+                        logger.info(f"[RENEWAL DEBUG] Not full cycle charge, returning")
+                        return
+                    logger.info(f"[RENEWAL DEBUG] End of subscription_update block, returning")
+                    return
+                
+                logger.info(f"[RENEWAL DEBUG] Fetching account for customer {invoice.get('customer')}")
+                
+                customer_result = await client.schema('basejump').from_('billing_customers')\
+                    .select('account_id')\
+                    .eq('id', invoice['customer'])\
+                    .execute()
+                
+                if not customer_result.data:
+                    logger.error(f"[RENEWAL DEBUG] No account found for customer {invoice.get('customer')}, RETURNING")
+                    return
+                
+                account_id = customer_result.data[0]['account_id']
+                logger.info(f"[RENEWAL DEBUG] Found account {account_id}, continuing with renewal")
+                
+                account_result = await client.from_('credit_accounts')\
+                    .select('tier, last_grant_date, next_credit_grant, billing_cycle_anchor, last_processed_invoice_id, trial_status, last_renewal_period_start')\
+                    .eq('account_id', account_id)\
+                    .execute()
+                
+                if not account_result.data:
+                    logger.error(f"[RENEWAL DEBUG] No credit account found for {account_id}, RETURNING")
+                    return
+                
+                account = account_result.data[0]
+                tier = account['tier']
+                trial_status = account.get('trial_status')
+                period_start_dt = datetime.fromtimestamp(period_start, tz=timezone.utc)
+                
+                logger.info(f"[RENEWAL DEBUG] Account tier={tier}, trial_status={trial_status}, invoice_id={invoice_id}")
+                
+                if account.get('last_processed_invoice_id') == invoice_id:
+                    logger.warning(f"[RENEWAL DEBUG] Invoice {invoice_id} already processed, RETURNING")
+                    return
+                
+                if trial_status == 'active' and billing_reason == 'subscription_create':
+                    logger.info(f"[RENEWAL DEBUG] Trial + subscription_create, updating invoice ID and RETURNING")
+                    await client.from_('credit_accounts').update({
+                        'last_processed_invoice_id': invoice_id
+                    }).eq('account_id', account_id).execute()
+                    return
+                    
+                last_renewal_period = account.get('last_renewal_period_start')
+                
+                logger.info(f"[RENEWAL DEBUG] last_renewal_period={last_renewal_period}, period_end={period_end}")
 
-                if trial_status == 'converted':
-                    update_data['trial_status'] = 'none'
+                if last_renewal_period:
+                    if last_renewal_period == period_end:
+                        logger.info(f"[RENEWAL DEBUG] last_renewal_period == period_end, RETURNING")
+                        return
+                    elif last_renewal_period > period_end:
+                        logger.info(f"[RENEWAL DEBUG] last_renewal_period > period_end, RETURNING")
+                        return
+                    else:
+                        days_since_last = (period_end - last_renewal_period) / 86400
+                        logger.info(f"[RENEWAL DEBUG] Days since last renewal: {days_since_last}")
                 
-                await client.from_('credit_accounts').update(update_data).eq('account_id', account_id).execute()
+                if account.get('billing_cycle_anchor'):
+                    try:
+                        anchor_dt = datetime.fromisoformat(account['billing_cycle_anchor'].replace('Z', '+00:00'))
+                        
+                        months_since_anchor = 0
+                        check_dt = anchor_dt
+                        while check_dt < period_start_dt:
+                            check_dt = check_dt.replace(month=check_dt.month + 1) if check_dt.month < 12 else check_dt.replace(year=check_dt.year + 1, month=1)
+                            months_since_anchor += 1
+
+                    except Exception as e:
+                        logger.warning(f"[RENEWAL CHECK] Could not calculate months since anchor: {e}")
+                elif trial_status == 'converted':
+                    logger.info(f"[WEBHOOK] Processing first payment after trial conversion for account {account_id}")
                 
-                final_state = await client.from_('credit_accounts').select(
-                    'balance, expiring_credits, non_expiring_credits'
-                ).eq('account_id', account_id).execute()
+                try:
+                    await client.from_('credit_accounts').update({
+                        'last_renewal_period_start': period_end,
+                        'last_processed_invoice_id': invoice_id,
+                        'last_grant_date': datetime.fromtimestamp(period_end, tz=timezone.utc).isoformat()
+                    }).eq('account_id', account_id).execute()
+
+                except Exception as e:
+                    await client.from_('credit_accounts').update({
+                        'last_processed_invoice_id': invoice_id,
+                        'last_grant_date': period_start_dt.isoformat()
+                    }).eq('account_id', account_id).execute()
                 
-                if final_state.data:
-                    logger.info(f"[RENEWAL] State AFTER renewal: {final_state.data[0]}")
+                monthly_credits = get_monthly_credits(tier)
+                logger.info(f"[RENEWAL DEBUG] monthly_credits={monthly_credits} for tier={tier}")
                 
-                await Cache.invalidate(f"credit_balance:{account_id}")
-                await Cache.invalidate(f"credit_summary:{account_id}")
-                await Cache.invalidate(f"subscription_tier:{account_id}")
+                if monthly_credits > 0:
+                    current_state = await client.from_('credit_accounts').select(
+                        'balance, expiring_credits, non_expiring_credits'
+                    ).eq('account_id', account_id).execute()
+                    
+                    result = await credit_manager.reset_expiring_credits(
+                        account_id=account_id,
+                        new_credits=monthly_credits,
+                        description=f"Monthly {tier} tier credits renewal",
+                        stripe_event_id=stripe_event_id
+                    )
+                    
+                    if result['success']:
+                        logger.info(f"[RENEWAL] Renewal complete: Expiring=${result['new_expiring']:.2f}, "
+                                   f"Non-expiring=${result['non_expiring']:.2f}, Total=${result['total_balance']:.2f}")
+                        
+                        try:
+                            update_result = await client.from_('renewal_processing').update({
+                                'credits_granted': float(monthly_credits)
+                            }).eq('account_id', account_id).eq('period_start', period_start).execute()
+                            
+                            logger.info(f"[RENEWAL] Updated renewal record: ${monthly_credits} credits granted for period {period_start}")
+                        except Exception as update_error:
+                            logger.error(f"[RENEWAL] Error updating renewal record: {update_error}")
+                    
+                    next_grant = datetime.fromtimestamp(period_end, tz=timezone.utc)
+                    
+                    update_data = {
+                        'last_grant_date': period_start_dt.isoformat(),
+                        'next_credit_grant': next_grant.isoformat(),
+                        'last_processed_invoice_id': invoice_id
+                    }
+
+                    try:
+                        update_data['last_renewal_period_start'] = period_end
+                    except:
+                        pass
+
+                    if trial_status == 'converted':
+                        update_data['trial_status'] = 'none'
+                    
+                    await client.from_('credit_accounts').update(update_data).eq('account_id', account_id).execute()
+                    
+                    final_state = await client.from_('credit_accounts').select(
+                        'balance, expiring_credits, non_expiring_credits'
+                    ).eq('account_id', account_id).execute()
+                    
+                    if final_state.data:
+                        logger.info(f"[RENEWAL] State AFTER renewal: {final_state.data[0]}")
+                    
+                    await Cache.invalidate(f"credit_balance:{account_id}")
+                    await Cache.invalidate(f"credit_summary:{account_id}")
+                    await Cache.invalidate(f"subscription_tier:{account_id}")
+            
+            except Exception as e:
+                logger.error(f"Error handling subscription renewal: {e}")
+            
+            finally:
+                await lock.release()
 
         except Exception as e:
-            logger.error(f"Error handling subscription renewal: {e}")
+            logger.error(f"Outer error in handle_subscription_renewal: {e}")
 
 
     async def _track_commitment(self, account_id: str, price_id: str, subscription: Dict, client):
@@ -926,5 +1036,125 @@ class WebhookService:
     async def _handle_trial_will_end(self, event, client):
         subscription = event.data.object
         account_id = subscription.metadata.get('account_id')
+    
+    async def _handle_refund(self, event, client):
+        refund_obj = event.data.object
+        
+        if event.type == 'charge.refunded':
+            charge = refund_obj
+            refund_id = charge.get('refunds', {}).get('data', [{}])[0].get('id') if charge.get('refunds') else None
+            charge_id = charge.get('id')
+            payment_intent_id = charge.get('payment_intent')
+            amount_refunded = Decimal(str(charge.get('amount_refunded', 0))) / Decimal('100')
+        else:
+            payment_intent = refund_obj
+            refund_id = payment_intent.get('charges', {}).get('data', [{}])[0].get('refunds', {}).get('data', [{}])[0].get('id')
+            charge_id = payment_intent.get('charges', {}).get('data', [{}])[0].get('id')
+            payment_intent_id = payment_intent.get('id')
+            amount_refunded = Decimal(str(payment_intent.get('amount', 0))) / Decimal('100')
+        
+        if not refund_id or not charge_id:
+            logger.error(f"[REFUND] Missing refund_id or charge_id in event {event.id}")
+            return
+        
+        existing_refund = await client.from_('refund_history').select('id, status').eq(
+            'stripe_refund_id', refund_id
+        ).execute()
+        
+        if existing_refund.data:
+            if existing_refund.data[0]['status'] == 'processed':
+                logger.info(f"[REFUND] Refund {refund_id} already processed")
+                return
+        
+        purchase_record = await client.from_('credit_purchases').select(
+            'id, account_id, amount_dollars, status'
+        ).eq('stripe_payment_intent_id', payment_intent_id).execute()
+        
+        if not purchase_record.data:
+            logger.warning(f"[REFUND] No purchase found for payment_intent {payment_intent_id}")
+            
+            if not existing_refund.data:
+                await client.from_('refund_history').insert({
+                    'stripe_refund_id': refund_id,
+                    'stripe_charge_id': charge_id,
+                    'stripe_payment_intent_id': payment_intent_id,
+                    'amount_refunded': float(amount_refunded),
+                    'credits_deducted': 0,
+                    'refund_reason': 'No associated purchase found',
+                    'status': 'failed',
+                    'error_message': 'Purchase record not found',
+                    'account_id': '00000000-0000-0000-0000-000000000000',
+                    'processed_at': datetime.now(timezone.utc).isoformat()
+                }).execute()
+            return
+        
+        purchase = purchase_record.data[0]
+        account_id = purchase['account_id']
+        credits_to_deduct = Decimal(str(purchase['amount_dollars']))
+        
+        try:
+            if not existing_refund.data:
+                await client.from_('refund_history').insert({
+                    'account_id': account_id,
+                    'stripe_refund_id': refund_id,
+                    'stripe_charge_id': charge_id,
+                    'stripe_payment_intent_id': payment_intent_id,
+                    'amount_refunded': float(amount_refunded),
+                    'credits_deducted': 0,
+                    'status': 'pending',
+                    'metadata': {'purchase_id': purchase['id']}
+                }).execute()
+            
+            balance_info = await credit_manager.get_balance(account_id)
+            current_balance = Decimal(str(balance_info['total']))
+            
+            if current_balance < credits_to_deduct:
+                logger.warning(
+                    f"[REFUND] Insufficient balance for full refund. "
+                    f"Balance: ${current_balance}, Need: ${credits_to_deduct}"
+                )
+                credits_to_deduct = current_balance
+            
+            if credits_to_deduct > 0:
+                result = await credit_manager.use_credits(
+                    account_id=account_id,
+                    amount=credits_to_deduct,
+                    description=f"Refund deduction: {refund_id}",
+                    thread_id=None,
+                    message_id=None
+                )
+                
+                if not result.get('success'):
+                    logger.error(f"[REFUND] Failed to deduct credits: {result.get('error')}")
+                    await client.from_('refund_history').update({
+                        'status': 'failed',
+                        'error_message': result.get('error'),
+                        'processed_at': datetime.now(timezone.utc).isoformat()
+                    }).eq('stripe_refund_id', refund_id).execute()
+                    return
+            
+            await client.from_('credit_purchases').update({
+                'status': 'refunded',
+                'metadata': {'refund_id': refund_id, 'refund_processed_at': datetime.now(timezone.utc).isoformat()}
+            }).eq('id', purchase['id']).execute()
+            
+            await client.from_('refund_history').update({
+                'status': 'processed',
+                'credits_deducted': float(credits_to_deduct),
+                'processed_at': datetime.now(timezone.utc).isoformat()
+            }).eq('stripe_refund_id', refund_id).execute()
+            
+            logger.info(
+                f"[REFUND] Successfully processed refund {refund_id} for account {account_id}. "
+                f"Deducted ${credits_to_deduct} credits"
+            )
+            
+        except Exception as e:
+            logger.error(f"[REFUND] Error processing refund {refund_id}: {e}")
+            await client.from_('refund_history').update({
+                'status': 'failed',
+                'error_message': str(e),
+                'processed_at': datetime.now(timezone.utc).isoformat()
+            }).eq('stripe_refund_id', refund_id).execute()
         
 webhook_service = WebhookService() 
