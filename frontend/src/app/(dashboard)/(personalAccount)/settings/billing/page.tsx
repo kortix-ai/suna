@@ -205,7 +205,8 @@ export default function PersonalAccountBillingPage() {
               </div>
               {cancellationStatus?.has_subscription && 
                !cancellationStatus?.is_cancelled && 
-               subscriptionData?.subscription?.id && (
+               subscriptionData?.subscription?.id && 
+               subscriptionData?.subscription?.status !== 'trialing' && (
                 <CancelSubscriptionButton
                   subscriptionId={subscriptionData.subscription.id}
                   hasCommitment={commitmentInfo?.has_commitment}
