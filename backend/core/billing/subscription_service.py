@@ -18,6 +18,10 @@ from .config import (
     get_price_type
 )
 from .credit_manager import credit_manager
+from .idempotency import (
+    generate_checkout_idempotency_key,
+    generate_subscription_modify_idempotency_key
+)
 
 class SubscriptionService:
     def __init__(self):
@@ -219,6 +223,8 @@ class SubscriptionService:
             trial_status = credit_account.data[0].get('trial_status')
             current_tier = credit_account.data[0].get('tier')
         
+        idempotency_key = generate_checkout_idempotency_key(account_id, price_id, commitment_type)
+        
         if trial_status == 'active' and existing_subscription_id:
             logger.info(f"[TRIAL CONVERSION] User {account_id} upgrading from trial to paid plan")
             
@@ -248,7 +254,8 @@ class SubscriptionService:
                         'previous_tier': current_tier or 'trial',
                         'commitment_type': commitment_type or 'none'
                     }
-                }
+                },
+                idempotency_key=idempotency_key
             )
             
             logger.info(f"[TRIAL CONVERSION] Created new checkout session for user {account_id}")
@@ -268,6 +275,8 @@ class SubscriptionService:
             
             logger.info(f"Updating subscription {existing_subscription_id} to price {price_id}")
             
+            modify_key = generate_subscription_modify_idempotency_key(existing_subscription_id, price_id)
+            
             updated_subscription = await stripe.Subscription.modify_async(
                 existing_subscription_id,
                 items=[{
@@ -275,7 +284,8 @@ class SubscriptionService:
                     'price': price_id,
                 }],
                 proration_behavior='always_invoice',
-                payment_behavior='pending_if_incomplete'
+                payment_behavior='pending_if_incomplete',
+                idempotency_key=modify_key
             )
             
             logger.info(f"Stripe subscription updated, processing subscription change")
@@ -316,7 +326,8 @@ class SubscriptionService:
                         'account_type': 'personal',
                         'commitment_type': commitment_type or 'none'
                     }
-                }
+                },
+                idempotency_key=idempotency_key
             )
             return {'checkout_url': session.url}
 
@@ -505,11 +516,26 @@ class SubscriptionService:
         logger.error(f"[SUBSCRIPTION INFO] Billing anchor: {billing_anchor}")
 
         current_account = await client.from_('credit_accounts').select(
-            'tier, stripe_subscription_id, last_grant_date, billing_cycle_anchor, last_processed_invoice_id'
+            'tier, stripe_subscription_id, last_grant_date, billing_cycle_anchor, last_processed_invoice_id, trial_status'
         ).eq('account_id', account_id).execute()
 
         is_renewal = False
         is_upgrade = False
+        
+        if current_account.data:
+            current_trial_status = current_account.data[0].get('trial_status')
+            current_subscription_status = subscription.get('status')
+            prev_subscription_status = previous_attributes.get('status') if previous_attributes else None
+            
+            if current_trial_status == 'active' and prev_subscription_status == 'trialing' and current_subscription_status == 'active':
+                logger.info(f"[TRIAL END] Subscription transitioned from trialing to active - marking trial as converted")
+                await client.from_('credit_accounts').update({
+                    'trial_status': 'converted'
+                }).eq('account_id', account_id).execute()
+                await client.from_('trial_history').update({
+                    'ended_at': datetime.now(timezone.utc).isoformat(),
+                    'converted_to_paid': True
+                }).eq('account_id', account_id).is_('ended_at', 'null').execute()
         
         if subscription.get('id'):
             try:
