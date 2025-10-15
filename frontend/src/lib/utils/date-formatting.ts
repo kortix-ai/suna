@@ -10,30 +10,32 @@ export function formatDateForList(dateString: string): string {
   const date = new Date(dateString);
   const now = new Date();
   
-  // Calculate difference in milliseconds
-  const diffMs = now.getTime() - date.getTime();
-  const diffMins = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-
-  // Less than 1 hour: show minutes
-  if (diffMins < 60) {
-    return diffMins === 0 ? 'now' : `${diffMins}m`;
-  }
-
-  // Less than 24 hours (Today): show hours
-  if (diffHours < 24) {
+  // Get start of today (midnight)
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  
+  // Get start of date (midnight)
+  const startOfDate = new Date(date);
+  startOfDate.setHours(0, 0, 0, 0);
+  
+  // Calculate difference in days (calendar days, not 24-hour periods)
+  const diffDays = Math.floor((startOfToday.getTime() - startOfDate.getTime()) / (1000 * 60 * 60 * 24));
+  
+  // If it's today, show relative time
+  if (diffDays === 0) {
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    
+    if (diffMins < 60) {
+      return diffMins === 0 ? 'now' : `${diffMins}m`;
+    }
     return `${diffHours}h`;
   }
 
   // This week (1-7 days): show day name
   if (diffDays <= 7) {
     return date.toLocaleDateString('en-US', { weekday: 'short' });
-  }
-
-  // This month (8-30 days): show month and day
-  if (diffDays <= 30) {
-    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
 
   // Older: show month and day
