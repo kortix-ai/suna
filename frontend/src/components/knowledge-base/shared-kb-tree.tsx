@@ -3,7 +3,7 @@
 import React, { useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
 import {
     FolderIcon,
@@ -289,25 +289,14 @@ export function SharedTreeItem({
                             </div>
 
                             <div className="flex items-center gap-2 ml-4">
-                                {/* Assignment Switch */}
+                                {/* Assignment Checkbox */}
                                 {enableAssignment && (
-                                    <div className="relative shrink-0">
-                                        <Switch
-                                            checked={assignments?.[item.id] || false}
+                                    <div className="inline-flex items-center justify-center h-12 w-12 bg-card border border-border rounded-2xl shrink-0">
+                                        <Checkbox
+                                            checked={assignmentIndeterminate?.[item.id] ? 'indeterminate' : (assignments?.[item.id] || false)}
                                             onCheckedChange={() => onToggleAssignment?.(item.id)}
                                             onClick={(e) => e.stopPropagation()}
-                                            className="shrink-0"
                                         />
-                                        {/* Indeterminate indicator for folders */}
-                                        {assignmentIndeterminate?.[item.id] && (
-                                            <div
-                                                className="absolute inset-0 flex items-center justify-center pointer-events-none"
-                                                style={{
-                                                    background: 'linear-gradient(45deg, transparent 30%, hsl(var(--primary)) 30%, hsl(var(--primary)) 70%, transparent 70%)',
-                                                    borderRadius: 'inherit'
-                                                }}
-                                            />
-                                        )}
                                     </div>
                                 )}
 
@@ -452,14 +441,15 @@ export function SharedTreeItem({
                             </div>
 
                             <div className="flex items-center gap-2 ml-4">
-                                {/* Assignment Switch for Files */}
+                                {/* Assignment Checkbox for Files */}
                                 {enableAssignment && (
-                                    <Switch
-                                        checked={assignments?.[item.id] || false}
-                                        onCheckedChange={() => onToggleAssignment?.(item.id)}
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="shrink-0"
-                                    />
+                                    <div className="inline-flex items-center justify-center h-12 w-12 bg-card border border-border rounded-2xl shrink-0">
+                                        <Checkbox
+                                            checked={assignments?.[item.id] || false}
+                                            onCheckedChange={() => onToggleAssignment?.(item.id)}
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                    </div>
                                 )}
 
                                 {/* File Actions */}

@@ -211,8 +211,8 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                     </Button>
                 </DropdownMenuTrigger>
 
-                <DropdownMenuContent align="end" className="w-[280px] p-3 border-[1.5px] border-border rounded-2xl" sideOffset={6}>
-                    <div className="mb-3">
+                <DropdownMenuContent align="end" className="w-[280px] px-0 py-3 border-[1.5px] border-border rounded-2xl" sideOffset={6}>
+                    <div className="mb-3 px-3">
                         <div className="relative">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-[18px] w-[18px] text-muted-foreground pointer-events-none" />
                             <input
@@ -230,7 +230,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                     {/* Agents */}
                     {onAgentSelect && (
                         <div className="">
-                            <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center justify-between mb-3 px-3">
                                 <span className="text-xs font-medium text-muted-foreground">My Workers</span>
                                 <Button
                                     size="sm"
@@ -256,7 +256,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                 </div>
                             ) : (
                                 <>
-                                    <div className="max-h-[240px] overflow-y-auto space-y-0.5 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+                                    <div className="max-h-[240px] overflow-y-auto space-y-0.5 px-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
                                         {orderedAgents.map((agent) => {
                                             const isActive = selectedAgentId === agent.agent_id;
                                             return (
@@ -268,7 +268,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                                     )}
                                                 >
                                                     <div
-                                                        className="flex items-center gap-3 text-sm cursor-pointer px-3 py-1"
+                                                        className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1"
                                                         onClick={() => handleAgentClick(agent.agent_id)}
                                                     >
                                                         <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
@@ -312,10 +312,10 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
 
                     {/* Models */}
                     <div className="">
-                        <div className="mb-3">
+                        <div className="mb-3 px-3">
                             <span className="text-xs font-medium text-muted-foreground">Models</span>
                         </div>
-                        <div className="space-y-0.5">
+                        <div className="space-y-0.5 px-2">
                             {modelOptions.slice(0, 2).map((model) => {
                                 const isActive = selectedModel === model.id;
                                 return (
@@ -327,7 +327,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                         )}
                                     >
                                         <div
-                                            className="flex items-center gap-3 text-sm cursor-pointer px-3 py-1"
+                                            className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1"
                                             onClick={() => onModelChange(model.id)}
                                         >
                                             <ModelProviderIcon
@@ -350,7 +350,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                 )}
                             >
                                 <DropdownMenuSub>
-                                    <DropdownMenuSubTrigger className="flex items-center gap-3 text-sm cursor-pointer px-3 py-1 hover:bg-transparent focus:bg-transparent data-[state=open]:bg-transparent">
+                                    <DropdownMenuSubTrigger className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1 hover:bg-transparent focus:bg-transparent data-[state=open]:bg-transparent">
                                         <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
                                             <Cpu className="h-4 w-4" />
                                         </div>
@@ -397,11 +397,11 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                     </div>
                     <div className="h-px bg-border/50 -mx-3 my-3" />
                     {onAgentSelect && (selectedAgentId || displayAgent?.agent_id) && (
-                        <div className="">
+                        <div className="px-3">
                             <div className="mb-3">
                                 <span className="text-xs font-medium text-muted-foreground">Worker Settings</span>
                             </div>
-                            <div className="flex justify-between items-center">
+                            <div className="flex justify-between items-center gap-2">
                                 {[
                                     { action: 'instructions' as const, icon: Plug },
                                     { action: 'knowledge' as const, icon: Brain },
@@ -413,7 +413,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                         key={action}
                                         variant="ghost"
                                         size="icon"
-                                        className="h-8 w-12 p-0 cursor-pointer hover:bg-muted/60 border-[1.5px] border-border rounded-2xl"
+                                        className="h-8 flex-1 p-0 cursor-pointer hover:bg-muted/60 border-[1.5px] border-border rounded-2xl"
                                         onClick={() => action === 'integrations' ? setIntegrationsOpen(true) : handleQuickAction(action as any)}
                                     >
                                         <Icon className="h-4 w-4" />

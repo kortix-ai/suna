@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -310,11 +310,10 @@ export const GranularToolConfiguration = ({
                           disabled || isLoading ? "opacity-50 cursor-not-allowed" : ""
                         )}
                       >
-                        <Switch
+                        <Checkbox
                           checked={isGroupEnabled}
-                          onCheckedChange={(enabled) => handleToolGroupToggle(toolGroup.name, enabled)}
+                          onCheckedChange={(enabled) => handleToolGroupToggle(toolGroup.name, enabled === true)}
                           disabled={disabled || isLoading}
-                          className="data-[state=checked]:bg-primary data-[state=unchecked]:bg-input"
                         />
                       </div>
                     </div>
@@ -352,13 +351,13 @@ export const GranularToolConfiguration = ({
                                     </p>
                                   </div>
 
-                                  <Switch
+                                  <Checkbox
                                     checked={isMethodEnabledState}
                                     onCheckedChange={(enabled) =>
-                                      handleMethodToggle(toolGroup.name, method.name, enabled)
+                                      handleMethodToggle(toolGroup.name, method.name, enabled === true)
                                     }
                                     disabled={disabled || isLoading}
-                                    className="flex-shrink-0 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input"
+                                    className="flex-shrink-0"
                                   />
                                 </div>
                               );
