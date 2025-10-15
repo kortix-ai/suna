@@ -30,14 +30,15 @@ interface AgentConfigTourState {
 const useAgentConfigTourStore = create<AgentConfigTourState>()(
   persist(
     (set, get) => ({
-      hasSeenTour: false,
-      run: false,
+      hasSeenTour: true, // TOURS DISABLED - Always mark as seen
+      run: false, // TOURS DISABLED
       stepIndex: 0,
-      setHasSeenTour: (seen) => set({ hasSeenTour: seen }),
-      setRun: (run) => set({ run }),
+      setHasSeenTour: (seen) => set({ hasSeenTour: true }), // Always true
+      setRun: (run) => set({ run: false }), // Always false
       setStepIndex: (index) => set({ stepIndex: index }),
       startTour: () => {
-        set({ run: true, stepIndex: 0 });
+        // TOURS DISABLED - Do nothing
+        set({ run: false, stepIndex: 0 });
       },
       stopTour: () => {
         set({ run: false, hasSeenTour: true });
@@ -46,7 +47,8 @@ const useAgentConfigTourStore = create<AgentConfigTourState>()(
         set({ run: false, hasSeenTour: true });
       },
       resetTour: () => {
-        set({ hasSeenTour: false, run: false, stepIndex: 0 });
+        // TOURS DISABLED - Keep tours disabled even on reset
+        set({ hasSeenTour: true, run: false, stepIndex: 0 });
       },
     }),
     {

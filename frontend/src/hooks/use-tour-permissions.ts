@@ -18,23 +18,26 @@ interface TourPermissionsState {
 const useTourPermissionsStore = create<TourPermissionsState>()(
   persist(
     (set) => ({
-      hasBeenAsked: false,
-      toursEnabled: false,
-      showWelcome: false,
-      setHasBeenAsked: (asked) => set({ hasBeenAsked: asked }),
-      setToursEnabled: (enabled) => set({ toursEnabled: enabled }),
-      setShowWelcome: (show) => set({ showWelcome: show }),
+      hasBeenAsked: true, // TOURS DISABLED - Always mark as asked
+      toursEnabled: false, // TOURS DISABLED
+      showWelcome: false, // TOURS DISABLED - Never show welcome
+      setHasBeenAsked: (asked) => set({ hasBeenAsked: true }), // Always true
+      setToursEnabled: (enabled) => set({ toursEnabled: false }), // Always false
+      setShowWelcome: (show) => set({ showWelcome: false }), // Always false
       enableTours: () => {
-        set({ toursEnabled: true, hasBeenAsked: true, showWelcome: false });
+        // TOURS DISABLED - Do nothing
+        set({ toursEnabled: false, hasBeenAsked: true, showWelcome: false });
       },
       disableTours: () => {
         set({ toursEnabled: false, hasBeenAsked: true, showWelcome: false });
       },
       forceShowWelcome: () => {
-        set({ showWelcome: true });
+        // TOURS DISABLED - Do nothing
+        set({ showWelcome: false });
       },
       resetPermissions: () => {
-        set({ hasBeenAsked: false, toursEnabled: false, showWelcome: false });
+        // TOURS DISABLED - Keep tours disabled even on reset
+        set({ hasBeenAsked: true, toursEnabled: false, showWelcome: false });
       },
     }),
     {

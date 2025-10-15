@@ -3,7 +3,8 @@
 import React, { useState, Suspense, useCallback, useEffect } from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Joyride, { CallBackProps, STATUS, Step } from 'react-joyride';
+// TOURS DISABLED - Joyride imports commented out
+// import Joyride, { CallBackProps, STATUS, Step } from 'react-joyride';
 import {
   ChatInput,
   ChatInputHandles,
@@ -34,13 +35,15 @@ import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog'
 import { CustomAgentsSection } from './custom-agents-section';
 import { toast } from 'sonner';
 import { ReleaseBadge } from '../auth/release-badge';
-import { useDashboardTour } from '@/hooks/use-dashboard-tour';
-import { TourConfirmationDialog } from '@/components/tour/TourConfirmationDialog';
+// TOURS DISABLED - Tour imports commented out
+// import { useDashboardTour } from '@/hooks/use-dashboard-tour';
+// import { TourConfirmationDialog } from '@/components/tour/TourConfirmationDialog';
 import { Calendar, MessageSquare, Plus, Sparkles, Zap } from 'lucide-react';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
 
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 
+/* TOURS DISABLED - dashboardTourSteps commented out
 const dashboardTourSteps: Step[] = [
   {
     target: '[data-tour="chat-input"]',
@@ -64,6 +67,7 @@ const dashboardTourSteps: Step[] = [
     disableBeacon: true,
   },
 ];
+*/
 
 export function DashboardContent() {
   const [inputValue, setInputValue] = useState('');
@@ -108,16 +112,16 @@ export function DashboardContent() {
   const initiateAgentMutation = useInitiateAgentWithInvalidation();
   const [showPaymentModal, setShowPaymentModal] = useState(false);
 
-  // Tour integration
-  const {
-    run,
-    stepIndex,
-    setStepIndex,
-    stopTour,
-    showWelcome,
-    handleWelcomeAccept,
-    handleWelcomeDecline,
-  } = useDashboardTour();
+  // TOURS DISABLED - Tour integration commented out
+  // const {
+  //   run,
+  //   stepIndex,
+  //   setStepIndex,
+  //   stopTour,
+  //   showWelcome,
+  //   handleWelcomeAccept,
+  //   handleWelcomeDecline,
+  // } = useDashboardTour();
 
   // Feature flag for custom agents section
 
@@ -176,15 +180,16 @@ export function DashboardContent() {
     }
   }, [threadQuery.data, initiatedThreadId, router]);
 
-  const handleTourCallback = useCallback((data: CallBackProps) => {
-    const { status, type, index } = data;
+  // TOURS DISABLED - handleTourCallback commented out
+  // const handleTourCallback = useCallback((data: CallBackProps) => {
+  //   const { status, type, index } = data;
 
-    if (status === STATUS.FINISHED || status === STATUS.SKIPPED) {
-      stopTour();
-    } else if (type === 'step:after') {
-      setStepIndex(index + 1);
-    }
-  }, [stopTour, setStepIndex]);
+  //   if (status === STATUS.FINISHED || status === STATUS.SKIPPED) {
+  //     stopTour();
+  //   } else if (type === 'step:after') {
+  //     setStepIndex(index + 1);
+  //   }
+  // }, [stopTour, setStepIndex]);
 
   const handleSubmit = async (
     message: string,
@@ -280,7 +285,8 @@ export function DashboardContent() {
 
   return (
     <>
-      <Joyride
+      {/* TOURS DISABLED - Joyride and TourConfirmationDialog commented out */}
+      {/* <Joyride
         steps={dashboardTourSteps}
         run={run}
         stepIndex={stepIndex}
@@ -346,13 +352,13 @@ export function DashboardContent() {
             backgroundColor: 'transparent',
           },
         }}
-      />
+      /> */}
 
-      <TourConfirmationDialog
+      {/* <TourConfirmationDialog
         open={showWelcome}
         onAccept={handleWelcomeAccept}
         onDecline={handleWelcomeDecline}
-      />
+      /> */}
 
       <BillingModal
         open={showPaymentModal}

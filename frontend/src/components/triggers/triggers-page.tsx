@@ -26,7 +26,8 @@ import {
   ChevronDown,
   PlugZap,
   Webhook,
-  Repeat
+  Repeat,
+  Search
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
@@ -158,7 +159,7 @@ const EmptyState = () => (
 );
 
 const LoadingSkeleton = () => (
-  <div className="space-y-4 px-4">
+  <div className="space-y-4">
     {[1, 2, 3, 4, 5].map((i) => (
       <div key={i} className="rounded-xl border dark:bg-card px-4 py-3">
         <div className="flex items-center gap-3">
@@ -251,67 +252,74 @@ export function TriggersPage() {
       </div>
       <div className="h-screen flex overflow-hidden">
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex justify-center">
-            <div className={cn(
-              "w-full px-4 transition-all duration-300 ease-in-out",
-              selectedTrigger ? "max-w-2xl" : "max-w-4xl"
-            )}>
-              <div className="flex items-center justify-between py-10">
-                <h1 className="text-xl font-semibold">Triggers</h1>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      <Plus className="h-4 w-4" />
-                      New trigger
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-72">
-                    <DropdownMenuItem onClick={() => setTriggerDialogType('schedule')} className='rounded-lg'>
-                      <Clock className="h-4 w-4 text-muted-foreground" />
-                      <div className="flex flex-col">
-                        <span>Scheduled Trigger</span>
-                        <span className="text-xs text-muted-foreground">
-                          Schedule a trigger to run at a specific time
-                        </span>
-                      </div>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setTriggerDialogType('event')} className='rounded-lg'>
-                      <PlugZap className="h-4 w-4 text-muted-foreground" />
-                      <div className="flex flex-col">
-                        <span>Event-based Trigger</span>
-                        <span className="text-xs text-muted-foreground">
-                          Make a trigger to run when an event occurs
-                        </span>
-                      </div>
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+          {/* Search Bar and Create Button */}
+          <div className="container mx-auto max-w-7xl px-4">
+            <div className="flex items-center justify-between pb-4 pt-3">
+              <div className="max-w-md w-md">
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search"
+                    className="h-10 w-full rounded-xl border border-input bg-background px-10 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  />
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                    <Search className="h-4 w-4" />
+                  </div>
+                </div>
               </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="h-10 px-4 rounded-xl gap-2"
+                  >
+                    <Plus className="h-4 w-4" />
+                    Create new
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-72">
+                  <DropdownMenuItem onClick={() => setTriggerDialogType('schedule')} className='rounded-lg'>
+                    <Clock className="h-4 w-4 text-muted-foreground" />
+                    <div className="flex flex-col">
+                      <span>Scheduled Trigger</span>
+                      <span className="text-xs text-muted-foreground">
+                        Schedule a trigger to run at a specific time
+                      </span>
+                    </div>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setTriggerDialogType('event')} className='rounded-lg'>
+                    <PlugZap className="h-4 w-4 text-muted-foreground" />
+                    <div className="flex flex-col">
+                      <span>Event-based Trigger</span>
+                      <span className="text-xs text-muted-foreground">
+                        Make a trigger to run when an event occurs
+                      </span>
+                    </div>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
+
           <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700 scrollbar-track-transparent">
-            <div className="flex justify-center">
-              <div className={cn(
-                "w-full px-4 pb-8 transition-all duration-300 ease-in-out",
-                selectedTrigger ? "max-w-2xl" : "max-w-4xl"
-              )}>
-                {isLoading ? (
-                  <LoadingSkeleton />
-                ) : sortedTriggers.length === 0 ? (
-                  <EmptyState />
-                ) : (
-                  <div className="space-y-4">
-                    {sortedTriggers.map(trigger => (
-                      <TriggerListItem
-                        key={trigger.trigger_id}
-                        trigger={trigger}
-                        isSelected={selectedTrigger?.trigger_id === trigger.trigger_id}
-                        onClick={() => handleTriggerClick(trigger)}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
+            <div className="container mx-auto max-w-7xl px-4 pb-8">
+              {isLoading ? (
+                <LoadingSkeleton />
+              ) : sortedTriggers.length === 0 ? (
+                <EmptyState />
+              ) : (
+                <div className="space-y-4">
+                  {sortedTriggers.map(trigger => (
+                    <TriggerListItem
+                      key={trigger.trigger_id}
+                      trigger={trigger}
+                      isSelected={selectedTrigger?.trigger_id === trigger.trigger_id}
+                      onClick={() => handleTriggerClick(trigger)}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -181,7 +181,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
     }, [selectedAgentId, displayAgent?.agent_id]);
 
     const renderAgentIcon = useCallback((agent: any) => {
-        return <AgentAvatar agentId={agent?.agent_id} size={32} className="flex-shrink-0 !border-0 !bg-transparent" fallbackName={agent?.name} iconColor='#' />;
+        return <AgentAvatar agent={agent} agentId={agent?.agent_id} size={32} className="flex-shrink-0 !border-0" />;
     }, []);
 
     return (
@@ -198,7 +198,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                             <div className="flex items-center gap-2 min-w-0 max-w-[180px]">
                                 {renderAgentIcon(displayAgent)}
                                 <span className="truncate text-sm font-medium">
-                                    {displayAgent?.name || 'Suna'}
+                                    {displayAgent?.name || 'Super Worker'}
                                 </span>
                                 <ChevronDown size={12} className="opacity-60 flex-shrink-0" />
                             </div>
