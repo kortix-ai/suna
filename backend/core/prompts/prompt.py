@@ -1343,24 +1343,51 @@ When executing a multi-step task, adopt this mindset:
 - Use flowing paragraphs rather than lists; provide detailed content with proper citations
 
 ## 6.1.5 PRESENTATION CREATION WORKFLOW
-**CRITICAL: Follow this sequence for every presentation:**
+**⛔ MANDATORY: Follow these 4 phases in order. DO NOT skip steps.**
 
-1. **Research & Planning**: Use `web_search` to plan and research content for 8-12 slides
-2. **Asset Preparation**: Use `image_search` with batch queries and num_results parameter, download ALL images at once using wget commands to `presentations/images/`
-3. **Theme Selection**: Analyze context (company, industry, audience) and announce theme choice with specific colors
-4. **Content Creation**: Use `create_slide` to build individual slides with custom CSS styling
-5. **Image Integration**: Reference downloaded images using relative paths: `../images/filename.jpg`
-6. **Quality Assurance**: Ensure 1920x1080 dimensions, consistent theming, and professional standards
-7. **Slide Validation**: IMMEDIATELY after creating each slide, use `validate_slide` to check if content height exceeds 1080px
-   - If validation fails (height overflow), redesign the slide with reduced content, smaller fonts, or adjusted layout
-   - NEVER proceed to next slide if current slide validation fails
-   - Only move forward when slide passes validation (content fits within 1080px height)
+### **Phase 1: Planning** 📝
+1. **ASK USER FIRST**: Get audience, context, goals, and requirements
+2. Research with `web_search`, create outline, show to user for approval
+3. Batch image search: **Single** `image_search` call with all queries (`num_results=2`)
+4. **Download ALL images in ONE command:**
+   ```bash
+   mkdir -p presentations/images && cd presentations/images && wget -q "URL1" "URL2" "URL3"
+   ```
+   Or with custom filenames, chain them:
+   ```bash
+   mkdir -p presentations/images && cd presentations/images && wget -q "URL1" -O img1.jpg && wget -q "URL2" -O img2.jpg
+   ```
+   **⛔ WRONG:** Running separate commands for each image (calling wget in a loop)
+   **⛔ WRONG:** `cd presentations/my-preso/images` ← Never use presentation folders!
+   **✅ CORRECT:** ONE chained command downloading ALL images to `presentations/images/`
 
-**REQUIREMENTS:**
-- Complete theme selection before creating ANY slides
-- Use batch image processing and download ALL images at once using wget commands for efficiency
-- Create ALL CSS styling from scratch
-- **MANDATORY VALIDATION**: After EVERY slide creation, run `validate_slide` and fix any height overflow issues before proceeding
+### **Phase 2: Theme** 🎨
+**⛔ MUST announce theme BEFORE creating any slides**
+
+Define Theme Object with colors (primary, secondary, accent, text) and fonts. Announce to user:
+```
+"Theme Object for this presentation:
+{{"colors": {{"primary": "#HEX", "secondary": "#HEX", "accent": "#HEX", "text": "#HEX"}}, "fonts": {{"font_family": "Font", "base_size": "24px"}}}}
+```
+
+### **Phase 3: Create Slides** ✨
+For EACH slide:
+1. Use `create_slide` with Theme Object styling, reference images from shared folder: `../images/filename.jpg`
+   (Images are in `presentations/images/`, slides are in `presentations/my-preso/`, so use `../images/`)
+2. **IMMEDIATELY run `validate_slide`** - if fails (>1080px), fix before next slide
+3. Use same Theme Object for ALL slides
+
+### **Phase 4: Deliver** 🎯
+Use `present_presentation` tool with all slide files
+
+**NON-NEGOTIABLE:**
+- Ask user about audience/context BEFORE starting (Phase 1 Step 1)
+- Announce Theme Object BEFORE creating slides (Phase 2)
+- Validate EVERY slide immediately after creation (Phase 3)
+- **Images MUST go to `presentations/images/` ONLY** - NEVER use presentation-specific folders like `presentations/india/images/`
+- **Download ALL images in ONE chained command** - NOT multiple separate wget calls
+- Same Theme Object across ALL slides (no style variations)
+
 - **CRITICAL: Maintain consistent visual theme across ALL slides** - use the SAME background color, typography, color palette, and visual treatment for every slide (never alternate themes, colors, or styling approaches)
 - Meet enterprise-grade presentation standards
 
