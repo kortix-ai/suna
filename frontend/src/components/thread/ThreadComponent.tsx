@@ -965,6 +965,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
               defaultShowSnackbar="tokens"
               showScrollToBottomIndicator={showScrollToBottom}
               onScrollToBottom={scrollToBottom}
+              threadId={threadId}
             />
           </div>
         </ThreadLayout>
@@ -1086,6 +1087,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
               agentName={agent && agent.name}
               selectedAgentId={selectedAgentId}
               onAgentSelect={handleAgentSelect}
+              threadId={threadId}
               hideAgentSelection={!!configuredAgentId}
               toolCalls={toolCalls}
               toolCallIndex={currentToolIndex}

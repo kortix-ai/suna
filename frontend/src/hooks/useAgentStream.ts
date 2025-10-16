@@ -18,6 +18,7 @@ import { agentKeys } from '@/hooks/react-query/agents/keys';
 import { composioKeys } from '@/hooks/react-query/composio/keys';
 import { knowledgeBaseKeys } from '@/hooks/react-query/knowledge-base/keys';
 import { fileQueryKeys } from '@/hooks/react-query/files/use-file-queries';
+import { useContextUsageStore } from '@/lib/stores/context-usage-store';
 
 interface ApiMessageType {
   message_id?: string;
@@ -83,6 +84,7 @@ export function useAgentStream(
   agentId?: string, // Optional agent ID for invalidation
 ): UseAgentStreamResult {
   const queryClient = useQueryClient();
+  const setContextUsage = useContextUsageStore((state) => state.setUsage);
 
   const [status, setStatus] = useState<string>('idle');
   const [textContent, setTextContent] = useState<
@@ -438,8 +440,6 @@ export function useAgentStream(
                 setToolCall(null);
               }
               break;
-            case 'thread_run_end':
-              break;
             case 'finish':
               // Optional: Handle finish reasons like 'xml_tool_limit_reached'
               // Don't finalize here, wait for thread_run_end or completion message
@@ -448,10 +448,18 @@ export function useAgentStream(
               setError(parsedContent.message || 'Agent run failed');
               finalizeStream('error', currentRunIdRef.current);
               break;
-            // Ignore thread_run_start, assistant_response_start etc. for now
+            // Ignore thread_run_start, thread_run_end, assistant_response_start etc. for now
             default:
               // console.debug('[useAgentStream] Received unhandled status type:', parsedContent.status_type);
               break;
+          }
+          break;
+        case 'llm_response_end':
+          // Extract context usage from llm_response_end
+          if (parsedContent.usage?.total_tokens && threadIdRef.current) {
+            setContextUsage(threadIdRef.current, {
+              current_tokens: parsedContent.usage.total_tokens
+            });
           }
           break;
         case 'user':
@@ -467,13 +475,14 @@ export function useAgentStream(
       }
     },
     [
-      threadId,
-      setMessages,
       status,
       toolCall,
       callbacks,
       finalizeStream,
       updateStatus,
+      addContentThrottled,
+      flushPendingContent,
+      setContextUsage,
     ],
   );
 
@@ -624,7 +633,7 @@ export function useAgentStream(
       // Only set mounted flag to false to prevent new operations
       // Streams will be cleaned up when they naturally complete or on explicit stop
     };
-  }, []); // Empty dependency array for mount/unmount effect
+  }, [flushPendingContent]); // Include flushPendingContent for cleanup
 
   // --- Public Functions ---
 
