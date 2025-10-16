@@ -7,6 +7,7 @@ from core.utils.logger import logger
 from core.utils.cache import Cache
 from .credit_manager import credit_manager
 from .config import get_tier_by_price_id
+from .stripe_circuit_breaker import StripeAPIWrapper
 
 
 class ReconciliationService:
@@ -38,7 +39,7 @@ class ReconciliationService:
             
             for purchase in failed_purchases.data:
                 try:
-                    payment_intent = await stripe.PaymentIntent.retrieve_async(
+                    payment_intent = await StripeAPIWrapper.retrieve_payment_intent(
                         purchase['stripe_payment_intent_id']
                     )
                     

@@ -7,7 +7,7 @@ from core.services.supabase import DBConnection
 from core.utils.config import config
 from core.utils.logger import logger
 from core.utils.cache import Cache
-from core.utils.distributed_lock import WebhookLock, RenewalLock
+from core.utils.distributed_lock import WebhookLock, RenewalLock, DistributedLock
 from .config import (
     get_tier_by_price_id, 
     get_tier_by_name,
@@ -19,6 +19,7 @@ from .config import (
     get_commitment_duration_months
 )
 from .credit_manager import credit_manager
+from .stripe_circuit_breaker import StripeAPIWrapper
 
 
 class WebhookService:
@@ -92,7 +93,7 @@ class WebhookService:
             logger.error(f"[WEBHOOK] Error processing webhook: {e}")
             if event and hasattr(event, 'id'):
                 await WebhookLock.mark_webhook_failed(event.id, str(e))
-            raise HTTPException(status_code=400, detail=str(e))
+            return {'status': 'success', 'error': 'processed_with_errors', 'message': 'Webhook logged as failed internally'}
     
     async def _handle_checkout_session_completed(self, event, client):
         session = event.data.object
@@ -127,16 +128,20 @@ class WebhookService:
                 }).eq('stripe_payment_intent_id', session.payment_intent).execute()
                 
                 if not update_result.data or len(update_result.data) == 0:
+                    purchase_id = metadata.get('purchase_id')
+                    if purchase_id:
+                        update_result = await client.table('credit_purchases').update({
+                            'status': 'completed',
+                            'completed_at': datetime.now(timezone.utc).isoformat(),
+                            'stripe_payment_intent_id': session.payment_intent
+                        }).eq('id', purchase_id).execute()
+            else:
+                purchase_id = metadata.get('purchase_id')
+                if purchase_id:
                     update_result = await client.table('credit_purchases').update({
                         'status': 'completed',
-                        'completed_at': datetime.now(timezone.utc).isoformat(),
-                        'stripe_payment_intent_id': session.payment_intent
-                    }).eq('stripe_checkout_session_id', session.id).execute()
-            else:
-                update_result = await client.table('credit_purchases').update({
-                    'status': 'completed',
-                    'completed_at': datetime.now(timezone.utc).isoformat()
-                }).eq('stripe_checkout_session_id', session.id).execute()
+                        'completed_at': datetime.now(timezone.utc).isoformat()
+                    }).eq('id', purchase_id).execute()
             
             result = await credit_manager.add_credits(
                 account_id=account_id,
@@ -146,30 +151,22 @@ class WebhookService:
             )
             
             if not result.get('success'):
-                if session.payment_intent:
+                purchase_id = metadata.get('purchase_id')
+                if purchase_id:
                     await client.table('credit_purchases').update({
                         'status': 'failed',
                         'error_message': 'Credit addition failed'
-                    }).eq('stripe_payment_intent_id', session.payment_intent).execute()
-                else:
-                    await client.table('credit_purchases').update({
-                        'status': 'failed',
-                        'error_message': 'Credit addition failed'
-                    }).eq('stripe_checkout_session_id', session.id).execute()
+                    }).eq('id', purchase_id).execute()
                 
                 return
         except Exception as e:
             try:
-                if session.payment_intent:
+                purchase_id = metadata.get('purchase_id')
+                if purchase_id:
                     await client.table('credit_purchases').update({
                         'status': 'failed',
                         'error_message': str(e)
-                    }).eq('stripe_payment_intent_id', session.payment_intent).execute()
-                else:
-                    await client.table('credit_purchases').update({
-                        'status': 'failed',
-                        'error_message': str(e)
-                    }).eq('stripe_checkout_session_id', session.id).execute()
+                    }).eq('id', purchase_id).execute()
             except:
                 pass
             return
@@ -204,7 +201,7 @@ class WebhookService:
             if trial_check.data and trial_check.data[0].get('trial_status') == 'active':
                 subscription_id = session.get('subscription')
                 if subscription_id:
-                    subscription = await stripe.Subscription.retrieve_async(subscription_id)
+                    subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
                     price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
                     tier_info = get_tier_by_price_id(price_id)
                     
@@ -217,7 +214,8 @@ class WebhookService:
                         
                         await client.from_('trial_history').update({
                             'ended_at': datetime.now(timezone.utc).isoformat(),
-                            'converted_to_paid': True
+                            'converted_to_paid': True,
+                            'status': 'converted'
                         }).eq('account_id', account_id).is_('ended_at', 'null').execute()
                         
 
@@ -225,7 +223,11 @@ class WebhookService:
             account_id = session['metadata'].get('account_id')
             if session.get('subscription'):
                 subscription_id = session['subscription']
-                subscription = stripe.Subscription.retrieve(subscription_id, expand=['default_payment_method'])
+                subscription = await StripeAPIWrapper.safe_stripe_call(
+                    stripe.Subscription.retrieve_async, 
+                    subscription_id, 
+                    expand=['default_payment_method']
+                )
 
                 price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
                 tier_info = get_tier_by_price_id(price_id)
@@ -233,43 +235,59 @@ class WebhookService:
                 if not tier_info:
                     return
                 
-                tier_name = tier_info.name
-                tier_credits = float(tier_info.monthly_credits)
+                lock_key = f"credit_grant:trial_conversion:{account_id}"
+                lock = DistributedLock(lock_key, timeout_seconds=60)
                 
-                current_balance_result = await client.from_('credit_accounts')\
-                    .select('balance, non_expiring_credits')\
-                    .eq('account_id', account_id)\
-                    .execute()
+                acquired = await lock.acquire(wait=True, wait_timeout=30)
+                if not acquired:
+                    logger.error(f"[TRIAL CONVERSION] Failed to acquire lock for {account_id}")
+                    return
                 
-                old_non_expiring = 0
-                if current_balance_result.data:
-                    old_non_expiring = float(current_balance_result.data[0].get('non_expiring_credits', 0))
-                
-                billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
-                next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
-                expires_at = next_grant_date
-                
-                await client.from_('credit_accounts').update({
-                    'trial_status': 'converted',
-                    'converted_to_paid_at': datetime.now(timezone.utc).isoformat(),
-                    'tier': tier_name,
-                    'stripe_subscription_id': subscription['id'],
-                    'billing_cycle_anchor': billing_anchor.isoformat(),
-                    'next_credit_grant': next_grant_date.isoformat()
-                }).eq('account_id', account_id).execute()
-                
-                await credit_manager.add_credits(
-                    account_id=account_id,
-                    amount=Decimal(str(tier_credits)),
-                    is_expiring=True,
-                    description=f"Converted from trial to {tier_info.display_name} plan",
-                    expires_at=expires_at
-                )
-                
-                await client.from_('trial_history').update({
-                    'ended_at': datetime.now(timezone.utc).isoformat(),
-                    'converted_to_paid': True
-                }).eq('account_id', account_id).is_('ended_at', 'null').execute()
+                try:
+                    logger.info(f"[TRIAL CONVERSION] 🔒 Acquired lock for trial conversion for {account_id}")
+                    
+                    tier_name = tier_info.name
+                    tier_credits = float(tier_info.monthly_credits)
+                    
+                    current_balance_result = await client.from_('credit_accounts')\
+                        .select('balance, non_expiring_credits')\
+                        .eq('account_id', account_id)\
+                        .execute()
+                    
+                    old_non_expiring = 0
+                    if current_balance_result.data:
+                        old_non_expiring = float(current_balance_result.data[0].get('non_expiring_credits', 0))
+                    
+                    billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
+                    next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
+                    expires_at = next_grant_date
+                    
+                    await client.from_('credit_accounts').update({
+                        'trial_status': 'converted',
+                        'converted_to_paid_at': datetime.now(timezone.utc).isoformat(),
+                        'tier': tier_name,
+                        'stripe_subscription_id': subscription['id'],
+                        'billing_cycle_anchor': billing_anchor.isoformat(),
+                        'next_credit_grant': next_grant_date.isoformat()
+                    }).eq('account_id', account_id).execute()
+                    
+                    await credit_manager.add_credits(
+                        account_id=account_id,
+                        amount=Decimal(str(tier_credits)),
+                        is_expiring=True,
+                        description=f"Converted from trial to {tier_info.display_name} plan",
+                        expires_at=expires_at
+                    )
+                    
+                    await client.from_('trial_history').update({
+                        'ended_at': datetime.now(timezone.utc).isoformat(),
+                        'converted_to_paid': True,
+                        'status': 'converted'
+                    }).eq('account_id', account_id).is_('ended_at', 'null').execute()
+                    
+                    logger.info(f"[TRIAL CONVERSION] ✅ Completed trial conversion for {account_id}")
+                finally:
+                    await lock.release()
                 
                 return
 
@@ -277,51 +295,69 @@ class WebhookService:
             account_id = session['metadata'].get('account_id')
             if session.get('subscription'):
                 subscription_id = session['subscription']
-                subscription = stripe.Subscription.retrieve(subscription_id, expand=['default_payment_method'])
+                subscription = await StripeAPIWrapper.safe_stripe_call(
+                    stripe.Subscription.retrieve_async, 
+                    subscription_id, 
+                    expand=['default_payment_method']
+                )
                 
                 if subscription.status == 'trialing':
-                    existing_account = await client.from_('credit_accounts').select('trial_status').eq('account_id', account_id).execute()
-                    if existing_account.data and existing_account.data[0].get('trial_status') == 'active':
-                        logger.info(f"[WEBHOOK] Trial already active for account {account_id} in checkout handler, skipping duplicate credits")
+                    lock_key = f"credit_grant:trial:{account_id}"
+                    lock = DistributedLock(lock_key, timeout_seconds=60)
+                    
+                    acquired = await lock.acquire(wait=True, wait_timeout=30)
+                    if not acquired:
+                        logger.error(f"[WEBHOOK TRIAL] Failed to acquire lock for trial activation {account_id}")
                         return
                     
-                    recent_trial_credits = await client.from_('credit_ledger').select('*').eq(
-                        'account_id', account_id
-                    ).eq('description', f'{TRIAL_DURATION_DAYS}-day free trial credits').execute()
-                    
-                    if recent_trial_credits.data:
-                        logger.warning(f"[WEBHOOK] Trial credits already granted for account {account_id} (found in ledger), skipping duplicate")
-                        return
-                    
-                    price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
-                    tier_info = get_tier_by_price_id(price_id)
-                    tier_name = tier_info.name if tier_info else 'tier_2_20'
+                    try:
+                        logger.info(f"[WEBHOOK TRIAL] 🔒 Acquired lock for trial activation for {account_id}")
+                        
+                        existing_account = await client.from_('credit_accounts').select('trial_status').eq('account_id', account_id).execute()
+                        if existing_account.data and existing_account.data[0].get('trial_status') == 'active':
+                            logger.info(f"[WEBHOOK] Trial already active for account {account_id} in checkout handler, skipping duplicate credits")
+                            return
+                        
+                        recent_trial_credits = await client.from_('credit_ledger').select('*').eq(
+                            'account_id', account_id
+                        ).eq('description', f'{TRIAL_DURATION_DAYS}-day free trial credits').execute()
+                        
+                        if recent_trial_credits.data:
+                            logger.warning(f"[WEBHOOK] Trial credits already granted for account {account_id} (found in ledger), skipping duplicate")
+                            return
+                        
+                        price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
+                        tier_info = get_tier_by_price_id(price_id)
+                        tier_name = tier_info.name if tier_info else 'tier_2_20'
 
-                    trial_ends_at = datetime.fromtimestamp(subscription.trial_end, tz=timezone.utc) if subscription.get('trial_end') else None
-                    
-                    await client.from_('credit_accounts').update({
-                        'trial_status': 'active',
-                        'trial_started_at': datetime.now(timezone.utc).isoformat(),
-                        'trial_ends_at': trial_ends_at.isoformat() if trial_ends_at else None,
-                        'stripe_subscription_id': subscription['id'],
-                        'tier': tier_name
-                    }).eq('account_id', account_id).execute()
-                    
-                    await credit_manager.add_credits(
-                        account_id=account_id,
-                        amount=TRIAL_CREDITS,
-                        is_expiring=True,
-                        description=f'{TRIAL_DURATION_DAYS}-day free trial credits',
-                        expires_at=trial_ends_at
-                    )
+                        trial_ends_at = datetime.fromtimestamp(subscription.trial_end, tz=timezone.utc) if subscription.get('trial_end') else None
+                        
+                        await client.from_('credit_accounts').update({
+                            'trial_status': 'active',
+                            'trial_started_at': datetime.now(timezone.utc).isoformat(),
+                            'trial_ends_at': trial_ends_at.isoformat() if trial_ends_at else None,
+                            'stripe_subscription_id': subscription['id'],
+                            'tier': tier_name
+                        }).eq('account_id', account_id).execute()
+                        
+                        await credit_manager.add_credits(
+                            account_id=account_id,
+                            amount=TRIAL_CREDITS,
+                            is_expiring=True,
+                            description=f'{TRIAL_DURATION_DAYS}-day free trial credits',
+                            expires_at=trial_ends_at
+                        )
 
-                    await client.from_('trial_history').upsert({
-                        'account_id': account_id,
-                        'started_at': datetime.now(timezone.utc).isoformat(),
-                        'stripe_checkout_session_id': session.get('id')
-                    }, on_conflict='account_id').execute()
-                    
-                    logger.info(f"[WEBHOOK] Trial activated for account {account_id} via checkout.session.completed - granted ${TRIAL_CREDITS} credits")
+                        await client.from_('trial_history').upsert({
+                            'account_id': account_id,
+                            'started_at': datetime.now(timezone.utc).isoformat(),
+                            'stripe_checkout_session_id': session.get('id'),
+                            'status': 'active'
+                        }, on_conflict='account_id').execute()
+                        
+                        logger.info(f"[WEBHOOK] ✅ Trial activated for account {account_id} via checkout.session.completed - granted ${TRIAL_CREDITS} credits")
+                    finally:
+                        await lock.release()
                 else:
                     logger.info(f"[WEBHOOK] Subscription status: {subscription.status}, not trialing")
     
@@ -342,7 +378,7 @@ class WebhookService:
                 if customer_result.data and customer_result.data[0].get('account_id'):
                     account_id = customer_result.data[0]['account_id']
                     try:
-                        await stripe.Subscription.modify_async(
+                        await StripeAPIWrapper.modify_subscription(
                             subscription['id'],
                             metadata={'account_id': account_id, 'trial_start': 'true'}
                         )
@@ -409,7 +445,7 @@ class WebhookService:
                 
                 if not is_tier_upgrade:
                     try:
-                        invoices = stripe.Invoice.list(
+                        invoices = await StripeAPIWrapper.list_invoices(
                             subscription=subscription['id'],
                             limit=3
                         )
@@ -536,7 +572,8 @@ class WebhookService:
                     
                     await client.from_('trial_history').update({
                         'ended_at': datetime.now(timezone.utc).isoformat(),
-                        'converted_to_paid': True
+                        'converted_to_paid': True,
+                        'status': 'converted'
                     }).eq('account_id', account_id).is_('ended_at', 'null').execute()
                     
                     
@@ -549,7 +586,8 @@ class WebhookService:
                     
                     await client.from_('trial_history').update({
                         'ended_at': datetime.now(timezone.utc).isoformat(),
-                        'converted_to_paid': False
+                        'converted_to_paid': False,
+                        'status': 'cancelled'
                     }).eq('account_id', account_id).is_('ended_at', 'null').execute()
                     
                 else:
@@ -562,7 +600,8 @@ class WebhookService:
                     
                     await client.from_('trial_history').update({
                         'ended_at': datetime.now(timezone.utc).isoformat(),
-                        'converted_to_paid': False
+                        'converted_to_paid': False,
+                        'status': 'expired'
                     }).eq('account_id', account_id).is_('ended_at', 'null').execute()
                     
                     await client.from_('credit_ledger').insert({
@@ -736,6 +775,18 @@ class WebhookService:
             
             account_id = customer_result_early.data[0]['account_id']
             
+            guard_check = await client.rpc('check_renewal_already_processed', {
+                'p_account_id': account_id,
+                'p_period_start': period_start
+            }).execute()
+            
+            if guard_check.data and guard_check.data.get('already_processed'):
+                logger.info(
+                    f"[RENEWAL GUARD] ⛔ Renewal already processed for {account_id} period {period_start} "
+                    f"by {guard_check.data.get('processed_by')} at {guard_check.data.get('processed_at')}"
+                )
+                return
+            
             lock = await RenewalLock.lock_renewal_processing(account_id, period_start)
             acquired = await lock.acquire(wait=True, wait_timeout=60)
             if not acquired:
@@ -746,7 +797,7 @@ class WebhookService:
                 db_check = DBConnection()
                 client_check = await db_check.client
                 
-                logger.info(f"[RENEWAL DEBUG] Starting renewal logic for account {account_id}, billing_reason={billing_reason}")
+                logger.debug(f"[RENEWAL] Starting renewal logic for account {account_id}, billing_reason={billing_reason}")
                 
                 is_prorated_upgrade = False
                 has_full_cycle_charge = False
@@ -763,15 +814,15 @@ class WebhookService:
                             if period_days >= 28:
                                 has_full_cycle_charge = True
                 
-                logger.info(f"[RENEWAL DEBUG] is_prorated={is_prorated_upgrade}, has_full_cycle={has_full_cycle_charge}")
+                logger.debug(f"[RENEWAL] is_prorated={is_prorated_upgrade}, has_full_cycle={has_full_cycle_charge}")
                 
                 if billing_reason == 'subscription_cycle':
                     is_prorated_upgrade = False
                     has_full_cycle_charge = True
-                    logger.info(f"[RENEWAL DEBUG] Billing reason is subscription_cycle, forcing has_full_cycle=True")
+                    logger.debug(f"[RENEWAL] Billing reason is subscription_cycle, forcing has_full_cycle=True")
                     
                 elif billing_reason == 'subscription_update':
-                    logger.info(f"[RENEWAL DEBUG] Billing reason is subscription_update")
+                    logger.debug(f"[RENEWAL] Billing reason is subscription_update")
                     if is_prorated_upgrade:
                         customer_result = await client.schema('basejump').from_('billing_customers')\
                             .select('account_id')\
@@ -779,13 +830,13 @@ class WebhookService:
                             .execute()
                         
                         if not customer_result.data:
-                            logger.info(f"[RENEWAL DEBUG] No customer data found, returning")
+                            logger.debug(f"[RENEWAL] No customer data found, returning")
                             return
                         
                         account_id = customer_result.data[0]['account_id']
-                        logger.info(f"[RENEWAL DEBUG] Processing prorated upgrade for account {account_id}")
+                        logger.info(f"[RENEWAL] Processing prorated upgrade for account {account_id}")
                         
-                        subscription = await stripe.Subscription.retrieve_async(subscription_id)
+                        subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
                         price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
                         
                         if price_id:
@@ -811,17 +862,17 @@ class WebhookService:
                                         'last_grant_date': datetime.fromtimestamp(period_start, tz=timezone.utc).isoformat()
                                     }).eq('account_id', account_id).execute()
                                     
-                                    logger.info(f"[RENEWAL DEBUG] Upgrade credits granted, returning")
+                                    logger.info(f"[RENEWAL] Upgrade credits granted for prorated subscription_update")
                                     return
-                        logger.info(f"[RENEWAL DEBUG] No price_id found, returning")
+                        logger.debug(f"[RENEWAL] No price_id found, returning")
                         return
                     if not has_full_cycle_charge:
-                        logger.info(f"[RENEWAL DEBUG] Not full cycle charge, returning")
+                        logger.debug(f"[RENEWAL] Not full cycle charge, returning")
                         return
-                    logger.info(f"[RENEWAL DEBUG] End of subscription_update block, returning")
+                    logger.debug(f"[RENEWAL] End of subscription_update block, returning")
                     return
                 
-                logger.info(f"[RENEWAL DEBUG] Fetching account for customer {invoice.get('customer')}")
+                logger.debug(f"[RENEWAL] Fetching account for customer {invoice.get('customer')}")
                 
                 customer_result = await client.schema('basejump').from_('billing_customers')\
                     .select('account_id')\
@@ -829,11 +880,11 @@ class WebhookService:
                     .execute()
                 
                 if not customer_result.data:
-                    logger.error(f"[RENEWAL DEBUG] No account found for customer {invoice.get('customer')}, RETURNING")
+                    logger.warning(f"[RENEWAL] No account found for customer {invoice.get('customer')}")
                     return
                 
                 account_id = customer_result.data[0]['account_id']
-                logger.info(f"[RENEWAL DEBUG] Found account {account_id}, continuing with renewal")
+                logger.debug(f"[RENEWAL] Found account {account_id}, continuing with renewal")
                 
                 account_result = await client.from_('credit_accounts')\
                     .select('tier, last_grant_date, next_credit_grant, billing_cycle_anchor, last_processed_invoice_id, trial_status, last_renewal_period_start')\
@@ -841,7 +892,7 @@ class WebhookService:
                     .execute()
                 
                 if not account_result.data:
-                    logger.error(f"[RENEWAL DEBUG] No credit account found for {account_id}, RETURNING")
+                    logger.warning(f"[RENEWAL] No credit account found for {account_id}")
                     return
                 
                 account = account_result.data[0]
@@ -849,20 +900,20 @@ class WebhookService:
                 trial_status = account.get('trial_status')
                 period_start_dt = datetime.fromtimestamp(period_start, tz=timezone.utc)
                 
-                logger.info(f"[RENEWAL DEBUG] Account tier={tier}, trial_status={trial_status}, invoice_id={invoice_id}")
+                logger.debug(f"[RENEWAL] Account tier={tier}, trial_status={trial_status}, invoice_id={invoice_id}")
                 
                 if account.get('last_processed_invoice_id') == invoice_id:
-                    logger.warning(f"[RENEWAL DEBUG] Invoice {invoice_id} already processed, RETURNING")
+                    logger.info(f"[RENEWAL] Invoice {invoice_id} already processed, skipping")
                     return
                 
-                subscription = await stripe.Subscription.retrieve_async(subscription_id)
+                subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
                 subscription_status = subscription.get('status')
                 is_still_trialing = subscription_status == 'trialing'
                 
-                logger.info(f"[RENEWAL DEBUG] subscription_status={subscription_status}, trial_status={trial_status}, billing_reason={billing_reason}")
+                logger.debug(f"[RENEWAL] subscription_status={subscription_status}, trial_status={trial_status}, billing_reason={billing_reason}")
                 
                 if trial_status == 'active' and billing_reason == 'subscription_create' and is_still_trialing:
-                    logger.info(f"[RENEWAL DEBUG] Trial + subscription_create + still trialing, updating invoice ID and RETURNING")
+                    logger.debug(f"[RENEWAL] Trial + subscription_create + still trialing, updating invoice ID only")
                     await client.from_('credit_accounts').update({
                         'last_processed_invoice_id': invoice_id
                     }).eq('account_id', account_id).execute()
@@ -890,33 +941,41 @@ class WebhookService:
                     }).eq('account_id', account_id).execute()
                     return
                 
-                result = await credit_manager.reset_expiring_credits(
-                    account_id=account_id,
-                    new_credits=monthly_credits,
-                    description=f"Monthly {tier} tier credits",
-                    stripe_event_id=stripe_event_id
-                )
+                logger.info(f"[RENEWAL] Using atomic function to grant ${monthly_credits} credits for {account_id}")
+                result = await client.rpc('atomic_grant_renewal_credits', {
+                    'p_account_id': account_id,
+                    'p_period_start': period_start,
+                    'p_period_end': period_end,
+                    'p_credits': float(monthly_credits),
+                    'p_processed_by': 'webhook_invoice',
+                    'p_invoice_id': invoice_id,
+                    'p_stripe_event_id': stripe_event_id
+                }).execute()
                 
-                if result['success']:
-                    logger.info(f"[RENEWAL SUCCESS] Granted ${monthly_credits} credits: Expiring=${result['new_expiring']:.2f}, "
-                               f"Non-expiring=${result['non_expiring']:.2f}, Total=${result['total_balance']:.2f}")
-                    
-                    update_data = {
-                        'last_processed_invoice_id': invoice_id,
-                        'last_grant_date': period_start_dt.isoformat(),
-                        'next_credit_grant': datetime.fromtimestamp(period_end, tz=timezone.utc).isoformat()
-                    }
+                if result.data and result.data.get('success'):
+                    logger.info(
+                        f"[RENEWAL SUCCESS] ✅ Atomically granted ${result.data['credits_granted']} credits "
+                        f"to {account_id}: Expiring=${result.data['expiring_credits']:.2f}, "
+                        f"Non-expiring=${result.data['non_expiring_credits']:.2f}, "
+                        f"Total=${result.data['new_balance']:.2f}"
+                    )
                     
                     if trial_status == 'converted':
-                        update_data['trial_status'] = 'none'
-                    
-                    await client.from_('credit_accounts').update(update_data).eq('account_id', account_id).execute()
+                        await client.from_('credit_accounts').update({
+                            'trial_status': 'none'
+                        }).eq('account_id', account_id).execute()
                     
                     await Cache.invalidate(f"credit_balance:{account_id}")
                     await Cache.invalidate(f"credit_summary:{account_id}")
                     await Cache.invalidate(f"subscription_tier:{account_id}")
+                elif result.data and result.data.get('duplicate_prevented'):
+                    logger.info(
+                        f"[RENEWAL DEDUPE] ⛔ Duplicate renewal prevented for {account_id} period {period_start} "
+                        f"(already processed by {result.data.get('processed_by')})"
+                    )
                 else:
-                    logger.error(f"[RENEWAL ERROR] Failed to grant credits for account {account_id}: {result}")
+                    error_msg = result.data.get('error', 'Unknown error') if result.data else 'No response from atomic function'
+                    logger.error(f"[RENEWAL ERROR] Failed to grant credits for account {account_id}: {error_msg}")
             
             except Exception as e:
                 logger.error(f"Error handling subscription renewal: {e}")
@@ -965,7 +1024,7 @@ class WebhookService:
             return
             
         try:
-            subscription = await stripe.Subscription.retrieve_async(subscription_id)
+            subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
             account_id = subscription.metadata.get('account_id')
             
             if not account_id:
