@@ -866,11 +866,12 @@ class WebhookService:
                                     return
                         logger.debug(f"[RENEWAL] No price_id found, returning")
                         return
+                    
                     if not has_full_cycle_charge:
-                        logger.debug(f"[RENEWAL] Not full cycle charge, returning")
+                        logger.info(f"[RENEWAL] subscription_update without full cycle charge - skipping (likely mid-period change)")
                         return
-                    logger.debug(f"[RENEWAL] End of subscription_update block, returning")
-                    return
+                    
+                    logger.info(f"[RENEWAL] subscription_update WITH full cycle charge detected - treating as renewal and continuing processing")
                 
                 logger.debug(f"[RENEWAL] Fetching account for customer {invoice.get('customer')}")
                 
@@ -941,23 +942,48 @@ class WebhookService:
                     }).eq('account_id', account_id).execute()
                     return
                 
-                logger.info(f"[RENEWAL] Using atomic function to grant ${monthly_credits} credits for {account_id}")
-                result = await client.rpc('atomic_grant_renewal_credits', {
-                    'p_account_id': account_id,
-                    'p_period_start': period_start,
-                    'p_period_end': period_end,
-                    'p_credits': float(monthly_credits),
-                    'p_processed_by': 'webhook_invoice',
-                    'p_invoice_id': invoice_id,
-                    'p_stripe_event_id': stripe_event_id
-                }).execute()
+                is_true_renewal = billing_reason == 'subscription_cycle'
+                if is_true_renewal:
+                    logger.info(f"[RENEWAL] Using atomic function to grant ${monthly_credits} credits for {account_id} (TRUE RENEWAL)")
+                    result = await client.rpc('atomic_grant_renewal_credits', {
+                        'p_account_id': account_id,
+                        'p_period_start': period_start,
+                        'p_period_end': period_end,
+                        'p_credits': float(monthly_credits),
+                        'p_processed_by': 'webhook_invoice',
+                        'p_invoice_id': invoice_id,
+                        'p_stripe_event_id': stripe_event_id
+                    }).execute()
+                else:
+                    logger.info(f"[INITIAL GRANT] Granting ${monthly_credits} credits for {account_id} (billing_reason={billing_reason}, NOT a renewal - will not block future renewals)")
+                    add_result = await credit_manager.add_credits(
+                        account_id=account_id,
+                        amount=Decimal(str(monthly_credits)),
+                        is_expiring=True,
+                        description=f"Initial subscription grant: {billing_reason}",
+                        stripe_event_id=stripe_event_id
+                    )
+                    
+                    await client.from_('credit_accounts').update({
+                        'last_grant_date': datetime.fromtimestamp(period_start, tz=timezone.utc).isoformat(),
+                        'next_credit_grant': datetime.fromtimestamp(period_end, tz=timezone.utc).isoformat(),
+                        'last_processed_invoice_id': invoice_id
+                    }).eq('account_id', account_id).execute()
+                    
+                    result = add_result
                 
-                if result.data and result.data.get('success'):
+                if is_true_renewal and result and hasattr(result, 'data') and result.data:
+                    data = result.data
+                    credits_granted = data.get('credits_granted', monthly_credits)
+                    expiring = data.get('expiring_credits', credits_granted)
+                    non_expiring = data.get('non_expiring_credits', 0)
+                    total = data.get('new_balance', credits_granted)
+                    
                     logger.info(
-                        f"[RENEWAL SUCCESS] ✅ Atomically granted ${result.data['credits_granted']} credits "
-                        f"to {account_id}: Expiring=${result.data['expiring_credits']:.2f}, "
-                        f"Non-expiring=${result.data['non_expiring_credits']:.2f}, "
-                        f"Total=${result.data['new_balance']:.2f}"
+                        f"[RENEWAL SUCCESS] ✅ Granted ${credits_granted} credits "
+                        f"to {account_id}: Expiring=${expiring:.2f}, "
+                        f"Non-expiring=${non_expiring:.2f}, "
+                        f"Total=${total:.2f}"
                     )
                     
                     if trial_status == 'converted':
@@ -968,14 +994,20 @@ class WebhookService:
                     await Cache.invalidate(f"credit_balance:{account_id}")
                     await Cache.invalidate(f"credit_summary:{account_id}")
                     await Cache.invalidate(f"subscription_tier:{account_id}")
-                elif result.data and result.data.get('duplicate_prevented'):
+                elif is_true_renewal and result and hasattr(result, 'data') and result.data and result.data.get('duplicate_prevented'):
                     logger.info(
                         f"[RENEWAL DEDUPE] ⛔ Duplicate renewal prevented for {account_id} period {period_start} "
                         f"(already processed by {result.data.get('processed_by')})"
                     )
-                else:
-                    error_msg = result.data.get('error', 'Unknown error') if result.data else 'No response from atomic function'
+                elif is_true_renewal:
+                    error_msg = result.data.get('error', 'Unknown error') if (result and hasattr(result, 'data') and result.data) else 'No response from atomic function'
                     logger.error(f"[RENEWAL ERROR] Failed to grant credits for account {account_id}: {error_msg}")
+                elif not is_true_renewal and result and result.get('success'):
+                    logger.info(f"[INITIAL GRANT SUCCESS] ✅ Granted ${monthly_credits} initial subscription credits to {account_id}")
+                    
+                    await Cache.invalidate(f"credit_balance:{account_id}")
+                    await Cache.invalidate(f"credit_summary:{account_id}")
+                    await Cache.invalidate(f"subscription_tier:{account_id}")
             
             except Exception as e:
                 logger.error(f"Error handling subscription renewal: {e}")
