@@ -21,8 +21,6 @@ export default function HomeLayout({
 
   return (
     <div className="w-full relative">
-      {!isLocalMode() && <div className="block w-px h-full border-l border-border fixed top-0 left-6 z-10"></div>}
-      {!isLocalMode() && <div className="block w-px h-full border-r border-border fixed top-0 right-6 z-10"></div>}
       <Navbar tabs={tabs} />
       {children}
     </div>

@@ -9,7 +9,7 @@ import { ModalProviders } from '@/providers/modal-providers';
 import { BackgroundAALChecker } from '@/components/auth/background-aal-checker';
 import { BentoSection } from '@/components/home/sections/bento-section';
 import { CapabilitiesSection } from '@/components/home/sections/capabilities-section';
-import { isLocalMode } from '@/lib/config';
+import { isLocalMode, isStagingMode } from '@/lib/config';
 import { HeroSection as NewHeroSection } from '@/components/home/sections/new/hero-section';
 import { AIWorkerSection } from '@/components/home/sections/new/ai-workers';
 import { SlidesSection } from '@/components/home/sections/new/slides-section';
@@ -17,7 +17,7 @@ import { PersonalizationSection } from '@/components/home/sections/new/personali
 
 export default function Home() {
   //temp new dev
-  if (isLocalMode()) {
+  if (isLocalMode() || isStagingMode()) {
     return <>
       <ModalProviders />
       <BackgroundAALChecker>
