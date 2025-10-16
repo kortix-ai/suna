@@ -39,7 +39,6 @@ export function PaperSearchToolView({
   const {
     query,
     total_results,
-    cost_deducted,
     results,
     actualIsSuccess,
     actualToolTimestamp,
@@ -65,6 +64,7 @@ export function PaperSearchToolView({
   const getSourceIcon = (url: string) => {
     const domain = url ? url.toLowerCase() : '';
     
+    if (domain.includes('semanticscholar')) return <GraduationCap className="w-4 h-4" />;
     if (domain.includes('arxiv')) return <ScrollText className="w-4 h-4" />;
     if (domain.includes('pubmed') || domain.includes('ncbi')) return <GraduationCap className="w-4 h-4" />;
     if (domain.includes('ieee') || domain.includes('acm')) return <Award className="w-4 h-4" />;
@@ -77,6 +77,7 @@ export function PaperSearchToolView({
     if (!url) return 'Academic Source';
     try {
       const domain = url.toLowerCase();
+      if (domain.includes('semanticscholar')) return 'Semantic Scholar';
       if (domain.includes('arxiv')) return 'arXiv';
       if (domain.includes('pubmed')) return 'PubMed';
       if (domain.includes('ncbi')) return 'NCBI';
@@ -122,28 +123,21 @@ export function PaperSearchToolView({
           </div>
 
           {!isStreaming && (
-            <div className="flex items-center gap-2">
-              {cost_deducted && (
-                <Badge variant="outline" className="text-xs font-normal text-orange-600 dark:text-orange-400">
-                  {cost_deducted}
-                </Badge>
+            <Badge
+              variant="secondary"
+              className={
+                actualIsSuccess
+                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                  : "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300"
+              }
+            >
+              {actualIsSuccess ? (
+                <CheckCircle className="h-3.5 w-3.5" />
+              ) : (
+                <AlertTriangle className="h-3.5 w-3.5" />
               )}
-              <Badge
-                variant="secondary"
-                className={
-                  actualIsSuccess
-                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
-                    : "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300"
-                }
-              >
-                {actualIsSuccess ? (
-                  <CheckCircle className="h-3.5 w-3.5" />
-                ) : (
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                )}
-                {actualIsSuccess ? 'Search completed' : 'Search failed'}
-              </Badge>
-            </div>
+              {actualIsSuccess ? 'Search completed' : 'Search failed'}
+            </Badge>
           )}
         </div>
       </CardHeader>

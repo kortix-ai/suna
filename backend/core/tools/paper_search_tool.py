@@ -1,98 +1,122 @@
-from typing import Optional
+from typing import Optional, Dict, Any
 import asyncio
-import structlog
 import json
-from decimal import Decimal
-from exa_py import Exa
-from exa_py.websets.types import CreateWebsetParameters, CreateEnrichmentParameters
+import aiohttp
+import time
 from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
-from core.utils.config import config, EnvMode
+from core.utils.config import config
 from core.utils.logger import logger
 from core.agentpress.thread_manager import ThreadManager
-from core.billing.credit_manager import CreditManager
-from core.billing.config import TOKEN_PRICE_MULTIPLIER
-from core.services.supabase import DBConnection
 
 @tool_metadata(
-    display_name="Research Papers",
-    description="Search and analyze academic papers and scientific research",
-    icon="FileText",
+    display_name="Academic Research",
+    description="Search and analyze academic papers, authors, and scientific research",
+    icon="GraduationCap",
     color="bg-emerald-100 dark:bg-emerald-800/50",
     weight=270,
-    visible=False
+    visible=True
 )
 class PaperSearchTool(Tool):
     def __init__(self, thread_manager: ThreadManager):
         super().__init__()
         self.thread_manager = thread_manager
-        self.api_key = config.EXA_API_KEY
-        self.db = DBConnection()
-        self.credit_manager = CreditManager()
-        self.exa_client = None
+        self.api_key = config.SEMANTIC_SCHOLAR_API_KEY
+        self.base_url = "https://api.semanticscholar.org/graph/v1"
+        self.last_request_time = 0
+        self.request_lock = asyncio.Lock()
         
         if self.api_key:
-            self.exa_client = Exa(self.api_key)
-            logger.info("Paper Search Tool initialized. Note: This requires an Exa Pro plan for Websets API access.")
+            logger.info("Paper Search Tool initialized with Semantic Scholar API (Free)")
         else:
-            logger.warning("EXA_API_KEY not configured - Paper Search Tool will not be available")
+            logger.warning("SEMANTIC_SCHOLAR_API_KEY not configured - Paper Search Tool will not be available")
     
-    async def _get_current_thread_and_user(self) -> tuple[Optional[str], Optional[str]]:
-        try:
-            context_vars = structlog.contextvars.get_contextvars()
-            thread_id = context_vars.get('thread_id')
+    async def _rate_limited_request(
+        self,
+        url: str,
+        params: Optional[Dict[str, Any]] = None,
+        max_retries: int = 3
+    ) -> Dict[str, Any]:
+        async with self.request_lock:
+            current_time = time.time()
+            time_since_last_request = current_time - self.last_request_time
             
-            if not thread_id:
-                logger.warning("No thread_id in execution context")
-                return None, None
+            if time_since_last_request < 1.0:
+                wait_time = 1.0 - time_since_last_request
+                await asyncio.sleep(wait_time)
             
-            client = await self.db.client
-            thread = await client.from_('threads').select('account_id').eq('thread_id', thread_id).single().execute()
-            if thread.data:
-                return thread_id, thread.data.get('account_id')
+            headers = {"x-api-key": self.api_key} if self.api_key else {}
+            
+            for attempt in range(max_retries):
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(url, params=params, headers=headers) as response:
+                            self.last_request_time = time.time()
+                            
+                            if response.status == 429:
+                                retry_after = int(response.headers.get('Retry-After', 2 ** attempt))
+                                logger.warning(f"Rate limited, waiting {retry_after}s before retry {attempt + 1}/{max_retries}")
+                                await asyncio.sleep(retry_after)
+                                continue
+                            
+                            if response.status == 200:
+                                return await response.json()
+                            else:
+                                error_text = await response.text()
+                                logger.error(f"API request failed with status {response.status}: {error_text}")
+                                
+                                if response.status >= 500 and attempt < max_retries - 1:
+                                    wait_time = 2 ** attempt
+                                    logger.info(f"Server error, retrying in {wait_time}s")
+                                    await asyncio.sleep(wait_time)
+                                    continue
+                                
+                                raise Exception(f"API request failed: {response.status} - {error_text}")
                 
-        except Exception as e:
-            logger.error(f"Failed to get thread context: {e}")
-        return None, None
+                except asyncio.TimeoutError:
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** attempt
+                        logger.warning(f"Request timeout, retrying in {wait_time}s")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    raise
+                except aiohttp.ClientError as e:
+                    if attempt < max_retries - 1:
+                        wait_time = 2 ** attempt
+                        logger.warning(f"Request error: {e}, retrying in {wait_time}s")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    raise
+            
+            raise Exception(f"Failed after {max_retries} attempts")
     
-    async def _deduct_credits(self, user_id: str, num_results: int, thread_id: Optional[str] = None) -> bool:
-        base_cost = Decimal('0.45')
-        total_cost = base_cost * TOKEN_PRICE_MULTIPLIER
-        
-        try:
-            result = await self.credit_manager.use_credits(
-                account_id=user_id,
-                amount=total_cost,
-                description=f"Paper search: {num_results} results",
-                thread_id=thread_id
-            )
-            
-            if result.get('success'):
-                logger.info(f"Deducted ${total_cost:.2f} for paper search ({num_results} results)")
-                return True
-            else:
-                logger.warning(f"Failed to deduct credits: {result.get('error')}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error deducting credits: {e}")
-            return False
-
     @openapi_schema({
         "type": "function",
         "function": {
             "name": "paper_search",
-            "description": "Search for academic papers and research documents using natural language queries and enrich with paper details. IMPORTANT: Requires Exa Pro plan and costs $0.54 per search (10 results).",
+            "description": "Search for academic papers and research documents using Semantic Scholar (FREE). Returns up to 100 relevant papers with abstracts, authors, citations, and publication details. No cost to use.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Natural language search query describing the papers you want to find. Examples: 'Machine learning papers on transformer architectures published in 2024', 'Climate change research papers from Nature journal', 'Recent AI safety papers from top conferences'"
+                        "description": "Search query for finding academic papers. Can include keywords, topics, or concepts. Examples: 'transformer architectures', 'climate change mitigation', 'quantum computing'"
                     },
-                    "enrichment_description": {
+                    "year": {
                         "type": "string",
-                        "description": "What specific information to find about each paper. Default: 'Paper abstract, authors, publication details, and key findings'",
-                        "default": "Paper abstract, authors, publication details, and key findings"
+                        "description": "Filter by publication year range (e.g., '2020-2023' or '2023'). Optional."
+                    },
+                    "fields_of_study": {
+                        "type": "string",
+                        "description": "Comma-separated list of fields to filter by (e.g., 'Computer Science,Physics'). Optional."
+                    },
+                    "open_access_only": {
+                        "type": "boolean",
+                        "description": "If true, only return papers with open access PDFs. Default: false"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of results to return (1-100). Default: 10",
+                        "default": 10
                     }
                 },
                 "required": ["query"]
@@ -102,177 +126,93 @@ class PaperSearchTool(Tool):
     async def paper_search(
         self,
         query: str,
-        enrichment_description: str = "Paper abstract, authors, publication details, and key findings"
+        year: Optional[str] = None,
+        fields_of_study: Optional[str] = None,
+        open_access_only: bool = False,
+        limit: int = 10
     ) -> ToolResult:
-        if not self.exa_client:
+        if not self.api_key:
             return self.fail_response(
-                "Paper Search is not available. EXA_API_KEY is not configured. "
+                "Paper Search is not available. SEMANTIC_SCHOLAR_API_KEY is not configured. "
                 "Please contact your administrator to enable this feature."
             )
         
         if not query:
             return self.fail_response("Search query is required.")
         
-        thread_id, user_id = await self._get_current_thread_and_user()
-        
-        if config.ENV_MODE != EnvMode.LOCAL and (not thread_id or not user_id):
-            return self.fail_response(
-                "No active session context for billing. This tool requires an active agent session."
-            )
+        if limit < 1 or limit > 100:
+            return self.fail_response("Limit must be between 1 and 100.")
         
         try:
-            logger.info(f"Creating Exa webset for paper search: '{query}' with 10 results")
+            logger.info(f"Searching Semantic Scholar for: '{query}' (limit: {limit})")
             
-            enrichment_config = CreateEnrichmentParameters(
-                description=enrichment_description,
-                format="text"
-            )
+            params = {
+                "query": query,
+                "limit": limit,
+                "fields": "paperId,title,abstract,year,authors,url,venue,publicationVenue,citationCount,referenceCount,influentialCitationCount,isOpenAccess,openAccessPdf,fieldsOfStudy,s2FieldsOfStudy,publicationTypes,publicationDate,journal"
+            }
             
-            webset_params = CreateWebsetParameters(
-                search={
-                    "query": query,
-                    "count": 10,
-                    "include_domains": ["arxiv.org", "scholar.google.com", "pubmed.ncbi.nlm.nih.gov", 
-                                      "ieee.org", "acm.org", "springer.com", "nature.com", 
-                                      "sciencedirect.com", "jstor.org", "researchgate.net"]
-                },
-                enrichments=[enrichment_config]
-            )
+            if year:
+                params["year"] = year
             
-            try:
-                webset = await asyncio.to_thread(
-                    self.exa_client.websets.create,
-                    params=webset_params
-                )
-                
-                logger.info(f"Paper webset created with ID: {webset.id}")
-            except Exception as create_error:
-                logger.error(f"Failed to create paper webset - Error type: {type(create_error).__name__}")
-                try:
-                    error_str = str(create_error)
-                    logger.error(f"Failed to create paper webset - Error message: {error_str}")
-                except:
-                    error_str = "Unknown error"
-                    logger.error(f"Failed to create paper webset - Could not convert error to string")
-                
-                if "401" in error_str:
-                    return self.fail_response(
-                        "Authentication failed with Exa API. Please check your API key and Pro plan status."
-                    )
-                elif "400" in error_str:
-                    return self.fail_response(
-                        "Invalid request to Exa API. Please check your query format."
-                    )
-                else:
-                    return self.fail_response(
-                        "Failed to create paper search webset. Please try again."
-                    )
+            if fields_of_study:
+                params["fieldsOfStudy"] = fields_of_study
             
-            logger.info(f"Waiting for paper webset {webset.id} to complete processing...")
-            try:
-                webset = await asyncio.to_thread(
-                    self.exa_client.websets.wait_until_idle,
-                    webset.id
-                )
-                logger.info(f"Paper webset {webset.id} processing complete")
-            except Exception as wait_error:
-                logger.error(f"Error waiting for paper webset: {type(wait_error).__name__}: {repr(wait_error)}")
-                return self.fail_response("Failed while waiting for paper search results. Please try again.")
-
-            logger.info(f"Retrieving paper items from webset {webset.id}...")
-            try:
-                items = await asyncio.to_thread(
-                    self.exa_client.websets.items.list,
-                    webset_id=webset.id
-                )
-                logger.info(f"Retrieved paper items from webset")
-            except Exception as items_error:
-                logger.error(f"Error retrieving paper items: {type(items_error).__name__}: {repr(items_error)}")
-                return self.fail_response("Failed to retrieve paper search results. Please try again.")
+            if open_access_only:
+                params["openAccessPdf"] = ""
             
-            results = items.data if items else []
-            logger.info(f"Got {len(results)} paper results from webset")
+            url = f"{self.base_url}/paper/search"
+            data = await self._rate_limited_request(url, params)
+            
+            results = data.get('data', [])
+            total = data.get('total', 0)
+            
+            logger.info(f"Found {len(results)} papers (total available: {total})")
             
             formatted_results = []
-            for idx, item in enumerate(results[:10], 1):
-                if hasattr(item, 'model_dump'):
-                    item_dict = item.model_dump()
-                elif isinstance(item, dict):
-                    item_dict = item
-                else:
-                    item_dict = vars(item) if hasattr(item, '__dict__') else {}
+            for idx, paper in enumerate(results, 1):
+                authors_list = []
+                for author in paper.get('authors', []):
+                    authors_list.append({
+                        "name": author.get('name', ''),
+                        "author_id": author.get('authorId', '')
+                    })
                 
-                properties = item_dict.get('properties', {})
+                open_access_pdf = paper.get('openAccessPdf')
+                pdf_url = open_access_pdf.get('url') if open_access_pdf else None
                 
-                evaluations_text = ""
-                evaluations = item_dict.get('evaluations', [])
-                if evaluations:
-                    eval_items = []
-                    for eval_item in evaluations:
-                        if isinstance(eval_item, dict):
-                            criterion = eval_item.get('criterion', '')
-                            satisfied = eval_item.get('satisfied', '')
-                            if criterion:
-                                eval_items.append(f"{criterion}: {satisfied}")
-                    evaluations_text = " | ".join(eval_items)
-                
-                enrichment_text = ""
-                if 'enrichments' in item_dict and item_dict['enrichments']:
-                    enrichments = item_dict['enrichments']
-                    if isinstance(enrichments, list) and len(enrichments) > 0:
-                        enrichment = enrichments[0]
-                        if isinstance(enrichment, dict):
-                            enrich_result = enrichment.get('result')
-                            if enrich_result is not None:
-                                if isinstance(enrich_result, list) and enrich_result:
-                                    enrichment_text = str(enrich_result[0]) if enrich_result[0] else ""
-                                elif isinstance(enrich_result, str):
-                                    enrichment_text = enrich_result
-                                else:
-                                    enrichment_text = str(enrich_result) if enrich_result else ""
-                
-                url = properties.get('url', '')
-                description = properties.get('description', '')
+                venue_info = paper.get('publicationVenue', {})
+                if not venue_info:
+                    venue_info = {}
                 
                 result_entry = {
                     "rank": idx,
-                    "id": item_dict.get('id', ''),
-                    "webset_id": item_dict.get('webset_id', ''),
-                    "source": str(item_dict.get('source', '')),
-                    "source_id": item_dict.get('source_id', ''),
-                    "url": url,
-                    "description": description,
-                    "type": properties.get('type', ''),
-                    "paper_details": enrichment_text,
-                    "evaluations": evaluations_text,
-                    "created_at": str(item_dict.get('created_at', '')),
-                    "updated_at": str(item_dict.get('updated_at', ''))
+                    "paper_id": paper.get('paperId', ''),
+                    "title": paper.get('title', ''),
+                    "abstract": paper.get('abstract', ''),
+                    "year": paper.get('year'),
+                    "url": paper.get('url', ''),
+                    "authors": authors_list,
+                    "venue": paper.get('venue', ''),
+                    "venue_type": venue_info.get('type', ''),
+                    "citation_count": paper.get('citationCount', 0),
+                    "reference_count": paper.get('referenceCount', 0),
+                    "influential_citation_count": paper.get('influentialCitationCount', 0),
+                    "is_open_access": paper.get('isOpenAccess', False),
+                    "pdf_url": pdf_url,
+                    "fields_of_study": paper.get('fieldsOfStudy', []),
+                    "publication_types": paper.get('publicationTypes', []),
+                    "publication_date": paper.get('publicationDate', ''),
+                    "journal": paper.get('journal', {}).get('name', '') if paper.get('journal') else ''
                 }
                 
                 formatted_results.append(result_entry)
             
-            base_cost = Decimal('0.45')
-            total_cost = base_cost * TOKEN_PRICE_MULTIPLIER
-            
-            if config.ENV_MODE == EnvMode.LOCAL:
-                logger.info("Running in LOCAL mode - skipping billing for paper search")
-                cost_deducted_str = f"${total_cost:.2f} (LOCAL - not charged)"
-            else:
-                credits_deducted = await self._deduct_credits(user_id, len(formatted_results), thread_id)
-                if not credits_deducted:
-                    return self.fail_response(
-                        "Insufficient credits for paper search. "
-                        f"This search costs ${total_cost:.2f} ({len(formatted_results)} results). "
-                        "Please add credits to continue."
-                    )
-                cost_deducted_str = f"${total_cost:.2f}"
-            
             output = {
                 "query": query,
-                "total_results": len(formatted_results),
-                "cost_deducted": cost_deducted_str,
-                "results": formatted_results,
-                "enrichment_type": enrichment_description
+                "total_available": total,
+                "results_returned": len(formatted_results),
+                "results": formatted_results
             }
             
             logger.info(f"Successfully completed paper search with {len(formatted_results)} results")
@@ -284,11 +224,488 @@ class PaperSearchTool(Tool):
                 logger.error(f"Failed to serialize paper search output: {json_error}")
                 summary = f"Found {len(formatted_results)} papers for query: {query}"
                 if formatted_results:
-                    summary += f"\n\nTop result:\nTitle: {formatted_results[0].get('title', 'Unknown')}\nURL: {formatted_results[0].get('url', 'Unknown')}\nDescription: {formatted_results[0].get('description', 'Unknown')[:200]}..."
+                    summary += f"\n\nTop result:\nTitle: {formatted_results[0].get('title', 'Unknown')}\nURL: {formatted_results[0].get('url', 'Unknown')}"
                 return self.success_response(summary)
                 
         except asyncio.TimeoutError:
             return self.fail_response("Paper search timed out. Please try again with a simpler query.")
         except Exception as e:
             logger.error(f"Paper search failed: {repr(e)}", exc_info=True)
-            return self.fail_response("An error occurred during the paper search. Please try again.")
+            return self.fail_response(f"An error occurred during the paper search: {str(e)}")
+    
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "get_paper_details",
+            "description": "Get detailed information about a specific academic paper using its Semantic Scholar paper ID (FREE). Returns full details including abstract, authors, citations, references, and more. No cost to use.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "paper_id": {
+                        "type": "string",
+                        "description": "The Semantic Scholar paper ID (e.g., '5c5751d45e298cea054f32b392c12c61027d2fe7')"
+                    },
+                    "include_citations": {
+                        "type": "boolean",
+                        "description": "Include list of papers that cite this paper. Default: false"
+                    },
+                    "include_references": {
+                        "type": "boolean",
+                        "description": "Include list of papers referenced by this paper. Default: false"
+                    }
+                },
+                "required": ["paper_id"]
+            }
+        }
+    })
+    async def get_paper_details(
+        self,
+        paper_id: str,
+        include_citations: bool = False,
+        include_references: bool = False
+    ) -> ToolResult:
+        if not self.api_key:
+            return self.fail_response(
+                "Paper Details is not available. SEMANTIC_SCHOLAR_API_KEY is not configured. "
+                "Please contact your administrator to enable this feature."
+            )
+        
+        if not paper_id:
+            return self.fail_response("Paper ID is required.")
+        
+        try:
+            logger.info(f"Fetching details for paper: {paper_id}")
+            
+            fields = "paperId,corpusId,title,abstract,year,authors,url,venue,publicationVenue,citationCount,referenceCount,influentialCitationCount,isOpenAccess,openAccessPdf,fieldsOfStudy,s2FieldsOfStudy,publicationTypes,publicationDate,journal,citationStyles,externalIds,tldr,embedding"
+            
+            if include_citations:
+                fields += ",citations.paperId,citations.title,citations.year,citations.authors,citations.citationCount"
+            
+            if include_references:
+                fields += ",references.paperId,references.title,references.year,references.authors,references.citationCount"
+            
+            url = f"{self.base_url}/paper/{paper_id}"
+            params = {"fields": fields}
+            
+            data = await self._rate_limited_request(url, params)
+            
+            authors_list = []
+            for author in data.get('authors', []):
+                author_info = {
+                    "author_id": author.get('authorId', ''),
+                    "name": author.get('name', ''),
+                    "url": author.get('url', ''),
+                    "affiliations": author.get('affiliations', []),
+                    "homepage": author.get('homepage', ''),
+                    "paper_count": author.get('paperCount', 0),
+                    "citation_count": author.get('citationCount', 0),
+                    "h_index": author.get('hIndex', 0)
+                }
+                authors_list.append(author_info)
+            
+            open_access_pdf = data.get('openAccessPdf')
+            pdf_info = None
+            if open_access_pdf:
+                pdf_info = {
+                    "url": open_access_pdf.get('url'),
+                    "status": open_access_pdf.get('status'),
+                    "license": open_access_pdf.get('license')
+                }
+            
+            venue_info = data.get('publicationVenue', {})
+            if not venue_info:
+                venue_info = {}
+            
+            citations_list = []
+            if include_citations and data.get('citations'):
+                for citation in data.get('citations', [])[:50]:
+                    citation_authors = [a.get('name', '') for a in citation.get('authors', [])]
+                    citations_list.append({
+                        "paper_id": citation.get('paperId', ''),
+                        "title": citation.get('title', ''),
+                        "year": citation.get('year'),
+                        "authors": citation_authors,
+                        "citation_count": citation.get('citationCount', 0)
+                    })
+            
+            references_list = []
+            if include_references and data.get('references'):
+                for reference in data.get('references', [])[:50]:
+                    ref_authors = [a.get('name', '') for a in reference.get('authors', [])]
+                    references_list.append({
+                        "paper_id": reference.get('paperId', ''),
+                        "title": reference.get('title', ''),
+                        "year": reference.get('year'),
+                        "authors": ref_authors,
+                        "citation_count": reference.get('citationCount', 0)
+                    })
+            
+            tldr_text = None
+            if data.get('tldr'):
+                tldr_text = data['tldr'].get('text', '')
+            
+            result = {
+                "paper_id": data.get('paperId', ''),
+                "corpus_id": data.get('corpusId'),
+                "title": data.get('title', ''),
+                "abstract": data.get('abstract', ''),
+                "tldr": tldr_text,
+                "year": data.get('year'),
+                "url": data.get('url', ''),
+                "authors": authors_list,
+                "venue": data.get('venue', ''),
+                "venue_name": venue_info.get('name', ''),
+                "venue_type": venue_info.get('type', ''),
+                "citation_count": data.get('citationCount', 0),
+                "reference_count": data.get('referenceCount', 0),
+                "influential_citation_count": data.get('influentialCitationCount', 0),
+                "is_open_access": data.get('isOpenAccess', False),
+                "pdf_info": pdf_info,
+                "fields_of_study": data.get('fieldsOfStudy', []),
+                "publication_types": data.get('publicationTypes', []),
+                "publication_date": data.get('publicationDate', ''),
+                "journal": data.get('journal', {}).get('name', '') if data.get('journal') else '',
+                "external_ids": data.get('externalIds', {}),
+                "citation_styles": data.get('citationStyles', {}),
+                "citations": citations_list if include_citations else None,
+                "references": references_list if include_references else None
+            }
+            
+            output = {
+                "paper": result
+            }
+            
+            logger.info(f"Successfully fetched details for paper: {paper_id}")
+            
+            try:
+                json_output = json.dumps(output, indent=2, default=str)
+                return self.success_response(json_output)
+            except Exception as json_error:
+                logger.error(f"Failed to serialize paper details output: {json_error}")
+                summary = f"Title: {result.get('title', 'Unknown')}\nYear: {result.get('year', 'Unknown')}\nCitations: {result.get('citation_count', 0)}\nURL: {result.get('url', 'Unknown')}"
+                return self.success_response(summary)
+                
+        except Exception as e:
+            logger.error(f"Get paper details failed: {repr(e)}", exc_info=True)
+            return self.fail_response(f"An error occurred while fetching paper details: {str(e)}")
+    
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "search_authors",
+            "description": "Search for academic authors and researchers using Semantic Scholar (FREE). Returns author profiles with publication and citation metrics. No cost to use.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query for finding authors. Can be a name or partial name. Examples: 'Geoffrey Hinton', 'Yann LeCun', 'adam smith'"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of results to return (1-100). Default: 10",
+                        "default": 10
+                    }
+                },
+                "required": ["query"]
+            }
+        }
+    })
+    async def search_authors(
+        self,
+        query: str,
+        limit: int = 10
+    ) -> ToolResult:
+        if not self.api_key:
+            return self.fail_response(
+                "Author Search is not available. SEMANTIC_SCHOLAR_API_KEY is not configured. "
+                "Please contact your administrator to enable this feature."
+            )
+        
+        if not query:
+            return self.fail_response("Search query is required.")
+        
+        if limit < 1 or limit > 100:
+            return self.fail_response("Limit must be between 1 and 100.")
+        
+        try:
+            logger.info(f"Searching Semantic Scholar for authors: '{query}' (limit: {limit})")
+            
+            params = {
+                "query": query,
+                "limit": limit,
+                "fields": "authorId,name,url,affiliations,homepage,paperCount,citationCount,hIndex,externalIds"
+            }
+            
+            url = f"{self.base_url}/author/search"
+            data = await self._rate_limited_request(url, params)
+            
+            results = data.get('data', [])
+            total = data.get('total', 0)
+            
+            logger.info(f"Found {len(results)} authors (total available: {total})")
+            
+            formatted_results = []
+            for idx, author in enumerate(results, 1):
+                result_entry = {
+                    "rank": idx,
+                    "author_id": author.get('authorId', ''),
+                    "name": author.get('name', ''),
+                    "url": author.get('url', ''),
+                    "affiliations": author.get('affiliations', []),
+                    "homepage": author.get('homepage', ''),
+                    "paper_count": author.get('paperCount', 0),
+                    "citation_count": author.get('citationCount', 0),
+                    "h_index": author.get('hIndex', 0),
+                    "external_ids": author.get('externalIds', {})
+                }
+                formatted_results.append(result_entry)
+            
+            output = {
+                "query": query,
+                "total_available": total,
+                "results_returned": len(formatted_results),
+                "results": formatted_results
+            }
+            
+            logger.info(f"Successfully completed author search with {len(formatted_results)} results")
+            
+            try:
+                json_output = json.dumps(output, indent=2, default=str)
+                return self.success_response(json_output)
+            except Exception as json_error:
+                logger.error(f"Failed to serialize author search output: {json_error}")
+                summary = f"Found {len(formatted_results)} authors for query: {query}"
+                if formatted_results:
+                    summary += f"\n\nTop result:\nName: {formatted_results[0].get('name', 'Unknown')}\nURL: {formatted_results[0].get('url', 'Unknown')}"
+                return self.success_response(summary)
+                
+        except asyncio.TimeoutError:
+            return self.fail_response("Author search timed out. Please try again with a simpler query.")
+        except Exception as e:
+            logger.error(f"Author search failed: {repr(e)}", exc_info=True)
+            return self.fail_response(f"An error occurred during the author search: {str(e)}")
+    
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "get_author_details",
+            "description": "Get detailed information about a specific author using their Semantic Scholar author ID (FREE). Returns author profile, metrics, and optionally their papers. No cost to use.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "author_id": {
+                        "type": "string",
+                        "description": "The Semantic Scholar author ID (e.g., '1741101')"
+                    },
+                    "include_papers": {
+                        "type": "boolean",
+                        "description": "Include list of papers by this author. Default: false"
+                    },
+                    "papers_limit": {
+                        "type": "integer",
+                        "description": "Number of papers to return if include_papers is true (1-100). Default: 10",
+                        "default": 10
+                    }
+                },
+                "required": ["author_id"]
+            }
+        }
+    })
+    async def get_author_details(
+        self,
+        author_id: str,
+        include_papers: bool = False,
+        papers_limit: int = 10
+    ) -> ToolResult:
+        if not self.api_key:
+            return self.fail_response(
+                "Author Details is not available. SEMANTIC_SCHOLAR_API_KEY is not configured. "
+                "Please contact your administrator to enable this feature."
+            )
+        
+        if not author_id:
+            return self.fail_response("Author ID is required.")
+        
+        if papers_limit < 1 or papers_limit > 100:
+            return self.fail_response("Papers limit must be between 1 and 100.")
+        
+        try:
+            logger.info(f"Fetching details for author: {author_id}")
+            
+            fields = "authorId,name,url,affiliations,homepage,paperCount,citationCount,hIndex,externalIds"
+            
+            if include_papers:
+                fields += ",papers.paperId,papers.title,papers.year,papers.citationCount,papers.url,papers.venue,papers.abstract"
+            
+            url = f"{self.base_url}/author/{author_id}"
+            params = {"fields": fields}
+            if include_papers:
+                params["limit"] = papers_limit
+            
+            data = await self._rate_limited_request(url, params)
+            
+            papers_list = []
+            if include_papers and data.get('papers'):
+                for paper in data.get('papers', [])[:papers_limit]:
+                    papers_list.append({
+                        "paper_id": paper.get('paperId', ''),
+                        "title": paper.get('title', ''),
+                        "year": paper.get('year'),
+                        "citation_count": paper.get('citationCount', 0),
+                        "url": paper.get('url', ''),
+                        "venue": paper.get('venue', ''),
+                        "abstract": paper.get('abstract', '')
+                    })
+            
+            result = {
+                "author_id": data.get('authorId', ''),
+                "name": data.get('name', ''),
+                "url": data.get('url', ''),
+                "affiliations": data.get('affiliations', []),
+                "homepage": data.get('homepage', ''),
+                "paper_count": data.get('paperCount', 0),
+                "citation_count": data.get('citationCount', 0),
+                "h_index": data.get('hIndex', 0),
+                "external_ids": data.get('externalIds', {}),
+                "papers": papers_list if include_papers else None
+            }
+            
+            output = {
+                "author": result
+            }
+            
+            logger.info(f"Successfully fetched details for author: {author_id}")
+            
+            try:
+                json_output = json.dumps(output, indent=2, default=str)
+                return self.success_response(json_output)
+            except Exception as json_error:
+                logger.error(f"Failed to serialize author details output: {json_error}")
+                summary = f"Name: {result.get('name', 'Unknown')}\nPapers: {result.get('paper_count', 0)}\nCitations: {result.get('citation_count', 0)}\nh-index: {result.get('h_index', 0)}\nURL: {result.get('url', 'Unknown')}"
+                return self.success_response(summary)
+                
+        except Exception as e:
+            logger.error(f"Get author details failed: {repr(e)}", exc_info=True)
+            return self.fail_response(f"An error occurred while fetching author details: {str(e)}")
+    
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "get_author_papers",
+            "description": "Get all papers by a specific author using their Semantic Scholar author ID (FREE). Returns a list of their publications with details. No cost to use.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "author_id": {
+                        "type": "string",
+                        "description": "The Semantic Scholar author ID (e.g., '1741101')"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Number of papers to return (1-1000). Default: 100",
+                        "default": 100
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Number of papers to skip for pagination. Default: 0",
+                        "default": 0
+                    }
+                },
+                "required": ["author_id"]
+            }
+        }
+    })
+    async def get_author_papers(
+        self,
+        author_id: str,
+        limit: int = 100,
+        offset: int = 0
+    ) -> ToolResult:
+        if not self.api_key:
+            return self.fail_response(
+                "Author Papers is not available. SEMANTIC_SCHOLAR_API_KEY is not configured. "
+                "Please contact your administrator to enable this feature."
+            )
+        
+        if not author_id:
+            return self.fail_response("Author ID is required.")
+        
+        if limit < 1 or limit > 1000:
+            return self.fail_response("Limit must be between 1 and 1000.")
+        
+        if offset < 0:
+            return self.fail_response("Offset must be 0 or greater.")
+        
+        try:
+            logger.info(f"Fetching papers for author: {author_id} (limit: {limit}, offset: {offset})")
+            
+            params = {
+                "fields": "paperId,title,abstract,year,citationCount,referenceCount,influentialCitationCount,url,venue,publicationVenue,isOpenAccess,openAccessPdf,fieldsOfStudy,publicationTypes,publicationDate,journal",
+                "limit": limit,
+                "offset": offset
+            }
+            
+            url = f"{self.base_url}/author/{author_id}/papers"
+            data = await self._rate_limited_request(url, params)
+            
+            papers = data.get('data', [])
+            next_offset = data.get('next')
+            
+            logger.info(f"Found {len(papers)} papers for author {author_id}")
+            
+            formatted_papers = []
+            for idx, paper in enumerate(papers, 1):
+                open_access_pdf = paper.get('openAccessPdf')
+                pdf_url = open_access_pdf.get('url') if open_access_pdf else None
+                
+                venue_info = paper.get('publicationVenue', {})
+                if not venue_info:
+                    venue_info = {}
+                
+                paper_entry = {
+                    "rank": offset + idx,
+                    "paper_id": paper.get('paperId', ''),
+                    "title": paper.get('title', ''),
+                    "abstract": paper.get('abstract', ''),
+                    "year": paper.get('year'),
+                    "url": paper.get('url', ''),
+                    "venue": paper.get('venue', ''),
+                    "venue_type": venue_info.get('type', ''),
+                    "citation_count": paper.get('citationCount', 0),
+                    "reference_count": paper.get('referenceCount', 0),
+                    "influential_citation_count": paper.get('influentialCitationCount', 0),
+                    "is_open_access": paper.get('isOpenAccess', False),
+                    "pdf_url": pdf_url,
+                    "fields_of_study": paper.get('fieldsOfStudy', []),
+                    "publication_types": paper.get('publicationTypes', []),
+                    "publication_date": paper.get('publicationDate', ''),
+                    "journal": paper.get('journal', {}).get('name', '') if paper.get('journal') else ''
+                }
+                formatted_papers.append(paper_entry)
+            
+            output = {
+                "author_id": author_id,
+                "papers_returned": len(formatted_papers),
+                "offset": offset,
+                "next_offset": next_offset,
+                "has_more": next_offset is not None,
+                "papers": formatted_papers
+            }
+            
+            logger.info(f"Successfully fetched {len(formatted_papers)} papers for author: {author_id}")
+            
+            try:
+                json_output = json.dumps(output, indent=2, default=str)
+                return self.success_response(json_output)
+            except Exception as json_error:
+                logger.error(f"Failed to serialize author papers output: {json_error}")
+                summary = f"Found {len(formatted_papers)} papers for author ID: {author_id}"
+                if formatted_papers:
+                    summary += f"\n\nTop paper:\nTitle: {formatted_papers[0].get('title', 'Unknown')}\nYear: {formatted_papers[0].get('year', 'Unknown')}"
+                return self.success_response(summary)
+                
+        except Exception as e:
+            logger.error(f"Get author papers failed: {repr(e)}", exc_info=True)
+            return self.fail_response(f"An error occurred while fetching author papers: {str(e)}")
+    

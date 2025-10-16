@@ -7,6 +7,7 @@ from .agent_tools import router as agent_tools_router
 from .agent_json import router as agent_json_router
 from .threads import router as threads_router
 from .tools_api import router as tools_api_router
+from .vapi_api import router as vapi_router
 
 router = APIRouter()
 
@@ -18,6 +19,7 @@ router.include_router(agent_tools_router)
 router.include_router(agent_json_router)
 router.include_router(threads_router)
 router.include_router(tools_api_router)
+router.include_router(vapi_router)
 
 # Re-export the initialize and cleanup functions
 __all__ = ['router', 'initialize', 'cleanup']

@@ -177,6 +177,19 @@ export interface TrialCheckoutResponse {
   session_id: string;
 }
 
+export interface SubscriptionCancellationStatus {
+  has_subscription: boolean;
+  subscription_id?: string;
+  is_cancelled: boolean;
+  cancel_at: number | null;
+  cancel_at_period_end: boolean;
+  canceled_at?: number | null;
+  current_period_end: number | string | null;
+  status: string | null;
+  cancellation_details?: any;
+  error?: string;
+}
+
 export const billingApiV2 = {
   async getSubscription() {
     const response = await backendApi.get<SubscriptionInfo>('/billing/subscription');
@@ -294,6 +307,12 @@ export const billingApiV2 = {
       '/billing/trial/cancel',
       {}
     );
+    if (response.error) throw response.error;
+    return response.data!;
+  },
+
+  async getSubscriptionCancellationStatus() {
+    const response = await backendApi.get<SubscriptionCancellationStatus>('/billing/subscription-cancellation-status');
     if (response.error) throw response.error;
     return response.data!;
   }

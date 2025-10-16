@@ -3,6 +3,8 @@
 import { useMemo, useState } from 'react';
 import { BillingModal } from '@/components/billing/billing-modal';
 import { CreditBalanceCard } from '@/components/billing/credit-balance-card';
+import { SubscriptionCancellationCard } from '@/components/billing/subscription-cancellation-card';
+import { CancelSubscriptionButton } from '@/components/billing/cancel-subscription-button';
 import { useAccounts } from '@/hooks/use-accounts';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
@@ -12,6 +14,8 @@ import { useSharedSubscription, useSubscriptionContext } from '@/contexts/Subscr
 import { isLocalMode, isStagingMode } from '@/lib/config';
 import Link from 'next/link';
 import { useCreatePortalSession, useTriggerTestRenewal } from '@/hooks/react-query/use-billing-v2';
+import { useSubscriptionCommitment } from '@/hooks/react-query/subscriptions/use-subscriptions';
+import { useCancellationStatus } from '@/hooks/react-query/use-subscription-cancellation';
 import { toast } from 'sonner';
 import { TrialManagement } from '@/components/dashboard/trial-management';
 import { useTransactions } from '@/hooks/react-query/billing/use-transactions';
@@ -24,14 +28,25 @@ export default function PersonalAccountBillingPage() {
   const [showBillingModal, setShowBillingModal] = useState(false);
   const triggerTestRenewal = useTriggerTestRenewal();
   
-  // Fetch transaction data to get credit breakdown
-  const { data: transactionData } = useTransactions(1, 0); // Only need current balance
+  const { data: transactionData } = useTransactions(1, 0);
 
   const {
     data: subscriptionData,
     isLoading: subscriptionLoading,
     error: subscriptionError,
+    refetch: refetchSubscription,
   } = useSharedSubscription();
+  
+  const {
+    data: commitmentInfo,
+    isLoading: commitmentLoading,
+  } = useSubscriptionCommitment(subscriptionData?.subscription?.id || null);
+
+  const {
+    data: cancellationStatus,
+    isLoading: cancellationLoading,
+    refetch: refetchCancellation
+  } = useCancellationStatus();
 
   const personalAccount = useMemo(
     () => accounts?.find((account) => account.personal_account),
@@ -79,10 +94,36 @@ export default function PersonalAccountBillingPage() {
     <div className="space-y-6">
       <BillingModal 
         open={showBillingModal} 
-        onOpenChange={setShowBillingModal}
+        onOpenChange={(open) => {
+          setShowBillingModal(open);
+          if (!open) {
+            refetchCancellation();
+            refetchSubscription();
+          }
+        }}
         returnUrl={`${returnUrl}/settings/billing`}
       />
       <TrialManagement />
+      {cancellationStatus?.has_subscription && cancellationStatus?.is_cancelled && (
+        <SubscriptionCancellationCard
+          subscription={{
+            id: cancellationStatus.subscription_id || subscriptionData?.subscription?.id || '',
+            cancel_at: cancellationStatus.cancel_at || undefined,
+            canceled_at: cancellationStatus.canceled_at || undefined,
+            cancel_at_period_end: cancellationStatus.cancel_at_period_end,
+            current_period_end: cancellationStatus.current_period_end || '',
+            status: cancellationStatus.status || subscriptionData?.subscription?.status || ''
+          }}
+          hasCommitment={commitmentInfo?.has_commitment}
+          commitmentEndDate={commitmentInfo?.commitment_end_date}
+          onReactivate={() => {
+            refetchSubscription();
+            refetchCancellation();
+            toast.success('Subscription reactivated successfully');
+          }}
+        />
+      )}
+      
       <div className="rounded-xl border shadow-sm bg-card p-6">
         <h2 className="text-xl font-semibold mb-4">Billing Status</h2>
 
@@ -144,22 +185,41 @@ export default function PersonalAccountBillingPage() {
                 </div>
               )}
             </div>
-            <div className='flex justify-center items-center gap-4'>
-              <Button
-                variant="outline"
-                className="border-border hover:bg-muted/50 shadow-sm hover:shadow-md transition-all whitespace-nowrap flex items-center"
-                asChild
-              >
-                <Link href="/model-pricing">
-                  View Model Pricing
-                </Link>
-              </Button>
-              <Button
-                onClick={() => setShowBillingModal(true)}
-                className="bg-primary hover:bg-primary/90 shadow-md hover:shadow-lg transition-all"
-              >
-                Manage Subscription
-              </Button>
+            <div className='flex flex-col sm:flex-row justify-center items-center gap-3'>
+              <div className='flex flex-col sm:flex-row gap-3'>
+                <Button
+                  variant="outline"
+                  className="border-border hover:bg-muted/50 shadow-sm hover:shadow-md transition-all whitespace-nowrap flex items-center"
+                  asChild
+                >
+                  <Link href="/model-pricing">
+                    View Model Pricing
+                  </Link>
+                </Button>
+                <Button
+                  onClick={() => setShowBillingModal(true)}
+                  className="bg-primary hover:bg-primary/90 shadow-md hover:shadow-lg transition-all"
+                >
+                  Manage Subscription
+                </Button>
+              </div>
+              {cancellationStatus?.has_subscription && 
+               !cancellationStatus?.is_cancelled && 
+               subscriptionData?.subscription?.id && 
+               subscriptionData?.subscription?.status !== 'trialing' && (
+                <CancelSubscriptionButton
+                  subscriptionId={subscriptionData.subscription.id}
+                  hasCommitment={commitmentInfo?.has_commitment}
+                  commitmentEndDate={commitmentInfo?.commitment_end_date}
+                  monthsRemaining={commitmentInfo?.months_remaining}
+                  onCancel={() => {
+                    refetchSubscription();
+                    refetchCancellation();
+                  }}
+                  variant="destructive"
+                  size="default"
+                />
+              )}
             </div>
           </>
         )}

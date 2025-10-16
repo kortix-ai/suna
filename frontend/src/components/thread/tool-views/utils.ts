@@ -90,6 +90,15 @@ export function getToolTitle(toolName: string): string {
     'delete-agent-scheduled-trigger': 'Delete Scheduled Trigger',
     'toggle-agent-scheduled-trigger': 'Toggle Scheduled Trigger',
 
+    'make-call': 'Make Call',
+    'make_call': 'Make Call',
+    'end-call': 'End Call',
+    'end_call': 'End Call',
+    'get-call-details': 'Call Details',
+    'get_call_details': 'Call Details',
+    'list-calls': 'Call History',
+    'list_calls': 'Call History',
+
     'generic-tool': 'Tool',
     'default': 'Tool',
   };

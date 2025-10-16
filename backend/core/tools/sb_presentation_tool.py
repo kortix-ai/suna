@@ -126,7 +126,40 @@ class SandboxPresentationTool(SandboxToolsBase):
                     },
                     "content": {
                         "type": "string",
-                        "description": "HTML body content only (DO NOT include <!DOCTYPE>, <html>, <head>, or <body> tags - these are added automatically). Include your content with inline CSS or <style> blocks. Design for 1920x1080 resolution. D3.js, Font Awesome, and Chart.js are pre-loaded and available to use."
+                        "description": """HTML body content only (DO NOT include <!DOCTYPE>, <html>, <head>, or <body> tags - these are added automatically). Include your content with inline CSS or <style> blocks. Design for 1920x1080 resolution. D3.js, Font Awesome, and Chart.js are pre-loaded and available to use.
+                        
+                        ## 📐 **Design and Layout Rules**
+
+                        ### **Dimensions & Spacing**
+                        *   **Slide Size**: 1920x1080 pixels (16:9)
+                        *   **Padding**: 80px on all edges (minimum 60px)
+                        *   **Section Gaps**: 40-60px between major sections  
+                        *   **Element Gaps**: 20-30px between related items
+                        *   **List Spacing**: Use `gap: 25px` in flex/grid layouts
+                        *   **Line Height**: 1.5-1.8 for readability
+
+                        ### **Typography**
+                        Use `font_family` from **Theme Object**:
+                        *   **Titles**: 48-72px (bold)
+                        *   **Subtitles**: 32-42px (semi-bold)  
+                        *   **Headings**: 28-36px (semi-bold)
+                        *   **Body**: 20-24px (normal)
+                        *   **Small**: 16-18px (light)
+
+                        ### **Color Usage**
+                        Use ONLY **Theme Object** colors:
+                        *   **Primary**: Backgrounds, main elements
+                        *   **Secondary**: Subtle backgrounds
+                        *   **Accent**: Highlights, CTAs
+                        *   **Text**: All text content
+
+                        ### **Layout Principles**
+                        *   Focus on 1-2 main ideas per slide
+                        *   Limit to 3-5 bullet points max
+                        *   Use `overflow: hidden` on containers
+                        *   Grid columns: Use `gap: 50-60px`
+                        *   Embrace whitespace - don't fill every pixel
+                        """
                     },
                     "presentation_title": {
                                     "type": "string",
@@ -604,7 +637,7 @@ print(json.dumps(result))
         "type": "function",
         "function": {
             "name": "present_presentation",
-            "description": "Present the final presentation to the user. Use this tool when: 1) All slides have been created and formatted, 2) The presentation is ready for user review, 3) You want to show the user the complete presentation with all files, 4) The presentation creation process is finished and you want to deliver the final result. IMPORTANT: This tool is specifically for presenting completed presentations, not for intermediate steps. Include the presentation name, slide count, and all relevant file attachments. This tool provides a special UI for presentation delivery.",
+            "description": "Present the final presentation to the user. Use this tool when: 1) All slides have been created and formatted, 2) The presentation is ready for user review, 3) You want to show the user the complete presentation with all files, 4) The presentation creation process is finished and you want to deliver the final result. IMPORTANT: This tool is specifically for presenting completed presentations, not for intermediate steps. Include the presentation name, slide count, and all relevant file attachments. This tool provides a special UI for presentation delivery. This tool allows users to download the presentation as PDF, PPTX, or upload to Google Slides.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -633,7 +666,7 @@ print(json.dumps(result))
                             {"type": "string"},
                             {"items": {"type": "string"}, "type": "array"}
                         ],
-                        "description": "List of presentation files to attach. Include: 1) All HTML slide files (e.g., 'presentations/my-presentation/slide_01.html'), 2) Any additional presentation files (PDF exports, etc.), 3) Supporting files if relevant. Always use relative paths to /workspace directory."
+                        "description": "List of HTML slide files to attach (e.g., 'presentations/my-presentation/slide_01.html'). The UI will provide buttons for users to download as PDF, PPTX, or upload to Google Slides, so you only need to provide the HTML files. Always use relative paths to /workspace directory."
                     },
                     "presentation_url": {
                         "type": "string",

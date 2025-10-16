@@ -1105,7 +1105,8 @@ export function FileViewerModal({
       try {
         // Normalize filename to NFC
         const normalizedName = normalizeFilenameToNFC(file.name);
-        const uploadPath = `${currentPath}/${normalizedName}`;
+        // Use uploads directory - backend will handle unique naming
+        const uploadPath = `/workspace/uploads/${normalizedName}`;
 
         const formData = new FormData();
         // If the filename was normalized, append with the normalized name in the field name
@@ -1138,10 +1139,19 @@ export function FileViewerModal({
           throw new Error(error || 'Upload failed');
         }
 
+        // Parse response to get the actual filename used
+        const responseData = await response.json();
+        const finalFilename = responseData.final_filename || normalizedName;
+        const wasRenamed = responseData.renamed || false;
+
         // Reload the file list using React Query
         await refetchFiles();
 
-        toast.success(`Uploaded: ${normalizedName}`);
+        if (wasRenamed) {
+          toast.success(`Uploaded as: ${finalFilename} (renamed to avoid conflict)`);
+        } else {
+          toast.success(`Uploaded: ${finalFilename}`);
+        }
       } catch (error) {
         toast.error(
           `Upload failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -1151,7 +1161,7 @@ export function FileViewerModal({
         if (event.target) event.target.value = '';
       }
     },
-    [currentPath, sandboxId, refetchFiles],
+    [sandboxId, refetchFiles],
   );
 
   // Reset file list mode when modal opens without filePathList
