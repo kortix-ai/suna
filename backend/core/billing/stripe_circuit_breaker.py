@@ -5,6 +5,7 @@ from enum import Enum
 from functools import wraps
 import stripe
 from core.utils.logger import logger
+from core.services.supabase import DBConnection
 
 
 class CircuitState(Enum):
@@ -16,25 +17,93 @@ class CircuitState(Enum):
 class CircuitBreaker:
     def __init__(
         self,
+        circuit_name: str = "stripe_api",
         failure_threshold: int = 5,
         recovery_timeout: int = 60,
         expected_exception: type = stripe.error.StripeError
     ):
+        self.circuit_name = circuit_name
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.expected_exception = expected_exception
-        self.failure_count = 0
-        self.last_failure_time: Optional[datetime] = None
-        self.state = CircuitState.CLOSED
+        self.db = DBConnection()
         self._lock = asyncio.Lock()
+    
+    async def _get_circuit_state(self) -> Dict:
+        try:
+            client = await self.db.client
+            result = await client.from_('circuit_breaker_state').select('*').eq(
+                'circuit_name', self.circuit_name
+            ).execute()
+            
+            if result.data and len(result.data) > 0:
+                state_data = result.data[0]
+                
+                last_failure_time = None
+                if state_data.get('last_failure_time'):
+                    last_failure_time = datetime.fromisoformat(state_data['last_failure_time'].replace('Z', '+00:00'))
+                
+                return {
+                    'state': CircuitState(state_data['state']),
+                    'failure_count': state_data['failure_count'],
+                    'last_failure_time': last_failure_time
+                }
+            
+            await self._initialize_circuit_state()
+            return {
+                'state': CircuitState.CLOSED,
+                'failure_count': 0,
+                'last_failure_time': None
+            }
+            
+        except Exception as e:
+            logger.error(f"[CIRCUIT BREAKER] Error reading state from DB: {e}, defaulting to CLOSED")
+            return {
+                'state': CircuitState.CLOSED,
+                'failure_count': 0,
+                'last_failure_time': None
+            }
+    
+    async def _initialize_circuit_state(self):
+        try:
+            client = await self.db.client
+            await client.from_('circuit_breaker_state').upsert({
+                'circuit_name': self.circuit_name,
+                'state': CircuitState.CLOSED.value,
+                'failure_count': 0,
+                'last_failure_time': None,
+                'updated_at': datetime.now(timezone.utc).isoformat()
+            }, on_conflict='circuit_name').execute()
+        except Exception as e:
+            logger.error(f"[CIRCUIT BREAKER] Error initializing state: {e}")
+    
+    async def _update_circuit_state(self, state: CircuitState, failure_count: int, last_failure_time: Optional[datetime] = None):
+        try:
+            client = await self.db.client
+            await client.from_('circuit_breaker_state').upsert({
+                'circuit_name': self.circuit_name,
+                'state': state.value,
+                'failure_count': failure_count,
+                'last_failure_time': last_failure_time.isoformat() if last_failure_time else None,
+                'updated_at': datetime.now(timezone.utc).isoformat()
+            }, on_conflict='circuit_name').execute()
+        except Exception as e:
+            logger.error(f"[CIRCUIT BREAKER] Error updating state: {e}")
     
     async def call(self, func: Callable, *args, **kwargs) -> Any:
         async with self._lock:
-            if self.state == CircuitState.OPEN:
-                if self._should_attempt_reset():
-                    self.state = CircuitState.HALF_OPEN
+            circuit_state = await self._get_circuit_state()
+            state = circuit_state['state']
+            last_failure_time = circuit_state['last_failure_time']
+            
+            if state == CircuitState.OPEN:
+                if self._should_attempt_reset(last_failure_time):
+                    await self._update_circuit_state(CircuitState.HALF_OPEN, circuit_state['failure_count'], last_failure_time)
+                    logger.info(f"[CIRCUIT BREAKER] Moving to HALF_OPEN state for {self.circuit_name}")
                 else:
-                    raise Exception(f"Circuit breaker is OPEN. Service unavailable. Will retry after {self.recovery_timeout} seconds")
+                    time_remaining = self.recovery_timeout - (datetime.now(timezone.utc) - last_failure_time).total_seconds()
+                    logger.warning(f"[CIRCUIT BREAKER] Circuit {self.circuit_name} is OPEN. Retry in {time_remaining:.0f}s")
+                    raise Exception(f"Circuit breaker is OPEN. Service unavailable. Will retry after {int(time_remaining)} seconds")
         
         try:
             result = await self._execute(func, *args, **kwargs)
@@ -52,37 +121,48 @@ class CircuitBreaker:
     
     async def _on_success(self):
         async with self._lock:
-            self.failure_count = 0
-            if self.state == CircuitState.HALF_OPEN:
-                self.state = CircuitState.CLOSED
-                logger.info("[CIRCUIT BREAKER] Circuit closed after successful recovery")
+            circuit_state = await self._get_circuit_state()
+            
+            if circuit_state['state'] == CircuitState.HALF_OPEN:
+                await self._update_circuit_state(CircuitState.CLOSED, 0, None)
+                logger.info(f"[CIRCUIT BREAKER] Circuit {self.circuit_name} closed after successful recovery")
+            elif circuit_state['failure_count'] > 0:
+                await self._update_circuit_state(CircuitState.CLOSED, 0, None)
     
     async def _on_failure(self):
         async with self._lock:
-            self.failure_count += 1
-            self.last_failure_time = datetime.now(timezone.utc)
+            circuit_state = await self._get_circuit_state()
+            failure_count = circuit_state['failure_count'] + 1
+            now = datetime.now(timezone.utc)
             
-            if self.failure_count >= self.failure_threshold:
-                self.state = CircuitState.OPEN
-                logger.warning(f"[CIRCUIT BREAKER] Circuit opened after {self.failure_count} failures")
+            if failure_count >= self.failure_threshold:
+                await self._update_circuit_state(CircuitState.OPEN, failure_count, now)
+                logger.error(f"[CIRCUIT BREAKER] Circuit {self.circuit_name} OPENED after {failure_count} failures across all instances!")
+            else:
+                await self._update_circuit_state(circuit_state['state'], failure_count, now)
+                logger.warning(f"[CIRCUIT BREAKER] Failure {failure_count}/{self.failure_threshold} for {self.circuit_name}")
     
-    def _should_attempt_reset(self) -> bool:
-        if not self.last_failure_time:
+    def _should_attempt_reset(self, last_failure_time: Optional[datetime]) -> bool:
+        if not last_failure_time:
             return True
         
-        time_since_failure = (datetime.now(timezone.utc) - self.last_failure_time).total_seconds()
+        time_since_failure = (datetime.now(timezone.utc) - last_failure_time).total_seconds()
         return time_since_failure >= self.recovery_timeout
     
-    def get_status(self) -> Dict:
+    async def get_status(self) -> Dict:
+        circuit_state = await self._get_circuit_state()
         return {
-            'state': self.state.value,
-            'failure_count': self.failure_count,
+            'circuit_name': self.circuit_name,
+            'state': circuit_state['state'].value,
+            'failure_count': circuit_state['failure_count'],
             'threshold': self.failure_threshold,
-            'last_failure': self.last_failure_time.isoformat() if self.last_failure_time else None
+            'last_failure': circuit_state['last_failure_time'].isoformat() if circuit_state['last_failure_time'] else None,
+            'recovery_timeout': self.recovery_timeout
         }
 
 
 stripe_circuit_breaker = CircuitBreaker(
+    circuit_name="stripe_api",
     failure_threshold=5,
     recovery_timeout=60,
     expected_exception=stripe.error.StripeError
@@ -140,6 +220,16 @@ class StripeAPIWrapper:
     @with_circuit_breaker
     async def upcoming_invoice(customer: str, **kwargs) -> stripe.Invoice:
         return await stripe.Invoice.upcoming_async(customer=customer, **kwargs)
+    
+    @staticmethod
+    @with_circuit_breaker
+    async def list_invoices(**kwargs) -> stripe.ListObject:
+        return stripe.Invoice.list(**kwargs)
+    
+    @staticmethod
+    @with_circuit_breaker
+    async def retrieve_price(price_id: str) -> stripe.Price:
+        return await stripe.Price.retrieve_async(price_id)
     
     @staticmethod
     async def safe_stripe_call(func: Callable, *args, max_retries: int = 3, **kwargs) -> Any:

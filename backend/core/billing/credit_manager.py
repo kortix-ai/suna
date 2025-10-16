@@ -76,21 +76,22 @@ class CreditManager:
                     'duplicate_prevented': True
                 }
         
-        recent_window = datetime.now(timezone.utc) - timedelta(seconds=5)
+        recent_window = datetime.now(timezone.utc) - timedelta(hours=24)
         recent_entries = await client.from_('credit_ledger').select(
-            'id, created_at, amount, description'
+            'id, created_at, amount, description, balance_after'
         ).eq('account_id', account_id).eq('amount', float(amount)).eq(
             'description', description
         ).gte('created_at', recent_window.isoformat()).execute()
         
         if recent_entries.data:
-            logger.warning(f"[IDEMPOTENCY] Potential duplicate credit add detected for {account_id}: "
+            logger.warning(f"[IDEMPOTENCY] Duplicate credit add detected for {account_id}: "
                          f"amount={amount}, description='{description}', "
-                         f"found {len(recent_entries.data)} similar entries in last 5 seconds")
+                         f"found {len(recent_entries.data)} similar entries in last 24 hours")
             return {
                 'success': True,
                 'message': 'Credit already added (duplicate prevented)',
                 'amount': float(amount),
+                'balance_after': float(recent_entries.data[0]['balance_after']),
                 'duplicate_prevented': True
             }
         
@@ -108,6 +109,11 @@ class CreditManager:
             current_sum = current_expiring + current_non_expiring
             if abs(current_sum - current_balance) > Decimal('0.01'):
                 difference = current_sum - current_balance
+                logger.critical(
+                    f"[DATA CORRUPTION] Balance mismatch for {account_id}: "
+                    f"expiring={current_expiring}, non_expiring={current_non_expiring}, "
+                    f"sum={current_sum}, balance={current_balance}, difference={difference}"
+                )
                 
                 if current_expiring >= difference:
                     current_expiring = current_expiring - difference
@@ -117,6 +123,8 @@ class CreditManager:
                     current_non_expiring = max(Decimal('0'), current_non_expiring - remainder)
                 
                 adjusted_sum = current_expiring + current_non_expiring
+                logger.info(f"[DATA CORRUPTION FIX] Adjusted balances for {account_id}: "
+                          f"new_expiring={current_expiring}, new_non_expiring={current_non_expiring}")
         else:
             current_expiring = Decimal('0')
             current_non_expiring = Decimal('0')
@@ -225,90 +233,14 @@ class CreditManager:
                         
             except Exception as e:
                 logger.error(f"[ATOMIC] Failed to use atomic function for deduction: {e}")
-                self.use_atomic_functions = False
+                logger.critical(f"[CRITICAL] Atomic functions unavailable - credit deduction has race condition risk!")
+                raise Exception("Atomic credit operations unavailable - refusing to process to prevent race conditions")
         
-        result = await client.from_('credit_accounts').select(
-            'expiring_credits, non_expiring_credits, balance'
-        ).eq('account_id', account_id).execute()
-        
-        if not result.data:
-            return {
-                'success': False,
-                'error': 'No credit account found',
-                'required': float(amount),
-                'available': 0
-            }
-        
-        current = result.data[0]
-        current_expiring = Decimal(str(current.get('expiring_credits', 0)))
-        current_non_expiring = Decimal(str(current.get('non_expiring_credits', 0)))
-        current_total = Decimal(str(current.get('balance', 0)))
-        
-        credit_sum = current_expiring + current_non_expiring
-        if abs(credit_sum - current_total) > Decimal('0.01'):
-            difference = current_total - credit_sum
-            if difference > 0:
-                current_non_expiring += difference
-            else:
-                if current_expiring >= abs(difference):
-                    current_expiring -= abs(difference)
-                else:
-                    remainder = abs(difference) - current_expiring
-                    current_expiring = Decimal('0')
-                    current_non_expiring = max(Decimal('0'), current_non_expiring - remainder)
-        
-        if current_total < amount:
-            return {
-                'success': False,
-                'error': 'Insufficient credits',
-                'required': float(amount),
-                'available': float(current_total)
-            }
-        
-        if current_expiring >= amount:
-            amount_from_expiring = amount
-            amount_from_non_expiring = Decimal('0')
-        else:
-            amount_from_expiring = current_expiring
-            amount_from_non_expiring = amount - current_expiring
-        
-        new_expiring = current_expiring - amount_from_expiring
-        new_non_expiring = current_non_expiring - amount_from_non_expiring
-        new_total = new_expiring + new_non_expiring
-        
-        await client.from_('credit_accounts').update({
-            'expiring_credits': float(new_expiring),
-            'non_expiring_credits': float(new_non_expiring),
-            'balance': float(new_total),
-            'updated_at': datetime.now(timezone.utc).isoformat()
-        }).eq('account_id', account_id).execute()
-        
-        await client.from_('credit_ledger').insert({
-            'account_id': account_id,
-            'amount': float(-amount),
-            'balance_after': float(new_total),
-            'type': 'usage',
-            'description': description,
-            'reference_id': thread_id or message_id,
-            'metadata': {
-                'thread_id': thread_id,
-                'message_id': message_id,
-                'from_expiring': float(amount_from_expiring),
-                'from_non_expiring': float(amount_from_non_expiring)
-            }
-        }).execute()
-        
-        await Cache.invalidate(f"credit_balance:{account_id}")
-        
-        return {
-            'success': True,
-            'amount_deducted': float(amount),
-            'from_expiring': float(amount_from_expiring),
-            'from_non_expiring': float(amount_from_non_expiring),
-            'new_expiring': float(new_expiring),
-            'new_non_expiring': float(new_non_expiring),
-            'new_total': float(new_total)
-        }
+        logger.critical(f"[CRITICAL] Atomic functions disabled for account {account_id} - refusing credit deduction")
+        raise Exception(
+            "Atomic credit operations are disabled. Cannot safely deduct credits without race condition protection. "
+            "Please ensure database atomic functions (atomic_use_credits) are available."
+        )
     
     async def reset_expiring_credits(
         self,
