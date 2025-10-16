@@ -795,6 +795,10 @@ class ResponseProcessor:
             # --- Final Finish Status ---
             if finish_reason and finish_reason != "xml_tool_limit_reached":
                 finish_content = {"status_type": "finish", "finish_reason": finish_reason}
+                # Add metadata to indicate tools were detected (for auto-continue detection)
+                # Check if tools were actually detected during this run
+                if xml_tool_call_count > 0 or len(complete_native_tool_calls) > 0:
+                    finish_content["tools_executed"] = True
                 finish_msg_obj = await self.add_message(
                     thread_id=thread_id, type="status", content=finish_content, 
                     is_llm_message=False, metadata={"thread_run_id": thread_run_id}

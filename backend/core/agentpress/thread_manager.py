@@ -602,13 +602,12 @@ class ThreadManager:
                             chunk, auto_continue_state, native_max_auto_continues
                         )
                         
-                        # Skip finish chunks that trigger auto-continue
+                        # Skip finish chunks that trigger auto-continue (but NOT tool execution, FE needs those)
                         if should_continue:
-                            if chunk.get('type') == 'finish' and chunk.get('finish_reason') == 'tool_calls':
-                                continue
-                            elif chunk.get('type') == 'status':
+                            if chunk.get('type') == 'status':
                                 try:
                                     content = json.loads(chunk.get('content', '{}'))
+                                    # Only skip length limit finish statuses (frontend needs tool execution finish)
                                     if content.get('finish_reason') == 'length':
                                         continue
                                 except (json.JSONDecodeError, TypeError):
@@ -646,25 +645,27 @@ class ThreadManager:
         native_max_auto_continues: int
     ) -> bool:
         """Check if a response chunk should trigger auto-continue."""
-        if chunk.get('type') == 'finish':
-            if chunk.get('finish_reason') == 'tool_calls':
-                if native_max_auto_continues > 0:
-                    logger.debug(f"Auto-continuing for tool_calls ({auto_continue_state['count'] + 1}/{native_max_auto_continues})")
-                    auto_continue_state['active'] = True
-                    auto_continue_state['count'] += 1
-                    return True
-            elif chunk.get('finish_reason') == 'xml_tool_limit_reached':
-                logger.debug("Stopping auto-continue due to XML tool limit")
-                auto_continue_state['active'] = False
-
-        elif chunk.get('type') == 'status':
+        if chunk.get('type') == 'status':
             try:
-                content = json.loads(chunk.get('content', '{}'))
-                if content.get('finish_reason') == 'length':
+                content = json.loads(chunk.get('content', '{}')) if isinstance(chunk.get('content'), str) else chunk.get('content', {})
+                finish_reason = content.get('finish_reason')
+                tools_executed = content.get('tools_executed', False)
+                
+                # Trigger auto-continue for: native tool calls, length limit, or XML tools executed
+                if finish_reason == 'tool_calls' or tools_executed:
+                    if native_max_auto_continues > 0:
+                        logger.debug(f"Auto-continuing for tool execution ({auto_continue_state['count'] + 1}/{native_max_auto_continues})")
+                        auto_continue_state['active'] = True
+                        auto_continue_state['count'] += 1
+                        return True
+                elif finish_reason == 'length':
                     logger.debug(f"Auto-continuing for length limit ({auto_continue_state['count'] + 1}/{native_max_auto_continues})")
                     auto_continue_state['active'] = True
                     auto_continue_state['count'] += 1
                     return True
+                elif finish_reason == 'xml_tool_limit_reached':
+                    logger.debug("Stopping auto-continue due to XML tool limit")
+                    auto_continue_state['active'] = False
             except (json.JSONDecodeError, TypeError):
                 pass
                 
