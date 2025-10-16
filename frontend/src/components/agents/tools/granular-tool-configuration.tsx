@@ -280,56 +280,36 @@ export const GranularToolConfiguration = ({
                           {toolGroup.description}
                         </p>
                         {hasGranular && isGroupEnabled && (
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {enabledMethodsCount} / {totalMethodsCount} capabilities enabled
-                          </p>
+                          <button
+                            onClick={() => toggleGroupExpansion(toolGroup.name)}
+                            className="flex items-center gap-1 mt-1 hover:opacity-80 transition-opacity"
+                          >
+                            <p className="text-xs text-muted-foreground">
+                              {enabledMethodsCount} / {totalMethodsCount} capabilities enabled
+                            </p>
+                            {isExpanded ? (
+                              <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                            ) : (
+                              <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                            )}
+                          </button>
                         )}
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2 ml-4 flex-shrink-0">
-                      {hasGranular && (
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={() => toggleGroupExpansion(toolGroup.name)}
-                          className="h-12 w-12 bg-card border border-border hover:bg-muted"
-                          disabled={!isGroupEnabled}
-                        >
-                          {isExpanded ? (
-                            <ChevronDown className="h-5 w-5" />
-                          ) : (
-                            <ChevronRight className="h-5 w-5" />
-                          )}
-                        </Button>
-                      )}
-
-                      <div
-                        className={cn(
-                          "inline-flex items-center justify-center h-12 w-12 bg-card border border-border rounded-2xl",
-                          disabled || isLoading ? "opacity-50 cursor-not-allowed" : ""
-                        )}
-                      >
-                        <Checkbox
-                          checked={isGroupEnabled}
-                          onCheckedChange={(enabled) => handleToolGroupToggle(toolGroup.name, enabled === true)}
-                          disabled={disabled || isLoading}
-                        />
-                      </div>
+                      <Checkbox
+                        checked={isGroupEnabled}
+                        onCheckedChange={(enabled) => handleToolGroupToggle(toolGroup.name, enabled === true)}
+                        disabled={disabled || isLoading}
+                      />
                     </div>
                   </div>
 
-                  {hasGranular && isExpanded && isGroupEnabled && (
+                  {hasGranular && isGroupEnabled && isExpanded && (
                     <div className="w-full overflow-hidden">
                       <div className="mt-4 pt-4 border-t w-full">
                         <div className="space-y-3 w-full">
-                          <div className="flex items-center gap-2 mb-3 w-full">
-                            <Settings2 className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                            <span className="text-sm font-medium text-muted-foreground truncate">
-                              Individual Capabilities
-                            </span>
-                          </div>
-
                           {toolGroup.methods
                             .filter(method => method.visible !== false) // Only show visible methods
                             .map((method) => {

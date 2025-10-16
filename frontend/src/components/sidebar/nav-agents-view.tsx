@@ -119,7 +119,7 @@ export function NavAgentsView() {
                         <Button
                             variant="outline"
                             size="sm"
-                            className="w-full shadow-none justify-center items-center h-10 px-4 bg-background"
+                            className="w-full shadow-none justify-center items-center h-10 px-4 bg-background mt-3"
                             asChild
                         >
                             <Link

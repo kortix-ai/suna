@@ -58,7 +58,7 @@ const getAgentConnectedApps = (
   if (!agent?.custom_mcps || !profiles?.length || !toolkits?.length) return [];
 
   const connectedApps: ConnectedApp[] = [];
-  
+
   agent.custom_mcps.forEach((mcpConfig: any) => {
     if (mcpConfig.config?.profile_id) {
       const profile = profiles.find(p => p.profile_id === mcpConfig.config.profile_id);
@@ -128,12 +128,12 @@ const ConnectedAppSkeleton = () => (
   </div>
 );
 
-const ConnectedAppCard = ({ 
-  connectedApp, 
-  onToggleTools, 
+const ConnectedAppCard = ({
+  connectedApp,
+  onToggleTools,
   onConfigure,
   onManageTools,
-  isUpdating 
+  isUpdating
 }: {
   connectedApp: ConnectedApp;
   onToggleTools: (profileId: string, enabled: boolean) => void;
@@ -145,7 +145,7 @@ const ConnectedAppCard = ({
   const hasEnabledTools = mcpConfig.enabledTools && mcpConfig.enabledTools.length > 0;
 
   return (
-    <div 
+    <div
       className="group border bg-card rounded-2xl p-4 transition-all duration-200 cursor-pointer"
     >
       <div className="flex items-start gap-3 mb-3">
@@ -174,7 +174,7 @@ const ConnectedAppCard = ({
           </Button>
         </div>
       </div>
-      
+
       <div className="flex justify-between items-center">
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
@@ -188,7 +188,7 @@ const ConnectedAppCard = ({
 };
 
 const AppCard = ({ app, profiles, onConnect, onConfigure, isConnectedToAgent, currentAgentId, mode }: {
-  app: ComposioToolkit; 
+  app: ComposioToolkit;
   profiles: ComposioProfile[];
   onConnect: () => void;
   onConfigure: (profile: ComposioProfile) => void;
@@ -198,9 +198,9 @@ const AppCard = ({ app, profiles, onConnect, onConfigure, isConnectedToAgent, cu
 }) => {
   const connectedProfiles = profiles.filter(p => p.is_connected);
   const canConnect = mode === 'profile-only' ? true : (!isConnectedToAgent && currentAgentId);
-  
+
   return (
-    <div 
+    <div
       onClick={canConnect ? (connectedProfiles.length > 0 ? () => onConfigure(connectedProfiles[0]) : onConnect) : undefined}
       className={cn(
         "group border bg-card rounded-2xl p-4 transition-all duration-200",
@@ -222,7 +222,7 @@ const AppCard = ({ app, profiles, onConnect, onConfigure, isConnectedToAgent, cu
           </p>
         </div>
       </div>
-      
+
       {app.tags.length > 0 && (
         <div className="flex flex-wrap gap-1 mb-3">
           {app.tags.slice(0, 2).map((tag, index) => (
@@ -237,7 +237,7 @@ const AppCard = ({ app, profiles, onConnect, onConfigure, isConnectedToAgent, cu
           )}
         </div>
       )}
-      
+
       <div className="flex justify-between items-center">
         {mode === 'profile-only' ? (
           <div className="flex items-center gap-2">
@@ -290,10 +290,10 @@ export const ComposioRegistry: React.FC<ComposioRegistryProps> = ({
   const [showToolsManager, setShowToolsManager] = useState(false);
   const [selectedConnectedApp, setSelectedConnectedApp] = useState<ConnectedApp | null>(null);
   const [showCustomMCPDialog, setShowCustomMCPDialog] = useState(false);
-  
+
   const [internalSelectedAgentId, setInternalSelectedAgentId] = useState<string | undefined>(selectedAgentId);
   const queryClient = useQueryClient();
-  
+
   const { data: categoriesData, isLoading: isLoadingCategories } = useComposioCategories();
   const {
     data: toolkitsInfiniteData,
@@ -304,7 +304,7 @@ export const ComposioRegistry: React.FC<ComposioRegistryProps> = ({
     isError
   } = useComposioToolkitsInfinite(search, selectedCategory);
   const { data: profiles, isLoading: isLoadingProfiles } = useComposioProfiles();
-  
+
   const allToolkits = useMemo(() => {
     if (!toolkitsInfiniteData?.pages) return [];
     return toolkitsInfiniteData.pages.flatMap(page => page.toolkits || []);
@@ -365,7 +365,7 @@ export const ComposioRegistry: React.FC<ComposioRegistryProps> = ({
     setShowConnector(true);
   };
 
-    const handleToggleTools = (profileId: string, enabled: boolean) => {
+  const handleToggleTools = (profileId: string, enabled: boolean) => {
     if (!currentAgentId || !agent) return;
 
     const updatedCustomMcps = agent.custom_mcps?.map((mcpConfig: any) => {
@@ -399,11 +399,11 @@ export const ComposioRegistry: React.FC<ComposioRegistryProps> = ({
   const handleConnectionComplete = (profileId: string, appName: string, appSlug: string) => {
     setShowConnector(false);
     queryClient.invalidateQueries({ queryKey: ['composio', 'profiles'] });
-    
+
     if (currentAgentId) {
       queryClient.invalidateQueries({ queryKey: ['agents', 'detail', currentAgentId] });
     }
-    
+
     if (onToolsSelected) {
       onToolsSelected(profileId, [], appName, appSlug);
     }
@@ -511,7 +511,7 @@ export const ComposioRegistry: React.FC<ComposioRegistryProps> = ({
                   {mode === 'profile-only' ? 'Connect New App' : 'App Integrations'}
                 </h2>
                 <p className="text-sm text-muted-foreground">
-                  {mode === 'profile-only' 
+                  {mode === 'profile-only'
                     ? 'Create a connection profile for your favorite apps'
                     : `Connect your favorite apps with ${currentAgentId ? 'this agent' : 'your agent'}`
                   }
@@ -529,7 +529,7 @@ export const ComposioRegistry: React.FC<ComposioRegistryProps> = ({
                 </div>
               </div>
             </div>
-            
+
             <div className="space-y-3">
               <div className="flex items-center gap-3">
                 <div className="relative flex-1">
@@ -538,12 +538,12 @@ export const ComposioRegistry: React.FC<ComposioRegistryProps> = ({
                     placeholder="Search apps..."
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
-                    className="pl-10"
+                    className="pl-10 h-10"
                   />
                 </div>
                 {mode !== 'profile-only' && currentAgentId && (
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     onClick={() => setShowCustomMCPDialog(true)}
                     className="flex items-center gap-2 whitespace-nowrap h-10"
                   >
@@ -631,7 +631,7 @@ export const ComposioRegistry: React.FC<ComposioRegistryProps> = ({
                   <h3 className="text-lg font-medium mb-4">
                     {currentAgentId ? 'Available Apps' : 'Browse Apps'}
                   </h3>
-                  
+
                   {isLoading ? (
                     <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4">
                       {Array.from({ length: 12 }).map((_, i) => (

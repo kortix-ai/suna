@@ -3,6 +3,7 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { Bot, Menu, Plus, Zap, ChevronRight, BookOpen, Code, Star, Package, Sparkle, Sparkles, X, MessageCircle, PanelLeftOpen, Settings, LogOut, User, CreditCard, Key, Plug, Shield, DollarSign, KeyRound, Sun, Moon, Book, Database } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 import { NavAgents } from '@/components/sidebar/nav-agents';
 import { NavAgentsView } from '@/components/sidebar/nav-agents-view';
@@ -97,6 +98,7 @@ function getInitials(name: string) {
 
 function UserProfileSection({ user }: { user: any }) {
   const { data: subscriptionData } = useSubscriptionData();
+  const { state } = useSidebar();
   const isLocal = isLocalMode();
   const planName = getPlanName(subscriptionData, isLocal);
 
@@ -262,116 +264,90 @@ export function SidebarLeft({
     >
       <SidebarHeader className={cn("px-[30px] pt-7", state === 'collapsed' && "px-6")}>
         <div className={cn("flex h-[32px] items-center", state === 'collapsed' ? "justify-center" : "justify-between")}>
-          <Link href="/dashboard" className="flex-shrink-0" onClick={() => isMobile && setOpenMobile(false)}>
-            <KortixLogo size={20} />
-          </Link>
-          {state !== 'collapsed' && !isMobile && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <SidebarTrigger className="h-8 w-8" />
-              </TooltipTrigger>
-              <TooltipContent>Toggle sidebar (CMD+B)</TooltipContent>
-            </Tooltip>
+          {state === 'collapsed' ? (
+            <div className="relative group flex items-center justify-center">
+              <div className="group-hover:opacity-0 transition-opacity">
+                <Link href="/dashboard" className="flex-shrink-0" onClick={() => isMobile && setOpenMobile(false)}>
+                  <KortixLogo size={20} />
+                </Link>
+              </div>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 absolute opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={() => setOpen(true)}
+                  >
+                    <PanelLeftOpen className="!h-5 !w-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Expand sidebar (CMD+B)</TooltipContent>
+              </Tooltip>
+            </div>
+          ) : (
+            <>
+              <Link href="/dashboard" className="flex-shrink-0" onClick={() => isMobile && setOpenMobile(false)}>
+                <KortixLogo size={20} />
+              </Link>
+              {!isMobile && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <SidebarTrigger className="h-8 w-8" />
+                  </TooltipTrigger>
+                  <TooltipContent>Toggle sidebar (CMD+B)</TooltipContent>
+                </Tooltip>
+              )}
+            </>
           )}
         </div>
       </SidebarHeader>
       <SidebarContent className="[&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
-        {state === 'collapsed' ? (
-          /* Collapsed layout: + button and 4 state buttons only */
-          <div className="px-6 pt-4 space-y-3 flex flex-col items-center">
-            {/* + button */}
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-10 w-10 p-0 shadow-none"
-              asChild
+        <AnimatePresence mode="wait">
+          {state === 'collapsed' ? (
+            /* Collapsed layout: + button and 4 state buttons only */
+            <motion.div
+              key="collapsed"
+              initial={false}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="px-6 pt-4 space-y-3 flex flex-col items-center"
             >
-              <Link
-                href="/dashboard"
-                onClick={() => {
-                  posthog.capture('new_task_clicked');
-                  if (isMobile) setOpenMobile(false);
-                }}
+              {/* + button */}
+              <motion.div
+                layout
+                transition={{ duration: 0.2, ease: "easeInOut" }}
+                className="w-full flex justify-center"
               >
-                <Plus className="h-4 w-4" />
-              </Link>
-            </Button>
-
-            {/* State buttons vertically */}
-            {[
-              { view: 'chats' as const, icon: MessageCircle },
-              { view: 'agents' as const, icon: Bot },
-              { view: 'starred' as const, icon: Zap },
-            ].map(({ view, icon: Icon }) => (
-              <Button
-                key={view}
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  "h-10 w-10 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border",
-                  activeView === view ? 'bg-muted/60 border-[1.5px] border-border' : ''
-                )}
-                onClick={() => {
-                  setActiveView(view);
-                  setOpen(true); // Expand sidebar when clicking state button
-                }}
-              >
-                <Icon className="!h-4 !w-4" />
-              </Button>
-            ))}
-
-            {/* Knowledge button - redirects to knowledge page */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-10 w-10 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border"
-              asChild
-            >
-              <Link
-                href="/knowledge"
-                onClick={() => {
-                  if (isMobile) setOpenMobile(false);
-                }}
-              >
-                <BookOpen className="!h-4 !w-4" />
-              </Link>
-            </Button>
-          </div>
-        ) : (
-          /* Expanded layout */
-          <>
-            <div className="px-[30px] pt-4 space-y-4">
-              {/* New Chat button */}
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full shadow-none justify-between h-10 px-4"
-                asChild
-              >
-                <Link
-                  href="/dashboard"
-                  onClick={() => {
-                    posthog.capture('new_task_clicked');
-                    if (isMobile) setOpenMobile(false);
-                  }}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-10 w-10 p-0 shadow-none"
+                  asChild
                 >
-                  <div className="flex items-center gap-2">
+                  <Link
+                    href="/dashboard"
+                    onClick={() => {
+                      posthog.capture('new_task_clicked');
+                      if (isMobile) setOpenMobile(false);
+                    }}
+                  >
                     <Plus className="h-4 w-4" />
-                    New Chat
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-base leading-0 cursor-pointer">⌘</kbd>
-                    <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-xs cursor-pointer">J</kbd>
-                  </div>
-                </Link>
-              </Button>
+                  </Link>
+                </Button>
+              </motion.div>
 
-              {/* State buttons horizontally */}
-              <div className="flex justify-between items-center">
+              {/* State buttons vertically */}
+              <motion.div
+                layout
+                transition={{ duration: 0.2, ease: "easeInOut" }}
+                className="w-full flex flex-col items-center space-y-3"
+              >
                 {[
                   { view: 'chats' as const, icon: MessageCircle },
                   { view: 'agents' as const, icon: Bot },
-                  { view: 'starred' as const, icon: Zap }
+                  { view: 'starred' as const, icon: Zap },
                 ].map(({ view, icon: Icon }) => (
                   <Button
                     key={view}
@@ -379,47 +355,140 @@ export function SidebarLeft({
                     size="icon"
                     className={cn(
                       "h-10 w-10 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border",
-                      activeView === view ? 'bg-card border-[1.5px] border-border' : ''
+                      activeView === view ? 'bg-muted/60 border-[1.5px] border-border' : ''
                     )}
-                    onClick={() => setActiveView(view)}
+                    onClick={() => {
+                      setActiveView(view);
+                      setOpen(true); // Expand sidebar when clicking state button
+                    }}
                   >
                     <Icon className="!h-4 !w-4" />
                   </Button>
                 ))}
+              </motion.div>
 
-                {/* Knowledge button - redirects to knowledge page */}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-10 w-10 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border"
-                  asChild
+              {/* Knowledge button - redirects to knowledge page */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-10 w-10 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border"
+                asChild
+              >
+                <Link
+                  href="/knowledge"
+                  onClick={() => {
+                    if (isMobile) setOpenMobile(false);
+                  }}
                 >
-                  <Link
-                    href="/knowledge"
-                    onClick={() => {
-                      if (isMobile) setOpenMobile(false);
-                    }}
+                  <BookOpen className="!h-4 !w-4" />
+                </Link>
+              </Button>
+            </motion.div>
+          ) : (
+            /* Expanded layout */
+            <motion.div
+              key="expanded"
+              initial={false}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              className="flex flex-col h-full"
+            >
+              <div className="px-[30px] pt-4 space-y-4">
+                {/* New Chat button */}
+                <motion.div
+                  layout
+                  transition={{ duration: 0.2, ease: "easeInOut" }}
+                  className="w-full"
+                >
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full shadow-none justify-between h-10 px-4"
+                    asChild
                   >
-                    <BookOpen className="!h-4 !w-4" />
-                  </Link>
-                </Button>
+                    <Link
+                      href="/dashboard"
+                      onClick={() => {
+                        posthog.capture('new_task_clicked');
+                        if (isMobile) setOpenMobile(false);
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Plus className="h-4 w-4" />
+                        New Chat
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-base leading-0 cursor-pointer">⌘</kbd>
+                        <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-xs cursor-pointer">J</kbd>
+                      </div>
+                    </Link>
+                  </Button>
+                </motion.div>
+
+                {/* State buttons horizontally */}
+                <motion.div
+                  layout
+                  transition={{ duration: 0.2, ease: "easeInOut" }}
+                  className="flex justify-between items-center"
+                >
+                  {[
+                    { view: 'chats' as const, icon: MessageCircle },
+                    { view: 'agents' as const, icon: Bot },
+                    { view: 'starred' as const, icon: Zap }
+                  ].map(({ view, icon: Icon }) => (
+                    <Button
+                      key={view}
+                      variant="ghost"
+                      size="icon"
+                      className={cn(
+                        "h-10 w-10 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border",
+                        activeView === view ? 'bg-card border-[1.5px] border-border' : ''
+                      )}
+                      onClick={() => setActiveView(view)}
+                    >
+                      <Icon className="!h-4 !w-4" />
+                    </Button>
+                  ))}
+
+                  {/* Knowledge button - redirects to knowledge page */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-10 w-10 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border"
+                    asChild
+                  >
+                    <Link
+                      href="/knowledge"
+                      onClick={() => {
+                        if (isMobile) setOpenMobile(false);
+                      }}
+                    >
+                      <BookOpen className="!h-4 !w-4" />
+                    </Link>
+                  </Button>
+                </motion.div>
               </div>
-            </div>
 
-            {/* Content area */}
-            <div className="px-6 flex-1 overflow-hidden">
-
-              {activeView === 'chats' && <NavAgents />}
-              {activeView === 'agents' && <NavAgentsView />}
-              {activeView === 'starred' && (
-                <>
-                  <NavGlobalConfig />
-                  <NavTriggerRuns />
-                </>
-              )}
-            </div>
-          </>
-        )}
+              {/* Content area */}
+              <motion.div
+                initial={false}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.1, duration: 0.2 }}
+                className="px-6 flex-1 overflow-hidden"
+              >
+                {activeView === 'chats' && <NavAgents />}
+                {activeView === 'agents' && <NavAgentsView />}
+                {activeView === 'starred' && (
+                  <>
+                    <NavGlobalConfig />
+                    <NavTriggerRuns />
+                  </>
+                )}
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </SidebarContent>
 
       {/* Enterprise Demo Card - Only show when expanded */}
@@ -454,25 +523,7 @@ export function SidebarLeft({
       }
 
       <div className={cn("pb-4", state === 'collapsed' ? "px-6" : "px-6")}>
-        {state === 'collapsed' && (
-          <div className="flex flex-col items-center space-y-4">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => setOpen(true)}
-                >
-                  <PanelLeftOpen className="!h-5 !w-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Expand sidebar (CMD+B)</TooltipContent>
-            </Tooltip>
-            <UserProfileSection user={user} />
-          </div>
-        )}
-        {state !== 'collapsed' && <UserProfileSection user={user} />}
+        <UserProfileSection user={user} />
       </div>
       <SidebarRail />
       <NewAgentDialog

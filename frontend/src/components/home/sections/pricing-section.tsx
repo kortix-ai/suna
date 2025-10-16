@@ -511,7 +511,7 @@ function PricingTier({
             {isAuthenticated && statusBadge}
           </div>
         </div>
-        <div className="flex items-baseline mt-2">
+        <div className="flex items-baseline mt-2 min-h-[80px]">
           {billingPeriod === 'yearly_commitment' && tier.monthlyCommitmentStripePriceId ? (
             <div className="flex flex-col">
               <div className="flex items-baseline gap-2">
@@ -541,9 +541,12 @@ function PricingTier({
               </div>
             </div>
           ) : (
-            <div className="flex items-baseline">
-              <PriceDisplay price={displayPrice} isCompact={insideDialog} />
-              <span className="ml-2">{displayPrice !== '$0' ? '/month' : ''}</span>
+            <div className="flex flex-col">
+              <div className="flex items-baseline">
+                <PriceDisplay price={displayPrice} isCompact={insideDialog} />
+                <span className="ml-2">{displayPrice !== '$0' ? '/month' : ''}</span>
+              </div>
+              <div className="h-[20px]" />
             </div>
           )}
         </div>
