@@ -654,6 +654,30 @@ export const getMessages = async (threadId: string): Promise<Message[]> => {
     }
   }
 
+  // Extract context_usage from the latest llm_response_end message
+  try {
+    const llmResponseEndMessages = allMessages.filter(msg => msg.type === 'llm_response_end');
+    
+    // Find the most recent llm_response_end message
+    if (llmResponseEndMessages.length > 0) {
+      const latestMsg = llmResponseEndMessages[llmResponseEndMessages.length - 1];
+      try {
+        const content = typeof latestMsg.content === 'string' ? JSON.parse(latestMsg.content) : latestMsg.content;
+        if (content?.usage?.total_tokens) {
+          // Store context usage
+          const { useContextUsageStore } = await import('@/lib/stores/context-usage-store');
+          useContextUsageStore.getState().setUsage(threadId, {
+            current_tokens: content.usage.total_tokens
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to parse llm_response_end message:', e);
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to extract context_usage from llm_response_end:', e);
+  }
+
   return allMessages;
 };
 
