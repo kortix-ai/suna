@@ -373,6 +373,11 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['configure-mcp-server', 'Configuring MCP Server'],
   ['get-popular-mcp-servers', 'Getting Popular MCP Servers'],
   ['test-mcp-server-connection', 'Testing MCP Server Connection'],
+  ['list_app_event_triggers', 'Finding event triggers'],
+  ['list-app-event-triggers', 'Finding event triggers'],
+  ['create-event-trigger', 'Creating event trigger'],
+  ['create_event_trigger', 'Creating event trigger'],
+
 
   ['get-project-structure', 'Getting Project Structure'],
   ['build-project', 'Building Project'],

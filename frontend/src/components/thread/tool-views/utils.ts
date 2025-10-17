@@ -85,6 +85,8 @@ export function getToolTitle(toolName: string): string {
     'discover-user-mcp-servers': 'Discovering tools',
     'configure-agent-integration': 'Configure Agent Integration',
     'list-available-integrations': 'List Available Integrations',
+    'list-app-event-triggers': 'List Event Triggers',
+    'create-event-trigger': 'Create Event Trigger',
     'create-agent-scheduled-trigger': 'Create Scheduled Trigger',
     'list-agent-scheduled-triggers': 'List Scheduled Triggers',
     'delete-agent-scheduled-trigger': 'Delete Scheduled Trigger',
@@ -1320,6 +1322,10 @@ export function getToolComponent(toolName: string): string {
       return 'UpdateAgentToolView';
     case 'discover-user-mcp-servers':
       return 'DiscoverUserMcpServersToolView';
+    case 'list-app-event-triggers':
+      return 'ListAppEventTriggersToolView';
+    case 'create-event-trigger':
+      return 'CreateEventTriggerToolView';
 
 
     // Upload operations
