@@ -133,6 +133,9 @@ async def check_status(
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
     try:
+        from core.utils.ensure_suna import ensure_suna_installed
+        await ensure_suna_installed(account_id)
+        
         if config.ENV_MODE == EnvMode.LOCAL:
             return {
                 "can_run": True,
@@ -901,6 +904,9 @@ async def get_trial_status(
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
     try:
+        from core.utils.ensure_suna import ensure_suna_installed
+        await ensure_suna_installed(account_id)
+        
         result = await trial_service.get_trial_status(account_id)
         return result
         
