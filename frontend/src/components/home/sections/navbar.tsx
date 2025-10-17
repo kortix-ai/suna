@@ -13,6 +13,7 @@ import { useTheme } from 'next-themes';
 import { useAuth } from '@/components/AuthProvider';
 import { useGitHubStars } from '@/hooks/use-github-stars';
 import { useRouter, usePathname } from 'next/navigation';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
 const INITIAL_WIDTH = '70rem';
 const MAX_WIDTH = '1000px';
@@ -114,12 +115,6 @@ export function Navbar({ tabs }: NavbarProps = {}) {
   const toggleDrawer = () => setIsDrawerOpen((prev) => !prev);
   const handleOverlayClick = () => setIsDrawerOpen(false);
 
-  const logoSrc = !mounted
-    ? '/kortix-logo.svg'
-    : resolvedTheme === 'dark'
-      ? '/kortix-logo-white.svg'
-      : '/kortix-logo.svg';
-
   return (
     <header
       className={cn(
@@ -144,14 +139,7 @@ export function Navbar({ tabs }: NavbarProps = {}) {
             {/* Left Section - Logo */}
             <div className="flex items-center justify-start flex-shrink-0 w-auto md:w-[200px]">
               <Link href="/" className="flex items-center gap-3">
-                <Image
-                  src={logoSrc}
-                  alt="Kortix Logo"
-                  width={80}
-                  height={14}
-                  className="md:w-[100px] md:h-[18px]"
-                  priority
-                />
+                <KortixLogo size={24} />
               </Link>
             </div>
 
@@ -234,13 +222,7 @@ export function Navbar({ tabs }: NavbarProps = {}) {
               <div className="flex flex-col gap-4">
                 <div className="flex items-center justify-between">
                   <Link href="/" className="flex items-center gap-3">
-                    <Image
-                      src={logoSrc}
-                      alt="Kortix Logo"
-                      width={120}
-                      height={22}
-                      priority
-                    />
+                    <KortixLogo size={120} />
                     <span className="font-medium text-primary text-sm">
                       / Suna
                     </span>
@@ -289,8 +271,8 @@ export function Navbar({ tabs }: NavbarProps = {}) {
                             setIsDrawerOpen(false);
                           }}
                           className={`underline-offset-4 hover:text-primary/80 transition-colors ${(item.href.startsWith('#') && pathname === '/' && activeSection === item.href.substring(1)) || (item.href === pathname)
-                              ? 'text-primary font-medium'
-                              : 'text-primary/60'
+                            ? 'text-primary font-medium'
+                            : 'text-primary/60'
                             }`}
                         >
                           {item.name}

@@ -449,7 +449,7 @@ export function NavAgents() {
       {/* Search hint */}
       {(state !== 'collapsed' || isMobile) && (
         <div className="px-2.5 py-3 mb-1 flex items-center justify-between text-xs text-muted-foreground">
-          <span>Chats</span>
+          <span>Search</span>
           <div className="flex items-center gap-1">
             <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-base leading-0 cursor-pointer">⌘</kbd>
             <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-xs cursor-pointer">K</kbd>

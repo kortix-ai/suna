@@ -366,23 +366,6 @@ export function SidebarLeft({
                   </Button>
                 ))}
               </motion.div>
-
-              {/* Knowledge button - redirects to knowledge page */}
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-10 w-10 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border"
-                asChild
-              >
-                <Link
-                  href="/knowledge"
-                  onClick={() => {
-                    if (isMobile) setOpenMobile(false);
-                  }}
-                >
-                  <BookOpen className="!h-4 !w-4" />
-                </Link>
-              </Button>
             </motion.div>
           ) : (
             /* Expanded layout */
@@ -430,43 +413,36 @@ export function SidebarLeft({
                 <motion.div
                   layout
                   transition={{ duration: 0.2, ease: "easeInOut" }}
-                  className="flex justify-between items-center"
+                  className="flex justify-between items-center gap-2"
                 >
                   {[
-                    { view: 'chats' as const, icon: MessageCircle },
-                    { view: 'agents' as const, icon: Bot },
-                    { view: 'starred' as const, icon: Zap }
-                  ].map(({ view, icon: Icon }) => (
-                    <Button
+                    { view: 'chats' as const, icon: MessageCircle, label: 'Chats' },
+                    { view: 'agents' as const, icon: Bot, label: 'Workers' },
+                    { view: 'starred' as const, icon: Zap, label: 'Triggers' }
+                  ].map(({ view, icon: Icon, label }) => (
+                    <motion.button
                       key={view}
-                      variant="ghost"
-                      size="icon"
+                      layout
+                      transition={{ duration: 0.2, ease: "easeInOut" }}
                       className={cn(
-                        "h-10 w-10 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border",
-                        activeView === view ? 'bg-card border-[1.5px] border-border' : ''
+                        "flex flex-col items-center justify-center gap-1.5 p-1.5 rounded-2xl cursor-pointer transition-colors w-[64px] h-[64px]",
+                        "hover:bg-muted/60 hover:border-[1.5px] hover:border-border",
+                        activeView === view ? 'bg-card border-[1.5px] border-border' : 'border-[1.5px] border-transparent'
                       )}
                       onClick={() => setActiveView(view)}
                     >
                       <Icon className="!h-4 !w-4" />
-                    </Button>
+                      <motion.span
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.15 }}
+                        className="text-xs text-muted-foreground whitespace-nowrap"
+                      >
+                        {label}
+                      </motion.span>
+                    </motion.button>
                   ))}
-
-                  {/* Knowledge button - redirects to knowledge page */}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-10 w-10 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border"
-                    asChild
-                  >
-                    <Link
-                      href="/knowledge"
-                      onClick={() => {
-                        if (isMobile) setOpenMobile(false);
-                      }}
-                    >
-                      <BookOpen className="!h-4 !w-4" />
-                    </Link>
-                  </Button>
                 </motion.div>
               </div>
 

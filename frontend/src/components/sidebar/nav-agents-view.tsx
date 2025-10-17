@@ -113,7 +113,6 @@ export function NavAgentsView() {
                             </>
                         ) : (
                             <div className="py-2 px-2 text-sm text-muted-foreground">
-                                No agents yet
                             </div>
                         )}
                         <Button

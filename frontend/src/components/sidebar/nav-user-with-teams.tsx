@@ -197,27 +197,27 @@ export function NavUserWithTeams({
                     {getInitials(user.name)}
                   </AvatarFallback>
                 </Avatar>
-                <div className="flex flex-col justify-center flex-1 min-w-0 py-2 group-data-[collapsible=icon]:hidden">
-                  <span className="truncate font-medium text-base">{user.name}</span>
+                <div className="flex flex-col justify-between flex-1 min-w-0 h-10 group-data-[collapsible=icon]:hidden">
+                  <span className="truncate font-medium text-sm leading-tight">{user.name}</span>
                   {user.planName && user.planIcon ? (
-                    <div className="flex items-center mt-1">
+                    <div className="flex items-center">
                       <>
-                        <div className="bg-black dark:hidden rounded-full px-2 py-1 flex items-center justify-center w-fit">
+                        <div className="bg-black dark:hidden rounded-full px-2 py-0.5 flex items-center justify-center w-fit">
                           <img
                             src={user.planIcon}
                             alt={user.planName}
-                            className="flex-shrink-0 h-[12px] w-auto"
+                            className="flex-shrink-0 h-[10px] w-auto"
                           />
                         </div>
                         <img
                           src={user.planIcon}
                           alt={user.planName}
-                          className="flex-shrink-0 h-[12px] w-auto hidden dark:block"
+                          className="flex-shrink-0 h-[10px] w-auto hidden dark:block"
                         />
                       </>
                     </div>
                   ) : (
-                    <span className="truncate text-sm text-muted-foreground mt-1">{user.email}</span>
+                    <span className="truncate text-xs text-muted-foreground leading-tight">{user.email}</span>
                   )}
                 </div>
                 <ChevronsUpDown className="ml-auto size-4 flex-shrink-0 group-data-[collapsible=icon]:hidden" />
@@ -320,6 +320,12 @@ export function NavUserWithTeams({
                     <span>Upgrade Plan</span>
                   </DropdownMenuItem>
                 )}
+                <DropdownMenuItem asChild>
+                  <Link href="/knowledge" className="gap-2 p-2">
+                    <FileText className="h-4 w-4" />
+                    <span>Knowledge Base</span>
+                  </Link>
+                </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link href="/settings/billing" className="gap-2 p-2">
                     <CreditCard className="h-4 w-4" />

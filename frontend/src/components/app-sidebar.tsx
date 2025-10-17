@@ -103,13 +103,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     setMounted(true);
   }, []);
 
-  const logoSrc = !mounted
-    ? '/kortix-logo.svg'
-    : resolvedTheme === 'dark'
-      ? '/kortix-logo-white.svg'
-      : '/kortix-logo.svg';
-  
-
   const isActive = (url: string) => {
     return pathname === url
   }
@@ -117,14 +110,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar className="w-72 [&_[data-sidebar=sidebar]]:bg-white dark:[&_[data-sidebar=sidebar]]:bg-black border-none" {...props}>
       <SidebarHeader className="bg-transparent p-6 px-2">
-        <Image
-          src={logoSrc}
-          alt="Kortix Logo"
-          width={80}
-          height={14}
-          className="md:w-[100px] md:h-[18px]"
-          priority
-        /> 
+        <KortixLogo size={24} />
       </SidebarHeader>
       <SidebarContent className="px-2 bg-transparent scrollbar-thin scrollbar-thumb-primary/20 scrollbar-track-transparent">
         {data.navMain.map((section) => (
@@ -134,7 +120,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               <SidebarMenu>
                 {section.items.map((item) => (
                   <SidebarMenuItem key={item.title}>
-                    <SidebarMenuButton 
+                    <SidebarMenuButton
                       className={`font-semibold ${item.comingSoon ? 'opacity-70 cursor-not-allowed' : ''}`}
                       asChild={!item.comingSoon}
                       isActive={isActive(item.url)}
@@ -166,7 +152,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       </SidebarContent>
       <SidebarFooter className="bg-transparent p-4 flex flex-row justify-between items-center">
         <div className="text-muted-foreground text-xs">Version 0.1.0</div>
-        <ThemeToggle/>
+        <ThemeToggle />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

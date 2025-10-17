@@ -52,7 +52,7 @@ export function DataTable<T>({
 
   const handleSelectAll = () => {
     if (!selectable || !onSelectionChange) return;
-    
+
     if (isAllSelected) {
       onSelectionChange([]);
     } else {
@@ -62,10 +62,10 @@ export function DataTable<T>({
 
   const handleSelectItem = (item: T) => {
     if (!selectable || !onSelectionChange || !getItemId) return;
-    
+
     const itemId = getItemId(item);
     const isSelected = selectedItems.some(selectedItem => getItemId(selectedItem) === itemId);
-    
+
     if (isSelected) {
       onSelectionChange(selectedItems.filter(selectedItem => getItemId(selectedItem) !== itemId));
     } else {
@@ -80,7 +80,7 @@ export function DataTable<T>({
   };
 
   return (
-    <div className={cn('rounded-md border', className)}>
+    <div className={cn('rounded-2xl border', className)}>
       {selectable && selectedItems.length > 0 && headerActions && (
         <div className="flex items-center justify-between px-4 py-3 border-b">
           <span className="text-sm text-muted-foreground">
@@ -149,9 +149,9 @@ export function DataTable<T>({
                     key={column.id}
                     className={cn(column.className, column.width)}
                   >
-                    {column.cell 
-                      ? column.cell(item) 
-                      : column.accessorKey 
+                    {column.cell
+                      ? column.cell(item)
+                      : column.accessorKey
                         ? String(item[column.accessorKey] || '')
                         : ''
                     }

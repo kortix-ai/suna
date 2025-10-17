@@ -13,6 +13,7 @@ import { safeJsonParse } from '@/components/thread/utils';
 import Link from 'next/link';
 import { parseXmlToolCalls } from '../tool-views/xml-parser';
 import { HIDE_STREAMING_XML_TAGS } from '@/components/thread/utils';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
 export interface PlaybackControlsProps {
   messages: UnifiedMessage[];
@@ -186,7 +187,7 @@ export const PlaybackControls = ({
     (text: string, onComplete: () => void) => {
       if (!text || !isPlaying) {
         onComplete();
-        return () => {};
+        return () => { };
       }
 
       updatePlaybackState({
@@ -480,13 +481,7 @@ export const PlaybackControls = ({
             <div className="flex items-center gap-2">
               <div className="flex items-center justify-center w-6 h-6 rounded-md overflow-hidden bg-primary/10">
                 <Link href="/">
-                  <img
-                    src="/kortix-symbol.svg"
-                    alt="Kortix"
-                    width={16}
-                    height={16}
-                    className="object-contain"
-                  />
+                  <KortixLogo size={16} />
                 </Link>
               </div>
               <h1>
