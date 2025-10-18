@@ -38,6 +38,12 @@ class BrowserAutomation {
     async init(apiKey: string): Promise<{status: string, message: string}> {
         try{
             if (!this.browserInitialized) {
+                // Clean up any existing browser before initializing new one
+                if (this.stagehand && this.page) {
+                    console.log("Cleaning up existing browser before init");
+                    await this.shutdown();
+                }
+                
                 console.log("Initializing browser with api key");
                 this.stagehand = new Stagehand({
                     env: "LOCAL",
@@ -58,9 +64,8 @@ class BrowserAutomation {
                         },
                         downloadsPath: '/workspace/downloads',
                         acceptDownloads: true,
-                        preserveUserDataDir: true,
+                        preserveUserDataDir: false,
                         args: [
-                            "--remote-debugging-port=9222",
                             "--no-sandbox",
                             "--disable-setuid-sandbox",
                             "--disable-dev-shm-usage",
@@ -94,7 +99,7 @@ class BrowserAutomation {
 
                 await this.page.goto('https://www.google.com', { waitUntil: 'domcontentloaded', timeout: 30000 });
                 return {
-                    status: "initialized",
+                    status: "healthy",
                     message: "Browser initialized"
                 }
             }
@@ -106,7 +111,7 @@ class BrowserAutomation {
             console.error("Error initializing browser", error);
             return {
                 status: "error",
-                message: "Failed to initialize browser"
+                message: String(error) || "Failed to initialize browser"
             }
         }
     }
@@ -125,7 +130,13 @@ class BrowserAutomation {
     async shutdown() {
         console.log("Shutting down browser");
         this.browserInitialized = false;
-        this.stagehand?.close();
+        if (this.stagehand && this.page) {
+            try {
+                await this.stagehand.close();
+            } catch (error) {
+                console.error("Error closing stagehand:", error);
+            }
+        }
         this.stagehand = null;
         this.page = null;
         return {
@@ -178,10 +189,12 @@ class BrowserAutomation {
                 res.json(result);
             } else {
                 res.status(500).json({
-                    "status": "error",
-                    "message": "Browser not initialized"
-                })
-
+                    success: false,
+                    message: "Browser not initialized",
+                    error: "Browser must be initialized before navigation",
+                    url: "",
+                    title: ""
+                } as BrowserActionResult)
             }
         } catch (error) {
             console.error(error);
@@ -211,15 +224,22 @@ class BrowserAutomation {
                 res.json(result);
             } else {
                 res.status(500).json({
-                    "status": "error",
-                    "message": "Browser not initialized"
-                })
+                    success: false,
+                    message: "Browser not initialized",
+                    error: "Browser must be initialized before taking screenshot",
+                    url: "",
+                    title: ""
+                } as BrowserActionResult)
             }
         } catch (error) {
             console.error(error);
+            const page_info = await this.get_stagehand_state();
             res.status(500).json({
                 success: false,
                 message: "Failed to take screenshot",
+                url: page_info.url,
+                title: page_info.title,
+                screenshot_base64: page_info.screenshot_base64,
                 error
             })
         }
@@ -254,9 +274,12 @@ class BrowserAutomation {
                 res.json(response);
             } else {
                 res.status(500).json({
-                    "status": "error",
-                    "message": "Browser not initialized"
-                })
+                    success: false,
+                    message: "Browser not initialized",
+                    error: "Browser must be initialized before performing actions",
+                    url: "",
+                    title: ""
+                } as BrowserActionResult)
             }
         } catch (error) {
             console.error(error);
@@ -292,6 +315,14 @@ class BrowserAutomation {
                     screenshot_base64: page_info.screenshot_base64,
                 }
                 res.json(response);
+            } else {
+                res.status(500).json({
+                    success: false,
+                    message: "Browser not initialized",
+                    error: "Browser must be initialized before extracting data",
+                    url: "",
+                    title: ""
+                } as BrowserActionResult)
             }
         } catch (error) {
             console.error(error);
