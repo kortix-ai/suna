@@ -93,6 +93,7 @@ const ThreadItem: React.FC<{
   isActive,
   isThreadLoading,
   isSelected,
+  isAgentRunning,
   handleThreadClick,
   toggleThreadSelection,
   handleDeleteThread,
@@ -114,7 +115,7 @@ const ThreadItem: React.FC<{
           className="block"
         >
           <div className="flex items-center gap-3 p-2.5 text-sm">
-            <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
+            <div className="relative flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
               {isThreadLoading ? (
                 <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
               ) : (
@@ -123,6 +124,9 @@ const ThreadItem: React.FC<{
                   className="text-muted-foreground"
                   size={14}
                 />
+              )}
+              {isAgentRunning && (
+                <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 rounded-full border border-background animate-pulse" />
               )}
             </div>
             <span className="flex-1 truncate">{thread.projectName}</span>
@@ -481,6 +485,7 @@ export function NavAgents() {
                       const isActive = pathname?.includes(thread.threadId) || false;
                       const isThreadLoading = loadingThreadId === thread.threadId;
                       const isSelected = selectedThreads.has(thread.threadId);
+                      const isAgentRunning = agentStatusMap.get(thread.threadId) || false;
 
                       return (
                         <ThreadItem
@@ -493,6 +498,7 @@ export function NavAgents() {
                           loadingThreadId={loadingThreadId}
                           pathname={pathname}
                           isMobile={isMobile}
+                          isAgentRunning={isAgentRunning}
                           handleThreadClick={handleThreadClick}
                           toggleThreadSelection={toggleThreadSelection}
                           handleDeleteThread={handleDeleteThread}

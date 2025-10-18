@@ -211,189 +211,168 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                     </Button>
                 </DropdownMenuTrigger>
 
-                <DropdownMenuContent align="end" className="w-[280px] px-0 py-3 border-[1.5px] border-border rounded-2xl" sideOffset={6}>
-                    <div className="mb-3 px-3">
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-[18px] w-[18px] text-muted-foreground pointer-events-none" />
-                            <input
-                                ref={searchInputRef}
-                                type="text"
-                                placeholder="Search..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                onKeyDown={handleSearchInputKeyDown}
-                                className="w-full h-11 pl-10 pr-4 rounded-2xl text-sm font-medium bg-border focus:outline-none focus:ring-2 focus:ring-primary/50"
-                            />
-                        </div>
-                    </div>
-
-                    {/* Agents */}
+                <DropdownMenuContent align="end" className="w-[320px] px-0 py-3 border-[1.5px] border-border rounded-2xl" sideOffset={6}>
+                    {/* Agents Submenu */}
                     {onAgentSelect && (
-                        <div className="">
-                            <div className="flex items-center justify-between mb-3 px-3">
-                                <span className="text-xs font-medium text-muted-foreground">My Workers</span>
-                                <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-5 w-5 p-0 text-muted-foreground cursor-pointer hover:text-foreground hover:bg-card rounded-2xl"
-                                    onClick={() => { setIsOpen(false); setShowNewAgentDialog(true); }}
-                                >
-                                    <Plus className="h-4 w-4" />
-                                </Button>
-                            </div>
-                            {isLoading && orderedAgents.length === 0 ? (
-                                <div className="space-y-2">
-                                    {Array.from({ length: 3 }).map((_, i) => (
-                                        <div key={i} className="flex items-center gap-3 p-3 rounded-2xl">
-                                            <div className="h-8 w-8 bg-muted/60 border-[1.5px] border-border rounded-2xl animate-pulse"></div>
-                                            <div className="h-4 bg-muted rounded flex-1 animate-pulse"></div>
-                                        </div>
-                                    ))}
-                                </div>
-                            ) : orderedAgents.length === 0 ? (
-                                <div className="p-6 text-center text-sm text-muted-foreground">
-                                    {debouncedSearchQuery ? 'No agents found' : 'No agents yet'}
-                                </div>
-                            ) : (
-                                <>
-                                    <div className="max-h-[240px] overflow-y-auto space-y-0.5 px-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
-                                        {orderedAgents.map((agent) => {
-                                            const isActive = selectedAgentId === agent.agent_id;
-                                            return (
-                                                <SpotlightCard
-                                                    key={agent.agent_id}
-                                                    className={cn(
-                                                        "transition-colors cursor-pointer bg-transparent",
-                                                        // isActive ? "bg-muted" : "bg-transparent"
-                                                    )}
-                                                >
-                                                    <div
-                                                        className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1"
-                                                        onClick={() => handleAgentClick(agent.agent_id)}
-                                                    >
-                                                        <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
-                                                            {renderAgentIcon(agent)}
-                                                        </div>
-                                                        <span className="flex-1 truncate font-medium">{agent.name}</span>
-                                                        {isActive && (
-                                                            <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
-                                                        )}
+                        <>
+                            <div className="px-2">
+                                <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
+                                    <DropdownMenuSub>
+                                        <DropdownMenuSubTrigger className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1 hover:bg-transparent focus:bg-transparent data-[state=open]:bg-transparent w-full">
+                                            <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
+                                                {renderAgentIcon(displayAgent)}
+                                            </div>
+                                            <span className="flex-1 truncate font-medium text-left">{displayAgent?.name || 'Super Worker'}</span>
+                                        </DropdownMenuSubTrigger>
+                                        <DropdownMenuPortal>
+                                            <DropdownMenuSubContent className="w-[320px] px-0 py-3 border-[1.5px] border-border rounded-2xl max-h-[500px] overflow-hidden" sideOffset={8}>
+                                                <div className="mb-3 px-3">
+                                                    <div className="relative">
+                                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-[18px] w-[18px] text-muted-foreground pointer-events-none" />
+                                                        <input
+                                                            ref={searchInputRef}
+                                                            type="text"
+                                                            placeholder="Search workers..."
+                                                            value={searchQuery}
+                                                            onChange={(e) => setSearchQuery(e.target.value)}
+                                                            onKeyDown={handleSearchInputKeyDown}
+                                                            className="w-full h-11 pl-10 pr-4 rounded-2xl text-sm font-medium bg-border focus:outline-none focus:ring-2 focus:ring-primary/50"
+                                                        />
                                                     </div>
-                                                </SpotlightCard>
-                                            );
-                                        })}
-                                    </div>
-                                    {canLoadMore && (
-                                        <div className="pt-2">
-                                            <Button
-                                                size="sm"
-                                                variant="ghost"
-                                                className="w-full h-8 text-sm text-muted-foreground hover:text-foreground rounded-2xl hover:bg-muted/60"
-                                                onClick={handleLoadMore}
-                                                disabled={isFetching}
-                                            >
-                                                {isFetching ? (
-                                                    <>
-                                                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                                                        Loading...
-                                                    </>
+                                                </div>
+                                                <div className="flex items-center justify-between mb-3 px-3">
+                                                    <span className="text-xs font-medium text-muted-foreground">My Workers</span>
+                                                    <Button
+                                                        size="sm"
+                                                        variant="ghost"
+                                                        className="h-5 w-5 p-0 text-muted-foreground cursor-pointer hover:text-foreground hover:bg-card rounded-2xl"
+                                                        onClick={() => { setIsOpen(false); setShowNewAgentDialog(true); }}
+                                                    >
+                                                        <Plus className="h-4 w-4" />
+                                                    </Button>
+                                                </div>
+                                                {isLoading && orderedAgents.length === 0 ? (
+                                                    <div className="space-y-2 px-2">
+                                                        {Array.from({ length: 3 }).map((_, i) => (
+                                                            <div key={i} className="flex items-center gap-3 p-3 rounded-2xl">
+                                                                <div className="h-8 w-8 bg-muted/60 border-[1.5px] border-border rounded-2xl animate-pulse"></div>
+                                                                <div className="h-4 bg-muted rounded flex-1 animate-pulse"></div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : orderedAgents.length === 0 ? (
+                                                    <div className="p-6 text-center text-sm text-muted-foreground">
+                                                        {debouncedSearchQuery ? 'No agents found' : 'No agents yet'}
+                                                    </div>
                                                 ) : (
-                                                    `+${orderedAgents.length - 5} more`
+                                                    <>
+                                                        <div className="max-h-[340px] overflow-y-auto space-y-0.5 px-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+                                                            {orderedAgents.map((agent) => {
+                                                                const isActive = selectedAgentId === agent.agent_id;
+                                                                return (
+                                                                    <SpotlightCard
+                                                                        key={agent.agent_id}
+                                                                        className="transition-colors cursor-pointer bg-transparent"
+                                                                    >
+                                                                        <div
+                                                                            className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1"
+                                                                            onClick={() => handleAgentClick(agent.agent_id)}
+                                                                        >
+                                                                            <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
+                                                                                {renderAgentIcon(agent)}
+                                                                            </div>
+                                                                            <span className="flex-1 truncate font-medium">{agent.name}</span>
+                                                                            {isActive && (
+                                                                                <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                                                                            )}
+                                                                        </div>
+                                                                    </SpotlightCard>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                        {canLoadMore && (
+                                                            <div className="pt-2 px-2">
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="ghost"
+                                                                    className="w-full h-8 text-sm text-muted-foreground hover:text-foreground rounded-2xl hover:bg-muted/60"
+                                                                    onClick={handleLoadMore}
+                                                                    disabled={isFetching}
+                                                                >
+                                                                    {isFetching ? (
+                                                                        <>
+                                                                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                                                            Loading...
+                                                                        </>
+                                                                    ) : (
+                                                                        `Load more`
+                                                                    )}
+                                                                </Button>
+                                                            </div>
+                                                        )}
+                                                    </>
                                                 )}
-                                            </Button>
-                                        </div>
-                                    )}
-                                </>
-                            )}
-                        </div>
+                                            </DropdownMenuSubContent>
+                                        </DropdownMenuPortal>
+                                    </DropdownMenuSub>
+                                </SpotlightCard>
+                            </div>
+                            <div className="h-px bg-border/50 -mx-3 my-3" />
+                        </>
                     )}
 
-                    {onAgentSelect && <div className="h-px bg-border/50 -mx-3 my-3" />}
-
-                    {/* Models */}
-                    <div className="">
-                        <div className="mb-3 px-3">
-                            <span className="text-xs font-medium text-muted-foreground">Models</span>
-                        </div>
-                        <div className="space-y-0.5 px-2">
-                            {modelOptions.slice(0, 2).map((model) => {
-                                const isActive = selectedModel === model.id;
-                                return (
-                                    <SpotlightCard
-                                        key={model.id}
-                                        className={cn(
-                                            "transition-colors cursor-pointer bg-transparent",
-                                            // isActive ? "bg-muted" : ""
-                                        )}
-                                    >
-                                        <div
-                                            className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1"
-                                            onClick={() => onModelChange(model.id)}
-                                        >
-                                            <ModelProviderIcon
-                                                modelId={model.id}
-                                                size={32}
-                                                className="flex-shrink-0"
-                                            />
-                                            <span className="flex-1 truncate font-medium">{model.label}</span>
-                                            {isActive && (
-                                                <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
-                                            )}
+                    {/* Models Submenu */}
+                    <div className="px-2">
+                        <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
+                            <DropdownMenuSub>
+                                <DropdownMenuSubTrigger className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1 hover:bg-transparent focus:bg-transparent data-[state=open]:bg-transparent w-full">
+                                    <ModelProviderIcon
+                                        modelId={selectedModel}
+                                        size={32}
+                                        className="flex-shrink-0"
+                                    />
+                                    <span className="flex-1 truncate font-medium text-left">
+                                        {modelOptions.find(m => m.id === selectedModel)?.label || 'Select Model'}
+                                    </span>
+                                </DropdownMenuSubTrigger>
+                                <DropdownMenuPortal>
+                                    <DropdownMenuSubContent className="w-[320px] p-3 border-[1.5px] border-border rounded-2xl max-h-[500px] overflow-y-auto" sideOffset={8}>
+                                        <div className="mb-3">
+                                            <span className="text-xs font-medium text-muted-foreground">Available Models</span>
                                         </div>
-                                    </SpotlightCard>
-                                );
-                            })}
-                            <SpotlightCard
-                                className={cn(
-                                    "transition-colors cursor-pointer",
-                                    "bg-transparent"
-                                )}
-                            >
-                                <DropdownMenuSub>
-                                    <DropdownMenuSubTrigger className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1 hover:bg-transparent focus:bg-transparent data-[state=open]:bg-transparent">
-                                        <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
-                                            <Cpu className="h-4 w-4" />
-                                        </div>
-                                        <span className="flex-1 truncate font-medium">All models</span>
-                                    </DropdownMenuSubTrigger>
-                                    <DropdownMenuPortal>
-                                        <DropdownMenuSubContent className="w-[280px] p-3 border-[1.5px] border-border rounded-2xl max-h-[400px] overflow-y-auto">
-                                            <div className="space-y-0.5">
-                                                {modelOptions.map((model) => {
-                                                    const isActive = selectedModel === model.id;
-                                                    return (
-                                                        <SpotlightCard
-                                                            key={model.id}
-                                                            className={cn(
-                                                                "transition-colors cursor-pointer bg-transparent",
-                                                            )}
+                                        <div className="space-y-0.5">
+                                            {modelOptions.map((model) => {
+                                                const isActive = selectedModel === model.id;
+                                                return (
+                                                    <SpotlightCard
+                                                        key={model.id}
+                                                        className="transition-colors cursor-pointer bg-transparent"
+                                                    >
+                                                        <div
+                                                            className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1"
+                                                            onClick={() => {
+                                                                onModelChange(model.id);
+                                                                setIsOpen(false);
+                                                            }}
                                                         >
-                                                            <div
-                                                                className="flex items-center gap-3 text-sm cursor-pointer px-3 py-1"
-                                                                onClick={() => {
-                                                                    onModelChange(model.id);
-                                                                    setIsOpen(false);
-                                                                }}
-                                                            >
-                                                                <ModelProviderIcon
-                                                                    modelId={model.id}
-                                                                    size={32}
-                                                                    className="flex-shrink-0"
-                                                                />
-                                                                <span className="flex-1 truncate font-medium">{model.label}</span>
-                                                                {isActive && (
-                                                                    <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
-                                                                )}
-                                                            </div>
-                                                        </SpotlightCard>
-                                                    );
-                                                })}
-                                            </div>
-                                        </DropdownMenuSubContent>
-                                    </DropdownMenuPortal>
-                                </DropdownMenuSub>
-                            </SpotlightCard>
-                        </div>
+                                                            <ModelProviderIcon
+                                                                modelId={model.id}
+                                                                size={32}
+                                                                className="flex-shrink-0"
+                                                            />
+                                                            <span className="flex-1 truncate font-medium">{model.label}</span>
+                                                            {isActive && (
+                                                                <Check className="h-4 w-4 text-blue-500 flex-shrink-0" />
+                                                            )}
+                                                        </div>
+                                                    </SpotlightCard>
+                                                );
+                                            })}
+                                        </div>
+                                    </DropdownMenuSubContent>
+                                </DropdownMenuPortal>
+                            </DropdownMenuSub>
+                        </SpotlightCard>
                     </div>
                     <div className="h-px bg-border/50 -mx-3 my-3" />
                     {onAgentSelect && (selectedAgentId || displayAgent?.agent_id) && (

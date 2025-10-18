@@ -65,6 +65,7 @@ import { useTheme } from 'next-themes';
 import { isLocalMode } from '@/lib/config';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { BillingModal } from '@/components/billing/billing-modal';
+import { UserSettingsModal } from '@/components/settings/user-settings-modal';
 
 export function NavUserWithTeams({
   user,
@@ -83,6 +84,8 @@ export function NavUserWithTeams({
   const { data: accounts } = useAccounts();
   const [showNewTeamDialog, setShowNewTeamDialog] = React.useState(false);
   const [showBillingModal, setShowBillingModal] = React.useState(false);
+  const [showSettingsModal, setShowSettingsModal] = React.useState(false);
+  const [settingsTab, setSettingsTab] = React.useState<'general' | 'plan' | 'billing' | 'env-manager'>('general');
   const { theme, setTheme } = useTheme();
 
   // Prepare personal account and team accounts
@@ -314,23 +317,31 @@ export function NavUserWithTeams({
                 General
               </DropdownMenuLabel>
               <DropdownMenuGroup>
-                {user.planName && (
-                  <DropdownMenuItem onClick={() => setShowBillingModal(true)} className="gap-2 p-2">
-                    <Zap className="h-4 w-4" />
-                    <span>Upgrade Plan</span>
-                  </DropdownMenuItem>
-                )}
+                <DropdownMenuItem
+                  onClick={() => {
+                    setSettingsTab('plan');
+                    setShowSettingsModal(true);
+                  }}
+                  className="gap-2 p-2"
+                >
+                  <Zap className="h-4 w-4" />
+                  <span>Plan</span>
+                </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link href="/knowledge" className="gap-2 p-2">
                     <FileText className="h-4 w-4" />
                     <span>Knowledge Base</span>
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/settings/billing" className="gap-2 p-2">
-                    <CreditCard className="h-4 w-4" />
-                    <span>Billing</span>
-                  </Link>
+                <DropdownMenuItem
+                  onClick={() => {
+                    setSettingsTab('billing');
+                    setShowSettingsModal(true);
+                  }}
+                  className="gap-2 p-2"
+                >
+                  <CreditCard className="h-4 w-4" />
+                  <span>Billing</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link href="/settings/credentials" className="gap-2 p-2">
@@ -338,11 +349,15 @@ export function NavUserWithTeams({
                     <span>Integrations</span>
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem asChild>
-                  <Link href="/settings" className="gap-2 p-2">
-                    <Settings className="h-4 w-4" />
-                    <span>Settings</span>
-                  </Link>
+                <DropdownMenuItem
+                  onClick={() => {
+                    setSettingsTab('general');
+                    setShowSettingsModal(true);
+                  }}
+                  className="gap-2 p-2"
+                >
+                  <Settings className="h-4 w-4" />
+                  <span>Settings</span>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
@@ -380,11 +395,15 @@ export function NavUserWithTeams({
                       </DropdownMenuItem>
                     )}
                     {isLocalMode() && (
-                      <DropdownMenuItem asChild>
-                        <Link href="/settings/env-manager" className="gap-2 p-2">
-                          <KeyRound className="h-4 w-4" />
-                          <span>Local .Env Manager</span>
-                        </Link>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setSettingsTab('env-manager');
+                          setShowSettingsModal(true);
+                        }}
+                        className="gap-2 p-2"
+                      >
+                        <KeyRound className="h-4 w-4" />
+                        <span>Local .Env Manager</span>
                       </DropdownMenuItem>
                     )}
                   </DropdownMenuGroup>
@@ -417,6 +436,14 @@ export function NavUserWithTeams({
       <BillingModal
         open={showBillingModal}
         onOpenChange={setShowBillingModal}
+        returnUrl={typeof window !== 'undefined' ? window?.location?.href || '/' : '/'}
+      />
+
+      {/* User Settings Modal */}
+      <UserSettingsModal
+        open={showSettingsModal}
+        onOpenChange={setShowSettingsModal}
+        defaultTab={settingsTab}
         returnUrl={typeof window !== 'undefined' ? window?.location?.href || '/' : '/'}
       />
     </Dialog>

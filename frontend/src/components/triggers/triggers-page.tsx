@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -180,6 +181,8 @@ export function TriggersPage() {
   const [selectedTrigger, setSelectedTrigger] = useState<TriggerWithAgent | null>(null);
   const [triggerDialogType, setTriggerDialogType] = useState<'schedule' | 'event' | null>(null);
   const [pendingTriggerId, setPendingTriggerId] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const router = useRouter();
 
   const sortedTriggers = useMemo(() => {
     return [...triggers].sort((a, b) => {
@@ -189,6 +192,22 @@ export function TriggersPage() {
       return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
     });
   }, [triggers]);
+
+  // Handle trigger_id from URL
+  useEffect(() => {
+    const triggerIdFromUrl = searchParams.get('trigger_id');
+    if (triggerIdFromUrl && triggers.length > 0) {
+      const trigger = triggers.find(t => t.trigger_id === triggerIdFromUrl);
+      if (trigger) {
+        setSelectedTrigger(trigger);
+        // Scroll to header
+        setTimeout(() => {
+          const headerHeight = document.querySelector('.container')?.clientHeight || 120;
+          window.scrollTo({ top: headerHeight, behavior: 'smooth' });
+        }, 100);
+      }
+    }
+  }, [searchParams, triggers]);
 
   useEffect(() => {
     if (pendingTriggerId) {
@@ -218,8 +237,12 @@ export function TriggersPage() {
   const handleTriggerClick = (trigger: TriggerWithAgent) => {
     if (selectedTrigger?.trigger_id === trigger.trigger_id) {
       setSelectedTrigger(null);
+      // Remove trigger_id from URL
+      router.replace('/triggers', { scroll: false });
     } else {
       setSelectedTrigger(trigger);
+      // Add trigger_id to URL
+      router.replace(`/triggers?trigger_id=${trigger.trigger_id}`, { scroll: false });
       const headerHeight = document.querySelector('.container')?.clientHeight || 120;
       window.scrollTo({ top: headerHeight, behavior: 'smooth' }); //for smooth brain
     }

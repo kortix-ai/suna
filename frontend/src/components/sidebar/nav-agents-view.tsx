@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { Bot, Loader2, Plus } from 'lucide-react';
 import { useSidebar } from '@/components/ui/sidebar';
 import { useAgents } from '@/hooks/react-query/agents/use-agents';
@@ -11,6 +11,7 @@ import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { formatDateForList } from '@/lib/utils/date-formatting';
 import { Button } from '@/components/ui/button';
 import { AgentAvatar } from '@/components/thread/content/agent-avatar';
+import { NewAgentDialog } from '@/components/agents/new-agent-dialog';
 
 // Component for date group headers (reusing the style from nav-agents)
 const DateGroupHeader: React.FC<{ title: string; count: number }> = ({ title, count }) => {
@@ -59,6 +60,8 @@ const AgentItem: React.FC<{
 export function NavAgentsView() {
     const { isMobile, state, setOpenMobile } = useSidebar();
     const router = useRouter();
+    const pathname = usePathname();
+    const [showNewAgentDialog, setShowNewAgentDialog] = useState(false);
 
     const {
         data: agentsResponse,
@@ -102,14 +105,17 @@ export function NavAgentsView() {
                         ) : agents.length > 0 ? (
                             // Show agents list
                             <>
-                                {agents.map((agent) => (
-                                    <AgentItem
-                                        key={agent.agent_id}
-                                        agent={agent}
-                                        isActive={false} // We can add logic to detect active agent later
-                                        onAgentClick={handleAgentClick}
-                                    />
-                                ))}
+                                {agents.map((agent) => {
+                                    const isActive = pathname?.includes(agent.agent_id) || false;
+                                    return (
+                                        <AgentItem
+                                            key={agent.agent_id}
+                                            agent={agent}
+                                            isActive={isActive}
+                                            onAgentClick={handleAgentClick}
+                                        />
+                                    );
+                                })}
                             </>
                         ) : (
                             <div className="py-2 px-2 text-sm text-muted-foreground">
@@ -119,23 +125,25 @@ export function NavAgentsView() {
                             variant="outline"
                             size="sm"
                             className="w-full shadow-none justify-center items-center h-10 px-4 bg-background mt-3"
-                            asChild
+                            onClick={() => setShowNewAgentDialog(true)}
                         >
-                            <Link
-                                href="/dashboard?tab=worker-templates"
-                                onClick={() => {
-                                    if (isMobile) setOpenMobile(false);
-                                }}
-                            >
-                                <div className="flex items-center gap-2">
-                                    <Plus className="h-4 w-4" />
-                                    Add Workers
-                                </div>
-                            </Link>
+                            <div className="flex items-center gap-2">
+                                <Plus className="h-4 w-4" />
+                                Add Workers
+                            </div>
                         </Button>
                     </>
                 )}
             </div>
+
+            <NewAgentDialog
+                open={showNewAgentDialog}
+                onOpenChange={setShowNewAgentDialog}
+                onSuccess={(agentId) => {
+                    router.push(`/agents/config/${agentId}`);
+                    if (isMobile) setOpenMobile(false);
+                }}
+            />
         </div>
     );
 }

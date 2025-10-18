@@ -179,6 +179,12 @@ export default function AgentConfigPage() {
               </div>
             </div>
           </div>
+          <Button
+            onClick={() => router.push(`/dashboard?agent_id=${agentId}`)}
+            className="gap-2"
+          >
+            Start Chat
+          </Button>
         </div>
 
         {/* Dynamic Content Based on Active View */}
