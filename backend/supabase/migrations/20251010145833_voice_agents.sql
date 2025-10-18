@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS public.vapi_calls (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT extensions.uuid_generate_v4(),
     call_id TEXT NOT NULL UNIQUE,
     agent_id UUID REFERENCES public.agents(agent_id) ON DELETE SET NULL,
     thread_id UUID REFERENCES public.threads(thread_id) ON DELETE CASCADE,
