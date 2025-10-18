@@ -16,6 +16,7 @@ from core.utils.config import config, EnvMode
 from core.services import redis
 from core.sandbox.sandbox import create_sandbox, delete_sandbox
 from core.utils.sandbox_utils import generate_unique_filename, get_uploads_directory
+from core.utils.ensure_suna import ensure_suna_installed
 from run_agent_background import run_agent_background
 from core.ai_models import model_manager
 
@@ -647,6 +648,7 @@ async def initiate_agent_with_files(
     else:
         # Load default agent
         logger.debug(f"[AGENT INITIATE] Loading default agent")
+        await ensure_suna_installed(account_id)
         default_agent = await client.table('agents').select('agent_id').eq('account_id', account_id).eq('is_default', True).maybe_single().execute()
         
         if default_agent.data:
