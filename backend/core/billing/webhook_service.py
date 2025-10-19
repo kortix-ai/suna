@@ -70,7 +70,7 @@ class WebhookService:
             elif event.type == 'customer.subscription.deleted':
                 await self._handle_subscription_deleted(event, client)
             
-            elif event.type in ['invoice.payment_succeeded', 'invoice_payment.paid']:
+            elif event.type in ['invoice.payment_succeeded', 'invoice.paid', 'invoice_payment.paid']:
                 await self._handle_invoice_payment_succeeded(event, client)
             
             elif event.type == 'invoice.payment_failed':
@@ -1069,10 +1069,14 @@ class WebhookService:
                     account_id = customer_result.data[0]['account_id']
             
             if account_id:
-                await client.from_('credit_accounts').update({
-                    'payment_status': 'failed',
-                    'last_payment_failure': datetime.now(timezone.utc).isoformat()
-                }).eq('account_id', account_id).execute()
+                try:
+                    await client.from_('credit_accounts').update({
+                        'payment_status': 'failed',
+                        'last_payment_failure': datetime.now(timezone.utc).isoformat()
+                    }).eq('account_id', account_id).execute()
+                    logger.info(f"[WEBHOOK] Marked payment as failed for account {account_id}")
+                except Exception as update_error:
+                    logger.warning(f"[WEBHOOK] Could not update payment status (non-critical): {update_error}")
                 
         except Exception as e:
             logger.error(f"[WEBHOOK] Error processing payment failure: {e}")
