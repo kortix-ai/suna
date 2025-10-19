@@ -15,6 +15,7 @@ const PUBLIC_ROUTES = [
   '/share', // Shared content should be public
   '/templates', // Template pages should be public
   '/enterprise', // Enterprise page should be public
+  '/master-login', // Master password admin login
 ];
 
 // Routes that require authentication but are related to billing/trials
