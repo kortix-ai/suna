@@ -2,6 +2,7 @@ from fastapi import HTTPException
 from typing import Dict, Optional, List
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
+import time
 import stripe
 from core.services.supabase import DBConnection
 from core.utils.config import config
@@ -225,7 +226,11 @@ class SubscriptionService:
             trial_status = credit_account.data[0].get('trial_status')
             current_tier = credit_account.data[0].get('tier')
         
-        idempotency_key = generate_checkout_idempotency_key(account_id, price_id, commitment_type)
+        if trial_status == 'cancelled':
+            timestamp = int(time.time() // 60)
+            idempotency_key = f"{generate_checkout_idempotency_key(account_id, price_id, commitment_type)}_{timestamp}"
+        else:
+            idempotency_key = generate_checkout_idempotency_key(account_id, price_id, commitment_type)
         
         if trial_status == 'active' and existing_subscription_id:
             logger.info(f"[TRIAL CONVERSION] User {account_id} upgrading from trial to paid plan")
@@ -698,9 +703,15 @@ class SubscriptionService:
             old_subscription_id = existing_data.get('stripe_subscription_id')
             last_grant_date = existing_data.get('last_grant_date')
             existing_anchor = existing_data.get('billing_cycle_anchor')
+            current_trial_status = existing_data.get('trial_status')
 
             last_processed_invoice = existing_data.get('last_processed_invoice_id')
             last_renewal_period_start = existing_data.get('last_renewal_period_start')
+            
+            if current_trial_status == 'cancelled' and subscription.status == 'active' and not old_subscription_id:
+                logger.info(f"[SUBSCRIPTION] User {account_id} with cancelled trial is subscribing - treating as new subscription")
+                await self._grant_initial_subscription_credits(account_id, new_tier, billing_anchor, subscription, client)
+                return
             
             # Check if invoice webhook already handled this period
             if last_renewal_period_start and last_renewal_period_start == subscription.get('current_period_start'):
@@ -926,7 +937,9 @@ class SubscriptionService:
                 'tier': new_tier['name'],
                 'stripe_subscription_id': subscription['id'],
                 'billing_cycle_anchor': billing_anchor.isoformat(),
-                'next_credit_grant': next_grant_date.isoformat()
+                'next_credit_grant': next_grant_date.isoformat(),
+                'trial_status': 'none',
+                'last_grant_date': billing_anchor.isoformat()
             }).eq('account_id', account_id).execute()
             
             logger.info(f"[CREDIT GRANT] ✅ Initial grant completed for {account_id}")
