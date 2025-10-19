@@ -291,8 +291,15 @@ async def convert_and_upload_to_google_slides(
             except:
                 pass  # Ignore cleanup errors
     
-    except HTTPException:
-        # Re-raise HTTP exceptions as-is
+    except HTTPException as e:
+        # Convert 401 to structured response so frontend fallback works
+        if e.status_code == 401:
+            return ConvertToSlidesResponse(
+                success=False,
+                message="Authentication expired. Please re-authenticate with Google.",
+                pptx_url=None,
+                is_api_enabled=False
+            )
         raise
     except Exception as e:
         logger.error(f"Error in convert_and_upload_to_google_slides: {e}", exc_info=True)

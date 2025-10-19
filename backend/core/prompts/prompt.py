@@ -1343,6 +1343,22 @@ When executing a multi-step task, adopt this mindset:
 - Use flowing paragraphs rather than lists; provide detailed content with proper citations
 
 ## 6.1.5 PRESENTATION CREATION WORKFLOW
+
+**PRESENTATION FOLDER STRUCTURE:**
+
+Organize your presentation files with the following structure:
+
+```
+presentations/
+  ├── images/
+  │     └── image1.png
+  └── [title]/
+        └── slide01.html
+```
+
+* `images/` contains all image assets for the presentation.
+* `[title]/` is a folder with the name of the presentation, containing all slide HTML files (e.g. `slide01.html`, `slide02.html`, etc.).
+
 **⛔ MANDATORY: Follow these 4 phases in order. DO NOT skip steps.**
 
 ### **Phase 1: Planning** 📝

@@ -317,6 +317,20 @@ class PerfectHTMLToPPTXConverter:
                             return true;
                         }
                         
+                        // Check for inline SVG icons (small SVG elements that are likely icons)
+                        if (element.tagName === 'svg' || element.tagName === 'SVG') {
+                            const rect = element.getBoundingClientRect();
+                            // Consider SVGs smaller than 200x200 as icons
+                            if (rect.width > 0 && rect.height > 0 && rect.width <= 200 && rect.height <= 200) {
+                                return true;
+                            }
+                        }
+                        
+                        // Check for elements with class "icon" that contain SVG
+                        if (element.classList.contains('icon') && element.querySelector('svg')) {
+                            return true;
+                        }
+                        
                         return false;
                     }
                     
@@ -332,7 +346,17 @@ class PerfectHTMLToPPTXConverter:
                         
                         const results = [];
                         
-                        // Check if this element is an icon
+                        // Check if this element contains an SVG child - if so, capture the SVG directly instead
+                        const svgChild = element.querySelector('svg');
+                        if (svgChild && isIcon(element)) {
+                            // Skip this container, let the SVG be captured directly
+                            Array.from(element.children).forEach(child => {
+                                results.push(...extractIconElements(child, depth + 1));
+                            });
+                            return results;
+                        }
+                        
+                        // Check if this element is an icon (SVG or Font Awesome)
                         if (isIcon(element)) {
                             console.log('ICON ELEMENT FOUND:', element.tagName, element.textContent?.trim().substring(0, 30));
                             
@@ -346,11 +370,17 @@ class PerfectHTMLToPPTXConverter:
                                 className: element.className,
                                 id: element.id,
                                 depth: depth,
+                                isSvg: element.tagName.toLowerCase() === 'svg',
                                 // Add debug info
                                 debugInfo: {
                                     textContent: element.textContent?.trim().substring(0, 50) || 'No text'
                                 }
                             });
+                            
+                            // If this is an SVG, don't process children (they're part of the SVG)
+                            if (element.tagName.toLowerCase() === 'svg') {
+                                return results;
+                            }
                         }
                         
                         // Process children for nested icons
@@ -385,13 +415,21 @@ class PerfectHTMLToPPTXConverter:
                         if width < 5 or height < 5:
                             continue
                         
-                        # Capture the icon
+                        # Capture the icon with transparency support for SVGs
                         element_path = temp_dir / f"icon_element_{html_path.stem}_{i:03d}.png"
-                        await page.screenshot(
-                            path=str(element_path),
-                            full_page=False,
-                            clip={"x": x, "y": y, "width": width, "height": height}
-                        )
+                        
+                        # For SVG icons, we want to capture them with transparent background
+                        screenshot_options = {
+                            'path': str(element_path),
+                            'full_page': False,
+                            'clip': {"x": x, "y": y, "width": width, "height": height}
+                        }
+                        
+                        # Add transparency support for SVG icons
+                        if data.get('isSvg', False):
+                            screenshot_options['omit_background'] = True
+                        
+                        await page.screenshot(**screenshot_options)
                         
                         icon_element = {
                             'type': 'visual',  # Treat as visual element for consistency
@@ -633,8 +671,10 @@ class PerfectHTMLToPPTXConverter:
                                     const clonedElement = targetElement.cloneNode(true);
                                     
                                     // Copy all computed styles from original to cloned element and its descendants
-                                    function copyComputedStyles(original, cloned, isRoot = true) {
+                                    function copyComputedStyles(original, cloned, isRoot = true, parentIsSvg = false) {
                                         const computedStyle = window.getComputedStyle(original);
+                                        const isSvgElement = original.tagName === 'svg' || original.tagName === 'SVG';
+                                        const isSvgChild = parentIsSvg || original.namespaceURI === 'http://www.w3.org/2000/svg';
                                         
                                         // Create a clean style string with all computed properties
                                         let styleStr = '';
@@ -645,13 +685,15 @@ class PerfectHTMLToPPTXConverter:
                                         cloned.style.cssText = styleStr;
                                         
                                         // For child elements (not root), make the entire element transparent
-                                        if (!isRoot) {
+                                        // EXCEPT for SVG elements and their children - preserve them completely
+                                        if (!isRoot && !isSvgElement && !isSvgChild) {
                                             cloned.style.opacity = '0';
                                         }
                                         
                                         // Recursively copy styles for children (mark as non-root)
+                                        // Pass down SVG context to preserve all SVG descendants
                                         for (let i = 0; i < original.children.length && i < cloned.children.length; i++) {
-                                            copyComputedStyles(original.children[i], cloned.children[i], false);
+                                            copyComputedStyles(original.children[i], cloned.children[i], false, isSvgElement || isSvgChild);
                                         }
                                     }
                                     
@@ -1220,6 +1262,14 @@ class PerfectHTMLToPPTXConverter:
         # Add paragraph
         p = text_frame.paragraphs[0]
         p.text = text_element.text
+        
+        # Add bullet formatting for list items
+        if text_element.tag == 'li':
+            p.level = 0
+            p.text = text_element.text  # Ensure text is set
+            # Note: python-pptx doesn't have direct bullet control, but we can prepend bullet
+            if not p.text.startswith('•'):
+                p.text = '• ' + p.text
         
         # Set text alignment
         alignment_map = {
