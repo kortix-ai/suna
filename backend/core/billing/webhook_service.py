@@ -1096,15 +1096,6 @@ class WebhookService:
                         'p_stripe_event_id': stripe_event_id
                     }).execute()
                 else:
-                    logger.info(f"[INITIAL GRANT] Granting ${monthly_credits} credits for {account_id} (billing_reason={billing_reason}, NOT a renewal - will not block future renewals)")
-                    add_result = await credit_manager.add_credits(
-                        account_id=account_id,
-                        amount=Decimal(str(monthly_credits)),
-                        is_expiring=True,
-                        description=f"Initial subscription grant: {billing_reason}",
-                        stripe_event_id=stripe_event_id
-                    )
-                    
                     update_data = {
                         'tier': tier,
                         'last_grant_date': datetime.fromtimestamp(period_start, tz=timezone.utc).isoformat(),
@@ -1120,8 +1111,6 @@ class WebhookService:
                     
                     await client.from_('credit_accounts').update(update_data).eq('account_id', account_id).execute()
                     
-                    result = add_result
-                
                 if is_true_renewal and result and hasattr(result, 'data') and result.data:
                     data = result.data
                     credits_granted = data.get('credits_granted', monthly_credits)
