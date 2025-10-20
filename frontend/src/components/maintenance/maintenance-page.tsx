@@ -85,6 +85,16 @@ export function MaintenancePage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Grain texture overlay - ON TOP OF EVERYTHING */}
+        <div
+          className="absolute inset-0 opacity-[0.15] pointer-events-none z-50"
+          style={{
+            backgroundImage: 'url(/grain-texture.png)',
+            backgroundRepeat: 'repeat',
+            mixBlendMode: 'overlay'
+          }}
+        />
       </div>
     </div>
   );

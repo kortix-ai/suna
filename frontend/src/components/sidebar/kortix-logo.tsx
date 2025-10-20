@@ -23,7 +23,7 @@ export function KortixLogo({ size = 24 }: KortixLogoProps) {
 
   return (
     <Image
-      src="/kortix-symbol.svgb"
+      src="/kortix-symbol.svg"
       alt="Kortix"
       width={size}
       height={size}
