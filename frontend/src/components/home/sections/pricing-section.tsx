@@ -18,7 +18,7 @@ import {
   Presentation,
   Diamond,
   Heart,
-  Zap
+  Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -31,6 +31,8 @@ import { isLocalMode, isYearlyCommitmentDowngrade, isPlanChangeAllowed, getPlanI
 import { useSubscription, useSubscriptionCommitment } from '@/hooks/react-query';
 import { useAuth } from '@/components/AuthProvider';
 import posthog from 'posthog-js';
+import { Badge } from '@/components/ui/badge';
+import { AnimatedBg } from '@/components/home/ui/AnimatedBg';
 
 // Constants
 export const SUBSCRIPTION_PLANS = {
@@ -145,8 +147,8 @@ function BillingPeriodToggle({
   setBillingPeriod: (period: 'monthly' | 'yearly' | 'yearly_commitment') => void;
 }) {
   return (
-    <div className="flex items-center justify-center gap-3">
-      <div className="flex gap-2">
+    <div className="flex items-center justify-center gap-3 w-full">
+      <div className="flex gap-2 justify-end w-full">
         <Button
           variant={billingPeriod === 'monthly' ? 'default' : 'outline'}
           onClick={() => setBillingPeriod('monthly')}
@@ -471,10 +473,12 @@ function PricingTier({
         : 'bg-secondary hover:bg-secondary/90 text-white';
   }
 
+  const isUltraPlan = tier.name === 'Ultra';
+
   return (
     <div
       className={cn(
-        'rounded-[18px] flex flex-col relative',
+        'rounded-[18px] flex flex-col relative overflow-hidden',
         insideDialog
           ? 'min-h-[300px]'
           : 'h-full min-h-[300px]',
@@ -484,8 +488,45 @@ function PricingTier({
         !insideDialog && ringClass,
       )}
     >
+      {/* AnimatedBg for Ultra plan */}
+      {isUltraPlan && (
+        <AnimatedBg
+          variant="header"
+          blurMultiplier={0.8}
+          sizeMultiplier={0.7}
+          customArcs={{
+            left: [
+              {
+                pos: { left: -120, top: -30 },
+                size: 350,
+                tone: 'light',
+                opacity: 0.15,
+                delay: 0.02,
+                x: [0, 12, -6, 0],
+                y: [0, 8, -4, 0],
+                scale: [0.85, 1.05, 0.95, 0.85],
+                blur: ['10px', '15px', '12px', '10px'],
+              },
+            ],
+            right: [
+              {
+                pos: { right: -110, top: 200 },
+                size: 380,
+                tone: 'dark',
+                opacity: 0.2,
+                delay: 1.0,
+                x: [0, -15, 8, 0],
+                y: [0, 10, -6, 0],
+                scale: [0.9, 1.1, 0.98, 0.9],
+                blur: ['8px', '4px', '6px', '8px'],
+              },
+            ],
+          }}
+        />
+      )}
+
       <div className={cn(
-        "flex flex-col gap-3",
+        "flex flex-col gap-3 relative z-10",
         insideDialog ? "p-3" : "p-4"
       )}>
         <div className="flex items-center gap-2">
@@ -493,19 +534,17 @@ function PricingTier({
             <img
               src={getPlanIcon(tier.name)}
               alt={tier.name}
-              className="h-[13px] w-auto"
+              className="h-[24px] w-auto"
             />
           </div>
           <img
             src={getPlanIcon(tier.name)}
             alt={tier.name}
-            className="h-[13px] w-auto hidden dark:block"
+            className="h-[24px] w-auto hidden dark:block"
           />
           <div className="flex items-center gap-2">
             {tier.isPopular && (
-              <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-[10px] font-medium px-1.5 py-0.5 rounded-full">
-                Popular
-              </span>
+              <Badge variant='outline'>Popular</Badge>
             )}
             {/* Show upgrade badge for yearly commitment plans when user is on monthly */}
             {isAuthenticated && statusBadge}
@@ -554,7 +593,7 @@ function PricingTier({
       </div>
 
       <div className={cn(
-        "flex-grow",
+        "flex-grow relative z-10",
         insideDialog ? "px-3 pb-2" : "px-4 pb-3"
       )}>
         {tier.features && tier.features.length > 0 && (
@@ -572,7 +611,7 @@ function PricingTier({
       </div>
 
       <div className={cn(
-        "mt-auto",
+        "mt-auto relative z-10",
         insideDialog ? "px-3 pt-1 pb-3" : "px-4 pt-2 pb-4"
       )}>
         <Button

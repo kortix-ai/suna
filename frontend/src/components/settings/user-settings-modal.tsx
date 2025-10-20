@@ -114,7 +114,7 @@ export function UserSettingsModal({
                             </Button>
                         </div>
                     </DialogHeader>
-                )}                <div className={cn("flex", isMobile ? "flex-col h-full" : "flex-row  h-[800px]")}>
+                )}                <div className={cn("flex", isMobile ? "flex-col h-full" : "flex-row  h-[700px]")}>
                     {/* Sidebar */}
                     <div className={cn(
                         "bg-background",
@@ -295,10 +295,11 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
 function PlanTab({ returnUrl }: { returnUrl: string }) {
 
     return (
-        <div className="overflow-y-auto max-h-full">
+        <div className="overflow-y-auto max-h-full flex items-center justify-center py-6">
             <PricingSection
                 returnUrl={returnUrl}
-                showTitleAndTabs={true}
+                showTitleAndTabs={false}
+                showInfo={false}
                 insideDialog={false}
                 noPadding={false}
             />
