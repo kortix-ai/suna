@@ -39,7 +39,8 @@ class BillingIntegration:
             from decimal import Decimal
             non_cached_prompt_tokens = prompt_tokens - cache_read_tokens
             
-            model_lower = model.lower()
+            # Handle None model gracefully
+            model_lower = model.lower() if model else ''
             if any(provider in model_lower for provider in ['anthropic', 'claude', 'sonnet']):
                 cache_discount = Decimal('0.1')
             elif any(provider in model_lower for provider in ['gpt', 'openai', 'gpt-4o']):

@@ -273,6 +273,10 @@ class ModelRegistry:
             self._aliases[alias] = model.id
     
     def get(self, model_id: str) -> Optional[Model]:
+        # Handle None or empty model_id
+        if not model_id:
+            return None
+            
         if model_id in self._models:
             return self._models[model_id]
         

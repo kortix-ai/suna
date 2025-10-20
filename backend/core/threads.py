@@ -3,7 +3,7 @@ import traceback
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Depends, Form, Query
+from fastapi import APIRouter, HTTPException, Depends, Form, Query, Body
 
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, verify_and_authorize_thread_access, require_thread_access, AuthorizedThreadAccess
 from core.utils.logger import logger
@@ -67,6 +67,12 @@ async def get_user_threads(
             )
             
             logger.debug(f"[API] Retrieved {len(projects_data)} projects")
+            
+            # DEBUG: Log first project to see if icon_name exists
+            if projects_data and len(projects_data) > 0:
+                logger.debug(f"[API] FIRST PROJECT RAW FROM DB: {projects_data[0]}")
+                logger.debug(f"[API] FIRST PROJECT ICON_NAME: {projects_data[0].get('icon_name', 'NOT FOUND')}")
+            
             # Create a lookup map of projects by ID
             projects_by_id = {
                 project['project_id']: project 
@@ -79,15 +85,23 @@ async def get_user_threads(
             project_data = None
             if thread.get('project_id') and thread['project_id'] in projects_by_id:
                 project = projects_by_id[thread['project_id']]
+                
+                # DEBUG: Log what we're getting from the project
+                logger.debug(f"[API] Mapping project {project['project_id']}: icon_name = {project.get('icon_name', 'MISSING')}")
+                
                 project_data = {
                     "project_id": project['project_id'],
                     "name": project.get('name', ''),
+                    "icon_name": project.get('icon_name'),
                     "description": project.get('description', ''),
                     "sandbox": project.get('sandbox', {}),
                     "is_public": project.get('is_public', False),
                     "created_at": project['created_at'],
                     "updated_at": project['updated_at']
                 }
+                
+                # DEBUG: Log the mapped project_data
+                logger.debug(f"[API] Mapped project_data: {project_data}")
             
             mapped_thread = {
                 "thread_id": thread['thread_id'],
@@ -153,6 +167,7 @@ async def get_thread(
                     "description": project.get('description', ''),
                     "sandbox": project.get('sandbox', {}),
                     "is_public": project.get('is_public', False),
+                    "icon_name": project.get('icon_name'),  # Include icon for thread display
                     "created_at": project['created_at'],
                     "updated_at": project['updated_at']
                 }
@@ -334,7 +349,7 @@ async def get_thread_messages(
 @router.post("/threads/{thread_id}/messages/add", summary="Add Message to Thread", operation_id="add_message_to_thread")
 async def add_message_to_thread(
     thread_id: str,
-    message: str,
+    message: str = Body(..., embed=True),
     user_id: str = Depends(verify_and_get_user_id_from_jwt),
 ):
     """Add a message to a thread"""

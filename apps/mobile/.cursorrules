@@ -1,0 +1,737 @@
+# Kortix Project - Development Rules
+
+## Project Overview
+Kortix is a React Native + Expo app built with TypeScript, NativeWind (Tailwind CSS), and a custom design system.
+
+## Core Technologies
+- **Framework**: React Native (Expo)
+- **Styling**: NativeWind (Tailwind CSS for React Native)
+- **Font**: Roobert (custom font family)
+- **Icons**: Lucide React Native
+- **Animations**: React Native Reanimated
+- **Routing**: Expo Router
+- **Type Safety**: TypeScript (strict mode)
+
+---
+
+## 1. CODE ORGANIZATION
+
+### File Structure
+```
+/app                    # Expo Router screens
+/components
+  /home                 # Home screen components
+  /input                # Input & agent system components
+  /ui                   # Reusable UI primitives
+/hooks                  # Custom React hooks
+/lib                    # Utility functions & configurations
+/assets
+  /brand                # Brand assets (logos, symbols)
+  /font/Roobert         # Custom font files
+```
+
+### Component Organization Rules
+
+1. **One component per file** - Never combine multiple components in a single file
+2. **Co-locate related components** - Group by feature, not by type
+3. **Create index.ts files** - For clean imports from component folders
+4. **Separate concerns** - Logic (hooks) vs Presentation (components)
+
+Example:
+```tsx
+// ✅ GOOD
+/components/input/
+  - ChatInput.tsx
+  - AgentSelector.tsx
+  - AgentDrawer.tsx
+  - AgentAvatar.tsx
+  - types.ts
+  - agents.ts
+  - index.ts
+
+// ❌ BAD
+/components/
+  - AllChatComponents.tsx
+  - types.ts
+```
+
+---
+
+## 2. COLOR SYSTEM (CRITICAL)
+
+### STRICT RULE: Use Design Tokens ONLY
+
+**NEVER use hardcoded colors**. Always use semantic tokens from `global.css`.
+
+### Color Token Reference
+```tsx
+// Background colors
+bg-background          // Main app background (#F8F8F8 light / #121215 dark)
+bg-card                // Card surfaces (#FFFFFF light / #161618 dark)
+bg-popover             // Popover backgrounds
+bg-input               // Input backgrounds
+
+// Text colors
+text-foreground        // Primary text (#121215 light / #F8F8F8 dark)
+text-card-foreground   // Card text
+text-muted             // Muted/secondary text
+text-muted-foreground  // Even more muted
+
+// Interactive colors
+bg-primary             // Primary buttons/elements
+bg-secondary           // Secondary surfaces
+bg-accent              // Accent colors
+bg-destructive         // Destructive actions
+
+// Borders
+border-border          // Standard borders
+border-input           // Input borders
+
+// Utility
+bg-primary/10          // 10% opacity variants (use /5, /10, /15, /20, etc.)
+text-foreground/60     // 60% opacity text
+```
+
+### Examples
+
+```tsx
+// ✅ GOOD - Using design tokens
+<View className="bg-background">
+  <View className="bg-card border border-border">
+    <Text className="text-foreground">Title</Text>
+    <Text className="text-muted">Subtitle</Text>
+  </View>
+</View>
+
+// ❌ BAD - Hardcoded colors
+<View className="bg-[#F8F8F8]">
+  <View style={{ backgroundColor: '#FFFFFF' }}>
+    <Text className="text-[#121215]">Title</Text>
+  </View>
+</View>
+
+// ✅ GOOD - Opacity modifiers
+<View className="bg-primary/10">
+<Text className="text-foreground/60">
+
+// ❌ BAD - Inline rgba
+<View style={{ backgroundColor: 'rgba(18, 18, 21, 0.1)' }}>
+```
+
+### TextInput placeholderTextColor
+For TextInput components, use HSL format:
+```tsx
+<TextInput
+  placeholderTextColor="hsl(var(--foreground))"
+  className="text-foreground"
+/>
+```
+
+---
+
+## 3. FONT SYSTEM
+
+### Font Configuration
+The app uses **Roobert** font family exclusively.
+
+### Font Weight Classes
+```tsx
+font-roobert           // Regular (400)
+font-roobert-light     // Light (300)
+font-roobert-medium    // Medium (500)
+font-roobert-semibold  // Semi-bold (600)
+font-roobert-bold      // Bold (700)
+font-roobert-heavy     // Heavy (800)
+```
+
+### Usage Rules
+
+1. **Use Tailwind classes** for UI components:
+```tsx
+<Text className="text-base font-roobert-medium">Medium Text</Text>
+<Text className="text-xl font-roobert-semibold">Heading</Text>
+```
+
+2. **Use style prop** for TextInput:
+```tsx
+<TextInput
+  style={{ fontFamily: 'Roobert-Regular' }}
+  className="text-foreground text-[15px]"
+/>
+```
+
+3. **Default weights**:
+   - Body text: `font-roobert` (Regular)
+   - UI elements: `font-roobert-medium`
+   - Headings: `font-roobert-semibold` or `font-roobert-bold`
+
+---
+
+## 4. COMPONENT PATTERNS
+
+### Custom Hooks Pattern
+
+**ALWAYS extract logic into custom hooks**. Keep components clean and presentational.
+
+```tsx
+// ✅ GOOD - Logic in custom hooks
+// hooks/useAgentManager.ts
+export function useAgentManager() {
+  const [selectedAgent, setSelectedAgent] = useState(DEFAULT_AGENT);
+  const [isDrawerVisible, setIsDrawerVisible] = useState(false);
+  
+  const openDrawer = () => setIsDrawerVisible(true);
+  const closeDrawer = () => setIsDrawerVisible(false);
+  const selectAgent = (agent: Agent) => {
+    setSelectedAgent(agent);
+    console.log('Agent selected:', agent);
+  };
+  
+  return {
+    selectedAgent,
+    isDrawerVisible,
+    openDrawer,
+    closeDrawer,
+    selectAgent,
+    agents: AGENTS,
+  };
+}
+
+// app/index.tsx
+export default function HomeScreen() {
+  const agentManager = useAgentManager();
+  
+  return (
+    <ChatInput onAgentPress={agentManager.openDrawer} />
+  );
+}
+
+// ❌ BAD - Logic mixed with presentation
+export default function HomeScreen() {
+  const [selectedAgent, setSelectedAgent] = useState(DEFAULT_AGENT);
+  const [isDrawerVisible, setIsDrawerVisible] = useState(false);
+  // ... 50 more lines of logic
+  
+  return <View>...</View>;
+}
+```
+
+### Component Structure
+
+```tsx
+// 1. Imports (grouped)
+import { Text } from '@/components/ui/text';
+import { Icon } from '@/components/ui/icon';
+import * as React from 'react';
+import { Pressable, View } from 'react-native';
+import { Menu } from 'lucide-react-native';
+
+// 2. Types/Interfaces
+interface TopNavProps {
+  onMenuPress?: () => void;
+  currentCredits?: number;
+}
+
+// 3. Component (with JSDoc)
+/**
+ * Top Navigation Bar Component
+ * 
+ * Displays menu icon, theme switcher, and credits.
+ */
+export function TopNav({ onMenuPress, currentCredits = 250 }: TopNavProps) {
+  // 4. Hooks
+  const { colorScheme } = useColorScheme();
+  
+  // 5. Event handlers
+  const handlePress = () => {
+    console.log('Menu pressed');
+    onMenuPress?.();
+  };
+  
+  // 6. Render
+  return (
+    <View className="flex-row items-center">
+      <Pressable onPress={handlePress}>
+        <Icon as={Menu} size={24} className="text-foreground" />
+      </Pressable>
+    </View>
+  );
+}
+```
+
+---
+
+## 5. ANIMATIONS
+
+### Use React Native Reanimated
+
+```tsx
+import Animated, { 
+  useAnimatedStyle, 
+  useSharedValue, 
+  withSpring 
+} from 'react-native-reanimated';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+export function AnimatedButton() {
+  const scale = useSharedValue(1);
+  
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+  
+  return (
+    <AnimatedPressable
+      onPressIn={() => {
+        scale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
+      }}
+      onPressOut={() => {
+        scale.value = withSpring(1, { damping: 15, stiffness: 400 });
+      }}
+      style={animatedStyle}
+    >
+      {/* ... */}
+    </AnimatedPressable>
+  );
+}
+```
+
+### Animation Config
+- **Spring animations**: `{ damping: 15, stiffness: 400 }` for quick, responsive feel
+- **Duration**: 200-300ms for most transitions
+- **Easing**: Spring for natural feel, avoid linear
+
+---
+
+## 6. ICONS
+
+### ALWAYS Use Lucide React Native
+
+```tsx
+import { Menu, Zap, Plus, Moon, Sun } from 'lucide-react-native';
+
+// ✅ GOOD - Lucide with proper theming
+<Icon 
+  as={Menu}
+  size={24}
+  className="text-foreground"
+/>
+
+// ❌ BAD - PNG images
+<Image source={require('./menu-icon.png')} />
+```
+
+### Icon Guidelines
+- Use `Icon` wrapper component from `@/components/ui/icon`
+- Size: 16-24px for UI, 32px+ for feature icons
+- Color: Always use `text-foreground` or other semantic tokens
+- strokeWidth: 2 (default) or specified
+
+---
+
+## 7. CONSOLE LOGGING
+
+**ALWAYS log user interactions** for debugging.
+
+```tsx
+const handlePress = () => {
+  console.log('🎯 Action:', 'Menu pressed');
+  console.log('⏰ Timestamp:', new Date().toISOString());
+  console.log('📊 Data:', { userId, screen: 'Home' });
+  onPress?.();
+};
+```
+
+### Emoji Convention
+- 🎯 User actions
+- 🤖 Agent/AI operations
+- 📳 Haptic feedback
+- ⏰ Timestamps
+- 📊 Data objects
+- ✅ Success
+- ❌ Errors
+- 🌓 Theme changes
+
+---
+
+## 8. THEME SYSTEM
+
+### Light Mode First
+The app is built **light mode first**, with dark mode as a variant.
+
+```tsx
+// Access theme
+import { useColorScheme } from 'nativewind';
+
+const { colorScheme, toggleColorScheme } = useColorScheme();
+
+// Check theme
+if (colorScheme === 'dark') {
+  // Dark mode specific logic
+}
+
+// Theme-aware components
+const SymbolComponent = colorScheme === 'dark' ? WhiteSymbol : BlackSymbol;
+```
+
+### Theme-Aware Assets
+```tsx
+// ✅ GOOD - Theme-aware
+export function BackgroundLogo() {
+  const { colorScheme } = useColorScheme();
+  const Symbol = colorScheme === 'dark' ? SymbolWhite : SymbolBlack;
+  return <Symbol />;
+}
+
+// ❌ BAD - Static asset
+export function BackgroundLogo() {
+  return <Symbol />;
+}
+```
+
+---
+
+## 9. TYPESCRIPT RULES
+
+### Type Safety
+```tsx
+// ✅ GOOD - Explicit types
+interface Agent {
+  id: string;
+  name: string;
+  icon: LucideIcon;
+  description?: string;
+}
+
+export function AgentDrawer({ agents }: { agents: Agent[] }) {
+  // ...
+}
+
+// ❌ BAD - Any types
+export function AgentDrawer({ agents }: { agents: any[] }) {
+  // ...
+}
+```
+
+### Type Organization
+- Create `types.ts` files in component folders
+- Export types alongside components
+- Use interfaces for objects, types for unions
+
+---
+
+## 10. STYLING RULES
+
+### NativeWind Best Practices
+
+```tsx
+// ✅ GOOD - Tailwind classes
+<View className="flex-1 bg-background px-6">
+  <Text className="text-lg font-roobert-semibold text-foreground">
+    Title
+  </Text>
+</View>
+
+// ✅ GOOD - Style prop for dimensions
+<View 
+  className="bg-card rounded-2xl"
+  style={{ width: 33.75, height: 33.75 }}
+>
+
+// ❌ BAD - Inline styles for colors
+<View style={{ backgroundColor: '#F8F8F8', padding: 24 }}>
+  <Text style={{ color: '#121215', fontSize: 18 }}>
+    Title
+  </Text>
+</View>
+```
+
+### Spacing Scale
+**ALWAYS use Tailwind's standardized spacing scale** - Never use custom pixel values.
+
+```tsx
+// ✅ GOOD - Tailwind spacing
+<View className="gap-3 p-4 mx-6 mb-8">
+<View className="gap-1">  // 4px
+<View className="gap-2">  // 8px
+<View className="gap-3">  // 12px
+<View className="gap-4">  // 16px
+
+// ❌ BAD - Custom spacing
+<View style={{ gap: 11.25 }}>
+<View style={{ padding: 15.5 }}>
+```
+
+**Tailwind Spacing Reference:**
+- `gap-1` to `gap-12` (4px to 48px in 4px increments)
+- `p-2`, `px-4`, `py-3`, etc. (padding)
+- `m-2`, `mx-3`, `mb-8`, etc. (margin)
+- Use `gap-x` and `gap-y` for directional gaps
+
+---
+
+## 11. IMPORT ORGANIZATION
+
+### Import Order
+```tsx
+// 1. UI Components
+import { Text } from '@/components/ui/text';
+import { Icon } from '@/components/ui/icon';
+
+// 2. Feature Components
+import { AgentDrawer, ChatInput } from '@/components/input';
+import { TopNav, BackgroundLogo } from '@/components/home';
+
+// 3. Hooks
+import { useAgentManager, useChatInput } from '@/hooks';
+
+// 4. External Libraries
+import { Stack } from 'expo-router';
+import { useColorScheme } from 'nativewind';
+
+// 5. React
+import * as React from 'react';
+
+// 6. React Native
+import { View, Pressable, TextInput } from 'react-native';
+
+// 7. Icons
+import { Menu, Zap } from 'lucide-react-native';
+
+// 8. Types
+import type { Agent } from './types';
+```
+
+### Path Aliases
+```tsx
+// ✅ GOOD - Use @ alias
+import { Text } from '@/components/ui/text';
+import { AGENTS } from '@/components/input';
+
+// ❌ BAD - Relative paths
+import { Text } from '../../components/ui/text';
+```
+
+---
+
+## 12. PERFORMANCE
+
+### Optimization Rules
+1. **Memoize expensive computations**
+   ```tsx
+   const memoizedValue = React.useMemo(() => computeExpensive(), [deps]);
+   ```
+
+2. **Use React.memo for pure components**
+   ```tsx
+   export const AgentAvatar = React.memo(function AgentAvatar({ agent }) {
+     // ...
+   });
+   ```
+
+3. **Avoid inline functions in render**
+   ```tsx
+   // ✅ GOOD
+   const handlePress = useCallback(() => {
+     onPress?.();
+   }, [onPress]);
+   
+   // ❌ BAD
+   <Pressable onPress={() => onPress?.()} />
+   ```
+
+---
+
+## 13. DOCUMENTATION
+
+### Component Documentation
+```tsx
+/**
+ * ChatInput Component - Pixel-perfect recreation from Figma
+ * Node ID: 181:9659
+ * 
+ * Features:
+ * - Multi-line text input
+ * - Attach button with animation
+ * - Agent selector
+ * - Send button
+ * 
+ * Specifications:
+ * - Height: 120px
+ * - Border radius: 20.625px
+ * - Padding: 16px
+ */
+export function ChatInput({ ... }) {
+  // ...
+}
+```
+
+### README Files
+Each major component folder should have a `README.md`:
+- Purpose and overview
+- Component list
+- Usage examples
+- Props documentation
+
+---
+
+## 14. GIT WORKFLOW
+
+### NEVER commit without explicit user request
+```tsx
+// In chat:
+// ❌ "I've committed the changes"
+// ✅ "The changes are ready. Would you like me to commit them?"
+```
+
+### Commit Message Format
+```
+feat: Add theme switcher component
+fix: Resolve keyboard dismissal issue
+refactor: Extract agent logic into custom hook
+docs: Update color system documentation
+```
+
+---
+
+## 15. ERROR HANDLING
+
+### Graceful Degradation
+```tsx
+// ✅ GOOD - Safe optional chaining
+onPress?.();
+agent?.name ?? 'Unknown Agent';
+
+// ✅ GOOD - Error boundaries for crash prevention
+try {
+  riskyOperation();
+} catch (error) {
+  console.error('❌ Error:', error);
+  // Fallback UI
+}
+```
+
+---
+
+## 16. ACCESSIBILITY
+
+### Basic Accessibility
+```tsx
+<Pressable
+  onPress={handlePress}
+  accessibilityLabel="Open menu"
+  accessibilityRole="button"
+  accessibilityHint="Opens the navigation menu"
+>
+  <Icon as={Menu} size={24} />
+</Pressable>
+```
+
+---
+
+## 17. COMMON PATTERNS
+
+### Conditional Rendering
+```tsx
+// ✅ GOOD - Optional chaining
+{onCreateAgent && (
+  <Pressable onPress={onCreateAgent}>...</Pressable>
+)}
+
+// ✅ GOOD - Ternary for either/or
+{isLoading ? <Spinner /> : <Content />}
+```
+
+### List Rendering
+```tsx
+// ✅ GOOD - Proper keys
+{agents.map((agent) => (
+  <AgentCard key={agent.id} agent={agent} />
+))}
+
+// ❌ BAD - Index as key
+{agents.map((agent, index) => (
+  <AgentCard key={index} agent={agent} />
+))}
+```
+
+---
+
+## 18. DO NOT CREATE
+
+- **Helper scripts** - Use standard tools
+- **Workarounds** - Fix the root cause
+- **Temporary files** - Clean up after yourself
+- **Documentation files** - Unless explicitly requested
+- **Config overrides** - Respect project settings
+
+---
+
+## 19. TESTING MINDSET
+
+### Manual Testing Checklist
+- [ ] Light mode works
+- [ ] Dark mode works
+- [ ] Theme switching is smooth
+- [ ] All colors use design tokens
+- [ ] Fonts load correctly
+- [ ] Icons display properly
+- [ ] Animations are smooth
+- [ ] Console logs work
+- [ ] No linter errors
+
+---
+
+## 20. QUICK REFERENCE
+
+### Most Used Commands
+```bash
+# Start dev server
+npx expo start --clear
+
+# Check linter
+# Use read_lints tool
+
+# Install package
+npm install package-name
+```
+
+### Most Used Patterns
+```tsx
+// Color
+className="bg-background text-foreground"
+
+// Font
+className="font-roobert-medium"
+
+// Animation
+const scale = useSharedValue(1);
+scale.value = withSpring(0.9);
+
+// Theme
+const { colorScheme } = useColorScheme();
+
+// Logging
+console.log('🎯 Action:', 'Button pressed');
+```
+
+---
+
+## SUMMARY: THE GOLDEN RULES
+
+1. ✅ **Use design tokens ONLY** - Never hardcode colors
+2. ✅ **Use Roobert font** - Never use system fonts
+3. ✅ **Extract logic to hooks** - Keep components clean
+4. ✅ **One component per file** - Stay organized
+5. ✅ **Use Lucide icons** - No PNG images
+6. ✅ **Log everything** - Console.log user actions
+7. ✅ **TypeScript strict** - No any types
+8. ✅ **Theme-aware** - Support light and dark modes
+9. ✅ **Animate with Reanimated** - Smooth interactions
+10. ✅ **Document well** - Future you will thank you
+
+---
+
+**Remember**: Clean code is not about being clever, it's about being clear, consistent, and maintainable. When in doubt, follow the patterns already established in the codebase.
+

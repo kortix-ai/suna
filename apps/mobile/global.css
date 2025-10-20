@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    font-family: 'Roobert-Regular';
+  }
+
+  /* Light Mode (Default) - Kortix Brand */
+  :root {
+    --background: 240 11% 97%;         /* #F8F8F8 - Kortix White */
+    --foreground: 218 12% 7%;          /* #121215 - Kortix Black */
+    --card: 0 0% 100%;                 /* #FFFFFF - Pure white cards */
+    --card-foreground: 218 12% 7%;     /* #121215 - Card text */
+    --popover: 0 0% 100%;              /* #FFFFFF - Popover background */
+    --popover-foreground: 218 12% 7%;  /* #121215 - Popover text */
+    --primary: 218 12% 7%;             /* #121215 - Primary (black) */
+    --primary-foreground: 240 11% 97%; /* #F8F8F8 - Text on primary */
+    --secondary: 220 13% 91%;          /* #E5E7EB - Secondary surfaces */
+    --secondary-foreground: 218 12% 7%;/* #121215 - Text on secondary */
+    --muted: 220 9% 46%;               /* Muted gray */
+    --muted-foreground: 220 9% 46%;    /* Muted text */
+    --accent: 220 13% 91%;             /* #E5E7EB - Accent */
+    --accent-foreground: 218 12% 7%;   /* #121215 - Text on accent */
+    --destructive: 0 84.2% 60.2%;
+    --border: 220 13% 85%;             /* #D4D4D8 - Borders */
+    --input: 0 0% 100%;                /* #FFFFFF - Inputs */
+    --ring: 218 12% 7%;                /* #121215 - Focus rings */
+    --radius: 0.625rem;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+  }
+
+  /* Dark Mode - Kortix Brand */
+  .dark:root {
+    --background: 218 12% 7%;          /* #121215 - Kortix Black */
+    --foreground: 240 11% 97%;         /* #F8F8F8 - Kortix White */
+    --card: 220 6% 9%;                 /* #161618 - Dark cards */
+    --card-foreground: 240 11% 97%;    /* #F8F8F8 - Card text */
+    --popover: 220 6% 9%;              /* #161618 - Popover background */
+    --popover-foreground: 240 11% 97%; /* #F8F8F8 - Popover text */
+    --primary: 240 11% 97%;            /* #F8F8F8 - Primary (white) */
+    --primary-foreground: 218 12% 7%;  /* #121215 - Text on primary */
+    --secondary: 220 4% 17%;           /* #2A2A2C - Secondary surfaces */
+    --secondary-foreground: 240 11% 97%;/* #F8F8F8 - Text on secondary */
+    --muted: 240 2% 14%;               /* #232324 - Muted */
+    --muted-foreground: 0 0% 60%;      /* Muted text */
+    --accent: 220 4% 17%;              /* #2A2A2C - Accent */
+    --accent-foreground: 240 11% 97%;  /* #F8F8F8 - Text on accent */
+    --destructive: 0 70.9% 59.4%;
+    --border: 240 3% 15%;              /* #242427 - Borders */
+    --input: 220 6% 9%;                /* #161618 - Inputs */
+    --ring: 240 11% 97%;               /* #F8F8F8 - Focus rings */
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+  }
+}

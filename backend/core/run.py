@@ -45,9 +45,7 @@ from core.tools.paper_search_tool import PaperSearchTool
 from core.ai_models.manager import model_manager
 from core.tools.vapi_voice_tool import VapiVoiceTool
 
-
 load_dotenv()
-
 
 @dataclass
 class AgentConfig:
@@ -163,7 +161,6 @@ class ToolManager:
             if enabled_methods:
                 logger.debug(f"✅ Registered vapi_voice_tool with methods: {enabled_methods}")
             
-    
     def _register_agent_builder_tools(self, agent_id: str, disabled_tools: List[str]):
         """Register agent builder tools with proper initialization."""
         from core.tools.agent_builder_tools.agent_config_tool import AgentConfigTool

@@ -1,121 +1,169 @@
-import { AuthOverlay } from '@/components/AuthOverlay';
-import { ChatContainer } from '@/components/ChatContainer';
-import { ChatHeader } from '@/components/ChatHeader';
-import { PanelContainer } from '@/components/PanelContainer';
-import { Skeleton } from '@/components/Skeleton';
-import { useAuth } from '@/hooks/useAuth';
-import { useChatSession, useNewChatSession } from '@/hooks/useChatHooks';
-import { useThemedStyles } from '@/hooks/useThemeColor';
-import {
-    useIsNewChatMode,
-    useLeftPanelVisible,
-    useRightPanelVisible,
-    useSelectedProject,
-    useSetLeftPanelVisible,
-    useSetRightPanelVisible
-} from '@/stores/ui-store';
-import { View } from 'react-native';
+import { MenuPage, HomePage, ThreadPage } from '@/components/pages';
+import { useSideMenu, usePageNavigation, useChat, useAgentManager } from '@/hooks';
+import { useAuthContext } from '@/contexts';
+import { AuthDrawer } from '@/components/auth';
+import { BottomSheetModal } from '@gorhom/bottom-sheet';
+import { Stack } from 'expo-router';
+import { useColorScheme } from 'nativewind';
+import * as React from 'react';
+import { StatusBar as RNStatusBar } from 'react-native';
+import { Drawer } from 'react-native-drawer-layout';
+import type { Agent } from '@/components/shared/types';
+import type { Conversation } from '@/components/menu/types';
 
-export default function HomeScreen() {
-    // Use store state instead of local state for panel visibility
-    const leftPanelVisible = useLeftPanelVisible();
-    const rightPanelVisible = useRightPanelVisible();
-    const setLeftPanelVisible = useSetLeftPanelVisible();
-    const setRightPanelVisible = useSetRightPanelVisible();
+/**
+ * Main App Screen with Drawer Navigation
+ * 
+ * No auth protection - users can access app directly
+ * Auth drawer shows when needed for user-specific features
+ * 
+ * Architecture:
+ * - Drawer (left side): MenuPage (conversations, profile, navigation)
+ * - Main Content: HomePage (default - chat interface)
+ * - Auth Drawer (bottom): Shows when user tries to access protected features
+ * 
+ * Swipe Gestures:
+ * - Swipe right from edge → Opens drawer (Menu)
+ * - Swipe left on drawer → Closes drawer (returns to Home)
+ * - Tap outside drawer → Closes drawer
+ * 
+ * The drawer is full-page and supports native swipe gestures
+ */
+export default function AppScreen() {
+  const { colorScheme } = useColorScheme();
+  const { isAuthenticated } = useAuthContext();
+  const chat = useChat(); // SINGLE UNIFIED HOOK
+  const pageNav = usePageNavigation();
+  const authDrawerRef = React.useRef<BottomSheetModal>(null);
+  const [isAuthDrawerOpen, setIsAuthDrawerOpen] = React.useState(false);
+  
+  // Handle new chat - starts new chat and closes drawer
+  const handleNewChat = React.useCallback(() => {
+    console.log('🆕 New Chat clicked - Starting new chat');
+    chat.startNewChat();
+    pageNav.closeDrawer();
+  }, [chat, pageNav]);
+  
+  // Handle agent selection - starts chat with specific agent
+  const handleAgentPress = React.useCallback((agent: Agent) => {
+    console.log('🤖 Agent selected:', agent.name);
+    console.log('📊 Starting chat with:', agent);
+    // TODO: Set the selected agent in chat thread
+    chat.startNewChat();
+    pageNav.closeDrawer();
+  }, [chat, pageNav]);
+  
+  const menu = useSideMenu({ onNewChat: handleNewChat });
+  const agentManager = useAgentManager();
 
-    const { user, loading } = useAuth();
-    const selectedProject = useSelectedProject();
-    const isNewChatMode = useIsNewChatMode();
+  // Handle conversation click - load thread
+  const handleConversationPress = React.useCallback((conversation: Conversation) => {
+    console.log('📖 Loading thread:', conversation.id);
+    
+    // Load the thread
+    chat.loadThread(conversation.id);
+    
+    // Close drawer
+    pageNav.closeDrawer();
+  }, [chat, pageNav]);
 
-    // Use appropriate chat session based on mode
-    const projectChatSession = useChatSession(
-        (!isNewChatMode && selectedProject?.id && selectedProject.id !== 'new-chat-temp')
-            ? selectedProject.id
-            : ''
-    );
-    const newChatSession = useNewChatSession();
-
-    // Extract messages from both sessions
-    const newChatMessages = newChatSession.messages;
-    const projectMessages = projectChatSession.messages;
-
-    // Select the right session based on mode
-    const { messages } = isNewChatMode ? newChatSession : projectChatSession;
-
-    // Simple fallback for tools panel - use newChatMessages OR messages
-    const newchatmessages = (newChatMessages && newChatMessages.length > 0) ? newChatMessages : messages;
-
-    // Basic logging to see which message state we have
-    console.log('=== MESSAGE STATE DEBUG ===');
-    console.log('isNewChatMode:', isNewChatMode);
-    console.log('newChatMessages length:', newChatMessages?.length || 0);
-    console.log('projectMessages length:', projectMessages?.length || 0);
-    console.log('selected messages length:', messages?.length || 0);
-    console.log('fallback newchatmessages length:', newchatmessages?.length || 0);
-    console.log('=============================');
-
-    const toggleLeftPanel = () => setLeftPanelVisible(!leftPanelVisible);
-    const toggleRightPanel = () => setRightPanelVisible(!rightPanelVisible);
-
-    const styles = useThemedStyles((theme) => ({
-        container: {
-            flex: 1,
-            backgroundColor: theme.background,
-        },
-        header: {
-            backgroundColor: theme.background,
-            borderBottomWidth: 1,
-            borderBottomColor: theme.border,
-            justifyContent: 'center' as const,
-        },
-        chatContainer: {
-            flex: 1,
-        },
-    }));
-
-    if (loading) {
-        return (
-            <View style={styles.container}>
-                <Skeleton />
-            </View>
-        );
+  // Handle profile press - show auth drawer if not authenticated
+  const handleProfilePress = React.useCallback(() => {
+    console.log('🎯 Profile pressed');
+    if (!isAuthenticated) {
+      console.log('🔐 User not authenticated, showing auth drawer');
+      // Use present() to open at the defined snap point (85%)
+      authDrawerRef.current?.present();
+      setIsAuthDrawerOpen(true);
+    } else {
+      menu.handleProfilePress();
     }
+  }, [isAuthenticated, menu]);
 
-    if (!user) {
-        return (
-            <View style={styles.container}>
-                <AuthOverlay
-                    visible={true}
-                    onClose={() => { }}
-                />
-            </View>
-        );
-    }
+  // Handle auth drawer close
+  const handleAuthDrawerClose = React.useCallback(() => {
+    console.log('🔐 Auth drawer closed');
+    authDrawerRef.current?.dismiss();
+    setIsAuthDrawerOpen(false);
+  }, []);
 
-    return (
-        <View style={styles.container}>
-            <PanelContainer
-                leftPanelVisible={leftPanelVisible}
-                rightPanelVisible={rightPanelVisible}
-                onCloseLeft={() => {
-                    console.log('onCloseLeft called');
-                    setLeftPanelVisible(false);
-                }}
-                onCloseRight={() => setRightPanelVisible(false)}
-                onOpenLeft={() => setLeftPanelVisible(true)}
-                messages={newchatmessages}
-            >
-                <View style={styles.header}>
-                    <ChatHeader
-                        onMenuPress={toggleLeftPanel}
-                        onSettingsPress={toggleRightPanel}
-                        selectedProject={selectedProject}
-                    />
-                </View>
-                <View style={styles.chatContainer}>
-                    <ChatContainer />
-                </View>
-            </PanelContainer>
-        </View>
-    );
-} 
+  // Handle auth drawer open - used when user tries protected actions
+  const handleAuthDrawerOpen = React.useCallback(() => {
+    console.log('🔐 Opening auth drawer');
+    authDrawerRef.current?.present();
+    setIsAuthDrawerOpen(true);
+  }, []);
+
+  return (
+    <>
+      <Stack.Screen options={{ headerShown: false }} />
+      <RNStatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
+      
+      <Drawer
+        open={pageNav.isDrawerOpen}
+        onOpen={pageNav.handleDrawerOpen}
+        onClose={pageNav.handleDrawerClose}
+        drawerType="front"
+        drawerStyle={{
+          width: '100%',
+          backgroundColor: 'transparent',
+        }}
+        overlayStyle={{ 
+          backgroundColor: colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 0, 0, 0.2)'
+        }}
+        swipeEnabled={true}
+        swipeEdgeWidth={80}
+        swipeMinDistance={30}
+        swipeMinVelocity={300}
+        renderDrawerContent={() => (
+          <MenuPage
+            sections={menu.sections}
+            profile={menu.profile}
+            activeTab={menu.activeTab}
+            onNewChat={handleNewChat}
+            onNewWorker={() => {
+              console.log('🤖 New Worker clicked');
+              pageNav.closeDrawer();
+            }}
+            onNewTrigger={() => {
+              console.log('⚡ New Trigger clicked');
+              pageNav.closeDrawer();
+            }}
+            selectedAgentId={agentManager.selectedAgent.id}
+            onConversationPress={handleConversationPress}
+            onAgentPress={handleAgentPress}
+            onProfilePress={handleProfilePress}
+            onChatsPress={menu.handleChatsTabPress}
+            onWorkersPress={menu.handleWorkersTabPress}
+            onTriggersPress={menu.handleTriggersTabPress}
+            onClose={pageNav.closeDrawer}
+          />
+        )}
+      >
+        {/* Main Content: Conditionally render HomePage or ThreadPage */}
+        {chat.hasActiveThread ? (
+          <ThreadPage
+            onMenuPress={pageNav.openDrawer}
+            chat={chat}
+            isAuthenticated={isAuthenticated}
+            onOpenAuthDrawer={handleAuthDrawerOpen}
+          />
+        ) : (
+          <HomePage
+            onMenuPress={pageNav.openDrawer}
+            chat={chat}
+            isAuthenticated={isAuthenticated}
+            onOpenAuthDrawer={handleAuthDrawerOpen}
+          />
+        )}
+      </Drawer>
+
+      {/* Auth Drawer - Shows when user needs to sign in */}
+      <AuthDrawer
+        ref={authDrawerRef}
+        isOpen={isAuthDrawerOpen}
+        onClose={handleAuthDrawerClose}
+      />
+    </>
+  );
+}
