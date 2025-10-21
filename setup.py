@@ -190,13 +190,8 @@ def load_existing_env_vars():
             "CLOUDFLARE_API_TOKEN": backend_env.get("CLOUDFLARE_API_TOKEN", ""),
         },
         "storage": {
-            "S3_ACCESS_KEY": backend_env.get("S3_ACCESS_KEY", ""),
-            "S3_SECRET_KEY": backend_env.get("S3_SECRET_KEY", ""),
-            "S3_HOST": backend_env.get("S3_HOST", ""),
-            "S3_REGION": backend_env.get("S3_REGION", ""),
         },
         "email": {
-            "SENDGRID_API_KEY": backend_env.get("SENDGRID_API_KEY", ""),
         },
         "frontend": {
             "NEXT_PUBLIC_SUPABASE_URL": frontend_env.get(
@@ -213,8 +208,6 @@ def load_existing_env_vars():
             "NEXT_PUBLIC_TOLT_REFERRAL_ID": frontend_env.get("NEXT_PUBLIC_TOLT_REFERRAL_ID", ""),
             "NEXT_PUBLIC_PHONE_NUMBER_MANDATORY": frontend_env.get("NEXT_PUBLIC_PHONE_NUMBER_MANDATORY", ""),
             "NEXT_PUBLIC_APP_URL": frontend_env.get("NEXT_PUBLIC_APP_URL", ""),
-            "ORSHOT_API_KEY": frontend_env.get("ORSHOT_API_KEY", ""),
-            "EDGE_CONFIG": frontend_env.get("EDGE_CONFIG", ""),
         },
     }
 

@@ -383,20 +383,7 @@ class Configuration:
     WEBHOOK_BASE_URL: Optional[str] = None
     TRIGGER_WEBHOOK_SECRET: Optional[str] = None
     
-    # S3 Storage configuration
-    S3_ACCESS_KEY: Optional[str] = None
-    S3_SECRET_KEY: Optional[str] = None
-    S3_HOST: Optional[str] = None
-    S3_REGION: Optional[str] = None
-    
     # Email configuration
-    SENDGRID_API_KEY: Optional[str] = None
-    
-    # Image generation
-    ORSHOT_API_KEY: Optional[str] = None
-    
-    # Edge configuration
-    EDGE_CONFIG: Optional[str] = None
     
     # Agent execution limits (can be overridden via environment variable)
     _MAX_PARALLEL_AGENT_RUNS_ENV: Optional[str] = None
