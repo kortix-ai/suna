@@ -145,7 +145,6 @@
     "react-dom": "^18",
     "react-hook-form": "^7.62.0",
     "react-icons": "^5.5.0",
-    "react-joyride": "^3.0.0-7",
     "react-markdown": "^10.1.0",
     "react-papaparse": "^4.4.0",
     "react-pdf": "^9.2.1",

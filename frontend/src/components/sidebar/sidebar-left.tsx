@@ -256,7 +256,7 @@ export function SidebarLeft({
                           </Link>
                         </SidebarMenuSubButton>
                       </SidebarMenuSubItem> */}
-                      <SidebarMenuSubItem data-tour="my-agents">
+                      <SidebarMenuSubItem>
                         <SidebarMenuSubButton className={cn('pl-3 touch-manipulation', {
                           'bg-accent text-accent-foreground font-medium': pathname === '/agents' && (searchParams.get('tab') === 'my-agents' || searchParams.get('tab') === null),
                         })} asChild>
@@ -265,7 +265,7 @@ export function SidebarLeft({
                           </Link>
                         </SidebarMenuSubButton>
                       </SidebarMenuSubItem>
-                      <SidebarMenuSubItem data-tour="new-agent">
+                      <SidebarMenuSubItem>
                         <SidebarMenuSubButton
                           onClick={() => {
                             setShowNewAgentDialog(true);
