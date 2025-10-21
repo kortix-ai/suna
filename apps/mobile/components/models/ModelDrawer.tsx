@@ -8,8 +8,10 @@ import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { Pressable, View } from 'react-native';
 import { AgentAvatar } from '../agents/AgentAvatar';
-import type { Agent, Model } from '../shared/types';
+import type { Agent } from '@/api/types';
+import type { Model } from '@/api/types';
 import { useLanguage } from '@/contexts';
+import { useAvailableModels } from '@/hooks/api/useModels';
 
 interface ModelDrawerProps {
   visible: boolean;
@@ -40,6 +42,10 @@ export function ModelDrawer({
   const bottomSheetRef = React.useRef<BottomSheet>(null);
   const snapPoints = React.useMemo(() => ['60%'], []);
   const { colorScheme } = useColorScheme();
+  
+  // Fetch available models
+  const { data: modelsResponse, isLoading } = useAvailableModels();
+  const models = modelsResponse?.models || [];
 
   // Handle visibility changes
   React.useEffect(() => {
@@ -142,7 +148,13 @@ export function ModelDrawer({
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 20 }}
         >
-          {agent.models?.map((model) => {
+          {isLoading ? (
+            <View className="py-8 items-center">
+              <View className="w-8 h-8 bg-muted rounded-full animate-pulse mb-2" />
+              <Text className="text-muted-foreground text-sm font-roobert">Loading models...</Text>
+            </View>
+          ) : (
+            models.map((model) => {
             const isSelected = model.id === selectedModelId;
             
             return (
@@ -150,13 +162,13 @@ export function ModelDrawer({
                 key={model.id}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  console.log('🤖 Model Selected:', {
-                    modelId: model.id,
-                    modelName: model.name,
-                    agentId: agent.id,
-                    agentName: agent.name,
-                    timestamp: new Date().toISOString()
-                  });
+                    console.log('🤖 Model Selected:', {
+                      modelId: model.id,
+                      modelName: model.display_name,
+                      agentId: agent.agent_id,
+                      agentName: agent.name,
+                      timestamp: new Date().toISOString()
+                    });
                   onSelectModel(model);
                   onClose();
                 }}
@@ -164,30 +176,15 @@ export function ModelDrawer({
                   isSelected ? 'bg-primary/15' : 'bg-primary/5'
                 }`}
               >
-                <View 
-                  className="items-center justify-center rounded-2xl"
-                  style={{
-                    width: 48,
-                    height: 48,
-                    backgroundColor: model.backgroundColor,
-                    borderWidth: 1.2,
-                    borderColor: colorScheme === 'dark' ? '#232324' : '#E4E4E7'
-                  }}
-                >
-                  <Icon 
-                    as={model.icon} 
-                    size={20} 
-                    color={model.iconColor}
-                    strokeWidth={2}
-                  />
-                </View>
-                <View className="ml-3 flex-1">
-                  <Text className="text-foreground text-base font-roobert-medium">
-                    {model.name}
+                <View className="flex-1">
+                  <Text className={`text-base font-roobert-medium ${
+                    isSelected ? 'text-primary' : 'text-foreground'
+                  }`}>
+                    {model.display_name}
                   </Text>
-                  {model.description && (
-                    <Text className="text-foreground/60 text-sm font-roobert mt-0.5">
-                      {model.description}
+                  {model.short_name && (
+                    <Text className="text-sm text-foreground/60 font-roobert mt-0.5">
+                      {model.short_name}
                     </Text>
                   )}
                 </View>
@@ -196,7 +193,8 @@ export function ModelDrawer({
                 )}
               </Pressable>
             );
-          })}
+            })
+          )}
         </BottomSheetScrollView>
       </View>
     </BottomSheet>

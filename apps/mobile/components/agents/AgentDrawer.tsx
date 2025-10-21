@@ -2,6 +2,7 @@ import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { useLanguage } from '@/contexts';
+import { useAgent } from '@/contexts/AgentContext';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
@@ -12,14 +13,11 @@ import { Pressable, View } from 'react-native';
 import { AgentAvatar } from './AgentAvatar';
 import { AgentList } from './AgentList';
 import { useSearch } from '@/lib/search';
-import type { Agent } from '../shared/types';
+import type { Agent } from '@/api/types';
 
 interface AgentDrawerProps {
   visible: boolean;
   onClose: () => void;
-  agents: Agent[];
-  selectedAgentId: string;
-  onSelectAgent: (agent: Agent) => void;
   onCreateAgent?: () => void;
 }
 
@@ -31,13 +29,11 @@ interface AgentDrawerProps {
  * - My Workers section with agent list
  * - Clean agent selection interface
  * - Proper theming and haptic feedback
+ * - Loading and empty states
  */
 export function AgentDrawer({
   visible,
   onClose,
-  agents,
-  selectedAgentId,
-  onSelectAgent,
   onCreateAgent
 }: AgentDrawerProps) {
   const bottomSheetRef = React.useRef<BottomSheet>(null);
@@ -45,9 +41,23 @@ export function AgentDrawer({
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
   
-  // Search functionality
+  // Get agents from context
+  const { agents, selectedAgentId, selectAgent, isLoading, error } = useAgent();
+  
+  // Search functionality - transform agents to have 'id' field for search
+  const searchableAgents = React.useMemo(() => 
+    agents.map(agent => ({ ...agent, id: agent.agent_id })), 
+    [agents]
+  );
+  
   const searchFields = React.useMemo(() => ['name', 'description'], []);
-  const { query, results, clearSearch, updateQuery, isSearching } = useSearch(agents, searchFields);
+  const { query, results, clearSearch, updateQuery, isSearching } = useSearch(searchableAgents, searchFields);
+  
+  // Transform results back to Agent type
+  const agentResults = React.useMemo(() => 
+    results.map(result => ({ ...result, agent_id: result.id })), 
+    [results]
+  );
 
   // Handle visibility changes
   React.useEffect(() => {
@@ -79,16 +89,16 @@ export function AgentDrawer({
     }
   }, [onClose]);
 
-  const handleAgentPress = React.useCallback((agent: Agent) => {
+  const handleAgentPress = React.useCallback(async (agent: Agent) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     console.log('🤖 Agent Selected:', {
-      id: agent.id,
+      id: agent.agent_id,
       name: agent.name,
       timestamp: new Date().toISOString()
     });
-    onSelectAgent(agent);
+    await selectAgent(agent.agent_id);
     onClose();
-  }, [onSelectAgent, onClose]);
+  }, [selectAgent, onClose]);
 
 
   return (
@@ -159,14 +169,51 @@ export function AgentDrawer({
               )}
             </View>
 
+            {/* Loading State */}
+            {isLoading && (
+              <View className="py-8 items-center">
+                <View className="w-8 h-8 bg-muted rounded-full animate-pulse mb-2" />
+                <Text className="text-muted-foreground text-sm font-roobert">Loading agents...</Text>
+              </View>
+            )}
+
+            {/* Error State */}
+            {error && (
+              <View className="py-8 items-center">
+                <Text className="text-destructive text-sm font-roobert text-center">
+                  Failed to load agents. Please try again.
+                </Text>
+              </View>
+            )}
+
+            {/* Empty State */}
+            {!isLoading && !error && agentResults.length === 0 && query && (
+              <View className="py-8 items-center">
+                <Text className="text-muted-foreground text-sm font-roobert text-center">
+                  No agents found matching "{query}"
+                </Text>
+              </View>
+            )}
+
+            {/* Empty State - No Agents */}
+            {!isLoading && !error && agentResults.length === 0 && !query && (
+              <View className="py-8 items-center">
+                <Text className="text-muted-foreground text-sm font-roobert text-center">
+                  No agents available. Create your first agent to get started.
+                </Text>
+              </View>
+            )}
+
             {/* Agent List - Using reusable AgentList component with search results */}
-            <AgentList
-              agents={results}
-              selectedAgentId={selectedAgentId}
-              onAgentPress={handleAgentPress}
-              showChevron={true}
-              compact={true}
-            />
+            {!isLoading && !error && agentResults.length > 0 && (
+              <AgentList
+                agents={agentResults}
+                selectedAgentId={selectedAgentId}
+                onAgentPress={handleAgentPress}
+                showChevron={true}
+                compact={true}
+              />
+            )}
           </View>
 
         </BottomSheetScrollView>

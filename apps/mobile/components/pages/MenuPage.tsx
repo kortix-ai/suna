@@ -22,14 +22,16 @@ import { ProfileSection } from '@/components/menu/ProfileSection';
 import { SettingsDrawer } from '@/components/menu/SettingsDrawer';
 import { AuthDrawer } from '@/components/auth/AuthDrawer';
 import { useAuthContext, useLanguage } from '@/contexts';
+import { useRouter } from 'expo-router';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AgentList } from '@/components/agents/AgentList';
-import { AGENTS } from '@/components/agents/agents';
+import { useAgent } from '@/contexts/AgentContext';
 import { useSearch } from '@/lib/search';
-import { useThreads } from '@/hooks/api';
+import { useThreads, useAllTriggers } from '@/hooks/api';
 import { groupThreadsByMonth } from '@/lib/thread-utils';
+import { TriggerList, TriggerCreationDrawer } from '@/components/triggers';
 import type { Conversation, UserProfile, ConversationSection as ConversationSectionType } from '@/components/menu/types';
-import type { Agent } from '@/components/shared/types';
+import type { Agent, TriggerWithAgent } from '@/api/types';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
@@ -242,9 +244,17 @@ export function MenuPage({
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
   const { user } = useAuthContext();
+  const router = useRouter();
+  const { agents } = useAgent();
   const scrollY = useSharedValue(0);
   const [isSettingsVisible, setIsSettingsVisible] = React.useState(false);
   const [isAuthDrawerVisible, setIsAuthDrawerVisible] = React.useState(false);
+  const [isTriggerDrawerVisible, setIsTriggerDrawerVisible] = React.useState(false);
+
+  // Debug trigger drawer visibility
+  React.useEffect(() => {
+    console.log('🔧 TriggerCreationDrawer visible changed to:', isTriggerDrawerVisible);
+  }, [isTriggerDrawerVisible]);
   const authDrawerRef = React.useRef<any>(null);
   
   const isGuest = !user;
@@ -270,7 +280,7 @@ export function MenuPage({
   // Search functionality for different tabs
   const chatsSearchFields = React.useMemo(() => ['title', 'lastMessage'], []);
   const workersSearchFields = React.useMemo(() => ['name', 'description'], []);
-  const triggersSearchFields = React.useMemo(() => ['name', 'description'], []);
+  const triggersSearchFields = React.useMemo(() => ['name', 'description', 'agent_name', 'trigger_type'], []);
   
   // Memoize conversations array to prevent infinite loops
   const conversations = React.useMemo(() => 
@@ -279,10 +289,35 @@ export function MenuPage({
   );
   
   const chatsSearch = useSearch(conversations, chatsSearchFields);
-  const workersSearch = useSearch(AGENTS, workersSearchFields);
   
-  // For triggers, we'll use a placeholder since we don't have trigger data yet
-  const triggersSearch = useSearch([], triggersSearchFields);
+  // Transform agents to have 'id' field for search
+  const searchableAgents = React.useMemo(() => 
+    agents.map(agent => ({ ...agent, id: agent.agent_id })), 
+    [agents]
+  );
+  const workersSearch = useSearch(searchableAgents, workersSearchFields);
+  
+  // Transform results back to Agent type
+  const agentResults = React.useMemo(() => 
+    workersSearch.results.map(result => ({ ...result, agent_id: result.id })), 
+    [workersSearch.results]
+  );
+  
+  // Get triggers data
+  const { data: triggers = [], isLoading: triggersLoading, error: triggersError, refetch: refetchTriggers } = useAllTriggers();
+  
+  // Transform triggers to have 'id' field for search
+  const searchableTriggers = React.useMemo(() => 
+    triggers.map(trigger => ({ ...trigger, id: trigger.trigger_id })), 
+    [triggers]
+  );
+  const triggersSearch = useSearch(searchableTriggers, triggersSearchFields);
+  
+  // Transform results back to TriggerWithAgent type
+  const triggerResults = React.useMemo(() => 
+    triggersSearch.results.map(result => ({ ...result, trigger_id: result.id })), 
+    [triggersSearch.results]
+  );
   
   /**
    * Handle scroll event to track scroll position
@@ -313,6 +348,33 @@ export function MenuPage({
   const handleCloseSettings = () => {
     console.log('🎯 Closing settings drawer');
     setIsSettingsVisible(false);
+  };
+
+  /**
+   * Handle trigger creation
+   */
+  const handleTriggerCreate = () => {
+    console.log('🔧 Opening trigger creation drawer');
+    console.log('🔧 Current isTriggerDrawerVisible:', isTriggerDrawerVisible);
+    setIsTriggerDrawerVisible(true);
+    console.log('🔧 Set isTriggerDrawerVisible to true');
+  };
+
+  /**
+   * Handle trigger drawer close
+   */
+  const handleTriggerDrawerClose = () => {
+    setIsTriggerDrawerVisible(false);
+  };
+
+  /**
+   * Handle trigger created
+   */
+  const handleTriggerCreated = (triggerId: string) => {
+    console.log('🔧 Trigger created:', triggerId);
+    setIsTriggerDrawerVisible(false);
+    // Refetch triggers to show the new one
+    refetchTriggers();
   };
   
   /**
@@ -444,7 +506,7 @@ export function MenuPage({
               
               {activeTab === 'workers' && (
                 <AgentList
-                  agents={workersSearch.results}
+                  agents={agentResults}
                   selectedAgentId={selectedAgentId}
                   onAgentPress={onAgentPress}
                   showChevron={false}
@@ -453,22 +515,31 @@ export function MenuPage({
               )}
               
               {activeTab === 'triggers' && (
-                <View className="items-center justify-center py-16">
-                  <View className="w-16 h-16 rounded-2xl bg-secondary items-center justify-center mb-4">
-                    <Icon 
-                      as={Plus}
-                      size={32}
-                      className="text-muted-foreground"
-                      strokeWidth={2}
-                    />
-                  </View>
-                  <Text className="text-foreground text-lg font-roobert-semibold">
-                    {t('emptyStates.triggers')}
-                  </Text>
-                  <Text className="text-muted-foreground text-sm font-roobert mt-2 text-center px-8">
-                    {t('emptyStates.triggersDescription')}
-                  </Text>
-                </View>
+                <TriggerList
+                  triggers={triggerResults}
+                  onTriggerPress={(trigger) => {
+                    console.log('🔧 Trigger selected:', trigger.name);
+                    // Navigate to trigger detail page
+                    router.push({
+                      pathname: '/trigger-detail',
+                      params: { triggerId: trigger.trigger_id }
+                    });
+                  }}
+                  isLoading={triggersLoading}
+                  isRefreshing={false}
+                  onRefresh={refetchTriggers}
+                  searchQuery={triggersSearch.query}
+                  onSearchChange={triggersSearch.updateQuery}
+                  showAgent={true}
+                  compact={false}
+                  groupByCategory={true}
+                  emptyStateTitle={t('emptyStates.triggers') || 'No triggers found'}
+                  emptyStateDescription={t('emptyStates.triggersDescription') || 'Create your first trigger to get started'}
+                  emptyStateAction={{
+                    label: t('menu.newTrigger') || 'Create Trigger',
+                    onPress: handleTriggerCreate,
+                  }}
+                />
               )}
             </AnimatedScrollView>
             
@@ -534,7 +605,14 @@ export function MenuPage({
         activeTab={activeTab}
         onChatPress={onNewChat}
         onWorkerPress={onNewWorker}
-        onTriggerPress={onNewTrigger}
+        onTriggerPress={handleTriggerCreate}
+      />
+
+      {/* Trigger Creation Drawer */}
+      <TriggerCreationDrawer
+        visible={isTriggerDrawerVisible}
+        onClose={handleTriggerDrawerClose}
+        onTriggerCreated={handleTriggerCreated}
       />
     </View>
   );

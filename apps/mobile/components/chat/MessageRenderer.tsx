@@ -9,7 +9,7 @@
  */
 
 import React, { useMemo, useCallback, useEffect } from 'react';
-import { View, Pressable, Linking } from 'react-native';
+import { View, Pressable, Linking, Text as RNText } from 'react-native';
 import { Text } from '@/components/ui/text';
 import type { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/api/types';
 import { groupMessages, safeJsonParse, type MessageGroup } from '@/lib/message-grouping';
@@ -217,10 +217,16 @@ function UserMessageBubble({
 
   if (!content) return null;
 
+  const { colorScheme } = useColorScheme();
+  
   return (
     <View className={`px-4 flex-row justify-end ${isLast ? 'mb-0' : 'mb-6'}`}>
       <View className="max-w-[80%] bg-primary rounded-[20px] px-4 py-3 shadow-sm">
-        <Text className="text-primary-foreground text-[15px] leading-[22px]">
+        <Text 
+          className="text-primary-foreground text-[15px] leading-[22px]"
+          style={{ color: colorScheme === 'dark' ? '#121215' : '#f8f8f8' }}
+          selectable
+        >
           {content}
         </Text>
       </View>
@@ -391,6 +397,15 @@ function AssistantMessageContent({
     return false;
   }, []);
 
+  // Custom rules to make all text selectable using React Native's built-in selection
+  const customRules = useMemo(() => ({
+    text: (node: any, children: any, parent: any, styles: any) => (
+      <RNText key={node.key} style={styles.text} selectable>
+        {node.content}
+      </RNText>
+    ),
+  }), []);
+
   // Don't render assistant messages that contain function calls
   // The tool cards will show all the necessary information
   if (hasFunctionCalls) return null;
@@ -400,11 +415,12 @@ function AssistantMessageContent({
 
   return (
     <View className={`px-4 ${hasToolsBelow ? 'mb-3' : 'mb-0'}`}>
-      {/* Message content - full width, perfect typography */}
+      {/* Message content - full width, perfect typography with selectable text */}
       <View className="w-full">
         <Markdown
           style={isDark ? markdownStylesDark : markdownStyles}
           onLinkPress={handleLinkPress}
+          rules={customRules}
         >
           {content}
         </Markdown>

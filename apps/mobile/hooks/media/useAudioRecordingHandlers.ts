@@ -1,6 +1,6 @@
 import * as Haptics from 'expo-haptics';
 import type { useAudioRecorder } from './useAudioRecorder';
-import type { useAgentManager } from './useAgentManager';
+import type { useAgentManager } from '../ui/useAgentManager';
 
 /**
  * Custom hook for audio recording handlers with haptic feedback
@@ -50,7 +50,7 @@ export function useAudioRecordingHandlers(
         console.log('📊 Audio data:', {
           uri: result.uri,
           duration: result.duration,
-          agent: agentManager.selectedAgent.name,
+          agent: agentManager.selectedAgent?.name || 'Unknown',
         });
         
         await audioRecorder.reset();

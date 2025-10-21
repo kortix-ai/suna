@@ -9,12 +9,11 @@ import Animated, {
   withSpring 
 } from 'react-native-reanimated';
 import { AgentAvatar } from './AgentAvatar';
-import type { Agent } from '../shared/types';
+import { useAgent } from '@/contexts/AgentContext';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface AgentSelectorProps {
-  agent: Agent;
   onPress?: () => void;
   compact?: boolean;
 }
@@ -26,12 +25,24 @@ interface AgentSelectorProps {
  * Compact mode: Shows only avatar with small chevron overlay (minimal space)
  * Full mode: Shows avatar, name, and chevron (default)
  */
-export function AgentSelector({ agent, onPress, compact = true }: AgentSelectorProps) {
+export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
+  const { getCurrentAgent } = useAgent();
+  const agent = getCurrentAgent();
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
+
+  // Show loading state if no agent is selected yet
+  if (!agent) {
+    return (
+      <View className="flex-row items-center gap-1.5 bg-secondary/50 rounded-full px-3 py-1.5 border border-border/30">
+        <View className="w-6 h-6 bg-muted rounded-full animate-pulse" />
+        <Text className="text-muted-foreground text-sm font-roobert-medium">Loading...</Text>
+      </View>
+    );
+  }
 
   if (compact) {
     // Minimal version: just avatar with chevron badge

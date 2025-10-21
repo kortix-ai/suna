@@ -17,10 +17,14 @@ import type { Attachment } from '@/hooks/useChat';
 import { AgentSelector } from '../agents/AgentSelector';
 import { AttachmentPreview } from '../attachments/AttachmentPreview';
 import { AudioWaveform } from '../attachments/AudioWaveform';
-import type { Agent } from '../shared/types';
+import type { Agent } from '@/api/types';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedView = Animated.createAnimatedComponent(View);
+
+export interface ChatInputRef {
+  focus: () => void;
+}
 
 interface ChatInputProps extends ViewProps {
   value?: string;
@@ -33,7 +37,7 @@ interface ChatInputProps extends ViewProps {
   onCancelRecording?: () => void;
   onStopAgentRun?: () => void;
   placeholder?: string;
-  agent: Agent;
+  agent?: Agent;
   isRecording?: boolean;
   recordingDuration?: number;
   attachments?: Attachment[];
@@ -59,8 +63,9 @@ interface ChatInputProps extends ViewProps {
  * - Send button
  * - Authentication checks before sending
  * - Auto-clear input after successful send
+ * - Programmatic focus support
  */
-export function ChatInput({ 
+export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({ 
   value, 
   onChangeText, 
   onSendMessage,
@@ -84,13 +89,24 @@ export function ChatInput({
   isSendingMessage = false,
   style,
   ...props 
-}: ChatInputProps) {
+}, ref) => {
   // Animation values for buttons
   const attachScale = useSharedValue(1);
   const cancelScale = useSharedValue(1);
   const stopScale = useSharedValue(1);
   const sendScale = useSharedValue(1);
   const pulseOpacity = useSharedValue(1);
+  
+  // TextInput ref for programmatic focus
+  const textInputRef = React.useRef<TextInput>(null);
+  
+  // Expose focus method via ref
+  React.useImperativeHandle(ref, () => ({
+    focus: () => {
+      console.log('🎯 Focusing chat input');
+      textInputRef.current?.focus();
+    },
+  }), []);
   
   // Pulsing animation for agent running state
   React.useEffect(() => {
@@ -197,7 +213,7 @@ export function ChatInput({
     
     console.log('✅ User authenticated, sending message');
     // Don't clear input here - let useChat handle it after successful send
-    onSendMessage?.(value, agent.id, agent.name);
+    onSendMessage?.(value, agent?.agent_id || '', agent?.name || '');
   };
 
   // Handle sending audio - also checks auth
@@ -360,6 +376,7 @@ export function ChatInput({
 
                 {/* Text Input */}
                 <TextInput
+                  ref={textInputRef}
                   value={value}
                   onChangeText={onChangeText}
                   placeholder={effectivePlaceholder}
@@ -445,7 +462,7 @@ export function ChatInput({
               {/* Right Actions */}
               <View className="flex-row items-center gap-2">
                 {/* Agent Selector with Full Name */}
-                <AgentSelector agent={agent} onPress={onAgentPress} compact={false} />
+                <AgentSelector onPress={onAgentPress} compact={false} />
 
                 {/* Send/Stop/Audio Button */}
                 <AnimatedPressable 
@@ -488,4 +505,6 @@ export function ChatInput({
       </View>
     </View>
   );
-}
+});
+
+ChatInput.displayName = 'ChatInput';

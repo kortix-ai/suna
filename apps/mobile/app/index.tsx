@@ -1,4 +1,5 @@
 import { MenuPage, HomePage, ThreadPage } from '@/components/pages';
+import type { HomePageRef } from '@/components/pages/HomePage';
 import { useSideMenu, usePageNavigation, useChat, useAgentManager } from '@/hooks';
 import { useAuthContext } from '@/contexts';
 import { AuthDrawer } from '@/components/auth';
@@ -8,7 +9,7 @@ import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { StatusBar as RNStatusBar } from 'react-native';
 import { Drawer } from 'react-native-drawer-layout';
-import type { Agent } from '@/components/shared/types';
+import type { Agent } from '@/api/types';
 import type { Conversation } from '@/components/menu/types';
 
 /**
@@ -35,6 +36,7 @@ export default function AppScreen() {
   const chat = useChat(); // SINGLE UNIFIED HOOK
   const pageNav = usePageNavigation();
   const authDrawerRef = React.useRef<BottomSheetModal>(null);
+  const homePageRef = React.useRef<HomePageRef>(null);
   const [isAuthDrawerOpen, setIsAuthDrawerOpen] = React.useState(false);
   
   // Handle new chat - starts new chat and closes drawer
@@ -42,6 +44,12 @@ export default function AppScreen() {
     console.log('🆕 New Chat clicked - Starting new chat');
     chat.startNewChat();
     pageNav.closeDrawer();
+    
+    // Focus chat input after drawer closes
+    setTimeout(() => {
+      console.log('🎯 Focusing chat input after new chat');
+      homePageRef.current?.focusChatInput();
+    }, 300); // Small delay to ensure drawer is closed
   }, [chat, pageNav]);
   
   // Handle agent selection - starts chat with specific agent
@@ -129,7 +137,7 @@ export default function AppScreen() {
               console.log('⚡ New Trigger clicked');
               pageNav.closeDrawer();
             }}
-            selectedAgentId={agentManager.selectedAgent.id}
+            selectedAgentId={agentManager.selectedAgent?.agent_id}
             onConversationPress={handleConversationPress}
             onAgentPress={handleAgentPress}
             onProfilePress={handleProfilePress}
@@ -150,6 +158,7 @@ export default function AppScreen() {
           />
         ) : (
           <HomePage
+            ref={homePageRef}
             onMenuPress={pageNav.openDrawer}
             chat={chat}
             isAuthenticated={isAuthenticated}

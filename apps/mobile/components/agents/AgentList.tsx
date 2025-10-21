@@ -6,7 +6,7 @@ import { ChevronRight } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { AgentAvatar } from './AgentAvatar';
-import type { Agent } from '../shared/types';
+import type { Agent } from '@/api/types';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -50,11 +50,11 @@ export function AgentList({
   return (
     <View className={containerGap}>
       {agents.map((agent) => {
-        const isSelected = agent.id === selectedAgentId;
+        const isSelected = agent.agent_id === selectedAgentId;
         
         return (
           <AgentListItem
-            key={agent.id}
+            key={agent.agent_id}
             agent={agent}
             isSelected={isSelected}
             onPress={handleAgentPress}

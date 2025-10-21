@@ -186,17 +186,309 @@ export interface UploadedFile {
 // ============================================================================
 
 export interface Agent {
-  id: string;
+  agent_id: string;
   name: string;
   description?: string;
   system_prompt?: string;
-  model_name?: string;
-  temperature?: number;
-  max_tokens?: number;
-  tools?: string[];
-  metadata?: Record<string, any>;
+  model?: string;
+  configured_mcps: Array<{
+    name: string;
+    config: Record<string, any>;
+  }>;
+  custom_mcps?: Array<{
+    name: string;
+    type: 'json' | 'sse';
+    config: Record<string, any>;
+    enabledTools: string[];
+  }>;
+  agentpress_tools: Record<string, any>;
+  is_default: boolean;
+  is_public?: boolean;
+  marketplace_published_at?: string;
+  download_count?: number;
+  tags?: string[];
   created_at: string;
   updated_at: string;
+  icon_name?: string | null;
+  icon_color?: string | null;
+  icon_background?: string | null;
+  current_version_id?: string | null;
+  version_count?: number;
+  current_version?: AgentVersion | null;
+  metadata?: {
+    template_name?: string;
+    kortix_template_id?: string;
+    is_kortix_team?: boolean;
+    is_suna_default?: boolean;
+    centrally_managed?: boolean;
+    management_version?: string;
+    restrictions?: {
+      system_prompt_editable?: boolean;
+      tools_editable?: boolean;
+      name_editable?: boolean;
+      mcps_editable?: boolean;
+    };
+    installation_date?: string;
+    last_central_update?: string;
+  };
+}
+
+export interface AgentVersion {
+  version_id: string;
+  agent_id: string;
+  version_number: number;
+  version_name: string;
+  system_prompt: string;
+  model?: string;
+  configured_mcps: Array<any>;
+  custom_mcps: Array<any>;
+  agentpress_tools: Record<string, any>;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+  created_by?: string;
+  change_description?: string;
+}
+
+export interface AgentsResponse {
+  agents: Agent[];
+  pagination: PaginationInfo;
+}
+
+export interface PaginationInfo {
+  current_page: number;
+  page_size: number;
+  total_items: number;
+  total_pages: number;
+  has_next: boolean;
+  has_previous: boolean;
+}
+
+export interface AgentsParams {
+  page?: number;
+  limit?: number;
+  search?: string;
+  sort_by?: string;
+  sort_order?: string;
+  has_default?: boolean;
+  has_mcp_tools?: boolean;
+  has_agentpress_tools?: boolean;
+  tools?: string;
+  content_type?: string;
+}
+
+export interface AgentCreateRequest {
+  name: string;
+  description?: string;
+  system_prompt?: string;
+  configured_mcps?: Array<{
+    name: string;
+    config: Record<string, any>;
+  }>;
+  custom_mcps?: Array<{
+    name: string;
+    type: 'json' | 'sse';
+    config: Record<string, any>;
+    enabledTools: string[];
+  }>;
+  agentpress_tools?: Record<string, any>;
+  is_default?: boolean;
+  icon_name?: string | null;
+  icon_color?: string | null;
+  icon_background?: string | null;
+}
+
+export interface AgentUpdateRequest {
+  name?: string;
+  description?: string;
+  system_prompt?: string;
+  model?: string;
+  configured_mcps?: Array<{
+    name: string;
+    config: Record<string, any>;
+  }>;
+  custom_mcps?: Array<{
+    name: string;
+    type: 'json' | 'sse';
+    config: Record<string, any>;
+    enabledTools: string[];
+  }>;
+  agentpress_tools?: Record<string, any>;
+  is_default?: boolean;
+  icon_name?: string | null;
+  icon_color?: string | null;
+  icon_background?: string | null;
+  replace_mcps?: boolean;
+}
+
+// ============================================================================
+// Models
+// ============================================================================
+
+export interface Model {
+  id: string;
+  display_name: string;
+  short_name?: string;
+  requires_subscription?: boolean;
+  is_available?: boolean;
+  input_cost_per_million_tokens?: number | null;
+  output_cost_per_million_tokens?: number | null;
+  max_tokens?: number | null;
+  context_window?: number;
+  capabilities?: string[];
+  recommended?: boolean;
+  priority?: number;
+}
+
+export interface AvailableModelsResponse {
+  models: Model[];
+  subscription_tier: string;
+  total_models: number;
+}
+
+// ===== TRIGGER TYPES =====
+
+export interface TriggerConfiguration {
+  trigger_id: string;
+  agent_id: string;
+  trigger_type: string;
+  provider_id: string;
+  name: string;
+  description?: string;
+  is_active: boolean;
+  webhook_url?: string;
+  created_at: string;
+  updated_at: string;
+  config?: Record<string, any>;
+}
+
+export interface TriggerProvider {
+  provider_id: string;
+  name: string;
+  description?: string;
+  trigger_type: string;
+  webhook_enabled: boolean;
+  config_schema: Record<string, any>;
+}
+
+export interface TriggerWithAgent {
+  trigger_id: string;
+  agent_id: string;
+  trigger_type: string;
+  provider_id: string;
+  name: string;
+  description?: string;
+  is_active: boolean;
+  webhook_url?: string;
+  created_at: string;
+  updated_at: string;
+  config?: Record<string, any>;
+  // Agent details
+  agent_name: string;
+  agent_description?: string;
+  icon_name?: string | null;
+  icon_color?: string | null;
+  icon_background?: string | null;
+}
+
+export interface TriggerResponse {
+  trigger_id: string;
+  agent_id: string;
+  trigger_type: string;
+  provider_id: string;
+  name: string;
+  description?: string;
+  is_active: boolean;
+  webhook_url?: string;
+  created_at: string;
+  updated_at: string;
+  config: Record<string, any>;
+}
+
+export interface ProviderResponse {
+  provider_id: string;
+  name: string;
+  description?: string;
+  trigger_type: string;
+  webhook_enabled: boolean;
+  config_schema: Record<string, any>;
+}
+
+// Trigger Config Interfaces
+export interface ScheduleTriggerConfig {
+  cron_expression: string;
+  agent_prompt?: string;
+  timezone?: string;
+}
+
+export interface EventTriggerConfig {
+  profile_id?: string;
+  agent_prompt: string;
+  trigger_slug: string;
+  composio_trigger_id?: string;
+}
+
+export interface WebhookTriggerConfig {
+  webhook_url?: string;
+  secret?: string;
+  headers_validation?: Record<string, string>;
+  expected_content_type?: string;
+}
+
+export interface TelegramTriggerConfig {
+  bot_token: string;
+  secret_token?: string;
+  allowed_users?: number[];
+  allowed_chats?: number[];
+  trigger_commands?: string[];
+  trigger_keywords?: string[];
+  respond_to_all_messages?: boolean;
+  response_mode?: 'reply' | 'new_message';
+}
+
+export interface SlackTriggerConfig {
+  signing_secret: string;
+  bot_token?: string;
+  allowed_channels?: string[];
+  trigger_keywords?: string[];
+  respond_to_mentions?: boolean;
+  respond_to_direct_messages?: boolean;
+}
+
+export interface GitHubTriggerConfig {
+  secret: string;
+  events: string[];
+  repository?: string;
+}
+
+export interface DiscordTriggerConfig {
+  webhook_url: string;
+  bot_token?: string;
+  allowed_channels?: string[];
+  trigger_keywords?: string[];
+}
+
+// Request/Response Types
+export interface TriggerCreateRequest {
+  provider_id: string;
+  name: string;
+  config: Record<string, any>;
+  description?: string;
+}
+
+export interface TriggerUpdateRequest {
+  config?: Record<string, any>;
+  name?: string;
+  description?: string;
+  is_active?: boolean;
+}
+
+export interface TriggersResponse {
+  triggers: TriggerConfiguration[];
+}
+
+export interface ProvidersResponse {
+  providers: TriggerProvider[];
 }
 
 // ============================================================================

@@ -1,18 +1,26 @@
-import { AGENTS, DEFAULT_AGENT, type Agent } from '@/components/agents';
 import { useState } from 'react';
+import { useAgent } from '@/contexts/AgentContext';
 
 /**
  * Custom hook for managing agent selection and operations
+ * Now uses AgentContext for state management
  */
 export function useAgentManager() {
-  const [selectedAgent, setSelectedAgent] = useState<Agent>(DEFAULT_AGENT);
+  const { 
+    selectedAgentId, 
+    agents, 
+    isLoading, 
+    getCurrentAgent, 
+    selectAgent 
+  } = useAgent();
+  
   const [isDrawerVisible, setIsDrawerVisible] = useState(false);
 
   const openDrawer = () => {
     console.log('🔽 Agent Selector Pressed');
     console.log('📊 Current Agent:', { 
-      id: selectedAgent.id, 
-      name: selectedAgent.name 
+      id: selectedAgentId, 
+      name: getCurrentAgent()?.name 
     });
     console.log('⏰ Timestamp:', new Date().toISOString());
     setIsDrawerVisible(true);
@@ -22,13 +30,13 @@ export function useAgentManager() {
     setIsDrawerVisible(false);
   };
 
-  const selectAgent = (agent: Agent) => {
+  const selectAgentHandler = async (agentId: string) => {
     console.log('✅ Agent Changed:', {
-      from: { id: selectedAgent.id, name: selectedAgent.name },
-      to: { id: agent.id, name: agent.name },
+      from: { id: selectedAgentId, name: getCurrentAgent()?.name },
+      to: { id: agentId, name: agents.find(a => a.agent_id === agentId)?.name },
       timestamp: new Date().toISOString()
     });
-    setSelectedAgent(agent);
+    await selectAgent(agentId);
   };
 
   const openAgentSettings = () => {
@@ -38,12 +46,13 @@ export function useAgentManager() {
   };
 
   return {
-    selectedAgent,
+    selectedAgent: getCurrentAgent(),
     isDrawerVisible,
-    agents: AGENTS,
+    agents,
+    isLoading,
     openDrawer,
     closeDrawer,
-    selectAgent,
+    selectAgent: selectAgentHandler,
     openAgentSettings
   };
 }

@@ -3,15 +3,15 @@
  * 
  * Displays agent avatar + name in a horizontal layout
  * Used in chat messages, tool cards, etc.
- * Fetches agent data by agent_id with fallback to default
+ * Uses AgentContext to get agent data
  */
 
 import React, { useMemo } from 'react';
 import { View, type ViewProps } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { AgentAvatar } from './AgentAvatar';
-import { getAgentById, DEFAULT_AGENT } from './agents';
-import type { Agent } from '../shared/types';
+import { useAgent } from '@/contexts/AgentContext';
+import type { Agent } from '@/api/types';
 
 interface AgentIdentifierProps extends ViewProps {
   /** Agent ID to fetch and display */
@@ -33,7 +33,7 @@ interface AgentIdentifierProps extends ViewProps {
  * ```tsx
  * <AgentIdentifier agentId="super-worker" size={24} showName />
  * <AgentIdentifier agent={myAgent} size={32} />
- * <AgentIdentifier /> // Uses default agent
+ * <AgentIdentifier /> // Uses current selected agent
  * ```
  */
 export function AgentIdentifier({
@@ -45,21 +45,38 @@ export function AgentIdentifier({
   style,
   ...props
 }: AgentIdentifierProps) {
-  // Get agent from ID or use provided agent or fallback to default
+  const { agents, getCurrentAgent } = useAgent();
+  
+  // Get agent from ID or use provided agent or fallback to current agent
   const agent = useMemo(() => {
     if (providedAgent) return providedAgent;
     if (agentId) {
-      const found = getAgentById(agentId);
+      const found = agents.find(a => a.agent_id === agentId);
       if (found) return found;
     }
-    return DEFAULT_AGENT;
-  }, [agentId, providedAgent]);
+    return getCurrentAgent() || agents[0] || null;
+  }, [agentId, providedAgent, agents, getCurrentAgent]);
 
   const textSizeClass = {
     xs: 'text-xs',
     sm: 'text-sm',
     base: 'text-base',
   }[textSize];
+
+  if (!agent) {
+    return (
+      <View 
+        className="flex-row items-center gap-2"
+        style={style}
+        {...props}
+      >
+        <View className="w-6 h-6 bg-muted rounded-full animate-pulse" />
+        {showName && (
+          <View className="w-16 h-4 bg-muted rounded animate-pulse" />
+        )}
+      </View>
+    );
+  }
 
   return (
     <View 

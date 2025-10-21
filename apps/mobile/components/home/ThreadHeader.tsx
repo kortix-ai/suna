@@ -3,6 +3,7 @@ import { Text } from '@/components/ui/text';
 import { useLanguage } from '@/contexts';
 import * as React from 'react';
 import { Pressable, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight, MoreHorizontal } from 'lucide-react-native';
 import Animated, {
   useAnimatedStyle,
@@ -42,6 +43,7 @@ export function ThreadHeader({
 }: ThreadHeaderProps) {
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
+  const insets = useSafeAreaInsets();
   const defaultTitle = t('chat.newChat');
   const [isEditingTitle, setIsEditingTitle] = React.useState(false);
   const [editedTitle, setEditedTitle] = React.useState(threadTitle || defaultTitle);
@@ -100,7 +102,11 @@ export function ThreadHeader({
   };
 
   return (
-    <View className="absolute top-16 left-0 right-0 flex-row items-center justify-between px-6 py-3 bg-background z-50">
+    <View 
+      className="absolute top-0 left-0 right-0 bg-background z-50 border-b border-border/20" 
+      style={{ paddingTop: insets.top }}
+    >
+      <View className="flex-row items-center justify-between px-6 py-3">
       {/* Left - Chevron Menu Button */}
       <AnimatedPressable
         onPressIn={() => {
@@ -163,6 +169,7 @@ export function ThreadHeader({
       >
         <Icon as={MoreHorizontal} size={16} className="text-foreground/70" strokeWidth={2} />
       </AnimatedPressable>
+      </View>
     </View>
   );
 }

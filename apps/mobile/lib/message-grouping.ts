@@ -85,11 +85,11 @@ export function groupMessages(messages: UnifiedMessage[]): MessageGroup[] {
   });
 
   // Finalize any remaining assistant group
-  if (currentAssistantGroup && currentAssistantGroup.length > 0) {
+  if (currentAssistantGroup !== null && (currentAssistantGroup as UnifiedMessage[]).length > 0) {
     assistantGroupCounter++;
     groups.push({
       type: 'assistant_group',
-      messages: currentAssistantGroup,
+      messages: currentAssistantGroup as UnifiedMessage[],
       key: `assistant-group-${assistantGroupCounter}`,
     });
   }

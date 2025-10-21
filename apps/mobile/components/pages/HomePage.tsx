@@ -9,7 +9,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { AgentDrawer } from '@/components/agents';
 import { AttachmentDrawer } from '@/components/attachments';
-import { ChatInput } from '@/components/chat';
+import { ChatInput, type ChatInputRef } from '@/components/chat';
 import { QuickActionBar } from '@/components/quick-actions';
 import { BackgroundLogo, TopNav } from '@/components/home';
 import { useAgentManager, useAudioRecorder, useAudioRecordingHandlers, type UseChatReturn } from '@/hooks';
@@ -19,6 +19,10 @@ interface HomePageProps {
   chat: UseChatReturn;
   isAuthenticated: boolean;
   onOpenAuthDrawer: () => void;
+}
+
+export interface HomePageRef {
+  focusChatInput: () => void;
 }
 
 /**
@@ -34,18 +38,30 @@ interface HomePageProps {
  * - Agent selection drawer
  * - Quick action bar for contextual prompts
  * - Auth protection for sending messages
+ * - Programmatic chat input focus support
  */
-export function HomePage({
+export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(({
   onMenuPress,
   chat,
   isAuthenticated,
   onOpenAuthDrawer,
-}: HomePageProps) {
+}, ref) => {
   // Custom hooks - Clean separation of concerns
   const agentManager = useAgentManager();
   const audioRecorder = useAudioRecorder();
   const audioHandlers = useAudioRecordingHandlers(audioRecorder, agentManager);
   const { colorScheme } = useColorScheme();
+  
+  // ChatInput ref for programmatic focus
+  const chatInputRef = React.useRef<ChatInputRef>(null);
+  
+  // Expose focus method via ref
+  React.useImperativeHandle(ref, () => ({
+    focusChatInput: () => {
+      console.log('🎯 Focusing chat input from HomePage');
+      chatInputRef.current?.focus();
+    },
+  }), []);
 
   // Snappy keyboard animation - instant response
   const keyboard = useAnimatedKeyboard();
@@ -122,9 +138,10 @@ export function HomePage({
               {/* Chat Input */}
               <View className="mx-3 mb-8">
                 <ChatInput
+                  ref={chatInputRef}
                   value={chat.inputValue}
                   onChangeText={chat.setInputValue}
-                  onSendMessage={chat.sendMessage}
+                  onSendMessage={(content, agentId, agentName) => chat.sendMessage(content, agentId, agentName)}
                   onSendAudio={audioHandlers.handleSendAudio}
                   onAttachPress={chat.openAttachmentDrawer}
                   onAgentPress={agentManager.openDrawer}
@@ -132,7 +149,7 @@ export function HomePage({
                   onCancelRecording={audioHandlers.handleCancelRecording}
                   onStopAgentRun={chat.stopAgent}
                   placeholder={chat.getPlaceholder()}
-                  agent={agentManager.selectedAgent}
+                  agent={agentManager.selectedAgent || undefined}
                   isRecording={audioRecorder.isRecording}
                   recordingDuration={audioRecorder.recordingDuration}
                   attachments={chat.attachments}
@@ -153,9 +170,6 @@ export function HomePage({
         <AgentDrawer
           visible={agentManager.isDrawerVisible}
           onClose={agentManager.closeDrawer}
-          agents={agentManager.agents}
-          selectedAgentId={agentManager.selectedAgent.id}
-          onSelectAgent={agentManager.selectAgent}
         />
 
         {/* Attachment Drawer */}
@@ -169,4 +183,6 @@ export function HomePage({
       </KeyboardAvoidingView>
     </View>
   );
-}
+});
+
+HomePage.displayName = 'HomePage';

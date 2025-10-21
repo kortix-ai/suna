@@ -15,8 +15,6 @@ export { SettingsDrawer } from './SettingsDrawer';
 export { TierBadge } from './TierBadge';
 export { LanguageDrawer } from './LanguageDrawer';
 
-export { CONVERSATION_SECTIONS } from './conversations';
-
 export type {
   Conversation,
   ConversationSection as ConversationSectionType,
