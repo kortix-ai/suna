@@ -430,26 +430,38 @@ class AgentLoader:
     
     async def _batch_load_configs(self, agents: list[AgentData]):
         """Batch load configurations for multiple agents."""
-        from core.utils.query_utils import batch_query_in
         
-        # Get all version IDs
+        # Get all version IDs for non-Suna agents
         version_ids = [a.current_version_id for a in agents if a.current_version_id and not a.is_suna_default]
         
         if not version_ids:
+            # Only Suna agents, load their configs
+            for agent in agents:
+                if agent.is_suna_default:
+                    self._load_suna_config(agent)
+                    agent.config_loaded = True
             return
         
         try:
-            client = await self.db.client
-            versions_data = await batch_query_in(
-                client=client,
-                table_name='agent_versions',
-                select_fields='version_id, agent_id, version_number, version_name, config',
-                in_field='version_id',
-                in_values=version_ids
-            )
+            # Use versioning service instead of direct config access
+            from core.versioning.version_service import get_version_service
+            version_service = await get_version_service()
             
-            # Create version map
-            version_map = {v['agent_id']: v for v in versions_data}
+            # Create version map using versioning service
+            version_map = {}
+            for agent in agents:
+                if agent.current_version_id and not agent.is_suna_default:
+                    try:
+                        version = await version_service.get_version(
+                            agent_id=agent.agent_id,
+                            version_id=agent.current_version_id,
+                            user_id=agent.account_id
+                        )
+                        if version:
+                            version_map[agent.agent_id] = version.to_dict()
+                    except Exception as e:
+                        logger.warning(f"Failed to load version {agent.current_version_id} for agent {agent.agent_id}: {e}")
+                        continue
             
             # Apply configs
             for agent in agents:
@@ -463,6 +475,11 @@ class AgentLoader:
                 
         except Exception as e:
             logger.warning(f"Failed to batch load agent configs: {e}")
+            # Fallback: load Suna configs only
+            for agent in agents:
+                if agent.is_suna_default:
+                    self._load_suna_config(agent)
+                    agent.config_loaded = True
     
     def _apply_version_config(self, agent: AgentData, version_row: Dict[str, Any]):
         """Apply version configuration to agent."""

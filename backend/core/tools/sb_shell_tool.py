@@ -307,7 +307,7 @@ class SandboxShellTool(SandboxToolsBase):
     @openapi_schema({
         "type": "function",
         "function": {
-            "name": "list_commands",
+            "name": "‡",
             "description": "List all running tmux sessions and their status.",
             "parameters": {
                 "type": "object",
