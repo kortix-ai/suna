@@ -33,9 +33,9 @@ class SandboxWebSearchTool(SandboxToolsBase):
         self.firecrawl_url = config.FIRECRAWL_URL
         
         if not self.tavily_api_key:
-            raise ValueError("TAVILY_API_KEY not found in configuration")
+            logger.warning("TAVILY_API_KEY not configured - Web Search Tool will not be available")
         if not self.firecrawl_api_key:
-            raise ValueError("FIRECRAWL_API_KEY not found in configuration")
+            logger.warning("FIRECRAWL_API_KEY not configured - Web Scraping Tool will not be available")
 
         # Tavily asynchronous search client
         self.tavily_client = AsyncTavilyClient(api_key=self.tavily_api_key)
@@ -71,6 +71,10 @@ class SandboxWebSearchTool(SandboxToolsBase):
         Search the web using the Tavily API to find relevant and up-to-date information.
         """
         try:
+            # Check if Tavily API key is configured
+            if not self.tavily_api_key:
+                return self.fail_response("Web Search is not available. TAVILY_API_KEY is not configured.")
+            
             # Ensure we have a valid query
             if not query or not isinstance(query, str):
                 return self.fail_response("A valid search query is required.")
@@ -166,6 +170,10 @@ class SandboxWebSearchTool(SandboxToolsBase):
         - include_html: Whether to include full HTML content alongside markdown (default: False)
         """
         try:
+            # Check if Firecrawl API key is configured
+            if not self.firecrawl_api_key:
+                return self.fail_response("Web Scraping is not available. FIRECRAWL_API_KEY is not configured.")
+            
             logging.info(f"Starting to scrape webpages: {urls}")
             
             # Ensure sandbox is initialized

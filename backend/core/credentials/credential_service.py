@@ -57,7 +57,12 @@ class EncryptionService:
         self._cipher = Fernet(self._encryption_key)
     
     def _get_or_create_encryption_key(self) -> bytes:
-        key_env = os.getenv("MCP_CREDENTIAL_ENCRYPTION_KEY")
+        # Try MCP_CREDENTIAL_ENCRYPTION_KEY first, then fall back to ENCRYPTION_KEY
+        key_env = os.getenv("MCP_CREDENTIAL_ENCRYPTION_KEY") or os.getenv("ENCRYPTION_KEY")
+        
+        if not key_env:
+            logger.error("No encryption key found in environment variables")
+            raise ValueError("MCP_CREDENTIAL_ENCRYPTION_KEY or ENCRYPTION_KEY must be set")
         
         try:
             if isinstance(key_env, str):
@@ -67,11 +72,7 @@ class EncryptionService:
                 
         except Exception as e:
             logger.error(f"Invalid encryption key: {e}")
-            logger.warning("Generating new encryption key for this session")
-            key = Fernet.generate_key()
-            logger.debug(f"Generated new encryption key. Set this in your environment:")
-            logger.debug(f"MCP_CREDENTIAL_ENCRYPTION_KEY={key.decode()}")
-            return key
+            raise ValueError(f"Invalid encryption key format: {e}")
     
     def encrypt_config(self, config: Dict[str, Any]) -> Tuple[bytes, str]:
         config_json = json.dumps(config, sort_keys=True)

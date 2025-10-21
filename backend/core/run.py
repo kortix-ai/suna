@@ -104,12 +104,26 @@ class ToolManager:
     
     def _register_sandbox_tools(self, disabled_tools: List[str]):
         """Register sandbox-related tools with granular control."""
+        # Register web search tools conditionally based on API keys
+        if config.TAVILY_API_KEY or config.FIRECRAWL_API_KEY:
+            if 'web_search_tool' not in disabled_tools:
+                enabled_methods = self._get_enabled_methods_for_tool('web_search_tool')
+                self.thread_manager.add_tool(SandboxWebSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager, project_id=self.project_id)
+                if enabled_methods:
+                    logger.debug(f"✅ Registered web_search_tool with methods: {enabled_methods}")
+        
+        if config.SERPER_API_KEY:
+            if 'image_search_tool' not in disabled_tools:
+                enabled_methods = self._get_enabled_methods_for_tool('image_search_tool')
+                self.thread_manager.add_tool(SandboxImageSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager, project_id=self.project_id)
+                if enabled_methods:
+                    logger.debug(f"✅ Registered image_search_tool with methods: {enabled_methods}")
+        
+        # Register other sandbox tools
         sandbox_tools = [
             ('sb_shell_tool', SandboxShellTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
             ('sb_files_tool', SandboxFilesTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
             ('sb_expose_tool', SandboxExposeTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
-            ('web_search_tool', SandboxWebSearchTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
-            ('image_search_tool', SandboxImageSearchTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),
             ('sb_vision_tool', SandboxVisionTool, {'project_id': self.project_id, 'thread_id': self.thread_id, 'thread_manager': self.thread_manager}),
             ('sb_image_edit_tool', SandboxImageEditTool, {'project_id': self.project_id, 'thread_id': self.thread_id, 'thread_manager': self.thread_manager}),
             ('sb_kb_tool', SandboxKbTool, {'project_id': self.project_id, 'thread_manager': self.thread_manager}),

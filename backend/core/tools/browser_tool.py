@@ -210,6 +210,10 @@ class BrowserTool(SandboxToolsBase):
     async def _execute_stagehand_api(self, endpoint: str, params: dict = None, method: str = "POST") -> ToolResult:
         """Execute a Stagehand action through the sandbox API"""
         try:
+            # Check if Gemini API key is configured
+            if not config.GEMINI_API_KEY:
+                return self.fail_response("Browser tool is not available. GEMINI_API_KEY is not configured.")
+            
             # Ensure sandbox is initialized
             await self._ensure_sandbox()
             
