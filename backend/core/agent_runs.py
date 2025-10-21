@@ -650,15 +650,22 @@ async def initiate_agent_with_files(
         agent_data = await loader.load_agent(agent_id, user_id, load_config=True)
         logger.debug(f"Using agent {agent_data.name} ({agent_id}) version {agent_data.version_name}")
     else:
-        # Load default agent
+        # Load default agent - ensure Suna is installed first
         logger.debug(f"[AGENT INITIATE] Loading default agent")
-        default_agent = await client.table('agents').select('agent_id').eq('account_id', account_id).eq('is_default', True).maybe_single().execute()
         
-        if default_agent.data:
+        # Ensure Suna is installed for this account
+        from core.utils.ensure_suna import ensure_suna_installed
+        await ensure_suna_installed(account_id)
+        
+        # Try to find the default agent (Suna)
+        default_agent = await client.table('agents').select('agent_id').eq('account_id', account_id).eq('metadata->>is_suna_default', 'true').maybe_single().execute()
+        
+        if default_agent and default_agent.data:
             agent_data = await loader.load_agent(default_agent.data['agent_id'], user_id, load_config=True)
             logger.debug(f"Using default agent: {agent_data.name} ({agent_data.agent_id}) version {agent_data.version_name}")
         else:
             logger.warning(f"[AGENT INITIATE] No default agent found for account {account_id}")
+            raise HTTPException(status_code=404, detail="No default agent available. Please contact support.")
     
     # Convert to dict for backward compatibility with rest of function
     agent_config = agent_data.to_dict() if agent_data else None

@@ -20,7 +20,7 @@ class CircuitBreaker:
         circuit_name: str = "stripe_api",
         failure_threshold: int = 5,
         recovery_timeout: int = 60,
-        expected_exception: type = stripe.error.StripeError
+        expected_exception: type = stripe.StripeError
     ):
         self.circuit_name = circuit_name
         self.failure_threshold = failure_threshold
