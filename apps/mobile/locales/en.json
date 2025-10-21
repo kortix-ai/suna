@@ -29,6 +29,8 @@
     "emailPlaceholder": "Email address",
     "password": "Password",
     "passwordPlaceholder": "Password",
+    "confirmPasswordPlaceholder": "Confirm password",
+    "fullNamePlaceholder": "Full name (optional)",
     "forgotPassword": "Forgot password?",
     "resetPassword": "Reset password",
     "resetPasswordDescription": "Enter your email and we'll send you a reset link",
@@ -42,6 +44,7 @@
     "continueWithGoogle": "Continue with Google",
     "continueWithEmail": "Continue with Email",
     "signInWithEmail": "Sign in with email",
+    "signUpWithEmail": "Sign up with email",
     "signInWithApple": "Sign in with Apple",
     "signInWithGoogle": "Sign in with Google",
     "orEmail": "or email",
@@ -52,10 +55,44 @@
     "guest": "Guest",
     "signOutConfirm": "Sure you want to sign out?",
     "createFreeAccount": "Create free account",
+    "createAccount": "Create account",
+    "creatingAccount": "Creating account...",
     "enterEmailPassword": "Enter email and password",
     "enterEmailAddress": "Enter your email address",
     "signInFailed": "Sign in failed. Check your credentials.",
-    "resetFailed": "Couldn't send email. Try again."
+    "signUpFailed": "Sign up failed. Please try again.",
+    "resetFailed": "Couldn't send email. Try again.",
+    "passwordsDontMatch": "Passwords don't match",
+    "passwordTooShort": "Password must be at least 8 characters",
+    "bySigningUp": "By signing up, you agree to our",
+    "termsOfService": "Terms of Service",
+    "and": "and",
+    "privacyPolicy": "Privacy Policy",
+    "verificationEmailSent": "We've sent a verification link to",
+    "openEmailApp": "Open email app",
+    "goToSignIn": "Go to sign in",
+    "verifyEmailInstructions": "Click the link in the email to verify your account, then sign in."
+  },
+  "onboarding": {
+    "skip": "Skip",
+    "next": "Next",
+    "getStarted": "Get Started",
+    "slide1": {
+      "title": "Chat with AI",
+      "description": "Have natural conversations with powerful AI assistants that understand context and provide helpful responses"
+    },
+    "slide2": {
+      "title": "Lightning Fast",
+      "description": "Get instant responses powered by the latest AI models. Your assistant is always ready to help"
+    },
+    "slide3": {
+      "title": "Secure & Private",
+      "description": "Your conversations are encrypted and secure. We respect your privacy and never share your data"
+    },
+    "slide4": {
+      "title": "Automate Tasks",
+      "description": "Set up triggers and workers to automate your workflows and boost productivity"
+    }
   },
   "settings": {
     "title": "Settings",

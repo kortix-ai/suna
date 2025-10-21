@@ -21,3 +21,4 @@ export * from './media';
 export * from './useAuth';
 export * from './useAuthDrawer';
 export * from './useNavigation';
+export * from './useOnboarding';

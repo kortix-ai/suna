@@ -35,7 +35,7 @@ docker compose up redis
 docker compose up api worker
 ```
 
-## Development Setup
+    ## Development Setup
 
 For local development, you might only need to run Redis, while working on the API locally. This is useful when:
 
@@ -94,8 +94,6 @@ FIRECRAWL_URL=https://api.firecrawl.dev
 DAYTONA_API_KEY=your-daytona-key
 DAYTONA_SERVER_URL=https://app.daytona.io/api
 DAYTONA_TARGET=us
-
-WEBHOOK_BASE_URL=https://yourdomain.com
 
 # MCP Configuration
 MCP_CREDENTIAL_ENCRYPTION_KEY=your-generated-encryption-key

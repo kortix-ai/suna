@@ -7,6 +7,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useColorScheme } from 'nativewind';
 import { useAuthContext, useLanguage } from '@/contexts';
+import { useRouter } from 'expo-router';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { 
@@ -58,6 +59,7 @@ export function SettingsDrawer({ visible, profile, onClose }: SettingsDrawerProp
   const { colorScheme } = useColorScheme();
   const { user, signOut } = useAuthContext();
   const { t } = useLanguage();
+  const router = useRouter();
   const [isLanguageDrawerVisible, setIsLanguageDrawerVisible] = React.useState(false);
   
   // Get user data
@@ -130,8 +132,10 @@ export function SettingsDrawer({ visible, profile, onClose }: SettingsDrawerProp
             console.log('🔐 Signing out...');
             const result = await signOut();
             if (result.success) {
-              console.log('✅ Signed out successfully');
+              console.log('✅ Signed out successfully - Redirecting to auth');
               onClose();
+              // Navigate to splash screen which will redirect to auth
+              router.replace('/');
             } else {
               console.error('❌ Sign out failed:', result.error);
               Alert.alert(t('common.error'), 'Failed to sign out. Please try again.');

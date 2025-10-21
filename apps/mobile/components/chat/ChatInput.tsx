@@ -202,9 +202,9 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
       // Dismiss keyboard first for better UX
       Keyboard.dismiss();
       
-      // Wait for keyboard to dismiss, then open auth drawer
+      // Wait for keyboard to dismiss, then open auth screen
       setTimeout(() => {
-        console.log('🔐 Opening auth drawer after keyboard dismissal');
+        console.log('🔐 Opening auth screen after keyboard dismissal');
         onOpenAuthDrawer?.();
       }, 200); // Small delay for smooth transition
       
@@ -227,9 +227,9 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
       // Cancel recording first
       onCancelRecording?.();
       
-      // Wait a bit, then open auth drawer
+      // Wait a bit, then open auth screen
       setTimeout(() => {
-        console.log('🔐 Opening auth drawer after canceling recording');
+        console.log('🔐 Opening auth screen after canceling recording');
         onOpenAuthDrawer?.();
       }, 200);
       

@@ -59,13 +59,13 @@ export default function SplashScreen() {
       setTimeout(() => {
         if (!isAuthenticated) {
           console.log('🔐 User not authenticated, routing to sign in');
-          router.replace('/auth');
+          router.replace('/auth/sign-in');
         } else if (!hasCompletedOnboarding) {
           console.log('👋 User needs onboarding, routing to onboarding');
           router.replace('/onboarding');
         } else {
           console.log('✅ User authenticated and onboarded, routing to app');
-          router.replace('/home');
+          router.replace('/');
         }
         setIsReady(true);
       }, 800); // Minimum splash display time

@@ -168,12 +168,8 @@ async def get_agent_triggers(
         trigger_service = get_trigger_service(db)
         triggers = await trigger_service.get_agent_triggers(agent_id)
         
-        base_url = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
-        
         responses = []
         for trigger in triggers:
-            webhook_url = f"{base_url}/api/triggers/{trigger.trigger_id}/webhook"
-            
             responses.append(TriggerResponse(
                 trigger_id=trigger.trigger_id,
                 agent_id=trigger.agent_id,
@@ -182,7 +178,7 @@ async def get_agent_triggers(
                 name=trigger.name,
                 description=trigger.description,
                 is_active=trigger.is_active,
-                webhook_url=webhook_url,
+                webhook_url=None,
                 created_at=trigger.created_at.isoformat(),
                 updated_at=trigger.updated_at.isoformat(),
                 config=trigger.config
@@ -228,12 +224,9 @@ async def get_all_user_triggers(
         if not triggers_result.data:
             return []
         
-        base_url = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
-        
         responses = []
         for trigger in triggers_result.data:
             agent_id = trigger['agent_id']
-            webhook_url = f"{base_url}/api/triggers/{trigger['trigger_id']}/webhook"
 
             config = trigger.get('config', {})
             if isinstance(config, str):
@@ -251,7 +244,7 @@ async def get_all_user_triggers(
                 'name': trigger['name'],
                 'description': trigger.get('description'),
                 'is_active': trigger.get('is_active', False),
-                'webhook_url': webhook_url,
+                'webhook_url': None,
                 'created_at': trigger['created_at'],
                 'updated_at': trigger['updated_at'],
                 'config': config,
@@ -366,9 +359,6 @@ async def create_agent_trigger(
         # Sync triggers to version config after creation
         await sync_triggers_to_version_config(agent_id)
         
-        base_url = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
-        webhook_url = f"{base_url}/api/triggers/{trigger.trigger_id}/webhook"
-        
         return TriggerResponse(
             trigger_id=trigger.trigger_id,
             agent_id=trigger.agent_id,
@@ -377,7 +367,7 @@ async def create_agent_trigger(
             name=trigger.name,
             description=trigger.description,
             is_active=trigger.is_active,
-            webhook_url=webhook_url,
+            webhook_url=None,
             created_at=trigger.created_at.isoformat(),
             updated_at=trigger.updated_at.isoformat(),
             config=trigger.config
@@ -406,9 +396,6 @@ async def get_trigger(
         
         await verify_and_authorize_trigger_agent_access(trigger.agent_id, user_id)
         
-        base_url = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
-        webhook_url = f"{base_url}/api/triggers/{trigger_id}/webhook"
-        
         return TriggerResponse(
             trigger_id=trigger.trigger_id,
             agent_id=trigger.agent_id,
@@ -417,7 +404,7 @@ async def get_trigger(
             name=trigger.name,
             description=trigger.description,
             is_active=trigger.is_active,
-            webhook_url=webhook_url,
+            webhook_url=None,
             created_at=trigger.created_at.isoformat(),
             updated_at=trigger.updated_at.isoformat(),
             config=trigger.config
@@ -456,9 +443,6 @@ async def update_trigger(
         # Sync triggers to version config after update
         await sync_triggers_to_version_config(updated_trigger.agent_id)
         
-        base_url = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
-        webhook_url = f"{base_url}/api/triggers/{trigger_id}/webhook"
-
         return TriggerResponse(
             trigger_id=updated_trigger.trigger_id,
             agent_id=updated_trigger.agent_id,
@@ -467,7 +451,7 @@ async def update_trigger(
             name=updated_trigger.name,
             description=updated_trigger.description,
             is_active=updated_trigger.is_active,
-            webhook_url=webhook_url,
+            webhook_url=None,
             created_at=updated_trigger.created_at.isoformat(),
             updated_at=updated_trigger.updated_at.isoformat(),
             config=updated_trigger.config

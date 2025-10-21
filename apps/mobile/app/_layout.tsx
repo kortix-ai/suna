@@ -30,9 +30,9 @@ export {
  * 1. Loads fonts
  * 2. Provides auth context
  * 3. Sets up providers
+ * 4. Handles navigation stacks
  * 
- * Note: No auth routing - users can access app directly
- * Auth drawer shows when needed for specific features
+ * Auth is handled via dedicated screens in /auth
  */
 export default function RootLayout() {
   const { colorScheme, setColorScheme } = useColorScheme();
@@ -95,7 +95,18 @@ export default function RootLayout() {
               <BottomSheetModalProvider>
                 <ThemeProvider value={NAV_THEME[activeColorScheme]}>
                   <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
-                  <Stack screenOptions={{ headerShown: false }} />
+                  <Stack 
+                    screenOptions={{ 
+                      headerShown: false,
+                      animation: 'fade',
+                    }}
+                  >
+                    <Stack.Screen name="index" options={{ animation: 'none' }} />
+                    <Stack.Screen name="onboarding" />
+                    <Stack.Screen name="home" />
+                    <Stack.Screen name="auth" />
+                    <Stack.Screen name="trigger-detail" />
+                  </Stack>
                   <PortalHost />
                 </ThemeProvider>
               </BottomSheetModalProvider>
