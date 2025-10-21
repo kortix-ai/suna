@@ -215,6 +215,11 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                     {/* Agents Submenu */}
                     {onAgentSelect && (
                         <>
+                            <div className="px-3">
+                                <div className="mb-3">
+                                    <span className="text-xs font-medium text-muted-foreground">Agents</span>
+                                </div>
+                            </div>
                             <div className="px-2">
                                 <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
                                     <DropdownMenuSub>
@@ -322,6 +327,11 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                     )}
 
                     {/* Models Submenu */}
+                    <div className="px-3">
+                        <div className="mb-3">
+                            <span className="text-xs font-medium text-muted-foreground">Models</span>
+                        </div>
+                    </div>
                     <div className="px-2">
                         <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
                             <DropdownMenuSub>

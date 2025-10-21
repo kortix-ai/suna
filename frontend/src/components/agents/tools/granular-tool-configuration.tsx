@@ -316,29 +316,32 @@ export const GranularToolConfiguration = ({
                               const isMethodEnabledState = isMethodEnabled(toolGroup.name, method.name);
 
                               return (
-                                <div key={method.name} className="flex items-center gap-3 pl-6 pr-2 w-full">
-                                  <div className="flex-1 min-w-0 overflow-hidden" style={{ maxWidth: 'calc(100% - 4rem)' }}>
-                                    <div className="flex items-center gap-2 w-full overflow-hidden">
-                                      <h5 className="text-sm font-medium truncate">
-                                        {method.displayName}
-                                      </h5>
-                                      {method.isCore && (
-                                        <Badge variant="outline" className="text-xs flex-shrink-0">Core</Badge>
-                                      )}
+                                <div key={method.name} className="flex items-center justify-between w-full">
+                                  <div className="flex items-center gap-4 flex-1 min-w-0 ml-16">
+                                    <div className="flex-1 min-w-0 overflow-hidden">
+                                      <div className="flex items-center gap-2 w-full overflow-hidden">
+                                        <h5 className="text-sm font-medium truncate">
+                                          {method.displayName}
+                                        </h5>
+                                        {method.isCore && (
+                                          <Badge variant="outline" className="text-xs flex-shrink-0">Core</Badge>
+                                        )}
+                                      </div>
+                                      <p className="text-xs text-muted-foreground truncate w-full">
+                                        {method.description}
+                                      </p>
                                     </div>
-                                    <p className="text-xs text-muted-foreground truncate w-full">
-                                      {method.description}
-                                    </p>
                                   </div>
 
-                                  <Checkbox
-                                    checked={isMethodEnabledState}
-                                    onCheckedChange={(enabled) =>
-                                      handleMethodToggle(toolGroup.name, method.name, enabled === true)
-                                    }
-                                    disabled={disabled || isLoading}
-                                    className="flex-shrink-0"
-                                  />
+                                  <div className="flex items-center gap-2 ml-4 flex-shrink-0">
+                                    <Checkbox
+                                      checked={isMethodEnabledState}
+                                      onCheckedChange={(enabled) =>
+                                        handleMethodToggle(toolGroup.name, method.name, enabled === true)
+                                      }
+                                      disabled={disabled || isLoading}
+                                    />
+                                  </div>
                                 </div>
                               );
                             })}

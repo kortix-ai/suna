@@ -271,7 +271,7 @@ export function SidebarLeft({
                   <KortixLogo size={20} />
                 </Link>
               </div>
-              <Tooltip>
+              <Tooltip delayDuration={2000}>
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
@@ -291,7 +291,7 @@ export function SidebarLeft({
                 <KortixLogo size={20} />
               </Link>
               {!isMobile && (
-                <Tooltip>
+                <Tooltip delayDuration={2000}>
                   <TooltipTrigger asChild>
                     <SidebarTrigger className="h-8 w-8" />
                   </TooltipTrigger>
@@ -311,13 +311,13 @@ export function SidebarLeft({
               initial={false}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.15 }}
+              transition={{ duration: 0.12, ease: "easeOut" }}
               className="px-6 pt-4 space-y-3 flex flex-col items-center"
             >
               {/* + button */}
               <motion.div
                 layout
-                transition={{ duration: 0.2, ease: "easeInOut" }}
+                transition={{ duration: 0.15, ease: "easeOut" }}
                 className="w-full flex justify-center"
               >
                 <Button
@@ -341,7 +341,7 @@ export function SidebarLeft({
               {/* State buttons vertically */}
               <motion.div
                 layout
-                transition={{ duration: 0.2, ease: "easeInOut" }}
+                transition={{ duration: 0.15, ease: "easeOut" }}
                 className="w-full flex flex-col items-center space-y-3"
               >
                 {[
@@ -374,14 +374,14 @@ export function SidebarLeft({
               initial={false}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.15 }}
+              transition={{ duration: 0.12, ease: "easeOut" }}
               className="flex flex-col h-full"
             >
               <div className="px-[30px] pt-4 space-y-4">
                 {/* New Chat button */}
                 <motion.div
                   layout
-                  transition={{ duration: 0.2, ease: "easeInOut" }}
+                  transition={{ duration: 0.15, ease: "easeOut" }}
                   className="w-full"
                 >
                   <Button
@@ -412,7 +412,7 @@ export function SidebarLeft({
                 {/* State buttons horizontally */}
                 <motion.div
                   layout
-                  transition={{ duration: 0.2, ease: "easeInOut" }}
+                  transition={{ duration: 0.15, ease: "easeOut" }}
                   className="flex justify-between items-center gap-2"
                 >
                   {[
@@ -423,7 +423,7 @@ export function SidebarLeft({
                     <motion.button
                       key={view}
                       layout
-                      transition={{ duration: 0.2, ease: "easeInOut" }}
+                      transition={{ duration: 0.15, ease: "easeOut" }}
                       className={cn(
                         "flex flex-col items-center justify-center gap-1.5 p-1.5 rounded-2xl cursor-pointer transition-colors w-[64px] h-[64px]",
                         "hover:bg-muted/60 hover:border-[1.5px] hover:border-border",
@@ -436,7 +436,7 @@ export function SidebarLeft({
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: 'auto' }}
                         exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.15 }}
+                        transition={{ duration: 0.12, ease: "easeOut" }}
                         className="text-xs text-muted-foreground whitespace-nowrap"
                       >
                         {label}
@@ -450,7 +450,7 @@ export function SidebarLeft({
               <motion.div
                 initial={false}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 0.1, duration: 0.2 }}
+                transition={{ duration: 0.15, ease: "easeOut" }}
                 className="px-6 flex-1 overflow-hidden"
               >
                 {activeView === 'chats' && <NavAgents />}

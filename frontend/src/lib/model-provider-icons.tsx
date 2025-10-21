@@ -82,7 +82,7 @@ export function ModelProviderIcon({
 
   // Calculate responsive border radius - proportional to size (matching AgentAvatar)
   const borderRadiusStyle = {
-    borderRadius: `${Math.min(size * 0.35, 16)}px` // 25% of size, max 16px
+    borderRadius: `${Math.min(size * 0.25, 16)}px` // 25% of size, max 16px
   };
 
   if (!iconSrc) {

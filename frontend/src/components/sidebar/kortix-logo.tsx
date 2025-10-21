@@ -7,8 +7,9 @@ import { isLocalMode, isStagingMode } from '@/lib/config';
 
 interface KortixLogoProps {
   size?: number;
+  variant?: 'symbol' | 'logomark';
 }
-export function KortixLogo({ size = 24 }: KortixLogoProps) {
+export function KortixLogo({ size = 24, variant = 'symbol' }: KortixLogoProps) {
   const { theme, systemTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
 
@@ -21,6 +22,22 @@ export function KortixLogo({ size = 24 }: KortixLogoProps) {
     theme === 'dark' || (theme === 'system' && systemTheme === 'dark')
   );
 
+  // For logomark variant, use logomark-white.svg which is already white
+  // and invert it for light mode instead
+  if (variant === 'logomark') {
+    return (
+      <Image
+        src="/logomark-white.svg"
+        alt="Kortix"
+        width={size}
+        height={size}
+        className={`${shouldInvert ? '' : 'invert'} flex-shrink-0`}
+        style={{ height: size, width: 'auto' }}
+      />
+    );
+  }
+
+  // Default symbol variant behavior (unchanged)
   return (
     <Image
       src="/kortix-symbol.svg"

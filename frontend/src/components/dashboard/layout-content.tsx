@@ -80,8 +80,9 @@ export default function DashboardLayoutContent({
 
   const mantenanceBanner: React.ReactNode | null = null;
 
-  // Show loading state while checking auth, health, or maintenance status
-  if (isLoading || isCheckingHealth || maintenanceLoading) {
+  // Show loading state only while checking auth or maintenance status (not health)
+  // Health check errors should show the maintenance page, not infinite loading
+  if (isLoading || maintenanceLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -96,11 +97,12 @@ export default function DashboardLayoutContent({
 
   // Show maintenance page if maintenance mode is enabled
   if (maintenanceNotice?.enabled) {
-    return <MaintenanceAlert open={true} onOpenChange={() => {}} closeable={false} />;
+    return <MaintenanceAlert open={true} onOpenChange={() => { }} closeable={false} />;
   }
 
-  // Show maintenance page if API is not healthy (but not during initial loading)
-  if (!isCheckingHealth && !isApiHealthy) {
+  // Show maintenance page if API is not healthy OR if health check failed
+  // This includes: health check errors, unhealthy status, or still loading after initial mount
+  if (!isApiHealthy || healthError) {
     return <MaintenancePage />;
   }
 
@@ -130,7 +132,7 @@ export default function DashboardLayoutContent({
 
             {/* Status overlay for deletion operations */}
             <StatusOverlay />
-            
+
             {/* Floating mobile menu button */}
             <FloatingMobileMenuButton />
           </SidebarProvider>
