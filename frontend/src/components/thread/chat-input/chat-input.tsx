@@ -511,7 +511,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       }
       // Unified compact menu for both logged and non-logged (non-logged shows only models subset via menu trigger)
       return (
-        <div className="flex items-center gap-2" data-tour="agent-selector">
+        <div className="flex items-center gap-2">
           <UnifiedConfigMenu
             isLoggedIn={isLoggedIn}
             selectedAgentId={!hideAgentSelection ? selectedAgentId : undefined}
