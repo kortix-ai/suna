@@ -19,7 +19,7 @@ import {
   Target, Calendar as CalendarIcon, Repeat, X
 } from 'lucide-react-native';
 import { useAgent } from '@/contexts/AgentContext';
-import { useCreateTrigger } from '@/hooks/api';
+import { useCreateTrigger } from '@/lib/triggers';
 
 interface TriggerCreationDrawerProps {
   visible: boolean;

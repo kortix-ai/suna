@@ -31,13 +31,13 @@ import {
   CheckCircle2,
   XCircle
 } from 'lucide-react-native';
-import { useTrigger, useDeleteTrigger, useToggleTrigger } from '@/hooks/api';
+import { useTrigger, useDeleteTrigger, useToggleTrigger } from '@/lib/triggers';
 import { 
   getTriggerIcon, 
   getTriggerCategory, 
   formatCronExpression, 
   formatTriggerDate 
-} from '@/lib/trigger-utils';
+} from '@/lib/utils/trigger-utils';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 

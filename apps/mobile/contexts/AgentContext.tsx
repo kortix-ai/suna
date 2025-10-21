@@ -1,6 +1,7 @@
 import * as React from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useAgents } from '@/hooks/api/useAgents';
+import { useAgents } from '@/lib/agents';
+import { useAuthContext } from './AuthContext';
 import type { Agent } from '@/api/types';
 
 /**
@@ -37,18 +38,38 @@ const AgentContext = React.createContext<AgentContextType | undefined>(undefined
  * </AgentProvider>
  */
 export function AgentProvider({ children }: { children: React.ReactNode }) {
+  // Auth state
+  const { session } = useAuthContext();
+  
   // State
   const [selectedAgentId, setSelectedAgentId] = React.useState<string | undefined>(undefined);
   const [hasInitialized, setHasInitialized] = React.useState(false);
   
-  // API hooks
-  const { data: agentsResponse, isLoading, error, refetch } = useAgents({
-    limit: 100,
-    sort_by: 'name',
-    sort_order: 'asc'
-  });
+  // API hooks - only fetch when user is authenticated
+  const { data: agentsResponse, isLoading, error, refetch } = useAgents(
+    {
+      limit: 100,
+      sort_by: 'name',
+      sort_order: 'asc'
+    },
+    {
+      enabled: !!session?.access_token, // Only fetch when authenticated
+    }
+  );
   
   const agents = agentsResponse?.agents || [];
+  
+  // Log state changes for debugging
+  React.useEffect(() => {
+    console.log('🤖 AgentContext State:', {
+      isAuthenticated: !!session?.access_token,
+      isLoading,
+      error: error?.message,
+      agentsCount: agents.length,
+      selectedAgentId,
+      hasInitialized
+    });
+  }, [session?.access_token, isLoading, error, agents.length, selectedAgentId, hasInitialized]);
   
   // AsyncStorage key
   const STORAGE_KEY = '@agentpress/selected_agent_id';

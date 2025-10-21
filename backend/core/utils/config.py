@@ -283,7 +283,6 @@ class Configuration:
     REDIS_PASSWORD: Optional[str] = None
     REDIS_SSL: bool = True
     
-    # Daytona sandbox configuration
     DAYTONA_API_KEY: str
     DAYTONA_SERVER_URL: str
     DAYTONA_TARGET: str

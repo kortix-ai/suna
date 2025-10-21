@@ -18,7 +18,7 @@ import EventSource from 'react-native-sse';
 import { useQueryClient } from '@tanstack/react-query';
 import type { UnifiedMessage, ParsedContent, ParsedMetadata, Thread } from '@/api/types';
 import { API_URL, getAuthToken } from '@/api/config';
-import { safeJsonParse } from '@/lib/message-grouping';
+import { safeJsonParse } from '@/lib/utils/message-grouping';
 import { useLanguage } from '@/contexts';
 import type { ToolMessagePair } from '@/components/chat/MessageRenderer';
 import {
@@ -30,7 +30,7 @@ import {
   useStopAgentRun as useStopAgentRunMutation,
   useActiveAgentRuns,
   chatKeys,
-} from './api/useApiQueries';
+} from '@/lib/chat';
 
 // ============================================================================
 // Types

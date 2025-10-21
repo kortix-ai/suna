@@ -1,9 +1,9 @@
 import '@/global.css';
 
-import { ROOBERT_FONTS } from '@/lib/fonts';
-import { NAV_THEME } from '@/lib/theme';
-import { initializeI18n } from '@/lib/i18n';
-import { AuthProvider, LanguageProvider, AgentProvider } from '@/contexts';
+import { ROOBERT_FONTS } from '@/lib/utils/fonts';
+import { NAV_THEME } from '@/lib/utils/theme';
+import { initializeI18n } from '@/lib/utils/i18n';
+import { AuthProvider, LanguageProvider, AgentProvider, BillingProvider } from '@/contexts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { ThemeProvider } from '@react-navigation/native';
@@ -91,26 +91,29 @@ export default function RootLayout() {
       <GestureHandlerRootView style={{ flex: 1 }}>
         <LanguageProvider>
           <AuthProvider>
-            <AgentProvider>
-              <BottomSheetModalProvider>
-                <ThemeProvider value={NAV_THEME[activeColorScheme]}>
-                  <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
-                  <Stack 
-                    screenOptions={{ 
-                      headerShown: false,
-                      animation: 'fade',
-                    }}
-                  >
-                    <Stack.Screen name="index" options={{ animation: 'none' }} />
-                    <Stack.Screen name="onboarding" />
-                    <Stack.Screen name="home" />
-                    <Stack.Screen name="auth" />
-                    <Stack.Screen name="trigger-detail" />
-                  </Stack>
-                  <PortalHost />
-                </ThemeProvider>
-              </BottomSheetModalProvider>
-            </AgentProvider>
+            <BillingProvider>
+              <AgentProvider>
+                <BottomSheetModalProvider>
+                  <ThemeProvider value={NAV_THEME[activeColorScheme]}>
+                    <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
+                    <Stack 
+                      screenOptions={{ 
+                        headerShown: false,
+                        animation: 'fade',
+                      }}
+                    >
+                      <Stack.Screen name="index" options={{ animation: 'none' }} />
+                      <Stack.Screen name="onboarding" />
+                      <Stack.Screen name="home" />
+                      <Stack.Screen name="auth" />
+                      <Stack.Screen name="billing" />
+                      <Stack.Screen name="trigger-detail" />
+                    </Stack>
+                    <PortalHost />
+                  </ThemeProvider>
+                </BottomSheetModalProvider>
+              </AgentProvider>
+            </BillingProvider>
           </AuthProvider>
         </LanguageProvider>
       </GestureHandlerRootView>

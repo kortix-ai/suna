@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useTranslation } from 'react-i18next';
-import { changeLanguage, getCurrentLanguage, getAvailableLanguages } from '@/lib/i18n';
+import { changeLanguage, getCurrentLanguage, getAvailableLanguages } from '@/lib/utils/i18n';
 
 interface Language {
   code: string;

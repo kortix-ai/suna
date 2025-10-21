@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View, Pressable, TextInput, KeyboardAvoidingView, Platform, ScrollView, Keyboard, Linking } from 'react-native';
+import { View, Pressable, TextInput, KeyboardAvoidingView, Platform, ScrollView, Keyboard, Linking, ActivityIndicator } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
@@ -214,17 +214,6 @@ export default function AuthScreen() {
             {/* Main View - OAuth Options */}
             {currentView === 'main' && (
               <View className="items-center">
-                {/* Back Button - Top Left */}
-                <View className="w-full mb-8">
-                  <Pressable 
-                    onPress={() => router.back()} 
-                    className="size-10 justify-center"
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  >
-                    <Icon as={ChevronLeft} size={24} className="text-foreground" />
-                  </Pressable>
-                </View>
-
                 {/* Logo */}
                 <View className="mb-12">
                   <Logomark width={224} height={44} />
@@ -275,17 +264,6 @@ export default function AuthScreen() {
             {/* Sign In Options View */}
             {currentView === 'sign-in' && (
               <View className="items-center">
-                {/* Back Button - Top Left */}
-                <View className="w-full mb-8">
-                  <Pressable 
-                    onPress={handleBack} 
-                    className="size-10 justify-center"
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  >
-                    <Icon as={ChevronLeft} size={24} className="text-foreground" />
-                  </Pressable>
-                </View>
-
                 {/* Logo */}
                 <View className="mb-12">
                   <Logomark width={224} height={44} />
@@ -336,17 +314,6 @@ export default function AuthScreen() {
             {/* Sign Up Options View */}
             {currentView === 'sign-up' && (
               <View className="items-center">
-                {/* Back Button - Top Left */}
-                <View className="w-full mb-8">
-                  <Pressable 
-                    onPress={handleBack} 
-                    className="size-10 justify-center"
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  >
-                    <Icon as={ChevronLeft} size={24} className="text-foreground" />
-                  </Pressable>
-                </View>
-
                 {/* Logo */}
                 <View className="mb-12">
                   <Logomark width={224} height={44} />
@@ -457,13 +424,39 @@ export default function AuthScreen() {
                 <Pressable
                   onPress={handleSignIn}
                   disabled={isLoading}
-                  className="bg-primary h-12 rounded-2xl flex-row items-center justify-center gap-2 mb-4"
+                  style={{
+                    backgroundColor: colorScheme === 'dark' ? '#F8F8F8' : '#000000',
+                    height: 48,
+                    borderRadius: 16,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    marginBottom: 16,
+                    opacity: isLoading ? 0.7 : 1,
+                  }}
                 >
-                  <Text className="text-[15px] font-roobert-medium text-primary-foreground">
+                  {isLoading && (
+                    <ActivityIndicator 
+                      size="small" 
+                      color={colorScheme === 'dark' ? '#000000' : '#FFFFFF'} 
+                    />
+                  )}
+                  <Text 
+                    style={{
+                      fontSize: 15,
+                      fontWeight: '500',
+                      color: colorScheme === 'dark' ? '#000000' : '#FFFFFF',
+                    }}
+                  >
                     {isLoading ? t('auth.signingIn') : t('auth.signIn')}
                   </Text>
                   {!isLoading && (
-                    <Icon as={ArrowRight} size={16} className="text-primary-foreground" />
+                    <Icon 
+                      as={ArrowRight} 
+                      size={16} 
+                      color={colorScheme === 'dark' ? '#000000' : '#FFFFFF'} 
+                    />
                   )}
                 </Pressable>
 
@@ -569,13 +562,39 @@ export default function AuthScreen() {
                 <Pressable
                   onPress={handleSignUp}
                   disabled={isLoading}
-                  className="bg-primary h-12 rounded-2xl flex-row items-center justify-center gap-2 mb-4"
+                  style={{
+                    backgroundColor: colorScheme === 'dark' ? '#F8F8F8' : '#000000',
+                    height: 48,
+                    borderRadius: 16,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    marginBottom: 16,
+                    opacity: isLoading ? 0.7 : 1,
+                  }}
                 >
-                  <Text className="text-[15px] font-roobert-medium text-primary-foreground">
+                  {isLoading && (
+                    <ActivityIndicator 
+                      size="small" 
+                      color={colorScheme === 'dark' ? '#000000' : '#FFFFFF'} 
+                    />
+                  )}
+                  <Text 
+                    style={{
+                      fontSize: 15,
+                      fontWeight: '500',
+                      color: colorScheme === 'dark' ? '#000000' : '#FFFFFF',
+                    }}
+                  >
                     {isLoading ? t('auth.creatingAccount') : t('auth.createAccount')}
                   </Text>
                   {!isLoading && (
-                    <Icon as={ArrowRight} size={16} className="text-primary-foreground" />
+                    <Icon 
+                      as={ArrowRight} 
+                      size={16} 
+                      color={colorScheme === 'dark' ? '#000000' : '#FFFFFF'} 
+                    />
                   )}
                 </Pressable>
 

@@ -10,7 +10,7 @@ import { View, Pressable, TextInput, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
-import { getCronPresets, isValidCronExpression, formatCronExpression } from '@/lib/trigger-utils';
+import { getCronPresets, isValidCronExpression, formatCronExpression } from '@/lib/utils/trigger-utils';
 import { Clock, Check, AlertCircle } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 

@@ -12,7 +12,7 @@ import type {
   OAuthProvider,
   PasswordResetRequest,
   AuthError,
-} from '@/lib/auth-types';
+} from '@/lib/utils/auth-types';
 import type { Session, User, AuthChangeEvent } from '@supabase/supabase-js';
 
 // Configure WebBrowser for OAuth

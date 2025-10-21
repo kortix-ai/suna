@@ -7,7 +7,7 @@
 import React from 'react';
 import { View } from 'react-native';
 import { ListItem } from '@/components/shared/ListItem';
-import { getTriggerIcon, formatCronExpression, getTriggerCategory } from '@/lib/trigger-utils';
+import { getTriggerIcon, formatCronExpression, getTriggerCategory } from '@/lib/utils/trigger-utils';
 import type { TriggerWithAgent } from '@/api/types';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 

@@ -7,7 +7,7 @@
 import * as React from 'react';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
-import { formatConversationDate } from '@/lib/date';
+import { formatConversationDate } from '@/lib/utils/date';
 import { ListItem } from '@/components/shared/ListItem';
 import { ThreadIcon } from '@/components/shared/ThreadIcon';
 import type { Conversation } from './types';

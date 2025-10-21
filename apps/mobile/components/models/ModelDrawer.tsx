@@ -11,7 +11,7 @@ import { AgentAvatar } from '../agents/AgentAvatar';
 import type { Agent } from '@/api/types';
 import type { Model } from '@/api/types';
 import { useLanguage } from '@/contexts';
-import { useAvailableModels } from '@/hooks/api/useModels';
+import { useAvailableModels } from '@/lib/models';
 
 interface ModelDrawerProps {
   visible: boolean;

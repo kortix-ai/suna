@@ -12,7 +12,7 @@ import * as React from 'react';
 import { Pressable, View } from 'react-native';
 import { AgentAvatar } from './AgentAvatar';
 import { AgentList } from './AgentList';
-import { useSearch } from '@/lib/search';
+import { useSearch } from '@/lib/utils/search';
 import type { Agent } from '@/api/types';
 
 interface AgentDrawerProps {
@@ -42,7 +42,18 @@ export function AgentDrawer({
   const { t } = useLanguage();
   
   // Get agents from context
-  const { agents, selectedAgentId, selectAgent, isLoading, error } = useAgent();
+  const { agents, selectedAgentId, selectAgent, isLoading, error, loadAgents } = useAgent();
+  
+  // Log drawer state for debugging
+  React.useEffect(() => {
+    if (visible) {
+      console.log('🚪 AgentDrawer Opened:', {
+        isLoading,
+        error: error?.message,
+        agentsCount: agents.length
+      });
+    }
+  }, [visible, isLoading, error, agents.length]);
   
   // Search functionality - transform agents to have 'id' field for search
   const searchableAgents = React.useMemo(() => 
@@ -180,9 +191,21 @@ export function AgentDrawer({
             {/* Error State */}
             {error && (
               <View className="py-8 items-center">
-                <Text className="text-destructive text-sm font-roobert text-center">
+                <Text className="text-destructive text-sm font-roobert text-center mb-4">
                   Failed to load agents. Please try again.
                 </Text>
+                <Text className="text-muted-foreground text-xs font-roobert text-center mb-4">
+                  {error.message}
+                </Text>
+                <Pressable
+                  onPress={() => {
+                    console.log('🔄 Retry loading agents');
+                    loadAgents();
+                  }}
+                  className="bg-primary/15 rounded-lg px-4 py-2 active:opacity-70"
+                >
+                  <Text className="text-foreground text-sm font-roobert-medium">Retry</Text>
+                </Pressable>
               </View>
             )}
 

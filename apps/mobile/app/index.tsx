@@ -15,21 +15,25 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useAuthContext } from '@/contexts';
 import { useOnboarding } from '@/hooks/useOnboarding';
+import { useBillingContext } from '@/contexts/BillingContext';
 
 /**
  * Splash Screen
  * 
- * Shown while checking authentication and onboarding status
+ * Shown while checking authentication, onboarding, and billing status
  * Routes user to appropriate screen based on state:
  * - Not authenticated → Sign In
+ * - Authenticated + Can start trial → Trial
+ * - Authenticated + No subscription → Subscription Required
  * - Authenticated + No onboarding → Onboarding
- * - Authenticated + Has onboarding → App
+ * - Authenticated + Has everything → App
  */
 export default function SplashScreen() {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const { isAuthenticated, isLoading: authLoading } = useAuthContext();
   const { hasCompletedOnboarding, isLoading: onboardingLoading } = useOnboarding();
+  const { subscriptionData, trialStatus, isLoading: billingLoading } = useBillingContext();
   const [isReady, setIsReady] = React.useState(false);
 
   const Logomark = colorScheme === 'dark' ? LogomarkWhite : LogomarkBlack;
@@ -54,23 +58,39 @@ export default function SplashScreen() {
 
   // Route user once we have all the info
   React.useEffect(() => {
-    if (!authLoading && !onboardingLoading) {
+    if (!authLoading && !onboardingLoading && !billingLoading) {
       // Small delay for smooth transition
       setTimeout(() => {
         if (!isAuthenticated) {
           console.log('🔐 User not authenticated, routing to sign in');
           router.replace('/auth');
-        } else if (!hasCompletedOnboarding) {
-          console.log('👋 User needs onboarding, routing to onboarding');
-          router.replace('/onboarding');
         } else {
-          console.log('✅ User authenticated and onboarded, routing to app');
-          router.replace('/home');
+          // User is authenticated - check billing status
+          const hasActiveTrial = trialStatus?.has_trial && trialStatus?.trial_status === 'active';
+          const canStartTrial = trialStatus?.can_start_trial;
+          const hasActiveSubscription =
+            subscriptionData?.tier && 
+            subscriptionData.tier.name !== 'none' && 
+            subscriptionData.tier.name !== 'free';
+
+          if (canStartTrial) {
+            console.log('🎁 User can start trial, routing to trial');
+            router.replace('/billing/trial');
+          } else if (!hasActiveTrial && !hasActiveSubscription) {
+            console.log('💳 User needs subscription, routing to subscription');
+            router.replace('/billing/subscription');
+          } else if (!hasCompletedOnboarding) {
+            console.log('👋 User needs onboarding, routing to onboarding');
+            router.replace('/onboarding');
+          } else {
+            console.log('✅ User authenticated and ready, routing to app');
+            router.replace('/home');
+          }
         }
         setIsReady(true);
       }, 800); // Minimum splash display time
     }
-  }, [authLoading, onboardingLoading, isAuthenticated, hasCompletedOnboarding, router]);
+  }, [authLoading, onboardingLoading, billingLoading, isAuthenticated, hasCompletedOnboarding, subscriptionData, trialStatus, router]);
 
   return (
     <>

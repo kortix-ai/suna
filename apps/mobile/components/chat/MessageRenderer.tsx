@@ -6,11 +6,11 @@ import React, { useMemo, useCallback, useEffect } from 'react';
 import { View, Pressable, Linking, Text as RNText } from 'react-native';
 import { Text } from '@/components/ui/text';
 import type { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/api/types';
-import { groupMessages, safeJsonParse, type MessageGroup } from '@/lib/message-grouping';
-import { parseToolMessage, formatToolOutput, stripXMLTags } from '@/lib/tool-parser';
+import { groupMessages, safeJsonParse, type MessageGroup } from '@/lib/utils/message-grouping';
+import { parseToolMessage, formatToolOutput, stripXMLTags } from '@/lib/utils/tool-parser';
 import { Wrench, AlertCircle, CheckCircle2 } from 'lucide-react-native';
 import Markdown from 'react-native-markdown-display';
-import { markdownStyles, markdownStylesDark } from '@/lib/markdown-styles';
+import { markdownStyles, markdownStylesDark } from '@/lib/utils/markdown-styles';
 import { useColorScheme } from 'nativewind';
 import { AgentIdentifier } from '@/components/agents';
 import Animated, { 
