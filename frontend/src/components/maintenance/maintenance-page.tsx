@@ -42,12 +42,12 @@ export function MaintenancePage() {
           <KortixLogo size={32} />
 
           {/* Title - 43px */}
-          <h1 className="text-[43px] font-normal tracking-tight text-white leading-none">
+          <h1 className="text-[43px] font-normal tracking-tight textforeground leading-none">
             We'll Be Right Back
           </h1>
 
           {/* Description - 16px */}
-          <p className="text-[16px] text-gray-400 text-center leading-relaxed">
+          <p className="text-[16px] text-foreground/60 text-center leading-relaxed">
             {isLocalMode() ? (
               "Performing scheduled maintenance to enhance system stability. All services will resume shortly."
             ) : (
@@ -76,9 +76,9 @@ export function MaintenancePage() {
                   className="h-12 w-12 bg-border"
                 >
                   {isCheckingHealth ? (
-                    <Loader2 className="h-5 w-5 animate-spin text-white" />
+                    <Loader2 className="h-5 w-5 animate-spin text-foreground" />
                   ) : (
-                    <RefreshCw className="h-5 w-5 text-white" />
+                    <RefreshCw className="h-5 w-5 text-foreground" />
                   )}
                 </Button>
               </div>

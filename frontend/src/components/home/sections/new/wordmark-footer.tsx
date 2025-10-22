@@ -29,7 +29,7 @@ export function WordmarkFooter() {
                 ref={containerRef}
                 onMouseEnter={() => setIsHovered(true)}
                 onMouseLeave={() => setIsHovered(false)}
-                className="relative w-full mx-auto overflow-hidden md:px-12 lg:px-16 pt-24 md:pt-32"
+                className="relative w-full mx-auto overflow-hidden md:px-12 lg:px-16 pt-10 md:pt-32"
                 style={{
                     // @ts-expect-error - CSS custom properties are not in CSSProperties type
                     '--mouse-x': `${mousePosition.x}px`,
@@ -40,9 +40,9 @@ export function WordmarkFooter() {
                 <div className="absolute inset-0 bg-background" />
 
                 {/* Wordmark - revealed by spotlight */}
-                <div className="relative w-full aspect-[1150/344] p-8 md:p-12 lg:p-16">
+                <div className="relative w-full aspect-[1150/344] p-0 sm:p-8 md:p-12 lg:p-16">
                     <div
-                        className="absolute inset-0 p-8 md:p-12 lg:p-16"
+                        className="absolute inset-0 sm:p-8 md:p-12 lg:p-16"
                         style={{
                             maskImage: isHovered
                                 ? `radial-gradient(1500px circle at var(--mouse-x) var(--mouse-y), black, transparent 40%)`
