@@ -469,8 +469,8 @@ function PricingTier({
     buttonVariant = tier.buttonColor as ButtonVariant;
     buttonClassName =
       tier.buttonColor === 'default'
-        ? 'bg-primary hover:bg-primary/90 text-white'
-        : 'bg-secondary hover:bg-secondary/90 text-white';
+        ? 'bg-primary hover:bg-primary/90'
+        : 'bg-primary hover:bg-primary/90';
   }
 
   const isUltraPlan = tier.name === 'Ultra';
