@@ -30,7 +30,7 @@ uv run api.py
 
 ```bash
 
-npm install
+cd frontend && npm install
 
 npm run dev
 ```
