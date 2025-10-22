@@ -492,7 +492,7 @@ class SetupWizard:
     def run_step(self, step_number, step_function, *args, **kwargs):
         """Executes a setup step if it hasn't been completed."""
         if self.current_step < step_number:
-            step_function(*args, **kwargs)
+            step_function(*args, **kwargs)  
             self.current_step = step_number
             save_progress(self.current_step, self.env_vars)
     
