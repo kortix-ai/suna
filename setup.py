@@ -674,22 +674,22 @@ class SetupWizard:
         """Collects Supabase project information from the user."""
         print_step(3, self.total_steps, "Collecting Supabase Information")
 
-        # Always ask user to choose between cloud and local Supabase
+        # Always ask user to choose between local and cloud Supabase
         print_info("Suna REQUIRES a Supabase project to function. Without these keys, the application will crash on startup.")
         print_info("You can choose between:")
-        print_info("  1. Cloud Supabase (hosted on supabase.com)")
-        print_info("  2. Local Supabase (self-hosted using Docker)")
+        print_info("  1. Local Supabase (self-hosted using Docker, recommended for development)")
+        print_info("  2. Cloud Supabase (hosted on supabase.com)")
         
         while True:
-            choice = input("Choose your Supabase setup (1 for cloud, 2 for local): ").strip()
+            choice = input("Choose your Supabase setup (1 for local, 2 for cloud): ").strip()
             if choice == "1":
-                self.env_vars["supabase_setup_method"] = "cloud"
-                break
-            elif choice == "2":
                 self.env_vars["supabase_setup_method"] = "local"
                 break
+            elif choice == "2":
+                self.env_vars["supabase_setup_method"] = "cloud"
+                break
             else:
-                print_error("Please enter 1 for cloud or 2 for local.")
+                print_error("Please enter 1 for local or 2 for cloud.")
 
         # Handle local Supabase setup
         if self.env_vars["supabase_setup_method"] == "local":
@@ -730,40 +730,80 @@ class SetupWizard:
                 return
         else:
             print_info("Using existing Supabase project configuration.")
+        
+        # Stop any running Supabase instance first (to ensure config changes are picked up)
+        print_info("Checking for existing Supabase instance...")
+        try:
+            subprocess.run(
+                ["npx", "supabase", "stop"],
+                cwd="backend",
+                capture_output=True,
+                shell=IS_WINDOWS,
+            )
+            print_info("Stopped any existing Supabase instance.")
+        except:
+            pass  # It's OK if stop fails (nothing running)
+        
+        # Configure local Supabase settings for development
+        print_info("Configuring Supabase for local development...")
+        self._configure_local_supabase_settings()
 
         # Start Supabase services using Supabase CLI instead of Docker Compose
         print_info("Starting Supabase services using Supabase CLI...")
+        print_info("This may take a few minutes on first run (downloading Docker images)...")
+        print_info("Please wait while Supabase starts...\n")
+        
         try:
+            # Run without capturing output so user sees progress in real-time
             result = subprocess.run(
                 ["npx", "supabase", "start"],
+                cwd="backend",
+                check=True,
+                text=True,
+                shell=IS_WINDOWS,
+            )
+            
+            print_success("\nSupabase services started successfully!")
+            
+            # Now run 'supabase status' to get the connection details
+            print_info("Retrieving connection details...")
+            status_result = subprocess.run(
+                ["npx", "supabase", "status"],
                 cwd="backend",
                 check=True,
                 capture_output=True,
                 text=True,
                 shell=IS_WINDOWS,
             )
-            print_success("Supabase services started successfully!")
             
-            # Extract keys from the CLI output
-            output = result.stdout
+            # Extract keys from the status output
+            output = status_result.stdout
+            print_info(f"Parsing Supabase status output...")
+            
             for line in output.split('\n'):
+                line = line.strip()
                 if 'API URL:' in line:
                     url = line.split('API URL:')[1].strip()
                     self.env_vars["supabase"]["SUPABASE_URL"] = url
                     self.env_vars["supabase"]["NEXT_PUBLIC_SUPABASE_URL"] = url
                     self.env_vars["supabase"]["EXPO_PUBLIC_SUPABASE_URL"] = url
-                elif 'anon key:' in line:
-                    anon_key = line.split('anon key:')[1].strip()
+                    print_success(f"✓ Found API URL: {url}")
+                elif 'Publishable key:' in line or 'anon key:' in line:
+                    # Supabase status uses "Publishable key" which is the anon key
+                    anon_key = line.split(':')[1].strip()
                     self.env_vars["supabase"]["SUPABASE_ANON_KEY"] = anon_key
-                elif 'service_role key:' in line:
-                    service_key = line.split('service_role key:')[1].strip()
+                    print_success(f"✓ Found Anon Key: {anon_key[:20]}...")
+                elif 'Secret key:' in line or 'service_role key:' in line:
+                    # Supabase status uses "Secret key" which is the service role key
+                    service_key = line.split(':')[1].strip()
                     self.env_vars["supabase"]["SUPABASE_SERVICE_ROLE_KEY"] = service_key
+                    print_success(f"✓ Found Service Role Key: {service_key[:20]}...")
             
             print_success("Supabase keys configured from CLI output!")
             
         except subprocess.SubprocessError as e:
             print_error(f"Failed to start Supabase services: {e}")
-            if e.stderr:
+            if hasattr(e, 'stderr') and e.stderr:
                 print_error(f"Error output: {e.stderr}")
             return
 
@@ -774,6 +814,38 @@ class SetupWizard:
 
         # Set JWT secret (this is usually a fixed value for local development)
         self.env_vars["supabase"]["SUPABASE_JWT_SECRET"] = "your-super-secret-jwt-token-with-at-least-32-characters-long"
+    
+    def _configure_local_supabase_settings(self):
+        """Configures local Supabase settings for development (disables email confirmations)."""
+        config_path = "backend/supabase/config.toml"
+        
+        if not os.path.exists(config_path):
+            print_warning("Config file not found, will be created by Supabase CLI.")
+            return
+        
+        try:
+            with open(config_path, "r") as f:
+                config_content = f.read()
+            
+            # Replace enable_confirmations = true with enable_confirmations = false
+            if "enable_confirmations = true" in config_content:
+                config_content = config_content.replace(
+                    "enable_confirmations = true",
+                    "enable_confirmations = false"
+                )
+                
+                with open(config_path, "w") as f:
+                    f.write(config_content)
+                
+                print_success("Configured local Supabase to disable email confirmations for development.")
+            elif "enable_confirmations = false" in config_content:
+                print_info("Email confirmations already disabled in local Supabase config.")
+            else:
+                print_warning("Could not find enable_confirmations setting in config.toml")
+                
+        except Exception as e:
+            print_warning(f"Could not modify Supabase config: {e}")
+            print_info("You may need to manually set enable_confirmations = false in backend/supabase/config.toml")
 
     def _setup_cloud_supabase(self):
         """Sets up cloud Supabase configuration."""
@@ -1349,7 +1421,11 @@ class SetupWizard:
 
         backend_env = {
             "ENV_MODE": "local",
-            **self.env_vars["supabase"],
+            # Backend only needs these Supabase variables
+            "SUPABASE_URL": self.env_vars["supabase"].get("SUPABASE_URL", ""),
+            "SUPABASE_ANON_KEY": self.env_vars["supabase"].get("SUPABASE_ANON_KEY", ""),
+            "SUPABASE_SERVICE_ROLE_KEY": self.env_vars["supabase"].get("SUPABASE_SERVICE_ROLE_KEY", ""),
+            "SUPABASE_JWT_SECRET": self.env_vars["supabase"].get("SUPABASE_JWT_SECRET", ""),
             "REDIS_HOST": redis_host,
             "REDIS_PORT": "6379",
             "REDIS_PASSWORD": "",
@@ -1482,27 +1558,27 @@ class SetupWizard:
             print_info("Please start Supabase services first with: npx supabase start")
             return
 
-        # Apply migrations using Supabase CLI
-        print_info("Applying migrations using Supabase CLI...")
+        # Apply migrations using Supabase CLI for local development
+        # For local Supabase, we use 'db reset' which applies all migrations
+        print_info("Resetting local database and applying all migrations...")
+        print_info("This will recreate the database schema from scratch.")
         try:
             subprocess.run(
-                ["npx", "supabase", "db", "push"],
+                ["npx", "supabase", "db", "reset"],
                 cwd="backend",
                 check=True,
                 shell=IS_WINDOWS,
             )
             print_success("All migrations applied successfully!")
+            print_success("Local Supabase database is ready!")
             
-            print_warning(
-                "IMPORTANT: You must manually expose the 'basejump' schema.")
             print_info(
-                "In your Supabase dashboard, go to: Project Settings -> API -> Exposed schemas")
-            print_info("Add 'basejump' to Exposed Schemas, then save.")
-            input("Press Enter once you've completed this step...")
+                "Note: For local Supabase, the 'basejump' schema is already exposed in config.toml")
             
         except subprocess.SubprocessError as e:
             print_error(f"Failed to apply migrations: {e}")
             print_warning("You may need to apply migrations manually.")
+            print_info("Try running: cd backend && npx supabase db reset")
 
     def _apply_cloud_migrations(self):
         """Applies migrations to cloud Supabase using Supabase CLI."""
@@ -1638,10 +1714,21 @@ class SetupWizard:
                     )
             except subprocess.SubprocessError as e:
                 print_error(f"Failed to start Suna with Docker Compose: {e}")
-                print_info(
-                    "Try running 'docker compose up --build' manually to diagnose the issue."
+                print_warning(
+                    "The Docker build might be failing due to environment variable issues during build time."
                 )
-                sys.exit(1)
+                print_info(
+                    "WORKAROUND: Try starting without rebuilding:"
+                )
+                print_info(f"  {Colors.CYAN}docker compose up -d{Colors.ENDC} (without --build)")
+                print_info(
+                    "\nIf that doesn't work, you may need to:"
+                )
+                print_info(f"  1. {Colors.CYAN}cd frontend{Colors.ENDC}")
+                print_info(f"  2. {Colors.CYAN}npm run build{Colors.ENDC}")
+                print_info(f"  3. {Colors.CYAN}cd .. && docker compose up -d{Colors.ENDC}")
+                # Don't exit, let the final instructions show
+                return
         else:
             print_info(
                 "All configurations are complete. Manual start is required.")
@@ -1673,29 +1760,62 @@ class SetupWizard:
             print(
                 f"  {Colors.CYAN}python start.py{Colors.ENDC}           - To start or stop Suna services"
             )
+            
+            # Show Supabase-specific commands if using local Supabase
+            if self.env_vars.get("supabase_setup_method") == "local":
+                print("\nLocal Supabase commands (run from backend/ directory):")
+                print(
+                    f"  {Colors.CYAN}npx supabase start{Colors.ENDC}      - Start Supabase services"
+                )
+                print(
+                    f"  {Colors.CYAN}npx supabase stop{Colors.ENDC}       - Stop Supabase services"
+                )
+                print(
+                    f"  {Colors.CYAN}npx supabase status{Colors.ENDC}     - Check Supabase status"
+                )
         else:
             print_info(
                 "To start Suna, you need to run these commands in separate terminals:"
             )
+            
+            # Show Supabase start command for local setup
+            step_num = 1
+            if self.env_vars.get("supabase_setup_method") == "local":
+                print(
+                    f"\n{Colors.BOLD}{step_num}. Start Local Supabase (in backend directory):{Colors.ENDC}"
+                )
+                print(f"{Colors.CYAN}   cd backend && npx supabase start{Colors.ENDC}")
+                step_num += 1
+            
             print(
-                f"\n{Colors.BOLD}1. Start Infrastructure (in project root):{Colors.ENDC}"
+                f"\n{Colors.BOLD}{step_num}. Start Infrastructure (in project root):{Colors.ENDC}"
             )
             print(f"{Colors.CYAN}   docker compose up redis -d{Colors.ENDC}")
+            step_num += 1
 
             print(
-                f"\n{Colors.BOLD}2. Start Frontend (in a new terminal):{Colors.ENDC}")
+                f"\n{Colors.BOLD}{step_num}. Start Frontend (in a new terminal):{Colors.ENDC}")
             print(f"{Colors.CYAN}   cd frontend && npm run dev{Colors.ENDC}")
+            step_num += 1
 
             print(
-                f"\n{Colors.BOLD}3. Start Backend (in a new terminal):{Colors.ENDC}")
+                f"\n{Colors.BOLD}{step_num}. Start Backend (in a new terminal):{Colors.ENDC}")
             print(f"{Colors.CYAN}   cd backend && uv run api.py{Colors.ENDC}")
+            step_num += 1
 
             print(
-                f"\n{Colors.BOLD}4. Start Background Worker (in a new terminal):{Colors.ENDC}"
+                f"\n{Colors.BOLD}{step_num}. Start Background Worker (in a new terminal):{Colors.ENDC}"
             )
             print(
                 f"{Colors.CYAN}   cd backend && uv run dramatiq run_agent_background{Colors.ENDC}"
             )
+            
+            # Show stop commands for local Supabase
+            if self.env_vars.get("supabase_setup_method") == "local":
+                print(
+                    f"\n{Colors.BOLD}To stop Local Supabase:{Colors.ENDC}"
+                )
+                print(f"{Colors.CYAN}   cd backend && npx supabase stop{Colors.ENDC}")
 
         print("\nOnce all services are running, access Suna at: http://localhost:3000")
 
