@@ -268,9 +268,6 @@ export function HeroSection() {
                                     enableAdvancedConfig={false}
                                 />
                             </div>
-                            <div>
-                                <div className="absolute -bottom-2 inset-x-0 h-6 bg-black/20 blur-xl rounded-full -z-10 opacity-70"></div>
-                            </div>
 
                         </div>
 
