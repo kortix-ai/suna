@@ -274,10 +274,7 @@ export function HeroSection() {
 
                         </div>
 
-                        {/* Examples section - right after chat input */}
-                        <div className="w-full">
-                            <Examples onSelectPrompt={setInputValue} />
-                        </div>
+
                     </div>
 
                 </div>

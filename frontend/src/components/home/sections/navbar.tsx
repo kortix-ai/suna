@@ -139,14 +139,13 @@ export function Navbar({ tabs }: NavbarProps = {}) {
             {/* Left Section - Logo */}
             <div className="flex items-center justify-start flex-shrink-0 w-auto md:w-[200px]">
               <Link href="/" className="flex items-center gap-3">
-                <KortixLogo size={24} />
+                <KortixLogo size={18} variant='logomark' />
               </Link>
             </div>
-
-            {/* Center Section - Navigation Menu */}
+            {/* 
             <div className="hidden md:flex items-center justify-center flex-grow">
               <NavMenu links={filteredNavLinks} />
-            </div>
+            </div> */}
 
             {/* Right Section - Actions */}
             <div className="flex items-center justify-end flex-shrink-0 w-auto md:w-[200px] ml-auto">
@@ -166,7 +165,7 @@ export function Navbar({ tabs }: NavbarProps = {}) {
                   </Link>
                   {user ? (
                     <Link
-                      className="bg-secondary h-8 hidden md:flex items-center justify-center text-sm font-normal tracking-wide rounded-full text-primary-foreground dark:text-secondary-foreground w-fit px-4 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
+                      className="bg-primary h-8 hidden md:flex items-center justify-center text-sm font-normal tracking-wide rounded-full text-primary-foreground w-fit px-4 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
                       href="/dashboard"
                     >
                       Dashboard
@@ -180,7 +179,7 @@ export function Navbar({ tabs }: NavbarProps = {}) {
                     </Link>
                   )}
                 </div>
-                <ThemeToggle />
+                {/* <ThemeToggle /> */}
                 <button
                   className="md:hidden border border-border size-8 rounded-md cursor-pointer flex items-center justify-center"
                   onClick={toggleDrawer}

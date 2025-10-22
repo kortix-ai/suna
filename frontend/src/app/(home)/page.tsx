@@ -14,43 +14,18 @@ import { HeroSection as NewHeroSection } from '@/components/home/sections/new/he
 import { AIWorkerSection } from '@/components/home/sections/new/ai-workers';
 import { SlidesSection } from '@/components/home/sections/new/slides-section';
 import { PersonalizationSection } from '@/components/home/sections/new/personalization-section';
+import { FAQSection } from '@/components/home/sections/new/faq-section';
 
 export default function Home() {
-  //temp new dev
-  if (isLocalMode() || isStagingMode()) {
-    return <>
-      <ModalProviders />
-      <BackgroundAALChecker>
-        <main className="w-full">
-          <NewHeroSection />
-          <AIWorkerSection />
-          <div className="w-full h-screen overflow-y-scroll snap-y snap-mandatory">
-            <SlidesSection />
-            <PersonalizationSection />
-          </div>
-        </main>
-      </BackgroundAALChecker>
-    </>
-  }
+
   return (
     <>
       <ModalProviders />
       <BackgroundAALChecker>
-        <main className="flex flex-col items-center justify-center min-h-screen w-full">
-          <div className="w-full divide-y divide-border">
-            <HeroSection />
-            <CapabilitiesSection />
-            {/* <DeliverablesSection />             */}
-            <BentoSection />
-
-            {/* <AgentShowcaseSection /> */}
-            <OpenSourceSection />
-            <PricingSection />
-            {/* <TestimonialSection /> */}
-            {/* <FAQSection /> */}
-            <CTASection />
-            <FooterSection />
-          </div>
+        <main className="w-full">
+          <NewHeroSection />
+          <FAQSection />
+          <PricingSection showInfo={false} />
         </main>
       </BackgroundAALChecker>
     </>
