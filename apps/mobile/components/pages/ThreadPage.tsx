@@ -145,9 +145,13 @@ export function ThreadPage({
       {/* Thread Header - Fixed at top */}
       <ThreadHeader
         threadTitle={chat.activeThread?.title}
-        onTitleChange={(newTitle) => {
+        onTitleChange={async (newTitle) => {
           console.log('📝 Thread title changed to:', newTitle);
-          // TODO: Update thread title in state/backend
+          try {
+            await chat.updateThreadTitle(newTitle);
+          } catch (error) {
+            console.error('❌ Failed to update thread title:', error);
+          }
         }}
         onMenuPress={onMenuPress}
         onActionsPress={() => setIsThreadActionsVisible(true)}

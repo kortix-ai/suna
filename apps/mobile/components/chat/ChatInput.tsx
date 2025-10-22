@@ -2,10 +2,10 @@ import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { useLanguage } from '@/contexts';
 import { BlurView } from 'expo-blur';
-import { AudioLines, CornerDownLeft, Paperclip, X, Image, Presentation, Table2, FileText, Users, Search, Square } from 'lucide-react-native';
+import { AudioLines, CornerDownLeft, Paperclip, X, Image, Presentation, Table2, FileText, Users, Search, Square, Loader2 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { Keyboard, Pressable, ScrollView, TextInput, View, type ViewProps, ActivityIndicator } from 'react-native';
+import { Keyboard, Pressable, ScrollView, TextInput, View, type ViewProps } from 'react-native';
 import Animated, { 
   useAnimatedStyle, 
   useSharedValue, 
@@ -96,6 +96,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   const stopScale = useSharedValue(1);
   const sendScale = useSharedValue(1);
   const pulseOpacity = useSharedValue(1);
+  const rotation = useSharedValue(0);
   
   // TextInput ref for programmatic focus
   const textInputRef = React.useRef<TextInput>(null);
@@ -120,6 +121,19 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
       pulseOpacity.value = withTiming(1, { duration: 300 });
     }
   }, [isAgentRunning]);
+  
+  // Rotating animation for sending state
+  React.useEffect(() => {
+    if (isSendingMessage) {
+      rotation.value = withRepeat(
+        withTiming(360, { duration: 1000 }),
+        -1,
+        false
+      );
+    } else {
+      rotation.value = withTiming(0, { duration: 0 });
+    }
+  }, [isSendingMessage]);
   
   // States
   const { colorScheme } = useColorScheme();
@@ -186,6 +200,10 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   const sendAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: sendScale.value }],
     opacity: pulseOpacity.value,
+  }));
+  
+  const rotationAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotation.value}deg` }],
   }));
 
   // Handle sending text message - checks auth first
@@ -473,7 +491,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                     sendScale.value = withSpring(1, { damping: 15, stiffness: 400 });
                   }}
                   onPress={handleButtonPress}
-                  disabled={isSendingMessage && !isAgentRunning}
+                  disabled={isSendingMessage}
                   className={`rounded-full items-center justify-center ${
                     isAgentRunning 
                       ? 'bg-destructive' 
@@ -481,8 +499,15 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                   }`}
                   style={[{ width: 33.75, height: 33.75 }, sendAnimatedStyle]}
                 >
-                  {isSendingMessage && !isAgentRunning ? (
-                    <ActivityIndicator size="small" color="#ffffff" />
+                  {isSendingMessage ? (
+                    <AnimatedView style={rotationAnimatedStyle}>
+                      <Icon 
+                        as={Loader2}
+                        size={15} 
+                        className="text-primary-foreground"
+                        strokeWidth={2}
+                      />
+                    </AnimatedView>
                   ) : (
                     <Icon 
                       as={

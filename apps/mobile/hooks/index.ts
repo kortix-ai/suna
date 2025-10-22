@@ -25,4 +25,5 @@ export * from './media';
 export { useMessages, useSendMessage, useThreads, useInitiateAgent } from '@/lib/chat';
 export { useAgents, useAgent } from '@/lib/agents';
 export { useTriggers } from '@/lib/triggers';
-export { useSubscription, useCreditBalance, useBillingCheck } from '@/lib/billing';
+export { useSubscription, useCreditBalance } from '@/lib/billing';
+export { useBillingCheck } from '@/lib/billing/validation'; // Direct import to avoid circular dependency

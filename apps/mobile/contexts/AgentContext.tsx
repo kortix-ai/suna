@@ -53,7 +53,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
       sort_order: 'asc'
     },
     {
-      enabled: !!session?.access_token, // Only fetch when authenticated
+      enabled: !!session, // Only fetch when authenticated
     }
   );
   
@@ -62,14 +62,15 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   // Log state changes for debugging
   React.useEffect(() => {
     console.log('🤖 AgentContext State:', {
-      isAuthenticated: !!session?.access_token,
+      isAuthenticated: !!session,
+      hasSession: !!session,
       isLoading,
       error: error?.message,
       agentsCount: agents.length,
       selectedAgentId,
       hasInitialized
     });
-  }, [session?.access_token, isLoading, error, agents.length, selectedAgentId, hasInitialized]);
+  }, [session, isLoading, error, agents.length, selectedAgentId, hasInitialized]);
   
   // AsyncStorage key
   const STORAGE_KEY = '@agentpress/selected_agent_id';

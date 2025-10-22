@@ -168,6 +168,11 @@ export default function AuthScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setCurrentView('sign-in');
     setError('');
+    // Clear form fields when navigating to sign in
+    setEmail('');
+    setPassword('');
+    setConfirmPassword('');
+    setFullName('');
   };
 
   const showSignInEmail = () => {
@@ -181,6 +186,11 @@ export default function AuthScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setCurrentView('sign-up');
     setError('');
+    // Clear form fields when navigating to sign up
+    setEmail('');
+    setPassword('');
+    setConfirmPassword('');
+    setFullName('');
   };
 
   const showSignUpEmail = () => {
@@ -196,6 +206,15 @@ export default function AuthScreen() {
     setError('');
     setForgotPasswordSuccess(false);
     setTimeout(() => emailInputRef.current?.focus(), 300);
+  };
+
+  const showSignInEmailWithPrefilledData = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setCurrentView('sign-in-email');
+    setError('');
+    // Keep email and password prefilled, clear confirm password and full name
+    setConfirmPassword('');
+    setFullName('');
   };
 
   return (
@@ -667,10 +686,7 @@ export default function AuthScreen() {
 
                   {/* Go to Sign In Button */}
                   <Pressable
-                    onPress={() => {
-                      setCurrentView('sign-in');
-                      setError('');
-                    }}
+                    onPress={showSignInEmailWithPrefilledData}
                     className="bg-card border border-border h-12 rounded-2xl flex-row items-center justify-center gap-2"
                   >
                     <Text className="text-[15px] font-roobert-medium text-foreground">

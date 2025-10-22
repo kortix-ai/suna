@@ -29,6 +29,7 @@ import {
   useInitiateAgent as useInitiateAgentMutation,
   useStopAgentRun as useStopAgentRunMutation,
   useActiveAgentRuns,
+  useUpdateThread,
   chatKeys,
 } from '@/lib/chat';
 
@@ -56,6 +57,7 @@ export interface UseChatReturn {
   threads: Thread[];
   loadThread: (threadId: string) => void;
   startNewChat: () => void;
+  updateThreadTitle: (newTitle: string) => Promise<void>;
   hasActiveThread: boolean;
   
   // Messages & Streaming
@@ -143,6 +145,7 @@ export function useChat(): UseChatReturn {
   const sendMessageMutation = useSendMessageMutation();
   const initiateAgentMutation = useInitiateAgentMutation();
   const stopAgentRunMutation = useStopAgentRunMutation();
+  const updateThreadMutation = useUpdateThread();
 
   // ============================================================================
   // Streaming - Internal EventSource Management
@@ -526,6 +529,25 @@ export function useChat(): UseChatReturn {
     stopStreaming();
   }, [stopStreaming]);
 
+  const updateThreadTitle = useCallback(async (newTitle: string) => {
+    if (!activeThreadId) {
+      console.warn('[useChat] Cannot update title: no active thread');
+      return;
+    }
+
+    try {
+      console.log('[useChat] Updating thread title to:', newTitle);
+      await updateThreadMutation.mutateAsync({
+        threadId: activeThreadId,
+        data: { title: newTitle },
+      });
+      console.log('[useChat] Thread title updated successfully');
+    } catch (error) {
+      console.error('[useChat] Failed to update thread title:', error);
+      throw error;
+    }
+  }, [activeThreadId, updateThreadMutation]);
+
   const sendMessage = useCallback(async (content: string, agentId: string, agentName: string) => {
     if (!content.trim()) return;
 
@@ -824,6 +846,7 @@ export function useChat(): UseChatReturn {
     threads: threadsData,
     loadThread,
     startNewChat,
+    updateThreadTitle,
     hasActiveThread: !!activeThreadId,
     
     // Messages & Streaming

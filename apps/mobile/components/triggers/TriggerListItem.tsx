@@ -2,10 +2,12 @@
  * Trigger List Item Component
  * 
  * Displays individual trigger using the generic ListItem component
+ * Ensures proper theme consistency with design system colors
  */
 
 import React from 'react';
 import { View } from 'react-native';
+import { useColorScheme } from 'nativewind';
 import { ListItem } from '@/components/shared/ListItem';
 import { getTriggerIcon, formatCronExpression, getTriggerCategory } from '@/lib/utils/trigger-utils';
 import type { TriggerWithAgent } from '@/api/types';
@@ -20,6 +22,7 @@ export function TriggerListItem({
   trigger,
   onPress,
 }: TriggerListItemProps) {
+  const { colorScheme } = useColorScheme();
   const IconComponent = getTriggerIcon(trigger.trigger_type);
   const category = getTriggerCategory(trigger.trigger_type);
 
@@ -31,9 +34,18 @@ export function TriggerListItem({
     return trigger.description || undefined;
   }, [category, trigger.config, trigger.description]);
 
-  // Status indicator dot
+  // Status indicator dot with design system colors
   const statusIndicator = (
-    <View className={`w-2 h-2 rounded-full ${trigger.is_active ? 'bg-green-500' : 'bg-gray-400'}`} />
+    <View 
+      style={{
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        backgroundColor: trigger.is_active 
+          ? '#22C55E'  // Green for active
+          : (colorScheme === 'dark' ? '#666666' : '#9CA3AF')  // Gray for inactive
+      }}
+    />
   );
 
   return (

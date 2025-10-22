@@ -6,15 +6,16 @@
  * - React Query hooks
  * - Checkout flows
  * - Pricing data
- * - Validation utilities
+ * 
+ * Note: useBillingCheck is NOT exported here to avoid circular dependency
+ * with BillingContext. Import it from '@/hooks' or '@/lib/billing/validation' directly.
  */
 
-// Re-export everything from submodules
+// Re-export everything from submodules (except validation to avoid circular dependency)
 export * from './api';
 export * from './hooks';
 export * from './checkout';
 export * from './pricing';
-export * from './validation';
 
 // Named exports for convenience
 export { billingApi } from './api';
@@ -27,5 +28,4 @@ export {
   openExternalUrl,
 } from './checkout';
 export { PRICING_TIERS, CREDIT_PACKAGES } from './pricing';
-export { useBillingCheck } from './validation';
 

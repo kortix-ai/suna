@@ -1,25 +1,31 @@
 /**
- * Trigger Creation Drawer - SIMPLE & VISIBLE
+ * Trigger Creation Drawer
  * 
- * Uses simple Animated View - guaranteed to be visible
+ * Uses @gorhom/bottom-sheet for consistent design with the rest of the app
+ * Matches AgentDrawer and ThreadActionsDrawer styling
  */
 
 import React, { useState, useEffect } from 'react';
-import { 
-  View, Pressable, TextInput, Alert, ScrollView, 
-  Animated, Dimensions, KeyboardAvoidingView, Platform,
-  TouchableWithoutFeedback
-} from 'react-native';
+import { View, Pressable, TextInput, Alert } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import { 
-  Clock, Sparkles, ChevronRight, ChevronLeft, Check, Zap, Timer, 
-  Target, Calendar as CalendarIcon, Repeat, X
+  Clock, Sparkles, ChevronRight, Check, Zap, 
+  Target, Calendar as CalendarIcon
 } from 'lucide-react-native';
 import { useAgent } from '@/contexts/AgentContext';
 import { useCreateTrigger } from '@/lib/triggers';
+import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface TriggerCreationDrawerProps {
   visible: boolean;
@@ -30,8 +36,6 @@ interface TriggerCreationDrawerProps {
 type TriggerStep = 'type' | 'config';
 type ScheduleMode = 'preset' | 'recurring' | 'advanced';
 type RecurringType = 'daily' | 'weekly' | 'monthly';
-
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Schedule presets
 const SCHEDULE_PRESETS = [
@@ -51,14 +55,88 @@ const WEEKDAYS = [
   { value: '0', label: 'Sun' },
 ];
 
+/**
+ * TypeCard Component - Card for trigger type selection
+ */
+function TypeCard({ 
+  icon: IconComponent, 
+  title, 
+  subtitle, 
+  onPress 
+}: { 
+  icon: any; 
+  title: string; 
+  subtitle: string; 
+  onPress: () => void;
+}) {
+  const { colorScheme } = useColorScheme();
+  const scale = useSharedValue(1);
+  
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+  
+  const bgColor = colorScheme === 'dark' ? '#161618' : '#FFFFFF';
+  const borderColor = colorScheme === 'dark' ? '#232324' : '#DCDCDC';
+  const textColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
+  const subtitleColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
+
+  return (
+    <AnimatedPressable
+      onPress={onPress}
+      onPressIn={() => { scale.value = withSpring(0.97); }}
+      onPressOut={() => { scale.value = withSpring(1); }}
+      style={[
+        animatedStyle,
+        {
+          flexDirection: 'row',
+          alignItems: 'center',
+          padding: 16,
+          borderRadius: 16,
+          borderWidth: 1.5,
+          borderColor,
+          backgroundColor: bgColor,
+          marginBottom: 12,
+        }
+      ]}
+    >
+      <View 
+        style={{
+          width: 48,
+          height: 48,
+          borderRadius: 16,
+          borderWidth: 1.5,
+          borderColor,
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginRight: 12,
+          backgroundColor: bgColor,
+        }}
+      >
+        <Icon as={IconComponent} size={20} color={textColor} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 16, fontWeight: '600', color: textColor }}>
+          {title}
+        </Text>
+        <Text style={{ fontSize: 14, color: subtitleColor, opacity: 0.6, marginTop: 4 }}>
+          {subtitle}
+        </Text>
+      </View>
+      <Icon as={ChevronRight} size={20} color={textColor} />
+    </AnimatedPressable>
+  );
+}
+
 export function TriggerCreationDrawer({
   visible,
   onClose,
   onTriggerCreated
 }: TriggerCreationDrawerProps) {
+  const bottomSheetRef = React.useRef<BottomSheet>(null);
+  const snapPoints = React.useMemo(() => ['85%'], []);
   const { colorScheme } = useColorScheme();
   const { selectedAgentId } = useAgent();
-  const slideAnim = React.useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   
   // Wizard state
   const [currentStep, setCurrentStep] = useState<TriggerStep>('type');
@@ -83,24 +161,35 @@ export function TriggerCreationDrawer({
   
   const createTriggerMutation = useCreateTrigger();
 
-  // Animate in/out
+  // Handle visibility changes
   useEffect(() => {
-    console.log('🎬 Drawer visible changed to:', visible);
     if (visible) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        useNativeDriver: true,
-        tension: 65,
-        friction: 11
-      }).start();
+      console.log('🚪 Trigger Creation Drawer Opened');
+      bottomSheetRef.current?.snapToIndex(0);
     } else {
-      Animated.timing(slideAnim, {
-        toValue: SCREEN_HEIGHT,
-        duration: 250,
-        useNativeDriver: true,
-      }).start(() => {
-        // Reset form
+      bottomSheetRef.current?.close();
+    }
+  }, [visible]);
+
+  const renderBackdrop = React.useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop
+        {...props}
+        disappearsOnIndex={-1}
+        appearsOnIndex={0}
+        opacity={0.5}
+        pressBehavior="close"
+      />
+    ),
+    []
+  );
+
+  const handleSheetChange = React.useCallback((index: number) => {
+    if (index === -1) {
+      onClose();
+      // Reset form when closed
+      setTimeout(() => {
         setCurrentStep('type');
         setSelectedType(null);
         setTriggerName('');
@@ -109,16 +198,9 @@ export function TriggerCreationDrawer({
         setScheduleMode('preset');
         setSelectedPreset('');
         setCronExpression('');
-      });
+      }, 300);
     }
-  }, [visible]);
-
-  if (!visible) return null;
-
-  const handleClose = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onClose();
-  };
+  }, [onClose]);
 
   const handleTypeSelect = (type: 'schedule' | 'event') => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -161,6 +243,14 @@ export function TriggerCreationDrawer({
       setSelectedWeekdays([...selectedWeekdays, day].sort());
     }
   };
+
+  // Design system colors
+  const bgColor = colorScheme === 'dark' ? '#161618' : '#FFFFFF';
+  const textColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
+  const mutedColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
+  const borderColor = colorScheme === 'dark' ? '#232324' : '#DCDCDC';
+  const inputBg = colorScheme === 'dark' ? '#161618' : '#FFFFFF';
+  const previewBg = colorScheme === 'dark' ? '#161618' : '#F5F5F5';
 
   const handleCreate = async () => {
     if (!selectedAgentId) {
@@ -219,357 +309,443 @@ export function TriggerCreationDrawer({
     }
   };
 
-  const bgColor = colorScheme === 'dark' ? '#000000' : '#FFFFFF';
-  const textColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
-  const mutedColor = colorScheme === 'dark' ? '#666666' : '#9CA3AF';
-  const borderColor = colorScheme === 'dark' ? '#232324' : '#DCDCDC';
-
   return (
-    <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999 }}>
-      {/* Backdrop */}
-      <TouchableWithoutFeedback onPress={handleClose}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} />
-      </TouchableWithoutFeedback>
-
-      {/* Drawer */}
-      <Animated.View
-        style={{
-          position: 'absolute',
-          bottom: 0,
-          left: 0,
-          right: 0,
-          height: SCREEN_HEIGHT * 0.85,
-          backgroundColor: bgColor,
-          borderTopLeftRadius: 24,
-          borderTopRightRadius: 24,
-          transform: [{ translateY: slideAnim }],
-        }}
+    <BottomSheet
+      ref={bottomSheetRef}
+      index={-1}
+      snapPoints={snapPoints}
+      enablePanDownToClose
+      onChange={handleSheetChange}
+      backdropComponent={renderBackdrop}
+      backgroundStyle={{ 
+        backgroundColor: bgColor
+      }}
+      handleIndicatorStyle={{ 
+        backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',
+        width: 36,
+        height: 5,
+        borderRadius: 3,
+        marginTop: 8,
+        marginBottom: 0
+      }}
+      enableDynamicSizing={false}
+      style={{
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+        overflow: 'hidden'
+      }}
+    >
+      <BottomSheetScrollView 
+        className="flex-1 px-6"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 40 }}
+        keyboardShouldPersistTaps="handled"
       >
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={{ flex: 1 }}
-        >
-          {/* Header */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 24, paddingTop: 20, paddingBottom: 16, borderBottomWidth: 1, borderBottomColor: borderColor }}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 20, fontWeight: '600', color: textColor }}>
-                {currentStep === 'type' ? 'Create Trigger' : `${selectedType === 'schedule' ? 'Schedule' : 'Event'} Trigger`}
-              </Text>
-              <Text style={{ fontSize: 14, color: mutedColor, marginTop: 4 }}>
-                {currentStep === 'type' ? 'Choose a trigger type' : 'Configure your trigger'}
-              </Text>
-            </View>
-            <Pressable onPress={handleClose} style={{ padding: 8 }}>
-              <Icon as={X} size={24} color={textColor} />
-            </Pressable>
-          </View>
-
-          <ScrollView 
-            style={{ flex: 1 }}
-            contentContainerStyle={{ padding: 24, paddingBottom: 120 }}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
+        {/* Header */}
+        <View className="pt-6 pb-4">
+          <Text 
+            style={{ 
+              color: textColor, 
+              fontSize: 20, 
+              fontWeight: '600' 
+            }}
           >
-            {currentStep === 'type' && (
-              <View>
-                {/* Schedule Trigger */}
-                <Pressable
-                  onPress={() => handleTypeSelect('schedule')}
-                  style={({ pressed }) => [{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    padding: 16,
-                    borderRadius: 16,
-                    borderWidth: 1,
-                    borderColor: borderColor,
-                    marginBottom: 12,
-                    opacity: pressed ? 0.7 : 1,
-                  }]}
-                >
-                  <View style={{ width: 48, height: 48, borderRadius: 16, borderWidth: 1.5, borderColor: borderColor, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                    <Icon as={Clock} size={20} color={textColor} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 16, fontWeight: '600', color: textColor }}>Schedule Trigger</Text>
-                    <Text style={{ fontSize: 14, color: mutedColor, marginTop: 4 }}>Run on a schedule</Text>
-                  </View>
-                  <Icon as={ChevronRight} size={20} color={textColor} />
-                </Pressable>
+            {currentStep === 'type' ? 'Create Trigger' : `${selectedType === 'schedule' ? 'Schedule' : 'Event'} Trigger`}
+          </Text>
+          <Text 
+            style={{ 
+              color: mutedColor, 
+              fontSize: 14, 
+              opacity: 0.6, 
+              marginTop: 4 
+            }}
+          >
+            {currentStep === 'type' ? 'Choose a trigger type' : 'Configure your trigger'}
+          </Text>
+        </View>
+        {/* Type Selection Step */}
+        {currentStep === 'type' && (
+          <View>
+            <TypeCard
+              icon={Clock}
+              title="Schedule Trigger"
+              subtitle="Run on a schedule"
+              onPress={() => handleTypeSelect('schedule')}
+            />
+            <TypeCard
+              icon={Sparkles}
+              title="Event Trigger"
+              subtitle="From external apps"
+              onPress={() => handleTypeSelect('event')}
+            />
+          </View>
+        )}
 
-                {/* Event Trigger */}
-                <Pressable
-                  onPress={() => handleTypeSelect('event')}
-                  style={({ pressed }) => [{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    padding: 16,
-                    borderRadius: 16,
-                    borderWidth: 1,
-                    borderColor: borderColor,
-                    opacity: pressed ? 0.7 : 1,
-                  }]}
-                >
-                  <View style={{ width: 48, height: 48, borderRadius: 16, borderWidth: 1.5, borderColor: borderColor, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-                    <Icon as={Sparkles} size={20} color={textColor} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 16, fontWeight: '600', color: textColor }}>Event Trigger</Text>
-                    <Text style={{ fontSize: 14, color: mutedColor, marginTop: 4 }}>From external apps</Text>
-                  </View>
-                  <Icon as={ChevronRight} size={20} color={textColor} />
-                </Pressable>
+        {/* Schedule Configuration Step */}
+        {currentStep === 'config' && selectedType === 'schedule' && (
+          <View>
+            {/* Name Input */}
+            <View style={{ marginBottom: 16 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: textColor, marginBottom: 8 }}>
+                Name *
+              </Text>
+              <TextInput
+                value={triggerName}
+                onChangeText={setTriggerName}
+                placeholder="Daily report"
+                placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                style={{ 
+                  padding: 12, 
+                  borderRadius: 12, 
+                  borderWidth: 1.5, 
+                  borderColor,
+                  backgroundColor: inputBg,
+                  fontSize: 16, 
+                  color: textColor 
+                }}
+              />
+            </View>
+
+            {/* Schedule Mode Tabs */}
+            <View style={{ marginBottom: 16 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: textColor, marginBottom: 8 }}>
+                Schedule
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                {(['preset', 'recurring', 'advanced'] as const).map((mode) => (
+                  <Pressable
+                    key={mode}
+                    onPress={() => setScheduleMode(mode)}
+                    style={{
+                      flex: 1,
+                      padding: 10,
+                      borderRadius: 12,
+                      borderWidth: 1.5,
+                      borderColor: scheduleMode === mode ? '#3B82F6' : borderColor,
+                      backgroundColor: scheduleMode === mode ? '#3B82F610' : 'transparent',
+                    }}
+                  >
+                    <Text 
+                      style={{ 
+                        textAlign: 'center', 
+                        fontSize: 13, 
+                        fontWeight: '500', 
+                        color: scheduleMode === mode ? '#3B82F6' : textColor 
+                      }}
+                    >
+                      {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                    </Text>
+                  </Pressable>
+                ))}
               </View>
-            )}
 
-            {currentStep === 'config' && selectedType === 'schedule' && (
-              <View>
-                {/* Name */}
-                <View style={{ marginBottom: 16 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: textColor, marginBottom: 8 }}>Name *</Text>
-                  <TextInput
-                    value={triggerName}
-                    onChangeText={setTriggerName}
-                    placeholder="Daily report"
-                    placeholderTextColor={mutedColor}
-                    style={{ padding: 12, borderRadius: 12, borderWidth: 1.5, borderColor: borderColor, fontSize: 16, color: textColor }}
+              {/* Preset Options */}
+              {scheduleMode === 'preset' && SCHEDULE_PRESETS.map((preset) => (
+                <Pressable
+                  key={preset.id}
+                  onPress={() => handlePresetSelect(preset.id)}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    padding: 12,
+                    borderRadius: 12,
+                    borderWidth: 1.5,
+                    borderColor: selectedPreset === preset.id ? '#3B82F6' : borderColor,
+                    backgroundColor: selectedPreset === preset.id ? '#3B82F610' : bgColor,
+                    marginBottom: 8,
+                  }}
+                >
+                  <Icon 
+                    as={preset.icon} 
+                    size={18} 
+                    color={selectedPreset === preset.id ? '#3B82F6' : textColor} 
                   />
-                </View>
+                  <Text 
+                    style={{ 
+                      flex: 1, 
+                      marginLeft: 12, 
+                      fontSize: 14, 
+                      fontWeight: '500', 
+                      color: selectedPreset === preset.id ? '#3B82F6' : textColor 
+                    }}
+                  >
+                    {preset.name}
+                  </Text>
+                  {selectedPreset === preset.id && <Icon as={Check} size={16} color="#3B82F6" />}
+                </Pressable>
+              ))}
 
-                {/* Mode Tabs */}
-                <View style={{ marginBottom: 16 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: textColor, marginBottom: 8 }}>Schedule</Text>
+              {/* Recurring Options */}
+              {scheduleMode === 'recurring' && (
+                <View>
                   <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-                    {['preset', 'recurring', 'advanced'].map((mode) => (
+                    {(['daily', 'weekly', 'monthly'] as const).map((type) => (
                       <Pressable
-                        key={mode}
-                        onPress={() => setScheduleMode(mode as ScheduleMode)}
+                        key={type}
+                        onPress={() => setRecurringType(type)}
                         style={{
                           flex: 1,
-                          padding: 10,
+                          padding: 8,
                           borderRadius: 12,
                           borderWidth: 1.5,
-                          borderColor: scheduleMode === mode ? '#3B82F6' : borderColor,
-                          backgroundColor: scheduleMode === mode ? '#3B82F610' : 'transparent',
+                          borderColor: recurringType === type ? '#3B82F6' : borderColor,
+                          backgroundColor: recurringType === type ? '#3B82F610' : 'transparent',
                         }}
                       >
-                        <Text style={{ textAlign: 'center', fontSize: 13, fontWeight: '500', color: scheduleMode === mode ? '#3B82F6' : textColor }}>
-                          {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                        <Text 
+                          style={{ 
+                            textAlign: 'center', 
+                            fontSize: 12, 
+                            fontWeight: '500', 
+                            color: recurringType === type ? '#3B82F6' : textColor 
+                          }}
+                        >
+                          {type.charAt(0).toUpperCase() + type.slice(1)}
                         </Text>
                       </Pressable>
                     ))}
                   </View>
 
-                  {/* Presets */}
-                  {scheduleMode === 'preset' && SCHEDULE_PRESETS.map((preset) => (
-                    <Pressable
-                      key={preset.id}
-                      onPress={() => handlePresetSelect(preset.id)}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        padding: 12,
-                        borderRadius: 12,
-                        borderWidth: 1.5,
-                        borderColor: selectedPreset === preset.id ? '#3B82F6' : borderColor,
-                        backgroundColor: selectedPreset === preset.id ? '#3B82F610' : 'transparent',
-                        marginBottom: 8,
+                  <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                    <TextInput
+                      value={selectedHour}
+                      onChangeText={setSelectedHour}
+                      placeholder="09"
+                      keyboardType="number-pad"
+                      maxLength={2}
+                      placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                      style={{ 
+                        width: 60, 
+                        padding: 8, 
+                        borderRadius: 8, 
+                        borderWidth: 1.5, 
+                        borderColor,
+                        backgroundColor: inputBg,
+                        textAlign: 'center', 
+                        fontSize: 16, 
+                        color: textColor 
                       }}
-                    >
-                      <Icon as={preset.icon} size={18} color={selectedPreset === preset.id ? '#3B82F6' : textColor} />
-                      <Text style={{ flex: 1, marginLeft: 12, fontSize: 14, fontWeight: '500', color: selectedPreset === preset.id ? '#3B82F6' : textColor }}>
-                        {preset.name}
-                      </Text>
-                      {selectedPreset === preset.id && <Icon as={Check} size={16} color="#3B82F6" />}
-                    </Pressable>
-                  ))}
+                    />
+                    <Text style={{ fontSize: 20, color: textColor, alignSelf: 'center' }}>:</Text>
+                    <TextInput
+                      value={selectedMinute}
+                      onChangeText={setSelectedMinute}
+                      placeholder="00"
+                      keyboardType="number-pad"
+                      maxLength={2}
+                      placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                      style={{ 
+                        width: 60, 
+                        padding: 8, 
+                        borderRadius: 8, 
+                        borderWidth: 1.5, 
+                        borderColor,
+                        backgroundColor: inputBg,
+                        textAlign: 'center', 
+                        fontSize: 16, 
+                        color: textColor 
+                      }}
+                    />
+                  </View>
 
-                  {/* Recurring */}
-                  {scheduleMode === 'recurring' && (
-                    <View>
-                      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-                        {['daily', 'weekly', 'monthly'].map((type) => (
-                          <Pressable
-                            key={type}
-                            onPress={() => setRecurringType(type as RecurringType)}
-                            style={{
-                              flex: 1,
-                              padding: 8,
-                              borderRadius: 12,
-                              borderWidth: 1.5,
-                              borderColor: recurringType === type ? '#3B82F6' : borderColor,
-                              backgroundColor: recurringType === type ? '#3B82F610' : 'transparent',
+                  {recurringType === 'weekly' && (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                      {WEEKDAYS.map((day) => (
+                        <Pressable
+                          key={day.value}
+                          onPress={() => toggleWeekday(day.value)}
+                          style={{
+                            paddingHorizontal: 12,
+                            paddingVertical: 8,
+                            borderRadius: 8,
+                            borderWidth: 1.5,
+                            borderColor: selectedWeekdays.includes(day.value) ? '#3B82F6' : borderColor,
+                            backgroundColor: selectedWeekdays.includes(day.value) ? '#3B82F610' : 'transparent',
+                          }}
+                        >
+                          <Text 
+                            style={{ 
+                              fontSize: 12, 
+                              fontWeight: '500', 
+                              color: selectedWeekdays.includes(day.value) ? '#3B82F6' : textColor 
                             }}
                           >
-                            <Text style={{ textAlign: 'center', fontSize: 12, fontWeight: '500', color: recurringType === type ? '#3B82F6' : textColor }}>
-                              {type.charAt(0).toUpperCase() + type.slice(1)}
-                            </Text>
-                          </Pressable>
-                        ))}
-                      </View>
-
-                      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
-                        <TextInput
-                          value={selectedHour}
-                          onChangeText={setSelectedHour}
-                          placeholder="09"
-                          keyboardType="number-pad"
-                          maxLength={2}
-                          style={{ width: 60, padding: 8, borderRadius: 8, borderWidth: 1.5, borderColor: borderColor, textAlign: 'center', fontSize: 16, color: textColor }}
-                        />
-                        <Text style={{ fontSize: 20, color: textColor, alignSelf: 'center' }}>:</Text>
-                        <TextInput
-                          value={selectedMinute}
-                          onChangeText={setSelectedMinute}
-                          placeholder="00"
-                          keyboardType="number-pad"
-                          maxLength={2}
-                          style={{ width: 60, padding: 8, borderRadius: 8, borderWidth: 1.5, borderColor: borderColor, textAlign: 'center', fontSize: 16, color: textColor }}
-                        />
-                      </View>
-
-                      {recurringType === 'weekly' && (
-                        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
-                          {WEEKDAYS.map((day) => (
-                            <Pressable
-                              key={day.value}
-                              onPress={() => toggleWeekday(day.value)}
-                              style={{
-                                paddingHorizontal: 12,
-                                paddingVertical: 8,
-                                borderRadius: 8,
-                                borderWidth: 1.5,
-                                borderColor: selectedWeekdays.includes(day.value) ? '#3B82F6' : borderColor,
-                                backgroundColor: selectedWeekdays.includes(day.value) ? '#3B82F610' : 'transparent',
-                              }}
-                            >
-                              <Text style={{ fontSize: 12, fontWeight: '500', color: selectedWeekdays.includes(day.value) ? '#3B82F6' : textColor }}>
-                                {day.label}
-                              </Text>
-                            </Pressable>
-                          ))}
-                        </View>
-                      )}
-
-                      <View style={{ padding: 12, borderRadius: 12, backgroundColor: colorScheme === 'dark' ? '#1a1a1a' : '#f5f5f5', marginBottom: 12 }}>
-                        <Text style={{ fontSize: 12, fontFamily: 'monospace', color: mutedColor }}>
-                          {generateRecurringCron()}
-                        </Text>
-                      </View>
+                            {day.label}
+                          </Text>
+                        </Pressable>
+                      ))}
                     </View>
                   )}
 
-                  {/* Advanced */}
-                  {scheduleMode === 'advanced' && (
-                    <TextInput
-                      value={cronExpression}
-                      onChangeText={setCronExpression}
-                      placeholder="0 9 * * 1-5"
-                      placeholderTextColor={mutedColor}
-                      style={{ padding: 12, borderRadius: 12, borderWidth: 1.5, borderColor: borderColor, fontFamily: 'monospace', fontSize: 14, color: textColor }}
-                    />
-                  )}
-                </View>
-
-                {/* Instructions */}
-                <View style={{ marginBottom: 16 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: textColor, marginBottom: 8 }}>Instructions *</Text>
-                  <TextInput
-                    value={agentPrompt}
-                    onChangeText={setAgentPrompt}
-                    placeholder="What should your agent do?"
-                    placeholderTextColor={mutedColor}
-                    multiline
-                    numberOfLines={3}
-                    style={{ padding: 12, borderRadius: 12, borderWidth: 1.5, borderColor: borderColor, fontSize: 14, color: textColor, textAlignVertical: 'top' }}
-                  />
-                </View>
-
-                {/* Buttons */}
-                <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
-                  <Pressable
-                    onPress={handleBack}
-                    style={({ pressed }) => [{
-                      flex: 1,
-                      padding: 16,
-                      borderRadius: 12,
-                      borderWidth: 1.5,
-                      borderColor: borderColor,
-                      alignItems: 'center',
-                      opacity: pressed ? 0.7 : 1,
-                    }]}
-                  >
-                    <Text style={{ fontSize: 16, fontWeight: '600', color: textColor }}>Back</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={handleCreate}
-                    disabled={createTriggerMutation.isPending}
-                    style={({ pressed }) => [{
-                      flex: 1,
-                      padding: 16,
-                      borderRadius: 12,
-                      backgroundColor: textColor,
-                      alignItems: 'center',
-                      opacity: pressed || createTriggerMutation.isPending ? 0.7 : 1,
-                    }]}
-                  >
-                    <Text style={{ fontSize: 16, fontWeight: '600', color: bgColor }}>
-                      {createTriggerMutation.isPending ? 'Creating...' : 'Create'}
-                    </Text>
-                  </Pressable>
-                </View>
-              </View>
-            )}
-
-            {currentStep === 'config' && selectedType === 'event' && (
-              <View>
-                <View style={{ marginBottom: 16 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: textColor, marginBottom: 8 }}>Name *</Text>
-                  <TextInput
-                    value={triggerName}
-                    onChangeText={setTriggerName}
-                    placeholder="Event processor"
-                    placeholderTextColor={mutedColor}
-                    style={{ padding: 12, borderRadius: 12, borderWidth: 1.5, borderColor: borderColor, fontSize: 16, color: textColor }}
-                  />
-                </View>
-
-                <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
-                  <Pressable 
-                    onPress={handleBack} 
-                    style={({ pressed }) => [{ 
-                      flex: 1, 
-                      padding: 16, 
+                  <View 
+                    style={{ 
+                      padding: 12, 
                       borderRadius: 12, 
-                      borderWidth: 1.5, 
-                      borderColor: borderColor, 
-                      alignItems: 'center', 
-                      opacity: pressed ? 0.7 : 1 
-                    }]}
+                      backgroundColor: previewBg, 
+                      marginBottom: 12 
+                    }}
                   >
-                    <Text style={{ fontSize: 16, fontWeight: '600', color: textColor }}>Back</Text>
-                  </Pressable>
-                  <Pressable 
-                    onPress={handleCreate} 
-                    disabled={createTriggerMutation.isPending}
-                    style={({ pressed }) => [{ 
-                      flex: 1, 
-                      padding: 16, 
-                      borderRadius: 12, 
-                      backgroundColor: textColor, 
-                      alignItems: 'center', 
-                      opacity: pressed || createTriggerMutation.isPending ? 0.7 : 1 
-                    }]}
-                  >
-                    <Text style={{ fontSize: 16, fontWeight: '600', color: bgColor }}>
-                      {createTriggerMutation.isPending ? 'Creating...' : 'Create'}
+                    <Text 
+                      style={{ 
+                        fontSize: 12, 
+                        fontFamily: 'monospace', 
+                        color: textColor,
+                        opacity: 0.6 
+                      }}
+                    >
+                      {generateRecurringCron()}
                     </Text>
-                  </Pressable>
+                  </View>
                 </View>
-              </View>
-            )}
-          </ScrollView>
-        </KeyboardAvoidingView>
-      </Animated.View>
-    </View>
+              )}
+
+              {/* Advanced Cron Input */}
+              {scheduleMode === 'advanced' && (
+                <TextInput
+                  value={cronExpression}
+                  onChangeText={setCronExpression}
+                  placeholder="0 9 * * 1-5"
+                  placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                  style={{ 
+                    padding: 12, 
+                    borderRadius: 12, 
+                    borderWidth: 1.5, 
+                    borderColor,
+                    backgroundColor: inputBg,
+                    fontFamily: 'monospace', 
+                    fontSize: 14, 
+                    color: textColor 
+                  }}
+                />
+              )}
+            </View>
+
+            {/* Agent Instructions */}
+            <View style={{ marginBottom: 16 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: textColor, marginBottom: 8 }}>
+                Instructions *
+              </Text>
+              <TextInput
+                value={agentPrompt}
+                onChangeText={setAgentPrompt}
+                placeholder="What should your agent do?"
+                placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                multiline
+                numberOfLines={3}
+                style={{ 
+                  padding: 12, 
+                  borderRadius: 12, 
+                  borderWidth: 1.5, 
+                  borderColor,
+                  backgroundColor: inputBg,
+                  fontSize: 14, 
+                  color: textColor, 
+                  textAlignVertical: 'top' 
+                }}
+              />
+            </View>
+
+            {/* Action Buttons */}
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
+              <Pressable
+                onPress={handleBack}
+                style={({ pressed }) => [{
+                  flex: 1,
+                  padding: 16,
+                  borderRadius: 12,
+                  borderWidth: 1.5,
+                  borderColor,
+                  backgroundColor: bgColor,
+                  alignItems: 'center',
+                  opacity: pressed ? 0.7 : 1,
+                }]}
+              >
+                <Text style={{ fontSize: 16, fontWeight: '600', color: textColor }}>
+                  Back
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={handleCreate}
+                disabled={createTriggerMutation.isPending}
+                style={({ pressed }) => [{
+                  flex: 1,
+                  padding: 16,
+                  borderRadius: 12,
+                  backgroundColor: textColor,
+                  alignItems: 'center',
+                  opacity: pressed || createTriggerMutation.isPending ? 0.7 : 1,
+                }]}
+              >
+                <Text style={{ fontSize: 16, fontWeight: '600', color: bgColor }}>
+                  {createTriggerMutation.isPending ? 'Creating...' : 'Create'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        {/* Event Trigger Configuration Step */}
+        {currentStep === 'config' && selectedType === 'event' && (
+          <View>
+            <View style={{ marginBottom: 16 }}>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: textColor, marginBottom: 8 }}>
+                Name *
+              </Text>
+              <TextInput
+                value={triggerName}
+                onChangeText={setTriggerName}
+                placeholder="Event processor"
+                placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+                style={{ 
+                  padding: 12, 
+                  borderRadius: 12, 
+                  borderWidth: 1.5, 
+                  borderColor,
+                  backgroundColor: inputBg,
+                  fontSize: 16, 
+                  color: textColor 
+                }}
+              />
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 8 }}>
+              <Pressable 
+                onPress={handleBack} 
+                style={({ pressed }) => [{ 
+                  flex: 1, 
+                  padding: 16, 
+                  borderRadius: 12, 
+                  borderWidth: 1.5, 
+                  borderColor,
+                  backgroundColor: bgColor,
+                  alignItems: 'center', 
+                  opacity: pressed ? 0.7 : 1 
+                }]}
+              >
+                <Text style={{ fontSize: 16, fontWeight: '600', color: textColor }}>
+                  Back
+                </Text>
+              </Pressable>
+              <Pressable 
+                onPress={handleCreate} 
+                disabled={createTriggerMutation.isPending}
+                style={({ pressed }) => [{ 
+                  flex: 1, 
+                  padding: 16, 
+                  borderRadius: 12, 
+                  backgroundColor: textColor, 
+                  alignItems: 'center', 
+                  opacity: pressed || createTriggerMutation.isPending ? 0.7 : 1 
+                }]}
+              >
+                <Text style={{ fontSize: 16, fontWeight: '600', color: bgColor }}>
+                  {createTriggerMutation.isPending ? 'Creating...' : 'Create'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+      </BottomSheetScrollView>
+    </BottomSheet>
   );
 }
