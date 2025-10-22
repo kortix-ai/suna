@@ -677,8 +677,8 @@ class SetupWizard:
         # Always ask user to choose between local and cloud Supabase
         print_info("Suna REQUIRES a Supabase project to function. Without these keys, the application will crash on startup.")
         print_info("You can choose between:")
-        print_info("  1. Local Supabase (self-hosted using Docker, recommended for development)")
-        print_info("  2. Cloud Supabase (hosted on supabase.com)")
+        print_info("  1. Local Supabase (automatic setup, recommended for development & local use - runs in Docker)")
+        print_info("  2. Cloud Supabase (hosted on supabase.com - requires manual setup)")
         
         while True:
             choice = input("Choose your Supabase setup (1 for local, 2 for cloud): ").strip()
@@ -1419,10 +1419,16 @@ class SetupWizard:
         encryption_key = base64.b64encode(
             secrets.token_bytes(32)).decode("utf-8")
 
+        # For Docker setup with local Supabase, use host.docker.internal for networking
+        supabase_url = self.env_vars["supabase"].get("SUPABASE_URL", "")
+        if is_docker and self.env_vars.get("supabase_setup_method") == "local":
+            supabase_url = supabase_url.replace("127.0.0.1", "host.docker.internal")
+            print_info(f"Using Docker-compatible Supabase URL: {supabase_url}")
+
         backend_env = {
             "ENV_MODE": "local",
             # Backend only needs these Supabase variables
-            "SUPABASE_URL": self.env_vars["supabase"].get("SUPABASE_URL", ""),
+            "SUPABASE_URL": supabase_url,
             "SUPABASE_ANON_KEY": self.env_vars["supabase"].get("SUPABASE_ANON_KEY", ""),
             "SUPABASE_SERVICE_ROLE_KEY": self.env_vars["supabase"].get("SUPABASE_SERVICE_ROLE_KEY", ""),
             "SUPABASE_JWT_SECRET": self.env_vars["supabase"].get("SUPABASE_JWT_SECRET", ""),
@@ -1460,11 +1466,25 @@ class SetupWizard:
         print_success("Created backend/.env file with ENCRYPTION_KEY.")
 
         # --- Frontend .env.local ---
+        # For Docker setup, use host.docker.internal for services on host machine
+        frontend_supabase_url = self.env_vars["supabase"]["NEXT_PUBLIC_SUPABASE_URL"]
+        backend_url = "http://localhost:8000/api"
+        
+        if is_docker and self.env_vars.get("supabase_setup_method") == "local":
+            # Frontend in Docker needs host.docker.internal to reach host services
+            frontend_supabase_url = frontend_supabase_url.replace("127.0.0.1", "host.docker.internal")
+            frontend_supabase_url = frontend_supabase_url.replace("localhost", "host.docker.internal")
+        
+        if is_docker:
+            # Frontend in Docker always needs to reach backend via Docker service name or localhost stays
+            # Since backend is in same Docker network, use service name
+            backend_url = "http://backend:8000/api"
+        
         frontend_env = {
             "NEXT_PUBLIC_ENV_MODE": "local",  # production, staging, or local
-            "NEXT_PUBLIC_SUPABASE_URL": self.env_vars["supabase"]["NEXT_PUBLIC_SUPABASE_URL"],
+            "NEXT_PUBLIC_SUPABASE_URL": frontend_supabase_url,
             "NEXT_PUBLIC_SUPABASE_ANON_KEY": self.env_vars["supabase"]["SUPABASE_ANON_KEY"],
-            "NEXT_PUBLIC_BACKEND_URL": "http://localhost:8000/api",
+            "NEXT_PUBLIC_BACKEND_URL": backend_url,
             "NEXT_PUBLIC_URL": "http://localhost:3000",
             "KORTIX_ADMIN_API_KEY": self.env_vars["kortix"]["KORTIX_ADMIN_API_KEY"],
             **self.env_vars.get("frontend", {}),
@@ -1479,6 +1499,8 @@ class SetupWizard:
         print_success("Created frontend/.env.local file.")
 
         # --- Mobile App .env ---
+        # Mobile will access from the device, so it should use localhost (not Docker host)
+        # Users would need to update this based on their network setup
         mobile_env = {
             "EXPO_PUBLIC_ENV_MODE": "local",  # production, staging, or local
             "EXPO_PUBLIC_SUPABASE_URL": self.env_vars["supabase"]["EXPO_PUBLIC_SUPABASE_URL"],
