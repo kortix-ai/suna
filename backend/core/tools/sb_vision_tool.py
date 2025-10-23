@@ -63,6 +63,9 @@ class SandboxVisionTool(SandboxToolsBase):
             Tuple of (png_bytes, 'image/png')
         """
         try:
+            # Check if Gemini API key is configured
+            if not config.GEMINI_API_KEY:
+                return self.fail_response("Vision tool is not available. GEMINI_API_KEY is not configured.")
             
             # Ensure sandbox is initialized
             await self._ensure_sandbox()
