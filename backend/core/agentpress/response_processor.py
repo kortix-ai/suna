@@ -513,7 +513,7 @@ class ResponseProcessor:
 
                             if hasattr(remaining_chunk, 'choices') and remaining_chunk.choices:
                                 if hasattr(remaining_chunk.choices[0], 'finish_reason') and remaining_chunk.choices[0].finish_reason:
-                                    if not finish_reason or finish_reason == "xml_tool_limit_reached":
+                                    if not finish_reason:
                                         finish_reason = remaining_chunk.choices[0].finish_reason
                             
                             if (current_drain_time - drain_start_time) > drain_timeout:
