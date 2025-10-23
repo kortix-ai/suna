@@ -591,25 +591,33 @@ class SetupWizard:
         print_info(
             "You can start Suna using either Docker Compose or by manually starting the services."
         )
+        
+        # Important note about Supabase compatibility
+        print(f"\n{Colors.YELLOW}⚠️  IMPORTANT - Supabase Compatibility:{Colors.ENDC}")
+        print(f"  • {Colors.GREEN}Docker Compose{Colors.ENDC} → Only supports {Colors.CYAN}Cloud Supabase{Colors.ENDC}")
+        print(f"  • {Colors.GREEN}Manual Setup{Colors.ENDC} → Supports both {Colors.CYAN}Cloud and Local Supabase{Colors.ENDC}")
+        print(f"\n  Why? Docker networking can't easily reach local Supabase containers.")
+        print(f"  Want to fix this? See: {Colors.CYAN}https://github.com/kortix-ai/suna/issues/1920{Colors.ENDC}")
+        
         print(f"\n{Colors.CYAN}How would you like to set up Suna?{Colors.ENDC}")
         print(
-            f"{Colors.CYAN}[1] {Colors.GREEN}Docker Compose{Colors.ENDC} {Colors.CYAN}(recommended, starts all services automatically){Colors.ENDC}"
+            f"{Colors.CYAN}[1] {Colors.GREEN}Manual{Colors.ENDC} {Colors.CYAN}(supports both Cloud and Local Supabase){Colors.ENDC}"
         )
         print(
-            f"{Colors.CYAN}[2] {Colors.GREEN}Manual{Colors.ENDC} {Colors.CYAN}(requires installing dependencies and running services manually){Colors.ENDC}\n"
+            f"{Colors.CYAN}[2] {Colors.GREEN}Docker Compose{Colors.ENDC} {Colors.CYAN}(requires Cloud Supabase){Colors.ENDC}\n"
         )
 
         while True:
             choice = input("Enter your choice (1 or 2): ").strip()
             if choice == "1":
-                self.env_vars["setup_method"] = "docker"
+                self.env_vars["setup_method"] = "manual"
                 break
             elif choice == "2":
-                self.env_vars["setup_method"] = "manual"
+                self.env_vars["setup_method"] = "docker"
                 break
             else:
                 print_error(
-                    "Invalid selection. Please enter '1' for Docker or '2' for Manual."
+                    "Invalid selection. Please enter '1' for Manual or '2' for Docker."
                 )
         print_success(f"Selected '{self.env_vars['setup_method']}' setup.")
 
