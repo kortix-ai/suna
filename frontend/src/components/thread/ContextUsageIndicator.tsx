@@ -28,6 +28,7 @@ export const ContextUsageIndicator = ({
 
   const modelData = modelName ? allModels.find((m) => m.id === modelName) : null
   const context_window = modelData?.contextWindow || 200000
+  const displayModelName = modelData?.label || ""
 
   const rawPct = (current_tokens / context_window) * 100
   const percentage = Math.max(0, Math.min(100, rawPct))
@@ -87,15 +88,14 @@ export const ContextUsageIndicator = ({
           <TooltipContent
             side="top"
             align="center"
-            className="w-auto max-w-[30rem] px-2 py-1.5 text-xs"
+            className="w-auto max-w-xs px-2.5 py-1.5 text-xs"
           >
-            <div className="space-y-1">
-              <p className="font-medium text-pretty">Context: {percentage.toFixed(1)}%</p>
-              <p className="text-xs text-muted-foreground">
+            <div className="flex flex-col gap-0.5">
+              <p className="font-medium">Context: {percentage.toFixed(1)}%</p>
+              <p className="text-muted-foreground">
                 {current_tokens.toLocaleString()} / {context_window.toLocaleString()} tokens
               </p>
-              <p>{modelName ? ` • ${modelName}` : ""}</p>
-              
+              {displayModelName && <p className="text-muted-foreground">{displayModelName}</p>}
             </div>
           </TooltipContent>
         </Tooltip>
@@ -104,7 +104,7 @@ export const ContextUsageIndicator = ({
       <span className="sr-only">
         Context usage {percentage.toFixed(1)} percent. {current_tokens.toLocaleString()} of{" "}
         {context_window.toLocaleString()} tokens used
-        {modelName ? ` for model ${modelName}.` : "."}
+        {displayModelName ? ` for model ${displayModelName}.` : "."}
       </span>
     </div>
   )
