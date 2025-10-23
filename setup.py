@@ -445,6 +445,32 @@ class SetupWizard:
                 print(f"  {item}")
             print()
 
+    def is_setup_complete(self):
+        """Checks if the setup has been completed."""
+        # Check if essential env files exist and have required keys
+        try:
+            # Check backend .env
+            if not os.path.exists("backend/.env"):
+                return False
+            
+            with open("backend/.env", "r") as f:
+                backend_content = f.read()
+                if "SUPABASE_URL" not in backend_content or "ENCRYPTION_KEY" not in backend_content:
+                    return False
+            
+            # Check frontend .env.local
+            if not os.path.exists("frontend/.env.local"):
+                return False
+            
+            with open("frontend/.env.local", "r") as f:
+                frontend_content = f.read()
+                if "NEXT_PUBLIC_SUPABASE_URL" not in frontend_content:
+                    return False
+            
+            return True
+        except Exception:
+            return False
+
     def run(self):
         """Runs the setup wizard."""
         print_banner()
@@ -454,6 +480,42 @@ class SetupWizard:
 
         # Show current configuration status
         self.show_current_config()
+
+        # Check if setup is already complete
+        if self.is_setup_complete():
+            print_info("Setup already complete!")
+            print_info("Would you like to start Suna?")
+            print()
+            print("[1] Start with Docker Compose")
+            print("[2] Start manually (show commands)")
+            print("[3] Re-run setup wizard")
+            print("[4] Exit")
+            print()
+            
+            choice = input("Enter your choice (1-4): ").strip()
+            
+            if choice == "1":
+                print_info("Starting Suna with Docker Compose...")
+                self.start_suna()
+                return
+            elif choice == "2":
+                self.final_instructions()
+                return
+            elif choice == "3":
+                print_info("Re-running setup wizard...")
+                # Delete progress file and reset
+                if os.path.exists(PROGRESS_FILE):
+                    os.remove(PROGRESS_FILE)
+                self.env_vars = {}
+                self.total_steps = 17
+                self.current_step = 0
+                # Continue with normal setup
+            elif choice == "4":
+                print_info("Exiting...")
+                return
+            else:
+                print_error("Invalid choice. Exiting...")
+                return
 
         try:
             self.run_step(1, self.choose_setup_method)
@@ -1419,11 +1481,8 @@ class SetupWizard:
         encryption_key = base64.b64encode(
             secrets.token_bytes(32)).decode("utf-8")
 
-        # For Docker setup with local Supabase, use host.docker.internal for networking
+        # Always use localhost for the base .env file
         supabase_url = self.env_vars["supabase"].get("SUPABASE_URL", "")
-        if is_docker and self.env_vars.get("supabase_setup_method") == "local":
-            supabase_url = supabase_url.replace("127.0.0.1", "host.docker.internal")
-            print_info(f"Using Docker-compatible Supabase URL: {supabase_url}")
 
         backend_env = {
             "ENV_MODE": "local",
@@ -1436,8 +1495,6 @@ class SetupWizard:
             "REDIS_PORT": "6379",
             "REDIS_PASSWORD": "",
             "REDIS_SSL": "false",
-            "RABBITMQ_HOST": "localhost",
-            "RABBITMQ_PORT": "5672",
             **self.env_vars["llm"],
             **self.env_vars["search"],
             **self.env_vars["rapidapi"],
@@ -1466,19 +1523,9 @@ class SetupWizard:
         print_success("Created backend/.env file with ENCRYPTION_KEY.")
 
         # --- Frontend .env.local ---
-        # For Docker setup, use host.docker.internal for services on host machine
+        # Always use localhost for base .env files - Docker override handled separately
         frontend_supabase_url = self.env_vars["supabase"]["NEXT_PUBLIC_SUPABASE_URL"]
         backend_url = "http://localhost:8000/api"
-        
-        if is_docker and self.env_vars.get("supabase_setup_method") == "local":
-            # Frontend in Docker needs host.docker.internal to reach host services
-            frontend_supabase_url = frontend_supabase_url.replace("127.0.0.1", "host.docker.internal")
-            frontend_supabase_url = frontend_supabase_url.replace("localhost", "host.docker.internal")
-        
-        if is_docker:
-            # Frontend in Docker always needs to reach backend via Docker service name or localhost stays
-            # Since backend is in same Docker network, use service name
-            backend_url = "http://backend:8000/api"
         
         frontend_env = {
             "NEXT_PUBLIC_ENV_MODE": "local",  # production, staging, or local
@@ -1516,6 +1563,7 @@ class SetupWizard:
         with open(os.path.join("apps", "mobile", ".env"), "w") as f:
             f.write(mobile_env_content)
         print_success("Created apps/mobile/.env file.")
+
 
     def setup_supabase_database(self):
         """Applies database migrations to Supabase (local or cloud)."""
@@ -1769,6 +1817,28 @@ class SetupWizard:
 
         if self.env_vars["setup_method"] == "docker":
             print_info("Your Suna instance is ready to use!")
+            
+            # Important limitation for local Supabase with Docker
+            if self.env_vars.get("supabase_setup_method") == "local":
+                print(f"\n{Colors.RED}{Colors.BOLD}⚠️  IMPORTANT LIMITATION:{Colors.ENDC}")
+                print(f"{Colors.YELLOW}Local Supabase is currently NOT supported with Docker Compose.{Colors.ENDC}")
+                print("\nThis is due to network configuration complexity between:")
+                print("  • Suna containers (backend, frontend, worker)")
+                print("  • Local Supabase containers (via npx supabase start)")
+                print("  • Your browser (accessing from host machine)")
+                print("\n" + "="*70)
+                print(f"{Colors.BOLD}RECOMMENDED OPTIONS:{Colors.ENDC}")
+                print("="*70)
+                print(f"\n{Colors.GREEN}Option 1 (Recommended):{Colors.ENDC} Use Cloud Supabase")
+                print("  • Re-run setup.py and choose Cloud Supabase")
+                print("  • Works seamlessly with Docker Compose")
+                print(f"\n{Colors.GREEN}Option 2:{Colors.ENDC} Run Everything Manually (No Docker)")
+                print("  • Re-run setup.py and choose 'Manual' setup")
+                print("  • Local Supabase works perfectly with manual setup")
+                print(f"\n{Colors.CYAN}Future:{Colors.ENDC} We plan to integrate Supabase directly into docker-compose.yaml")
+                print("="*70 + "\n")
+                return  # Don't show Docker commands if local Supabase is configured
+            
             print("\nUseful Docker commands:")
             print(
                 f"  {Colors.CYAN}docker compose ps{Colors.ENDC}         - Check service status"
@@ -1783,18 +1853,11 @@ class SetupWizard:
                 f"  {Colors.CYAN}python start.py{Colors.ENDC}           - To start or stop Suna services"
             )
             
-            # Show Supabase-specific commands if using local Supabase
-            if self.env_vars.get("supabase_setup_method") == "local":
-                print("\nLocal Supabase commands (run from backend/ directory):")
-                print(
-                    f"  {Colors.CYAN}npx supabase start{Colors.ENDC}      - Start Supabase services"
-                )
-                print(
-                    f"  {Colors.CYAN}npx supabase stop{Colors.ENDC}       - Stop Supabase services"
-                )
-                print(
-                    f"  {Colors.CYAN}npx supabase status{Colors.ENDC}     - Check Supabase status"
-                )
+            # Cloud Supabase commands
+            if self.env_vars.get("supabase_setup_method") == "cloud":
+                print("\nSupabase Management:")
+                print(f"  {Colors.CYAN}Supabase Dashboard:{Colors.ENDC} https://supabase.com/dashboard")
+                print(f"  {Colors.CYAN}Project URL:{Colors.ENDC} {self.env_vars['supabase'].get('SUPABASE_URL', 'N/A')}")
         else:
             print_info(
                 "To start Suna, you need to run these commands in separate terminals:"
