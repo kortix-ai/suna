@@ -167,11 +167,22 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     },
     ref,
   ) => {
+    // Use local state by default for better performance (avoids parent re-renders on every keystroke)
+    // Only use controlled value if explicitly provided
     const isControlled =
       controlledValue !== undefined && controlledOnChange !== undefined;
 
-    const [uncontrolledValue, setUncontrolledValue] = useState('');
-    const value = isControlled ? controlledValue : uncontrolledValue;
+    const [localValue, setLocalValue] = useState('');
+    
+    // For controlled mode, sync local value with controlled value when it changes externally
+    // (e.g., when clearing after submit)
+    useEffect(() => {
+      if (isControlled && controlledValue !== localValue) {
+        setLocalValue(controlledValue);
+      }
+    }, [isControlled, controlledValue, localValue]);
+    
+    const value = localValue;
 
     const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
     const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -392,19 +403,25 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
         model_name: baseModelName,
       });
 
-      if (!isControlled) {
-        setUncontrolledValue('');
+      // Clear local value after submit
+      setLocalValue('');
+      
+      // Notify parent in controlled mode
+      if (isControlled && controlledOnChange) {
+        controlledOnChange('');
       }
 
       setUploadedFiles([]);
-    }, [value, uploadedFiles, loading, disabled, isAgentRunning, isUploading, onStopAgent, generateDataOptionsMarkdown, getActualModelId, selectedModel, onSubmit, selectedAgentId, isControlled]);
+    }, [value, uploadedFiles, loading, disabled, isAgentRunning, isUploading, onStopAgent, generateDataOptionsMarkdown, getActualModelId, selectedModel, onSubmit, selectedAgentId, isControlled, controlledOnChange]);
 
     const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newValue = e.target.value;
-      if (isControlled) {
+      // Always update local state immediately for responsive typing
+      setLocalValue(newValue);
+      
+      // Only notify parent if in controlled mode (but this won't cause lag since we update local state first)
+      if (isControlled && controlledOnChange) {
         controlledOnChange(newValue);
-      } else {
-        setUncontrolledValue(newValue);
       }
     }, [isControlled, controlledOnChange]);
 
@@ -447,15 +464,16 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     };
 
     const handleTranscription = useCallback((transcribedText: string) => {
-      const currentValue = isControlled ? controlledValue : uncontrolledValue;
-      const newValue = currentValue ? `${currentValue} ${transcribedText}` : transcribedText;
-
-      if (isControlled) {
+      const newValue = localValue ? `${localValue} ${transcribedText}` : transcribedText;
+      
+      // Update local state
+      setLocalValue(newValue);
+      
+      // Notify parent in controlled mode
+      if (isControlled && controlledOnChange) {
         controlledOnChange(newValue);
-      } else {
-        setUncontrolledValue(newValue);
       }
-    }, [isControlled, controlledValue, uncontrolledValue, controlledOnChange]);
+    }, [localValue, isControlled, controlledOnChange]);
 
     const removeUploadedFile = useCallback(async (index: number) => {
       const fileToRemove = uploadedFiles[index];
