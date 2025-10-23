@@ -3,7 +3,7 @@ import { HeroVideoSection } from '@/components/home/sections/hero-video-section'
 import { siteConfig } from '@/lib/home';
 import { ArrowRight, Github, X, AlertCircle, Square } from 'lucide-react';
 import { AnimatedBg } from '@/components/home/ui/AnimatedBg';
-import { useMediaQuery } from '@/hooks/use-media-query';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { useState, useEffect, useRef, FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -28,7 +28,7 @@ import {
 import { BillingErrorAlert } from '@/components/billing/usage-limit-alert';
 import { useBillingError } from '@/hooks/useBillingError';
 import { useAccounts } from '@/hooks/use-accounts';
-import { isLocalMode, config } from '@/lib/config';
+import { isLocalMode, config, isStagingMode } from '@/lib/config';
 import { toast } from 'sonner';
 import { BillingModal } from '@/components/billing/billing-modal';
 import GitHubSignIn from '@/components/GithubSignIn';
@@ -39,6 +39,7 @@ import { agentKeys } from '@/hooks/react-query/agents/keys';
 import { getAgents } from '@/hooks/react-query/agents/utils';
 import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog';
 import { Examples } from '@/components/dashboard/examples';
+import { SunaModesPanel } from '@/components/dashboard/suna-modes-panel';
 
 // Custom dialog overlay with blur effect
 const BlurredDialogOverlay = () => (
@@ -52,10 +53,13 @@ const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 
 export function HeroSection() {
     const { hero } = siteConfig;
-    const tablet = useMediaQuery('(max-width: 1024px)');
+    const isMobile = useIsMobile();
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [inputValue, setInputValue] = useState('');
     const [selectedAgentId, setSelectedAgentId] = useState<string | undefined>();
+    const [selectedMode, setSelectedMode] = useState<string | null>(null);
+    const [selectedCharts, setSelectedCharts] = useState<string[]>([]);
+    const [selectedOutputFormat, setSelectedOutputFormat] = useState<string | null>(null);
     const router = useRouter();
     const { user, isLoading } = useAuth();
     const { billingError, handleBillingError, clearBillingError } =
@@ -94,8 +98,22 @@ export function HeroSection() {
 
     const agents = agentsResponse?.agents || [];
 
+    // Determine if selected agent is Suna default
+    const selectedAgent = selectedAgentId
+        ? agents.find(agent => agent.agent_id === selectedAgentId)
+        : null;
+    const isSunaAgent = selectedAgent?.metadata?.is_suna_default || false;
+
     // Auth dialog state
     const [authDialogOpen, setAuthDialogOpen] = useState(false);
+
+    // Reset data selections when mode changes
+    useEffect(() => {
+        if (selectedMode !== 'data') {
+            setSelectedCharts([]);
+            setSelectedOutputFormat(null);
+        }
+    }, [selectedMode]);
 
     useEffect(() => {
         if (authDialogOpen && inputValue.trim()) {
@@ -210,40 +228,7 @@ export function HeroSection() {
                 <AnimatedBg variant="hero" />
 
                 <div className="relative z-10 pt-16 sm:pt-24 md:pt-32 mx-auto h-full w-full max-w-6xl flex flex-col items-center justify-center">
-                    {/* <p className="border border-border bg-accent rounded-full text-sm h-8 px-3 flex items-center gap-2">
-            {hero.badgeIcon}
-            {hero.badge}
-          </p> */}
 
-                    {/* <Link
-            href={hero.githubUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="group border border-border/50 bg-background hover:bg-accent/20 hover:border-secondary/40 rounded-full text-sm h-8 px-3 flex items-center gap-2 transition-all duration-300 shadow-sm hover:shadow-md hover:scale-105 hover:-translate-y-0.5"
-          >
-            {hero.badgeIcon}
-            <span className="font-medium text-muted-foreground text-xs tracking-wide group-hover:text-primary transition-colors duration-300">
-              {hero.badge}
-            </span>
-            <span className="inline-flex items-center justify-center size-3.5 rounded-full bg-muted/30 group-hover:bg-secondary/30 transition-colors duration-300">
-              <svg
-                width="8"
-                height="8"
-                viewBox="0 0 24 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                className="text-muted-foreground group-hover:text-primary"
-              >
-                <path
-                  d="M7 17L17 7M17 7H8M17 7V16"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
-          </Link> */}
                     <div className="flex flex-col items-center justify-center gap-3 sm:gap-4 pt-8 sm:pt-20 max-w-4xl mx-auto pb-7">
                         <h1 className="text-2xl md:text-3xl lg:text-4xl font-medium tracking-tighter text-balance text-center px-2">
                             What do you want to automate today?
@@ -266,13 +251,30 @@ export function HeroSection() {
                                     onAgentSelect={setSelectedAgentId}
                                     autoFocus={false}
                                     enableAdvancedConfig={false}
+                                    selectedMode={selectedMode}
+                                    onModeDeselect={() => setSelectedMode(null)}
+                                    selectedCharts={selectedCharts}
+                                    selectedOutputFormat={selectedOutputFormat}
                                 />
                             </div>
-
                         </div>
-
-
                     </div>
+
+                    {/* Modes Panel - Below chat input, only show when user is logged in */}
+                    {(isStagingMode() || isLocalMode()) && (isSunaAgent || !user) && (
+                        <div className="w-full max-w-3xl mx-auto mt-4 px-2 sm:px-0">
+                            <SunaModesPanel
+                                selectedMode={selectedMode}
+                                onModeSelect={setSelectedMode}
+                                onSelectPrompt={setInputValue}
+                                isMobile={isMobile}
+                                selectedCharts={selectedCharts}
+                                onChartsChange={setSelectedCharts}
+                                selectedOutputFormat={selectedOutputFormat}
+                                onOutputFormatChange={setSelectedOutputFormat}
+                            />
+                        </div>
+                    )}
 
                 </div>
 
