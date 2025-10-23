@@ -20,13 +20,13 @@ import { useBillingContext } from '@/contexts/BillingContext';
 /**
  * Splash Screen
  * 
- * Shown while checking authentication, onboarding, and billing status
+ * Shown while checking authentication and billing status
  * Routes user to appropriate screen based on state:
  * - Not authenticated → Sign In
- * - Authenticated + Can start trial → Trial
- * - Authenticated + No subscription → Subscription Required
- * - Authenticated + No onboarding → Onboarding
- * - Authenticated + Has everything → App
+ * - Authenticated + Has subscription/trial → App
+ * - Authenticated + No subscription/trial → Onboarding (includes billing)
+ * 
+ * Note: Billing status is the source of truth for onboarding completion
  */
 export default function SplashScreen() {
   const router = useRouter();
@@ -65,26 +65,39 @@ export default function SplashScreen() {
           console.log('🔐 User not authenticated, routing to sign in');
           router.replace('/auth');
         } else {
-          // User is authenticated - check billing status
+          // User is authenticated
+          // Check billing status as source of truth for onboarding completion
           const hasActiveTrial = trialStatus?.has_trial && trialStatus?.trial_status === 'active';
-          const canStartTrial = trialStatus?.can_start_trial;
           const hasActiveSubscription =
             subscriptionData?.tier && 
             subscriptionData.tier.name !== 'none' && 
             subscriptionData.tier.name !== 'free';
+          
+          const hasBillingSetup = hasActiveTrial || hasActiveSubscription;
 
-          if (canStartTrial) {
-            console.log('🎁 User can start trial, routing to trial');
-            router.replace('/billing/trial');
-          } else if (!hasActiveTrial && !hasActiveSubscription) {
-            console.log('💳 User needs subscription, routing to subscription');
-            router.replace('/billing/subscription');
-          } else if (!hasCompletedOnboarding) {
-            console.log('👋 User needs onboarding, routing to onboarding');
-            router.replace('/onboarding');
-          } else {
-            console.log('✅ User authenticated and ready, routing to app');
+          console.log('🚦 Splash Screen Routing Decision:', {
+            isAuthenticated,
+            hasCompletedOnboarding,
+            hasActiveTrial,
+            hasActiveSubscription,
+            hasBillingSetup,
+            canStartTrial: trialStatus?.can_start_trial,
+          });
+
+          // If user has billing setup, they've completed onboarding
+          if (hasBillingSetup) {
+            // Mark onboarding as completed if not already (for faster future loads)
+            if (!hasCompletedOnboarding) {
+              console.log('💡 User has billing, marking onboarding as completed');
+              const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+              AsyncStorage.setItem('@onboarding_completed', 'true').catch(console.error);
+            }
+            console.log('✅ User has billing setup, routing to app');
             router.replace('/home');
+          } else {
+            // No billing setup - need onboarding
+            console.log('👋 User needs onboarding (no billing setup), routing to onboarding');
+            router.replace('/onboarding');
           }
         }
         setIsReady(true);

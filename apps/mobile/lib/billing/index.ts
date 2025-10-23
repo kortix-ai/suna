@@ -27,5 +27,5 @@ export {
   openBillingPortal,
   openExternalUrl,
 } from './checkout';
-export { PRICING_TIERS, CREDIT_PACKAGES } from './pricing';
+export { PRICING_TIERS } from './pricing';
 

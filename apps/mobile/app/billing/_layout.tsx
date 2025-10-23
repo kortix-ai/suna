@@ -21,11 +21,7 @@ export default function BillingLayout() {
       }}
     >
       <Stack.Screen name="index" />
-      <Stack.Screen name="trial" />
-      <Stack.Screen name="subscription" />
       <Stack.Screen name="credits" />
-      <Stack.Screen name="success" />
-      <Stack.Screen name="cancel" />
     </Stack>
   );
 }

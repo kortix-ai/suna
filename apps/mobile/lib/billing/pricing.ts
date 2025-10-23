@@ -1,8 +1,11 @@
 /**
  * Pricing Configuration
  * 
- * Defines subscription tiers and their features
+ * Defines subscription tiers with environment-specific Stripe price IDs
+ * Matches backend and frontend pricing configuration
  */
+
+import { useProductionStripeIds, ENV_MODE } from '@/lib/utils/env-config';
 
 export interface PricingTier {
   id: string;
@@ -20,112 +23,83 @@ export interface PricingTier {
   buttonText: string;
 }
 
-// Get Stripe price IDs based on environment
-const ENV_MODE = process.env.EXPO_PUBLIC_ENV_MODE?.toLowerCase() || 'production';
-const isProduction = ENV_MODE === 'production';
-
 export const PRICING_TIERS: PricingTier[] = [
   {
     id: 'tier_2_20',
-    name: 'Starter',
-    displayName: 'Starter',
+    name: 'Plus',
+    displayName: 'Plus',
     price: '$20',
     priceMonthly: 20,
-    priceYearly: 17, // 15% off
-    stripePriceId: isProduction
-      ? 'price_1RILb4G6l1KZGqIrhomjgDnO'
-      : 'price_1RIGvuG6l1KZGqIrCRu0E4Gi',
-    stripeYearlyPriceId: isProduction
-      ? 'price_1ReHB5G6l1KZGqIrD70I1xqM'
-      : 'price_1ReGogG6l1KZGqIrEyBTmtPk',
-    stripeYearlyCommitmentPriceId: isProduction
-      ? 'price_1RqtqiG6l1KZGqIrhjVPtE1s'
-      : 'price_1RqYGaG6l1KZGqIrIzcdPzeQ',
+    priceYearly: 17, // 15% off = $17/month billed yearly
+    stripePriceId: useProductionStripeIds
+      ? 'price_1RILb4G6l1KZGqIrhomjgDnO'      // Production monthly
+      : 'price_1RIGvuG6l1KZGqIrCRu0E4Gi',      // Staging/Local monthly
+    stripeYearlyPriceId: useProductionStripeIds
+      ? 'price_1ReHB5G6l1KZGqIrD70I1xqM'      // Production yearly
+      : 'price_1ReGogG6l1KZGqIrEyBTmtPk',      // Staging/Local yearly
+    stripeYearlyCommitmentPriceId: useProductionStripeIds
+      ? 'price_1RqtqiG6l1KZGqIrhjVPtE1s'      // Production commitment
+      : 'price_1RqYGaG6l1KZGqIrIzcdPzeQ',      // Staging/Local commitment
     credits: 20,
     features: [
-      '$20 AI token credits',
-      'Custom agents',
+      '$20 AI token credits/m',
+      '5 custom agents',
+      'Private projects',
       '100+ integrations',
-      'Premium AI models',
-      'Community support',
+      'Premium AI Models',
     ],
     isPopular: true,
     buttonText: 'Get Started',
   },
   {
     id: 'tier_6_50',
-    name: 'Professional',
-    displayName: 'Professional',
+    name: 'Pro',
+    displayName: 'Pro',
     price: '$50',
     priceMonthly: 50,
-    priceYearly: 42.5, // 15% off
-    stripePriceId: isProduction
-      ? 'price_1RILb4G6l1KZGqIr5q0sybWn'
-      : 'price_1RIGvuG6l1KZGqIrvjlz5p5V',
-    stripeYearlyPriceId: isProduction
-      ? 'price_1ReHAsG6l1KZGqIrlAog487C'
-      : 'price_1ReGoJG6l1KZGqIr0DJWtoOc',
-    stripeYearlyCommitmentPriceId: isProduction
-      ? 'price_1Rqtr8G6l1KZGqIrQ0ql0qHi'
-      : 'price_1RqYH1G6l1KZGqIrWDKh8xIU',
+    priceYearly: 42.5, // 15% off = $42.50/month billed yearly
+    stripePriceId: useProductionStripeIds
+      ? 'price_1RILb4G6l1KZGqIr5q0sybWn'      // Production monthly
+      : 'price_1RIGvuG6l1KZGqIrvjlz5p5V',      // Staging/Local monthly
+    stripeYearlyPriceId: useProductionStripeIds
+      ? 'price_1ReHAsG6l1KZGqIrlAog487C'      // Production yearly
+      : 'price_1ReGoJG6l1KZGqIr0DJWtoOc',      // Staging/Local yearly
+    stripeYearlyCommitmentPriceId: useProductionStripeIds
+      ? 'price_1Rqtr8G6l1KZGqIrQ0ql0qHi'      // Production commitment
+      : 'price_1RqYH1G6l1KZGqIrWDKh8xIU',      // Staging/Local commitment
     credits: 50,
     features: [
-      '$50 AI token credits',
-      'Custom agents',
+      '$50 AI token credits/m',
+      '20 custom agents',
+      'Private projects',
       '100+ integrations',
-      'Premium AI models',
-      'Priority support',
+      'Premium AI Models',
     ],
-    buttonText: 'Upgrade',
+    buttonText: 'Get Started',
   },
   {
     id: 'tier_12_100',
-    name: 'Team',
-    displayName: 'Team',
-    price: '$100',
-    priceMonthly: 100,
-    priceYearly: 85, // 15% off
-    stripePriceId: isProduction
-      ? 'price_1RILb4G6l1KZGqIr5Y20ZLHm'
-      : 'price_1RIGvuG6l1KZGqIrT6UfgblC',
-    stripeYearlyPriceId: isProduction
-      ? 'price_1ReHAWG6l1KZGqIrBHer2PQc'
-      : 'price_1ReGnZG6l1KZGqIr0ThLEl5S',
-    credits: 100,
-    features: [
-      '$100 AI token credits',
-      'Custom agents',
-      '100+ integrations',
-      'Premium AI models',
-      'Priority support',
-    ],
-    buttonText: 'Upgrade',
-  },
-  {
-    id: 'tier_25_200',
     name: 'Business',
     displayName: 'Business',
-    price: '$200',
-    priceMonthly: 200,
-    priceYearly: 170, // 15% off
-    stripePriceId: isProduction
-      ? 'price_1RILb4G6l1KZGqIrGAD8rNjb'
-      : 'price_1RIGvuG6l1KZGqIrOVLKlOMj',
-    stripeYearlyPriceId: isProduction
-      ? 'price_1ReH9uG6l1KZGqIrsvMLHViC'
-      : 'price_1ReGmzG6l1KZGqIre31mqoEJ',
-    stripeYearlyCommitmentPriceId: isProduction
-      ? 'price_1RqtrUG6l1KZGqIrEb8hLsk3'
-      : 'price_1RqYHbG6l1KZGqIrAUVf8KpG',
-    credits: 200,
+    price: '$100',
+    priceMonthly: 100,
+    priceYearly: 85, // 15% off = $85/month billed yearly
+    stripePriceId: useProductionStripeIds
+      ? 'price_1RILb4G6l1KZGqIr5Y20ZLHm'      // Production monthly
+      : 'price_1RIGvuG6l1KZGqIrT6UfgblC',      // Staging/Local monthly
+    stripeYearlyPriceId: useProductionStripeIds
+      ? 'price_1ReHAWG6l1KZGqIrBHer2PQc'      // Production yearly
+      : 'price_1ReGnZG6l1KZGqIr0ThLEl5S',      // Staging/Local yearly
+    credits: 100,
     features: [
-      '$200 AI token credits',
-      'Custom agents',
+      '$100 AI token credits/m',
+      'Unlimited custom agents',
+      'Private projects',
       '100+ integrations',
-      'Premium AI models',
-      'Dedicated support',
+      'Premium AI Models',
+      'Priority support',
     ],
-    buttonText: 'Upgrade',
+    buttonText: 'Get Started',
   },
 ];
 

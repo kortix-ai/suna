@@ -73,7 +73,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   }, [session, isLoading, error, agents.length, selectedAgentId, hasInitialized]);
   
   // AsyncStorage key
-  const STORAGE_KEY = '@agentpress/selected_agent_id';
+  const STORAGE_KEY = '@selected_agent_id';
   
   // Load selected agent from AsyncStorage on mount
   React.useEffect(() => {

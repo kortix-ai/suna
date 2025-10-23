@@ -67,7 +67,10 @@ const checkoutApi = {
       method: 'POST',
       body: JSON.stringify(request),
     });
-    console.log('✅ Backend returned checkout URL:', response.checkout_url || response.url);
+    console.log('✅ Backend returned checkout URLs:', {
+      checkout_url: response.checkout_url,
+      fe_checkout_url: response.fe_checkout_url,
+    });
     return response;
   },
   
@@ -77,7 +80,10 @@ const checkoutApi = {
       method: 'POST',
       body: JSON.stringify(request),
     });
-    console.log('✅ Backend returned trial checkout URL:', response.checkout_url);
+    console.log('✅ Backend returned trial checkout URLs:', {
+      fe_checkout_url: response.fe_checkout_url,
+      checkout_url: response.checkout_url,
+    });
     return response;
   },
   
@@ -202,8 +208,12 @@ export async function startTrialCheckout(
 
     const response = await checkoutApi.startTrial(request);
 
-    if (response.checkout_url) {
-      await openCheckoutInBrowser(response.checkout_url, onSuccess, onCancel);
+    // Use fe_checkout_url for Apple compliance, fallback to checkout_url
+    const checkoutUrl = response.fe_checkout_url || response.checkout_url;
+    
+    if (checkoutUrl) {
+      console.log('🌐 Opening checkout URL:', checkoutUrl);
+      await openCheckoutInBrowser(checkoutUrl, onSuccess, onCancel);
     } else {
       throw new Error('Backend did not return a checkout URL');
     }
@@ -239,15 +249,13 @@ export async function startPlanCheckout(
 
     const response = await checkoutApi.createCheckoutSession(request);
 
-    // Handle different response types from backend
-    if (response.status === 'new' || response.status === 'checkout_created' || response.status === 'commitment_created') {
-      // Backend returned checkout URL - open it
-      const checkoutUrl = response.checkout_url || response.url;
-      if (checkoutUrl) {
-        await openCheckoutInBrowser(checkoutUrl, onSuccess, onCancel);
-      } else {
-        throw new Error('Backend returned checkout status but no URL');
-      }
+    // Check if we have a checkout URL to open
+    const checkoutUrl = response.fe_checkout_url || response.checkout_url || response.url;
+    
+    if (checkoutUrl) {
+      // Backend returned checkout URL - open it in browser
+      console.log('🌐 Opening checkout URL:', checkoutUrl);
+      await openCheckoutInBrowser(checkoutUrl, onSuccess, onCancel);
     } else if (response.status === 'upgraded' || response.status === 'updated') {
       // Immediate upgrade (no checkout needed - e.g., downgrade or same billing cycle)
       console.log('✅ Plan upgraded immediately (no checkout required)');
@@ -256,6 +264,9 @@ export async function startPlanCheckout(
       // Downgrade scheduled for end of billing period
       console.log('📅 Plan change scheduled for next billing cycle');
       onSuccess?.();
+    } else {
+      // No URL and no known status - something went wrong
+      throw new Error('Backend did not return a checkout URL or status');
     }
 
     return response;
