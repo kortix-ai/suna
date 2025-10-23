@@ -48,6 +48,11 @@ export interface BillingContextType {
   refetchStatus: () => void;
   refetchTrial: () => void;
   checkBillingStatus: () => Promise<boolean>;
+  
+  // Computed states
+  hasActiveSubscription: boolean;
+  hasActiveTrial: boolean;
+  needsSubscription: boolean;
 }
 
 // ============================================================================
@@ -148,6 +153,20 @@ export function BillingProvider({ children }: BillingProviderProps) {
     }
   }, [isAuthenticated, refetchStatus]);
 
+  // Computed states for easier access
+  const hasActiveSubscription = Boolean(
+    subscriptionData?.tier && 
+    subscriptionData.tier.name !== 'none' && 
+    subscriptionData.tier.name !== 'free'
+  );
+
+  const hasActiveTrial = Boolean(
+    trialStatus?.has_trial && 
+    trialStatus?.trial_status === 'active'
+  );
+
+  const needsSubscription = !hasActiveSubscription && !hasActiveTrial;
+
   // Context value
   const value: BillingContextType = {
     // Data
@@ -173,6 +192,11 @@ export function BillingProvider({ children }: BillingProviderProps) {
     refetchStatus,
     refetchTrial,
     checkBillingStatus,
+    
+    // Computed states
+    hasActiveSubscription,
+    hasActiveTrial,
+    needsSubscription,
   };
 
   return (

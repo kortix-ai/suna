@@ -3,17 +3,25 @@ import '@/global.css';
 import { ROOBERT_FONTS } from '@/lib/utils/fonts';
 import { NAV_THEME } from '@/lib/utils/theme';
 import { initializeI18n } from '@/lib/utils/i18n';
-import { AuthProvider, LanguageProvider, AgentProvider, BillingProvider } from '@/contexts';
+import { AuthProvider, LanguageProvider, AgentProvider, BillingProvider, useAuthContext } from '@/contexts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { ThemeProvider } from '@react-navigation/native';
 import { PortalHost } from '@rn-primitives/portal';
 import { useFonts } from 'expo-font';
-import { Stack, SplashScreen } from 'expo-router';
+import { Stack, SplashScreen, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
 import { useColorScheme } from 'nativewind';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
+
+// Configure Reanimated logger to disable strict mode warnings
+// These warnings appear during theme changes and are overly sensitive
+configureReanimatedLogger({
+  level: ReanimatedLogLevel.warn,
+  strict: false, // Disable strict mode warnings
+});
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -31,8 +39,7 @@ export {
  * 2. Provides auth context
  * 3. Sets up providers
  * 4. Handles navigation stacks
- * 
- * Auth is handled via dedicated screens in /auth
+ * 5. Protects all routes except /auth - unauthenticated users are redirected to /auth
  */
 export default function RootLayout() {
   const { colorScheme, setColorScheme } = useColorScheme();
@@ -96,19 +103,21 @@ export default function RootLayout() {
                 <BottomSheetModalProvider>
                   <ThemeProvider value={NAV_THEME[activeColorScheme]}>
                     <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
-                    <Stack 
-                      screenOptions={{ 
-                        headerShown: false,
-                        animation: 'fade',
-                      }}
-                    >
-                      <Stack.Screen name="index" options={{ animation: 'none' }} />
-                      <Stack.Screen name="onboarding" />
-                      <Stack.Screen name="home" />
-                      <Stack.Screen name="auth" />
-                      <Stack.Screen name="billing" />
-                      <Stack.Screen name="trigger-detail" />
-                    </Stack>
+                    <AuthProtection>
+                      <Stack 
+                        screenOptions={{ 
+                          headerShown: false,
+                          animation: 'fade',
+                        }}
+                      >
+                        <Stack.Screen name="index" options={{ animation: 'none' }} />
+                        <Stack.Screen name="onboarding" />
+                        <Stack.Screen name="home" />
+                        <Stack.Screen name="auth" />
+                        <Stack.Screen name="billing" />
+                        <Stack.Screen name="trigger-detail" />
+                      </Stack>
+                    </AuthProtection>
                     <PortalHost />
                   </ThemeProvider>
                 </BottomSheetModalProvider>
@@ -119,4 +128,30 @@ export default function RootLayout() {
       </GestureHandlerRootView>
     </QueryClientProvider>
   );
+}
+
+/**
+ * Auth Protection Component
+ * 
+ * Protects all routes except /auth
+ * Redirects unauthenticated users to /auth automatically
+ */
+function AuthProtection({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuthContext();
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isLoading) return;
+
+    const inAuthGroup = segments[0] === 'auth';
+
+    if (!isAuthenticated && !inAuthGroup) {
+      // User is not authenticated and not in auth screens, redirect to auth
+      console.log('🚫 User not authenticated, redirecting to /auth');
+      router.replace('/auth');
+    }
+  }, [isAuthenticated, isLoading, segments, router]);
+
+  return <>{children}</>;
 }

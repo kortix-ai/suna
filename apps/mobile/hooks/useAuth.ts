@@ -5,6 +5,7 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Linking from 'expo-linking';
 import { makeRedirectUri } from 'expo-auth-session';
 import { Platform } from 'react-native';
+import { useQueryClient } from '@tanstack/react-query';
 import type {
   AuthState,
   SignInCredentials,
@@ -32,6 +33,7 @@ WebBrowser.maybeCompleteAuthSession();
  * const { signIn, signUp, signOut, user, isAuthenticated } = useAuth();
  */
 export function useAuth() {
+  const queryClient = useQueryClient();
   const [authState, setAuthState] = useState<AuthState>({
     user: null,
     session: null,
@@ -364,30 +366,128 @@ export function useAuth() {
   }, []);
 
   /**
-   * Sign out
+   * Sign out - Best practice implementation
+   * 
+   * 1. Attempts global sign out (server + local)
+   * 2. Falls back to local-only if global fails
+   * 3. Manually clears all Supabase keys from AsyncStorage as failsafe
+   * 4. Forces React state update
+   * 5. Clears onboarding status for next user
+   * 
+   * Always succeeds from UI perspective to prevent stuck states
    */
   const signOut = useCallback(async () => {
-    try {
-      console.log('🎯 Sign out attempt');
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    
+    /**
+     * Helper to clear all Supabase-related keys from AsyncStorage
+     * This is a nuclear option that ensures complete sign out
+     */
+    const clearSupabaseStorage = async () => {
+      try {
+        const allKeys = await AsyncStorage.getAllKeys();
+        const supabaseKeys = allKeys.filter((key: string) => 
+          key.includes('supabase') || 
+          key.includes('sb-') || 
+          key.includes('-auth-token')
+        );
+        
+        if (supabaseKeys.length > 0) {
+          console.log(`🗑️  Removing ${supabaseKeys.length} Supabase keys from storage`);
+          await AsyncStorage.multiRemove(supabaseKeys);
+        }
+      } catch (error) {
+        console.warn('⚠️  Failed to clear Supabase storage:', error);
+      }
+    };
+
+    /**
+     * Helper to clear ALL app-specific data
+     * This ensures no user data persists across sign-outs
+     */
+    const clearAppData = async () => {
+      try {
+        const allKeys = await AsyncStorage.getAllKeys();
+        
+        // Keys to clear (everything except system settings like language)
+        const appDataKeys = allKeys.filter((key: string) => 
+          key.startsWith('@') && 
+          !key.includes('language') && // Keep language preference
+          !key.includes('theme') // Keep theme preference
+        );
+        
+        console.log(`🧹 Clearing ${appDataKeys.length} app data keys:`, appDataKeys);
+        
+        if (appDataKeys.length > 0) {
+          await AsyncStorage.multiRemove(appDataKeys);
+        }
+        
+        console.log('✅ All app data cleared (except preferences)');
+      } catch (error) {
+        console.warn('⚠️  Failed to clear app data:', error);
+      }
+    };
+
+    /**
+     * Helper to force update React state
+     */
+    const forceSignOutState = () => {
+      setAuthState({
+        user: null,
+        session: null,
+        isLoading: false,
+        isAuthenticated: false,
+      });
       setError(null);
+    };
 
-      const { error: signOutError } = await supabase.auth.signOut();
+    try {
+      console.log('🎯 Sign out initiated');
 
-      if (signOutError) {
-        console.error('❌ Sign out error:', signOutError.message);
-        setError({ message: signOutError.message });
-        return { success: false, error: signOutError };
+      // Step 1: Try global sign out (preferred method)
+      const { error: globalError } = await supabase.auth.signOut({ scope: 'global' });
+
+      if (globalError) {
+        console.warn('⚠️  Global sign out failed:', globalError.message);
+        
+        // Step 2: Fallback to local-only sign out
+        const { error: localError } = await supabase.auth.signOut({ scope: 'local' });
+        
+        if (localError) {
+          console.warn('⚠️  Local sign out also failed:', localError.message);
+        }
       }
 
-      console.log('✅ Sign out successful');
+      // Step 3: Nuclear option - manually clear all Supabase data
+      await clearSupabaseStorage();
+
+      // Step 4: Clear app-specific data
+      await clearAppData();
+
+      // Step 5: Clear React Query cache (threads, agents, workers, etc.)
+      console.log('🗑️  Clearing React Query cache...');
+      queryClient.clear();
+      console.log('✅ React Query cache cleared');
+
+      // Step 6: Force React state update
+      forceSignOutState();
+
+      console.log('✅ Sign out completed successfully - all data cleared');
       return { success: true };
-    } catch (err: any) {
-      console.error('❌ Sign out exception:', err);
-      const error = { message: err.message || 'An unexpected error occurred' };
-      setError(error);
-      return { success: false, error };
+
+    } catch (error: any) {
+      console.error('❌ Sign out exception:', error);
+
+      // Emergency cleanup - ensure sign out completes
+      await clearSupabaseStorage().catch(() => {});
+      await clearAppData().catch(() => {});
+      queryClient.clear(); // Also clear React Query cache on error
+      forceSignOutState();
+
+      console.log('✅ Sign out completed (with errors handled) - all data cleared');
+      return { success: true }; // Always return success to prevent UI lock
     }
-  }, []);
+  }, [queryClient]);
 
   return {
     ...authState,

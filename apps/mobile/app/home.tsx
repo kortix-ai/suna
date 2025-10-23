@@ -13,8 +13,7 @@ import type { Conversation } from '@/components/menu/types';
 /**
  * Main App Screen with Drawer Navigation
  * 
- * No auth protection - users can access app directly
- * Auth screens show when needed for user-specific features
+ * Protected by root layout AuthProtection - requires authentication
  * 
  * Architecture:
  * - Drawer (left side): MenuPage (conversations, profile, navigation)

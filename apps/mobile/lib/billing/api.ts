@@ -108,7 +108,10 @@ export interface CreateCheckoutSessionRequest {
 
 export interface CreateCheckoutSessionResponse {
   checkout_url?: string;
+  fe_checkout_url?: string;  // Kortix-branded embedded checkout
   url?: string;
+  session_id?: string;
+  client_secret?: string;
   success?: boolean;
   subscription_id?: string;
   message?: string;
@@ -132,7 +135,9 @@ export interface TrialStartRequest {
 
 export interface TrialStartResponse {
   checkout_url: string;
+  fe_checkout_url?: string; 
   session_id: string;
+  client_secret?: string;  // For embedded checkout
 }
 
 export interface TrialCheckoutRequest {

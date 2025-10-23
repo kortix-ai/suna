@@ -226,11 +226,11 @@ class SubscriptionService:
             trial_status = credit_account.data[0].get('trial_status')
             current_tier = credit_account.data[0].get('tier')
         
-        if trial_status == 'cancelled':
-            timestamp = int(time.time() // 60)
-            idempotency_key = f"{generate_checkout_idempotency_key(account_id, price_id, commitment_type)}_{timestamp}"
-        else:
-            idempotency_key = generate_checkout_idempotency_key(account_id, price_id, commitment_type)
+        # Always use timestamp in idempotency key to allow retries with different parameters
+        import time
+        timestamp = int(time.time() * 1000)  # Millisecond precision
+        base_key = generate_checkout_idempotency_key(account_id, price_id, commitment_type)
+        idempotency_key = f"{base_key}_{timestamp}"
         
         if trial_status == 'active' and existing_subscription_id:
             logger.info(f"[TRIAL CONVERSION] User {account_id} upgrading from trial to paid plan")
@@ -251,8 +251,8 @@ class SubscriptionService:
                 payment_method_types=['card'],
                 line_items=[{'price': price_id, 'quantity': 1}],
                 mode='subscription',
-                success_url=success_url,
-                cancel_url=cancel_url,
+                ui_mode='embedded',
+                return_url=success_url,
                 subscription_data={
                     'metadata': {
                         'account_id': account_id,
@@ -266,8 +266,19 @@ class SubscriptionService:
             )
             
             logger.info(f"[TRIAL CONVERSION] Created new checkout session for user {account_id}")
+            
+            # Generate frontend checkout wrapper URL for Apple compliance
+            import os
+            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+            client_secret = getattr(session, 'client_secret', None)
+            checkout_param = f"client_secret={client_secret}" if client_secret else f"session_id={session.id}"
+            fe_checkout_url = f"{frontend_url}/checkout?{checkout_param}"
+            
             return {
-                'checkout_url': session.url, 
+                'checkout_url': session.url,  # Direct Stripe (fallback)
+                'fe_checkout_url': fe_checkout_url,  # Kortix-branded embedded checkout
+                'session_id': session.id,
+                'client_secret': client_secret,
                 'converting_from_trial': True,
                 'message': f'Converting from trial to {tier_display_name}. Your trial will end and the new plan will begin immediately upon payment.',
                 'tier_info': {
@@ -325,8 +336,8 @@ class SubscriptionService:
                 payment_method_types=['card'],
                 line_items=[{'price': price_id, 'quantity': 1}],
                 mode='subscription',
-                success_url=success_url,
-                cancel_url=cancel_url,
+                ui_mode='embedded',
+                return_url=success_url,
                 subscription_data={
                     'metadata': {
                         'account_id': account_id,
@@ -336,7 +347,20 @@ class SubscriptionService:
                 },
                 idempotency_key=idempotency_key
             )
-            return {'checkout_url': session.url}
+            
+            # Generate frontend checkout wrapper URL for Apple compliance
+            import os
+            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+            client_secret = getattr(session, 'client_secret', None)
+            checkout_param = f"client_secret={client_secret}" if client_secret else f"session_id={session.id}"
+            fe_checkout_url = f"{frontend_url}/checkout?{checkout_param}"
+            
+            return {
+                'checkout_url': session.url,  # Direct Stripe (fallback)
+                'fe_checkout_url': fe_checkout_url,  # Kortix-branded embedded checkout
+                'session_id': session.id,
+                'client_secret': client_secret,
+            }
 
     async def create_portal_session(self, account_id: str, return_url: str) -> Dict:
         customer_id = await self.get_or_create_stripe_customer(account_id)
@@ -966,6 +990,13 @@ class SubscriptionService:
         if credit_result.data and len(credit_result.data) > 0:
             tier_name = credit_result.data[0].get('tier', 'none')
             trial_status = credit_result.data[0].get('trial_status')
+        
+        # IMPORTANT: If trial is active but tier is 'none', use TRIAL_TIER
+        # This handles cases where trial was activated but tier wasn't set properly
+        if trial_status == 'active' and tier_name == 'none':
+            from .config import TRIAL_TIER
+            tier_name = TRIAL_TIER
+            logger.info(f"[TIER] Trial active but tier=none for {account_id}, using TRIAL_TIER: {TRIAL_TIER}")
         
         tier_obj = TIERS.get(tier_name, TIERS['none'])
         tier_info = {

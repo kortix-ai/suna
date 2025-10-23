@@ -2,14 +2,14 @@
  * Trigger Detail Page Component
  * 
  * Clean, modern detail view for viewing/managing a single trigger
- * Matches the app's design language with consistent spacing and typography
+ * Matches the ThreadPage design language with consistent spacing and typography
  */
 
 import React, { useState } from 'react';
 import { View, Pressable, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { useRouter } from 'expo-router';
 import Animated, {
@@ -62,7 +62,6 @@ function ActionButton({
   variant?: 'default' | 'destructive';
   disabled?: boolean;
 }) {
-  const { colorScheme } = useColorScheme();
   const scale = useSharedValue(1);
   
   const animatedStyle = useAnimatedStyle(() => ({
@@ -77,43 +76,27 @@ function ActionButton({
     scale.value = withSpring(1, { damping: 15, stiffness: 400 });
   };
 
-  const bgColor = variant === 'destructive' 
-    ? (colorScheme === 'dark' ? '#DC2626' : '#EF4444')
-    : (colorScheme === 'dark' ? '#161618' : '#FFFFFF');
-  
-  const borderColor = variant === 'destructive'
-    ? (colorScheme === 'dark' ? '#DC2626' : '#EF4444')
-    : (colorScheme === 'dark' ? '#232324' : '#DCDCDC');
-  
-  const textColor = variant === 'destructive'
-    ? '#FFFFFF'
-    : (colorScheme === 'dark' ? '#F8F8F8' : '#000000');
-  
-  const iconColor = variant === 'destructive'
-    ? '#FFFFFF'
-    : (colorScheme === 'dark' ? '#F8F8F8' : '#000000');
-
   return (
     <AnimatedPressable
       onPress={onPress}
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       disabled={disabled}
-      style={[
-        animatedStyle,
-        {
-          backgroundColor: bgColor,
-          borderColor: borderColor,
-          borderWidth: 1.5,
-          borderRadius: 16,
-          padding: 16,
-          opacity: disabled ? 0.5 : 1,
-        }
-      ]}
-      className="flex-row items-center justify-center gap-2"
+      style={animatedStyle}
+      className={`flex-row items-center justify-center gap-2 py-4 px-4 rounded-2xl ${
+        variant === 'destructive' 
+          ? 'bg-destructive' 
+          : 'bg-secondary border border-border'
+      } ${disabled ? 'opacity-50' : ''}`}
     >
-      <Icon as={IconComponent} size={20} color={iconColor} />
-      <Text style={{ color: textColor, fontSize: 16, fontWeight: '500' }}>
+      <Icon 
+        as={IconComponent} 
+        size={20} 
+        className={variant === 'destructive' ? 'text-white' : 'text-foreground'} 
+      />
+      <Text className={`text-base font-roobert-medium ${
+        variant === 'destructive' ? 'text-white' : 'text-foreground'
+      }`}>
         {label}
       </Text>
     </AnimatedPressable>
@@ -135,43 +118,18 @@ function InfoRow({
   value: string;
   mono?: boolean;
 }) {
-  const { colorScheme } = useColorScheme();
-  const iconColor = colorScheme === 'dark' ? '#F8F8F8' : '#000000';
-  const labelColor = colorScheme === 'dark' ? '#F8F8F8' : '#000000';
-  const valueColor = colorScheme === 'dark' ? '#F8F8F8' : '#000000';
-
   return (
     <View className="flex-row items-start gap-3 mb-4">
-      <View 
-        style={{
-          backgroundColor: colorScheme === 'dark' ? '#161618' : '#F5F5F5',
-          borderRadius: 12,
-          width: 40,
-          height: 40,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Icon as={IconComponent} size={20} color={iconColor} />
+      <View className="w-10 h-10 rounded-xl bg-secondary items-center justify-center">
+        <Icon as={IconComponent} size={20} className="text-foreground/70" />
       </View>
       <View className="flex-1">
-        <Text 
-          style={{ 
-            color: labelColor, 
-            fontSize: 14, 
-            opacity: 0.6,
-            marginBottom: 4
-          }}
-        >
+        <Text className="text-muted-foreground text-sm font-roobert mb-1">
           {label}
         </Text>
         <Text 
-          style={{ 
-            color: valueColor, 
-            fontSize: 16, 
-            fontWeight: '500',
-            fontFamily: mono ? 'monospace' : undefined
-          }}
+          className="text-foreground text-base font-roobert-medium"
+          style={mono ? { fontFamily: 'monospace' } : undefined}
           numberOfLines={mono ? undefined : 3}
         >
           {value}
@@ -186,19 +144,9 @@ function InfoRow({
  * Consistent section container
  */
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  const { colorScheme } = useColorScheme();
-  const textColor = colorScheme === 'dark' ? '#F8F8F8' : '#000000';
-
   return (
-    <View className="mb-6">
-      <Text 
-        style={{ 
-          color: textColor, 
-          fontSize: 18, 
-          fontWeight: '600',
-          marginBottom: 16
-        }}
-      >
+    <View className="mb-8">
+      <Text className="text-foreground text-lg font-roobert-semibold mb-4">
         {title}
       </Text>
       {children}
@@ -209,6 +157,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 export function TriggerDetailPage({ triggerId }: TriggerDetailPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
+  const insets = useSafeAreaInsets();
   const backScale = useSharedValue(1);
   
   const { data: trigger, isLoading, error, refetch } = useTrigger(triggerId);
@@ -220,10 +169,6 @@ export function TriggerDetailPage({ triggerId }: TriggerDetailPageProps) {
   }));
 
   const handleBack = () => {
-    backScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
-    setTimeout(() => {
-      backScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-    }, 100);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.back();
   };
@@ -288,73 +233,37 @@ export function TriggerDetailPage({ triggerId }: TriggerDetailPageProps) {
   // Loading State
   if (isLoading) {
     return (
-      <SafeAreaView 
-        edges={['top']} 
-        style={{ 
-          flex: 1, 
-          backgroundColor: colorScheme === 'dark' ? '#121215' : '#F8F8F8' 
-        }}
-      >
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color={colorScheme === 'dark' ? '#FFFFFF' : '#000000'} />
-          <Text 
-            style={{ 
-              color: colorScheme === 'dark' ? '#F8F8F8' : '#000000',
-              fontSize: 14,
-              opacity: 0.6,
-              marginTop: 16
-            }}
-          >
+      <View className="flex-1 bg-background">
+        <View className="flex-1 items-center justify-center px-8">
+          <View className="w-20 h-20 rounded-full bg-secondary/30 items-center justify-center mb-6">
+            <ActivityIndicator 
+              size="large" 
+              color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} 
+            />
+          </View>
+          <Text className="text-foreground text-lg font-roobert-semibold text-center">
             Loading trigger...
           </Text>
+          <Text className="text-muted-foreground text-sm font-roobert mt-2 text-center">
+            Fetching trigger details
+          </Text>
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
   // Error State
   if (error || !trigger) {
     return (
-      <SafeAreaView 
-        edges={['top']} 
-        style={{ 
-          flex: 1, 
-          backgroundColor: colorScheme === 'dark' ? '#121215' : '#F8F8F8' 
-        }}
-      >
+      <View className="flex-1 bg-background">
         <View className="flex-1 items-center justify-center p-6">
-          <View 
-            style={{
-              width: 64,
-              height: 64,
-              backgroundColor: colorScheme === 'dark' ? '#DC2626' : '#FEE2E2',
-              borderRadius: 32,
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: 16
-            }}
-          >
-            <Icon as={XCircle} size={32} color={colorScheme === 'dark' ? '#FFFFFF' : '#DC2626'} />
+          <View className="w-20 h-20 rounded-full bg-destructive/20 items-center justify-center mb-4">
+            <Icon as={XCircle} size={40} className="text-destructive" />
           </View>
-          <Text 
-            style={{ 
-              color: colorScheme === 'dark' ? '#F8F8F8' : '#000000',
-              fontSize: 20,
-              fontWeight: '600',
-              marginBottom: 8
-            }}
-          >
+          <Text className="text-foreground text-lg font-roobert-semibold text-center mb-2">
             Trigger Not Found
           </Text>
-          <Text 
-            style={{ 
-              color: colorScheme === 'dark' ? '#F8F8F8' : '#000000',
-              fontSize: 14,
-              opacity: 0.6,
-              textAlign: 'center',
-              marginBottom: 24
-            }}
-          >
+          <Text className="text-muted-foreground text-sm font-roobert text-center mb-6">
             This trigger may have been deleted or you don't have permission to view it.
           </Text>
           <ActionButton
@@ -363,7 +272,7 @@ export function TriggerDetailPage({ triggerId }: TriggerDetailPageProps) {
             onPress={handleBack}
           />
         </View>
-      </SafeAreaView>
+      </View>
     );
   }
 
@@ -372,119 +281,100 @@ export function TriggerDetailPage({ triggerId }: TriggerDetailPageProps) {
   const formattedDate = formatTriggerDate(trigger.created_at);
 
   return (
-    <SafeAreaView 
-      edges={['top']} 
-      style={{ 
-        flex: 1, 
-        backgroundColor: colorScheme === 'dark' ? '#121215' : '#F8F8F8' 
-      }}
-    >
-      {/* Header */}
+    <View className="flex-1 bg-background">
+      {/* Header - Fixed at top, matching ThreadHeader style */}
       <View 
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          padding: 16,
-          paddingBottom: 12,
-        }}
+        className="absolute top-0 left-0 right-0 bg-background z-50 border-b border-border/20" 
+        style={{ paddingTop: insets.top }}
       >
-        <AnimatedPressable
-          onPress={handleBack}
-          onPressIn={() => { backScale.value = withSpring(0.9); }}
-          onPressOut={() => { backScale.value = withSpring(1); }}
-          style={[
-            backAnimatedStyle,
-            {
-              width: 40,
-              height: 40,
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginRight: 8,
-            }
-          ]}
-        >
-          <Icon 
-            as={ChevronLeft} 
-            size={24} 
-            color={colorScheme === 'dark' ? '#F8F8F8' : '#000000'} 
-          />
-        </AnimatedPressable>
-
-        <View className="flex-1">
-          <Text 
-            style={{ 
-              color: colorScheme === 'dark' ? '#F8F8F8' : '#000000',
-              fontSize: 20,
-              fontWeight: '600'
+        <View className="flex-row items-center justify-between px-6 py-3">
+          {/* Left - Back Button */}
+          <AnimatedPressable
+            onPressIn={() => {
+              backScale.value = withSpring(0.95, { damping: 15, stiffness: 400 });
             }}
-            numberOfLines={1}
+            onPressOut={() => {
+              backScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+            }}
+            onPress={handleBack}
+            style={backAnimatedStyle}
+            className="w-8 h-8 items-center justify-center -ml-2"
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
           >
-            Trigger Details
-          </Text>
+            <Icon as={ChevronLeft} size={20} className="text-foreground/70" strokeWidth={2} />
+          </AnimatedPressable>
+
+          {/* Center - Title */}
+          <View className="flex-1 mx-4">
+            <Text 
+              className="text-sm font-roobert-semibold text-foreground text-center" 
+              numberOfLines={1}
+            >
+              Trigger Details
+            </Text>
+          </View>
+
+          {/* Right - Placeholder for symmetry */}
+          <View className="w-8 h-8" />
         </View>
       </View>
 
       {/* Scrollable Content */}
       <ScrollView 
-        className="flex-1 px-6"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 100 }}
+        className="flex-1"
+        showsVerticalScrollIndicator={true}
+        contentContainerStyle={{ 
+          flexGrow: 1,
+          paddingTop: insets.top + 60, // Safe area + header height
+          paddingBottom: 100,
+          paddingHorizontal: 24,
+        }}
+        keyboardShouldPersistTaps="handled"
+        scrollEventThrottle={16}
+        bounces={true}
+        alwaysBounceVertical={false}
       >
         {/* Trigger Icon & Name */}
-        <View className="items-center mb-6 mt-2">
-          <View 
-            style={{
-              backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
-              borderColor: colorScheme === 'dark' ? '#232324' : '#DCDCDC',
-              borderWidth: 2,
-              borderRadius: 24,
-              width: 80,
-              height: 80,
-              alignItems: 'center',
-              justifyContent: 'center',
-              marginBottom: 16,
-            }}
-          >
+        <View className="items-center mb-8">
+          <View className="w-20 h-20 rounded-full bg-secondary items-center justify-center mb-4">
             <Icon 
               as={IconComponent} 
               size={36} 
-              color={colorScheme === 'dark' ? '#F8F8F8' : '#000000'} 
+              className="text-foreground" 
             />
           </View>
-          <Text 
-            style={{ 
-              color: colorScheme === 'dark' ? '#F8F8F8' : '#000000',
-              fontSize: 24,
-              fontWeight: '600',
-              textAlign: 'center',
-              marginBottom: 8
-            }}
-          >
+          <Text className="text-foreground text-2xl font-roobert-semibold text-center mb-2">
             {trigger.name}
           </Text>
           {trigger.description && (
-            <Text 
-              style={{ 
-                color: colorScheme === 'dark' ? '#F8F8F8' : '#000000',
-                fontSize: 16,
-                opacity: 0.6,
-                textAlign: 'center'
-              }}
-            >
+            <Text className="text-muted-foreground text-base font-roobert text-center">
               {trigger.description}
             </Text>
           )}
         </View>
 
         {/* Status Toggle */}
-        <View className="mb-6">
-          <ActionButton
-            icon={trigger.is_active ? CheckCircle2 : XCircle}
-            label={trigger.is_active ? 'Active - Tap to Disable' : 'Inactive - Tap to Enable'}
+        <View className="mb-8">
+          <Pressable
             onPress={handleToggleActive}
-            variant={trigger.is_active ? 'default' : 'default'}
             disabled={toggleTriggerMutation.isPending}
-          />
+            className={`flex-row items-center justify-between p-4 rounded-2xl ${
+              trigger.is_active ? 'bg-green-500/10 border border-green-500/30' : 'bg-secondary border border-border'
+            } ${toggleTriggerMutation.isPending ? 'opacity-50' : ''}`}
+          >
+            <View className="flex-row items-center gap-3">
+              <View className={`w-3 h-3 rounded-full ${trigger.is_active ? 'bg-green-500' : 'bg-muted-foreground'}`} />
+              <Text className={`text-base font-roobert-medium ${
+                trigger.is_active ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'
+              }`}>
+                {trigger.is_active ? 'Active' : 'Inactive'}
+              </Text>
+            </View>
+            <Text className="text-sm font-roobert text-muted-foreground">
+              Tap to {trigger.is_active ? 'disable' : 'enable'}
+            </Text>
+          </Pressable>
         </View>
 
         {/* Basic Information */}
@@ -539,33 +429,17 @@ export function TriggerDetailPage({ triggerId }: TriggerDetailPageProps) {
         {/* Webhook URL */}
         {trigger.webhook_url && (
           <Section title="Webhook">
-            <View className="mb-4">
-              <Pressable
-                onPress={handleCopyWebhookUrl}
-                style={{
-                  backgroundColor: colorScheme === 'dark' ? '#161618' : '#F5F5F5',
-                  borderRadius: 12,
-                  padding: 16,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 12,
-                }}
-              >
-                <View className="flex-1">
-                  <Text 
-                    style={{ 
-                      color: colorScheme === 'dark' ? '#F8F8F8' : '#000000',
-                      fontSize: 12,
-                      fontFamily: 'monospace'
-                    }}
-                    numberOfLines={2}
-                  >
-                    {trigger.webhook_url}
-                  </Text>
-                </View>
-                <Icon as={Copy} size={20} color={colorScheme === 'dark' ? '#F8F8F8' : '#000000'} />
-              </Pressable>
-            </View>
+            <Pressable
+              onPress={handleCopyWebhookUrl}
+              className="bg-secondary rounded-xl p-4 flex-row items-center gap-3 active:bg-secondary/80"
+            >
+              <View className="flex-1">
+                <Text className="text-foreground text-xs font-mono" numberOfLines={2}>
+                  {trigger.webhook_url}
+                </Text>
+              </View>
+              <Icon as={Copy} size={20} className="text-foreground/70" />
+            </Pressable>
           </Section>
         )}
 
@@ -588,6 +462,6 @@ export function TriggerDetailPage({ triggerId }: TriggerDetailPageProps) {
           </View>
         </Section>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }

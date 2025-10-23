@@ -231,7 +231,8 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
     
     console.log('✅ User authenticated, sending message');
     // Don't clear input here - let useChat handle it after successful send
-    onSendMessage?.(value, agent?.agent_id || '', agent?.name || '');
+    // Trim trailing spaces before sending
+    onSendMessage?.(value.trim(), agent?.agent_id || '', agent?.name || '');
   };
 
   // Handle sending audio - also checks auth

@@ -16,6 +16,7 @@ const PUBLIC_ROUTES = [
   '/templates', // Template pages should be public
   '/enterprise', // Enterprise page should be public
   '/master-login', // Master password admin login
+  '/checkout', // Public checkout wrapper for Apple compliance
 ];
 
 // Routes that require authentication but are related to billing/trials

@@ -5,17 +5,16 @@
  */
 
 import React from 'react';
-import { View, ScrollView, Pressable, ActivityIndicator } from 'react-native';
+import { View, ScrollView, Pressable } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { ChevronLeft, Coins, Infinity } from 'lucide-react-native';
+import { ChevronLeft, Coins, Infinity, Clock } from 'lucide-react-native';
 import { useBillingContext } from '@/contexts/BillingContext';
+import { CreditPackages } from '@/components/billing';
 import { startCreditPurchase } from '@/lib/billing';
 import { useTranslation } from 'react-i18next';
 import * as Haptics from 'expo-haptics';
-
-const CREDIT_PACKAGES = [10, 25, 50, 100, 200, 500];
 
 export default function CreditsScreen() {
   const router = useRouter();
@@ -57,7 +56,7 @@ export default function CreditsScreen() {
         {/* Current Balance */}
         {creditBalance && (
           <View className="mx-6 my-6 p-6 bg-card border border-border rounded-2xl">
-            <View className="flex-row items-center justify-between">
+            <View className="flex-row items-center justify-between mb-4">
               <View>
                 <Text className="text-sm font-roobert text-muted-foreground mb-1">{t('billing.balance')}</Text>
                 <Text className="text-3xl font-roobert-bold text-foreground">
@@ -66,6 +65,30 @@ export default function CreditsScreen() {
               </View>
               <Icon as={Coins} size={32} className="text-primary" />
             </View>
+            
+            {/* Breakdown */}
+            {(creditBalance.expiring_credits > 0 || creditBalance.non_expiring_credits > 0) && (
+              <View className="pt-4 border-t border-border space-y-2">
+                <View className="flex-row items-center justify-between">
+                  <View className="flex-row items-center gap-2">
+                    <Icon as={Clock} size={14} className="text-muted-foreground" />
+                    <Text className="text-sm font-roobert text-muted-foreground">Plan credits</Text>
+                  </View>
+                  <Text className="text-sm font-roobert-semibold text-foreground">
+                    ${creditBalance.expiring_credits.toFixed(2)}
+                  </Text>
+                </View>
+                <View className="flex-row items-center justify-between">
+                  <View className="flex-row items-center gap-2">
+                    <Icon as={Infinity} size={14} className="text-green-600" />
+                    <Text className="text-sm font-roobert text-muted-foreground">Purchased credits</Text>
+                  </View>
+                  <Text className="text-sm font-roobert-semibold text-foreground">
+                    ${creditBalance.non_expiring_credits.toFixed(2)}
+                  </Text>
+                </View>
+              </View>
+            )}
           </View>
         )}
 
@@ -81,35 +104,11 @@ export default function CreditsScreen() {
 
         {/* Credit Packages */}
         <View className="px-6 pb-6">
-          <View className="grid grid-cols-2 gap-4">
-            {CREDIT_PACKAGES.map((amount) => {
-              const isPurchasing = purchasing === amount;
-              return (
-                <Pressable
-                  key={amount}
-                  onPress={() => handlePurchase(amount)}
-                  disabled={isPurchasing}
-                  className="bg-card border border-border rounded-2xl p-6 items-center"
-                >
-                  <Text className="text-3xl font-roobert-bold text-foreground mb-2">
-                    ${amount}
-                  </Text>
-                  <Text className="text-xs font-roobert text-muted-foreground mb-4">
-                    {amount} credits
-                  </Text>
-                  <View className="bg-primary h-10 w-full rounded-xl items-center justify-center">
-                    {isPurchasing ? (
-                      <ActivityIndicator color="white" size="small" />
-                    ) : (
-                      <Text className="text-sm font-roobert-semibold text-primary-foreground">
-                        {t('billing.selectPlan')}
-                      </Text>
-                    )}
-                  </View>
-                </Pressable>
-              );
-            })}
-          </View>
+          <CreditPackages
+            onPurchase={handlePurchase}
+            purchasing={purchasing}
+            t={t}
+          />
         </View>
       </ScrollView>
     </View>
