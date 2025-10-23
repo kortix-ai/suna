@@ -12,7 +12,7 @@ import type {
   OAuthProvider,
   PasswordResetRequest,
   AuthError,
-} from '@/lib/auth-types';
+} from '@/lib/utils/auth-types';
 import type { Session, User, AuthChangeEvent } from '@supabase/supabase-js';
 
 // Configure WebBrowser for OAuth
@@ -94,6 +94,7 @@ export function useAuth() {
       }
 
       console.log('✅ Sign in successful:', data.user?.email);
+      setAuthState((prev) => ({ ...prev, isLoading: false }));
       return { success: true, data };
     } catch (err: any) {
       console.error('❌ Sign in exception:', err);
@@ -132,6 +133,7 @@ export function useAuth() {
         }
 
         console.log('✅ Sign up successful:', data.user?.email);
+        setAuthState((prev) => ({ ...prev, isLoading: false }));
         return { success: true, data };
       } catch (err: any) {
         console.error('❌ Sign up exception:', err);

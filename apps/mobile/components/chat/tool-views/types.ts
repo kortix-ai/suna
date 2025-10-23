@@ -6,7 +6,7 @@
 
 import React from 'react';
 import type { UnifiedMessage } from '@/api/types';
-import type { ParsedToolData } from '@/lib/tool-parser';
+import type { ParsedToolData } from '@/lib/utils/tool-parser';
 
 export interface ToolViewProps {
   /** Parsed tool execution data */

@@ -15,7 +15,7 @@ import * as Haptics from 'expo-haptics';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { SearchBar } from '@/components/ui/SearchBar';
-import { Search, Plus, X, ChevronLeft, AlertCircle } from 'lucide-react-native';
+import { Search, Plus, X, ChevronLeft, AlertCircle, MessageSquare, Users, Zap } from 'lucide-react-native';
 import { ConversationSection } from '@/components/menu/ConversationSection';
 import { BottomNav } from '@/components/menu/BottomNav';
 import { ProfileSection } from '@/components/menu/ProfileSection';
@@ -26,15 +26,140 @@ import { useRouter } from 'expo-router';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AgentList } from '@/components/agents/AgentList';
 import { useAgent } from '@/contexts/AgentContext';
-import { useSearch } from '@/lib/search';
-import { useThreads, useAllTriggers } from '@/hooks/api';
-import { groupThreadsByMonth } from '@/lib/thread-utils';
-import { TriggerList, TriggerCreationDrawer } from '@/components/triggers';
+import { useSearch } from '@/lib/utils/search';
+import { useThreads } from '@/lib/chat';
+import { useAllTriggers } from '@/lib/triggers';
+import { groupThreadsByMonth } from '@/lib/utils/thread-utils';
+import { TriggerCreationDrawer, TriggerListItem } from '@/components/triggers';
 import type { Conversation, UserProfile, ConversationSection as ConversationSectionType } from '@/components/menu/types';
 import type { Agent, TriggerWithAgent } from '@/api/types';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedScrollView = Animated.createAnimatedComponent(ScrollView);
+
+/**
+ * EmptyState Component
+ * 
+ * Unified empty state component for all tabs (Chats, Workers, Triggers)
+ * Handles: loading, error, no results (search), and no items states
+ */
+interface EmptyStateProps {
+  type: 'loading' | 'error' | 'no-results' | 'empty';
+  icon: any; // Lucide icon component
+  title: string;
+  description: string;
+  actionLabel?: string;
+  onActionPress?: () => void;
+}
+
+function EmptyState({
+  type,
+  icon,
+  title,
+  description,
+  actionLabel,
+  onActionPress,
+}: EmptyStateProps) {
+  const { colorScheme } = useColorScheme();
+  const scale = useSharedValue(1);
+  
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+  
+  const handlePressIn = () => {
+    scale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
+  };
+  
+  const handlePressOut = () => {
+    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
+  };
+  
+  const handleActionPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    onActionPress?.();
+  };
+  
+  // Get colors based on type
+  const getColors = () => {
+    switch (type) {
+      case 'loading':
+        return {
+          iconColor: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+          iconBgColor: 'bg-secondary',
+        };
+      case 'error':
+        return {
+          iconColor: colorScheme === 'dark' ? '#EF4444' : '#DC2626',
+          iconBgColor: 'bg-destructive/10',
+        };
+      case 'no-results':
+        return {
+          iconColor: colorScheme === 'dark' ? '#71717A' : '#A1A1AA',
+          iconBgColor: 'bg-secondary',
+        };
+      case 'empty':
+        return {
+          iconColor: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+          iconBgColor: 'bg-primary/10',
+        };
+      default:
+        return {
+          iconColor: colorScheme === 'dark' ? '#71717A' : '#A1A1AA',
+          iconBgColor: 'bg-secondary',
+        };
+    }
+  };
+  
+  const { iconColor, iconBgColor } = getColors();
+  
+  // Loading state with spinner
+  if (type === 'loading') {
+    return (
+      <View className="items-center justify-center py-16 px-8">
+        <ActivityIndicator size="large" color={colorScheme === 'dark' ? '#FFFFFF' : '#000000'} />
+        <Text className="text-muted-foreground text-sm font-roobert mt-4 text-center">
+          {title}
+        </Text>
+      </View>
+    );
+  }
+  
+  // All other states
+  return (
+    <View className="items-center justify-center py-16 px-8">
+      <View className={`w-16 h-16 rounded-2xl ${iconBgColor} items-center justify-center mb-4`}>
+        <Icon 
+          as={icon}
+          size={32}
+          color={iconColor}
+          strokeWidth={2}
+        />
+      </View>
+      <Text className="text-foreground text-lg font-roobert-semibold text-center">
+        {title}
+      </Text>
+      <Text className="text-muted-foreground text-sm font-roobert mt-2 text-center">
+        {description}
+      </Text>
+      {actionLabel && onActionPress && (
+        <AnimatedPressable
+          onPress={handleActionPress}
+          onPressIn={handlePressIn}
+          onPressOut={handlePressOut}
+          style={animatedStyle}
+          className="mt-6 px-6 py-3 bg-primary rounded-xl"
+          accessibilityRole="button"
+          accessibilityLabel={actionLabel}
+        >
+          <Text className="text-primary-foreground text-base font-roobert-medium">
+            {actionLabel}
+          </Text>
+        </AnimatedPressable>
+      )}
+    </View>
+  );
+}
 
 /**
  * BackButton Component
@@ -410,16 +535,6 @@ export function MenuPage({
             <BackButton onPress={onClose} />
           </View>
           
-          {/* Search Bar - Full Width, Universal */}
-          <View className="mb-6">
-            <SearchBar
-              value={chatsSearch.query}
-              onChangeText={chatsSearch.updateQuery}
-              placeholder={t('placeholders.search')}
-              onClear={chatsSearch.clearSearch}
-            />
-          </View>
-          
           {/* Scrollable Content Area with Bottom Blur */}
           <View className="flex-1 relative -mx-6">
             <AnimatedScrollView 
@@ -432,47 +547,39 @@ export function MenuPage({
             >
               {activeTab === 'chats' && (
                 <>
+                  {/* Chats Search Bar */}
+                  <View className="mb-4">
+                    <SearchBar
+                      value={chatsSearch.query}
+                      onChangeText={chatsSearch.updateQuery}
+                      placeholder={t('placeholders.searchChats') || 'Search chats...'}
+                      onClear={chatsSearch.clearSearch}
+                    />
+                  </View>
+                  
                   {isLoadingThreads ? (
-                    <View className="items-center justify-center py-16">
-                      <ActivityIndicator size="large" color={colorScheme === 'dark' ? '#FFFFFF' : '#000000'} />
-                      <Text className="text-muted-foreground text-sm font-roobert mt-4">
-                        {t('loading.threads') || 'Loading chats...'}
-                      </Text>
-                    </View>
+                    <EmptyState
+                      type="loading"
+                      icon={MessageSquare}
+                      title={t('loading.threads') || 'Loading chats...'}
+                      description=""
+                    />
                   ) : threadsError ? (
-                    <View className="items-center justify-center py-16">
-                      <View className="w-16 h-16 rounded-2xl bg-destructive/10 items-center justify-center mb-4">
-                        <Icon 
-                          as={AlertCircle}
-                          size={32}
-                          className="text-destructive"
-                          strokeWidth={2}
-                        />
-                      </View>
-                      <Text className="text-foreground text-lg font-roobert-semibold">
-                        {t('errors.loadingThreads') || 'Failed to load chats'}
-                      </Text>
-                      <Text className="text-muted-foreground text-sm font-roobert mt-2 text-center px-8">
-                        {t('errors.tryAgain') || 'Please try again later'}
-                      </Text>
-                    </View>
+                    <EmptyState
+                      type="error"
+                      icon={AlertCircle}
+                      title={t('errors.loadingThreads') || 'Failed to load chats'}
+                      description={t('errors.tryAgain') || 'Please try again later'}
+                    />
                   ) : sections.length === 0 ? (
-                    <View className="items-center justify-center py-16">
-                      <View className="w-16 h-16 rounded-2xl bg-secondary items-center justify-center mb-4">
-                        <Icon 
-                          as={Plus}
-                          size={32}
-                          className="text-muted-foreground"
-                          strokeWidth={2}
-                        />
-                      </View>
-                      <Text className="text-foreground text-lg font-roobert-semibold">
-                        {t('emptyStates.chats') || 'No chats yet'}
-                      </Text>
-                      <Text className="text-muted-foreground text-sm font-roobert mt-2 text-center px-8">
-                        {t('emptyStates.chatsDescription') || 'Start a new chat to get started'}
-                      </Text>
-                    </View>
+                    <EmptyState
+                      type="empty"
+                      icon={MessageSquare}
+                      title={t('emptyStates.noConversations') || 'No chats yet'}
+                      description={t('emptyStates.noConversationsDescription') || 'Start a new chat to get started'}
+                      actionLabel={t('chat.newChat') || 'New Chat'}
+                      onActionPress={onNewChat}
+                    />
                   ) : (
                     <View className="gap-8">
                       {sections.map((section) => {
@@ -499,47 +606,127 @@ export function MenuPage({
                           />
                         );
                       })}
+                      
+                      {/* Show no results state if searching and no results */}
+                      {chatsSearch.isSearching && 
+                       sections.every(section => 
+                         !section.conversations.some(conv => 
+                           chatsSearch.results.some(result => result.id === conv.id)
+                         )
+                       ) && (
+                        <EmptyState
+                          type="no-results"
+                          icon={Search}
+                          title={t('emptyStates.noResults') || 'No results'}
+                          description={t('emptyStates.tryDifferentSearch') || 'Try a different search term'}
+                        />
+                      )}
                     </View>
                   )}
                 </>
               )}
               
               {activeTab === 'workers' && (
-                <AgentList
-                  agents={agentResults}
-                  selectedAgentId={selectedAgentId}
-                  onAgentPress={onAgentPress}
-                  showChevron={false}
-                  compact={false}
-                />
+                <>
+                  {/* Workers Search Bar */}
+                  <View className="mb-4">
+                    <SearchBar
+                      value={workersSearch.query}
+                      onChangeText={workersSearch.updateQuery}
+                      placeholder={t('placeholders.searchWorkers') || 'Search workers...'}
+                      onClear={workersSearch.clearSearch}
+                    />
+                  </View>
+                  
+                  {agentResults.length === 0 && !workersSearch.isSearching ? (
+                    <EmptyState
+                      type="empty"
+                      icon={Users}
+                      title={t('emptyStates.noWorkers') || 'No workers yet'}
+                      description={t('emptyStates.noWorkersDescription') || 'Create your first worker to get started'}
+                      actionLabel={t('agents.newWorker') || 'New Worker'}
+                      onActionPress={onNewWorker}
+                    />
+                  ) : agentResults.length === 0 && workersSearch.isSearching ? (
+                    <EmptyState
+                      type="no-results"
+                      icon={Search}
+                      title={t('emptyStates.noResults') || 'No results'}
+                      description={t('emptyStates.tryDifferentSearch') || 'Try a different search term'}
+                    />
+                  ) : (
+                    <AgentList
+                      agents={agentResults}
+                      selectedAgentId={selectedAgentId}
+                      onAgentPress={onAgentPress}
+                      showChevron={false}
+                      compact={false}
+                    />
+                  )}
+                </>
               )}
               
               {activeTab === 'triggers' && (
-                <TriggerList
-                  triggers={triggerResults}
-                  onTriggerPress={(trigger) => {
-                    console.log('🔧 Trigger selected:', trigger.name);
-                    // Navigate to trigger detail page
-                    router.push({
-                      pathname: '/trigger-detail',
-                      params: { triggerId: trigger.trigger_id }
-                    });
-                  }}
-                  isLoading={triggersLoading}
-                  isRefreshing={false}
-                  onRefresh={refetchTriggers}
-                  searchQuery={triggersSearch.query}
-                  onSearchChange={triggersSearch.updateQuery}
-                  showAgent={true}
-                  compact={false}
-                  groupByCategory={true}
-                  emptyStateTitle={t('emptyStates.triggers') || 'No triggers found'}
-                  emptyStateDescription={t('emptyStates.triggersDescription') || 'Create your first trigger to get started'}
-                  emptyStateAction={{
-                    label: t('menu.newTrigger') || 'Create Trigger',
-                    onPress: handleTriggerCreate,
-                  }}
-                />
+                <>
+                  {/* Triggers Search Bar */}
+                  <View className="mb-4">
+                    <SearchBar
+                      value={triggersSearch.query}
+                      onChangeText={triggersSearch.updateQuery}
+                      placeholder={t('placeholders.searchTriggers') || 'Search triggers...'}
+                      onClear={triggersSearch.clearSearch}
+                    />
+                  </View>
+                  
+                  {triggersLoading ? (
+                    <EmptyState
+                      type="loading"
+                      icon={Zap}
+                      title={t('loading.triggers') || 'Loading triggers...'}
+                      description=""
+                    />
+                  ) : triggersError ? (
+                    <EmptyState
+                      type="error"
+                      icon={AlertCircle}
+                      title={t('errors.loadingTriggers') || 'Failed to load triggers'}
+                      description={t('errors.tryAgain') || 'Please try again later'}
+                    />
+                  ) : triggerResults.length === 0 && !triggersSearch.isSearching ? (
+                    <EmptyState
+                      type="empty"
+                      icon={Zap}
+                      title={t('emptyStates.triggers') || 'No triggers yet'}
+                      description={t('emptyStates.triggersDescription') || 'Create your first trigger to get started'}
+                      actionLabel={t('menu.newTrigger') || 'Create Trigger'}
+                      onActionPress={handleTriggerCreate}
+                    />
+                  ) : triggerResults.length === 0 && triggersSearch.isSearching ? (
+                    <EmptyState
+                      type="no-results"
+                      icon={Search}
+                      title={t('emptyStates.noResults') || 'No results'}
+                      description={t('emptyStates.tryDifferentSearch') || 'Try a different search term'}
+                    />
+                  ) : (
+                    <View className="gap-3">
+                      {triggerResults.map((trigger) => (
+                        <TriggerListItem
+                          key={trigger.trigger_id}
+                          trigger={trigger}
+                          onPress={(selectedTrigger) => {
+                            console.log('🔧 Trigger selected:', selectedTrigger.name);
+                            // Navigate to trigger detail page
+                            router.push({
+                              pathname: '/trigger-detail',
+                              params: { triggerId: selectedTrigger.trigger_id }
+                            });
+                          }}
+                        />
+                      ))}
+                    </View>
+                  )}
+                </>
               )}
             </AnimatedScrollView>
             

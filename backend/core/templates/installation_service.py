@@ -687,7 +687,6 @@ class InstallationService:
             url = f"{api_base}/api/v3/trigger_instances/{trigger_slug}/upsert"
             headers = {"x-api-key": api_key, "Content-Type": "application/json"}
 
-            base_url = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
             secret = os.getenv("COMPOSIO_WEBHOOK_SECRET", "")
             webhook_headers: Dict[str, Any] = {"X-Composio-Secret": secret} if secret else {}
             vercel_bypass = os.getenv("VERCEL_PROTECTION_BYPASS_KEY", "")

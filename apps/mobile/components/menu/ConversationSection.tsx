@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { View } from 'react-native';
 import { useLanguage } from '@/contexts';
-import { formatMonthYear } from '@/lib/date';
+import { formatMonthYear } from '@/lib/utils/date';
 import { Text } from '@/components/ui/text';
 import { ConversationItem } from './ConversationItem';
 import type { ConversationSection as ConversationSectionType, Conversation } from './types';

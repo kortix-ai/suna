@@ -38,7 +38,9 @@ export function useAgents(
   return useQuery({
     queryKey: agentKeys.list(params),
     queryFn: async () => {
+      console.log('🔄 Fetching agents...');
       const headers = await getAuthHeaders();
+      console.log('📋 Auth headers obtained:', headers);
       
       // Build query parameters
       const queryParams = new URLSearchParams();
@@ -54,11 +56,21 @@ export function useAgents(
       if (params.content_type) queryParams.append('content_type', params.content_type);
 
       const url = `${API_URL}/agents${queryParams.toString() ? `?${queryParams.toString()}` : ''}`;
+      console.log('🌐 API URL:', url);
       
       const res = await fetch(url, { headers });
-      if (!res.ok) throw new Error(`Failed to fetch agents: ${res.status}`);
+      console.log('📡 Response status:', res.status);
       
-      return res.json();
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('❌ Failed to fetch agents:', res.status, errorText);
+        throw new Error(`Failed to fetch agents: ${res.status}`);
+      }
+      
+      const data = await res.json();
+      console.log('✅ Agents fetched successfully:', data);
+      
+      return data;
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
     ...options,

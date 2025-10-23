@@ -1,22 +1,16 @@
 /**
- * Message Renderer
- * 
- * Vercel-level design with perfect spacing and visual hierarchy:
- * - User messages: Clean bubbles with generous spacing
- * - Assistant messages: Grouped tightly with minimal spacing for flow
- * - Tool cards: Elegant cards with proper visual weight
- * - Agent indicators: Subtle, consistent branding
+ * Message Renderer - Clean chat message display
  */
 
 import React, { useMemo, useCallback, useEffect } from 'react';
 import { View, Pressable, Linking, Text as RNText } from 'react-native';
 import { Text } from '@/components/ui/text';
 import type { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/api/types';
-import { groupMessages, safeJsonParse, type MessageGroup } from '@/lib/message-grouping';
-import { parseToolMessage, formatToolOutput, stripXMLTags } from '@/lib/tool-parser';
+import { groupMessages, safeJsonParse, type MessageGroup } from '@/lib/utils/message-grouping';
+import { parseToolMessage, formatToolOutput, stripXMLTags } from '@/lib/utils/tool-parser';
 import { Wrench, AlertCircle, CheckCircle2 } from 'lucide-react-native';
 import Markdown from 'react-native-markdown-display';
-import { markdownStyles, markdownStylesDark } from '@/lib/markdown-styles';
+import { markdownStyles, markdownStylesDark } from '@/lib/utils/markdown-styles';
 import { useColorScheme } from 'nativewind';
 import { AgentIdentifier } from '@/components/agents';
 import Animated, { 
@@ -42,12 +36,7 @@ interface MessageRendererProps {
 }
 
 /**
- * Main Message Renderer Component
- * 
- * Clean architecture with perfect spacing rhythm:
- * - 24px between different message groups (user ↔ assistant)
- * - 12px within assistant message groups for visual cohesion
- * - 8px between tool cards for subtle grouping
+ * Main Message Renderer
  */
 export function MessageRenderer({
   messages,
@@ -182,9 +171,6 @@ export function MessageRenderer({
 
 /**
  * User Message Bubble
- * 
- * Design: Clean, rounded bubble aligned right
- * Spacing: Generous 24px bottom margin for clear separation
  */
 function UserMessageBubble({ 
   message, 
@@ -235,13 +221,7 @@ function UserMessageBubble({
 }
 
 /**
- * Assistant Message Group (Assistant + Linked Tools)
- * 
- * Design Philosophy:
- * - Agent identifier shown ONCE at the top of the group
- * - Agent identifier + message + tools flow as one cohesive unit
- * - Minimal spacing within group (tight coupling)
- * - Tools are visually subordinate but connected
+ * Assistant Message Group
  */
 function AssistantMessageGroup({
   messages,
@@ -347,11 +327,7 @@ function AssistantMessageGroup({
 }
 
 /**
- * Assistant Message Content
- * 
- * Design: Clean, left-aligned text without background
- * Note: Agent identifier is shown once per group (not per message)
- * Spacing: Minimal when tools follow, normal otherwise
+ * Assistant Message Content - Clean markdown rendering with native text selection
  */
 function AssistantMessageContent({ 
   message,
@@ -361,80 +337,47 @@ function AssistantMessageContent({
   hasToolsBelow: boolean;
 }) {
   const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
   
-  const { content, hasFunctionCalls, functionCallPreview } = useMemo(() => {
+  const content = useMemo(() => {
     const parsed = safeJsonParse<ParsedContent>(message.content, {});
     const rawContent = parsed.content || '';
     
-    const hasFunctionCalls = rawContent.includes('<function_calls>');
+    // Skip if this is a function call
+    if (rawContent.includes('<function_calls>')) return null;
     
-    let functionCallPreview = 'Executing tool...';
-    if (hasFunctionCalls) {
-      const invokeMatch = rawContent.match(/<invoke name="([^"]+)">/);
-      if (invokeMatch) {
-        const toolName = invokeMatch[1];
-        functionCallPreview = toolName
-          .split('_')
-          .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-          .join(' ');
-      }
-    }
-    
-    const cleanContent = stripXMLTags(rawContent);
-    
-    return {
-      content: cleanContent,
-      hasFunctionCalls,
-      functionCallPreview,
-    };
+    // Clean and return
+    return stripXMLTags(rawContent).trim();
   }, [message.content]);
 
-  const handleLinkPress = useCallback((url: string) => {
-    Linking.openURL(url).catch((err) => {
-      console.error('[MessageRenderer] Failed to open link:', err);
-    });
-    return false;
-  }, []);
-
-  // Custom rules to make all text selectable using React Native's built-in selection
-  const customRules = useMemo(() => ({
-    text: (node: any, children: any, parent: any, styles: any) => (
-      <RNText key={node.key} style={styles.text} selectable>
-        {node.content}
+  // Override textgroup rule to inject native text selection
+  const selectableRules = useMemo(() => ({
+    textgroup: (node: any, children: any) => (
+      <RNText key={node.key} selectable>
+        {children}
       </RNText>
     ),
   }), []);
 
-  // Don't render assistant messages that contain function calls
-  // The tool cards will show all the necessary information
-  if (hasFunctionCalls) return null;
-  
-  // Don't render if empty
   if (!content) return null;
 
   return (
     <View className={`px-4 ${hasToolsBelow ? 'mb-3' : 'mb-0'}`}>
-      {/* Message content - full width, perfect typography with selectable text */}
-      <View className="w-full">
-        <Markdown
-          style={isDark ? markdownStylesDark : markdownStyles}
-          onLinkPress={handleLinkPress}
-          rules={customRules}
-        >
-          {content}
-        </Markdown>
-      </View>
+      <Markdown
+        style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
+        onLinkPress={(url) => {
+          Linking.openURL(url).catch(console.error);
+          return false;
+        }}
+        rules={selectableRules}
+      >
+        {content}
+      </Markdown>
     </View>
   );
 }
 
 /**
- * Unified Tool Card Component
- * 
- * Design: Single component that handles both loading and completed states
- * Features: Smooth transitions, no flashing between states
- * States: loading (streaming) → completed (success/error)
+ * Tool Card
  */
 function ToolCard({
   message,
@@ -546,9 +489,6 @@ function ToolCard({
 
 /**
  * Streaming Dots Animation
- * 
- * Design: Elegant three-dot pulse showing active streaming
- * Position: Bottom of content, subtle and non-intrusive
  */
 function StreamingDots() {
   const dot1Opacity = useSharedValue(0.3);

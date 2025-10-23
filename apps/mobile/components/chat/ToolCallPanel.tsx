@@ -10,7 +10,7 @@ import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import type { UnifiedMessage } from '@/api/types';
-import { parseToolMessage } from '@/lib/tool-parser';
+import { parseToolMessage } from '@/lib/utils/tool-parser';
 import { getToolViewComponent } from './tool-views';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';

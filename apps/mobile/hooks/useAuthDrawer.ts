@@ -1,10 +1,11 @@
 import { useCallback } from 'react';
+import { useRouter } from 'expo-router';
 import { useAuthContext } from '@/contexts';
 
 /**
- * Custom hook to manage auth drawer interactions
+ * Custom hook to manage auth navigation
  * 
- * Use this to check auth state and trigger auth when needed
+ * Use this to check auth state and navigate to auth screens when needed
  * 
  * @example
  * const { requireAuth } = useAuthDrawer();
@@ -18,10 +19,11 @@ import { useAuthContext } from '@/contexts';
  */
 export function useAuthDrawer() {
   const { isAuthenticated, user } = useAuthContext();
+  const router = useRouter();
 
   /**
    * Execute a function only if user is authenticated
-   * Returns true if authenticated, false if not (and auth should be triggered)
+   * Returns true if authenticated, false if not (and navigates to auth)
    */
   const requireAuth = useCallback(
     (callback?: () => void): boolean => {
@@ -30,11 +32,11 @@ export function useAuthDrawer() {
         return true;
       }
       
-      console.log('🔐 Authentication required');
-      // Auth drawer will be shown by parent component
+      console.log('🔐 Authentication required - navigating to sign in');
+      router.push('/auth');
       return false;
     },
-    [isAuthenticated]
+    [isAuthenticated, router]
   );
 
   /**

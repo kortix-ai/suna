@@ -493,29 +493,38 @@ class ResponseProcessor:
                     logger.info("XML tool limit reached - draining remaining stream to capture usage data")
                     self.trace.event(name="xml_tool_limit_draining_stream", level="DEFAULT", status_message=(f"XML tool limit reached - draining remaining stream to capture usage data"))
                     
-                    # Continue reading stream to capture the final usage chunk (critical for billing)
-                    # Don't process content/tools, just extract usage data
+                    drain_timeout = 5.0
+                    drain_start_time = datetime.now(timezone.utc).timestamp()
+                    chunks_drained = 0
+                    max_drain_chunks = 100
+                    
                     try:
                         async for remaining_chunk in llm_response:
                             chunk_count += 1
-                            # Update timing
-                            last_chunk_time = datetime.now(timezone.utc).timestamp()
-                            
-                            # Capture usage chunk if present
+                            chunks_drained += 1
+
+                            current_drain_time = datetime.now(timezone.utc).timestamp()
+                            last_chunk_time = current_drain_time
+
                             if hasattr(remaining_chunk, 'usage') and remaining_chunk.usage and final_llm_response is None:
                                 final_llm_response = remaining_chunk
                                 logger.info(f"✅ Captured usage data after tool limit: {remaining_chunk.usage}")
-                                break  # Got what we needed, can stop now
-                            
-                            # Also check for finish_reason in case it wasn't set yet
+                                break
+
                             if hasattr(remaining_chunk, 'choices') and remaining_chunk.choices:
                                 if hasattr(remaining_chunk.choices[0], 'finish_reason') and remaining_chunk.choices[0].finish_reason:
                                     if not finish_reason or finish_reason == "xml_tool_limit_reached":
                                         finish_reason = remaining_chunk.choices[0].finish_reason
+                            
+                            if (current_drain_time - drain_start_time) > drain_timeout:
+                                break
+                            
+                            if chunks_drained >= max_drain_chunks:
+                                break
+                                
                     except Exception as drain_error:
                         logger.warning(f"Error draining stream after tool limit: {drain_error}")
                     
-                    logger.info(f"Stream drained. Final chunk count: {chunk_count}")
                     break
 
             logger.info(f"Stream complete. Total chunks: {chunk_count}")

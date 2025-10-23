@@ -11,6 +11,7 @@
     "clean": "rm -rf .expo node_modules"
   },
   "dependencies": {
+    "@alentoma/react-native-selectable-text": "^1.6.0",
     "@gorhom/bottom-sheet": "^5.2.6",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-masked-view/masked-view": "^0.3.2",
@@ -39,6 +40,7 @@
     "@rn-primitives/toggle": "^1.2.0",
     "@rn-primitives/toggle-group": "^1.2.0",
     "@rn-primitives/tooltip": "^1.2.0",
+    "@rob117/react-native-selectable-text": "^2.1.0",
     "@supabase/supabase-js": "^2.75.0",
     "@tanstack/react-query": "^5.90.5",
     "class-variance-authority": "^0.7.1",

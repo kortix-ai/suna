@@ -46,8 +46,6 @@ class TriggerProvider(ABC):
 class ScheduleProvider(TriggerProvider):
     def __init__(self):
         super().__init__("schedule", TriggerType.SCHEDULE)
-        # This should point to your backend base URL since Supabase Cron will POST to backend
-        self._webhook_base_url = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
         self._db = DBConnection()
     
     async def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
@@ -73,7 +71,8 @@ class ScheduleProvider(TriggerProvider):
     
     async def setup_trigger(self, trigger: Trigger) -> bool:
         try:
-            webhook_url = f"{self._webhook_base_url}/api/triggers/{trigger.trigger_id}/webhook"
+            # Note: webhook_url removed - scheduled triggers may need alternative configuration
+            webhook_url = f"http://localhost:8000/api/triggers/{trigger.trigger_id}/webhook"
             cron_expression = trigger.config['cron_expression']
             user_timezone = trigger.config.get('timezone', 'UTC')
 

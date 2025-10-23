@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { useAuth } from '@/hooks/useAuth';
-import type { AuthState, SignInCredentials, SignUpCredentials, OAuthProvider } from '@/lib/auth-types';
+import type { AuthState, SignInCredentials, SignUpCredentials, OAuthProvider } from '@/lib/utils/auth-types';
 
 /**
  * Auth Context Type

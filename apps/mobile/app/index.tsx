@@ -1,178 +1,112 @@
-import { MenuPage, HomePage, ThreadPage } from '@/components/pages';
-import type { HomePageRef } from '@/components/pages/HomePage';
-import { useSideMenu, usePageNavigation, useChat, useAgentManager } from '@/hooks';
-import { useAuthContext } from '@/contexts';
-import { AuthDrawer } from '@/components/auth';
-import { BottomSheetModal } from '@gorhom/bottom-sheet';
-import { Stack } from 'expo-router';
-import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { StatusBar as RNStatusBar } from 'react-native';
-import { Drawer } from 'react-native-drawer-layout';
-import type { Agent } from '@/api/types';
-import type { Conversation } from '@/components/menu/types';
+import { View, ActivityIndicator } from 'react-native';
+import { useRouter, Stack } from 'expo-router';
+import { useColorScheme } from 'nativewind';
+import { Text } from '@/components/ui/text';
+import LogomarkBlack from '@/assets/brand/Logomark-Black.svg';
+import LogomarkWhite from '@/assets/brand/Logomark-White.svg';
+import Animated, {
+  useAnimatedStyle,
+  withRepeat,
+  withTiming,
+  useSharedValue,
+  withSequence,
+  Easing,
+} from 'react-native-reanimated';
+import { useAuthContext } from '@/contexts';
+import { useOnboarding } from '@/hooks/useOnboarding';
+import { useBillingContext } from '@/contexts/BillingContext';
 
 /**
- * Main App Screen with Drawer Navigation
+ * Splash Screen
  * 
- * No auth protection - users can access app directly
- * Auth drawer shows when needed for user-specific features
- * 
- * Architecture:
- * - Drawer (left side): MenuPage (conversations, profile, navigation)
- * - Main Content: HomePage (default - chat interface)
- * - Auth Drawer (bottom): Shows when user tries to access protected features
- * 
- * Swipe Gestures:
- * - Swipe right from edge → Opens drawer (Menu)
- * - Swipe left on drawer → Closes drawer (returns to Home)
- * - Tap outside drawer → Closes drawer
- * 
- * The drawer is full-page and supports native swipe gestures
+ * Shown while checking authentication, onboarding, and billing status
+ * Routes user to appropriate screen based on state:
+ * - Not authenticated → Sign In
+ * - Authenticated + Can start trial → Trial
+ * - Authenticated + No subscription → Subscription Required
+ * - Authenticated + No onboarding → Onboarding
+ * - Authenticated + Has everything → App
  */
-export default function AppScreen() {
+export default function SplashScreen() {
+  const router = useRouter();
   const { colorScheme } = useColorScheme();
-  const { isAuthenticated } = useAuthContext();
-  const chat = useChat(); // SINGLE UNIFIED HOOK
-  const pageNav = usePageNavigation();
-  const authDrawerRef = React.useRef<BottomSheetModal>(null);
-  const homePageRef = React.useRef<HomePageRef>(null);
-  const [isAuthDrawerOpen, setIsAuthDrawerOpen] = React.useState(false);
-  
-  // Handle new chat - starts new chat and closes drawer
-  const handleNewChat = React.useCallback(() => {
-    console.log('🆕 New Chat clicked - Starting new chat');
-    chat.startNewChat();
-    pageNav.closeDrawer();
-    
-    // Focus chat input after drawer closes
-    setTimeout(() => {
-      console.log('🎯 Focusing chat input after new chat');
-      homePageRef.current?.focusChatInput();
-    }, 300); // Small delay to ensure drawer is closed
-  }, [chat, pageNav]);
-  
-  // Handle agent selection - starts chat with specific agent
-  const handleAgentPress = React.useCallback((agent: Agent) => {
-    console.log('🤖 Agent selected:', agent.name);
-    console.log('📊 Starting chat with:', agent);
-    // TODO: Set the selected agent in chat thread
-    chat.startNewChat();
-    pageNav.closeDrawer();
-  }, [chat, pageNav]);
-  
-  const menu = useSideMenu({ onNewChat: handleNewChat });
-  const agentManager = useAgentManager();
+  const { isAuthenticated, isLoading: authLoading } = useAuthContext();
+  const { hasCompletedOnboarding, isLoading: onboardingLoading } = useOnboarding();
+  const { subscriptionData, trialStatus, isLoading: billingLoading } = useBillingContext();
+  const [isReady, setIsReady] = React.useState(false);
 
-  // Handle conversation click - load thread
-  const handleConversationPress = React.useCallback((conversation: Conversation) => {
-    console.log('📖 Loading thread:', conversation.id);
-    
-    // Load the thread
-    chat.loadThread(conversation.id);
-    
-    // Close drawer
-    pageNav.closeDrawer();
-  }, [chat, pageNav]);
+  const Logomark = colorScheme === 'dark' ? LogomarkWhite : LogomarkBlack;
 
-  // Handle profile press - show auth drawer if not authenticated
-  const handleProfilePress = React.useCallback(() => {
-    console.log('🎯 Profile pressed');
-    if (!isAuthenticated) {
-      console.log('🔐 User not authenticated, showing auth drawer');
-      // Use present() to open at the defined snap point (85%)
-      authDrawerRef.current?.present();
-      setIsAuthDrawerOpen(true);
-    } else {
-      menu.handleProfilePress();
+  // Animated values for logo
+  const opacity = useSharedValue(0);
+  const scale = useSharedValue(0.8);
+
+  React.useEffect(() => {
+    // Animate logo in
+    opacity.value = withTiming(1, { duration: 600, easing: Easing.out(Easing.ease) });
+    scale.value = withSequence(
+      withTiming(1.05, { duration: 400, easing: Easing.out(Easing.ease) }),
+      withTiming(1, { duration: 200, easing: Easing.inOut(Easing.ease) })
+    );
+  }, []);
+
+  const logoStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ scale: scale.value }],
+  }));
+
+  // Route user once we have all the info
+  React.useEffect(() => {
+    if (!authLoading && !onboardingLoading && !billingLoading) {
+      // Small delay for smooth transition
+      setTimeout(() => {
+        if (!isAuthenticated) {
+          console.log('🔐 User not authenticated, routing to sign in');
+          router.replace('/auth');
+        } else {
+          // User is authenticated - check billing status
+          const hasActiveTrial = trialStatus?.has_trial && trialStatus?.trial_status === 'active';
+          const canStartTrial = trialStatus?.can_start_trial;
+          const hasActiveSubscription =
+            subscriptionData?.tier && 
+            subscriptionData.tier.name !== 'none' && 
+            subscriptionData.tier.name !== 'free';
+
+          if (canStartTrial) {
+            console.log('🎁 User can start trial, routing to trial');
+            router.replace('/billing/trial');
+          } else if (!hasActiveTrial && !hasActiveSubscription) {
+            console.log('💳 User needs subscription, routing to subscription');
+            router.replace('/billing/subscription');
+          } else if (!hasCompletedOnboarding) {
+            console.log('👋 User needs onboarding, routing to onboarding');
+            router.replace('/onboarding');
+          } else {
+            console.log('✅ User authenticated and ready, routing to app');
+            router.replace('/home');
+          }
+        }
+        setIsReady(true);
+      }, 800); // Minimum splash display time
     }
-  }, [isAuthenticated, menu]);
-
-  // Handle auth drawer close
-  const handleAuthDrawerClose = React.useCallback(() => {
-    console.log('🔐 Auth drawer closed');
-    authDrawerRef.current?.dismiss();
-    setIsAuthDrawerOpen(false);
-  }, []);
-
-  // Handle auth drawer open - used when user tries protected actions
-  const handleAuthDrawerOpen = React.useCallback(() => {
-    console.log('🔐 Opening auth drawer');
-    authDrawerRef.current?.present();
-    setIsAuthDrawerOpen(true);
-  }, []);
+  }, [authLoading, onboardingLoading, billingLoading, isAuthenticated, hasCompletedOnboarding, subscriptionData, trialStatus, router]);
 
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <RNStatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
-      
-      <Drawer
-        open={pageNav.isDrawerOpen}
-        onOpen={pageNav.handleDrawerOpen}
-        onClose={pageNav.handleDrawerClose}
-        drawerType="front"
-        drawerStyle={{
-          width: '100%',
-          backgroundColor: 'transparent',
-        }}
-        overlayStyle={{ 
-          backgroundColor: colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 0, 0, 0.2)'
-        }}
-        swipeEnabled={true}
-        swipeEdgeWidth={80}
-        swipeMinDistance={30}
-        swipeMinVelocity={300}
-        renderDrawerContent={() => (
-          <MenuPage
-            sections={menu.sections}
-            profile={menu.profile}
-            activeTab={menu.activeTab}
-            onNewChat={handleNewChat}
-            onNewWorker={() => {
-              console.log('🤖 New Worker clicked');
-              pageNav.closeDrawer();
-            }}
-            onNewTrigger={() => {
-              console.log('⚡ New Trigger clicked');
-              pageNav.closeDrawer();
-            }}
-            selectedAgentId={agentManager.selectedAgent?.agent_id}
-            onConversationPress={handleConversationPress}
-            onAgentPress={handleAgentPress}
-            onProfilePress={handleProfilePress}
-            onChatsPress={menu.handleChatsTabPress}
-            onWorkersPress={menu.handleWorkersTabPress}
-            onTriggersPress={menu.handleTriggersTabPress}
-            onClose={pageNav.closeDrawer}
-          />
+      <View className="flex-1 bg-background items-center justify-center">
+        <Animated.View style={logoStyle} className="items-center mb-8">
+          <Logomark width={240} height={48} />
+        </Animated.View>
+        
+        {!isReady && (
+          <View className="mt-8">
+            <ActivityIndicator size="large" color="hsl(var(--primary))" />
+          </View>
         )}
-      >
-        {/* Main Content: Conditionally render HomePage or ThreadPage */}
-        {chat.hasActiveThread ? (
-          <ThreadPage
-            onMenuPress={pageNav.openDrawer}
-            chat={chat}
-            isAuthenticated={isAuthenticated}
-            onOpenAuthDrawer={handleAuthDrawerOpen}
-          />
-        ) : (
-          <HomePage
-            ref={homePageRef}
-            onMenuPress={pageNav.openDrawer}
-            chat={chat}
-            isAuthenticated={isAuthenticated}
-            onOpenAuthDrawer={handleAuthDrawerOpen}
-          />
-        )}
-      </Drawer>
-
-      {/* Auth Drawer - Shows when user needs to sign in */}
-      <AuthDrawer
-        ref={authDrawerRef}
-        isOpen={isAuthDrawerOpen}
-        onClose={handleAuthDrawerClose}
-      />
+      </View>
     </>
   );
 }
+

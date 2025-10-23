@@ -429,3 +429,57 @@ async def delete_message(
     except Exception as e:
         logger.error(f"Error deleting message {message_id} from thread {thread_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to delete message: {str(e)}")
+
+@router.patch("/threads/{thread_id}", summary="Update Thread", operation_id="update_thread")
+async def update_thread(
+    thread_id: str,
+    title: Optional[str] = Body(None, embed=True),
+    auth: AuthorizedThreadAccess = Depends(require_thread_access)
+):
+    """Update thread title (updates the associated project name)."""
+    logger.debug(f"Updating thread: {thread_id}")
+    client = await utils.db.client
+    
+    try:
+        if title is None:
+            raise HTTPException(status_code=400, detail="No title provided")
+        
+        # Get the thread to find its project_id
+        thread_result = await client.table('threads').select('project_id, metadata').eq('thread_id', thread_id).execute()
+        if not thread_result.data:
+            raise HTTPException(status_code=404, detail="Thread not found")
+        
+        thread = thread_result.data[0]
+        project_id = thread.get('project_id')
+        
+        # Update project name if thread has a project
+        if project_id:
+            logger.debug(f"Updating project {project_id} name to: {title}")
+            project_result = await client.table('projects').update({
+                'name': title
+            }).eq('project_id', project_id).execute()
+            
+            if not project_result.data:
+                raise HTTPException(status_code=500, detail="Failed to update project name")
+        
+        # Also store title in thread metadata as fallback
+        current_metadata = thread.get('metadata', {}) or {}
+        current_metadata['title'] = title
+        
+        thread_update = await client.table('threads').update({
+            'metadata': current_metadata
+        }).eq('thread_id', thread_id).execute()
+        
+        if not thread_update.data:
+            raise HTTPException(status_code=500, detail="Failed to update thread")
+        
+        logger.debug(f"Successfully updated thread: {thread_id}")
+        
+        # Return the updated thread with project data
+        return await get_thread(thread_id, auth)
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating thread {thread_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to update thread: {str(e)}")

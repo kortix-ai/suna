@@ -1,14 +1,17 @@
 /**
- * API Query Hooks (Internal)
+ * Chat React Query Hooks
  * 
- * React Query hooks for data fetching.
- * These are used INTERNALLY by the main useChat hook.
- * 
- * ⚠️ DO NOT import these directly in components!
- * Use the main useChat hook instead: import { useChat } from '@/hooks'
+ * React Query hooks for threads, messages, and agent runs
+ * Used internally by the main useChat hook
  */
 
-import { useMutation, useQuery, useQueryClient, type UseMutationOptions, type UseQueryOptions } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type UseMutationOptions,
+  type UseQueryOptions,
+} from '@tanstack/react-query';
 import { API_URL, getAuthToken, getAuthHeaders } from '@/api/config';
 import type {
   Thread,
@@ -46,13 +49,13 @@ export function useThreads(
     queryKey: [...chatKeys.threads(), { projectId }],
     queryFn: async () => {
       const headers = await getAuthHeaders();
-      const url = projectId 
-        ? `${API_URL}/threads?project_id=${projectId}` 
+      const url = projectId
+        ? `${API_URL}/threads?project_id=${projectId}`
         : `${API_URL}/threads`;
-      
+
       const res = await fetch(url, { headers });
       if (!res.ok) throw new Error(`Failed to fetch threads: ${res.status}`);
-      
+
       const data = await res.json();
       return data.threads || [];
     },
@@ -138,16 +141,16 @@ export function useMessages(
     queryKey: [...chatKeys.messages(threadId || ''), params],
     queryFn: async () => {
       const headers = await getAuthHeaders();
-      const query = params 
-        ? `?${new URLSearchParams(params as any).toString()}` 
+      const query = params
+        ? `?${new URLSearchParams(params as any).toString()}`
         : '';
-      
+
       const res = await fetch(`${API_URL}/threads/${threadId}/messages${query}`, { headers });
       if (!res.ok) throw new Error(`Failed to fetch messages: ${res.status}`);
-      
+
       const data = await res.json();
       const messages = Array.isArray(data) ? data : data.messages || [];
-      
+
       // Sort messages by created_at in ascending order (oldest first)
       return messages.sort((a: any, b: any) => {
         const timeA = new Date(a.created_at).getTime();
@@ -161,9 +164,6 @@ export function useMessages(
   });
 }
 
-/**
- * Add a message to a thread (step 1 of message flow)
- */
 export function useAddMessage(
   options?: UseMutationOptions<Message, Error, { threadId: string; message: string }>
 ) {
@@ -187,13 +187,10 @@ export function useAddMessage(
   });
 }
 
-/**
- * Start an agent run (step 2 of message flow)
- */
 export function useStartAgent(
   options?: UseMutationOptions<
-    { agent_run_id: string; status: string }, 
-    Error, 
+    { agent_run_id: string; status: string },
+    Error,
     { threadId: string; modelName?: string; agentId?: string }
   >
 ) {
@@ -202,12 +199,11 @@ export function useStartAgent(
   return useMutation({
     mutationFn: async ({ threadId, modelName, agentId }) => {
       const headers = await getAuthHeaders();
-      
-      // Only include model_name and agent_id if they're defined
+
       const body: any = {};
       if (modelName) body.model_name = modelName;
       if (agentId) body.agent_id = agentId;
-      
+
       const res = await fetch(`${API_URL}/thread/${threadId}/agent/start`, {
         method: 'POST',
         headers,
@@ -226,14 +222,10 @@ export function useStartAgent(
   });
 }
 
-/**
- * Complete message flow: Add message → Start agent → Return run ID
- * This is the primary hook for sending messages in existing threads
- */
 export function useSendMessage(
   options?: UseMutationOptions<
-    { message: Message; agentRunId: string }, 
-    Error, 
+    { message: Message; agentRunId: string },
+    Error,
     SendMessageInput
   >
 ) {
@@ -243,8 +235,7 @@ export function useSendMessage(
   return useMutation({
     mutationFn: async (input) => {
       console.log('🚀 [useSendMessage] Step 1: Adding message to thread', input.threadId);
-      
-      // Step 1: Add message to thread
+
       const message = await addMessage.mutateAsync({
         threadId: input.threadId,
         message: input.message,
@@ -253,7 +244,6 @@ export function useSendMessage(
       console.log('✅ [useSendMessage] Step 1 complete: Message added', message);
       console.log('🚀 [useSendMessage] Step 2: Starting agent run');
 
-      // Step 2: Start agent run
       const agentRun = await startAgent.mutateAsync({
         threadId: input.threadId,
         modelName: input.modelName,
@@ -304,15 +294,14 @@ export function useAgentRuns(
     queryKey: chatKeys.runs(threadId || ''),
     queryFn: async () => {
       const headers = await getAuthHeaders();
-      
+
       try {
         const res = await fetch(`${API_URL}/thread/${threadId}/agent-runs`, { headers });
-        
-        // 404 is expected when no runs exist
+
         if (res.status === 404) return [];
-        
+
         if (!res.ok) throw new Error(`Failed to fetch runs: ${res.status}`);
-        
+
         const data = await res.json();
         return data.agent_runs || [];
       } catch (error: any) {
@@ -378,10 +367,6 @@ export function useCancelAgentRun(
   });
 }
 
-/**
- * Get all active agent runs across all threads
- * Used for auto-reconnection to running streams on page load
- */
 export function useActiveAgentRuns(
   options?: Omit<UseQueryOptions<ActiveAgentRun[], Error>, 'queryKey' | 'queryFn'>
 ) {
@@ -403,15 +388,11 @@ export function useActiveAgentRuns(
       }
     },
     staleTime: 5 * 1000,
-    refetchInterval: 10000, // Poll every 10s to keep status updated
+    refetchInterval: 10000,
     ...options,
   });
 }
 
-/**
- * Get specific agent run status
- * Polls every 2s while running
- */
 export function useAgentRunStatus(
   agentRunId: string | undefined,
   options?: Omit<UseQueryOptions<AgentRun, Error>, 'queryKey' | 'queryFn'>
@@ -427,7 +408,6 @@ export function useAgentRunStatus(
     enabled: !!agentRunId,
     staleTime: 1 * 1000,
     refetchInterval: (query) => {
-      // Poll every 2s if running, stop if completed
       const status = query.state.data?.status;
       return status === 'running' ? 2000 : false;
     },
@@ -435,9 +415,6 @@ export function useAgentRunStatus(
   });
 }
 
-/**
- * Stop/cancel a running agent run
- */
 export function useStopAgentRun(
   options?: UseMutationOptions<void, Error, string>
 ) {
@@ -473,7 +450,7 @@ export function useInitiateAgent(
 
       const formData = new FormData();
       formData.append('prompt', input.prompt);
-      
+
       if (input.agent_id) formData.append('agent_id', input.agent_id);
       if (input.model_name) formData.append('model_name', input.model_name);
       if (input.files?.length) {
@@ -500,3 +477,4 @@ export function useInitiateAgent(
     ...options,
   });
 }
+

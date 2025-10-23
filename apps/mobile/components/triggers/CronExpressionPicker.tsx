@@ -2,7 +2,7 @@
  * Cron Expression Picker Component
  * 
  * Schedule picker component with preset options and custom input
- * Used in TriggerCreationDrawer for schedule triggers
+ * Updated to match app design system colors
  */
 
 import React, { useState } from 'react';
@@ -10,7 +10,7 @@ import { View, Pressable, TextInput, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
-import { getCronPresets, isValidCronExpression, formatCronExpression } from '@/lib/trigger-utils';
+import { getCronPresets, isValidCronExpression, formatCronExpression } from '@/lib/utils/trigger-utils';
 import { Clock, Check, AlertCircle } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 
@@ -31,6 +31,13 @@ export function CronExpressionPicker({
   const [showCustomInput, setShowCustomInput] = useState(false);
 
   const presets = getCronPresets();
+  
+  // Design system colors
+  const textColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
+  const borderColor = colorScheme === 'dark' ? '#232324' : '#DCDCDC';
+  const bgColor = colorScheme === 'dark' ? '#161618' : '#FFFFFF';
+  const previewBg = colorScheme === 'dark' ? '#161618' : '#F5F5F5';
+  const mutedTextColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
 
   const handlePresetSelect = (presetValue: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -60,80 +67,95 @@ export function CronExpressionPicker({
   const humanReadable = formatCronExpression(displayValue);
 
   return (
-    <View className="space-y-4">
+    <View style={{ gap: 16 }}>
       {/* Preset Options */}
-      <View className="space-y-3">
-        <Text className="text-foreground text-lg font-roobert-semibold">
+      <View style={{ gap: 12 }}>
+        <Text style={{ color: textColor, fontSize: 18, fontWeight: '600' }}>
           Schedule Options
         </Text>
         
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row">
-          {presets.map((preset) => (
-            <Pressable
-              key={preset.value || 'custom'}
-              onPress={() => handlePresetSelect(preset.value)}
-              className={`mr-3 px-4 py-3 rounded-2xl border-[1.5px] ${
-                selectedPreset === preset.value || 
-                (preset.value === '' && showCustomInput)
-                  ? colorScheme === 'dark' 
-                    ? 'border-[#232324] bg-[#161618]' 
-                    : 'border-[#DCDCDC] bg-white'
-                  : colorScheme === 'dark'
-                    ? 'border-[#232324] bg-[#161618]'
-                    : 'border-[#DCDCDC] bg-white'
-              } active:opacity-70`}
-              style={({ pressed }) => [
-                {
-                  opacity: pressed ? 0.7 : 1,
-                },
-              ]}
-            >
-              <View className="items-center min-w-20">
-                <Text className={`text-sm font-roobert-medium ${
-                  selectedPreset === preset.value || 
-                  (preset.value === '' && showCustomInput)
-                    ? colorScheme === 'dark' ? 'text-white' : 'text-black'
-                    : colorScheme === 'dark' ? 'text-white opacity-50' : 'text-black opacity-50'
-                }`}>
-                  {preset.label}
-                </Text>
-                <Text className={`text-xs font-roobert mt-1 text-center max-w-24 ${
-                  colorScheme === 'dark' ? 'text-white opacity-40' : 'text-black opacity-40'
-                }`}>
-                  {preset.description}
-                </Text>
-              </View>
-            </Pressable>
-          ))}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            {presets.map((preset) => {
+              const isSelected = selectedPreset === preset.value || (preset.value === '' && showCustomInput);
+              return (
+                <Pressable
+                  key={preset.value || 'custom'}
+                  onPress={() => handlePresetSelect(preset.value)}
+                  style={({ pressed }) => [
+                    {
+                      marginRight: 0,
+                      paddingHorizontal: 16,
+                      paddingVertical: 12,
+                      borderRadius: 16,
+                      borderWidth: 1.5,
+                      borderColor,
+                      backgroundColor: bgColor,
+                      opacity: pressed ? 0.7 : 1,
+                    },
+                  ]}
+                >
+                  <View style={{ alignItems: 'center', minWidth: 80 }}>
+                    <Text 
+                      style={{ 
+                        fontSize: 14, 
+                        fontWeight: '500', 
+                        color: isSelected ? textColor : textColor,
+                        opacity: isSelected ? 1 : 0.5
+                      }}
+                    >
+                      {preset.label}
+                    </Text>
+                    <Text 
+                      style={{ 
+                        fontSize: 12, 
+                        marginTop: 4, 
+                        textAlign: 'center', 
+                        maxWidth: 96,
+                        color: textColor,
+                        opacity: 0.4
+                      }}
+                    >
+                      {preset.description}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
         </ScrollView>
       </View>
 
       {/* Custom Input */}
       {showCustomInput && (
-        <View className="space-y-2">
-          <Text className="text-foreground text-base font-roobert-semibold">
+        <View style={{ gap: 8 }}>
+          <Text style={{ color: textColor, fontSize: 16, fontWeight: '600' }}>
             Custom Cron Expression
           </Text>
           
-          <View className="relative">
+          <View style={{ position: 'relative' }}>
             <TextInput
               value={customCron}
               onChangeText={handleCustomCronChange}
               placeholder="0 9 * * 1-5"
-              className={`px-4 py-4 rounded-2xl border-[1.5px] font-mono text-base ${
-                error || !isValid
-                  ? 'border-red-500 bg-red-50' 
-                  : colorScheme === 'dark'
-                    ? 'border-[#232324] bg-[#161618]'
-                    : 'border-[#DCDCDC] bg-white'
-              }`}
               placeholderTextColor={colorScheme === 'dark' ? '#666' : '#9ca3af'}
+              style={{
+                paddingHorizontal: 16,
+                paddingVertical: 16,
+                borderRadius: 16,
+                borderWidth: 1.5,
+                borderColor: error || !isValid ? '#EF4444' : borderColor,
+                backgroundColor: error || !isValid ? '#FEE2E2' : bgColor,
+                fontFamily: 'monospace',
+                fontSize: 16,
+                color: textColor,
+              }}
               autoCapitalize="none"
               autoCorrect={false}
             />
             
             {customCron && (
-              <View className="absolute right-3 top-3">
+              <View style={{ position: 'absolute', right: 12, top: 12 }}>
                 {isValid ? (
                   <Icon as={Check} size={16} color="#22c55e" />
                 ) : (
@@ -144,7 +166,7 @@ export function CronExpressionPicker({
           </View>
           
           {customCron && !isValid && (
-            <Text className="text-red-500 text-xs font-roobert">
+            <Text style={{ color: '#ef4444', fontSize: 12, fontWeight: '400' }}>
               Invalid cron expression format
             </Text>
           )}
@@ -153,19 +175,19 @@ export function CronExpressionPicker({
 
       {/* Preview */}
       {displayValue && (
-        <View className="p-3 bg-muted/30 rounded-xl">
-          <View className="flex-row items-center mb-2">
+        <View style={{ padding: 12, backgroundColor: previewBg, borderRadius: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
             <Icon as={Clock} size={16} color="#666" />
-            <Text className="text-muted-foreground text-sm font-roobert-medium ml-2">
+            <Text style={{ color: mutedTextColor, opacity: 0.6, fontSize: 14, fontWeight: '500', marginLeft: 8 }}>
               Schedule Preview
             </Text>
           </View>
           
-          <Text className="text-foreground text-sm font-roobert">
+          <Text style={{ color: textColor, fontSize: 14, fontWeight: '400' }}>
             {humanReadable}
           </Text>
           
-          <Text className="text-muted-foreground text-xs font-mono mt-1">
+          <Text style={{ color: mutedTextColor, opacity: 0.6, fontSize: 12, fontFamily: 'monospace', marginTop: 4 }}>
             {displayValue}
           </Text>
         </View>
@@ -173,9 +195,9 @@ export function CronExpressionPicker({
 
       {/* Error Message */}
       {error && (
-        <View className="flex-row items-center p-3 bg-red-50 rounded-xl">
+        <View style={{ flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#FEE2E2', borderRadius: 12 }}>
           <Icon as={AlertCircle} size={16} color="#ef4444" />
-          <Text className="text-red-500 text-sm font-roobert ml-2">
+          <Text style={{ color: '#ef4444', fontSize: 14, fontWeight: '400', marginLeft: 8 }}>
             {error}
           </Text>
         </View>

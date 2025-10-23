@@ -7,6 +7,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useColorScheme } from 'nativewind';
 import { useAuthContext, useLanguage } from '@/contexts';
+import { useRouter } from 'expo-router';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { 
@@ -58,6 +59,7 @@ export function SettingsDrawer({ visible, profile, onClose }: SettingsDrawerProp
   const { colorScheme } = useColorScheme();
   const { user, signOut } = useAuthContext();
   const { t } = useLanguage();
+  const router = useRouter();
   const [isLanguageDrawerVisible, setIsLanguageDrawerVisible] = React.useState(false);
   
   // Get user data
@@ -66,7 +68,6 @@ export function SettingsDrawer({ visible, profile, onClose }: SettingsDrawerProp
   const userAvatar = user?.user_metadata?.avatar_url || profile?.avatar;
   const userTier = profile?.tier;
   const isGuest = !user;
-  const isPro = userTier === 'Pro' || userTier === 'Ultra';
   
   const handleClose = () => {
     console.log('🎯 Settings drawer closing');
@@ -83,7 +84,8 @@ export function SettingsDrawer({ visible, profile, onClose }: SettingsDrawerProp
   const handleBilling = () => {
     console.log('🎯 Billing pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    // TODO: Navigate to billing
+    onClose();
+    router.push('/billing');
   };
   
   const handleIntegrations = () => {
@@ -102,12 +104,6 @@ export function SettingsDrawer({ visible, profile, onClose }: SettingsDrawerProp
     console.log('🎯 App Language pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsLanguageDrawerVisible(true);
-  };
-  
-  const handleUpgrade = () => {
-    console.log('🎯 Upgrade pressed');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    // TODO: Navigate to upgrade page
   };
   
   const handleSignOut = async () => {
@@ -130,8 +126,10 @@ export function SettingsDrawer({ visible, profile, onClose }: SettingsDrawerProp
             console.log('🔐 Signing out...');
             const result = await signOut();
             if (result.success) {
-              console.log('✅ Signed out successfully');
+              console.log('✅ Signed out successfully - Redirecting to auth');
               onClose();
+              // Navigate to splash screen which will redirect to auth
+              router.replace('/');
             } else {
               console.error('❌ Sign out failed:', result.error);
               Alert.alert(t('common.error'), 'Failed to sign out. Please try again.');
@@ -184,31 +182,6 @@ export function SettingsDrawer({ visible, profile, onClose }: SettingsDrawerProp
               </Text>
             )}
           </View>
-          
-          {/* Upgrade Section - Only show for non-Pro users */}
-          {!isPro && !isGuest && (
-            <View className="mx-6 mb-6">
-              <Pressable
-                onPress={handleUpgrade}
-                className="bg-primary/10 border-[1.5px] border-primary/30 rounded-2xl p-4"
-              >
-                <View className="flex-row items-center gap-3">
-                  <View className="w-10 h-10 rounded-full bg-primary items-center justify-center">
-                    <Icon as={Zap} size={20} className="text-white" strokeWidth={2} />
-                  </View>
-                  <View className="flex-1">
-                    <Text className="text-base font-roobert-semibold text-foreground">
-                      {t('settings.upgrade')}
-                    </Text>
-                    <Text className="text-sm font-roobert text-muted-foreground mt-0.5">
-                      {t('settings.unlockFeatures')}
-                    </Text>
-                  </View>
-                  <Icon as={ChevronRight} size={20} className="text-foreground/40" strokeWidth={2} />
-                </View>
-              </Pressable>
-            </View>
-          )}
           
           {/* Settings List */}
           <View className="px-6">
