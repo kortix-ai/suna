@@ -37,6 +37,10 @@ class LLMError(Exception):
 
 def setup_api_keys() -> None:
     """Set up API keys from environment variables."""
+    if not config:
+        logger.warning("Config not loaded - skipping API key setup")
+        return
+        
     providers = [
         "OPENAI",
         "ANTHROPIC",
@@ -47,37 +51,47 @@ def setup_api_keys() -> None:
         "GEMINI",
         "OPENAI_COMPATIBLE",
     ]
+    
     for provider in providers:
-        key = getattr(config, f"{provider}_API_KEY")
-        if key:
-            # logger.debug(f"API key set for provider: {provider}")
-            pass
-        else:
-            logger.warning(f"No API key found for provider: {provider}")
+        try:
+            key = getattr(config, f"{provider}_API_KEY", None)
+            if key:
+                # logger.debug(f"API key set for provider: {provider}")
+                pass
+            else:
+                logger.debug(f"No API key found for provider: {provider} (this is normal if not using this provider)")
+        except AttributeError as e:
+            logger.debug(f"Could not access {provider}_API_KEY: {e}")
 
     # Set up OpenRouter API base if not already set
-    if config.OPENROUTER_API_KEY and config.OPENROUTER_API_BASE:
-        os.environ["OPENROUTER_API_BASE"] = config.OPENROUTER_API_BASE
-        # logger.debug(f"Set OPENROUTER_API_BASE to {config.OPENROUTER_API_BASE}")
-
+    if hasattr(config, 'OPENROUTER_API_KEY') and hasattr(config, 'OPENROUTER_API_BASE'):
+        if config.OPENROUTER_API_KEY and config.OPENROUTER_API_BASE:
+            os.environ["OPENROUTER_API_BASE"] = config.OPENROUTER_API_BASE
+            # logger.debug(f"Set OPENROUTER_API_BASE to {config.OPENROUTER_API_BASE}")
 
     # Set up AWS Bedrock bearer token authentication
-    bedrock_token = config.AWS_BEARER_TOKEN_BEDROCK
-    if bedrock_token:
-        os.environ["AWS_BEARER_TOKEN_BEDROCK"] = bedrock_token
-        logger.debug("AWS Bedrock bearer token configured")
-    else:
-        logger.warning("AWS_BEARER_TOKEN_BEDROCK not configured - Bedrock models will not be available")
+    if hasattr(config, 'AWS_BEARER_TOKEN_BEDROCK'):
+        bedrock_token = config.AWS_BEARER_TOKEN_BEDROCK
+        if bedrock_token:
+            os.environ["AWS_BEARER_TOKEN_BEDROCK"] = bedrock_token
+            logger.debug("AWS Bedrock bearer token configured")
+        else:
+            logger.debug("AWS_BEARER_TOKEN_BEDROCK not configured - Bedrock models will not be available")
 
 def setup_provider_router(openai_compatible_api_key: str = None, openai_compatible_api_base: str = None):
     global provider_router
+    
+    # Get config values safely
+    config_openai_key = getattr(config, 'OPENAI_COMPATIBLE_API_KEY', None) if config else None
+    config_openai_base = getattr(config, 'OPENAI_COMPATIBLE_API_BASE', None) if config else None
+    
     model_list = [
         {
             "model_name": "openai-compatible/*", # support OpenAI-Compatible LLM provider
             "litellm_params": {
                 "model": "openai/*",
-                "api_key": openai_compatible_api_key or config.OPENAI_COMPATIBLE_API_KEY,
-                "api_base": openai_compatible_api_base or config.OPENAI_COMPATIBLE_API_BASE,
+                "api_key": openai_compatible_api_key or config_openai_key,
+                "api_base": openai_compatible_api_base or config_openai_base,
             },
         },
         {
@@ -133,9 +147,13 @@ def _configure_openai_compatible(params: Dict[str, Any], model_name: str, api_ke
     if not model_name.startswith("openai-compatible/"):
         return
     
+    # Get config values safely
+    config_openai_key = getattr(config, 'OPENAI_COMPATIBLE_API_KEY', None) if config else None
+    config_openai_base = getattr(config, 'OPENAI_COMPATIBLE_API_BASE', None) if config else None
+    
     # Check if have required config either from parameters or environment
-    if (not api_key and not config.OPENAI_COMPATIBLE_API_KEY) or (
-        not api_base and not config.OPENAI_COMPATIBLE_API_BASE
+    if (not api_key and not config_openai_key) or (
+        not api_base and not config_openai_base
     ):
         raise LLMError(
             "OPENAI_COMPATIBLE_API_KEY and OPENAI_COMPATIBLE_API_BASE is required for openai-compatible models. If just updated the environment variables, wait a few minutes or restart the service to ensure they are loaded."

@@ -1,3 +1,29 @@
+# ============================================================================
+# SUNA DOCKER COMPOSE - LOCAL DEVELOPMENT
+# ============================================================================
+# This Docker Compose file runs Suna services (Backend, Worker, Frontend, Redis)
+#
+# ⚠️  IMPORTANT LIMITATION - LOCAL SUPABASE:
+# Currently, local Supabase (via `npx supabase start`) is NOT supported with
+# Docker Compose due to network configuration complexity.
+#
+# TODO: Integrate Supabase services directly into this compose file to enable
+#       full Docker-based local development with proper network configuration.
+#
+# CURRENT WORKAROUND:
+# - Use cloud Supabase for Docker Compose setup
+# - OR run everything manually (no Docker) to use local Supabase
+#
+# Quick Start:
+#   docker compose up -d          # Start all services
+#   docker compose down           # Stop all services
+#   docker compose logs -f        # View all logs
+#
+# Access:
+#   - Suna Frontend:     http://localhost:3000
+#   - Suna Backend API:  http://localhost:8000
+# ============================================================================
+
 services:
   redis:
     image: redis:7-alpine
@@ -22,9 +48,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./backend/.env:/app/.env
-    env_file:
-      - ./backend/.env
+      - ./backend/.env:/app/.env:ro
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -45,8 +69,6 @@ services:
     command: uv run dramatiq --skip-logging --processes 4 --threads 4 run_agent_background
     volumes:
       - ./backend/.env:/app/.env:ro
-    env_file:
-      - ./backend/.env
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -63,8 +85,6 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
-    volumes:
-      - ./frontend/.env.local:/app/.env.local:ro
     depends_on:
       - backend
 

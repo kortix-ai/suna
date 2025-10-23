@@ -27,7 +27,7 @@ class SandboxImageSearchTool(SandboxToolsBase):
         self.serper_api_key = config.SERPER_API_KEY
         
         if not self.serper_api_key:
-            raise ValueError("SERPER_API_KEY not found in configuration")
+            logger.warning("SERPER_API_KEY not configured - Image Search Tool will not be available")
 
     @openapi_schema({
         "type": "function",
@@ -80,6 +80,10 @@ class SandboxImageSearchTool(SandboxToolsBase):
         queries = []
         
         try:
+            # Check if Serper API key is configured
+            if not self.serper_api_key:
+                return self.fail_response("Image Search is not available. SERPER_API_KEY is not configured.")
+            
             # Validate inputs
             if isinstance(query, str):
                 if not query or not query.strip():
