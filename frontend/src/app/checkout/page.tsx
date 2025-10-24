@@ -17,7 +17,6 @@ function CheckoutContent() {
   // Check if Stripe is already loaded
   useEffect(() => {
     const checkStripe = () => {
-      // @ts-ignore
       if (typeof window !== 'undefined' && typeof window.Stripe !== 'undefined') {
         console.log('✅ Stripe already loaded on window!');
         setStripeLoaded(true);
@@ -38,7 +37,6 @@ function CheckoutContent() {
 
     const timeout = setTimeout(() => {
       clearInterval(interval);
-      // @ts-ignore
       if (typeof window.Stripe === 'undefined') {
         console.error('❌ Stripe still not loaded after 5 seconds');
         setError('Payment system taking too long to load. Please refresh the page.');
@@ -79,7 +77,6 @@ function CheckoutContent() {
         console.log('🔑 Stripe key:', stripeKey?.substring(0, 20) + '...');
         console.log('🎫 Client secret:', clientSecret.substring(0, 20) + '...');
 
-        // @ts-ignore - Stripe is loaded via Script tag
         if (typeof window.Stripe === 'undefined') {
           throw new Error('Stripe not loaded on window');
         }
