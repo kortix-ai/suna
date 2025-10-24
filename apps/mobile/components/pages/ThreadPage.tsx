@@ -46,7 +46,11 @@ export function ThreadPage({
   // Custom hooks - Clean separation of concerns
   const agentManager = useAgentManager();
   const audioRecorder = useAudioRecorder();
-  const audioHandlers = useAudioRecordingHandlers(audioRecorder, agentManager);
+  const audioHandlers = useAudioRecordingHandlers(
+    audioRecorder, 
+    agentManager, 
+    chat.transcribeAndAddToInput
+  );
   const { colorScheme } = useColorScheme();
   const insets = useSafeAreaInsets();
   const [isThreadActionsVisible, setIsThreadActionsVisible] = React.useState(false);
@@ -285,6 +289,7 @@ export function ThreadPage({
             onOpenAuthDrawer={onOpenAuthDrawer}
             isAgentRunning={chat.isAgentRunning}
             isSendingMessage={chat.isSendingMessage}
+            isTranscribing={chat.isTranscribing}
           />
         </Pressable>
       </Animated.View>

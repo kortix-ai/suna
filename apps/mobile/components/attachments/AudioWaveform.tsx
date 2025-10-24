@@ -7,24 +7,37 @@ import Animated, {
   withTiming,
   withSequence,
   Easing,
+  withSpring,
 } from 'react-native-reanimated';
 
 interface AudioWaveformProps {
   isRecording?: boolean;
   barCount?: number;
+  audioLevel?: number; // 0-1 normalized audio level from recorder
 }
 
 /**
  * AudioWaveform Component
  * 
  * Displays an animated waveform visualization for audio recording.
- * Bars animate with random heights to simulate audio input levels.
+ * Uses realistic audio-reactive animations that respond to actual recording.
  */
 export function AudioWaveform({ 
   isRecording = false, 
-  barCount = 40 
+  barCount = 40,
+  audioLevel = 0.5
 }: AudioWaveformProps) {
   const bars = Array.from({ length: barCount }, (_, i) => i);
+  
+  // Simulate varying audio levels across bars for more realistic effect
+  const audioLevels = React.useMemo(() => {
+    return bars.map((_, i) => {
+      // Center bars get more energy, edges less
+      const centerDistance = Math.abs(i - barCount / 2) / (barCount / 2);
+      const baseLevelVariation = (1 - centerDistance * 0.6);
+      return audioLevel * baseLevelVariation + Math.random() * 0.2;
+    });
+  }, [audioLevel, barCount]);
 
   return (
     <View className="flex-row items-center justify-center h-12 gap-1">
@@ -34,6 +47,7 @@ export function AudioWaveform({
           index={index} 
           isRecording={isRecording}
           totalBars={barCount}
+          audioLevel={audioLevels[index]}
         />
       ))}
     </View>
@@ -44,35 +58,43 @@ interface WaveformBarProps {
   index: number;
   isRecording: boolean;
   totalBars: number;
+  audioLevel: number;
 }
 
-function WaveformBar({ index, isRecording, totalBars }: WaveformBarProps) {
+function WaveformBar({ index, isRecording, totalBars, audioLevel }: WaveformBarProps) {
   const height = useSharedValue(4);
   const opacity = useSharedValue(0.3);
 
   React.useEffect(() => {
     if (isRecording) {
-      // Stagger the animation start based on index for wave effect
-      const delay = (index / totalBars) * 200;
+      // Calculate target height based on audio level
+      const minHeight = 4;
+      const maxHeight = 40;
+      const baseHeight = minHeight + (maxHeight - minHeight) * audioLevel;
       
-      // Random height animation
+      // Add some natural variation
+      const variation = Math.random() * 8;
+      
+      // Animate to audio-driven height with realistic timing
       height.value = withRepeat(
         withSequence(
-          withTiming(Math.random() * 32 + 8, {
-            duration: 300 + Math.random() * 200,
-            easing: Easing.inOut(Easing.ease),
+          withSpring(baseHeight + variation, {
+            damping: 8,
+            stiffness: 180,
+            mass: 0.8,
           }),
-          withTiming(Math.random() * 24 + 4, {
-            duration: 300 + Math.random() * 200,
-            easing: Easing.inOut(Easing.ease),
+          withSpring(baseHeight - variation, {
+            damping: 8,
+            stiffness: 180,
+            mass: 0.8,
           })
         ),
         -1,
         false
       );
 
-      opacity.value = withTiming(1, {
-        duration: 200,
+      opacity.value = withTiming(0.8 + audioLevel * 0.2, {
+        duration: 150,
         easing: Easing.inOut(Easing.ease),
       });
     } else {
@@ -85,7 +107,7 @@ function WaveformBar({ index, isRecording, totalBars }: WaveformBarProps) {
         easing: Easing.inOut(Easing.ease),
       });
     }
-  }, [isRecording, index, totalBars]);
+  }, [isRecording, index, totalBars, audioLevel]);
 
   const animatedStyle = useAnimatedStyle(() => ({
     height: height.value,

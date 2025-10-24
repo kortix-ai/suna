@@ -20,12 +20,16 @@ export function getServerUrl(): string {
   }
 
   // For React Native, replace localhost with the correct IP
-  // if (url.includes('localhost') || url.includes('127.0.0.1')) {
-  //   const devHost = process.env.EXPO_PUBLIC_DEV_HOST || (
-  //     Platform.OS === 'ios' ? 'localhost' : '10.0.2.2'
-  //   );
-  //   url = url.replace('localhost', devHost).replace('127.0.0.1', devHost);
-  // }
+  if (url.includes('localhost') || url.includes('127.0.0.1')) {
+    // iOS Simulator: Use localhost (works on newer versions)
+    // Android Emulator: Use 10.0.2.2 (special alias to host machine)
+    // Physical device: Use actual machine IP from EXPO_PUBLIC_DEV_HOST
+    const devHost = process.env.EXPO_PUBLIC_DEV_HOST || (
+      Platform.OS === 'ios' ? 'localhost' : '10.0.2.2'
+    );
+    url = url.replace('localhost', devHost).replace('127.0.0.1', devHost);
+    console.log('📡 Using backend URL:', url);
+  }
 
   return url;
 }

@@ -32,12 +32,13 @@ import {
   useUpdateThread,
   chatKeys,
 } from '@/lib/chat';
-import { 
+import {
   useUploadMultipleFiles,
   convertAttachmentsToFormDataFiles,
   generateFileReferences,
   validateFileSize,
 } from '@/lib/files';
+import { transcribeAudio, validateAudioFile } from '@/lib/chat/transcription';
 
 // ============================================================================
 // Types
@@ -113,6 +114,10 @@ export interface UseChatReturn {
   isAttachmentDrawerVisible: boolean;
   openAttachmentDrawer: () => void;
   closeAttachmentDrawer: () => void;
+  
+  // Audio Transcription
+  transcribeAndAddToInput: (audioUri: string) => Promise<void>;
+  isTranscribing: boolean;
 }
 
 // ============================================================================
@@ -140,6 +145,7 @@ export function useChat(): UseChatReturn {
   } | null>(null);
   const [isAttachmentDrawerVisible, setIsAttachmentDrawerVisible] = useState(false);
   const [selectedQuickAction, setSelectedQuickAction] = useState<string | null>(null);
+  const [isTranscribing, setIsTranscribing] = useState(false);
 
   // ============================================================================
   // React Query Hooks
@@ -195,9 +201,12 @@ export function useChat(): UseChatReturn {
     setStreamingToolCall(null);
     processedMessageIds.current.clear();
 
+    // Invalidate active runs query to update agent running status
+    queryClient.invalidateQueries({ queryKey: chatKeys.activeRuns() });
+
     // Refetch messages to get the final state
     refetchMessages();
-  }, [refetchMessages]);
+  }, [refetchMessages, queryClient]);
 
   // Handle incoming stream messages
   const handleStreamMessage = useCallback((rawData: string) => {
@@ -465,8 +474,12 @@ export function useChat(): UseChatReturn {
     if (activeRun?.status === 'running' && !completedRunIds.current.has(activeRun.id)) {
       console.log('[useChat] Found active agent run:', activeRun.id);
       setAgentRunId(activeRun.id);
+    } else if (agentRunId && !activeRun) {
+      // Clear agentRunId if there's no active run for this thread
+      console.log('[useChat] No active agent run, clearing agentRunId');
+      setAgentRunId(null);
     }
-  }, [activeThreadId, messagesData, activeRuns]);
+  }, [activeThreadId, messagesData, activeRuns, agentRunId]);
 
   // Auto-connect to stream
   useEffect(() => {
@@ -943,6 +956,49 @@ export function useChat(): UseChatReturn {
   }, []);
 
   // ============================================================================
+  // Public API - Audio Transcription
+  // ============================================================================
+
+  const transcribeAndAddToInput = useCallback(async (audioUri: string) => {
+    console.log('[useChat] Transcribing audio:', audioUri);
+    
+    // Validate audio file
+    const validation = validateAudioFile(audioUri);
+    if (!validation.valid) {
+      console.error('[useChat] Invalid audio file:', validation.error);
+      Alert.alert(t('common.error'), validation.error || 'Invalid audio file');
+      return;
+    }
+    
+    setIsTranscribing(true);
+    
+    try {
+      // Transcribe audio
+      const transcribedText = await transcribeAudio(audioUri);
+      console.log('[useChat] Transcription complete:', transcribedText);
+      
+      // Add transcribed text to input
+      // If there's already text, add a space before appending
+      setInputValue(prev => {
+        const newValue = prev ? `${prev} ${transcribedText}` : transcribedText;
+        console.log('[useChat] Updated input value with transcription');
+        return newValue;
+      });
+      
+      // Show success feedback
+      console.log('✅ Transcription added to input');
+    } catch (error) {
+      console.error('[useChat] Transcription failed:', error);
+      Alert.alert(
+        t('common.error'),
+        error instanceof Error ? error.message : 'Failed to transcribe audio'
+      );
+    } finally {
+      setIsTranscribing(false);
+    }
+  }, [t]);
+
+  // ============================================================================
   // Computed State
   // ============================================================================
 
@@ -1022,6 +1078,10 @@ export function useChat(): UseChatReturn {
     isAttachmentDrawerVisible,
     openAttachmentDrawer,
     closeAttachmentDrawer,
+    
+    // Audio Transcription
+    transcribeAndAddToInput,
+    isTranscribing,
   };
 }
 

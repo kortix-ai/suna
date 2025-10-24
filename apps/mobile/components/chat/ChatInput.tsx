@@ -47,6 +47,7 @@ interface ChatInputProps extends ViewProps {
   onOpenAuthDrawer?: () => void;
   isAgentRunning?: boolean;
   isSendingMessage?: boolean;
+  isTranscribing?: boolean;
 }
 
 /**
@@ -86,6 +87,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   onOpenAuthDrawer,
   isAgentRunning = false,
   isSendingMessage = false,
+  isTranscribing = false,
   style,
   ...props 
 }, ref) => {
@@ -285,6 +287,11 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
     const secs = seconds % 60;
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
+  
+  // Show transcription status in recording mode
+  const recordingStatusText = isTranscribing 
+    ? 'Transcribing...' 
+    : formatDuration(recordingDuration);
 
   return (
     <View 
@@ -322,10 +329,10 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
               <AudioWaveform isRecording={true} barCount={42} />
             </View>
             
-            {/* Timer */}
+            {/* Timer / Transcription Status */}
             <View className="absolute bottom-6 right-16 items-center">
               <Text className="text-xs font-roobert-medium text-foreground/50">
-                {formatDuration(recordingDuration)}
+                {recordingStatusText}
               </Text>
             </View>
             
@@ -394,7 +401,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                   }
                   multiline
                   scrollEnabled={false}
-                  editable={!isSendingMessage && !isAgentRunning}
+                  editable={!isSendingMessage && !isAgentRunning && !isTranscribing}
                   onContentSizeChange={(e) => {
                     const newHeight = e.nativeEvent.contentSize.height;
                     // Only log significant changes (every 50px)
@@ -408,7 +415,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                   style={{ 
                     fontFamily: 'Roobert-Regular',
                     minHeight: 52,
-                    opacity: isSendingMessage || isAgentRunning ? 0.5 : 1,
+                    opacity: isSendingMessage || isAgentRunning || isTranscribing ? 0.5 : 1,
                   }}
                 />
               </ScrollView>
@@ -427,11 +434,11 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                     attachScale.value = withSpring(1, { damping: 15, stiffness: 400 });
                   }}
                   onPress={onAttachPress}
-                  disabled={isSendingMessage || isAgentRunning}
+                  disabled={isSendingMessage || isAgentRunning || isTranscribing}
                   className="bg-primary/5 rounded-full w-9 h-9 items-center justify-center border border-border/30"
                   style={[
                     attachAnimatedStyle,
-                    { opacity: isSendingMessage || isAgentRunning ? 0.4 : 1 }
+                    { opacity: isSendingMessage || isAgentRunning || isTranscribing ? 0.4 : 1 }
                   ]}
                 >
                   <Icon 

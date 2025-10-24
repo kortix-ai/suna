@@ -6,11 +6,13 @@
  * - Messages
  * - Agent runs
  * - SSE streaming
+ * - Audio transcription
  */
 
 // Re-export everything
 export * from './api';
 export * from './hooks';
+export * from './transcription';
 
 // Named exports for convenience
 export { chatKeys } from './hooks';

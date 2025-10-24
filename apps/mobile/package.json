@@ -76,6 +76,7 @@
     "react-native-reanimated": "~4.1.3",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
+    "react-native-sound-level": "^1.3.0",
     "react-native-sse": "^1.2.1",
     "react-native-svg": "15.12.1",
     "react-native-url-polyfill": "^3.0.0",
