@@ -11,7 +11,7 @@ import Animated, {
 import { MessageRenderer, ToolCallPanel, ChatInput, type ToolMessagePair } from '@/components/chat';
 import { ThreadHeader, ThreadActionsDrawer } from '@/components/home';
 import { AgentDrawer } from '@/components/agents';
-import { AttachmentDrawer } from '@/components/attachments';
+import { AttachmentDrawer, AttachmentBar } from '@/components/attachments';
 import { useAgentManager, useAudioRecorder, useAudioRecordingHandlers, type UseChatReturn } from '@/hooks';
 import { Text } from '@/components/ui/text';
 import { MessageCircle, ArrowDown } from 'lucide-react-native';
@@ -249,6 +249,12 @@ export function ThreadPage({
             height: 250,
           }}
           pointerEvents="none"
+        />
+        
+        {/* Attachment Bar - Above Input */}
+        <AttachmentBar 
+          attachments={chat.attachments}
+          onRemove={chat.removeAttachment}
         />
         
         {/* Chat Input */}

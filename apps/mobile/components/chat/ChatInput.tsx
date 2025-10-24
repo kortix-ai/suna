@@ -15,7 +15,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import type { Attachment } from '@/hooks/useChat';
 import { AgentSelector } from '../agents/AgentSelector';
-import { AttachmentPreview } from '../attachments/AttachmentPreview';
 import { AudioWaveform } from '../attachments/AudioWaveform';
 import type { Agent } from '@/api/types';
 
@@ -178,11 +177,10 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
   const dynamicHeight = React.useMemo(() => {
     const baseHeight = 140;
     const maxHeight = 280;
-    // Add extra height for attachments if present
-    const attachmentHeight = hasAttachments ? 90 : 0;
-    const calculatedHeight = contentHeight + 80 + attachmentHeight; // Add padding for controls and attachments
+    // No longer need attachment height as they're external
+    const calculatedHeight = contentHeight + 80; // Add padding for controls
     return Math.max(baseHeight, Math.min(calculatedHeight, maxHeight));
-  }, [contentHeight, hasAttachments]);
+  }, [contentHeight]);
 
   // Animated styles
   const attachAnimatedStyle = useAnimatedStyle(() => ({
@@ -377,22 +375,12 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
         ) : (
           /* Normal Text Input Mode */
           <>
-            {/* Content Area with Attachments */}
+            {/* Content Area - Text Only */}
             <View className="flex-1 mb-12">
               <ScrollView 
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
               >
-                {/* Attachments Preview */}
-                {hasAttachments && onRemoveAttachment && (
-                  <View className="mb-2">
-                    <AttachmentPreview
-                      attachments={attachments}
-                      onRemove={onRemoveAttachment}
-                    />
-                  </View>
-                )}
-
                 {/* Text Input */}
                 <TextInput
                   ref={textInputRef}

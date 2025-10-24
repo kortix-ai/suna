@@ -12,7 +12,7 @@ const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:800
 /**
  * Get the correct server URL based on platform
  */
-function getServerUrl(): string {
+export function getServerUrl(): string {
   let url = BACKEND_URL;
 
   if (Platform.OS === 'web') {

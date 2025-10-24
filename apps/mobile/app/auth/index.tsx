@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View, Pressable, TextInput, KeyboardAvoidingView, Platform, ScrollView, Keyboard, Linking, ActivityIndicator } from 'react-native';
+import { View, Pressable, TextInput, KeyboardAvoidingView, Platform, ScrollView, Keyboard, ActivityIndicator, ActionSheetIOS } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
@@ -13,6 +13,7 @@ import { useLanguage } from '@/contexts';
 import LogomarkBlack from '@/assets/brand/Logomark-Black.svg';
 import LogomarkWhite from '@/assets/brand/Logomark-White.svg';
 import * as Haptics from 'expo-haptics';
+import { openInbox } from 'react-native-email-link';
 import Animated, { 
   useAnimatedStyle, 
   useSharedValue, 
@@ -59,6 +60,51 @@ export default function AuthScreen() {
   const confirmPasswordInputRef = React.useRef<TextInput>(null);
 
   const Logomark = colorScheme === 'dark' ? LogomarkWhite : LogomarkBlack;
+
+  // Handle opening email app with native iOS ActionSheet
+  const handleOpenEmailApp = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    if (Platform.OS === 'ios') {
+      // Use native iOS ActionSheet
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          options: ['Cancel', 'Default', 'Apple Mail', 'Gmail', 'Outlook', 'Yahoo Mail'],
+          cancelButtonIndex: 0,
+          title: 'Choose Email App',
+          message: 'Select your preferred email app',
+        },
+        async (buttonIndex) => {
+          // Index 0: Cancel
+          // Index 1: Default (no app specified - opens system default)
+          // Index 2+: Specific apps
+          const apps = ['', '', 'apple-mail', 'gmail', 'outlook', 'yahoo-mail'];
+          
+          if (buttonIndex > 0) {
+            console.log('🔗 Opening email app:', buttonIndex === 1 ? 'default' : apps[buttonIndex]);
+            try {
+              if (buttonIndex === 1) {
+                // Open default email app (no app parameter)
+                await openInbox();
+              } else {
+                // Open specific app
+                await openInbox({ app: apps[buttonIndex] });
+              }
+              console.log('✅ Successfully opened email app');
+            } catch (error) {
+              console.error('❌ Error opening email app:', error);
+            }
+          }
+        }
+      );
+    } else {
+      // Android: Just open default email app
+      console.log('🔗 Opening default email app on Android');
+      openInbox().catch((error) => {
+        console.error('❌ Error opening email app:', error);
+      });
+    }
+  };
 
   // Navigation helpers
   const handleNavigateToHome = React.useCallback(() => {
@@ -650,56 +696,47 @@ export default function AuthScreen() {
             {/* Sign Up Success View */}
             {currentView === 'sign-up-success' && (
               <View className="w-full max-w-sm mx-auto">
-                <View className="flex-1 justify-center">
-                  <View className="items-center mb-8">
-                    <View className="size-16 rounded-full bg-primary/10 items-center justify-center mb-4">
-                      <Icon as={Mail} size={32} className="text-primary" />
-                    </View>
-                    
-                    <Text className="text-2xl font-roobert-semibold text-foreground text-center mb-3">
-                      {t('auth.checkYourEmail')}
-                    </Text>
-                    
-                    <Text className="text-[15px] font-roobert text-muted-foreground text-center px-4">
-                      {t('auth.verificationEmailSent')}{'\n'}
-                      <Text className="font-roobert-medium text-foreground">{email}</Text>
-                    </Text>
+                <View className="items-center mb-8">
+                  <View className="size-16 rounded-full bg-primary/10 items-center justify-center mb-4">
+                    <Icon as={Mail} size={32} className="text-primary" />
                   </View>
+                  
+                  <Text className="text-2xl font-roobert-semibold text-foreground text-center mb-3">
+                    {t('auth.checkYourEmail')}
+                  </Text>
+                  
+                  <Text className="text-[15px] font-roobert text-muted-foreground text-center px-4">
+                    {t('auth.verificationEmailSent')}{'\n'}
+                    <Text className="font-roobert-medium text-foreground">{email}</Text>
+                  </Text>
+                </View>
 
-                  {/* Open Email App Button */}
-                  <Pressable
-                    onPress={() => {
-                      if (Platform.OS === 'ios') {
-                        Linking.openURL('message://');
-                      } else {
-                        // Android will show an app picker for email apps
-                        Linking.openURL('mailto:');
-                      }
-                    }}
-                    className="bg-primary h-12 rounded-2xl flex-row items-center justify-center gap-2 mb-3"
-                  >
-                    <Icon as={Mail} size={16} className="text-primary-foreground" />
-                    <Text className="text-[15px] font-roobert-medium text-primary-foreground">
-                      {t('auth.openEmailApp')}
-                    </Text>
-                  </Pressable>
+                {/* Open Email App Button */}
+                <Pressable
+                  onPress={handleOpenEmailApp}
+                  className="bg-primary h-12 rounded-2xl flex-row items-center justify-center gap-2 mb-3"
+                >
+                  <Icon as={Mail} size={18} className="text-primary-foreground" />
+                  <Text className="text-[15px] font-roobert-medium text-primary-foreground">
+                    {t('auth.openEmailApp')}
+                  </Text>
+                </Pressable>
 
-                  {/* Go to Sign In Button */}
-                  <Pressable
-                    onPress={showSignInEmailWithPrefilledData}
-                    className="bg-card border border-border h-12 rounded-2xl flex-row items-center justify-center gap-2"
-                  >
-                    <Text className="text-[15px] font-roobert-medium text-foreground">
-                      {t('auth.goToSignIn')}
-                    </Text>
-                  </Pressable>
+                {/* Go to Sign In Button */}
+                <Pressable
+                  onPress={showSignInEmailWithPrefilledData}
+                  className="bg-card border border-border h-12 rounded-2xl flex-row items-center justify-center gap-2"
+                >
+                  <Text className="text-[15px] font-roobert-medium text-foreground">
+                    {t('auth.goToSignIn')}
+                  </Text>
+                </Pressable>
 
-                  {/* Info Text */}
-                  <View className="mt-6">
-                    <Text className="text-[14px] font-roobert text-muted-foreground text-center">
-                      {t('auth.verifyEmailInstructions')}
-                    </Text>
-                  </View>
+                {/* Info Text */}
+                <View className="mt-6">
+                  <Text className="text-[14px] font-roobert text-muted-foreground text-center">
+                    {t('auth.verifyEmailInstructions')}
+                  </Text>
                 </View>
               </View>
             )}
@@ -768,39 +805,37 @@ export default function AuthScreen() {
             {/* Forgot Password Success View */}
             {currentView === 'forgot-password' && forgotPasswordSuccess && (
               <View className="w-full max-w-sm mx-auto">
-                <View className="flex-1 justify-center">
-                  <View className="items-center mb-8">
-                    <View className="size-16 rounded-full bg-primary/10 items-center justify-center mb-4">
-                      <Icon as={Mail} size={32} className="text-primary" />
-                    </View>
-                    
-                    <Text className="text-2xl font-roobert-semibold text-foreground text-center mb-3">
-                      {t('auth.checkYourEmail')}
-                    </Text>
-                    
-                    <Text className="text-[15px] font-roobert text-muted-foreground text-center px-4">
-                      {t('auth.resetLinkSent')}{'\n'}
-                      <Text className="font-roobert-medium text-foreground">{email}</Text>
-                    </Text>
+                <View className="items-center mb-8">
+                  <View className="size-16 rounded-full bg-primary/10 items-center justify-center mb-4">
+                    <Icon as={Mail} size={32} className="text-primary" />
                   </View>
-
-                  {/* Back to Sign In Button */}
-                  <Pressable
-                    onPress={handleBack}
-                    className="bg-primary h-12 rounded-2xl flex-row items-center justify-center gap-2"
-                  >
-                    <Text className="text-[15px] font-roobert-medium text-primary-foreground">
-                      {t('auth.backToSignIn')}
-                    </Text>
-                  </Pressable>
-
-                  {/* Resend Link */}
-                  <Pressable onPress={() => setForgotPasswordSuccess(false)} className="mt-6">
-                    <Text className="text-[14px] font-roobert-medium text-muted-foreground text-center">
-                      {t('auth.didntReceiveEmail')}
-                    </Text>
-                  </Pressable>
+                  
+                  <Text className="text-2xl font-roobert-semibold text-foreground text-center mb-3">
+                    {t('auth.checkYourEmail')}
+                  </Text>
+                  
+                  <Text className="text-[15px] font-roobert text-muted-foreground text-center px-4">
+                    {t('auth.resetLinkSent')}{'\n'}
+                    <Text className="font-roobert-medium text-foreground">{email}</Text>
+                  </Text>
                 </View>
+
+                {/* Back to Sign In Button */}
+                <Pressable
+                  onPress={handleBack}
+                  className="bg-primary h-12 rounded-2xl flex-row items-center justify-center gap-2"
+                >
+                  <Text className="text-[15px] font-roobert-medium text-primary-foreground">
+                    {t('auth.backToSignIn')}
+                  </Text>
+                </Pressable>
+
+                {/* Resend Link */}
+                <Pressable onPress={() => setForgotPasswordSuccess(false)} className="mt-6">
+                  <Text className="text-[14px] font-roobert-medium text-muted-foreground text-center">
+                    {t('auth.didntReceiveEmail')}
+                  </Text>
+                </Pressable>
               </View>
             )}
           </View>

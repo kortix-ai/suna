@@ -2,6 +2,8 @@
   "common": {
     "cancel": "Cancel",
     "save": "Save",
+    "saving": "Saving...",
+    "success": "Success",
     "done": "Done",
     "close": "Close",
     "ok": "OK",
@@ -97,9 +99,19 @@
   "settings": {
     "title": "Settings",
     "name": "Name",
+    "editName": "Edit Name",
+    "updateName": "Update Name",
+    "enterName": "Enter your name",
+    "namePlaceholder": "Your name",
+    "nameRequired": "Name is required",
+    "nameUpdated": "Name updated successfully",
     "billing": "Billing",
     "integrations": "Integrations",
     "theme": "Theme & Icon",
+    "themeTitle": "Theme",
+    "lightMode": "Light Mode",
+    "darkMode": "Dark Mode",
+    "currentTheme": "Current Theme",
     "language": "Language",
     "signOut": "Sign out",
     "upgrade": "Upgrade to Pro",
@@ -267,7 +279,9 @@
     "photosPermissionMessage": "Enable photos access in your settings.",
     "failedToOpenCamera": "Couldn't open camera. Try again.",
     "failedToOpenImagePicker": "Couldn't open gallery. Try again.",
-    "failedToOpenFilePicker": "Couldn't open file picker. Try again."
+    "failedToOpenFilePicker": "Couldn't open file picker. Try again.",
+    "fileTooLarge": "File size exceeds the maximum allowed size.",
+    "uploadFailed": "Failed to upload files. Please try again."
   },
   "models": {
     "selectModel": "Select Model",
@@ -373,5 +387,32 @@
     "error": "Failed to load billing information",
     "tryAgain": "Try again",
     "remaining": "remaining"
+  },
+  "integrations": {
+    "title": "Integrations",
+    "connected": "Connected",
+    "connectedToAgent": "Connected to this agent",
+    "available": "Available Apps",
+    "connect": "Connect",
+    "manage": "Manage",
+    "searchPlaceholder": "Search integrations...",
+    "noConnected": "No connected integrations",
+    "noConnectedDescription": "Connect your favorite apps to get started",
+    "toolsEnabled": "{{count}} tools enabled",
+    "connectionSuccess": "Connected successfully",
+    "connectionError": "Connection failed",
+    "connecting": "Connecting...",
+    "disconnect": "Disconnect",
+    "noAppsFound": "No apps found",
+    "tryDifferentSearch": "Try a different search term"
+  },
+  "loading": {
+    "threads": "Loading chats...",
+    "triggers": "Loading triggers..."
+  },
+  "errors": {
+    "loadingThreads": "Failed to load chats",
+    "loadingTriggers": "Failed to load triggers",
+    "tryAgain": "Please try again later"
   }
 }

@@ -11,7 +11,7 @@
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Alert } from 'react-native';
+import { Alert, Keyboard } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import EventSource from 'react-native-sse';
@@ -32,6 +32,12 @@ import {
   useUpdateThread,
   chatKeys,
 } from '@/lib/chat';
+import { 
+  useUploadMultipleFiles,
+  convertAttachmentsToFormDataFiles,
+  generateFileReferences,
+  validateFileSize,
+} from '@/lib/files';
 
 // ============================================================================
 // Types
@@ -43,6 +49,9 @@ export interface Attachment {
   name?: string;
   size?: number;
   mimeType?: string;
+  isUploading?: boolean;
+  uploadProgress?: number;
+  uploadError?: string;
 }
 
 export interface UseChatReturn {
@@ -146,6 +155,7 @@ export function useChat(): UseChatReturn {
   const initiateAgentMutation = useInitiateAgentMutation();
   const stopAgentRunMutation = useStopAgentRunMutation();
   const updateThreadMutation = useUpdateThread();
+  const uploadFilesMutation = useUploadMultipleFiles();
 
   // ============================================================================
   // Streaming - Internal EventSource Management
@@ -549,20 +559,40 @@ export function useChat(): UseChatReturn {
   }, [activeThreadId, updateThreadMutation]);
 
   const sendMessage = useCallback(async (content: string, agentId: string, agentName: string) => {
-    if (!content.trim()) return;
+    if (!content.trim() && attachments.length === 0) return;
 
     try {
-      console.log('[useChat] Sending message:', { content, agentId, agentName, activeThreadId });
+      console.log('[useChat] Sending message:', { content, agentId, agentName, activeThreadId, attachmentsCount: attachments.length });
+      
+      // Validate file sizes
+      for (const attachment of attachments) {
+        const validation = validateFileSize(attachment.size);
+        if (!validation.valid) {
+          Alert.alert(t('common.error'), validation.error || t('attachments.fileTooLarge'));
+          return;
+        }
+      }
       
       let currentThreadId = activeThreadId;
       
       if (!currentThreadId) {
-        // NEW THREAD: Use /agent/initiate
+        // ========================================================================
+        // NEW THREAD: Use /agent/initiate with FormData
+        // ========================================================================
         console.log('[useChat] Creating new thread via /agent/initiate');
+        
+        // Convert attachments to FormData-compatible format
+        const formDataFiles = attachments.length > 0
+          ? await convertAttachmentsToFormDataFiles(attachments)
+          : [];
+        
+        console.log('[useChat] Converted', formDataFiles.length, 'attachments for FormData');
+        
         const createResult = await initiateAgentMutation.mutateAsync({
           prompt: content,
           agent_id: agentId,
           model_name: 'claude-sonnet-4',
+          files: formDataFiles as any, // FormData files for new thread
         });
         
         currentThreadId = createResult.thread_id;
@@ -579,16 +609,98 @@ export function useChat(): UseChatReturn {
           }, 100);
         }
         
-        // Clear input AFTER successful send
+        // Clear input and attachments AFTER successful send
         setInputValue('');
         setAttachments([]);
       } else {
-        // EXISTING THREAD: Send message + start agent run
+        // ========================================================================
+        // EXISTING THREAD: Upload files to sandbox, then send message with references
+        // ========================================================================
         console.log('[useChat] Sending to existing thread:', currentThreadId);
         
+        let messageContent = content;
+        
+        // Upload files to sandbox if there are attachments
+        if (attachments.length > 0) {
+          // Get sandbox ID from thread data
+          const sandboxId = threadData?.project?.sandbox?.id;
+          
+          if (!sandboxId) {
+            console.error('[useChat] No sandbox ID available for file upload');
+            Alert.alert(
+              t('common.error'),
+              'Cannot upload files: sandbox not available'
+            );
+            return;
+          }
+          
+          console.log('[useChat] Uploading', attachments.length, 'files to sandbox:', sandboxId);
+          
+          // Mark attachments as uploading
+          setAttachments(prev => prev.map(a => ({ ...a, isUploading: true, uploadProgress: 0 })));
+          
+          try {
+            // Convert attachments to upload format
+            const filesToUpload = await convertAttachmentsToFormDataFiles(attachments);
+            
+            // Upload files to sandbox with progress tracking
+            const uploadResults = await uploadFilesMutation.mutateAsync({
+              sandboxId,
+              files: filesToUpload.map(f => ({
+                uri: f.uri,
+                name: f.name,
+                type: f.type,
+              })),
+              onProgress: (fileName: string, progress: number) => {
+                console.log('[useChat] Upload progress:', fileName, progress);
+                // Update progress for specific file
+                setAttachments(prev => prev.map(a => {
+                  const matchingFile = filesToUpload.find(f => f.name === fileName);
+                  if (matchingFile && a.uri === matchingFile.uri) {
+                    return { ...a, uploadProgress: progress };
+                  }
+                  return a;
+                }));
+              },
+            });
+            
+            console.log('[useChat] Files uploaded successfully:', uploadResults.length);
+            
+            // Mark upload complete
+            setAttachments(prev => prev.map(a => ({ ...a, isUploading: false, uploadProgress: 100 })));
+            
+            // Generate file references
+            const filePaths = uploadResults.map(result => result.path);
+            const fileReferences = generateFileReferences(filePaths);
+            
+            // Append file references to message
+            messageContent = content
+              ? `${content}\n\n${fileReferences}`
+              : fileReferences;
+              
+            console.log('[useChat] Message with file references prepared');
+          } catch (uploadError) {
+            console.error('[useChat] File upload failed:', uploadError);
+            
+            // Mark attachments with error
+            setAttachments(prev => prev.map(a => ({ 
+              ...a, 
+              isUploading: false, 
+              uploadError: 'Upload failed' 
+            })));
+            
+            Alert.alert(
+              t('common.error'),
+              t('attachments.uploadFailed') || 'Failed to upload files'
+            );
+            return; // Don't send message if upload failed
+          }
+        }
+        
+        // Send message with file references (if any)
         const result = await sendMessageMutation.mutateAsync({
           threadId: currentThreadId,
-          message: content,
+          message: messageContent,
           modelName: 'claude-sonnet-4',
         });
         
@@ -599,15 +711,29 @@ export function useChat(): UseChatReturn {
           setAgentRunId(result.agentRunId);
         }
         
-        // Clear input AFTER successful send
+        // Clear input and attachments AFTER successful send
         setInputValue('');
         setAttachments([]);
       }
     } catch (error) {
       console.error('[useChat] Error sending message:', error);
+      // Reset attachment upload state on error
+      setAttachments(prev => prev.map(a => ({ 
+        ...a, 
+        isUploading: false, 
+        uploadError: 'Failed' 
+      })));
       throw error;
     }
-  }, [activeThreadId, sendMessageMutation, initiateAgentMutation]);
+  }, [
+    activeThreadId,
+    attachments,
+    sendMessageMutation,
+    initiateAgentMutation,
+    uploadFilesMutation,
+    threadData,
+    t,
+  ]);
 
   const stopAgent = useCallback(() => {
     if (agentRunId) {
@@ -807,6 +933,7 @@ export function useChat(): UseChatReturn {
 
   const openAttachmentDrawer = useCallback(() => {
     console.log('[useChat] Opening attachment drawer');
+    Keyboard.dismiss(); // Dismiss keyboard to prevent interference
     setIsAttachmentDrawerVisible(true);
   }, []);
 
@@ -831,6 +958,11 @@ export function useChat(): UseChatReturn {
   }, [threadData, messages]);
 
   const isAgentRunning = !!agentRunId || isStreaming;
+  
+  // Check if any attachments are currently uploading
+  const hasUploadingAttachments = attachments.some(a => a.isUploading);
+  
+  // Don't disable input during upload - only during message send/agent run
   const isSendingMessage = sendMessageMutation.isPending || initiateAgentMutation.isPending;
   
   // Compute isLoading: true when thread data or messages are being fetched

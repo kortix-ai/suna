@@ -13,6 +13,11 @@ import Markdown from 'react-native-markdown-display';
 import { markdownStyles, markdownStylesDark } from '@/lib/utils/markdown-styles';
 import { useColorScheme } from 'nativewind';
 import { AgentIdentifier } from '@/components/agents';
+import { 
+  FileAttachmentsGrid, 
+  extractFileReferences, 
+  removeFileReferences 
+} from './FileAttachmentRenderer';
 import Animated, { 
   useSharedValue, 
   useAnimatedStyle, 
@@ -328,6 +333,7 @@ function AssistantMessageGroup({
 
 /**
  * Assistant Message Content - Clean markdown rendering with native text selection
+ * Now with file attachment support
  */
 function AssistantMessageContent({ 
   message,
@@ -338,16 +344,34 @@ function AssistantMessageContent({
 }) {
   const { colorScheme } = useColorScheme();
   
-  const content = useMemo(() => {
+  const { content, fileAttachments, sandboxId } = useMemo(() => {
     const parsed = safeJsonParse<ParsedContent>(message.content, {});
     const rawContent = parsed.content || '';
     
     // Skip if this is a function call
-    if (rawContent.includes('<function_calls>')) return null;
+    if (rawContent.includes('<function_calls>')) {
+      return { content: null, fileAttachments: [], sandboxId: undefined };
+    }
     
-    // Clean and return
-    return stripXMLTags(rawContent).trim();
-  }, [message.content]);
+    // Extract file references
+    const files = extractFileReferences(rawContent);
+    
+    // Remove file references from content to get clean text
+    const cleanContent = removeFileReferences(rawContent);
+    
+    // Clean and strip XML tags
+    const finalContent = stripXMLTags(cleanContent).trim();
+    
+    // Try to get sandbox ID from message metadata
+    const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
+    const sandbox = metadata.sandbox_id;
+    
+    return { 
+      content: finalContent || null, 
+      fileAttachments: files,
+      sandboxId: sandbox,
+    };
+  }, [message.content, message.metadata]);
 
   // Override textgroup rule to inject native text selection
   const selectableRules = useMemo(() => ({
@@ -358,20 +382,33 @@ function AssistantMessageContent({
     ),
   }), []);
 
-  if (!content) return null;
+  // Return null if no content and no files
+  if (!content && fileAttachments.length === 0) return null;
 
   return (
     <View className={`px-4 ${hasToolsBelow ? 'mb-3' : 'mb-0'}`}>
-      <Markdown
-        style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-        onLinkPress={(url) => {
-          Linking.openURL(url).catch(console.error);
-          return false;
-        }}
-        rules={selectableRules}
-      >
-        {content}
-      </Markdown>
+      {/* File Attachments */}
+      {fileAttachments.length > 0 && (
+        <FileAttachmentsGrid
+          filePaths={fileAttachments}
+          sandboxId={sandboxId}
+          compact={false}
+        />
+      )}
+      
+      {/* Text Content */}
+      {content && (
+        <Markdown
+          style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
+          onLinkPress={(url) => {
+            Linking.openURL(url).catch(console.error);
+            return false;
+          }}
+          rules={selectableRules}
+        >
+          {content}
+        </Markdown>
+      )}
     </View>
   );
 }

@@ -4,7 +4,7 @@ import { useRouter, Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { ArrowRight, MessageSquare, Zap, Shield, Sparkles, CheckCircle, CreditCard } from 'lucide-react-native';
+import { ArrowRight, MessageSquare, Zap, Shield, Sparkles, CheckCircle, CreditCard, LogOut } from 'lucide-react-native';
 import LogomarkBlack from '@/assets/brand/Logomark-Black.svg';
 import LogomarkWhite from '@/assets/brand/Logomark-White.svg';
 import * as Haptics from 'expo-haptics';
@@ -18,6 +18,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useLanguage } from '@/contexts';
 import { useBillingContext } from '@/contexts/BillingContext';
+import { useAuthContext } from '@/contexts/AuthContext';
 import { 
   TrialCard, 
   PricingTierCard, 
@@ -58,7 +59,9 @@ export default function OnboardingScreen() {
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
   const { trialStatus, refetchAll, hasActiveTrial, hasActiveSubscription } = useBillingContext();
+  const { signOut } = useAuthContext();
   const [currentSlide, setCurrentSlide] = React.useState(0);
+  const [isLoggingOut, setIsLoggingOut] = React.useState(false);
   const scrollX = useSharedValue(0);
   const scrollViewRef = React.useRef<ScrollView>(null);
 
@@ -122,6 +125,23 @@ export default function OnboardingScreen() {
     }
   }, [refetchAll, router]);
 
+  const handleLogout = React.useCallback(async () => {
+    try {
+      setIsLoggingOut(true);
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      
+      console.log('🔓 Logging out from onboarding...');
+      await signOut();
+      
+      // Navigation will be handled by AuthProtection in _layout
+      // User will be automatically redirected to /auth
+    } catch (error) {
+      console.error('❌ Logout error:', error);
+    } finally {
+      setIsLoggingOut(false);
+    }
+  }, [signOut]);
+
   const handleNext = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (currentSlide < totalSlides - 1) {
@@ -160,13 +180,29 @@ export default function OnboardingScreen() {
         {/* Header with Skip */}
         <View className="pt-16 px-6 pb-4 flex-row justify-between items-center">
           <Logomark width={120} height={24} />
-          {currentSlide < totalSlides - 1 && (
-            <Pressable onPress={handleSkip}>
-              <Text className="text-[15px] font-roobert-medium text-muted-foreground">
-                {t('onboarding.skip')}
+          <View className="flex-row items-center gap-4">
+            {currentSlide < totalSlides - 1 && (
+              <Pressable onPress={handleSkip}>
+                <Text className="text-[15px] font-roobert-medium text-muted-foreground">
+                  {t('onboarding.skip')}
+                </Text>
+              </Pressable>
+            )}
+            <Pressable 
+              onPress={handleLogout}
+              disabled={isLoggingOut}
+              className="flex-row items-center gap-1.5"
+            >
+              <Icon 
+                as={LogOut} 
+                size={16} 
+                className={isLoggingOut ? "text-muted-foreground/50" : "text-muted-foreground"} 
+              />
+              <Text className={`text-[15px] font-roobert-medium ${isLoggingOut ? "text-muted-foreground/50" : "text-muted-foreground"}`}>
+                {isLoggingOut ? t('auth.loggingOut', 'Logging out...') : t('auth.logout', 'Log out')}
               </Text>
             </Pressable>
-          )}
+          </View>
         </View>
 
         {/* Slides */}
