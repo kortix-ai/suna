@@ -22,6 +22,7 @@ export const MODELS: Model[] = [
     iconColor: '#F8F8F8',
     backgroundColor: '#161618',
     description: 'Fast and efficient AI with 67% cost reduction',
+    costInfo: 'Input: $1.20 • Output: $6.00',
     isSelected: true // Default selected model
   },
   {
@@ -30,7 +31,8 @@ export const MODELS: Model[] = [
     icon: Brain,
     iconColor: '#F8F8F8',
     backgroundColor: '#161618',
-    description: 'Advanced reasoning and analysis'
+    description: 'Advanced reasoning and analysis',
+    costInfo: 'Input: $3.60 • Output: $18.00'
   },
   // Commented out non-Anthropic models as requested
   // {
@@ -61,4 +63,4 @@ export function getModelById(id: string): Model | undefined {
 /**
  * Default model
  */
-export const DEFAULT_MODEL = MODELS[0]; // Claude Sonnet 4
+export const DEFAULT_MODEL = MODELS[0]; // Claude Haiku 4.5

@@ -88,10 +88,12 @@ export function AgentModelSelector({
           label: displayName,
           requiresSubscription: model.requires_subscription || false,
           priority: model.priority || 0,
-          recommended: model.recommended || false,
+          recommended: false, // Remove recommended badges since we commented out non-Anthropic models
           top: (model.priority || 0) >= 90,
           capabilities: model.capabilities || [],
           contextWindow: model.context_window || 128000,
+          inputCostPerMillionTokens: model.input_cost_per_million_tokens,
+          outputCostPerMillionTokens: model.output_cost_per_million_tokens,
           isCustom: false
         });
       });
@@ -100,6 +102,7 @@ export function AgentModelSelector({
       allModels.forEach(model => {
         modelMap.set(model.id, {
           ...model,
+          recommended: false, // Remove recommended badges
           isCustom: false
         });
       });
@@ -287,7 +290,16 @@ export function AgentModelSelector({
     const isHighlighted = index === highlightedIndex;
     const isPremium = model.requiresSubscription;
     const isLowQuality = false; // API models are quality controlled
-    const isRecommended = model.recommended || false;
+    const isRecommended = false; // Remove recommended badges
+
+    // Format cost display
+    const formatCost = (cost: number | null | undefined) => {
+      if (cost === null || cost === undefined) return null;
+      return `$${cost.toFixed(2)}`;
+    };
+
+    const inputCost = formatCost(model.inputCostPerMillionTokens);
+    const outputCost = formatCost(model.outputCostPerMillionTokens);
 
     return (
       <Tooltip key={`model-${model.id}-${index}`}>
@@ -295,31 +307,33 @@ export function AgentModelSelector({
             <div className='w-full'>
               <DropdownMenuItem
                 className={cn(
-                  "text-sm px-3 rounded-lg py-2 mx-2 my-0.5 flex items-center justify-between cursor-pointer",
+                  "text-sm px-2 py-2 mx-2 my-0.5 flex items-center gap-0 cursor-pointer rounded-lg transition-all duration-200",
                   isHighlighted && "bg-accent",
+                  selectedModel === model.id && "bg-muted border border-border",
                   !accessible && !disabled && "opacity-70"
                 )}
                 onClick={() => !disabled && handleSelect(model.id)}
                 onMouseEnter={() => setHighlightedIndex(index)}
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
                   <ModelProviderIcon modelId={model.id} size={24} />
                   <span className="font-medium">{model.label}</span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="w-16 text-right text-xs text-muted-foreground">
+                  {inputCost || '—'}
+                </div>
+                <div className="w-16 text-right text-xs text-muted-foreground">
+                  {outputCost || '—'}
+                </div>
+                <div className="w-8 flex items-center justify-center">
                   {isLowQuality && (
                     <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
                   )}
-                  {isRecommended && (
-                    <span className="text-xs px-1.5 py-0.5 rounded-sm bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 font-medium">
-                      Recommended
-                    </span>
-                  )}
                   {isPremium && !accessible && !isLocalMode() && (
-                    <Crown className="h-3.5 w-3.5 text-blue-500" />
+                    <Crown className="h-3.5 w-3.5 text-muted-foreground" />
                   )}
                   {isLocalMode() && isCustom && (
-                    <>
+                    <div className="flex items-center gap-1">
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -338,10 +352,7 @@ export function AgentModelSelector({
                       >
                         <Trash className="h-3.5 w-3.5" />
                       </button>
-                    </>
-                  )}
-                  {selectedModel === model.id && (
-                    <Check className="h-4 w-4 text-blue-500" />
+                    </div>
                   )}
                 </div>
               </DropdownMenuItem>
@@ -354,10 +365,6 @@ export function AgentModelSelector({
           ) : isLowQuality ? (
             <TooltipContent side="left" className="text-xs max-w-xs">
               <p>Not recommended for complex tasks</p>
-            </TooltipContent>
-          ) : isRecommended ? (
-            <TooltipContent side="left" className="text-xs max-w-xs">
-              <p>Recommended for optimal performance</p>
             </TooltipContent>
           ) : isCustom ? (
             <TooltipContent side="left" className="text-xs max-w-xs">
@@ -389,14 +396,6 @@ export function AgentModelSelector({
                       />
                       <span className="truncate">{selectedModelDisplay}</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {allModels.find(m => m.id === selectedModel)?.recommended && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 font-medium">
-                          Recommended
-                        </span>
-                      )}
-                      <Check className="h-4 w-4 text-blue-500" />
-                    </div>
                   </div>
                 ) : (
                   <Button
@@ -420,7 +419,7 @@ export function AgentModelSelector({
         </Tooltip>
         <DropdownMenuContent
           align={variant === 'menu-item' ? 'end' : 'start'}
-          className="w-76 p-0 overflow-hidden"
+          className="w-80 p-0 overflow-hidden"
           sideOffset={variant === 'menu-item' ? 8 : 4}
         >
           <div className="max-h-[400px] overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700 scrollbar-track-transparent w-full">
@@ -478,6 +477,16 @@ export function AgentModelSelector({
                 </div>
               </div>
               
+              {/* Pricing Header */}
+              <div className="px-2 py-2">
+                <div className="flex items-center gap-0 text-xs text-muted-foreground">
+                  <div className="flex-1 pl-2">Model</div>
+                  <div className="w-16 text-right pr-2">Input</div>
+                  <div className="w-16 text-right pr-2">Output</div>
+                  <div className="w-8"></div>
+                </div>
+              </div>
+              
               {shouldDisplayAll ? (
                 <div>
                   <div className="px-3 py-2 text-xs font-medium text-muted-foreground">
@@ -488,14 +497,32 @@ export function AgentModelSelector({
                   {premiumModels.length > 0 && (
                     <>
                       <div className="mt-4 border-t border-border pt-2">
-                        <div className="px-3 py-1.5 text-xs font-medium text-blue-500 flex items-center">
+                        <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground flex items-center">
                           <Crown className="h-3.5 w-3.5 mr-1.5" />
                           {subscriptionStatus === 'active' ? 'Premium Models' : 'Additional Models'}
+                        </div>
+                        {/* Pricing Header for Premium Models */}
+                        <div className="px-2 py-2">
+                          <div className="flex items-center gap-0 text-xs text-muted-foreground">
+                            <div className="flex-1 pl-2">Model</div>
+                            <div className="w-16 text-right pr-2">Input</div>
+                            <div className="w-16 text-right pr-2">Output</div>
+                            <div className="w-8"></div>
+                          </div>
                         </div>
                         <div className="relative overflow-hidden" style={{ maxHeight: subscriptionStatus === 'active' ? 'none' : '160px' }}>
                           {(subscriptionStatus === 'active' ? premiumModels : premiumModels.slice(0, 3)).map((model, index) => {
                             const canAccess = isLocalMode() || canAccessModel(model.id);
-                            const isRecommended = model.recommended;
+                            const isRecommended = false; // Remove recommended badges
+                            
+                            // Format cost display
+                            const formatCost = (cost: number | null | undefined) => {
+                              if (cost === null || cost === undefined) return null;
+                              return `$${cost.toFixed(2)}`;
+                            };
+
+                            const inputCost = formatCost(model.inputCostPerMillionTokens);
+                            const outputCost = formatCost(model.outputCostPerMillionTokens);
                             
                             return (
                               <Tooltip key={`premium-${model.id}-${index}`}>
@@ -503,25 +530,24 @@ export function AgentModelSelector({
                                     <div className='w-full'>
                                       <DropdownMenuItem
                                         className={cn(
-                                          "text-sm px-3 rounded-lg py-2 mx-2 my-0.5 flex items-center justify-between cursor-pointer",
+                                          "text-sm px-2 py-2 mx-2 my-0.5 flex items-center gap-0 cursor-pointer rounded-lg transition-all duration-200",
+                                          selectedModel === model.id && "bg-muted border border-border",
                                           !canAccess && "opacity-70"
                                         )}
                                         onClick={() => handleSelect(model.id)}
                                       >
-                                        <div className="flex items-center gap-3">
+                                        <div className="flex items-center gap-3 min-w-0 flex-1 pl-2">
                                           <ModelProviderIcon modelId={model.id} size={24} />
                                           <span className="font-medium">{model.label}</span>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                          {isRecommended && (
-                                            <span className="text-xs px-1.5 py-0.5 rounded-sm bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 font-medium whitespace-nowrap">
-                                              Recommended
-                                            </span>
-                                          )}
-                                          {!canAccess && <Crown className="h-3.5 w-3.5 text-blue-500" />}
-                                          {selectedModel === model.id && (
-                                            <Check className="h-4 w-4 text-blue-500" />
-                                          )}
+                                        <div className="w-16 text-right text-xs text-muted-foreground pr-2">
+                                          {inputCost || '—'}
+                                        </div>
+                                        <div className="w-16 text-right text-xs text-muted-foreground pr-2">
+                                          {outputCost || '—'}
+                                        </div>
+                                        <div className="w-8 flex items-center justify-center">
+                                          {!canAccess && <Crown className="h-3.5 w-3.5 text-muted-foreground" />}
                                         </div>
                                       </DropdownMenuItem>
                                     </div>
@@ -529,7 +555,7 @@ export function AgentModelSelector({
                                   <TooltipContent side="left" className="text-xs max-w-xs">
                                     <p>
                                       {canAccess 
-                                        ? (isRecommended ? 'Recommended for optimal performance' : 'Premium model') 
+                                        ? 'Premium model' 
                                         : 'Requires subscription to access premium model'
                                       }
                                     </p>
@@ -540,10 +566,10 @@ export function AgentModelSelector({
                           {subscriptionStatus !== 'active' && (
                             <div className="absolute inset-0 bg-gradient-to-t from-background via-background/95 to-transparent flex items-end justify-center">
                               <div className="w-full p-3">
-                                <div className="rounded-xl bg-gradient-to-br from-blue-50/80 to-blue-200/70 dark:from-blue-950/40 dark:to-blue-900/30 shadow-sm border border-blue-200/50 dark:border-blue-800/50 p-3">
+                                <div className="rounded-xl bg-gradient-to-br from-muted/80 to-muted/70 dark:from-muted/40 dark:to-muted/30 shadow-sm border border-border p-3">
                                   <div className="flex flex-col space-y-2">
                                     <div className="flex items-center">
-                                      <Crown className="h-4 w-4 text-blue-500 mr-2 flex-shrink-0" />
+                                      <Crown className="h-4 w-4 text-muted-foreground mr-2 flex-shrink-0" />
                                       <div>
                                         <p className="text-sm font-medium">Unlock all models + higher limits</p>
                                       </div>
@@ -576,6 +602,13 @@ export function AgentModelSelector({
                   )}
                 </div>
               )}
+            </div>
+            
+            {/* Pricing Info Footer */}
+            <div className="px-4 py-2 border-t border-border bg-muted/30">
+              <div className="text-[10px] text-muted-foreground text-center">
+                * All prices are per 1 million tokens
+              </div>
             </div>
           </div>
         </DropdownMenuContent>
