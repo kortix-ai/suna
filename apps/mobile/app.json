@@ -39,6 +39,12 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "9fca3cff-a291-41c9-88b9-feb8053b990f"
+      }
+    },
+    "owner": "kortix"
   }
 }

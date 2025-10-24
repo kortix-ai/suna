@@ -16,30 +16,39 @@ import type { Model } from '../shared/types';
  */
 export const MODELS: Model[] = [
   {
+    id: 'claude-haiku-4-5',
+    name: 'Claude Haiku 4.5',
+    icon: Brain,
+    iconColor: '#F8F8F8',
+    backgroundColor: '#161618',
+    description: 'Fast and efficient AI with 67% cost reduction',
+    isSelected: true // Default selected model
+  },
+  {
     id: 'claude-sonnet-4',
     name: 'Claude Sonnet 4',
     icon: Brain,
     iconColor: '#F8F8F8',
     backgroundColor: '#161618',
-    description: 'Advanced reasoning and analysis',
-    isSelected: true // Default selected model
+    description: 'Advanced reasoning and analysis'
   },
-  {
-    id: 'chatgpt-5',
-    name: 'ChatGPT 5',
-    icon: MessageSquare,
-    iconColor: '#F8F8F8',
-    backgroundColor: '#161618',
-    description: 'Conversational AI with broad knowledge'
-  },
-  {
-    id: 'grok-4',
-    name: 'Grok 4',
-    icon: Zap,
-    iconColor: '#F8F8F8',
-    backgroundColor: '#161618',
-    description: 'Fast and efficient AI processing'
-  }
+  // Commented out non-Anthropic models as requested
+  // {
+  //   id: 'chatgpt-5',
+  //   name: 'ChatGPT 5',
+  //   icon: MessageSquare,
+  //   iconColor: '#F8F8F8',
+  //   backgroundColor: '#161618',
+  //   description: 'Conversational AI with broad knowledge'
+  // },
+  // {
+  //   id: 'grok-4',
+  //   name: 'Grok 4',
+  //   icon: Zap,
+  //   iconColor: '#F8F8F8',
+  //   backgroundColor: '#161618',
+  //   description: 'Fast and efficient AI processing'
+  // }
 ];
 
 /**

@@ -37,22 +37,24 @@ export function ThemeDrawer({ visible, onClose }: ThemeDrawerProps) {
   const { colorScheme, setColorScheme } = useColorScheme();
   const { t } = useLanguage();
   
-  const handleClose = () => {
+  const handleClose = React.useCallback(() => {
     console.log('🎯 Theme drawer closing');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
-  };
+  }, [onClose]);
   
-  const handleThemeSelect = (theme: 'light' | 'dark') => {
+  const handleThemeSelect = React.useCallback((theme: 'light' | 'dark') => {
+    // Don't do anything if already selected
+    if (colorScheme === theme) {
+      return;
+    }
+    
     console.log('🌓 Theme selected:', theme);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setColorScheme(theme);
     
-    // Close drawer after a short delay to show selection
-    setTimeout(() => {
-      handleClose();
-    }, 300);
-  };
+    // Change theme immediately - drawer stays open
+    setColorScheme(theme);
+  }, [colorScheme, setColorScheme]);
   
   if (!visible) return null;
   

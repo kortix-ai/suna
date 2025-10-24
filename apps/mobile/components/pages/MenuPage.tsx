@@ -20,7 +20,6 @@ import { ConversationSection } from '@/components/menu/ConversationSection';
 import { BottomNav } from '@/components/menu/BottomNav';
 import { ProfileSection } from '@/components/menu/ProfileSection';
 import { SettingsDrawer } from '@/components/menu/SettingsDrawer';
-import { AuthDrawer } from '@/components/auth/AuthDrawer';
 import { useAuthContext, useLanguage } from '@/contexts';
 import { useRouter } from 'expo-router';
 import { AgentAvatar } from '@/components/agents/AgentAvatar';
@@ -373,14 +372,12 @@ export function MenuPage({
   const { agents } = useAgent();
   const scrollY = useSharedValue(0);
   const [isSettingsVisible, setIsSettingsVisible] = React.useState(false);
-  const [isAuthDrawerVisible, setIsAuthDrawerVisible] = React.useState(false);
   const [isTriggerDrawerVisible, setIsTriggerDrawerVisible] = React.useState(false);
 
   // Debug trigger drawer visibility
   React.useEffect(() => {
     console.log('🔧 TriggerCreationDrawer visible changed to:', isTriggerDrawerVisible);
   }, [isTriggerDrawerVisible]);
-  const authDrawerRef = React.useRef<any>(null);
   
   const isGuest = !user;
   
@@ -454,17 +451,11 @@ export function MenuPage({
   };
   
   /**
-   * Handle profile press - Opens auth drawer if guest, otherwise settings
+   * Handle profile press - Opens settings drawer
    */
   const handleProfilePress = () => {
-    if (isGuest) {
-      console.log('🎯 Opening auth drawer for guest user');
-      setIsAuthDrawerVisible(true);
-      authDrawerRef.current?.present();
-    } else {
-      console.log('🎯 Opening settings drawer');
-      setIsSettingsVisible(true);
-    }
+    console.log('🎯 Opening settings drawer');
+    setIsSettingsVisible(true);
   };
   
   /**
@@ -500,14 +491,6 @@ export function MenuPage({
     setIsTriggerDrawerVisible(false);
     // Refetch triggers to show the new one
     refetchTriggers();
-  };
-  
-  /**
-   * Handle auth drawer close
-   */
-  const handleCloseAuthDrawer = () => {
-    console.log('🎯 Closing auth drawer');
-    setIsAuthDrawerVisible(false);
   };
   
   return (
@@ -778,13 +761,6 @@ export function MenuPage({
         visible={isSettingsVisible}
         profile={profile}
         onClose={handleCloseSettings}
-      />
-      
-      {/* Auth Drawer */}
-      <AuthDrawer
-        ref={authDrawerRef}
-        isOpen={isAuthDrawerVisible}
-        onClose={handleCloseAuthDrawer}
       />
       
       {/* Floating Action Button */}

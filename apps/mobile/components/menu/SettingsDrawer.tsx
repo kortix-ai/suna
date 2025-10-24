@@ -7,6 +7,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useColorScheme } from 'nativewind';
 import { useAuthContext, useLanguage } from '@/contexts';
+import { useRouter } from 'expo-router';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { 
@@ -61,6 +62,7 @@ export function SettingsDrawer({ visible, profile, onClose }: SettingsDrawerProp
   const { colorScheme } = useColorScheme();
   const { user, signOut } = useAuthContext();
   const { t } = useLanguage();
+  const router = useRouter();
   const [isLanguageDrawerVisible, setIsLanguageDrawerVisible] = React.useState(false);
   const [isNameEditDrawerVisible, setIsNameEditDrawerVisible] = React.useState(false);
   const [isThemeDrawerVisible, setIsThemeDrawerVisible] = React.useState(false);
@@ -87,11 +89,8 @@ export function SettingsDrawer({ visible, profile, onClose }: SettingsDrawerProp
   const handleBilling = () => {
     console.log('🎯 Billing pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Alert.alert(
-      t('settings.billing') || 'Billing',
-      'Billing management is coming soon!',
-      [{ text: t('common.ok') || 'OK' }]
-    );
+    onClose();
+    router.push('/billing');
   };
   
   const handleIntegrations = () => {
