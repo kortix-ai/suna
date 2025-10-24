@@ -33,12 +33,10 @@ def load_progress():
                 return {"step": 0, "data": {}}
     return {"step": 0, "data": {}}
 
-
 def get_setup_method():
     """Gets the setup method chosen during setup."""
     progress = load_progress()
     return progress.get("data", {}).get("setup_method")
-
 
 def check_docker_available():
     """Check if Docker is available and running."""
@@ -58,7 +56,6 @@ def check_docker_compose_up():
         shell=IS_WINDOWS,
     )
     return len(result.stdout.strip()) > 0
-
 
 def print_manual_instructions():
     """Prints instructions for manually starting Suna services."""
