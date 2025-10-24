@@ -40,6 +40,7 @@ import { getAgents } from '@/hooks/react-query/agents/utils';
 import { AgentRunLimitDialog } from '@/components/thread/agent-run-limit-dialog';
 import { Examples } from '@/components/dashboard/examples';
 import { SunaModesPanel } from '@/components/dashboard/suna-modes-panel';
+import { UsageSection } from '@/components/home/sections/new/usage-section';
 
 // Custom dialog overlay with blur effect
 const BlurredDialogOverlay = () => (
@@ -223,7 +224,7 @@ export function HeroSection() {
                 onOpenChange={setShowPaymentModal}
                 showUsageLimitAlert={true}
             />
-            <div className="relative flex flex-col items-center w-full px-4 sm:px-6 pb-8 sm:pb-32">
+            <div className="relative flex flex-col items-center w-full px-4 sm:px-6 pb-8 sm:pb-10">
                 {/* Animated background */}
                 <AnimatedBg variant="hero" />
 
@@ -272,6 +273,16 @@ export function HeroSection() {
                                 onChartsChange={setSelectedCharts}
                                 selectedOutputFormat={selectedOutputFormat}
                                 onOutputFormatChange={setSelectedOutputFormat}
+                            />
+                        </div>
+                    )}
+
+                    {/* Usage Cards - Show example prompts, hide when modes panel is active */}
+                    {!selectedMode && (
+                        <div className="w-full max-w-7xl sm:px-0">
+                            <UsageSection
+                                onCardClick={(prompt) => setInputValue(prompt)}
+                                maxCards={8}
                             />
                         </div>
                     )}

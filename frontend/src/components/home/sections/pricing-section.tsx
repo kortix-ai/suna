@@ -620,7 +620,7 @@ function PricingTier({
           variant={buttonVariant || 'default'}
           className={cn(
             'w-full font-medium transition-all duration-200',
-            isCompact || insideDialog ? 'h-8 text-xs' : 'h-10 rounded-full text-sm',
+            isCompact || insideDialog ? 'h-8 text-xs' : 'h-10 text-sm',
             buttonClassName,
             isPlanLoading && 'animate-pulse',
           )}

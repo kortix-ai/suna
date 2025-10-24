@@ -308,18 +308,14 @@ export function SidebarLeft({
             /* Collapsed layout: + button and 4 state buttons only */
             <motion.div
               key="collapsed"
-              initial={false}
+              initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.12, ease: "easeOut" }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
               className="px-6 pt-4 space-y-3 flex flex-col items-center"
             >
               {/* + button */}
-              <motion.div
-                layout
-                transition={{ duration: 0.15, ease: "easeOut" }}
-                className="w-full flex justify-center"
-              >
+              <div className="w-full flex justify-center">
                 <Button
                   variant="outline"
                   size="icon"
@@ -336,14 +332,10 @@ export function SidebarLeft({
                     <Plus className="h-4 w-4" />
                   </Link>
                 </Button>
-              </motion.div>
+              </div>
 
               {/* State buttons vertically */}
-              <motion.div
-                layout
-                transition={{ duration: 0.15, ease: "easeOut" }}
-                className="w-full flex flex-col items-center space-y-3"
-              >
+              <div className="w-full flex flex-col items-center space-y-3">
                 {[
                   { view: 'chats' as const, icon: MessageCircle },
                   { view: 'agents' as const, icon: Bot },
@@ -365,25 +357,21 @@ export function SidebarLeft({
                     <Icon className="!h-4 !w-4" />
                   </Button>
                 ))}
-              </motion.div>
+              </div>
             </motion.div>
           ) : (
             /* Expanded layout */
             <motion.div
               key="expanded"
-              initial={false}
+              initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.12, ease: "easeOut" }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
               className="flex flex-col h-full"
             >
               <div className="px-[30px] pt-4 space-y-4">
                 {/* New Chat button */}
-                <motion.div
-                  layout
-                  transition={{ duration: 0.15, ease: "easeOut" }}
-                  className="w-full"
-                >
+                <div className="w-full">
                   <Button
                     variant="outline"
                     size="sm"
@@ -407,23 +395,17 @@ export function SidebarLeft({
                       </div>
                     </Link>
                   </Button>
-                </motion.div>
+                </div>
 
                 {/* State buttons horizontally */}
-                <motion.div
-                  layout
-                  transition={{ duration: 0.15, ease: "easeOut" }}
-                  className="flex justify-between items-center gap-2"
-                >
+                <div className="flex justify-between items-center gap-2">
                   {[
                     { view: 'chats' as const, icon: MessageCircle, label: 'Chats' },
                     { view: 'agents' as const, icon: Bot, label: 'Workers' },
                     { view: 'starred' as const, icon: Zap, label: 'Triggers' }
                   ].map(({ view, icon: Icon, label }) => (
-                    <motion.button
+                    <button
                       key={view}
-                      layout
-                      transition={{ duration: 0.15, ease: "easeOut" }}
                       className={cn(
                         "flex flex-col items-center justify-center gap-1.5 p-1.5 rounded-2xl cursor-pointer transition-colors w-[64px] h-[64px]",
                         "hover:bg-muted/60 hover:border-[1.5px] hover:border-border",
@@ -432,27 +414,16 @@ export function SidebarLeft({
                       onClick={() => setActiveView(view)}
                     >
                       <Icon className="!h-4 !w-4" />
-                      <motion.span
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: 'auto' }}
-                        exit={{ opacity: 0, height: 0 }}
-                        transition={{ duration: 0.12, ease: "easeOut" }}
-                        className="text-xs text-muted-foreground whitespace-nowrap"
-                      >
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
                         {label}
-                      </motion.span>
-                    </motion.button>
+                      </span>
+                    </button>
                   ))}
-                </motion.div>
+                </div>
               </div>
 
               {/* Content area */}
-              <motion.div
-                initial={false}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.15, ease: "easeOut" }}
-                className="px-6 flex-1 overflow-hidden"
-              >
+              <div className="px-6 flex-1 overflow-hidden">
                 {activeView === 'chats' && <NavAgents />}
                 {activeView === 'agents' && <NavAgentsView />}
                 {activeView === 'starred' && (
@@ -461,7 +432,7 @@ export function SidebarLeft({
                     <NavTriggerRuns />
                   </>
                 )}
-              </motion.div>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
