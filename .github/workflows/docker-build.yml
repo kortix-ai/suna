@@ -12,6 +12,7 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write
 
 jobs:
   build-and-push:
@@ -42,6 +43,7 @@ jobs:
             echo "branch=${GITHUB_HEAD_REF:-${GITHUB_REF#refs/heads/}}" >> $GITHUB_OUTPUT
             echo "environment=staging" >> $GITHUB_OUTPUT
           fi
+          echo "aws_region=us-west-2" >> $GITHUB_OUTPUT
         id: get_tag_name
 
       - name: Set up Docker Buildx
@@ -79,7 +81,50 @@ jobs:
             docker compose build
             docker compose up -d
 
-      - name: Deploy to prod
+      - name: Configure AWS credentials
+        if: steps.get_tag_name.outputs.environment == 'prod'
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOYMENT_ROLE }}
+          aws-region: ${{ steps.get_tag_name.outputs.aws_region }}
+
+      - name: Update ECS services
+        if: steps.get_tag_name.outputs.environment == 'prod'
+        run: |
+          set -e
+          REGION="${{ steps.get_tag_name.outputs.aws_region }}"
+          CLUSTER="suna-ecs"
+          
+          # Get all service ARNs
+          SERVICES=$(aws ecs list-services --cluster $CLUSTER --region $REGION --query 'serviceArns' --output text)
+          
+          # Update API service
+          API_SERVICE_ARN=$(echo $SERVICES | tr ' ' '\n' | grep 'suna-api-svc' | head -1)
+          if [ -n "$API_SERVICE_ARN" ]; then
+            API_SERVICE=$(echo $API_SERVICE_ARN | awk -F'/' '{print $NF}')
+            echo "Updating API service: $API_SERVICE"
+            aws ecs update-service \
+              --cluster $CLUSTER \
+              --service $API_SERVICE \
+              --force-new-deployment \
+              --region $REGION \
+              --no-cli-pager
+          fi
+          
+          # Update Worker service
+          WORKER_SERVICE_ARN=$(echo $SERVICES | tr ' ' '\n' | grep 'suna-worker-svc' | head -1)
+          if [ -n "$WORKER_SERVICE_ARN" ]; then
+            WORKER_SERVICE=$(echo $WORKER_SERVICE_ARN | awk -F'/' '{print $NF}')
+            echo "Updating Worker service: $WORKER_SERVICE"
+            aws ecs update-service \
+              --cluster $CLUSTER \
+              --service $WORKER_SERVICE \
+              --force-new-deployment \
+              --region $REGION \
+              --no-cli-pager
+          fi
+
+      - name: Deploy to prod [legacy]
         if: steps.get_tag_name.outputs.environment == 'prod'
         uses: appleboy/ssh-action@v1
         with:
