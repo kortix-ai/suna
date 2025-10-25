@@ -94,6 +94,36 @@
     "slide4": {
       "title": "Automate Tasks",
       "description": "Set up triggers and workers to automate your workflows and boost productivity"
+    },
+    "slides": {
+      "title": "Generate Presentations",
+      "description": "Create professional presentations in seconds. From pitch decks to business reports.",
+      "example": "Create a pitch deck for my startup"
+    },
+    "research": {
+      "title": "Deep Research",
+      "description": "Comprehensive web research with instant insights, summaries, and analysis.",
+      "example": "Research AI trends in healthcare"
+    },
+    "data": {
+      "title": "Data Analysis",
+      "description": "Analyze data, create visualizations, and generate actionable intelligence.",
+      "example": "Analyze quarterly sales data"
+    },
+    "docs": {
+      "title": "Document Creation",
+      "description": "Generate reports, draft emails, and create any document with AI assistance.",
+      "example": "Draft a project proposal"
+    },
+    "automation": {
+      "title": "Smart Automation",
+      "description": "Set up triggers to automate workflows. Schedule tasks and monitor events.",
+      "example": "Send daily reports at 9 AM"
+    },
+    "superworker": {
+      "title": "Your AI Superworker",
+      "description": "Combine all features to build custom AI workers for any task you need.",
+      "example": "Create a customer support agent"
     }
   },
   "settings": {

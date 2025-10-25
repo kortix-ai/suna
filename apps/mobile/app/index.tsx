@@ -15,25 +15,24 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useAuthContext } from '@/contexts';
 import { useOnboarding } from '@/hooks/useOnboarding';
-import { useBillingContext } from '@/contexts/BillingContext';
 
 /**
  * Splash Screen
  * 
- * Shown while checking authentication and billing status
+ * Shown while checking authentication and onboarding status
  * Routes user to appropriate screen based on state:
  * - Not authenticated → Sign In
- * - Authenticated + Has subscription/trial → App
- * - Authenticated + No subscription/trial → Onboarding (includes billing)
+ * - Authenticated + Not completed onboarding → Onboarding
+ * - Authenticated + Completed onboarding → App
  * 
- * Note: Billing status is the source of truth for onboarding completion
+ * Note: Onboarding is shown every time user logs in (per user, per device)
+ * If user has active billing, onboarding auto-completes after showing features
  */
 export default function SplashScreen() {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
-  const { isAuthenticated, isLoading: authLoading } = useAuthContext();
+  const { isAuthenticated, isLoading: authLoading, session } = useAuthContext();
   const { hasCompletedOnboarding, isLoading: onboardingLoading } = useOnboarding();
-  const { subscriptionData, trialStatus, isLoading: billingLoading } = useBillingContext();
   const [isReady, setIsReady] = React.useState(false);
 
   const Logomark = colorScheme === 'dark' ? LogomarkWhite : LogomarkBlack;
@@ -58,52 +57,23 @@ export default function SplashScreen() {
 
   // Route user once we have all the info
   React.useEffect(() => {
-    if (!authLoading && !onboardingLoading && !billingLoading) {
+    if (!authLoading && !onboardingLoading) {
       // Small delay for smooth transition
       setTimeout(() => {
         if (!isAuthenticated) {
           console.log('🔐 User not authenticated, routing to sign in');
           router.replace('/auth');
+        } else if (!hasCompletedOnboarding) {
+          console.log('👋 User needs onboarding, routing to onboarding');
+          router.replace('/onboarding');
         } else {
-          // User is authenticated
-          // Check billing status as source of truth for onboarding completion
-          const hasActiveTrial = trialStatus?.has_trial && trialStatus?.trial_status === 'active';
-          const hasActiveSubscription =
-            subscriptionData?.tier && 
-            subscriptionData.tier.name !== 'none' && 
-            subscriptionData.tier.name !== 'free';
-          
-          const hasBillingSetup = hasActiveTrial || hasActiveSubscription;
-
-          console.log('🚦 Splash Screen Routing Decision:', {
-            isAuthenticated,
-            hasCompletedOnboarding,
-            hasActiveTrial,
-            hasActiveSubscription,
-            hasBillingSetup,
-            canStartTrial: trialStatus?.can_start_trial,
-          });
-
-          // If user has billing setup, they've completed onboarding
-          if (hasBillingSetup) {
-            // Mark onboarding as completed if not already (for faster future loads)
-            if (!hasCompletedOnboarding) {
-              console.log('💡 User has billing, marking onboarding as completed');
-              const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-              AsyncStorage.setItem('@onboarding_completed', 'true').catch(console.error);
-            }
-            console.log('✅ User has billing setup, routing to app');
-            router.replace('/home');
-          } else {
-            // No billing setup - need onboarding
-            console.log('👋 User needs onboarding (no billing setup), routing to onboarding');
-            router.replace('/onboarding');
-          }
+          console.log('✅ User authenticated and onboarded, routing to app');
+          router.replace('/home');
         }
         setIsReady(true);
       }, 800); // Minimum splash display time
     }
-  }, [authLoading, onboardingLoading, billingLoading, isAuthenticated, hasCompletedOnboarding, subscriptionData, trialStatus, router]);
+  }, [authLoading, onboardingLoading, isAuthenticated, hasCompletedOnboarding, router]);
 
   return (
     <>

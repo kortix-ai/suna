@@ -51,7 +51,7 @@ export function MessageRenderer({
   onToolPress,
 }: MessageRendererProps) {
   const groupedMessages = useMemo(() => {
-    // ✨ Smart deduplication: Only show streaming OR fetched, never both
+    // ✨ Smart deduplication: Prevent flickering by only showing streaming OR final message
     let messagesToRender = [...messages];
     
     if (streamingContent && streamingContent.trim().length > 0) {
@@ -61,17 +61,13 @@ export function MessageRenderer({
       if (lastAssistantMsg) {
         const lastContent = safeJsonParse<ParsedContent>(lastAssistantMsg.content, {}).content || '';
         
-        // ✨ Only use fetched if it's EXACTLY the same or contains ALL of streaming content
-        // This prevents filtering out early streaming chunks
-        const isExactMatch = lastContent === streamingContent;
-        const isSuperset = lastContent.length > streamingContent.length && 
-                           lastContent.includes(streamingContent);
+        // ✨ Only show streaming if the final message is significantly different
+        // This prevents flickering when final message arrives
+        const isSignificantlyDifferent = Math.abs(lastContent.length - streamingContent.length) > 10 ||
+                                        !lastContent.includes(streamingContent.substring(0, Math.min(50, streamingContent.length)));
         
-        if (isExactMatch || isSuperset) {
-          // Fetched message is complete/final, use it instead of streaming
-          console.log('📦 [MessageRenderer] Using fetched message (complete)');
-        } else {
-          // Streaming content is different or newer - show it!
+        if (isSignificantlyDifferent) {
+          // Show streaming content - final message is different
           console.log('🔄 [MessageRenderer] Showing streaming content:', streamingContent.length, 'chars');
           messagesToRender.push({
             message_id: null,
@@ -83,6 +79,9 @@ export function MessageRenderer({
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
           });
+        } else {
+          // Final message is ready - use it instead of streaming
+          console.log('📦 [MessageRenderer] Using final message (no flicker)');
         }
       } else {
         // No assistant message yet, definitely show streaming
@@ -330,7 +329,7 @@ function AssistantMessageGroup({
         const linkedTools = toolResultsMap.get(assistantMsg.message_id || null);
         
         return (
-          <View key={assistantMsg.message_id || `assistant-${idx}`}>
+          <View key={`${assistantMsg.message_id || 'assistant'}-${idx}-${assistantMsg.created_at}`}>
             <AssistantMessageContent 
               message={assistantMsg}
               hasToolsBelow={!!linkedTools && linkedTools.length > 0}
@@ -340,7 +339,7 @@ function AssistantMessageGroup({
             {linkedTools && linkedTools.length > 0 && (
               <View className="gap-2.5">
                 {linkedTools.map((toolMsg, toolIdx) => (
-                  <View key={toolMsg.message_id || `tool-${toolIdx}`} className="px-4 mb-2.5">
+                  <View key={`${toolMsg.message_id || 'tool'}-${toolIdx}-${toolMsg.created_at}`} className="px-4 mb-2.5">
                     <ToolCard
                       message={toolMsg}
                       onPress={() => handleToolPress(toolMsg)}
@@ -355,7 +354,7 @@ function AssistantMessageGroup({
       
       {/* Orphaned tools */}
       {toolResultsMap.get(null)?.map((toolMsg, idx) => (
-        <View key={toolMsg.message_id || `orphan-tool-${idx}`} className="px-4 mt-2">
+        <View key={`${toolMsg.message_id || 'orphan-tool'}-${idx}-${toolMsg.created_at}`} className="px-4 mt-2">
           <ToolCard
             message={toolMsg}
             onPress={() => handleToolPress(toolMsg)}

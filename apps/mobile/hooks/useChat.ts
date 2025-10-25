@@ -153,10 +153,13 @@ export function useChat(): UseChatReturn {
   // ============================================================================
 
   const { data: threadsData = [] } = useThreads();
-  // Don't load thread/messages if it's an optimistic new thread (to avoid loading spinner)
-  const shouldFetchThread = activeThreadId && !isNewThreadOptimistic;
+
+  // Simple data fetching - always fetch when we have a thread
+  const shouldFetchThread = !!activeThreadId;
+  const shouldFetchMessages = !!activeThreadId;
+
   const { data: threadData, isLoading: isThreadLoading } = useThread(shouldFetchThread ? activeThreadId : undefined);
-  const { data: messagesData, isLoading: isMessagesLoading, refetch: refetchMessages } = useMessages(shouldFetchThread ? activeThreadId : undefined);
+  const { data: messagesData, isLoading: isMessagesLoading, refetch: refetchMessages } = useMessages(shouldFetchMessages ? activeThreadId : undefined);
   const { data: activeRuns } = useActiveAgentRuns();
 
   // Mutations
@@ -179,9 +182,13 @@ export function useChat(): UseChatReturn {
   // Computed streaming state
   const isStreaming = !!currentRunIdRef.current;
 
-  // Update streaming status
+  // Update streaming status - accumulate ALL chunks
   const addContentImmediate = useCallback((content: string) => {
-    setStreamingContent((prev) => prev + content);
+    setStreamingContent((prev) => {
+      const newContent = prev + content;
+      console.log('[useChat] 📝 Accumulated content:', newContent.length, 'chars');
+      return newContent;
+    });
   }, []);
 
   // Finalize stream
@@ -195,29 +202,34 @@ export function useChat(): UseChatReturn {
       completedRunIds.current.add(currentRunIdRef.current);
     }
     
-    // Clear the current run ID to prevent re-connections
+    // Clear streaming state but keep agentRunId until refetch completes
     currentRunIdRef.current = null;
-    setAgentRunId(null);
-
-    // ✨ KEEP streaming content visible while we refetch
-    // We'll clear it after a small delay to ensure smooth transition
     processedMessageIds.current.clear();
 
     // Invalidate active runs query to update agent running status
     queryClient.invalidateQueries({ queryKey: chatKeys.activeRuns() });
 
+    // Clear optimistic flag
+    if (isNewThreadOptimistic) {
+      console.log('[useChat] Clearing optimistic flag - streaming complete');
+      setIsNewThreadOptimistic(false);
+    }
+
     // Refetch messages to get the final state
     refetchMessages().then(() => {
-      // Wait a bit to ensure the new message is rendered, then clear streaming
+      // Clear agentRunId AFTER refetch completes to maintain running state
+      setAgentRunId(null);
+      
+      // Clear streaming content after a longer delay to prevent flicker
       setTimeout(() => {
         if (isMountedRef.current) {
           console.log('[useChat] Clearing streaming content after refetch');
           setStreamingContent('');
           setStreamingToolCall(null);
         }
-      }, 100);
+      }, 500); // Longer delay to prevent flicker
     });
-  }, [refetchMessages, queryClient]);
+  }, [refetchMessages, queryClient, isNewThreadOptimistic]);
 
   // Handle incoming stream messages
   const handleStreamMessage = useCallback((rawData: string) => {
@@ -306,8 +318,8 @@ export function useChat(): UseChatReturn {
               });
             }
             
-            // Clear text content since we're now in tool mode
-            setStreamingContent('');
+            // DON'T clear text content - keep it visible until tool completes
+            // setStreamingContent('');
           } else {
             // Regular text content - ALWAYS render it
             addContentImmediate(content);
@@ -320,13 +332,8 @@ export function useChat(): UseChatReturn {
             // Add to messages immediately
             setMessages((prev) => [...prev, message]);
             
-            // Clear streaming state after a tiny delay to prevent flicker
-            setTimeout(() => {
-              if (isMountedRef.current) {
-                setStreamingContent('');
-                setStreamingToolCall(null);
-              }
-            }, 50);
+            // DON'T clear streaming content here - let finalizeStream handle it
+            // This prevents double clearing and flickering
           }
         } else if (!parsedMetadata.stream_status) {
           // Handle non-chunked assistant messages
@@ -394,12 +401,10 @@ export function useChat(): UseChatReturn {
 
     console.log('[useChat] 🚀 Starting stream for run:', runId);
     
-    // ✨ Clear any stale streaming content from previous runs
-    // This ensures fresh start for each stream
+    // Clear streaming content and set run ID
     setStreamingContent('');
     setStreamingToolCall(null);
     processedMessageIds.current.clear();
-    
     currentRunIdRef.current = runId;
 
     try {
@@ -490,7 +495,7 @@ export function useChat(): UseChatReturn {
     // Update the previous thread ID
     prevThreadIdRef.current = activeThreadId;
 
-    // Load messages for thread (but don't override optimistic messages)
+    // Load messages for thread - simple approach
     if (messagesData && !isNewThreadOptimistic) {
       setMessages(messagesData as unknown as UnifiedMessage[]);
     }
@@ -532,13 +537,15 @@ export function useChat(): UseChatReturn {
   useEffect(() => {
     if (activeThreadId) {
       console.log('📊 [useChat] Loading state:', {
-        isLoading: (isThreadLoading || isMessagesLoading),
+        isLoading: (isThreadLoading || isMessagesLoading) && !!activeThreadId && !isNewThreadOptimistic && messages.length === 0,
         isThreadLoading,
         isMessagesLoading,
+        isNewThreadOptimistic,
+        messagesCount: messages.length,
         threadId: activeThreadId,
       });
     }
-  }, [isThreadLoading, isMessagesLoading, activeThreadId]);
+  }, [isThreadLoading, isMessagesLoading, activeThreadId, isNewThreadOptimistic, messages.length]);
 
   // ============================================================================
   // Public API - Thread Operations
@@ -622,7 +629,7 @@ export function useChat(): UseChatReturn {
         // ========================================================================
         console.log('[useChat] Creating new thread via /agent/start with optimistic UI');
         
-        // ✨ OPTIMISTIC UI: Show user message immediately
+        // ✨ INSTANT UI: Show user message immediately like ChatGPT
         const optimisticUserMessage: UnifiedMessage = {
           message_id: 'optimistic-user-' + Date.now(),
           thread_id: 'optimistic',
@@ -634,7 +641,8 @@ export function useChat(): UseChatReturn {
           updated_at: new Date().toISOString(),
         };
         setMessages([optimisticUserMessage]);
-        setIsNewThreadOptimistic(true); // Flag to skip loading state
+        setIsNewThreadOptimistic(true);
+        console.log('✨ [useChat] INSTANT user message display');
         
         // Convert attachments to FormData-compatible format
         const formDataFiles = attachments.length > 0
@@ -654,16 +662,14 @@ export function useChat(): UseChatReturn {
         currentThreadId = createResult.thread_id;
         console.log('[useChat] Thread created:', currentThreadId, 'Agent Run:', createResult.agent_run_id);
         
-        // Set thread ID first
+        // Set thread ID and start streaming immediately like ChatGPT
         setActiveThreadId(currentThreadId);
-        setIsNewThreadOptimistic(false); // Clear optimistic flag
         
-        // Set agent run ID after a delay
         if (createResult.agent_run_id) {
-          setTimeout(() => {
-            console.log('[useChat] Setting agent run ID:', createResult.agent_run_id);
-            setAgentRunId(createResult.agent_run_id);
-          }, 100);
+          console.log('[useChat] Starting INSTANT streaming:', createResult.agent_run_id);
+          setAgentRunId(createResult.agent_run_id);
+          // Start streaming immediately - no delays
+          startStreaming(createResult.agent_run_id);
         }
         
         // Clear input and attachments AFTER successful send
@@ -763,9 +769,12 @@ export function useChat(): UseChatReturn {
         
         console.log('[useChat] Message sent, agent run started:', result.agentRunId);
         
-        // Set agent run ID
+        // Set agent run ID and start streaming immediately like ChatGPT
         if (result.agentRunId) {
+          console.log('[useChat] Starting INSTANT streaming for existing thread:', result.agentRunId);
           setAgentRunId(result.agentRunId);
+          // Start streaming immediately - no delays
+          startStreaming(result.agentRunId);
         }
         
         // Clear input and attachments AFTER successful send
@@ -790,6 +799,7 @@ export function useChat(): UseChatReturn {
     uploadFilesMutation,
     threadData,
     t,
+    startStreaming,
   ]);
 
   const stopAgent = useCallback(() => {
@@ -1057,7 +1067,7 @@ export function useChat(): UseChatReturn {
     };
   }, [threadData, messages]);
 
-  const isAgentRunning = !!agentRunId || isStreaming;
+  const isAgentRunning = !!agentRunId || isStreaming || sendMessageMutation.isPending || unifiedAgentStartMutation.isPending;
   
   // Check if any attachments are currently uploading
   const hasUploadingAttachments = attachments.some(a => a.isUploading);
@@ -1066,8 +1076,9 @@ export function useChat(): UseChatReturn {
   const isSendingMessage = sendMessageMutation.isPending || unifiedAgentStartMutation.isPending;
   
   // Compute isLoading: true when thread data or messages are being fetched
-  // ✨ BUT: Never show loading for new optimistic threads - they should appear instantly
-  const isLoading = (isThreadLoading || isMessagesLoading) && !!activeThreadId && !isNewThreadOptimistic;
+  // ✨ BUT: Never show loading when we have messages (optimistic or real) - they should appear instantly
+  // ✨ AND: Never show loading for new optimistic threads - they should appear instantly
+  const isLoading = (isThreadLoading || isMessagesLoading) && !!activeThreadId && !isNewThreadOptimistic && messages.length === 0;
 
   // ============================================================================
   // Return Public API
