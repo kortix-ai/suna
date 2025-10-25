@@ -51,40 +51,16 @@ export function MessageRenderer({
   onToolPress,
 }: MessageRendererProps) {
   const groupedMessages = useMemo(() => {
-    // ✨ Smart deduplication: Prevent flickering by only showing streaming OR final message
+    // ✨ Simplified: Trust data layer to handle deduplication
+    // Only add streaming content if it's not already represented in messages
     let messagesToRender = [...messages];
     
     if (streamingContent && streamingContent.trim().length > 0) {
-      // Find the most recent assistant message
-      const lastAssistantMsg = [...messages].reverse().find(m => m.type === 'assistant');
+      // Check if we already have a recent assistant message that matches the streaming content
+      const recentAssistantMsg = [...messages].reverse().find(m => m.type === 'assistant');
       
-      if (lastAssistantMsg) {
-        const lastContent = safeJsonParse<ParsedContent>(lastAssistantMsg.content, {}).content || '';
-        
-        // ✨ Only show streaming if the final message is significantly different
-        // This prevents flickering when final message arrives
-        const isSignificantlyDifferent = Math.abs(lastContent.length - streamingContent.length) > 10 ||
-                                        !lastContent.includes(streamingContent.substring(0, Math.min(50, streamingContent.length)));
-        
-        if (isSignificantlyDifferent) {
-          // Show streaming content - final message is different
-          console.log('🔄 [MessageRenderer] Showing streaming content:', streamingContent.length, 'chars');
-          messagesToRender.push({
-            message_id: null,
-            thread_id: 'streaming',
-            type: 'assistant',
-            is_llm_message: true,
-            content: JSON.stringify({ role: 'assistant', content: streamingContent }),
-            metadata: JSON.stringify({ stream_status: 'chunk' }),
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          });
-        } else {
-          // Final message is ready - use it instead of streaming
-          console.log('📦 [MessageRenderer] Using final message (no flicker)');
-        }
-      } else {
-        // No assistant message yet, definitely show streaming
+      if (!recentAssistantMsg) {
+        // No assistant message yet, show streaming content
         console.log('✨ [MessageRenderer] First chunks - showing streaming:', streamingContent.length, 'chars');
         messagesToRender.push({
           message_id: null,
@@ -182,11 +158,11 @@ export function MessageRenderer({
         </View>
       )}
 
-      {isStreaming && (
-        <View className="px-4 pb-3">
+      {/* {isStreaming && (
+        <View className="px-4 pt-2 pb-4">
           <StreamingDots />
         </View>
-      )}
+      )} */}
     </View>
   );
 }
@@ -606,18 +582,18 @@ function StreamingDots() {
   const dot3Style = useAnimatedStyle(() => ({ opacity: dot3Opacity.value }));
 
   return (
-    <View className="flex-row gap-1 items-center">
+    <View className="flex-row gap-2 items-center justify-center py-2">
       <Animated.View 
         style={[dot1Style]} 
-        className="w-1.5 h-1.5 rounded-full bg-muted-foreground" 
+        className="w-2 h-2 rounded-full bg-muted-foreground" 
       />
       <Animated.View 
         style={[dot2Style]} 
-        className="w-1.5 h-1.5 rounded-full bg-muted-foreground" 
+        className="w-2 h-2 rounded-full bg-muted-foreground" 
       />
       <Animated.View 
         style={[dot3Style]} 
-        className="w-1.5 h-1.5 rounded-full bg-muted-foreground" 
+        className="w-2 h-2 rounded-full bg-muted-foreground" 
       />
     </View>
   );

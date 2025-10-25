@@ -11,6 +11,7 @@ import { View, type ViewProps } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { AgentAvatar } from './AgentAvatar';
 import { useAgent } from '@/contexts/AgentContext';
+import { useColorScheme } from 'nativewind';
 import type { Agent } from '@/api/types';
 
 interface AgentIdentifierProps extends ViewProps {
@@ -46,6 +47,7 @@ export function AgentIdentifier({
   ...props
 }: AgentIdentifierProps) {
   const { agents, selectedAgentId } = useAgent();
+  const { colorScheme } = useColorScheme();
   
   // Get agent from ID or use provided agent or fallback to current agent
   const agent = useMemo(() => {
@@ -88,7 +90,10 @@ export function AgentIdentifier({
     >
       <AgentAvatar agent={agent} size={size} />
       {showName && (
-        <Text className={`${textSizeClass} font-medium opacity-50`} style={{ color: '#f8f8f8' }}>
+        <Text 
+          className={`${textSizeClass} font-medium opacity-50`} 
+          style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+        >
           {agent.name}
         </Text>
       )}

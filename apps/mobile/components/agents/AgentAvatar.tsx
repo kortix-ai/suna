@@ -23,15 +23,18 @@ interface AgentAvatarProps extends ViewProps {
  */
 export function AgentAvatar({ agent, size = 48, style, ...props }: AgentAvatarProps) {
   // Check if this is the SUNA/KORTIX SUPER WORKER
-  const isSunaAgent = agent?.metadata?.is_suna_default;
+  const isSunaAgent = agent?.metadata?.is_suna_default || 
+                      agent?.name?.toLowerCase() === 'suna' ||
+                      agent?.name?.toLowerCase() === 'superworker' ||
+                      agent?.name?.toLowerCase() === 'kortix super worker';
 
   return (
     <Avatar
       variant="agent"
       size={size}
       icon={agent?.icon_name || undefined}
-      iconColor={agent?.icon_color || undefined}
-      backgroundColor={agent?.icon_background || undefined}
+      iconColor={isSunaAgent ? undefined : agent?.icon_color}
+      backgroundColor={isSunaAgent ? undefined : agent?.icon_background}
       useKortixSymbol={isSunaAgent}
       fallbackText={agent?.name}
       style={style}
