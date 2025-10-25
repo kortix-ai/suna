@@ -165,9 +165,96 @@ const uploadFiles = async (
   }
 };
 
+const uploadFilesToProject = async (
+  files: File[],
+  projectId: string,
+  setUploadedFiles: React.Dispatch<React.SetStateAction<UploadedFile[]>>,
+  setIsUploading: React.Dispatch<React.SetStateAction<boolean>>,
+  setPendingFiles?: React.Dispatch<React.SetStateAction<File[]>>,
+) => {
+  try {
+    setIsUploading(true);
+
+    const newUploadedFiles: UploadedFile[] = [];
+
+    for (const file of files) {
+      if (file.size > 50 * 1024 * 1024) {
+        toast.error(`File size exceeds 50MB limit: ${file.name}`);
+        continue;
+      }
+
+      // Normalize filename to NFC
+      const normalizedName = normalizeFilenameToNFC(file.name);
+      const uploadPath = `/workspace/uploads/${normalizedName}`;
+
+      const formData = new FormData();
+      formData.append('file', file, normalizedName);
+      formData.append('path', uploadPath);
+
+      const supabase = createClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        throw new Error('No access token available');
+      }
+
+      const response = await fetch(`${API_URL}/project/${projectId}/files`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.statusText}`);
+      }
+
+      const responseData = await response.json();
+      const actualPath = responseData.path || uploadPath;
+      const finalFilename = responseData.final_filename || normalizedName;
+      const wasRenamed = responseData.renamed || false;
+
+      newUploadedFiles.push({
+        name: finalFilename,
+        path: actualPath,
+        size: file.size,
+        type: file.type || 'application/octet-stream',
+      });
+
+      if (wasRenamed) {
+        toast.success(`File uploaded as: ${finalFilename} (renamed to avoid conflict)`);
+      } else {
+        toast.success(`File uploaded: ${finalFilename}`);
+      }
+    }
+
+    setUploadedFiles((prev) => [...prev, ...newUploadedFiles]);
+    
+    // Clear pending files after successful upload
+    if (setPendingFiles) {
+      setPendingFiles([]);
+    }
+  } catch (error) {
+    console.error('File upload failed:', error);
+    toast.error(
+      typeof error === 'string'
+        ? error
+        : error instanceof Error
+          ? error.message
+          : 'Failed to upload file',
+    );
+  } finally {
+    setIsUploading(false);
+  }
+};
+
 const handleFiles = async (
   files: File[],
   sandboxId: string | undefined,
+  projectId: string | undefined,
   setPendingFiles: React.Dispatch<React.SetStateAction<File[]>>,
   setUploadedFiles: React.Dispatch<React.SetStateAction<UploadedFile[]>>,
   setIsUploading: React.Dispatch<React.SetStateAction<boolean>>,
@@ -175,10 +262,13 @@ const handleFiles = async (
   queryClient?: any, // Add queryClient parameter
 ) => {
   if (sandboxId) {
-    // If we have a sandboxId, upload files directly
+    // If we have a sandboxId, upload files directly to sandbox
     await uploadFiles(files, sandboxId, setUploadedFiles, setIsUploading, messages, queryClient, setPendingFiles);
+  } else if (projectId) {
+    // If we have a projectId but no sandbox, upload to project (creates sandbox if needed)
+    await uploadFilesToProject(files, projectId, setUploadedFiles, setIsUploading, setPendingFiles);
   } else {
-    // Otherwise, store files locally
+    // No sandboxId or projectId, store files locally
     handleLocalFiles(files, setPendingFiles, setUploadedFiles);
   }
 };
@@ -189,6 +279,7 @@ interface FileUploadHandlerProps {
   isAgentRunning: boolean;
   isUploading: boolean;
   sandboxId?: string;
+  projectId?: string;
   setPendingFiles: React.Dispatch<React.SetStateAction<File[]>>;
   setUploadedFiles: React.Dispatch<React.SetStateAction<UploadedFile[]>>;
   setIsUploading: React.Dispatch<React.SetStateAction<boolean>>;
@@ -207,6 +298,7 @@ export const FileUploadHandler = forwardRef<
       isAgentRunning,
       isUploading,
       sandboxId,
+      projectId,
       setPendingFiles,
       setUploadedFiles,
       setIsUploading,
@@ -247,6 +339,7 @@ export const FileUploadHandler = forwardRef<
       handleFiles(
         files,
         sandboxId,
+        projectId,
         setPendingFiles,
         setUploadedFiles,
         setIsUploading,
