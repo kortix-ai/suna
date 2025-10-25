@@ -11,8 +11,8 @@ export const markdownStyles = StyleSheet.create({
   // Root body
   body: {
     color: '#18181b', // zinc-900
-    fontSize: 15,
-    lineHeight: 22,
+    fontSize: 16,
+    lineHeight: 24,
     fontFamily: 'System',
   },
 
@@ -103,21 +103,21 @@ export const markdownStyles = StyleSheet.create({
   },
   list_item: {
     flexDirection: 'row',
-    marginVertical: 2,
+    marginVertical: 3,
   },
   bullet_list_icon: {
     marginLeft: 0,
-    marginRight: 8,
-    marginTop: 6,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
+    marginRight: 10,
+    marginTop: 8,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
     backgroundColor: '#71717a', // zinc-500
   },
   ordered_list_icon: {
     marginLeft: 0,
-    marginRight: 8,
-    minWidth: 20,
+    marginRight: 10,
+    minWidth: 22,
   },
   bullet_list_content: {
     flex: 1,
@@ -211,7 +211,7 @@ export const markdownStyles = StyleSheet.create({
   // Paragraphs
   paragraph: {
     marginVertical: 6,
-    lineHeight: 22,
+    lineHeight: 24,
   },
 
   // Text container
@@ -324,7 +324,12 @@ export const markdownStylesDark = StyleSheet.create({
   },
 
   bullet_list_icon: {
-    ...markdownStyles.bullet_list_icon,
+    marginLeft: 0,
+    marginRight: 10,
+    marginTop: 8,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
     backgroundColor: '#a1a1aa', // zinc-400
   },
 });

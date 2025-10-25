@@ -106,7 +106,7 @@ export function ThemeDrawer({ visible, onClose }: ThemeDrawerProps) {
           </View>
           
           {/* Current Theme Indicator */}
-          <View className="mt-8 p-4 bg-secondary rounded-xl">
+          <View className="mt-8 p-4 bg-secondary rounded-2xl">
             <Text className="text-sm font-roobert text-muted-foreground text-center">
               {t('settings.currentTheme') || 'Current Theme'}:{' '}
               <Text className="font-roobert-medium text-foreground">
@@ -155,7 +155,7 @@ function ThemeOption({ icon, label, isSelected, onPress }: ThemeOptionProps) {
       onPressIn={handlePressIn}
       onPressOut={handlePressOut}
       style={animatedStyle}
-      className={`h-16 px-4 rounded-xl flex-row items-center justify-between ${
+      className={`h-16 px-4 rounded-2xl flex-row items-center justify-between ${
         isSelected 
           ? 'bg-primary/10 border-2 border-primary' 
           : 'bg-secondary border-2 border-transparent'

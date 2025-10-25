@@ -231,7 +231,13 @@ export function useAudioRecorder() {
 
   const reset = async () => {
     console.log('🔄 Resetting audio recorder');
-    await deleteRecording();
+    
+    // Prevent double deletion
+    if (state !== 'idle' || audioUri) {
+      await deleteRecording();
+    } else {
+      console.log('⏭️ Already reset, skipping');
+    }
   };
 
   return {

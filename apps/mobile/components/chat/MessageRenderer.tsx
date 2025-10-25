@@ -51,38 +51,56 @@ export function MessageRenderer({
   onToolPress,
 }: MessageRendererProps) {
   const groupedMessages = useMemo(() => {
-    // Deduplicate streaming messages
-    const dedupedMessages = messages.reduce((acc: UnifiedMessage[], msg, idx) => {
-      if (!msg.message_id) {
-        const msgContent = safeJsonParse<ParsedContent>(msg.content, {}).content || '';
-        const hasDuplicateAfter = messages.slice(idx + 1).some((laterMsg) => {
-          if (!laterMsg.message_id) return false;
-          const laterContent = safeJsonParse<ParsedContent>(laterMsg.content, {}).content || '';
-          return laterContent === msgContent || laterContent.includes(msgContent);
-        });
-        
-        if (hasDuplicateAfter) return acc;
-      }
-      
-      acc.push(msg);
-      return acc;
-    }, []);
+    // ✨ Smart deduplication: Only show streaming OR fetched, never both
+    let messagesToRender = [...messages];
     
-    // Add streaming content as temporary message
-    if (streamingContent) {
-      dedupedMessages.push({
-        message_id: null,
-        thread_id: 'streaming',
-        type: 'assistant',
-        is_llm_message: true,
-        content: JSON.stringify({ role: 'assistant', content: streamingContent }),
-        metadata: JSON.stringify({ stream_status: 'chunk' }),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
+    if (streamingContent && streamingContent.trim().length > 0) {
+      // Find the most recent assistant message
+      const lastAssistantMsg = [...messages].reverse().find(m => m.type === 'assistant');
+      
+      if (lastAssistantMsg) {
+        const lastContent = safeJsonParse<ParsedContent>(lastAssistantMsg.content, {}).content || '';
+        
+        // ✨ Only use fetched if it's EXACTLY the same or contains ALL of streaming content
+        // This prevents filtering out early streaming chunks
+        const isExactMatch = lastContent === streamingContent;
+        const isSuperset = lastContent.length > streamingContent.length && 
+                           lastContent.includes(streamingContent);
+        
+        if (isExactMatch || isSuperset) {
+          // Fetched message is complete/final, use it instead of streaming
+          console.log('📦 [MessageRenderer] Using fetched message (complete)');
+        } else {
+          // Streaming content is different or newer - show it!
+          console.log('🔄 [MessageRenderer] Showing streaming content:', streamingContent.length, 'chars');
+          messagesToRender.push({
+            message_id: null,
+            thread_id: 'streaming',
+            type: 'assistant',
+            is_llm_message: true,
+            content: JSON.stringify({ role: 'assistant', content: streamingContent }),
+            metadata: JSON.stringify({ stream_status: 'chunk' }),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+        }
+      } else {
+        // No assistant message yet, definitely show streaming
+        console.log('✨ [MessageRenderer] First chunks - showing streaming:', streamingContent.length, 'chars');
+        messagesToRender.push({
+          message_id: null,
+          thread_id: 'streaming',
+          type: 'assistant',
+          is_llm_message: true,
+          content: JSON.stringify({ role: 'assistant', content: streamingContent }),
+          metadata: JSON.stringify({ stream_status: 'chunk' }),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      }
     }
 
-    return groupMessages(dedupedMessages);
+    return groupMessages(messagesToRender);
   }, [messages, streamingContent]);
 
   // Collect ALL tool messages from the ENTIRE thread for navigation
@@ -210,14 +228,31 @@ function UserMessageBubble({
 
   const { colorScheme } = useColorScheme();
   
+  // ✨ Dark bubble in dark mode, light bubble in light mode (matching Figma)
+  // Use inline styles ONLY to avoid Tailwind conflicts
+  const containerStyle = {
+    maxWidth: '80%' as const,
+  };
+  
+  const bubbleStyle = {
+    backgroundColor: colorScheme === 'dark' ? '#161618' : '#f8f8f8',
+    borderWidth: 1.5,
+    borderColor: colorScheme === 'dark' ? '#232324' : '#e5e5e5',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  };
+  
+  const textStyle = {
+    color: colorScheme === 'dark' ? '#f8f8f8' : '#121215',
+    fontSize: 16,
+    lineHeight: 24,
+  };
+  
   return (
     <View className={`px-4 flex-row justify-end ${isLast ? 'mb-0' : 'mb-6'}`}>
-      <View className="max-w-[80%] bg-primary rounded-[20px] px-4 py-3 shadow-sm">
-        <Text 
-          className="text-primary-foreground text-[15px] leading-[22px]"
-          style={{ color: colorScheme === 'dark' ? '#121215' : '#f8f8f8' }}
-          selectable
-        >
+      <View style={[containerStyle, bubbleStyle]}>
+        <Text style={textStyle} selectable>
           {content}
         </Text>
       </View>
@@ -280,12 +315,12 @@ function AssistantMessageGroup({
     <View className={isLast ? 'mb-0' : 'mb-6'}>
       {/* Agent identifier - ONCE per group */}
       {firstAssistantMessage && (
-        <View className="px-4 mb-2.5">
+        <View className="px-4 mb-2">
           <AgentIdentifier 
             agentId={firstAssistantMessage.agent_id} 
-            size={20} 
+            size={16} 
             showName 
-            textSize="xs"
+            textSize="base"
           />
         </View>
       )}
@@ -490,7 +525,7 @@ function ToolCard({
     <Pressable
       onPress={isLoading ? undefined : onPress}
       disabled={isLoading}
-      className={`bg-muted/30 rounded-xl px-3.5 py-3 border ${
+      className={`bg-muted/30 rounded-2xl px-3.5 py-3 border ${
         isLoading ? 'border-primary/30' : 'border-border/30'
       } ${!isLoading && 'active:bg-muted/50'}`}
     >
@@ -501,7 +536,7 @@ function ToolCard({
               <View className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
             )}
             <Wrench size={14} className="text-muted-foreground" />
-            <Text className="text-[13px] font-semibold text-foreground">
+            <Text className="text-[14px] font-semibold text-foreground">
               {toolName}
             </Text>
           </View>
@@ -516,7 +551,7 @@ function ToolCard({
           )}
         </View>
         
-        <Text className="text-[13px] text-muted-foreground leading-[18px]" numberOfLines={2}>
+        <Text className="text-[14px] text-muted-foreground leading-[20px]" numberOfLines={2}>
           {resultText}
         </Text>
       </Animated.View>

@@ -18,8 +18,7 @@ import type {
   Message,
   AgentRun,
   SendMessageInput,
-  InitiateAgentInput,
-  InitiateAgentResponse,
+  UnifiedAgentStartResponse,
   ActiveAgentRun,
 } from '@/api/types';
 
@@ -187,36 +186,53 @@ export function useAddMessage(
   });
 }
 
-export function useStartAgent(
+/**
+ * Unified agent start hook - works for both new and existing threads
+ */
+export function useUnifiedAgentStart(
   options?: UseMutationOptions<
-    { agent_run_id: string; status: string },
+    { thread_id: string; agent_run_id: string; status: string },
     Error,
-    { threadId: string; modelName?: string; agentId?: string }
+    { threadId?: string; prompt?: string; files?: any[]; modelName?: string; agentId?: string }
   >
 ) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ threadId, modelName, agentId }) => {
-      const headers = await getAuthHeaders();
+    mutationFn: async ({ threadId, prompt, files, modelName, agentId }) => {
+      const token = await getAuthToken();
+      if (!token) throw new Error('Authentication required');
 
-      const body: any = {};
-      if (modelName) body.model_name = modelName;
-      if (agentId) body.agent_id = agentId;
+      const formData = new FormData();
+      
+      if (threadId) formData.append('thread_id', threadId);
+      if (prompt) formData.append('prompt', prompt);
+      if (modelName) formData.append('model_name', modelName);
+      if (agentId) formData.append('agent_id', agentId);
+      
+      if (files?.length) {
+        files.forEach((file) => formData.append('files', file as any));
+      }
 
-      const res = await fetch(`${API_URL}/thread/${threadId}/agent/start`, {
+      const res = await fetch(`${API_URL}/agent/start`, {
         method: 'POST',
-        headers,
-        body: JSON.stringify(body),
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
       });
+
       if (!res.ok) {
         const error = await res.text().catch(() => 'Unknown error');
         throw new Error(`Failed to start agent: ${res.status} - ${error}`);
       }
+      
       return res.json();
     },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: chatKeys.runs(variables.threadId) });
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: chatKeys.threads() });
+      queryClient.invalidateQueries({ queryKey: chatKeys.runs(data.thread_id) });
+      if (variables.threadId) {
+        queryClient.invalidateQueries({ queryKey: chatKeys.runs(variables.threadId) });
+      }
     },
     ...options,
   });
@@ -230,7 +246,7 @@ export function useSendMessage(
   >
 ) {
   const addMessage = useAddMessage();
-  const startAgent = useStartAgent();
+  const unifiedAgentStart = useUnifiedAgentStart();
 
   return useMutation({
     mutationFn: async (input) => {
@@ -244,7 +260,7 @@ export function useSendMessage(
       console.log('✅ [useSendMessage] Step 1 complete: Message added', message);
       console.log('🚀 [useSendMessage] Step 2: Starting agent run');
 
-      const agentRun = await startAgent.mutateAsync({
+      const agentRun = await unifiedAgentStart.mutateAsync({
         threadId: input.threadId,
         modelName: input.modelName,
         agentId: input.agentId,
@@ -437,44 +453,3 @@ export function useStopAgentRun(
     ...options,
   });
 }
-
-export function useInitiateAgent(
-  options?: UseMutationOptions<InitiateAgentResponse, Error, InitiateAgentInput>
-) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (input) => {
-      const token = await getAuthToken();
-      if (!token) throw new Error('Authentication required');
-
-      const formData = new FormData();
-      formData.append('prompt', input.prompt);
-
-      if (input.agent_id) formData.append('agent_id', input.agent_id);
-      if (input.model_name) formData.append('model_name', input.model_name);
-      if (input.files?.length) {
-        input.files.forEach((file) => formData.append('files', file));
-      }
-
-      const res = await fetch(`${API_URL}/agent/initiate`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const error = await res.text().catch(() => 'Unknown error');
-        throw new Error(`Failed to initiate agent: ${res.status} - ${error}`);
-      }
-
-      return res.json();
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: chatKeys.threads() });
-      queryClient.setQueryData(chatKeys.thread(data.thread_id), data);
-    },
-    ...options,
-  });
-}
-

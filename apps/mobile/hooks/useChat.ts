@@ -26,7 +26,7 @@ import {
   useThread,
   useMessages,
   useSendMessage as useSendMessageMutation,
-  useInitiateAgent as useInitiateAgentMutation,
+  useUnifiedAgentStart as useUnifiedAgentStartMutation,
   useStopAgentRun as useStopAgentRunMutation,
   useActiveAgentRuns,
   useUpdateThread,
@@ -146,19 +146,22 @@ export function useChat(): UseChatReturn {
   const [isAttachmentDrawerVisible, setIsAttachmentDrawerVisible] = useState(false);
   const [selectedQuickAction, setSelectedQuickAction] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isNewThreadOptimistic, setIsNewThreadOptimistic] = useState(false); // Flag for optimistic new threads
 
   // ============================================================================
   // React Query Hooks
   // ============================================================================
 
   const { data: threadsData = [] } = useThreads();
-  const { data: threadData, isLoading: isThreadLoading } = useThread(activeThreadId);
-  const { data: messagesData, isLoading: isMessagesLoading, refetch: refetchMessages } = useMessages(activeThreadId);
+  // Don't load thread/messages if it's an optimistic new thread (to avoid loading spinner)
+  const shouldFetchThread = activeThreadId && !isNewThreadOptimistic;
+  const { data: threadData, isLoading: isThreadLoading } = useThread(shouldFetchThread ? activeThreadId : undefined);
+  const { data: messagesData, isLoading: isMessagesLoading, refetch: refetchMessages } = useMessages(shouldFetchThread ? activeThreadId : undefined);
   const { data: activeRuns } = useActiveAgentRuns();
 
   // Mutations
   const sendMessageMutation = useSendMessageMutation();
-  const initiateAgentMutation = useInitiateAgentMutation();
+  const unifiedAgentStartMutation = useUnifiedAgentStartMutation();
   const stopAgentRunMutation = useStopAgentRunMutation();
   const updateThreadMutation = useUpdateThread();
   const uploadFilesMutation = useUploadMultipleFiles();
@@ -196,16 +199,24 @@ export function useChat(): UseChatReturn {
     currentRunIdRef.current = null;
     setAgentRunId(null);
 
-    // Reset streaming state
-    setStreamingContent('');
-    setStreamingToolCall(null);
+    // ✨ KEEP streaming content visible while we refetch
+    // We'll clear it after a small delay to ensure smooth transition
     processedMessageIds.current.clear();
 
     // Invalidate active runs query to update agent running status
     queryClient.invalidateQueries({ queryKey: chatKeys.activeRuns() });
 
     // Refetch messages to get the final state
-    refetchMessages();
+    refetchMessages().then(() => {
+      // Wait a bit to ensure the new message is rendered, then clear streaming
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          console.log('[useChat] Clearing streaming content after refetch');
+          setStreamingContent('');
+          setStreamingToolCall(null);
+        }
+      }, 100);
+    });
   }, [refetchMessages, queryClient]);
 
   // Handle incoming stream messages
@@ -262,14 +273,14 @@ export function useChat(): UseChatReturn {
     switch (message.type) {
       case 'assistant':
         if (parsedMetadata.stream_status === 'chunk' && parsedContent.content) {
-          // Check if this chunk contains function_calls XML
           const content = parsedContent.content;
+          
+          // ✨ ALWAYS add content chunks - never skip them!
+          console.log('[useChat] 📝 Chunk received:', content.substring(0, 50) + (content.length > 50 ? '...' : ''));
           
           // Detect <function_calls> start
           if (content.includes('<function_calls>')) {
-            console.log('[useChat] Detected <function_calls> in stream');
-            // Clear streaming text content
-            setStreamingContent('');
+            console.log('[useChat] Detected <function_calls> in stream - switching to tool mode');
             
             // Try to extract function name from <invoke name="...">
             const invokeMatch = content.match(/<invoke name="([^"]+)">/);
@@ -294,20 +305,28 @@ export function useChat(): UseChatReturn {
                 arguments: {},
               });
             }
-          } else if (!streamingToolCall) {
-            // Only render text if we're not in tool call mode
+            
+            // Clear text content since we're now in tool mode
+            setStreamingContent('');
+          } else {
+            // Regular text content - ALWAYS render it
             addContentImmediate(content);
           }
         } else if (parsedMetadata.stream_status === 'complete') {
-          // Clear streaming content as complete message will be added to history
-          setStreamingContent('');
-          setStreamingToolCall(null);
-
+          // ✨ Keep streaming content visible until message is in the array
           // Only emit if has message_id and not already processed
           if (message.message_id && !processedMessageIds.current.has(message.message_id)) {
             processedMessageIds.current.add(message.message_id);
             // Add to messages immediately
             setMessages((prev) => [...prev, message]);
+            
+            // Clear streaming state after a tiny delay to prevent flicker
+            setTimeout(() => {
+              if (isMountedRef.current) {
+                setStreamingContent('');
+                setStreamingToolCall(null);
+              }
+            }, 50);
           }
         } else if (!parsedMetadata.stream_status) {
           // Handle non-chunked assistant messages
@@ -351,7 +370,7 @@ export function useChat(): UseChatReturn {
         }
         break;
     }
-  }, [addContentImmediate, finalizeStream, streamingToolCall]);
+  }, [addContentImmediate, finalizeStream]);
 
   // Start streaming
   const startStreaming = useCallback(async (runId: string) => {
@@ -373,7 +392,14 @@ export function useChat(): UseChatReturn {
       eventSourceRef.current = null;
     }
 
-    console.log('[useChat] Starting stream for run:', runId);
+    console.log('[useChat] 🚀 Starting stream for run:', runId);
+    
+    // ✨ Clear any stale streaming content from previous runs
+    // This ensures fresh start for each stream
+    setStreamingContent('');
+    setStreamingToolCall(null);
+    processedMessageIds.current.clear();
+    
     currentRunIdRef.current = runId;
 
     try {
@@ -464,8 +490,8 @@ export function useChat(): UseChatReturn {
     // Update the previous thread ID
     prevThreadIdRef.current = activeThreadId;
 
-    // Load messages for thread
-    if (messagesData) {
+    // Load messages for thread (but don't override optimistic messages)
+    if (messagesData && !isNewThreadOptimistic) {
       setMessages(messagesData as unknown as UnifiedMessage[]);
     }
 
@@ -479,7 +505,7 @@ export function useChat(): UseChatReturn {
       console.log('[useChat] No active agent run, clearing agentRunId');
       setAgentRunId(null);
     }
-  }, [activeThreadId, messagesData, activeRuns, agentRunId]);
+  }, [activeThreadId, messagesData, activeRuns, agentRunId, isNewThreadOptimistic]);
 
   // Auto-connect to stream
   useEffect(() => {
@@ -535,6 +561,7 @@ export function useChat(): UseChatReturn {
     setSelectedToolData(null);
     setInputValue('');
     setAttachments([]);
+    setIsNewThreadOptimistic(false); // Clear optimistic flag when loading existing thread
     
     // Set new thread
     setActiveThreadId(threadId);
@@ -548,6 +575,7 @@ export function useChat(): UseChatReturn {
     setInputValue('');
     setAttachments([]);
     setSelectedToolData(null);
+    setIsNewThreadOptimistic(false); // Reset optimistic flag
     completedRunIds.current.clear();
     stopStreaming();
   }, [stopStreaming]);
@@ -590,9 +618,23 @@ export function useChat(): UseChatReturn {
       
       if (!currentThreadId) {
         // ========================================================================
-        // NEW THREAD: Use /agent/initiate with FormData
+        // NEW THREAD: Use /agent/start with FormData
         // ========================================================================
-        console.log('[useChat] Creating new thread via /agent/initiate');
+        console.log('[useChat] Creating new thread via /agent/start with optimistic UI');
+        
+        // ✨ OPTIMISTIC UI: Show user message immediately
+        const optimisticUserMessage: UnifiedMessage = {
+          message_id: 'optimistic-user-' + Date.now(),
+          thread_id: 'optimistic',
+          type: 'user',
+          content: JSON.stringify({ content }),
+          metadata: JSON.stringify({}),
+          is_llm_message: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        setMessages([optimisticUserMessage]);
+        setIsNewThreadOptimistic(true); // Flag to skip loading state
         
         // Convert attachments to FormData-compatible format
         const formDataFiles = attachments.length > 0
@@ -601,10 +643,11 @@ export function useChat(): UseChatReturn {
         
         console.log('[useChat] Converted', formDataFiles.length, 'attachments for FormData');
         
-        const createResult = await initiateAgentMutation.mutateAsync({
+        const createResult = await unifiedAgentStartMutation.mutateAsync({
+          // No threadId = create new thread
           prompt: content,
-          agent_id: agentId,
-          model_name: 'claude-sonnet-4',
+          agentId: agentId,
+          modelName: 'claude-sonnet-4',
           files: formDataFiles as any, // FormData files for new thread
         });
         
@@ -613,6 +656,7 @@ export function useChat(): UseChatReturn {
         
         // Set thread ID first
         setActiveThreadId(currentThreadId);
+        setIsNewThreadOptimistic(false); // Clear optimistic flag
         
         // Set agent run ID after a delay
         if (createResult.agent_run_id) {
@@ -742,7 +786,7 @@ export function useChat(): UseChatReturn {
     activeThreadId,
     attachments,
     sendMessageMutation,
-    initiateAgentMutation,
+    unifiedAgentStartMutation,
     uploadFilesMutation,
     threadData,
     t,
@@ -1019,10 +1063,11 @@ export function useChat(): UseChatReturn {
   const hasUploadingAttachments = attachments.some(a => a.isUploading);
   
   // Don't disable input during upload - only during message send/agent run
-  const isSendingMessage = sendMessageMutation.isPending || initiateAgentMutation.isPending;
+  const isSendingMessage = sendMessageMutation.isPending || unifiedAgentStartMutation.isPending;
   
   // Compute isLoading: true when thread data or messages are being fetched
-  const isLoading = (isThreadLoading || isMessagesLoading) && !!activeThreadId;
+  // ✨ BUT: Never show loading for new optimistic threads - they should appear instantly
+  const isLoading = (isThreadLoading || isMessagesLoading) && !!activeThreadId && !isNewThreadOptimistic;
 
   // ============================================================================
   // Return Public API

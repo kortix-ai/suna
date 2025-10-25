@@ -9,6 +9,7 @@ import React, { useState } from 'react';
 import { View, Pressable, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Avatar } from '@/components/ui/Avatar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { useRouter } from 'expo-router';
@@ -120,9 +121,7 @@ function InfoRow({
 }) {
   return (
     <View className="flex-row items-start gap-3 mb-4">
-      <View className="w-10 h-10 rounded-xl bg-secondary items-center justify-center">
-        <Icon as={IconComponent} size={20} className="text-foreground/70" />
-      </View>
+      <Avatar variant="custom" icon={IconComponent} size={40} />
       <View className="flex-1">
         <Text className="text-muted-foreground text-sm font-roobert mb-1">
           {label}
@@ -431,7 +430,7 @@ export function TriggerDetailPage({ triggerId }: TriggerDetailPageProps) {
           <Section title="Webhook">
             <Pressable
               onPress={handleCopyWebhookUrl}
-              className="bg-secondary rounded-xl p-4 flex-row items-center gap-3 active:bg-secondary/80"
+              className="bg-secondary rounded-2xl p-4 flex-row items-center gap-3 active:bg-secondary/80"
             >
               <View className="flex-1">
                 <Text className="text-foreground text-xs font-mono" numberOfLines={2}>

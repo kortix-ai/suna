@@ -211,7 +211,7 @@ export function NameEditDrawer({
                 }}
                 placeholder={t('settings.namePlaceholder') || 'Your name'}
                 placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
-                className="h-12 px-4 bg-secondary rounded-xl text-foreground font-roobert text-base"
+                className="h-12 px-4 bg-secondary rounded-2xl text-foreground font-roobert text-base"
                 editable={!isLoading}
                 maxLength={100}
                 autoCapitalize="words"
@@ -280,7 +280,7 @@ function SaveButton({ onPress, disabled, isLoading }: SaveButtonProps) {
       onPressOut={handlePressOut}
       style={animatedStyle}
       disabled={disabled}
-      className={`h-12 rounded-xl items-center justify-center flex-row gap-2 ${bgColor}`}
+      className={`h-12 rounded-2xl items-center justify-center flex-row gap-2 ${bgColor}`}
     >
       {isLoading ? (
         <ActivityIndicator 

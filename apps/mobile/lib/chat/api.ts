@@ -12,8 +12,7 @@ export type {
   Message,
   AgentRun,
   SendMessageInput,
-  InitiateAgentInput,
-  InitiateAgentResponse,
+  UnifiedAgentStartResponse,
   ActiveAgentRun,
 } from '@/api/types';
 

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Pressable, View, Image, Alert, ScrollView } from 'react-native';
+import { Pressable, View, Image, Alert, ScrollView, Switch } from 'react-native';
 import Animated, { 
   useAnimatedStyle, 
   useSharedValue, 
@@ -20,12 +20,14 @@ import {
   Globe,
   LogOut,
   ChevronRight,
-  Zap
+  Zap,
+  Layers
 } from 'lucide-react-native';
 import type { UserProfile } from './types';
 import { LanguageDrawer } from './LanguageDrawer';
 import { NameEditDrawer } from './NameEditDrawer';
 import { ThemeDrawer } from './ThemeDrawer';
+import { useAdvancedFeatures } from '@/hooks';
 import * as Haptics from 'expo-haptics';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -66,6 +68,7 @@ export function SettingsDrawer({ visible, profile, onClose }: SettingsDrawerProp
   const [isLanguageDrawerVisible, setIsLanguageDrawerVisible] = React.useState(false);
   const [isNameEditDrawerVisible, setIsNameEditDrawerVisible] = React.useState(false);
   const [isThemeDrawerVisible, setIsThemeDrawerVisible] = React.useState(false);
+  const { isEnabled: advancedFeaturesEnabled, toggle: toggleAdvancedFeatures } = useAdvancedFeatures();
   
   // Get user data
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || profile?.name || 'Guest';
@@ -151,6 +154,12 @@ export function SettingsDrawer({ visible, profile, onClose }: SettingsDrawerProp
     );
   };
   
+  const handleAdvancedFeaturesToggle = React.useCallback(async () => {
+    console.log('🎯 Advanced features toggle pressed');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    await toggleAdvancedFeatures();
+  }, [toggleAdvancedFeatures]);
+  
   if (!visible) return null;
   
   return (
@@ -223,6 +232,17 @@ export function SettingsDrawer({ visible, profile, onClose }: SettingsDrawerProp
               icon={Globe}
               label={t('settings.language')}
               onPress={handleLanguage}
+            />
+            
+            {/* Divider before advanced features */}
+            <View className="h-px bg-border my-4" />
+            
+            {/* Advanced Features Toggle */}
+            <SettingsToggleItem
+              icon={Layers}
+              label={t('settings.advancedFeatures') || 'Advanced Features'}
+              value={advancedFeaturesEnabled}
+              onToggle={handleAdvancedFeaturesToggle}
             />
             
             {/* Divider before sign out */}
@@ -320,6 +340,44 @@ function SettingsItem({ icon, label, onPress, destructive = false }: SettingsIte
         <Icon as={ChevronRight} size={16} className="text-foreground/40" strokeWidth={2} />
       )}
     </AnimatedPressable>
+  );
+}
+
+/**
+ * SettingsToggleItem Component
+ * 
+ * Settings item with a toggle switch instead of navigation.
+ */
+interface SettingsToggleItemProps {
+  icon: typeof User;
+  label: string;
+  value: boolean;
+  onToggle: () => void;
+}
+
+function SettingsToggleItem({ icon, label, value, onToggle }: SettingsToggleItemProps) {
+  const { colorScheme } = useColorScheme();
+  
+  return (
+    <View className="flex-row items-center justify-between py-4">
+      <View className="flex-row items-center gap-3">
+        <Icon as={icon} size={20} className="text-foreground/60" strokeWidth={2} />
+        <Text className="text-base font-roobert text-foreground">
+          {label}
+        </Text>
+      </View>
+      
+      <Switch
+        value={value}
+        onValueChange={onToggle}
+        trackColor={{ 
+          false: colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7',
+          true: colorScheme === 'dark' ? '#34C759' : '#34C759' 
+        }}
+        thumbColor={colorScheme === 'dark' ? '#FFFFFF' : '#FFFFFF'}
+        ios_backgroundColor={colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7'}
+      />
+    </View>
   );
 }
 

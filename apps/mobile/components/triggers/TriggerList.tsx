@@ -1,79 +1,49 @@
 /**
- * Trigger List Component
+ * Trigger List Component - Unified trigger list
  * 
- * Reusable list of triggers using the generic ItemList component
+ * Uses unified EntityList and SelectableListItem for consistency
  */
 
 import React from 'react';
-import { type ViewProps } from 'react-native';
-import { ItemList } from '@/components/shared/ItemList';
+import { EntityList } from '@/components/shared/EntityList';
 import { TriggerListItem } from './TriggerListItem';
 import type { TriggerWithAgent } from '@/api/types';
-import { Zap } from 'lucide-react-native';
 
-interface TriggerListProps extends ViewProps {
+interface TriggerListProps {
   triggers: TriggerWithAgent[];
   onTriggerPress?: (trigger: TriggerWithAgent) => void;
   isLoading?: boolean;
-  isRefreshing?: boolean;
-  onRefresh?: () => void;
-  emptyStateTitle?: string;
-  emptyStateDescription?: string;
-  emptyStateAction?: {
-    label: string;
-    onPress: () => void;
-  };
-  showSearch?: boolean;
+  error?: Error | null;
   searchQuery?: string;
-  onSearchChange?: (query: string) => void;
-  onSearchClear?: () => void;
-  disableVirtualization?: boolean;
+  showChevron?: boolean;
 }
 
 export function TriggerList({
   triggers,
   onTriggerPress,
   isLoading = false,
-  isRefreshing = false,
-  onRefresh,
-  emptyStateTitle,
-  emptyStateDescription,
-  emptyStateAction,
-  showSearch = false,
+  error = null,
   searchQuery = '',
-  onSearchChange,
-  onSearchClear,
-  disableVirtualization = false,
-  style,
-  ...props
+  showChevron = true,
 }: TriggerListProps) {
   return (
-    <ItemList
-      items={triggers}
-      keyExtractor={(trigger) => trigger.trigger_id}
+    <EntityList
+      entities={triggers}
+      isLoading={isLoading}
+      error={error}
+      searchQuery={searchQuery}
+      emptyMessage="No triggers available"
+      noResultsMessage="No triggers found"
+      loadingMessage="Loading triggers..."
+      gap={4}
       renderItem={(trigger) => (
         <TriggerListItem
+          key={trigger.trigger_id}
           trigger={trigger}
           onPress={onTriggerPress}
+          showChevron={showChevron}
         />
       )}
-      showSearch={showSearch}
-      searchQuery={searchQuery}
-      onSearchChange={onSearchChange}
-      searchPlaceholder="Search triggers..."
-      onSearchClear={onSearchClear}
-      isLoading={isLoading}
-      isRefreshing={isRefreshing}
-      onRefresh={onRefresh}
-      disableVirtualization={disableVirtualization}
-      emptyState={{
-        icon: Zap,
-        title: emptyStateTitle || "No triggers found",
-        description: emptyStateDescription || "Create your first trigger to get started",
-        action: emptyStateAction,
-      }}
-      style={style}
-      {...props}
     />
   );
 }

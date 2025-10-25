@@ -120,7 +120,7 @@ export function BillingContent({
 
       {/* Status Message */}
       {showStatusMessage && statusMessage && (
-        <View className="mb-6 p-4 bg-destructive/10 rounded-lg border border-destructive/20">
+        <View className="mb-6 p-4 bg-destructive/10 rounded-2xl border border-destructive/20">
           <Text className="text-destructive font-medium text-center">
             {statusMessage}
           </Text>
@@ -170,7 +170,7 @@ export function BillingContent({
       )}
 
       {/* Footer Message */}
-      <View className="mt-6 p-4 bg-muted/50 rounded-lg">
+      <View className="mt-6 p-4 bg-muted/50 rounded-2xl">
         <Text className="text-xs text-center text-muted-foreground">
           {t('billing.footer', 'Cancel anytime. No questions asked.')}
         </Text>

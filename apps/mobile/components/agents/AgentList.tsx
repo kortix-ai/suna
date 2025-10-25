@@ -1,21 +1,19 @@
 /**
- * Agent List Component - Reusable agent list using generic ItemList
+ * Agent List Component - Unified agent list using SelectableListItem
  * 
  * Features:
  * - Consistent agent selection UI
  * - Configurable compact/normal layout
- * - Optional chevron indicators
  * - Proper haptic feedback
  * - Accessibility support
  * - Spring animations
+ * - Uses unified Avatar and SelectableListItem
  */
 
 import * as React from 'react';
-import { View } from 'react-native';
-import { ChevronRight } from 'lucide-react-native';
-import { ListItem } from '@/components/shared/ListItem';
+import { SelectableListItem } from '@/components/shared/SelectableListItem';
+import { EntityList } from '@/components/shared/EntityList';
 import { AgentAvatar } from './AgentAvatar';
-import { Icon } from '@/components/ui/icon';
 import type { Agent } from '@/api/types';
 
 interface AgentListProps {
@@ -24,6 +22,8 @@ interface AgentListProps {
   onAgentPress?: (agent: Agent) => void;
   showChevron?: boolean;
   compact?: boolean;
+  isLoading?: boolean;
+  error?: Error | null;
 }
 
 export function AgentList({
@@ -31,41 +31,32 @@ export function AgentList({
   selectedAgentId,
   onAgentPress,
   showChevron = false,
-  compact = false
+  compact = false,
+  isLoading = false,
+  error = null,
 }: AgentListProps) {
-  const containerGap = compact ? 'gap-2' : 'gap-3';
+  const avatarSize = compact ? 36 : 48;
 
   return (
-    <View className={containerGap}>
-      {agents.map((agent) => {
-        const isSelected = agent.agent_id === selectedAgentId;
-        
-        // Custom icon element with AgentAvatar
-        const iconElement = (
-          <AgentAvatar agent={agent} size={compact ? 36 : 40} />
-        );
-        
-        // Right-side indicator
-        const rightIndicator = showChevron ? (
-          <Icon as={ChevronRight} size={18} className="text-foreground/50" />
-        ) : isSelected ? (
-          <View className="w-2 h-2 rounded-full bg-primary" />
-        ) : null;
-        
-        return (
-          <ListItem
-            key={agent.agent_id}
-            iconElement={iconElement}
-            title={agent.name}
-            subtitle={agent.description}
-            statusIndicator={rightIndicator}
-            onPress={() => onAgentPress?.(agent)}
-            isSelected={isSelected}
-            accessibilityLabel={`Select ${agent.name} worker`}
-            marginBottom={compact ? 8 : 12}
-          />
-        );
-      })}
-    </View>
+    <EntityList
+      entities={agents}
+      isLoading={isLoading}
+      error={error}
+      emptyMessage="No workers available"
+      loadingMessage="Loading workers..."
+      gap={compact ? 2 : 4}
+      renderItem={(agent) => (
+        <SelectableListItem
+          key={agent.agent_id}
+          avatar={<AgentAvatar agent={agent} size={avatarSize} />}
+          title={agent.name}
+          subtitle={agent.description}
+          isSelected={agent.agent_id === selectedAgentId}
+          showChevron={showChevron}
+          onPress={() => onAgentPress?.(agent)}
+          accessibilityLabel={`Select ${agent.name} worker`}
+        />
+      )}
+    />
   );
 }

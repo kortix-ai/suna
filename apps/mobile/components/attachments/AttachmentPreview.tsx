@@ -90,7 +90,7 @@ function AttachmentItem({ attachment, index, onRemove }: AttachmentItemProps) {
       >
         {/* Image/Video Preview */}
         {(attachment.type === 'image' || attachment.type === 'video') && (
-          <View className="relative rounded-xl overflow-hidden border border-border bg-card">
+          <View className="relative rounded-2xl overflow-hidden border border-border bg-card">
             <Image
               source={{ uri: attachment.uri }}
               style={{ width: 80, height: 80 }}
@@ -132,7 +132,7 @@ function AttachmentItem({ attachment, index, onRemove }: AttachmentItemProps) {
 
         {/* Document Preview */}
         {attachment.type === 'document' && (
-          <View className="rounded-xl overflow-hidden border border-border bg-card p-3" style={{ width: 80, height: 80 }}>
+          <View className="rounded-2xl overflow-hidden border border-border bg-card p-3" style={{ width: 80, height: 80 }}>
             <View className="flex-1 items-center justify-center">
               {!isUploading && !hasError && (
                 <>

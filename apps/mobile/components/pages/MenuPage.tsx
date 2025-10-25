@@ -30,6 +30,7 @@ import { useThreads } from '@/lib/chat';
 import { useAllTriggers } from '@/lib/triggers';
 import { groupThreadsByMonth } from '@/lib/utils/thread-utils';
 import { TriggerCreationDrawer, TriggerListItem } from '@/components/triggers';
+import { useAdvancedFeatures } from '@/hooks';
 import type { Conversation, UserProfile, ConversationSection as ConversationSectionType } from '@/components/menu/types';
 import type { Agent, TriggerWithAgent } from '@/api/types';
 
@@ -147,7 +148,7 @@ function EmptyState({
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
           style={animatedStyle}
-          className="mt-6 px-6 py-3 bg-primary rounded-xl"
+          className="mt-6 px-6 py-3 bg-primary rounded-2xl"
           accessibilityRole="button"
           accessibilityLabel={actionLabel}
         >
@@ -370,6 +371,7 @@ export function MenuPage({
   const { user } = useAuthContext();
   const router = useRouter();
   const { agents } = useAgent();
+  const { isEnabled: advancedFeaturesEnabled } = useAdvancedFeatures();
   const scrollY = useSharedValue(0);
   const [isSettingsVisible, setIsSettingsVisible] = React.useState(false);
   const [isTriggerDrawerVisible, setIsTriggerDrawerVisible] = React.useState(false);
@@ -746,14 +748,16 @@ export function MenuPage({
         </View>
         
         {/* Bottom Section: Navigation (Elegant Layout) */}
-        <View className="px-6 pb-4">
-          <BottomNav
-            activeTab={activeTab}
-            onChatsPress={onChatsPress}
-            onWorkersPress={onWorkersPress}
-            onTriggersPress={onTriggersPress}
-          />
-        </View>
+        {advancedFeaturesEnabled && (
+          <View className="px-6 pb-4">
+            <BottomNav
+              activeTab={activeTab}
+              onChatsPress={onChatsPress}
+              onWorkersPress={onWorkersPress}
+              onTriggersPress={onTriggersPress}
+            />
+          </View>
+        )}
       </SafeAreaView>
       
       {/* Settings Drawer */}

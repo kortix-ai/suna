@@ -192,7 +192,7 @@ export function ToolCallPanel({
             <Pressable
               onPress={handlePrev}
               disabled={isPrevDisabled}
-              className={`flex-row items-center px-4 py-2 rounded-xl ${
+              className={`flex-row items-center px-4 py-2 rounded-2xl ${
                 isPrevDisabled
                   ? 'bg-secondary/50 opacity-40'
                   : 'bg-secondary active:bg-secondary/80'
@@ -226,7 +226,7 @@ export function ToolCallPanel({
             <Pressable
               onPress={handleNext}
               disabled={isNextDisabled}
-              className={`flex-row items-center px-4 py-2 rounded-xl ${
+              className={`flex-row items-center px-4 py-2 rounded-2xl ${
                 isNextDisabled
                   ? 'bg-secondary/50 opacity-40'
                   : 'bg-secondary active:bg-secondary/80'

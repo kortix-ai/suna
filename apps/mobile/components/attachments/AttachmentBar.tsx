@@ -141,7 +141,7 @@ function AttachmentItem({
       <Pressable
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
-        className={`rounded-lg overflow-hidden ${
+        className={`rounded-2xl overflow-hidden ${
           hasError
             ? 'bg-destructive/5 border border-destructive/20'
             : isUploading
@@ -204,7 +204,7 @@ function AttachmentItem({
         {attachment.type === 'document' && (
           <View className="items-center justify-center w-full h-full">
             {!isUploading && !hasError ? (
-              <View className="bg-primary/10 rounded-lg p-2">
+              <View className="bg-primary/10 rounded-2xl p-2">
                 <Icon
                   as={FileText}
                   size={20}

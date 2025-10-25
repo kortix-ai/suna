@@ -581,7 +581,7 @@ function BillingSlide({
           )}
 
           {/* Footer */}
-          <View className="mt-6 p-4 bg-muted/50 rounded-lg">
+          <View className="mt-6 p-4 bg-muted/50 rounded-2xl">
             <Text className="text-xs text-center text-muted-foreground">
               {t('billing.footer', 'Cancel anytime. No questions asked.')}
             </Text>

@@ -160,7 +160,7 @@ function ImageAttachment({
         }}
         onPress={handlePress}
         style={[animatedStyle]}
-        className="rounded-xl overflow-hidden border border-border bg-card"
+        className="rounded-2xl overflow-hidden border border-border bg-card"
       >
         <View style={{ width: containerSize, height: containerSize }}>
           {!hasError ? (
@@ -261,9 +261,9 @@ function DocumentAttachment({
       }}
       onPress={handlePress}
       style={animatedStyle}
-      className="flex-row items-center bg-muted/30 rounded-xl px-3 py-3 border border-border/30 mb-2 active:bg-muted/50"
+      className="flex-row items-center bg-muted/30 rounded-2xl px-3 py-3 border border-border/30 mb-2 active:bg-muted/50"
     >
-      <View className="bg-primary/10 rounded-lg p-2 mr-3">
+      <View className="bg-primary/10 rounded-2xl p-2 mr-3">
         <Icon 
           as={FileText} 
           size={compact ? 18 : 20} 
@@ -330,9 +330,9 @@ function GenericAttachment({
       }}
       onPress={handlePress}
       style={animatedStyle}
-      className="flex-row items-center bg-muted/30 rounded-xl px-3 py-3 border border-border/30 mb-2 active:bg-muted/50"
+      className="flex-row items-center bg-muted/30 rounded-2xl px-3 py-3 border border-border/30 mb-2 active:bg-muted/50"
     >
-      <View className="bg-muted rounded-lg p-2 mr-3">
+      <View className="bg-muted rounded-2xl p-2 mr-3">
         <Icon 
           as={File} 
           size={compact ? 18 : 20} 

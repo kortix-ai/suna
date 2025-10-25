@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useAdvancedFeatures } from '@/hooks';
 import type { Conversation, UserProfile, ConversationSection } from '@/components/menu/types';
 
 interface UseSideMenuProps {
@@ -23,6 +24,7 @@ export function useSideMenu({ onNewChat }: UseSideMenuProps = {}) {
   const [isMenuVisible, setIsMenuVisible] = React.useState(false);
   const [selectedConversation, setSelectedConversation] = React.useState<Conversation | null>(null);
   const [activeTab, setActiveTab] = React.useState<'chats' | 'workers' | 'triggers'>('chats');
+  const { isEnabled: advancedFeaturesEnabled } = useAdvancedFeatures();
   
   // Mock user profile (will be replaced with real user data later)
   const [profile] = React.useState<UserProfile>({
@@ -92,16 +94,34 @@ export function useSideMenu({ onNewChat }: UseSideMenuProps = {}) {
   }, []);
   
   const handleWorkersTabPress = React.useCallback(() => {
+    // Only allow tab switching if advanced features are enabled
+    if (!advancedFeaturesEnabled) {
+      console.log('⚠️ Workers tab disabled - advanced features not enabled');
+      return;
+    }
     console.log('🎯 Workers tab pressed');
     console.log('⏰ Timestamp:', new Date().toISOString());
     setActiveTab('workers');
-  }, []);
+  }, [advancedFeaturesEnabled]);
   
   const handleTriggersTabPress = React.useCallback(() => {
+    // Only allow tab switching if advanced features are enabled
+    if (!advancedFeaturesEnabled) {
+      console.log('⚠️ Triggers tab disabled - advanced features not enabled');
+      return;
+    }
     console.log('🎯 Triggers tab pressed');
     console.log('⏰ Timestamp:', new Date().toISOString());
     setActiveTab('triggers');
-  }, []);
+  }, [advancedFeaturesEnabled]);
+  
+  // Reset to 'chats' tab when advanced features are disabled
+  React.useEffect(() => {
+    if (!advancedFeaturesEnabled && activeTab !== 'chats') {
+      console.log('🔄 Resetting to chats tab - advanced features disabled');
+      setActiveTab('chats');
+    }
+  }, [advancedFeaturesEnabled, activeTab]);
   
   // Sections now loaded directly in MenuPage via useThreads()
   const sections: ConversationSection[] = [];

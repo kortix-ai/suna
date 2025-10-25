@@ -25,7 +25,7 @@ export {
   useSendMessage,
   useAgentRuns,
   useAgentRun,
-  useInitiateAgent,
+  useUnifiedAgentStart,
   useActiveAgentRuns,
   useAgentRunStatus,
   useStopAgentRun,
