@@ -836,18 +836,18 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                 {/* All file attachments rendered outside message bubble */}
                                                 {renderStandaloneAttachments(attachments as string[], handleOpenFileViewer, sandboxId, project, true)}
 
-                                                <div className="flex justify-end">
+                                                {cleanContent && (<div className="flex justify-end">
                                                     <div className="flex max-w-[85%] rounded-3xl rounded-br-lg bg-card border px-4 py-3 break-words overflow-hidden">
                                                         <div className="space-y-3 min-w-0 flex-1">
-                                                            {cleanContent && (
+                                                            {
                                                                 <ComposioUrlDetector content={cleanContent} className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none [&>:first-child]:mt-0 prose-headings:mt-3 break-words overflow-wrap-anywhere" />
-                                                            )}
+                                                            }
 
                                                             {/* Use the helper function to render regular (non-spreadsheet) attachments */}
                                                             {renderAttachments(attachments as string[], handleOpenFileViewer, sandboxId, project)}
                                                         </div>
                                                     </div>
-                                                </div>
+                                                </div>)}
                                             </div>
                                         );
                                     } else if (group.type === 'assistant_group') {
