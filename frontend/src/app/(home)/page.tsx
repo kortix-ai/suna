@@ -14,7 +14,6 @@ import { HeroSection as NewHeroSection } from '@/components/home/sections/new/he
 import { AIWorkerSection } from '@/components/home/sections/new/ai-workers';
 import { SlidesSection } from '@/components/home/sections/new/slides-section';
 import { PersonalizationSection } from '@/components/home/sections/new/personalization-section';
-import { FAQSection } from '@/components/home/sections/new/faq-section';
 import { WordmarkFooter } from '@/components/home/sections/new/wordmark-footer';
 
 export default function Home() {
@@ -25,7 +24,6 @@ export default function Home() {
       <BackgroundAALChecker>
         <main className="w-full">
           <NewHeroSection />
-          <FAQSection />
           <PricingSection showInfo={false} />
           <WordmarkFooter />
         </main>

@@ -264,7 +264,9 @@ function LoginContent() {
   return (
     <div className="min-h-screen bg-background relative">
       <div className="absolute top-6 left-6 z-10">
-        <KortixLogo size={28} />
+        <Link href="/" className="flex items-center space-x-2">
+          <KortixLogo size={28} />
+        </Link>
       </div>
       <div className="flex min-h-screen">
         <div className="relative flex-1 flex items-center justify-center p-4 lg:p-8">
@@ -294,7 +296,7 @@ function LoginContent() {
                 name="email"
                 type="email"
                 placeholder="Email address"
-                className="h-10 rounded-lg"
+                className=""
                 required
               />
               <Input
@@ -302,7 +304,7 @@ function LoginContent() {
                 name="password"
                 type="password"
                 placeholder="Password"
-                className="h-10 rounded-lg"
+                className=""
                 required
               />
               {isSignUp && (
@@ -311,7 +313,7 @@ function LoginContent() {
                   name="confirmPassword"
                   type="password"
                   placeholder="Confirm password"
-                  className="h-10 rounded-lg"
+                  className=""
                   required
                 />
               )}
@@ -319,7 +321,7 @@ function LoginContent() {
                 <div className="relative">
                   <SubmitButton
                     formAction={isSignUp ? handleSignUp : handleSignIn}
-                    className="w-full h-10 bg-primary text-primary-foreground hover:bg-primary/90 transition-colors rounded-lg"
+                    className="w-full h-10"
                     pendingText={isSignUp ? "Creating account..." : "Signing in..."}
                   >
                     {isSignUp ? 'Create account' : 'Sign in'}
@@ -397,7 +399,7 @@ function LoginContent() {
               placeholder="Email address"
               value={forgotPasswordEmail}
               onChange={(e) => setForgotPasswordEmail(e.target.value)}
-              className="h-11 rounded-xl"
+              className=""
               required
             />
             {forgotPasswordStatus.message && (

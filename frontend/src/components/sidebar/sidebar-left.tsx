@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Bot, Menu, Plus, Zap, ChevronRight, BookOpen, Code, Star, Package, Sparkle, Sparkles, X, MessageCircle, PanelLeftOpen, Settings, LogOut, User, CreditCard, Key, Plug, Shield, DollarSign, KeyRound, Sun, Moon, Book, Database } from 'lucide-react';
+import { Bot, Menu, Plus, Zap, ChevronRight, BookOpen, Code, Star, Package, Sparkle, Sparkles, X, MessageCircle, PanelLeftOpen, Settings, LogOut, User, CreditCard, Key, Plug, Shield, DollarSign, KeyRound, Sun, Moon, Book, Database, PanelLeftClose } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { NavAgents } from '@/components/sidebar/nav-agents';
@@ -262,46 +262,53 @@ export function SidebarLeft({
       className="border-r border-border/50 bg-background [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']"
       {...props}
     >
-      <SidebarHeader className={cn("px-[30px] pt-7", state === 'collapsed' && "px-6")}>
-        <div className={cn("flex h-[32px] items-center", state === 'collapsed' ? "justify-center" : "justify-between")}>
-          {state === 'collapsed' ? (
-            <div className="relative group flex items-center justify-center">
-              <div className="group-hover:opacity-0 transition-opacity">
-                <Link href="/dashboard" className="flex-shrink-0" onClick={() => isMobile && setOpenMobile(false)}>
-                  <KortixLogo size={20} />
+      <SidebarHeader className={cn("px-6 pt-7 overflow-hidden", state === 'collapsed' && "px-6")}>
+        <div className={cn("flex h-[32px] items-center justify-between min-w-[200px]")}>
+          <div className="">
+            {state === 'collapsed' ? (
+              <div className="pl-2 relative flex items-center justify-center w-fit group/logo">
+                <Link href="/dashboard" onClick={() => isMobile && setOpenMobile(false)}>
+                  <KortixLogo size={20} className="flex-shrink-0 opacity-100 group-hover/logo:opacity-0 transition-opacity" />
                 </Link>
-              </div>
-              <Tooltip delayDuration={2000}>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 absolute opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={() => setOpen(true)}
-                  >
-                    <PanelLeftOpen className="!h-5 !w-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Expand sidebar (CMD+B)</TooltipContent>
-              </Tooltip>
-            </div>
-          ) : (
-            <>
-              <Link href="/dashboard" className="flex-shrink-0" onClick={() => isMobile && setOpenMobile(false)}>
-                <KortixLogo size={20} />
-              </Link>
-              {!isMobile && (
                 <Tooltip delayDuration={2000}>
                   <TooltipTrigger asChild>
-                    <SidebarTrigger className="h-8 w-8" />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 absolute opacity-0 group-hover/logo:opacity-100 transition-opacity"
+                      onClick={() => setOpen(true)}
+                    >
+                      <PanelLeftOpen className="!h-5 !w-5" />
+                    </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Toggle sidebar (CMD+B)</TooltipContent>
+                  <TooltipContent>Expand sidebar (CMD+B)</TooltipContent>
                 </Tooltip>
-              )}
-            </>
-          )}
+              </div>
+            ) : (
+              <div className="pl-2 relative flex items-center justify-center w-fit">
+                <Link href="/dashboard" onClick={() => isMobile && setOpenMobile(false)}>
+                  <KortixLogo size={20} className="flex-shrink-0" />
+                </Link>
+              </div>
+            )}
+
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => {
+              if (isMobile) {
+                setOpenMobile(false);
+              } else {
+                setOpen(false);
+              }
+            }}
+          >
+            <PanelLeftClose className="!h-5 !w-5" />
+          </Button>
         </div>
-      </SidebarHeader>
+      </SidebarHeader >
       <SidebarContent className="[&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
         <AnimatePresence mode="wait">
           {state === 'collapsed' ? (
@@ -369,7 +376,7 @@ export function SidebarLeft({
               transition={{ duration: 0.15, ease: "easeOut" }}
               className="flex flex-col h-full"
             >
-              <div className="px-[30px] pt-4 space-y-4">
+              <div className="px-6 pt-4 space-y-4">
                 {/* New Chat button */}
                 <div className="w-full">
                   <Button
