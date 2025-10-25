@@ -19,10 +19,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kortix.app",
-      "usesAppleSignIn": true,
-      "infoPlist": {
-        "NSSupportsLiveActivities": true
-      }
+      "usesAppleSignIn": true
     },
     "android": {
       "edgeToEdgeEnabled": true,
