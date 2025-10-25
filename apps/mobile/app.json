@@ -19,7 +19,10 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kortix.app",
-      "usesAppleSignIn": true
+      "usesAppleSignIn": true,
+      "infoPlist": {
+        "NSSupportsLiveActivities": true
+      }
     },
     "android": {
       "edgeToEdgeEnabled": true,
@@ -35,7 +38,8 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "@bacons/apple-targets"
     ],
     "experiments": {
       "typedRoutes": true

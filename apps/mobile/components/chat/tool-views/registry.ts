@@ -8,16 +8,22 @@ import type { ToolViewComponent } from './types';
 
 // Import tool views
 import { GenericToolView } from './GenericToolView';
-import { FileOperationToolView } from './FileOperationToolView';
 import { CommandToolView } from './CommandToolView';
 import { TaskListToolView } from './TaskListToolView';
 import { ExposePortToolView } from './ExposePortToolView';
+import { WebSearchToolView } from './web-search-tool/WebSearchToolView';
+import { BrowserToolView } from './browser-tool/BrowserToolView';
+import { WebCrawlToolView } from './web-crawl-tool/WebCrawlToolView';
+import { WaitToolView } from './wait-tool/WaitToolView';
+import { WebScrapeToolView } from './web-scrape-tool/WebScrapeToolView';
+import { StrReplaceToolView } from './str-replace-tool/StrReplaceToolView';
+import { FileOperationToolView } from './file-operation/FileOperationToolView';
 
 /**
  * Registry mapping tool names to their view components
  */
 const toolViewRegistry: Record<string, ToolViewComponent> = {
-  // File operations
+  // File operations (NEW - mobile optimized)
   'create-file': FileOperationToolView,
   'read-file': FileOperationToolView,
   'edit-file': FileOperationToolView,
@@ -38,8 +44,38 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   // Port management
   'expose-port': ExposePortToolView,
   
+  // Web search
+  'web-search': WebSearchToolView,
+  'image-search': WebSearchToolView,
+  
+  // Web crawl
+  'crawl-webpage': WebCrawlToolView,
+  
+  // Web scrape
+  'scrape-webpage': WebScrapeToolView,
+  
+  // Browser operations
+  'browser-navigate-to': BrowserToolView,
+  'browser-click-element': BrowserToolView,
+  'browser-input-text': BrowserToolView,
+  'browser-scroll-down': BrowserToolView,
+  'browser-scroll-up': BrowserToolView,
+  'browser-go-back': BrowserToolView,
+  'browser-wait': BrowserToolView,
+  'browser-send-keys': BrowserToolView,
+  'browser-switch-tab': BrowserToolView,
+  'browser-close-tab': BrowserToolView,
+  'browser-scroll-to-text': BrowserToolView,
+  'browser-get-dropdown-options': BrowserToolView,
+  'browser-select-dropdown-option': BrowserToolView,
+  'browser-drag-drop': BrowserToolView,
+  'browser-click-coordinates': BrowserToolView,
+  
   // Wait tool
-  'wait': GenericToolView,
+  'wait': WaitToolView,
+  
+  // String replace
+  'str-replace': StrReplaceToolView,
   
   // Default fallback
   'default': GenericToolView,

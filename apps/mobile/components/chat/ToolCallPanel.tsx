@@ -1,10 +1,3 @@
-/**
- * Tool Call Panel
- * 
- * Bottom drawer displaying detailed tool call information.
- * Supports navigation between multiple tool calls.
- */
-
 import React, { useState, useMemo, useCallback } from 'react';
 import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
@@ -12,8 +5,9 @@ import { Icon } from '@/components/ui/icon';
 import type { UnifiedMessage } from '@/api/types';
 import { parseToolMessage } from '@/lib/utils/tool-parser';
 import { getToolViewComponent } from './tool-views';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { Portal } from '@rn-primitives/portal';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react-native';
@@ -28,35 +22,33 @@ interface ToolCallPanelProps {
   onClose: () => void;
   toolMessages: ToolMessagePair[];
   initialIndex?: number;
+  onAnimationStateChange?: (isAnimating: boolean) => void;
 }
 
-/**
- * Tool Call Panel Component
- */
 export function ToolCallPanel({
   visible,
   onClose,
   toolMessages,
   initialIndex = 0,
+  onAnimationStateChange,
 }: ToolCallPanelProps) {
-  const bottomSheetRef = React.useRef<BottomSheet>(null);
+  const bottomSheetRef = React.useRef<BottomSheetModal>(null);
   const snapPoints = React.useMemo(() => ['85%'], []);
   const { colorScheme } = useColorScheme();
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
 
-  // Reset index when panel opens
   React.useEffect(() => {
     if (visible) {
       setCurrentIndex(initialIndex);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       console.log('📳 Haptic Feedback: Tool Drawer Opened');
-      bottomSheetRef.current?.snapToIndex(0);
+      onAnimationStateChange?.(true);
+      bottomSheetRef.current?.present();
     } else {
-      bottomSheetRef.current?.close();
+      bottomSheetRef.current?.dismiss();
     }
-  }, [visible, initialIndex]);
+  }, [visible, initialIndex, onAnimationStateChange]);
 
-  // Get current tool data
   const currentPair = toolMessages[currentIndex];
   
   const toolData = useMemo(() => {
@@ -70,7 +62,6 @@ export function ToolCallPanel({
     return getToolViewComponent(toolName);
   }, [toolName]);
 
-  // Navigation handlers
   const handlePrev = useCallback(() => {
     if (currentIndex > 0) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -90,8 +81,19 @@ export function ToolCallPanel({
   const handleClose = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     console.log('❌ Tool Drawer Closed');
+    // Trigger scale-up animation immediately
+    onAnimationStateChange?.(false);
+    // Small delay to let animation start before closing
+    setTimeout(() => {
+      onClose();
+    }, 50);
+  }, [onClose, onAnimationStateChange]);
+
+  const handleDismiss = useCallback(() => {
+    console.log('🚫 Tool Drawer Dismissed');
+    onAnimationStateChange?.(false);
     onClose();
-  }, [onClose]);
+  }, [onClose, onAnimationStateChange]);
 
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
@@ -99,72 +101,88 @@ export function ToolCallPanel({
         {...props}
         disappearsOnIndex={-1}
         appearsOnIndex={0}
-        opacity={0.5}
+        opacity={0.7}
         pressBehavior="close"
+        style={[props.style, { backgroundColor: 'rgba(0,0,0,0.7)' }]}
+        onPress={() => {
+          // Trigger scale-up animation immediately on backdrop press
+          onAnimationStateChange?.(false);
+        }}
       />
     ),
-    []
+    [onAnimationStateChange]
   );
 
   const handleSheetChange = useCallback((index: number) => {
     if (index === -1) {
       onClose();
+    } else if (index === 0) {
+      onAnimationStateChange?.(true);
     }
-  }, [onClose]);
+  }, [onClose, onAnimationStateChange]);
 
   const isPrevDisabled = currentIndex <= 0;
   const isNextDisabled = currentIndex >= toolMessages.length - 1;
 
   return (
-    <BottomSheet
-      ref={bottomSheetRef}
-      index={-1}
-      snapPoints={snapPoints}
-      enablePanDownToClose
-      onChange={handleSheetChange}
-      backdropComponent={renderBackdrop}
-      backgroundStyle={{ 
+    <Portal name="tool-call-panel">
+      <BottomSheetModal
+        ref={bottomSheetRef}
+        index={0}
+        snapPoints={snapPoints}
+        enablePanDownToClose
+        onChange={handleSheetChange}
+        onDismiss={handleDismiss}
+        backdropComponent={renderBackdrop}
+        onAnimate={(fromIndex, toIndex) => {
+          if (fromIndex === 0 && toIndex === -1) {
+            onAnimationStateChange?.(false);
+          }
+        }}
+        backgroundStyle={{ 
+          backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
+        }}
+        handleIndicatorStyle={{ 
+          backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',
+          width: 36,
+          height: 5,
+          borderRadius: 3,
+          marginTop: 8,
+          marginBottom: 0
+        }}
+        enableDynamicSizing={false}
+        detached={false}
+        bottomInset={0}
+        style={{
+          borderTopLeftRadius: 24,
+          borderTopRightRadius: 24,
+          overflow: 'hidden',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -4 },
+          shadowOpacity: 0.25,
+          shadowRadius: 20,
+        }}
+        containerStyle={{
+          zIndex: 99999,
+          elevation: 999,
+        }}
+      >
+      <View style={{ 
+        flex: 1, 
         backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF'
-      }}
-      handleIndicatorStyle={{ 
-        backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',
-        width: 36,
-        height: 5,
-        borderRadius: 3,
-        marginTop: 8,
-        marginBottom: 0
-      }}
-      enableDynamicSizing={false}
-      style={{
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-        overflow: 'hidden'
-      }}
-    >
-      {/* Header */}
-      <View className="border-b border-border bg-card px-6 pb-4 pt-6">
-        <View className="flex-row items-center justify-between">
-          <View className="flex-1">
-            <Text className="text-lg font-roobert-semibold text-foreground" numberOfLines={1}>
-              {toolName}
-            </Text>
-          </View>
-
-          <Pressable
-            onPress={handleClose}
-            className="p-2 rounded-full bg-secondary active:bg-secondary/80"
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Icon as={X} size={20} className="text-foreground/60" />
-          </Pressable>
-        </View>
-      </View>
-
-      {/* Content */}
-      <BottomSheetScrollView 
-        className="flex-1"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 20 }}
+      }}>
+        <BottomSheetScrollView 
+          className="flex-1"
+          style={{ 
+            backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+            flex: 1
+          }}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ 
+            paddingBottom: 20
+          }}
       >
         {!currentPair || !toolData ? (
           <View className="flex-1 justify-center items-center px-6 py-12">
@@ -184,11 +202,14 @@ export function ToolCallPanel({
         )}
       </BottomSheetScrollView>
 
-      {/* Footer Navigation */}
       {toolMessages.length > 1 && (
-        <View className="border-t border-border bg-card px-6 py-3">
+        <View 
+          className="border-t border-border px-6 py-3" 
+          style={{ 
+            backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+            borderTopColor: colorScheme === 'dark' ? '#3F3F46' : '#E4E4E7'
+          }}>
           <View className="flex-row items-center justify-between">
-            {/* Previous Button */}
             <Pressable
               onPress={handlePrev}
               disabled={isPrevDisabled}
@@ -214,15 +235,11 @@ export function ToolCallPanel({
                 Prev
               </Text>
             </Pressable>
-
-            {/* Counter */}
             <View className="px-4">
               <Text className="text-sm font-roobert-semibold text-foreground tabular-nums">
                 {currentIndex + 1}/{toolMessages.length}
               </Text>
             </View>
-
-            {/* Next Button */}
             <Pressable
               onPress={handleNext}
               disabled={isNextDisabled}
@@ -251,6 +268,8 @@ export function ToolCallPanel({
           </View>
         </View>
       )}
-    </BottomSheet>
+      </View>
+      </BottomSheetModal>
+    </Portal>
   );
 }

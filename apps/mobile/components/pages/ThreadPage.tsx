@@ -12,7 +12,7 @@ import { MessageRenderer, ToolCallPanel, ChatInput, type ToolMessagePair } from 
 import { ThreadHeader, ThreadActionsDrawer } from '@/components/home';
 import { AgentDrawer } from '@/components/agents';
 import { AttachmentDrawer, AttachmentBar } from '@/components/attachments';
-import { useAgentManager, useAudioRecorder, useAudioRecordingHandlers, type UseChatReturn } from '@/hooks';
+import { useAgentManager, useAudioRecorder, useAudioRecordingHandlers, useBackgroundScale, type UseChatReturn } from '@/hooks';
 import { Text } from '@/components/ui/text';
 import { MessageCircle, ArrowDown } from 'lucide-react-native';
 
@@ -54,14 +54,14 @@ export function ThreadPage({
   const { colorScheme } = useColorScheme();
   const insets = useSafeAreaInsets();
   const [isThreadActionsVisible, setIsThreadActionsVisible] = React.useState(false);
+  const [isToolDrawerAnimating, setIsToolDrawerAnimating] = React.useState(false);
+ 
+  const { animatedStyle, containerAnimatedStyle } = useBackgroundScale(isToolDrawerAnimating, {
+    scaleValue: 0.90,
+    borderRadius: 46,
+    enableShadow: true,
+  });
   
-  // Tool drawer state - now managed by chat hook
-  // const [selectedToolData, setSelectedToolData] = React.useState<{
-  //   toolMessages: ToolMessagePair[];
-  //   initialIndex: number;
-  // } | null>(null);
-
-  // Optimized keyboard animation - smooth and responsive
   const keyboard = useAnimatedKeyboard();
   
   const animatedBottomStyle = useAnimatedStyle(() => {
@@ -69,30 +69,26 @@ export function ThreadPage({
       transform: [
         {
           translateY: withSpring(-keyboard.height.value, {
-            damping: 25,               // Balanced damping for smooth animation
-            stiffness: 300,            // Moderate stiffness for natural feel
-            mass: 0.8,                 // Slightly heavier for smoother motion
-            overshootClamping: false,  // Allow slight overshoot for natural feel
+            damping: 25,
+            stiffness: 300,
+            mass: 0.8,
+            overshootClamping: false,
           }),
         },
       ],
     };
   });
 
-  // Get messages and streaming state from chat
   const messages = chat.messages || [];
   const streamingContent = chat.streamingContent || '';
   const streamingToolCall = chat.streamingToolCall || null;
   const isLoading = chat.isLoading;
   const hasMessages = messages.length > 0 || streamingContent.length > 0;
-
-  // Enhanced auto-scroll behavior
   const scrollViewRef = React.useRef<ScrollView>(null);
   const [isUserScrolling, setIsUserScrolling] = React.useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = React.useState(false);
   const lastMessageCountRef = React.useRef(messages.length);
   
-  // Auto-scroll to bottom when new messages arrive (only if user isn't manually scrolling)
   React.useEffect(() => {
     const hasNewMessages = messages.length > lastMessageCountRef.current;
     const hasStreamingContent = streamingContent.length > 0;
@@ -145,9 +141,9 @@ export function ThreadPage({
   }, [isLoading, hasMessages, messages.length, chat.activeThread?.id, isUserScrolling, showScrollToBottom, insets.top]);
 
   return (
-    <View className="flex-1 bg-background">
-      {/* Thread Header - Fixed at top */}
-      <ThreadHeader
+    <Animated.View style={[{ flex: 1 }, containerAnimatedStyle]} className="bg-background">
+      <Animated.View style={[{ flex: 1, overflow: 'hidden' }, animatedStyle]} className="bg-background">
+        <ThreadHeader
         threadTitle={chat.activeThread?.title}
         onTitleChange={async (newTitle) => {
           console.log('📝 Thread title changed to:', newTitle);
@@ -160,8 +156,6 @@ export function ThreadPage({
         onMenuPress={onMenuPress}
         onActionsPress={() => setIsThreadActionsVisible(true)}
       />
-
-      {/* Main Content Area */}
       <View className="flex-1">
         {isLoading ? (
           <View className="flex-1 items-center justify-center px-8">
@@ -329,13 +323,16 @@ export function ThreadPage({
         }}
       />
       
-      {/* Tool Call Panel */}
+      </Animated.View>
+      
+      {/* Tool Call Panel - Outside of animated view */}
       <ToolCallPanel
         visible={!!chat.selectedToolData}
         onClose={() => chat.setSelectedToolData(null)}
         toolMessages={chat.selectedToolData?.toolMessages || []}
         initialIndex={chat.selectedToolData?.initialIndex || 0}
+        onAnimationStateChange={setIsToolDrawerAnimating}
       />
-    </View>
+    </Animated.View>
   );
 }
