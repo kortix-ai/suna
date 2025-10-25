@@ -114,6 +114,7 @@ export interface ChatInputProps {
   selectedCharts?: string[];
   selectedOutputFormat?: string | null;
   threadId?: string | null;
+  projectId?: string;
 }
 
 export interface UploadedFile {
@@ -164,6 +165,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       selectedCharts = [],
       selectedOutputFormat = null,
       threadId = null,
+      projectId,
     },
     ref,
   ) => {
@@ -454,6 +456,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
         handleFiles(
           imageFiles,
           sandboxId,
+          projectId,
           setPendingFiles,
           setUploadedFiles,
           setIsUploading,
@@ -575,6 +578,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
               isAgentRunning={isAgentRunning}
               isUploading={isUploading}
               sandboxId={sandboxId}
+              projectId={projectId}
               setPendingFiles={setPendingFiles}
               setUploadedFiles={setUploadedFiles}
               setIsUploading={setIsUploading}
@@ -782,6 +786,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                 handleFiles(
                   files,
                   sandboxId,
+                  projectId,
                   setPendingFiles,
                   setUploadedFiles,
                   setIsUploading,

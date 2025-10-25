@@ -1,5 +1,6 @@
 import os
 import urllib.parse
+import uuid
 from typing import Optional
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, APIRouter, Form, Depends, Request
@@ -7,7 +8,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 from daytona_sdk import AsyncSandbox
 
-from core.sandbox.sandbox import get_or_start_sandbox, delete_sandbox
+from core.sandbox.sandbox import get_or_start_sandbox, delete_sandbox, create_sandbox
 from core.utils.logger import logger
 from core.utils.auth_utils import get_optional_user_id, verify_and_get_user_id_from_jwt, verify_sandbox_access, verify_sandbox_access_optional
 from core.services.supabase import DBConnection
@@ -402,4 +403,90 @@ async def ensure_project_sandbox_active(
         }
     except Exception as e:
         logger.error(f"Error ensuring sandbox is active for project {project_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/project/{project_id}/files")
+async def create_file_in_project(
+    project_id: str,
+    path: str = Form(...),
+    file: UploadFile = File(...),
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    """
+    Upload a file to a project, creating a sandbox if one doesn't exist.
+    This endpoint handles both sandbox creation and file upload in a single call.
+    """
+    logger.debug(f"Received file upload for project {project_id}, path: {path}, user_id: {user_id}")
+    
+    # Normalize the path
+    path = normalize_path(path)
+    client = await db.client
+    
+    # Find the project and verify user has access
+    project_result = await client.table('projects').select('*').eq('project_id', project_id).execute()
+    
+    if not project_result.data or len(project_result.data) == 0:
+        logger.error(f"Project not found: {project_id}")
+        raise HTTPException(status_code=404, detail="Project not found")
+    
+    project_data = project_result.data[0]
+    account_id = project_data.get('account_id')
+    
+    # Verify user has access to this project
+    if account_id:
+        account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', account_id).execute()
+        if not (account_user_result.data and len(account_user_result.data) > 0):
+            logger.error(f"User {user_id} not authorized to access project {project_id}")
+            raise HTTPException(status_code=403, detail="Not authorized to access this project")
+    
+    try:
+        # Reuse existing sandbox creation/retrieval logic from agent_runs
+        from core.agent_runs import _ensure_sandbox_for_thread
+        
+        # Check if sandbox existed before
+        existing_sandbox_id = project_data.get('sandbox', {}).get('id')
+        
+        # Ensure sandbox exists (creates if needed)
+        sandbox, sandbox_id = await _ensure_sandbox_for_thread(client, project_id, [file])
+        
+        if not sandbox or not sandbox_id:
+            raise HTTPException(status_code=500, detail="Failed to ensure sandbox for file upload")
+        
+        sandbox_created = (existing_sandbox_id is None)
+        
+        # Upload the file to the sandbox
+        from pathlib import Path as PathLib
+        original_filename = PathLib(path).name
+        
+        # Always use /workspace/uploads/ as the base directory
+        uploads_dir = get_uploads_directory()
+        
+        # Generate a unique filename to avoid conflicts
+        unique_filename = await generate_unique_filename(sandbox, uploads_dir, original_filename)
+        
+        # Construct the final path
+        final_path = f"{uploads_dir}/{unique_filename}"
+        
+        # Read file content
+        content = await file.read()
+        
+        # Upload file to sandbox
+        await sandbox.fs.upload_file(content, final_path)
+        logger.info(f"File uploaded successfully: {final_path} in sandbox {sandbox_id}")
+        
+        return {
+            "status": "success",
+            "created": True,
+            "path": final_path,
+            "original_filename": original_filename,
+            "final_filename": unique_filename,
+            "renamed": original_filename != unique_filename,
+            "sandbox_id": sandbox_id,
+            "sandbox_created": sandbox_created
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading file to project {project_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
