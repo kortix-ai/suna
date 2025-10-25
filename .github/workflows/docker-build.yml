@@ -71,6 +71,21 @@ jobs:
         if: steps.get_tag_name.outputs.environment == 'staging'
         uses: appleboy/ssh-action@v1
         with:
+          host: ${{ secrets.AWS_STAGING_HOST }}
+          username: ${{ secrets.AWS_STAGING_USERNAME }}
+          key: ${{ secrets.AWS_STAGING_KEY }}
+          script: |
+            cd /home/ubuntu/suna/backend
+            git fetch origin main
+            git reset --hard origin/main
+            set -a && source .env && set +a
+            docker compose build
+            docker compose up -d
+
+      - name: Deploy to staging [legacy]
+        if: steps.get_tag_name.outputs.environment == 'staging'
+        uses: appleboy/ssh-action@v1
+        with:
           host: ${{ secrets.STAGING_HOST }}
           username: ${{ secrets.STAGING_USERNAME }}
           key: ${{ secrets.STAGING_KEY }}
