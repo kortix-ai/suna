@@ -23,8 +23,7 @@ from .agents import (
 )
 
 from .threads import (
-    AgentStartRequest,
-    InitiateAgentResponse,
+    UnifiedAgentStartResponse,
     CreateThreadResponse,
     MessageCreateRequest,
 )
@@ -52,8 +51,7 @@ __all__ = [
     "AgentIconGenerationResponse",
     
     # Thread models
-    "AgentStartRequest",
-    "InitiateAgentResponse",
+    "UnifiedAgentStartResponse",
     "CreateThreadResponse",
     "MessageCreateRequest",
     

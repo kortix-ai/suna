@@ -26,7 +26,7 @@ export function BillingPeriodSelector({ selected, onChange, t }: BillingPeriodSe
           <Pressable
             key={period}
             onPress={() => onChange(period)}
-            className={`flex-1 p-3 rounded-xl border-2 ${
+            className={`flex-1 p-3 rounded-2xl border-2 ${
               selected === period
                 ? 'bg-primary/10 border-primary'
                 : 'bg-card border-border'

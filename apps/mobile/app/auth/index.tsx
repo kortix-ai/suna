@@ -225,7 +225,6 @@ export default function AuthScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setCurrentView('sign-in-email');
     setError('');
-    setTimeout(() => emailInputRef.current?.focus(), 300);
   };
 
   const showSignUp = () => {
@@ -243,7 +242,6 @@ export default function AuthScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setCurrentView('sign-up-email');
     setError('');
-    setTimeout(() => emailInputRef.current?.focus(), 300);
   };
 
   const showForgotPassword = () => {
@@ -251,7 +249,6 @@ export default function AuthScreen() {
     setCurrentView('forgot-password');
     setError('');
     setForgotPasswordSuccess(false);
-    setTimeout(() => emailInputRef.current?.focus(), 300);
   };
 
   const showSignInEmailWithPrefilledData = () => {
@@ -432,7 +429,7 @@ export default function AuthScreen() {
                 {/* Back Button */}
                 <Pressable 
                   onPress={handleBack} 
-                  className="size-10 justify-center mb-8"
+                  className="size-10 justify-center mb-8 self-start"
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
                   <Icon as={ChevronLeft} size={24} className="text-foreground" />
@@ -451,8 +448,11 @@ export default function AuthScreen() {
                     placeholder={t('auth.emailPlaceholder')}
                     placeholderTextColor="hsl(var(--muted-foreground))"
                     keyboardType="email-address"
+                    textContentType="emailAddress"
+                    autoComplete="email"
                     autoCapitalize="none"
                     autoCorrect={false}
+                    autoFocus={true}
                     returnKeyType="next"
                     onSubmitEditing={() => passwordInputRef.current?.focus()}
                     style={{ fontFamily: 'Roobert-Regular' }}
@@ -468,6 +468,8 @@ export default function AuthScreen() {
                     onChangeText={setPassword}
                     placeholder={t('auth.passwordPlaceholder')}
                     placeholderTextColor="hsl(var(--muted-foreground))"
+                    textContentType="password"
+                    autoComplete="password"
                     secureTextEntry
                     autoCapitalize="none"
                     autoCorrect={false}
@@ -552,7 +554,7 @@ export default function AuthScreen() {
                 {/* Back Button */}
                 <Pressable 
                   onPress={handleBack} 
-                  className="size-10 justify-center mb-8"
+                  className="size-10 justify-center mb-8 self-start"
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
                   <Icon as={ChevronLeft} size={24} className="text-foreground" />
@@ -571,8 +573,11 @@ export default function AuthScreen() {
                     placeholder={t('auth.emailPlaceholder')}
                     placeholderTextColor="hsl(var(--muted-foreground))"
                     keyboardType="email-address"
+                    textContentType="emailAddress"
+                    autoComplete="email"
                     autoCapitalize="none"
                     autoCorrect={false}
+                    autoFocus={true}
                     returnKeyType="next"
                     onSubmitEditing={() => passwordInputRef.current?.focus()}
                     style={{ fontFamily: 'Roobert-Regular' }}
@@ -588,6 +593,8 @@ export default function AuthScreen() {
                     onChangeText={setPassword}
                     placeholder={t('auth.passwordPlaceholder')}
                     placeholderTextColor="hsl(var(--muted-foreground))"
+                    textContentType="newPassword"
+                    autoComplete="password-new"
                     secureTextEntry
                     autoCapitalize="none"
                     autoCorrect={false}
@@ -606,6 +613,8 @@ export default function AuthScreen() {
                     onChangeText={setConfirmPassword}
                     placeholder={t('auth.confirmPasswordPlaceholder')}
                     placeholderTextColor="hsl(var(--muted-foreground))"
+                    textContentType="newPassword"
+                    autoComplete="password-new"
                     secureTextEntry
                     autoCapitalize="none"
                     autoCorrect={false}
@@ -747,7 +756,7 @@ export default function AuthScreen() {
                 {/* Back Button */}
                 <Pressable 
                   onPress={handleBack} 
-                  className="size-10 justify-center mb-8"
+                  className="size-10 justify-center mb-8 self-start"
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
                   <Icon as={ChevronLeft} size={24} className="text-foreground" />
@@ -770,8 +779,11 @@ export default function AuthScreen() {
                     placeholder={t('auth.emailPlaceholder')}
                     placeholderTextColor="hsl(var(--muted-foreground))"
                     keyboardType="email-address"
+                    textContentType="emailAddress"
+                    autoComplete="email"
                     autoCapitalize="none"
                     autoCorrect={false}
+                    autoFocus={true}
                     returnKeyType="send"
                     onSubmitEditing={handleResetPassword}
                     style={{ fontFamily: 'Roobert-Regular' }}

@@ -1,30 +1,34 @@
 /**
- * Conversation Item Component
+ * Conversation Item Component - Unified thread item using SelectableListItem
  * 
- * Individual conversation list item using the generic ListItem component
+ * Uses the unified SelectableListItem with ThreadAvatar
+ * Ensures consistent design across all list types
  */
 
 import * as React from 'react';
-import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import { formatConversationDate } from '@/lib/utils/date';
-import { ListItem } from '@/components/shared/ListItem';
-import { ThreadIcon } from '@/components/shared/ThreadIcon';
+import { SelectableListItem } from '@/components/shared/SelectableListItem';
+import { ThreadAvatar } from '@/components/ui/ThreadAvatar';
 import type { Conversation } from './types';
 
 interface ConversationItemProps {
   conversation: Conversation;
   onPress?: (conversation: Conversation) => void;
+  showChevron?: boolean;
 }
 
 /**
  * ConversationItem Component
  * 
- * Individual conversation list item with icon, title, date, and optional preview.
- * Uses the generic ListItem component for consistent design.
+ * Individual conversation list item with avatar, title, preview, and date.
+ * Uses the unified SelectableListItem for consistent design.
  */
-export function ConversationItem({ conversation, onPress }: ConversationItemProps) {
-  const { colorScheme } = useColorScheme();
+export function ConversationItem({ 
+  conversation, 
+  onPress,
+  showChevron = false 
+}: ConversationItemProps) {
   const { currentLanguage } = useLanguage();
   
   // Format date based on current locale
@@ -33,26 +37,15 @@ export function ConversationItem({ conversation, onPress }: ConversationItemProp
     [conversation.timestamp, currentLanguage]
   );
   
-  const iconColor = colorScheme === 'dark' ? 'text-white' : 'text-black';
-  
-  // Custom icon element
-  const iconElement = (
-    <ThreadIcon 
-      iconName={conversation.iconName}
-      size={20}
-      className={iconColor}
-    />
-  );
-  
   return (
-    <ListItem
-      iconElement={iconElement}
+    <SelectableListItem
+      avatar={<ThreadAvatar title={conversation.title} size={48} />}
       title={conversation.title}
       subtitle={conversation.preview}
       meta={formattedDate}
+      hideIndicator
       onPress={() => onPress?.(conversation)}
       accessibilityLabel={`Open conversation: ${conversation.title}`}
-      marginBottom={0}
     />
   );
 }

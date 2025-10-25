@@ -21,7 +21,11 @@ import {
 /**
  * Get icon component for trigger type
  */
-export const getTriggerIcon = (triggerType: string) => {
+export const getTriggerIcon = (triggerType: string | undefined) => {
+  if (!triggerType) {
+    return Globe; // Default icon
+  }
+  
   switch (triggerType.toLowerCase()) {
     case 'schedule':
     case 'scheduled':

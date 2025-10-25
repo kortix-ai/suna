@@ -5,6 +5,7 @@
  */
 
 import { API_URL, getAuthToken } from '@/api/config';
+import * as FileSystem from 'expo-file-system';
 
 export interface TranscriptionResult {
   text: string;
@@ -48,27 +49,50 @@ export async function transcribeAudio(
       mimeType = 'audio/webm';
     }
     
-    console.log('📤 Reading audio file into memory...');
+    console.log('📤 Preparing audio file for upload...');
     console.log('📊 File:', filename, 'Type:', mimeType);
+    console.log('📊 File URI:', audioUri);
     
-    // Read the file into a Blob IMMEDIATELY before it gets deleted
-    // This is critical because React Native FormData reads files asynchronously
-    const fileBlob = await fetch(audioUri).then(r => r.blob());
-    console.log('✅ Audio file read into memory:', fileBlob.size, 'bytes');
+    // CRITICAL: Read the file into base64 IMMEDIATELY
+    // React Native's FormData reads file URIs asynchronously during fetch,
+    // which means the file might be deleted before it's read.
+    // Solution: Read it into memory NOW as base64.
+    console.log('📖 Reading file into base64...');
+    const base64 = await FileSystem.readAsStringAsync(audioUri, {
+      encoding: 'base64',
+    });
+    console.log('✅ File read into memory:', base64.length, 'chars');
     
-    // Create FormData with the Blob (not the URI)
+    // Convert base64 to Blob
+    const byteCharacters = atob(base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    const blob = new Blob([byteArray], { type: mimeType });
+    console.log('✅ Blob created:', blob.size, 'bytes');
+    
+    // Create FormData with the Blob (now safely in memory)
     const formData = new FormData();
-    formData.append('audio_file', fileBlob, filename);
+    formData.append('audio_file', blob, filename);
+    
+    console.log('✅ FormData created with audio blob');
 
     console.log('📤 Uploading audio for transcription');
     console.log('📊 API URL:', `${API_URL}/transcription`);
+    console.log('📊 Auth token (first 20 chars):', token.substring(0, 20) + '...');
 
     // Create abort controller for timeout
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
+    const timeoutId = setTimeout(() => {
+      console.error('⏰ Request timeout after 60 seconds');
+      controller.abort();
+    }, 60000); // 60 second timeout
 
     try {
       // Make API request with timeout
+      console.log('📤 Sending fetch request...');
       const response = await fetch(`${API_URL}/transcription`, {
         method: 'POST',
         headers: {
@@ -81,6 +105,7 @@ export async function transcribeAudio(
 
       clearTimeout(timeoutId);
       console.log('📡 Transcription response status:', response.status);
+      console.log('📡 Response headers:', JSON.stringify(Object.fromEntries(response.headers.entries()), null, 2));
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -127,7 +152,18 @@ export async function transcribeAudio(
     
     // Provide user-friendly error messages
     if (error?.message?.includes('Network request failed')) {
-      throw new Error('Network error. Please check your connection and ensure the backend is running.');
+      throw new Error(
+        'Network error: Cannot reach the transcription server. ' +
+        'Please check your internet connection and try again. ' +
+        `(Trying to connect to: ${API_URL}/transcription)`
+      );
+    }
+    
+    if (error?.message?.includes('Failed to fetch')) {
+      throw new Error(
+        'Connection error: The transcription service is not responding. ' +
+        'Please check if the backend server is running.'
+      );
     }
     
     throw error;

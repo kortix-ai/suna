@@ -158,19 +158,11 @@ export function ThreadPage({
       />
       <View className="flex-1">
         {isLoading ? (
-          <View className="flex-1 items-center justify-center px-8">
-            <View className="w-20 h-20 rounded-full bg-secondary/30 items-center justify-center mb-6">
-              <ActivityIndicator 
-                size="large" 
-                color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} 
-              />
-            </View>
-            <Text className="text-foreground text-lg font-roobert-semibold text-center">
-              Loading thread...
-            </Text>
-            <Text className="text-muted-foreground text-sm font-roobert mt-2 text-center">
-              Fetching messages
-            </Text>
+          <View className="flex-1 items-center justify-center">
+            <ActivityIndicator 
+              size="large" 
+              color={colorScheme === 'dark' ? '#FFFFFF' : '#121215'} 
+            />
           </View>
         ) : !hasMessages ? (
           <View className="flex-1 items-center justify-center px-8">
@@ -193,7 +185,7 @@ export function ThreadPage({
               flexGrow: 1,
               paddingTop: insets.top + 60, // Safe area + header height (48px) + extra spacing (12px)
               paddingBottom: 200,
-              paddingHorizontal: 16,
+              paddingHorizontal: 16, // Comfortable side margins
             }}
             keyboardShouldPersistTaps="handled"
             scrollEventThrottle={16}

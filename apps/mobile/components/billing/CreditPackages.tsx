@@ -37,7 +37,7 @@ export function CreditPackages({ onPurchase, purchasing, t }: CreditPackagesProp
             {isPurchasing ? (
               <ActivityIndicator />
             ) : (
-              <View className="bg-primary h-10 w-full rounded-xl items-center justify-center">
+              <View className="bg-primary h-10 w-full rounded-2xl items-center justify-center">
                 <Text className="text-sm font-roobert-semibold text-primary-foreground">
                   {t('billing.purchase')}
                 </Text>

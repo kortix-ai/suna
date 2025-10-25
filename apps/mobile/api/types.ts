@@ -96,16 +96,10 @@ export interface ActiveAgentRun {
   started_at: string;
 }
 
-export interface InitiateAgentResponse {
+export interface UnifiedAgentStartResponse {
   thread_id: string;
-  agent_run_id: string | null;
-}
-
-export interface InitiateAgentInput {
-  prompt: string;
-  files?: File[];
-  agent_id?: string;
-  model_name?: string;
+  agent_run_id: string;
+  status: string;
 }
 
 // ============================================================================

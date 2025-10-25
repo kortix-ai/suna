@@ -1980,6 +1980,8 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - RNSoundLevel (1.3.0):
+    - React
   - RNSVG (15.12.1):
     - hermes-engine
     - RCTRequired
@@ -2217,6 +2219,7 @@ DEPENDENCIES:
   - RNGestureHandler (from `../node_modules/react-native-gesture-handler`)
   - RNReanimated (from `../node_modules/react-native-reanimated`)
   - RNScreens (from `../node_modules/react-native-screens`)
+  - RNSoundLevel (from `../node_modules/react-native-sound-level`)
   - RNSVG (from `../node_modules/react-native-svg`)
   - RNWorklets (from `../node_modules/react-native-worklets`)
   - "SelectableText (from `../node_modules/@rob117/react-native-selectable-text`)"
@@ -2414,6 +2417,8 @@ EXTERNAL SOURCES:
     :path: "../node_modules/react-native-reanimated"
   RNScreens:
     :path: "../node_modules/react-native-screens"
+  RNSoundLevel:
+    :path: "../node_modules/react-native-sound-level"
   RNSVG:
     :path: "../node_modules/react-native-svg"
   RNWorklets:
@@ -2519,6 +2524,7 @@ SPEC CHECKSUMS:
   RNGestureHandler: 2914750df066d89bf9d8f48a10ad5f0051108ac3
   RNReanimated: 3895a29fdf77bbe2a627e1ed599a5e5d1df76c29
   RNScreens: d8d6f1792f6e7ac12b0190d33d8d390efc0c1845
+  RNSoundLevel: a48da8668fbde4f792c0bea948e27ab793bee7e1
   RNSVG: 31d6639663c249b7d5abc9728dde2041eb2a3c34
   RNWorklets: 76fce72926e28e304afb44f0da23b2d24f2c1fa0
   SelectableText: d78bb18cae7508bd797c4ea3294dc0e3df935172

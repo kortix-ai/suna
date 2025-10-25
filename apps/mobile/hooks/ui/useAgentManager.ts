@@ -17,12 +17,13 @@ export function useAgentManager() {
   const [isDrawerVisible, setIsDrawerVisible] = useState(false);
 
   const openDrawer = () => {
-    console.log('🔽 Agent Selector Pressed');
-    console.log('📊 Current Agent:', { 
+    console.log('🔽 [useAgentManager] Agent Selector Pressed');
+    console.log('📊 [useAgentManager] Current Agent:', { 
       id: selectedAgentId, 
       name: getCurrentAgent()?.name 
     });
-    console.log('⏰ Timestamp:', new Date().toISOString());
+    console.log('⏰ [useAgentManager] Timestamp:', new Date().toISOString());
+    console.log('👁️ [useAgentManager] Setting isDrawerVisible to TRUE');
     setIsDrawerVisible(true);
   };
 

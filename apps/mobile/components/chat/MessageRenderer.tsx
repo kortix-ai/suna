@@ -51,38 +51,31 @@ export function MessageRenderer({
   onToolPress,
 }: MessageRendererProps) {
   const groupedMessages = useMemo(() => {
-    // Deduplicate streaming messages
-    const dedupedMessages = messages.reduce((acc: UnifiedMessage[], msg, idx) => {
-      if (!msg.message_id) {
-        const msgContent = safeJsonParse<ParsedContent>(msg.content, {}).content || '';
-        const hasDuplicateAfter = messages.slice(idx + 1).some((laterMsg) => {
-          if (!laterMsg.message_id) return false;
-          const laterContent = safeJsonParse<ParsedContent>(laterMsg.content, {}).content || '';
-          return laterContent === msgContent || laterContent.includes(msgContent);
-        });
-        
-        if (hasDuplicateAfter) return acc;
-      }
-      
-      acc.push(msg);
-      return acc;
-    }, []);
+    // ✨ Simplified: Trust data layer to handle deduplication
+    // Only add streaming content if it's not already represented in messages
+    let messagesToRender = [...messages];
     
-    // Add streaming content as temporary message
-    if (streamingContent) {
-      dedupedMessages.push({
-        message_id: null,
-        thread_id: 'streaming',
-        type: 'assistant',
-        is_llm_message: true,
-        content: JSON.stringify({ role: 'assistant', content: streamingContent }),
-        metadata: JSON.stringify({ stream_status: 'chunk' }),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
+    if (streamingContent && streamingContent.trim().length > 0) {
+      // Check if we already have a recent assistant message that matches the streaming content
+      const recentAssistantMsg = [...messages].reverse().find(m => m.type === 'assistant');
+      
+      if (!recentAssistantMsg) {
+        // No assistant message yet, show streaming content
+        console.log('✨ [MessageRenderer] First chunks - showing streaming:', streamingContent.length, 'chars');
+        messagesToRender.push({
+          message_id: null,
+          thread_id: 'streaming',
+          type: 'assistant',
+          is_llm_message: true,
+          content: JSON.stringify({ role: 'assistant', content: streamingContent }),
+          metadata: JSON.stringify({ stream_status: 'chunk' }),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+      }
     }
 
-    return groupMessages(dedupedMessages);
+    return groupMessages(messagesToRender);
   }, [messages, streamingContent]);
 
   // Collect ALL tool messages from the ENTIRE thread for navigation
@@ -165,11 +158,11 @@ export function MessageRenderer({
         </View>
       )}
 
-      {isStreaming && (
-        <View className="px-4 pb-3">
+      {/* {isStreaming && (
+        <View className="px-4 pt-2 pb-4">
           <StreamingDots />
         </View>
-      )}
+      )} */}
     </View>
   );
 }
@@ -210,14 +203,31 @@ function UserMessageBubble({
 
   const { colorScheme } = useColorScheme();
   
+  // ✨ Dark bubble in dark mode, light bubble in light mode (matching Figma)
+  // Use inline styles ONLY to avoid Tailwind conflicts
+  const containerStyle = {
+    maxWidth: '80%' as const,
+  };
+  
+  const bubbleStyle = {
+    backgroundColor: colorScheme === 'dark' ? '#161618' : '#f8f8f8',
+    borderWidth: 1.5,
+    borderColor: colorScheme === 'dark' ? '#232324' : '#e5e5e5',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  };
+  
+  const textStyle = {
+    color: colorScheme === 'dark' ? '#f8f8f8' : '#121215',
+    fontSize: 16,
+    lineHeight: 24,
+  };
+  
   return (
     <View className={`px-4 flex-row justify-end ${isLast ? 'mb-0' : 'mb-6'}`}>
-      <View className="max-w-[80%] bg-primary rounded-[20px] px-4 py-3 shadow-sm">
-        <Text 
-          className="text-primary-foreground text-[15px] leading-[22px]"
-          style={{ color: colorScheme === 'dark' ? '#121215' : '#f8f8f8' }}
-          selectable
-        >
+      <View style={[containerStyle, bubbleStyle]}>
+        <Text style={textStyle} selectable>
           {content}
         </Text>
       </View>
@@ -280,12 +290,12 @@ function AssistantMessageGroup({
     <View className={isLast ? 'mb-0' : 'mb-6'}>
       {/* Agent identifier - ONCE per group */}
       {firstAssistantMessage && (
-        <View className="px-4 mb-2.5">
+        <View className="px-4 mb-2">
           <AgentIdentifier 
             agentId={firstAssistantMessage.agent_id} 
-            size={20} 
+            size={16} 
             showName 
-            textSize="xs"
+            textSize="base"
           />
         </View>
       )}
@@ -295,7 +305,7 @@ function AssistantMessageGroup({
         const linkedTools = toolResultsMap.get(assistantMsg.message_id || null);
         
         return (
-          <View key={assistantMsg.message_id || `assistant-${idx}`}>
+          <View key={`${assistantMsg.message_id || 'assistant'}-${idx}-${assistantMsg.created_at}`}>
             <AssistantMessageContent 
               message={assistantMsg}
               hasToolsBelow={!!linkedTools && linkedTools.length > 0}
@@ -305,7 +315,7 @@ function AssistantMessageGroup({
             {linkedTools && linkedTools.length > 0 && (
               <View className="gap-2.5">
                 {linkedTools.map((toolMsg, toolIdx) => (
-                  <View key={toolMsg.message_id || `tool-${toolIdx}`} className="px-4 mb-2.5">
+                  <View key={`${toolMsg.message_id || 'tool'}-${toolIdx}-${toolMsg.created_at}`} className="px-4 mb-2.5">
                     <ToolCard
                       message={toolMsg}
                       onPress={() => handleToolPress(toolMsg)}
@@ -320,7 +330,7 @@ function AssistantMessageGroup({
       
       {/* Orphaned tools */}
       {toolResultsMap.get(null)?.map((toolMsg, idx) => (
-        <View key={toolMsg.message_id || `orphan-tool-${idx}`} className="px-4 mt-2">
+        <View key={`${toolMsg.message_id || 'orphan-tool'}-${idx}-${toolMsg.created_at}`} className="px-4 mt-2">
           <ToolCard
             message={toolMsg}
             onPress={() => handleToolPress(toolMsg)}
@@ -490,7 +500,7 @@ function ToolCard({
     <Pressable
       onPress={isLoading ? undefined : onPress}
       disabled={isLoading}
-      className={`bg-muted/30 rounded-xl px-3.5 py-3 border ${
+      className={`bg-muted/30 rounded-2xl px-3.5 py-3 border ${
         isLoading ? 'border-primary/30' : 'border-border/30'
       } ${!isLoading && 'active:bg-muted/50'}`}
     >
@@ -501,7 +511,7 @@ function ToolCard({
               <View className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
             )}
             <Wrench size={14} className="text-muted-foreground" />
-            <Text className="text-[13px] font-semibold text-foreground">
+            <Text className="text-[14px] font-semibold text-foreground">
               {toolName}
             </Text>
           </View>
@@ -516,7 +526,7 @@ function ToolCard({
           )}
         </View>
         
-        <Text className="text-[13px] text-muted-foreground leading-[18px]" numberOfLines={2}>
+        <Text className="text-[14px] text-muted-foreground leading-[20px]" numberOfLines={2}>
           {resultText}
         </Text>
       </Animated.View>
@@ -572,18 +582,18 @@ function StreamingDots() {
   const dot3Style = useAnimatedStyle(() => ({ opacity: dot3Opacity.value }));
 
   return (
-    <View className="flex-row gap-1 items-center">
+    <View className="flex-row gap-2 items-center justify-center py-2">
       <Animated.View 
         style={[dot1Style]} 
-        className="w-1.5 h-1.5 rounded-full bg-muted-foreground" 
+        className="w-2 h-2 rounded-full bg-muted-foreground" 
       />
       <Animated.View 
         style={[dot2Style]} 
-        className="w-1.5 h-1.5 rounded-full bg-muted-foreground" 
+        className="w-2 h-2 rounded-full bg-muted-foreground" 
       />
       <Animated.View 
         style={[dot3Style]} 
-        className="w-1.5 h-1.5 rounded-full bg-muted-foreground" 
+        className="w-2 h-2 rounded-full bg-muted-foreground" 
       />
     </View>
   );

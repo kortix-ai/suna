@@ -1,13 +1,10 @@
 import * as React from 'react';
-import { Pressable, ScrollView, TextInput, View, Keyboard, ActivityIndicator } from 'react-native';
+import { Pressable, ScrollView, View, ActivityIndicator } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { 
   useAnimatedStyle, 
   useSharedValue, 
-  withSpring,
-  withTiming,
-  interpolate,
-  Extrapolate
+  withSpring
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
@@ -15,21 +12,21 @@ import * as Haptics from 'expo-haptics';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { SearchBar } from '@/components/ui/SearchBar';
-import { Search, Plus, X, ChevronLeft, AlertCircle, MessageSquare, Users, Zap } from 'lucide-react-native';
+import { Search, Plus, ChevronLeft, AlertCircle, MessageSquare, Users, Zap } from 'lucide-react-native';
 import { ConversationSection } from '@/components/menu/ConversationSection';
 import { BottomNav } from '@/components/menu/BottomNav';
 import { ProfileSection } from '@/components/menu/ProfileSection';
 import { SettingsDrawer } from '@/components/menu/SettingsDrawer';
 import { useAuthContext, useLanguage } from '@/contexts';
 import { useRouter } from 'expo-router';
-import { AgentAvatar } from '@/components/agents/AgentAvatar';
 import { AgentList } from '@/components/agents/AgentList';
 import { useAgent } from '@/contexts/AgentContext';
 import { useSearch } from '@/lib/utils/search';
 import { useThreads } from '@/lib/chat';
 import { useAllTriggers } from '@/lib/triggers';
 import { groupThreadsByMonth } from '@/lib/utils/thread-utils';
-import { TriggerCreationDrawer, TriggerListItem } from '@/components/triggers';
+import { TriggerCreationDrawer, TriggerList } from '@/components/triggers';
+import { useAdvancedFeatures } from '@/hooks';
 import type { Conversation, UserProfile, ConversationSection as ConversationSectionType } from '@/components/menu/types';
 import type { Agent, TriggerWithAgent } from '@/api/types';
 
@@ -147,7 +144,7 @@ function EmptyState({
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
           style={animatedStyle}
-          className="mt-6 px-6 py-3 bg-primary rounded-xl"
+          className="mt-6 px-6 py-3 bg-primary rounded-2xl"
           accessibilityRole="button"
           accessibilityLabel={actionLabel}
         >
@@ -370,6 +367,7 @@ export function MenuPage({
   const { user } = useAuthContext();
   const router = useRouter();
   const { agents } = useAgent();
+  const { isEnabled: advancedFeaturesEnabled } = useAdvancedFeatures();
   const scrollY = useSharedValue(0);
   const [isSettingsVisible, setIsSettingsVisible] = React.useState(false);
   const [isTriggerDrawerVisible, setIsTriggerDrawerVisible] = React.useState(false);
@@ -684,30 +682,21 @@ export function MenuPage({
                       actionLabel={t('menu.newTrigger') || 'Create Trigger'}
                       onActionPress={handleTriggerCreate}
                     />
-                  ) : triggerResults.length === 0 && triggersSearch.isSearching ? (
-                    <EmptyState
-                      type="no-results"
-                      icon={Search}
-                      title={t('emptyStates.noResults') || 'No results'}
-                      description={t('emptyStates.tryDifferentSearch') || 'Try a different search term'}
-                    />
                   ) : (
-                    <View className="gap-3">
-                      {triggerResults.map((trigger) => (
-                        <TriggerListItem
-                          key={trigger.trigger_id}
-                          trigger={trigger}
-                          onPress={(selectedTrigger) => {
-                            console.log('🔧 Trigger selected:', selectedTrigger.name);
-                            // Navigate to trigger detail page
-                            router.push({
-                              pathname: '/trigger-detail',
-                              params: { triggerId: selectedTrigger.trigger_id }
-                            });
-                          }}
-                        />
-                      ))}
-                    </View>
+                    <TriggerList
+                      triggers={triggerResults}
+                      isLoading={triggersLoading}
+                      error={triggersError}
+                      searchQuery={triggersSearch.query}
+                      onTriggerPress={(selectedTrigger) => {
+                        console.log('🔧 Trigger selected:', selectedTrigger.name);
+                        // Navigate to trigger detail page
+                        router.push({
+                          pathname: '/trigger-detail',
+                          params: { triggerId: selectedTrigger.trigger_id }
+                        });
+                      }}
+                    />
                   )}
                 </>
               )}
@@ -746,14 +735,16 @@ export function MenuPage({
         </View>
         
         {/* Bottom Section: Navigation (Elegant Layout) */}
-        <View className="px-6 pb-4">
-          <BottomNav
-            activeTab={activeTab}
-            onChatsPress={onChatsPress}
-            onWorkersPress={onWorkersPress}
-            onTriggersPress={onTriggersPress}
-          />
-        </View>
+        {advancedFeaturesEnabled && (
+          <View className="px-6 pb-4">
+            <BottomNav
+              activeTab={activeTab}
+              onChatsPress={onChatsPress}
+              onWorkersPress={onWorkersPress}
+              onTriggersPress={onTriggersPress}
+            />
+          </View>
+        )}
       </SafeAreaView>
       
       {/* Settings Drawer */}

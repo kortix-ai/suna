@@ -1,6 +1,6 @@
 'use client';
 
-import { initiateAgent, InitiateAgentResponse, BillingError, AgentRunLimitError } from "@/lib/api";
+import { unifiedAgentStart, UnifiedAgentStartResponse, BillingError, AgentRunLimitError } from "@/lib/api";
 import { createMutationHook } from "@/hooks/use-query";
 import { handleApiSuccess, handleApiError } from "@/lib/error-handler";
 import { dashboardKeys } from "./keys";
@@ -9,10 +9,23 @@ import { useQueryClient } from "@tanstack/react-query";
 import { projectKeys, threadKeys } from "../sidebar/keys";
 
 export const useInitiateAgentMutation = createMutationHook<
-  InitiateAgentResponse, 
+  UnifiedAgentStartResponse, 
   FormData
 >(
-  initiateAgent,
+  async (formData: FormData) => {
+    // Extract FormData fields
+    const prompt = formData.get('prompt') as string;
+    const model_name = formData.get('model_name') as string | undefined;
+    const agent_id = formData.get('agent_id') as string | undefined;
+    const files = formData.getAll('files') as File[];
+    
+    return await unifiedAgentStart({
+      prompt,
+      model_name,
+      agent_id,
+      files: files.length > 0 ? files : undefined,
+    });
+  },
   {
     errorContext: { operation: 'initiate agent', resource: 'AI assistant' },
     onSuccess: (data) => {

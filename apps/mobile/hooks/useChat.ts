@@ -26,7 +26,7 @@ import {
   useThread,
   useMessages,
   useSendMessage as useSendMessageMutation,
-  useInitiateAgent as useInitiateAgentMutation,
+  useUnifiedAgentStart as useUnifiedAgentStartMutation,
   useStopAgentRun as useStopAgentRunMutation,
   useActiveAgentRuns,
   useUpdateThread,
@@ -146,19 +146,25 @@ export function useChat(): UseChatReturn {
   const [isAttachmentDrawerVisible, setIsAttachmentDrawerVisible] = useState(false);
   const [selectedQuickAction, setSelectedQuickAction] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [isNewThreadOptimistic, setIsNewThreadOptimistic] = useState(false); // Flag for optimistic new threads
 
   // ============================================================================
   // React Query Hooks
   // ============================================================================
 
   const { data: threadsData = [] } = useThreads();
-  const { data: threadData, isLoading: isThreadLoading } = useThread(activeThreadId);
-  const { data: messagesData, isLoading: isMessagesLoading, refetch: refetchMessages } = useMessages(activeThreadId);
+
+  // Smart data fetching - avoid refetching during streaming
+  const shouldFetchThread = !!activeThreadId;
+  const shouldFetchMessages = !!activeThreadId;
+
+  const { data: threadData, isLoading: isThreadLoading } = useThread(shouldFetchThread ? activeThreadId : undefined);
+  const { data: messagesData, isLoading: isMessagesLoading, refetch: refetchMessages } = useMessages(shouldFetchMessages ? activeThreadId : undefined);
   const { data: activeRuns } = useActiveAgentRuns();
 
   // Mutations
   const sendMessageMutation = useSendMessageMutation();
-  const initiateAgentMutation = useInitiateAgentMutation();
+  const unifiedAgentStartMutation = useUnifiedAgentStartMutation();
   const stopAgentRunMutation = useStopAgentRunMutation();
   const updateThreadMutation = useUpdateThread();
   const uploadFilesMutation = useUploadMultipleFiles();
@@ -176,9 +182,46 @@ export function useChat(): UseChatReturn {
   // Computed streaming state
   const isStreaming = !!currentRunIdRef.current;
 
-  // Update streaming status
+  // Update streaming status - accumulate ALL chunks
   const addContentImmediate = useCallback((content: string) => {
-    setStreamingContent((prev) => prev + content);
+    setStreamingContent((prev) => {
+      const newContent = prev + content;
+      console.log('[useChat] 📝 Accumulated content:', newContent.length, 'chars');
+      return newContent;
+    });
+  }, []);
+
+  // Helper to safely update messages array with deduplication
+  const updateMessagesWithDeduplication = useCallback((newMessage: UnifiedMessage) => {
+    setMessages((prev) => {
+      const messageExists = prev.some(
+        (m) => m.message_id === newMessage.message_id,
+      );
+      if (messageExists) {
+        // Update existing message in place
+        return prev.map((m) =>
+          m.message_id === newMessage.message_id ? newMessage : m,
+        );
+      } else {
+        // Check if this is a user message that should replace an optimistic one
+        if (newMessage.type === 'user') {
+          const optimisticIndex = prev.findIndex(
+            (m) =>
+              m.type === 'user' &&
+              (m.message_id?.startsWith('optimistic-') || m.message_id?.startsWith('temp-')) &&
+              m.content === newMessage.content,
+          );
+          if (optimisticIndex !== -1) {
+            // Replace the optimistic message with the real one
+            return prev.map((m, index) =>
+              index === optimisticIndex ? newMessage : m,
+            );
+          }
+        }
+        // Add new message
+        return [...prev, newMessage];
+      }
+    });
   }, []);
 
   // Finalize stream
@@ -192,21 +235,34 @@ export function useChat(): UseChatReturn {
       completedRunIds.current.add(currentRunIdRef.current);
     }
     
-    // Clear the current run ID to prevent re-connections
+    // Clear streaming state but keep agentRunId until refetch completes
     currentRunIdRef.current = null;
-    setAgentRunId(null);
-
-    // Reset streaming state
-    setStreamingContent('');
-    setStreamingToolCall(null);
     processedMessageIds.current.clear();
 
     // Invalidate active runs query to update agent running status
     queryClient.invalidateQueries({ queryKey: chatKeys.activeRuns() });
 
+    // Clear optimistic flag
+    if (isNewThreadOptimistic) {
+      console.log('[useChat] Clearing optimistic flag - streaming complete');
+      setIsNewThreadOptimistic(false);
+    }
+
     // Refetch messages to get the final state
-    refetchMessages();
-  }, [refetchMessages, queryClient]);
+    refetchMessages().then(() => {
+      // Clear agentRunId AFTER refetch completes to maintain running state
+      setAgentRunId(null);
+      
+      // Clear streaming content after a longer delay to prevent flicker
+      setTimeout(() => {
+        if (isMountedRef.current) {
+          console.log('[useChat] Clearing streaming content after refetch');
+          setStreamingContent('');
+          setStreamingToolCall(null);
+        }
+      }, 100); // Short delay to ensure refetch is processed
+    });
+  }, [refetchMessages, queryClient, isNewThreadOptimistic]);
 
   // Handle incoming stream messages
   const handleStreamMessage = useCallback((rawData: string) => {
@@ -262,30 +318,17 @@ export function useChat(): UseChatReturn {
     switch (message.type) {
       case 'assistant':
         if (parsedMetadata.stream_status === 'chunk' && parsedContent.content) {
-          // Check if this chunk contains function_calls XML
           const content = parsedContent.content;
+          
+          // ✨ ALWAYS add content chunks - never skip them!
+          console.log('[useChat] 📝 Chunk received:', content.substring(0, 50) + (content.length > 50 ? '...' : ''));
           
           // Detect <function_calls> start
           if (content.includes('<function_calls>')) {
-            console.log('[useChat] Detected <function_calls> in stream');
-            // Clear streaming text content
-            setStreamingContent('');
+            console.log('[useChat] Detected <function_calls> in stream - switching to tool mode');
             
-            // Try to extract function name from <invoke name="...">
-            const invokeMatch = content.match(/<invoke name="([^"]+)">/);
-            if (invokeMatch) {
-              const functionName = invokeMatch[1];
-              console.log('[useChat] Extracted function name:', functionName);
-              
-              setStreamingToolCall({
-                role: 'assistant',
-                status_type: 'tool_started',
-                name: functionName,
-                function_name: functionName,
-                arguments: {},
-              });
-            } else {
-              // Show generic loading if we can't extract name yet
+            // Show loading state immediately when function calls are detected
+            if (!streamingToolCall) {
               setStreamingToolCall({
                 role: 'assistant',
                 status_type: 'tool_started',
@@ -294,26 +337,43 @@ export function useChat(): UseChatReturn {
                 arguments: {},
               });
             }
-          } else if (!streamingToolCall) {
-            // Only render text if we're not in tool call mode
+            
+            // Try to extract function name from <invoke name="...">
+            const invokeMatch = content.match(/<invoke name="([^"]+)">/);
+            if (invokeMatch) {
+              const functionName = invokeMatch[1];
+              console.log('[useChat] Extracted function name:', functionName);
+              
+              // Update with actual function name
+              setStreamingToolCall({
+                role: 'assistant',
+                status_type: 'tool_started',
+                name: functionName,
+                function_name: functionName,
+                arguments: {},
+              });
+            }
+            
+            // Clear streaming content to prevent XML from showing in UI
+            setStreamingContent('');
+          } else {
+            // Regular text content - ALWAYS render it
             addContentImmediate(content);
           }
         } else if (parsedMetadata.stream_status === 'complete') {
-          // Clear streaming content as complete message will be added to history
-          setStreamingContent('');
-          setStreamingToolCall(null);
-
-          // Only emit if has message_id and not already processed
+          // ✨ Check if message already exists and update in place (same as frontend)
           if (message.message_id && !processedMessageIds.current.has(message.message_id)) {
             processedMessageIds.current.add(message.message_id);
-            // Add to messages immediately
-            setMessages((prev) => [...prev, message]);
+            updateMessagesWithDeduplication(message);
+            
+            // DON'T clear streaming content here - let finalizeStream handle it
+            // This prevents double clearing and flickering
           }
         } else if (!parsedMetadata.stream_status) {
           // Handle non-chunked assistant messages
           if (message.message_id && !processedMessageIds.current.has(message.message_id)) {
             processedMessageIds.current.add(message.message_id);
-            setMessages((prev) => [...prev, message]);
+            updateMessagesWithDeduplication(message);
           }
         }
         break;
@@ -324,7 +384,7 @@ export function useChat(): UseChatReturn {
         // Only emit if has message_id and not already processed
         if (message.message_id && !processedMessageIds.current.has(message.message_id)) {
           processedMessageIds.current.add(message.message_id);
-          setMessages((prev) => [...prev, message]);
+          updateMessagesWithDeduplication(message);
         }
         break;
 
@@ -351,7 +411,7 @@ export function useChat(): UseChatReturn {
         }
         break;
     }
-  }, [addContentImmediate, finalizeStream, streamingToolCall]);
+  }, [addContentImmediate, finalizeStream]);
 
   // Start streaming
   const startStreaming = useCallback(async (runId: string) => {
@@ -373,7 +433,12 @@ export function useChat(): UseChatReturn {
       eventSourceRef.current = null;
     }
 
-    console.log('[useChat] Starting stream for run:', runId);
+    console.log('[useChat] 🚀 Starting stream for run:', runId);
+    
+    // Clear streaming content and set run ID
+    setStreamingContent('');
+    setStreamingToolCall(null);
+    processedMessageIds.current.clear();
     currentRunIdRef.current = runId;
 
     try {
@@ -449,6 +514,9 @@ export function useChat(): UseChatReturn {
     if (prevThreadIdRef.current && prevThreadIdRef.current !== activeThreadId) {
       console.log('[useChat] Thread switched');
       
+      // ✨ Clear messages immediately when switching threads
+      setMessages([]);
+      
       // Clear streaming state
       setStreamingContent('');
       setStreamingToolCall(null);
@@ -464,9 +532,40 @@ export function useChat(): UseChatReturn {
     // Update the previous thread ID
     prevThreadIdRef.current = activeThreadId;
 
-    // Load messages for thread
-    if (messagesData) {
-      setMessages(messagesData as unknown as UnifiedMessage[]);
+    // Load messages for thread - simple approach since we clear on thread switch
+    if (messagesData && !isNewThreadOptimistic && !isStreaming) {
+      const unifiedMessages = messagesData as unknown as UnifiedMessage[];
+      
+      // Simple merge: preserve any local optimistic messages for current thread
+      setMessages((prev) => {
+        const serverIds = new Set(
+          unifiedMessages.map((m) => m.message_id).filter(Boolean) as string[],
+        );
+        
+        // Only keep optimistic messages for current thread
+        const localExtras = (prev || []).filter(
+          (m) => {
+            // Keep optimistic/temp messages for current thread only
+            return (m.message_id?.startsWith('optimistic-') || m.message_id?.startsWith('temp-')) &&
+                   (m.thread_id === activeThreadId || m.thread_id === 'optimistic');
+          }
+        );
+        
+        const merged = [...unifiedMessages, ...localExtras].sort((a, b) => {
+          const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return aTime - bTime;
+        });
+        
+        console.log('🔄 [useChat] Loaded messages for thread:', {
+          serverCount: unifiedMessages.length,
+          localExtrasCount: localExtras.length,
+          mergedCount: merged.length,
+          currentThreadId: activeThreadId
+        });
+        
+        return merged;
+      });
     }
 
     // Check for active agent run
@@ -474,12 +573,13 @@ export function useChat(): UseChatReturn {
     if (activeRun?.status === 'running' && !completedRunIds.current.has(activeRun.id)) {
       console.log('[useChat] Found active agent run:', activeRun.id);
       setAgentRunId(activeRun.id);
-    } else if (agentRunId && !activeRun) {
-      // Clear agentRunId if there's no active run for this thread
-      console.log('[useChat] No active agent run, clearing agentRunId');
+    } else if (agentRunId && !activeRun && !isStreaming) {
+      // ✨ Only clear agentRunId if we're not currently streaming
+      // This prevents clearing during active streaming when backend hasn't updated yet
+      console.log('[useChat] No active agent run and not streaming, clearing agentRunId');
       setAgentRunId(null);
     }
-  }, [activeThreadId, messagesData, activeRuns, agentRunId]);
+  }, [activeThreadId, messagesData, activeRuns, agentRunId, isNewThreadOptimistic]);
 
   // Auto-connect to stream
   useEffect(() => {
@@ -506,13 +606,15 @@ export function useChat(): UseChatReturn {
   useEffect(() => {
     if (activeThreadId) {
       console.log('📊 [useChat] Loading state:', {
-        isLoading: (isThreadLoading || isMessagesLoading),
+        isLoading: (isThreadLoading || isMessagesLoading) && !!activeThreadId && !isNewThreadOptimistic && messages.length === 0,
         isThreadLoading,
         isMessagesLoading,
+        isNewThreadOptimistic,
+        messagesCount: messages.length,
         threadId: activeThreadId,
       });
     }
-  }, [isThreadLoading, isMessagesLoading, activeThreadId]);
+  }, [isThreadLoading, isMessagesLoading, activeThreadId, isNewThreadOptimistic, messages.length]);
 
   // ============================================================================
   // Public API - Thread Operations
@@ -535,6 +637,10 @@ export function useChat(): UseChatReturn {
     setSelectedToolData(null);
     setInputValue('');
     setAttachments([]);
+    setIsNewThreadOptimistic(false); // Clear optimistic flag when loading existing thread
+    
+    // Clear messages to ensure clean thread switch
+    setMessages([]);
     
     // Set new thread
     setActiveThreadId(threadId);
@@ -548,6 +654,7 @@ export function useChat(): UseChatReturn {
     setInputValue('');
     setAttachments([]);
     setSelectedToolData(null);
+    setIsNewThreadOptimistic(false); // Reset optimistic flag
     completedRunIds.current.clear();
     stopStreaming();
   }, [stopStreaming]);
@@ -590,9 +697,24 @@ export function useChat(): UseChatReturn {
       
       if (!currentThreadId) {
         // ========================================================================
-        // NEW THREAD: Use /agent/initiate with FormData
+        // NEW THREAD: Use /agent/start with FormData
         // ========================================================================
-        console.log('[useChat] Creating new thread via /agent/initiate');
+        console.log('[useChat] Creating new thread via /agent/start with optimistic UI');
+        
+        // ✨ INSTANT UI: Show user message immediately like ChatGPT
+        const optimisticUserMessage: UnifiedMessage = {
+          message_id: 'optimistic-user-' + Date.now(),
+          thread_id: 'optimistic',
+          type: 'user',
+          content: JSON.stringify({ content }),
+          metadata: JSON.stringify({}),
+          is_llm_message: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        setMessages([optimisticUserMessage]);
+        setIsNewThreadOptimistic(true);
+        console.log('✨ [useChat] INSTANT user message display');
         
         // Convert attachments to FormData-compatible format
         const formDataFiles = attachments.length > 0
@@ -601,25 +723,25 @@ export function useChat(): UseChatReturn {
         
         console.log('[useChat] Converted', formDataFiles.length, 'attachments for FormData');
         
-        const createResult = await initiateAgentMutation.mutateAsync({
+        const createResult = await unifiedAgentStartMutation.mutateAsync({
+          // No threadId = create new thread
           prompt: content,
-          agent_id: agentId,
-          model_name: 'claude-sonnet-4',
+          agentId: agentId,
+          modelName: 'claude-sonnet-4',
           files: formDataFiles as any, // FormData files for new thread
         });
         
         currentThreadId = createResult.thread_id;
         console.log('[useChat] Thread created:', currentThreadId, 'Agent Run:', createResult.agent_run_id);
         
-        // Set thread ID first
+        // Set thread ID and start streaming immediately like ChatGPT
         setActiveThreadId(currentThreadId);
         
-        // Set agent run ID after a delay
         if (createResult.agent_run_id) {
-          setTimeout(() => {
-            console.log('[useChat] Setting agent run ID:', createResult.agent_run_id);
-            setAgentRunId(createResult.agent_run_id);
-          }, 100);
+          console.log('[useChat] Starting INSTANT streaming:', createResult.agent_run_id);
+          setAgentRunId(createResult.agent_run_id);
+          // Start streaming immediately - no delays
+          startStreaming(createResult.agent_run_id);
         }
         
         // Clear input and attachments AFTER successful send
@@ -630,6 +752,25 @@ export function useChat(): UseChatReturn {
         // EXISTING THREAD: Upload files to sandbox, then send message with references
         // ========================================================================
         console.log('[useChat] Sending to existing thread:', currentThreadId);
+        
+        // ✨ INSTANT UI: Show user message immediately like ChatGPT (same as new threads)
+        const optimisticUserMessage: UnifiedMessage = {
+          message_id: 'optimistic-user-' + Date.now(),
+          thread_id: currentThreadId,
+          type: 'user',
+          content: JSON.stringify({ content }),
+          metadata: JSON.stringify({}),
+          is_llm_message: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        
+        // Add optimistic message to existing messages
+        setMessages((prev) => [...prev, optimisticUserMessage]);
+        console.log('✨ [useChat] INSTANT user message display for existing thread');
+        
+        // Set optimistic flag for existing threads too (for consistent behavior)
+        setIsNewThreadOptimistic(true);
         
         let messageContent = content;
         
@@ -649,14 +790,11 @@ export function useChat(): UseChatReturn {
           
           console.log('[useChat] Uploading', attachments.length, 'files to sandbox:', sandboxId);
           
-          // Mark attachments as uploading
-          setAttachments(prev => prev.map(a => ({ ...a, isUploading: true, uploadProgress: 0 })));
-          
           try {
             // Convert attachments to upload format
             const filesToUpload = await convertAttachmentsToFormDataFiles(attachments);
             
-            // Upload files to sandbox with progress tracking
+            // Upload files to sandbox (simplified - no progress tracking for now)
             const uploadResults = await uploadFilesMutation.mutateAsync({
               sandboxId,
               files: filesToUpload.map(f => ({
@@ -664,23 +802,9 @@ export function useChat(): UseChatReturn {
                 name: f.name,
                 type: f.type,
               })),
-              onProgress: (fileName: string, progress: number) => {
-                console.log('[useChat] Upload progress:', fileName, progress);
-                // Update progress for specific file
-                setAttachments(prev => prev.map(a => {
-                  const matchingFile = filesToUpload.find(f => f.name === fileName);
-                  if (matchingFile && a.uri === matchingFile.uri) {
-                    return { ...a, uploadProgress: progress };
-                  }
-                  return a;
-                }));
-              },
             });
             
             console.log('[useChat] Files uploaded successfully:', uploadResults.length);
-            
-            // Mark upload complete
-            setAttachments(prev => prev.map(a => ({ ...a, isUploading: false, uploadProgress: 100 })));
             
             // Generate file references
             const filePaths = uploadResults.map(result => result.path);
@@ -694,13 +818,6 @@ export function useChat(): UseChatReturn {
             console.log('[useChat] Message with file references prepared');
           } catch (uploadError) {
             console.error('[useChat] File upload failed:', uploadError);
-            
-            // Mark attachments with error
-            setAttachments(prev => prev.map(a => ({ 
-              ...a, 
-              isUploading: false, 
-              uploadError: 'Upload failed' 
-            })));
             
             Alert.alert(
               t('common.error'),
@@ -719,10 +836,16 @@ export function useChat(): UseChatReturn {
         
         console.log('[useChat] Message sent, agent run started:', result.agentRunId);
         
-        // Set agent run ID
+        // Set agent run ID and start streaming immediately like ChatGPT
         if (result.agentRunId) {
+          console.log('[useChat] Starting INSTANT streaming for existing thread:', result.agentRunId);
           setAgentRunId(result.agentRunId);
+          // Start streaming immediately - no delays
+          startStreaming(result.agentRunId);
         }
+        
+        // Clear optimistic flag after successful send
+        setIsNewThreadOptimistic(false);
         
         // Clear input and attachments AFTER successful send
         setInputValue('');
@@ -730,22 +853,17 @@ export function useChat(): UseChatReturn {
       }
     } catch (error) {
       console.error('[useChat] Error sending message:', error);
-      // Reset attachment upload state on error
-      setAttachments(prev => prev.map(a => ({ 
-        ...a, 
-        isUploading: false, 
-        uploadError: 'Failed' 
-      })));
       throw error;
     }
   }, [
     activeThreadId,
     attachments,
     sendMessageMutation,
-    initiateAgentMutation,
+    unifiedAgentStartMutation,
     uploadFilesMutation,
     threadData,
     t,
+    startStreaming,
   ]);
 
   const stopAgent = useCallback(() => {
@@ -1013,16 +1131,31 @@ export function useChat(): UseChatReturn {
     };
   }, [threadData, messages]);
 
-  const isAgentRunning = !!agentRunId || isStreaming;
+  // ✨ More robust running state - include all possible running conditions
+  const isAgentRunning = !!agentRunId || isStreaming || sendMessageMutation.isPending || unifiedAgentStartMutation.isPending || !!currentRunIdRef.current;
+  
+  // Debug running state
+  useEffect(() => {
+    console.log('🔍 [useChat] Running state check:', {
+      agentRunId: !!agentRunId,
+      isStreaming,
+      sendMessagePending: sendMessageMutation.isPending,
+      unifiedAgentPending: unifiedAgentStartMutation.isPending,
+      currentRunId: !!currentRunIdRef.current,
+      isAgentRunning
+    });
+  }, [agentRunId, isStreaming, sendMessageMutation.isPending, unifiedAgentStartMutation.isPending, isAgentRunning]);
   
   // Check if any attachments are currently uploading
   const hasUploadingAttachments = attachments.some(a => a.isUploading);
   
   // Don't disable input during upload - only during message send/agent run
-  const isSendingMessage = sendMessageMutation.isPending || initiateAgentMutation.isPending;
+  const isSendingMessage = sendMessageMutation.isPending || unifiedAgentStartMutation.isPending;
   
   // Compute isLoading: true when thread data or messages are being fetched
-  const isLoading = (isThreadLoading || isMessagesLoading) && !!activeThreadId;
+  // ✨ BUT: Never show loading when we have messages (optimistic or real) - they should appear instantly
+  // ✨ AND: Never show loading for new optimistic threads - they should appear instantly
+  const isLoading = (isThreadLoading || isMessagesLoading) && !!activeThreadId && !isNewThreadOptimistic && messages.length === 0;
 
   // ============================================================================
   // Return Public API

@@ -213,9 +213,9 @@ async function fetchApi<T>(
 
 export const billingApi = {
   async getSubscription(): Promise<SubscriptionInfo> {
-    console.log('🔄 Fetching subscription data...');
+    // console.log('🔄 Fetching subscription data...');
     const data = await fetchApi<SubscriptionInfo>('/billing/subscription');
-    console.log('✅ Subscription data received:', JSON.stringify(data, null, 2));
+    // console.log('✅ Subscription data received:', JSON.stringify(data, null, 2));
     return data;
   },
 
@@ -226,9 +226,9 @@ export const billingApi = {
   },
 
   async getCreditBalance(): Promise<CreditBalance> {
-    console.log('🔄 Fetching credit balance...');
+    // console.log('🔄 Fetching credit balance...');
     const data = await fetchApi<CreditBalance>('/billing/balance');
-    console.log('✅ Credit balance received:', JSON.stringify(data, null, 2));
+    // console.log('✅ Credit balance received:', JSON.stringify(data, null, 2));
     return data;
   },
 
@@ -254,9 +254,9 @@ export const billingApi = {
   },
 
   async getTrialStatus(): Promise<TrialStatus> {
-    console.log('🔄 Fetching trial status...');
+    // console.log('🔄 Fetching trial status...');
     const data = await fetchApi<TrialStatus>('/billing/trial/status');
-    console.log('✅ Trial status received:', JSON.stringify(data, null, 2));
+    // console.log('✅ Trial status received:', JSON.stringify(data, null, 2));
     return data;
   },
 

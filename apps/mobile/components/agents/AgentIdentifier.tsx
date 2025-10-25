@@ -11,6 +11,7 @@ import { View, type ViewProps } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { AgentAvatar } from './AgentAvatar';
 import { useAgent } from '@/contexts/AgentContext';
+import { useColorScheme } from 'nativewind';
 import type { Agent } from '@/api/types';
 
 interface AgentIdentifierProps extends ViewProps {
@@ -39,13 +40,14 @@ interface AgentIdentifierProps extends ViewProps {
 export function AgentIdentifier({
   agentId,
   agent: providedAgent,
-  size = 24,
+  size = 16,
   showName = true,
   textSize = 'xs',
   style,
   ...props
 }: AgentIdentifierProps) {
-  const { agents, getCurrentAgent } = useAgent();
+  const { agents, selectedAgentId } = useAgent();
+  const { colorScheme } = useColorScheme();
   
   // Get agent from ID or use provided agent or fallback to current agent
   const agent = useMemo(() => {
@@ -54,8 +56,10 @@ export function AgentIdentifier({
       const found = agents.find(a => a.agent_id === agentId);
       if (found) return found;
     }
-    return getCurrentAgent() || agents[0] || null;
-  }, [agentId, providedAgent, agents, getCurrentAgent]);
+    // Fallback to selected agent
+    const selectedAgent = agents.find(a => a.agent_id === selectedAgentId);
+    return selectedAgent || agents[0] || null;
+  }, [agentId, providedAgent, agents, selectedAgentId]);
 
   const textSizeClass = {
     xs: 'text-xs',
@@ -80,13 +84,16 @@ export function AgentIdentifier({
 
   return (
     <View 
-      className="flex-row items-center gap-2"
+      className="flex-row items-center gap-1.5"
       style={style}
       {...props}
     >
       <AgentAvatar agent={agent} size={size} />
       {showName && (
-        <Text className={`${textSizeClass} font-medium text-muted-foreground`}>
+        <Text 
+          className={`${textSizeClass} font-medium opacity-50`} 
+          style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+        >
           {agent.name}
         </Text>
       )}
