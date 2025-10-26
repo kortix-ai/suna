@@ -139,7 +139,7 @@ export function AttachmentGroup({
     // This ensures hooks aren't conditionally called
     const maxVisibleFiles = isMobile ? 2 : 5;
     let visibleCount = Math.min(maxVisibleFiles, uniqueFiles.length);
-    
+
     // Use standalone mode to optimize grid layout for all file types
     let moreCount = uniqueFiles.length - visibleCount;
 
@@ -296,11 +296,12 @@ export function AttachmentGroup({
                 <div className={cn("flex flex-wrap gap-3", className)}>
                     {visibleFilesWithMeta.map((item, index) => {
                         const isHtml = item.path.match(/\.(html|htm)$/i) !== null;
-                        const isPreviewable = item.path.match(/\.(html|htm|md|markdown|csv|tsv)$/i) !== null;
-                        
+                        // In inline mode (chat input), don't expand CSV/TSV files - they should show as compact attachments
+                        const isPreviewable = item.path.match(/\.(html|htm|md|markdown)$/i) !== null;
+
                         return (
-                            <div 
-                                key={index} 
+                            <div
+                                key={index}
                                 className={cn(
                                     "relative group",
                                     isPreviewable ? "w-full" : "h-[54px]",
@@ -327,29 +328,29 @@ export function AttachmentGroup({
                                     }
                                 />
                                 {onRemove && (
-                                <div
-                                    className="absolute -top-1 -right-1 h-5 w-5 rounded-full
+                                    <div
+                                        className="absolute -top-1 -right-1 h-5 w-5 rounded-full
                                         bg-black dark:bg-white
                                         border-3 border-sidebar
                                         text-white dark:text-black flex items-center justify-center
                                         z-30 cursor-pointer"
-                                    onClick={() => onRemove(index)}
-                                >
-                                    <TooltipProvider>
-                                        <Tooltip>
-                                            <TooltipTrigger asChild>
-                                                <div className="flex items-center justify-center w-full h-full">
-                                                    <X size={10} strokeWidth={3} />
-                                                </div>
-                                            </TooltipTrigger>
-                                            <TooltipContent side="top">
-                                                <p>Remove file</p>
-                                            </TooltipContent>
-                                        </Tooltip>
-                                    </TooltipProvider>
-                                </div>
-                            )}
-                        </div>
+                                        onClick={() => onRemove(index)}
+                                    >
+                                        <TooltipProvider>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <div className="flex items-center justify-center w-full h-full">
+                                                        <X size={10} strokeWidth={3} />
+                                                    </div>
+                                                </TooltipTrigger>
+                                                <TooltipContent side="top">
+                                                    <p>Remove file</p>
+                                                </TooltipContent>
+                                            </Tooltip>
+                                        </TooltipProvider>
+                                    </div>
+                                )}
+                            </div>
                         );
                     })}
 
