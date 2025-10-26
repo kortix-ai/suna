@@ -125,7 +125,7 @@ export function MessageRenderer({
   }, [messages]);
 
   return (
-    <View className="flex-1">
+    <View className="flex-1 pt-4">
       {groupedMessages.map((group, index) => {
         const isLastGroup = index === groupedMessages.length - 1;
         

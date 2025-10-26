@@ -60,19 +60,25 @@ export function useAgents(
       
       const res = await fetch(url, { headers });
       console.log('📡 Response status:', res.status);
+      console.log('📡 Response headers:', Object.fromEntries(res.headers.entries()));
       
       if (!res.ok) {
         const errorText = await res.text();
         console.error('❌ Failed to fetch agents:', res.status, errorText);
-        throw new Error(`Failed to fetch agents: ${res.status}`);
+        throw new Error(`Failed to fetch agents: ${res.status} - ${errorText}`);
       }
       
       const data = await res.json();
       console.log('✅ Agents fetched successfully:', data);
+      console.log('📊 Agents count:', data.agents?.length || 0);
       
       return data;
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
+    retry: (failureCount, error) => {
+      console.log(`🔄 Retry attempt ${failureCount} for agents fetch:`, error.message);
+      return failureCount < 3;
+    },
     ...options,
   });
 }
