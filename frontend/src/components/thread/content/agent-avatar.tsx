@@ -75,15 +75,10 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
     return (
       <div 
         className={cn(
-          "flex items-center justify-center border",
+          "flex items-center justify-center bg-muted border",
           className
         )}
-        style={{ 
-          width: size, 
-          height: size, 
-          backgroundColor: '#000000',
-          ...borderRadiusStyle 
-        }}
+        style={{ width: size, height: size, ...borderRadiusStyle }}
       >
         <KortixLogo size={size * 0.6} />
       </div>
