@@ -8,7 +8,8 @@ import { Text } from '@/components/ui/text';
 import type { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/api/types';
 import { groupMessages, safeJsonParse, type MessageGroup } from '@/lib/utils/message-grouping';
 import { parseToolMessage, formatToolOutput, stripXMLTags } from '@/lib/utils/tool-parser';
-import { Wrench, AlertCircle, CheckCircle2 } from 'lucide-react-native';
+import { getToolIcon, getUserFriendlyToolName } from '@/lib/utils/tool-display';
+import { AlertCircle, CheckCircle2, type LucideIcon } from 'lucide-react-native';
 import Markdown from 'react-native-markdown-display';
 import { markdownStyles, markdownStylesDark } from '@/lib/utils/markdown-styles';
 import { useColorScheme } from 'nativewind';
@@ -445,6 +446,7 @@ function ToolCard({
     if (!parsed) {
       return {
         toolName: 'Unknown Tool',
+        displayName: 'Unknown Tool',
         resultPreview: 'Failed to parse',
         isError: true,
       };
@@ -452,6 +454,7 @@ function ToolCard({
     
     return {
       toolName: parsed.toolName,
+      displayName: getUserFriendlyToolName(parsed.toolName),
       resultPreview: formatToolOutput(parsed.result.output, 60),
       isError: !parsed.result.success,
     };
@@ -462,24 +465,28 @@ function ToolCard({
     if (!isLoading || !toolCall) return null;
     
     const toolName = toolCall.function_name || toolCall.name || 'Tool';
-    const displayName = toolName
-      .split('_')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
+    const displayName = getUserFriendlyToolName(toolName);
     
-    return { displayName };
+    return { toolName, displayName };
   }, [isLoading, toolCall]);
 
   // Determine display data
   const toolName = isLoading 
-    ? loadingData?.displayName || 'Tool'
+    ? loadingData?.toolName || 'Tool'
     : completedData?.toolName || 'Tool';
+  
+  const displayName = isLoading 
+    ? loadingData?.displayName || 'Tool'
+    : completedData?.displayName || 'Tool';
   
   const resultText = isLoading 
     ? 'Executing...'
     : completedData?.resultPreview || '';
   
   const isError = completedData?.isError || false;
+  
+  const ToolIcon = getToolIcon(toolName);
+  const { colorScheme } = useColorScheme();
 
   // Animated opacity for smooth transitions
   const contentOpacity = useSharedValue(1);
@@ -500,35 +507,31 @@ function ToolCard({
     <Pressable
       onPress={isLoading ? undefined : onPress}
       disabled={isLoading}
-      className={`bg-muted/30 rounded-2xl px-3.5 py-3 border ${
-        isLoading ? 'border-primary/30' : 'border-border/30'
+      className={`bg-muted/10 dark:bg-muted/80 rounded-2xl px-2 py-2 pr-4 border ${
+        isLoading ? 'border-primary/30' : 'border-border'
       } ${!isLoading && 'active:bg-muted/50'}`}
     >
       <Animated.View style={animatedStyle}>
-        <View className="flex-row items-center justify-between mb-1.5">
+        <View className="flex-row items-center justify-between">
           <View className="flex-row items-center gap-2">
             {isLoading && (
               <View className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
             )}
-            <Wrench size={14} className="text-muted-foreground" />
+            <View className='rounded-full h-8 w-8 flex items-center justify-center bg-muted-foreground/20'>
+              <ToolIcon size={14} className="text-muted-foreground" />
+            </View>
             <Text className="text-[14px] font-semibold text-foreground">
-              {toolName}
+              {displayName}
             </Text>
           </View>
-          
-          {/* Status indicator */}
           {isLoading ? (
             <View className="w-3.5 h-3.5 rounded-full border-2 border-muted-foreground/30 border-t-primary animate-spin" />
           ) : isError ? (
-            <AlertCircle size={14} color="#ef4444" />
+            <AlertCircle size={14} color={(colorScheme ?? 'light') === 'dark' ? '#f87171' : '#ef4444'} />
           ) : (
-            <CheckCircle2 size={14} color="#22c55e" />
+            <CheckCircle2 size={14} color={(colorScheme ?? 'light') === 'dark' ? '#4ade80' : '#22c55e'} />
           )}
         </View>
-        
-        <Text className="text-[14px] text-muted-foreground leading-[20px]" numberOfLines={2}>
-          {resultText}
-        </Text>
       </Animated.View>
     </Pressable>
   );
