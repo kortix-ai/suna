@@ -123,7 +123,6 @@ function CheckoutContent() {
     <>
       <Script 
         src="https://js.stripe.com/v3/" 
-        strategy="beforeInteractive"
         onLoad={() => {
           console.log('✅ Stripe.js loaded!');
           setStripeLoaded(true);
