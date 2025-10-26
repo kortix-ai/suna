@@ -29,6 +29,13 @@
         "ascAppId": "6754448524",
         "appleTeamId": "T8G9J33433"
       }
+    },
+    "testflight": {
+      "ios": {
+        "appleId": "mkprivat2005@gmail.com",
+        "ascAppId": "6754448524",
+        "appleTeamId": "T8G9J33433"
+      }
     }
   }
 }

@@ -4,7 +4,7 @@
     "slug": "kortix",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/Icon-Light.png",
     "scheme": "kortix",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -19,6 +19,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kortix.app",
+      "buildNumber": "2",
       "usesAppleSignIn": true
     },
     "android": {

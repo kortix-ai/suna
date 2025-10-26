@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Keyboard } from 'react-native';
 import { useAgent } from '@/contexts/AgentContext';
 
 /**
@@ -24,7 +25,14 @@ export function useAgentManager() {
     });
     console.log('⏰ [useAgentManager] Timestamp:', new Date().toISOString());
     console.log('👁️ [useAgentManager] Setting isDrawerVisible to TRUE');
-    setIsDrawerVisible(true);
+    
+    // Dismiss keyboard first for better UX
+    Keyboard.dismiss();
+    
+    // Small delay to ensure keyboard is dismissed before opening drawer
+    setTimeout(() => {
+      setIsDrawerVisible(true);
+    }, 150);
   };
 
   const closeDrawer = () => {

@@ -20,7 +20,7 @@ import {
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { Pressable, View, StyleSheet, ScrollView } from 'react-native';
+import { Pressable, View, StyleSheet, ScrollView, Keyboard } from 'react-native';
 import Animated, { 
   useAnimatedStyle, 
   interpolate, 
@@ -140,6 +140,10 @@ export function AgentDrawer({
     console.log('🎭 [AgentDrawer] Visibility changed:', visible);
     if (visible) {
       console.log('✅ [AgentDrawer] Opening drawer with haptic feedback');
+      
+      // Ensure keyboard is dismissed when drawer opens
+      Keyboard.dismiss();
+      
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       bottomSheetRef.current?.snapToIndex(0);
       setCurrentView('main'); // Reset to main view when opening
@@ -461,7 +465,7 @@ export function AgentDrawer({
     <BottomSheet
       ref={bottomSheetRef}
       index={-1}
-      enableDynamicSizing
+      snapPoints={['95%']}
       enablePanDownToClose
       onChange={(index) => index === -1 && onClose()}
       backdropComponent={BlurBackdrop}
