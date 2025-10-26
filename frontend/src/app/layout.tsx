@@ -92,7 +92,10 @@ export const metadata: Metadata = {
     ],
   },
   icons: {
-    icon: [{ url: '/favicon.png', sizes: 'any' }],
+    icon: [
+      { url: '/favicon.png', sizes: 'any', media: '(prefers-color-scheme: light)' },
+      { url: '/favicon-light.png', sizes: 'any', media: '(prefers-color-scheme: dark)' },
+    ],
     shortcut: '/favicon.png',
   },
   alternates: {
