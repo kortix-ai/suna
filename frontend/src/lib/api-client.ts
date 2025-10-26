@@ -1,5 +1,10 @@
 import { createClient } from '@/lib/supabase/client';
-import { handleApiError, handleNetworkError, ErrorContext, ApiError } from './error-handler';
+import {
+  handleApiError,
+  handleNetworkError,
+  ErrorContext,
+  ApiError,
+} from './error-handler';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
@@ -47,7 +52,7 @@ export interface APIKeyCreateResponse {
 export const apiClient = {
   async request<T = any>(
     url: string,
-    options: RequestInit & ApiClientOptions = {}
+    options: RequestInit & ApiClientOptions = {},
   ): Promise<ApiResponse<T>> {
     const {
       showErrors = true,
@@ -60,20 +65,28 @@ export const apiClient = {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-      const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
+      // Get internal JWT from localStorage (set by CognitoAuthProvider)
+      const internalJWT =
+        typeof window !== 'undefined'
+          ? localStorage.getItem('super_enso_jwt')
+          : null;
+
+      console.log('🔌 [API Client] Making request to:', url);
+      console.log('🔌 [API Client] Has JWT:', !!internalJWT);
 
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        ...fetchOptions.headers as Record<string, string>,
+        ...(fetchOptions.headers as Record<string, string>),
       };
 
-      if (session?.access_token) {
-        headers['Authorization'] = `Bearer ${session.access_token}`;
-      }
-
-      if (session?.refresh_token) {
-        headers['X-Refresh-Token'] = session.refresh_token;
+      // Use internal JWT for API authentication
+      if (internalJWT) {
+        headers['Authorization'] = `Bearer ${internalJWT}`;
+        console.log(
+          '✅ [API Client] Authorization header set with internal JWT',
+        );
+      } else {
+        console.warn('⚠️ [API Client] No JWT available for authorization');
       }
 
       const response = await fetch(url, {
@@ -93,8 +106,7 @@ export const apiClient = {
           if (errorData.message) {
             errorMessage = errorData.message;
           }
-        } catch {
-        }
+        } catch {}
 
         // Create a custom error object to avoid read-only property issues
         const error: ApiError = Object.assign(Object.create(Error.prototype), {
@@ -103,7 +115,7 @@ export const apiClient = {
           status: response.status,
           response: response,
           details: errorData || undefined,
-          code: errorData?.code || response.status.toString()
+          code: errorData?.code || response.status.toString(),
         });
 
         if (showErrors) {
@@ -118,41 +130,40 @@ export const apiClient = {
 
       let data: T;
       const contentType = response.headers.get('content-type');
-      
+
       if (contentType?.includes('application/json')) {
         data = await response.json();
       } else if (contentType?.includes('text/')) {
-        data = await response.text() as T;
+        data = (await response.text()) as T;
       } else {
-        data = await response.blob() as T;
+        data = (await response.blob()) as T;
       }
 
       return {
         data,
         success: true,
       };
-
     } catch (error: any) {
       let apiError: ApiError;
-      
+
       if (error?.name === 'AbortError') {
         // Create custom error for timeout
         apiError = Object.assign(Object.create(Error.prototype), {
           message: 'Request timeout',
           name: 'ApiError',
-          code: 'TIMEOUT'
+          code: 'TIMEOUT',
         });
       } else if (error instanceof Error) {
         // Create a copy of the error to avoid read-only issues
         apiError = Object.assign(Object.create(Error.prototype), {
           message: error.message,
           name: error.name || 'ApiError',
-          stack: error.stack
+          stack: error.stack,
         });
       } else {
         apiError = Object.assign(Object.create(Error.prototype), {
           message: String(error),
-          name: 'ApiError'
+          name: 'ApiError',
         });
       }
 
@@ -169,7 +180,7 @@ export const apiClient = {
 
   get: async <T = any>(
     url: string,
-    options: Omit<RequestInit & ApiClientOptions, 'method' | 'body'> = {}
+    options: Omit<RequestInit & ApiClientOptions, 'method' | 'body'> = {},
   ): Promise<ApiResponse<T>> => {
     return apiClient.request<T>(url, {
       ...options,
@@ -180,7 +191,7 @@ export const apiClient = {
   post: async <T = any>(
     url: string,
     data?: any,
-    options: Omit<RequestInit & ApiClientOptions, 'method'> = {}
+    options: Omit<RequestInit & ApiClientOptions, 'method'> = {},
   ): Promise<ApiResponse<T>> => {
     return apiClient.request<T>(url, {
       ...options,
@@ -192,7 +203,7 @@ export const apiClient = {
   put: async <T = any>(
     url: string,
     data?: any,
-    options: Omit<RequestInit & ApiClientOptions, 'method'> = {}
+    options: Omit<RequestInit & ApiClientOptions, 'method'> = {},
   ): Promise<ApiResponse<T>> => {
     return apiClient.request<T>(url, {
       ...options,
@@ -204,7 +215,7 @@ export const apiClient = {
   patch: async <T = any>(
     url: string,
     data?: any,
-    options: Omit<RequestInit & ApiClientOptions, 'method'> = {}
+    options: Omit<RequestInit & ApiClientOptions, 'method'> = {},
   ): Promise<ApiResponse<T>> => {
     return apiClient.request<T>(url, {
       ...options,
@@ -215,7 +226,7 @@ export const apiClient = {
 
   delete: async <T = any>(
     url: string,
-    options: Omit<RequestInit & ApiClientOptions, 'method' | 'body'> = {}
+    options: Omit<RequestInit & ApiClientOptions, 'method' | 'body'> = {},
   ): Promise<ApiResponse<T>> => {
     return apiClient.request<T>(url, {
       ...options,
@@ -226,11 +237,11 @@ export const apiClient = {
   upload: async <T = any>(
     url: string,
     formData: FormData,
-    options: Omit<RequestInit & ApiClientOptions, 'method' | 'body'> = {}
+    options: Omit<RequestInit & ApiClientOptions, 'method' | 'body'> = {},
   ): Promise<ApiResponse<T>> => {
     const { headers, ...restOptions } = options;
-    
-    const uploadHeaders = { ...headers as Record<string, string> };
+
+    const uploadHeaders = { ...(headers as Record<string, string>) };
     delete uploadHeaders['Content-Type'];
 
     return apiClient.request<T>(url, {
@@ -245,19 +256,22 @@ export const apiClient = {
 export const supabaseClient = {
   async execute<T = any>(
     queryFn: () => Promise<{ data: T | null; error: any }>,
-    errorContext?: ErrorContext
+    errorContext?: ErrorContext,
   ): Promise<ApiResponse<T>> {
     try {
       const { data, error } = await queryFn();
 
       if (error) {
         // Create custom error object to avoid read-only property issues
-        const apiError: ApiError = Object.assign(Object.create(Error.prototype), {
-          message: error.message || 'Database error',
-          name: 'ApiError',
-          code: error.code,
-          details: error
-        });
+        const apiError: ApiError = Object.assign(
+          Object.create(Error.prototype),
+          {
+            message: error.message || 'Database error',
+            name: 'ApiError',
+            code: error.code,
+            details: error,
+          },
+        );
 
         handleApiError(apiError, errorContext);
 
@@ -273,17 +287,18 @@ export const supabaseClient = {
       };
     } catch (error: any) {
       // Create a copy of the error to avoid read-only issues
-      const apiError: ApiError = error instanceof Error 
-        ? Object.assign(Object.create(Error.prototype), {
-            message: error.message,
-            name: error.name || 'ApiError',
-            stack: error.stack
-          })
-        : Object.assign(Object.create(Error.prototype), {
-            message: String(error),
-            name: 'ApiError'
-          });
-      
+      const apiError: ApiError =
+        error instanceof Error
+          ? Object.assign(Object.create(Error.prototype), {
+              message: error.message,
+              name: error.name || 'ApiError',
+              stack: error.stack,
+            })
+          : Object.assign(Object.create(Error.prototype), {
+              message: String(error),
+              name: 'ApiError',
+            });
+
       handleApiError(apiError, errorContext);
 
       return {
@@ -295,23 +310,39 @@ export const supabaseClient = {
 };
 
 export const backendApi = {
-  get: <T = any>(endpoint: string, options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>) =>
-    apiClient.get<T>(`${API_URL}${endpoint}`, options),
+  get: <T = any>(
+    endpoint: string,
+    options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>,
+  ) => apiClient.get<T>(`${API_URL}${endpoint}`, options),
 
-  post: <T = any>(endpoint: string, data?: any, options?: Omit<RequestInit & ApiClientOptions, 'method'>) =>
-    apiClient.post<T>(`${API_URL}${endpoint}`, data, options),
+  post: <T = any>(
+    endpoint: string,
+    data?: any,
+    options?: Omit<RequestInit & ApiClientOptions, 'method'>,
+  ) => apiClient.post<T>(`${API_URL}${endpoint}`, data, options),
 
-  put: <T = any>(endpoint: string, data?: any, options?: Omit<RequestInit & ApiClientOptions, 'method'>) =>
-    apiClient.put<T>(`${API_URL}${endpoint}`, data, options),
+  put: <T = any>(
+    endpoint: string,
+    data?: any,
+    options?: Omit<RequestInit & ApiClientOptions, 'method'>,
+  ) => apiClient.put<T>(`${API_URL}${endpoint}`, data, options),
 
-  patch: <T = any>(endpoint: string, data?: any, options?: Omit<RequestInit & ApiClientOptions, 'method'>) =>
-    apiClient.patch<T>(`${API_URL}${endpoint}`, data, options),
+  patch: <T = any>(
+    endpoint: string,
+    data?: any,
+    options?: Omit<RequestInit & ApiClientOptions, 'method'>,
+  ) => apiClient.patch<T>(`${API_URL}${endpoint}`, data, options),
 
-  delete: <T = any>(endpoint: string, options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>) =>
-    apiClient.delete<T>(`${API_URL}${endpoint}`, options),
+  delete: <T = any>(
+    endpoint: string,
+    options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>,
+  ) => apiClient.delete<T>(`${API_URL}${endpoint}`, options),
 
-  upload: <T = any>(endpoint: string, formData: FormData, options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>) =>
-    apiClient.upload<T>(`${API_URL}${endpoint}`, formData, options),
+  upload: <T = any>(
+    endpoint: string,
+    formData: FormData,
+    options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>,
+  ) => apiClient.upload<T>(`${API_URL}${endpoint}`, formData, options),
 };
 
 // API Key Management API
@@ -319,7 +350,10 @@ export const apiKeysApi = {
   /**
    * Create a new API key
    */
-  create: (data: APIKeyCreateRequest, options?: ApiClientOptions): Promise<ApiResponse<APIKeyCreateResponse>> =>
+  create: (
+    data: APIKeyCreateRequest,
+    options?: ApiClientOptions,
+  ): Promise<ApiResponse<APIKeyCreateResponse>> =>
     backendApi.post<APIKeyCreateResponse>('/api-keys', data, options),
 
   /**
@@ -331,12 +365,22 @@ export const apiKeysApi = {
   /**
    * Revoke an API key
    */
-  revoke: (keyId: string, options?: ApiClientOptions): Promise<ApiResponse<{ message: string }>> =>
-    backendApi.patch<{ message: string }>(`/api-keys/${keyId}/revoke`, {}, options),
+  revoke: (
+    keyId: string,
+    options?: ApiClientOptions,
+  ): Promise<ApiResponse<{ message: string }>> =>
+    backendApi.patch<{ message: string }>(
+      `/api-keys/${keyId}/revoke`,
+      {},
+      options,
+    ),
 
   /**
    * Delete an API key permanently
    */
-  delete: (keyId: string, options?: ApiClientOptions): Promise<ApiResponse<{ message: string }>> =>
+  delete: (
+    keyId: string,
+    options?: ApiClientOptions,
+  ): Promise<ApiResponse<{ message: string }>> =>
     backendApi.delete<{ message: string }>(`/api-keys/${keyId}`, options),
-}; 
+};

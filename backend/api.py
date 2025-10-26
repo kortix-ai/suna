@@ -197,6 +197,11 @@ api_router.include_router(google_slides_router)
 from core.google.google_docs_api import router as google_docs_router
 api_router.include_router(google_docs_router)
 
+# Cognito authentication
+from core.auth.cognito_auth import router as cognito_auth_router
+api_router.include_router(cognito_auth_router)
+print("✅ [API] Cognito auth router registered")
+
 @api_router.get("/health", summary="Health Check", operation_id="health_check", tags=["system"])
 async def health_check():
     logger.debug("Health check endpoint called")

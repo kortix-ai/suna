@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "node server.js",
+    "dev:turbopack": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -95,6 +96,7 @@
     "@vercel/edge-config": "^1.4.0",
     "@vercel/speed-insights": "^1.2.0",
     "autoprefixer": "10.4.17",
+    "aws-amplify": "^6.15.7",
     "canvas": "^3.1.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

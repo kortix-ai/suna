@@ -2,7 +2,7 @@
 
 import { ThemeProvider } from 'next-themes';
 import { useState, createContext, useEffect } from 'react';
-import { AuthProvider } from '@/components/AuthProvider';
+import { CognitoAuthProvider } from '@/components/CognitoAuthProvider';
 import { ReactQueryProvider } from '@/providers/react-query-provider';
 import { dehydrate, QueryClient } from '@tanstack/react-query';
 
@@ -40,8 +40,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const queryClient = new QueryClient();
   const dehydratedState = dehydrate(queryClient);
 
+  console.log('🚀 [Providers] Rendering app providers');
+
   return (
-    <AuthProvider>
+    <CognitoAuthProvider>
       <ToolCallsContext.Provider value={{ toolCalls, setToolCalls }}>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <ReactQueryProvider dehydratedState={dehydratedState}>
@@ -49,6 +51,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
           </ReactQueryProvider>
         </ThemeProvider>
       </ToolCallsContext.Provider>
-    </AuthProvider>
+    </CognitoAuthProvider>
   );
 }
