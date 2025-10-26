@@ -39,13 +39,13 @@ const deliverables: DeliverableType[] = [
               <p className="text-xs text-muted-foreground">Every Monday at 9:00 AM, your agent will automatically process new job positions.</p>
             </div>
           </div>
-          
+
           {/* Right Column */}
           <div className="space-y-4">
             <div className="bg-primary/5 rounded-lg p-4 border border-primary/20">
               <h3 className="font-semibold text-sm mb-2 text-primary">Seed VC Associate Recruitment Campaign - COMPLETE</h3>
               <p className="text-xs text-muted-foreground mb-3">I've successfully completed a comprehensive recruitment campaign for the Seed VC Associate position at Founders Future.</p>
-              
+
               <div className="space-y-2">
                 <h4 className="font-medium text-xs text-foreground">📊 FINAL DELIVERABLES:</h4>
                 <ul className="text-xs text-muted-foreground space-y-1">
@@ -58,7 +58,7 @@ const deliverables: DeliverableType[] = [
                 </ul>
               </div>
             </div>
-            
+
             <div className="bg-secondary/5 rounded-lg p-3 border border-secondary/20">
               <h4 className="font-medium text-xs mb-2 text-secondary">🎯 TOP 3 CANDIDATES TO PRIORITIZE</h4>
               <p className="text-xs text-muted-foreground">Market Analysis, Compensation Insights, Sourcing Strategy recommendations included.</p>
@@ -110,12 +110,11 @@ const deliverables: DeliverableType[] = [
             <div className="space-y-1">
               <div className="h-6 bg-green-200 dark:bg-green-800 rounded text-xs flex items-center justify-center font-semibold">Status</div>
               {['Contacted', 'Interview', 'Pending', 'Contacted', 'New', 'Interview', 'Contacted', 'New', 'Pending', 'New', 'Contacted', 'New'].map((status, i) => (
-                <div key={i} className={`h-4 rounded text-xs flex items-center justify-center ${
-                  status === 'Interview' ? 'bg-yellow-200 dark:bg-yellow-800' :
-                  status === 'Contacted' ? 'bg-blue-200 dark:bg-blue-800' :
-                  status === 'Pending' ? 'bg-orange-200 dark:bg-orange-800' :
-                  'bg-gray-200 dark:bg-gray-800'
-                }`}>
+                <div key={i} className={`h-4 rounded text-xs flex items-center justify-center ${status === 'Interview' ? 'bg-yellow-200 dark:bg-yellow-800' :
+                    status === 'Contacted' ? 'bg-blue-200 dark:bg-blue-800' :
+                      status === 'Pending' ? 'bg-orange-200 dark:bg-orange-800' :
+                        'bg-gray-200 dark:bg-gray-800'
+                  }`}>
                   {status}
                 </div>
               ))}
@@ -141,20 +140,20 @@ const deliverables: DeliverableType[] = [
         <div className="relative w-full max-w-sm h-80 bg-card rounded-xl shadow-lg border border-border p-4">
           <div className="absolute top-4 left-4 w-16 h-4 bg-purple-200 dark:bg-purple-800 rounded"></div>
           <div className="absolute top-10 left-4 w-24 h-2 bg-purple-100 dark:bg-purple-900 rounded"></div>
-          
+
           <div className="absolute top-20 left-4 right-4 h-32 bg-gradient-to-br from-purple-100 to-violet-100 dark:from-purple-900/50 dark:to-violet-900/50 rounded-lg border border-purple-200 dark:border-purple-800 flex items-center justify-center">
             <div className="text-center">
               <div className="w-12 h-12 bg-purple-300 dark:bg-purple-700 rounded-full mx-auto mb-2"></div>
               <div className="w-20 h-2 bg-purple-200 dark:bg-purple-800 rounded mx-auto"></div>
             </div>
           </div>
-          
+
           <div className="absolute bottom-16 left-4 right-4 space-y-2">
             <div className="h-2 bg-purple-100 dark:bg-purple-900 rounded w-full"></div>
             <div className="h-2 bg-purple-100 dark:bg-purple-900 rounded w-3/4"></div>
             <div className="h-2 bg-purple-100 dark:bg-purple-900 rounded w-5/6"></div>
           </div>
-          
+
           <div className="absolute bottom-4 right-4 w-16 h-8 bg-purple-500 dark:bg-purple-600 rounded text-white text-xs flex items-center justify-center">
             CTA
           </div>
@@ -169,13 +168,13 @@ const deliverables: DeliverableType[] = [
       <div className="w-full h-full bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/20 dark:to-indigo-950/20 rounded-2xl p-6 border border-blue-200/50 dark:border-blue-800/50 shadow-2xl">
         <div className="space-y-4 h-full">
           <div className="h-6 bg-blue-200 dark:bg-blue-800 rounded w-2/3"></div>
-          
+
           <div className="space-y-2">
             <div className="h-3 bg-blue-100 dark:bg-blue-900 rounded w-full"></div>
             <div className="h-3 bg-blue-100 dark:bg-blue-900 rounded w-11/12"></div>
             <div className="h-3 bg-blue-100 dark:bg-blue-900 rounded w-10/12"></div>
           </div>
-          
+
           <div className="pt-2">
             <div className="h-4 bg-blue-200 dark:bg-blue-800 rounded w-1/2 mb-2"></div>
             <div className="space-y-2">
@@ -185,7 +184,7 @@ const deliverables: DeliverableType[] = [
               <div className="h-3 bg-blue-100 dark:bg-blue-900 rounded w-8/12"></div>
             </div>
           </div>
-          
+
           <div className="pt-2">
             <div className="h-4 bg-blue-200 dark:bg-blue-800 rounded w-2/5 mb-2"></div>
             <div className="space-y-2">
@@ -194,7 +193,7 @@ const deliverables: DeliverableType[] = [
               <div className="h-3 bg-blue-100 dark:bg-blue-900 rounded w-7/12"></div>
             </div>
           </div>
-          
+
           <div className="bg-blue-100 dark:bg-blue-900/50 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
             <div className="h-3 bg-blue-200 dark:bg-blue-800 rounded w-1/3 mb-2"></div>
             <div className="space-y-1">
@@ -216,7 +215,7 @@ const deliverables: DeliverableType[] = [
             <div className="h-4 bg-orange-200 dark:bg-orange-800 rounded w-1/2 mb-2"></div>
             <div className="h-2 bg-orange-100 dark:bg-orange-900 rounded w-3/4"></div>
           </div>
-          
+
           <div className="flex-1 flex items-end justify-center space-x-2">
             {[
               { height: '60%', label: 'Q1' },
@@ -226,7 +225,7 @@ const deliverables: DeliverableType[] = [
               { height: '90%', label: 'Q5' }
             ].map((bar, i) => (
               <div key={i} className="flex flex-col items-center">
-                <div 
+                <div
                   className="w-8 bg-gradient-to-t from-orange-400 to-orange-300 dark:from-orange-600 dark:to-orange-500 rounded-t"
                   style={{ height: bar.height }}
                 ></div>
@@ -234,18 +233,18 @@ const deliverables: DeliverableType[] = [
               </div>
             ))}
           </div>
-          
+
           <div className="mt-4 grid grid-cols-3 gap-2">
             <div className="bg-orange-100 dark:bg-orange-900/50 rounded p-2 text-center">
-              <div className="text-lg font-bold text-orange-600 dark:text-orange-400">85%</div>
+              <div className="text-lg font-medium text-orange-600 dark:text-orange-400">85%</div>
               <div className="text-xs text-orange-500 dark:text-orange-500">Growth</div>
             </div>
             <div className="bg-orange-100 dark:bg-orange-900/50 rounded p-2 text-center">
-              <div className="text-lg font-bold text-orange-600 dark:text-orange-400">$2.4M</div>
+              <div className="text-lg font-medium text-orange-600 dark:text-orange-400">$2.4M</div>
               <div className="text-xs text-orange-500 dark:text-orange-500">Revenue</div>
             </div>
             <div className="bg-orange-100 dark:bg-orange-900/50 rounded p-2 text-center">
-              <div className="text-lg font-bold text-orange-600 dark:text-orange-400">156</div>
+              <div className="text-lg font-medium text-orange-600 dark:text-orange-400">156</div>
               <div className="text-xs text-orange-500 dark:text-orange-500">Clients</div>
             </div>
           </div>
@@ -259,7 +258,7 @@ export function DeliverablesSection() {
   const [activeIndex, setActiveIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const isInView = useInView(containerRef, { margin: "-50%" });
-  
+
   const { scrollYProgress } = useScroll({
     target: containerRef,
     offset: ['start end', 'end start']
@@ -282,8 +281,8 @@ export function DeliverablesSection() {
   }, [scrollYProgress]);
 
   return (
-    <section 
-      ref={containerRef} 
+    <section
+      ref={containerRef}
       id="deliverables"
       className="flex flex-col items-center justify-center w-full relative"
     >
@@ -322,7 +321,7 @@ export function DeliverablesSection() {
                       <span className="text-foreground">AI Worker for </span>
                       <span className="text-primary">{deliverables[activeIndex].type}</span>
                     </motion.h3>
-                    
+
                     <motion.p
                       className="text-muted-foreground text-balance font-medium mb-8 text-lg leading-relaxed"
                       key={`desc-${activeIndex}`}
@@ -357,7 +356,7 @@ export function DeliverablesSection() {
                             strokeLinejoin="round"
                           />
                         </svg>
-                        </span>
+                      </span>
                     </motion.button>
 
                     {/* Progress Indicator */}
@@ -366,11 +365,10 @@ export function DeliverablesSection() {
                         <button
                           key={index}
                           onClick={() => setActiveIndex(index)}
-                          className={`h-3 rounded-full transition-all duration-500 cursor-pointer hover:bg-primary/70 ${
-                            index === activeIndex
+                          className={`h-3 rounded-full transition-all duration-500 cursor-pointer hover:bg-primary/70 ${index === activeIndex
                               ? 'w-10 bg-primary shadow-lg shadow-primary/25'
                               : 'w-3 bg-muted-foreground/30'
-                          }`}
+                            }`}
                         />
                       ))}
                     </div>
@@ -389,7 +387,7 @@ export function DeliverablesSection() {
                         initial={{ opacity: 0, scale: 0.95 }}
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.95 }}
-                        transition={{ 
+                        transition={{
                           duration: 0.5,
                           ease: [0.4, 0, 0.2, 1]
                         }}

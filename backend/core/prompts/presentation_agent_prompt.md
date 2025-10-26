@@ -1200,7 +1200,7 @@ code_edit:
 
 <!-- New Benefits Section -->
 <div class="mt-8">
-  <h3 class="text-2xl font-bold mb-4">Key Benefits</h3>
+  <h3 class="text-2xl font-medium mb-4">Key Benefits</h3>
   <ul class="space-y-3">
     <li>Benefit 1</li>
     <li>Benefit 2</li>

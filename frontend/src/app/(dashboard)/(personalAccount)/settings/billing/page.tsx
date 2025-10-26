@@ -23,7 +23,7 @@ export default function PersonalAccountBillingPage() {
   const { data: accounts, isLoading, error } = useAccounts();
   const [showBillingModal, setShowBillingModal] = useState(false);
   const triggerTestRenewal = useTriggerTestRenewal();
-  
+
   // Fetch transaction data to get credit breakdown
   const { data: transactionData } = useTransactions(1, 0); // Only need current balance
 
@@ -77,8 +77,8 @@ export default function PersonalAccountBillingPage() {
 
   return (
     <div className="space-y-6">
-      <BillingModal 
-        open={showBillingModal} 
+      <BillingModal
+        open={showBillingModal}
         onOpenChange={setShowBillingModal}
         returnUrl={`${returnUrl}/settings/billing`}
       />
@@ -109,9 +109,9 @@ export default function PersonalAccountBillingPage() {
         ) : (
           <>
             <div className="mb-6">
-              <CreditBalanceCard 
+              <CreditBalanceCard
                 showPurchaseButton={
-                  (subscriptionData?.credits?.can_purchase_credits || false) && 
+                  (subscriptionData?.credits?.can_purchase_credits || false) &&
                   subscriptionData?.tier?.name === 'tier_25_200'
                 }
                 tierCredits={subscriptionData?.credits?.tier_credits || subscriptionData?.tier?.credits}
@@ -126,7 +126,7 @@ export default function PersonalAccountBillingPage() {
                         <p className="text-xs text-muted-foreground">Resets monthly with subscription</p>
                       </div>
                     </div>
-                    <span className="text-lg font-bold text-orange-600">
+                    <span className="text-lg font-medium text-orange-600">
                       ${transactionData.current_balance.expiring.toFixed(2)}
                     </span>
                   </div>
@@ -137,7 +137,7 @@ export default function PersonalAccountBillingPage() {
                         <p className="text-sm font-medium">Non-Expiring Credits</p>
                       </div>
                     </div>
-                    <span className="text-lg font-bold text-blue-600">
+                    <span className="text-lg font-medium text-blue-600">
                       ${transactionData.current_balance.non_expiring.toFixed(2)}
                     </span>
                   </div>

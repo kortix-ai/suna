@@ -135,7 +135,7 @@ export function ConfigureProfileForAgentToolView({
                 <Separator />
 
                 <div className="text-center">
-                  <div className="text-3xl font-bold text-zinc-900 dark:text-zinc-100">
+                  <div className="text-3xl font-medium text-zinc-900 dark:text-zinc-100">
                     {total_tools}
                   </div>
                   <p className="text-sm text-zinc-500 dark:text-zinc-400">

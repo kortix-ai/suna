@@ -45,7 +45,7 @@ const templateAccents = {
 
 export function ListPresentationTemplatesToolView({ toolContent }: ToolViewProps) {
   const { toolResult } = extractToolData(toolContent);
-  
+
   let templatesData: TemplatesData | null = null;
   let error: string | null = null;
 
@@ -84,7 +84,7 @@ export function ListPresentationTemplatesToolView({ toolContent }: ToolViewProps
   return (
     <div className="space-y-6">
       <div className="text-center space-y-2">
-        <div className="flex items-center justify-center gap-2 text-2xl font-bold">
+        <div className="flex items-center justify-center gap-2 text-2xl font-medium">
           <Palette className="h-8 w-8 text-primary" />
           Premium Presentation Templates
         </div>
@@ -124,9 +124,9 @@ export function ListPresentationTemplatesToolView({ toolContent }: ToolViewProps
                   </div>
                   <div className="flex flex-wrap gap-1">
                     {template.layouts.map((layout) => (
-                      <Badge 
-                        key={layout} 
-                        variant="secondary" 
+                      <Badge
+                        key={layout}
+                        variant="secondary"
                         className="text-xs px-2 py-1"
                       >
                         {layout}
@@ -143,24 +143,24 @@ export function ListPresentationTemplatesToolView({ toolContent }: ToolViewProps
                   </div>
                   <div className="space-y-2">
                     {template.color_schemes.map((scheme) => (
-                      <div 
-                        key={scheme.name} 
+                      <div
+                        key={scheme.name}
                         className="flex items-center justify-between p-2 rounded-lg bg-white/40 dark:bg-gray-800/40"
                       >
                         <span className="text-sm font-medium">{scheme.name}</span>
                         <div className="flex gap-1">
-                          <div 
-                            className="w-4 h-4 rounded-full border border-gray-300 dark:border-gray-600" 
+                          <div
+                            className="w-4 h-4 rounded-full border border-gray-300 dark:border-gray-600"
                             style={{ backgroundColor: scheme.colors.primary }}
                             title={`Primary: ${scheme.colors.primary}`}
                           />
-                          <div 
-                            className="w-4 h-4 rounded-full border border-gray-300 dark:border-gray-600" 
+                          <div
+                            className="w-4 h-4 rounded-full border border-gray-300 dark:border-gray-600"
                             style={{ backgroundColor: scheme.colors.accent }}
                             title={`Accent: ${scheme.colors.accent}`}
                           />
-                          <div 
-                            className="w-4 h-4 rounded-full border border-gray-300 dark:border-gray-600" 
+                          <div
+                            className="w-4 h-4 rounded-full border border-gray-300 dark:border-gray-600"
                             style={{ backgroundColor: scheme.colors.background }}
                             title={`Background: ${scheme.colors.background}`}
                           />

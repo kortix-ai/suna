@@ -197,7 +197,7 @@ export function OtpVerification({
                   onChange={(e) => handleOtpChange(index, e.target.value)}
                   onKeyDown={(e) => handleKeyDown(index, e)}
                   onPaste={handlePaste}
-                  className="w-12 h-12 text-center text-lg font-bold"
+                  className="w-12 h-12 text-center text-lg font-medium"
                   disabled={isLoading || !challengeId}
                 />
               ))}

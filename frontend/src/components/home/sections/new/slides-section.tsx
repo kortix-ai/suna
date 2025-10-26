@@ -67,7 +67,7 @@ export function SlidesSection() {
                                     <div className="w-full h-full flex items-center justify-center">
                                         <div className="text-center">
                                             <div
-                                                className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-bold opacity-10"
+                                                className="text-4xl sm:text-6xl md:text-7xl lg:text-8xl font-medium opacity-10"
                                                 style={{ color: slide.textColor }}
                                             >
                                                 {slide.title}

@@ -75,7 +75,7 @@ export function CheckProfileConnectionToolView({
   const getConnectionStatus = (isConnected: boolean) => {
     return {
       icon: isConnected ? Link2 : Link2Off,
-      color: isConnected 
+      color: isConnected
         ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800'
         : 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800',
       text: isConnected ? 'Connected' : 'Not Connected'
@@ -174,7 +174,7 @@ export function CheckProfileConnectionToolView({
 
                 <div className="grid grid-cols-2 gap-4">
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
+                    <div className="text-2xl font-medium text-zinc-900 dark:text-zinc-100">
                       {connection_count}
                     </div>
                     <p className="text-sm text-zinc-500 dark:text-zinc-400">
@@ -182,7 +182,7 @@ export function CheckProfileConnectionToolView({
                     </p>
                   </div>
                   <div className="text-center">
-                    <div className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
+                    <div className="text-2xl font-medium text-zinc-900 dark:text-zinc-100">
                       {tool_count}
                     </div>
                     <p className="text-sm text-zinc-500 dark:text-zinc-400">
@@ -203,7 +203,7 @@ export function CheckProfileConnectionToolView({
                       {tool_count}
                     </Badge>
                   </div>
-                  
+
                   <div className="space-y-2">
                     {available_tools.map((tool, index) => (
                       <div
@@ -238,7 +238,7 @@ export function CheckProfileConnectionToolView({
                       {connection_count}
                     </Badge>
                   </div>
-                  
+
                   <div className="space-y-2">
                     {connections.map((connection, index) => (
                       <div
@@ -252,7 +252,7 @@ export function CheckProfileConnectionToolView({
                               {connection.app_name}
                             </span>
                           </div>
-                          
+
                           <Badge
                             variant="outline"
                             className={cn(
@@ -265,7 +265,7 @@ export function CheckProfileConnectionToolView({
                             {connection.is_active ? 'Active' : 'Inactive'}
                           </Badge>
                         </div>
-                        
+
                         <div className="text-xs text-zinc-500 dark:text-zinc-400 space-y-1">
                           <div className="flex items-center gap-2">
                             <Calendar className="w-3 h-3" />

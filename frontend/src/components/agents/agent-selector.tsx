@@ -92,7 +92,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
   const orderedAgents = useMemo(() => {
     const list = [...agents];
     if (!selectedAgentId) return list;
-    
+
     const selectedIndex = list.findIndex(a => a.agent_id === selectedAgentId);
     if (selectedIndex > 0) {
       const [selected] = list.splice(selectedIndex, 1);
@@ -126,26 +126,28 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
   const renderTriggerContent = () => {
     if (selectedAgent) {
       return (
-        <div className="flex items-center gap-3 min-w-0 flex-1">
-          <AgentAvatar
-            agentId={selectedAgent.agent_id}
-            size={24}
-            className="flex-shrink-0"
-            fallbackName={selectedAgent.name}
-          />
-          <span className="truncate font-medium">
-            {selectedAgent.name}
-          </span>
-          <ChevronDown size={12} className="opacity-60 flex-shrink-0" />
-        </div>
+        <>
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <AgentAvatar
+              agentId={selectedAgent.agent_id}
+              size={24}
+              className="flex-shrink-0"
+              fallbackName={selectedAgent.name}
+            />
+            <span className="truncate font-medium">
+              {selectedAgent.name}
+            </span>
+          </div>
+          <ChevronDown size={12} className="opacity-60 flex-shrink-0 ml-auto" />
+        </>
       );
     }
 
     return (
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <span>{placeholder}</span>
-        <ChevronDown size={12} className="opacity-60" />
-      </div>
+      <>
+        <span className="text-muted-foreground flex-1">{placeholder}</span>
+        <ChevronDown size={12} className="opacity-60 flex-shrink-0" />
+      </>
     );
   };
 

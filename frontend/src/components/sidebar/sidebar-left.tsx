@@ -353,8 +353,8 @@ export function SidebarLeft({
                     variant="ghost"
                     size="icon"
                     className={cn(
-                      "h-10 w-10 p-0 cursor-pointer hover:bg-muted/60 hover:border-[1.5px] hover:border-border",
-                      activeView === view ? 'bg-muted/60 border-[1.5px] border-border' : ''
+                      "h-10 w-10 p-0 cursor-pointer hover:bg-card hover:border-[1.5px] hover:border-border",
+                      activeView === view ? 'bg-card border-[1.5px] border-border' : ''
                     )}
                     onClick={() => {
                       setActiveView(view);

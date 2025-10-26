@@ -267,9 +267,8 @@ export const Feature = ({
       <div className="flex w-full flex-col items-center justify-center max-w-7xl mx-auto">
         <div className="grid h-full grid-cols-5 gap-x-10 px-10 md:px-20 items-center w-full">
           <div
-            className={`col-span-2 w-full h-full hidden lg:flex md:items-center ${
-              ltr ? 'md:order-2 md:justify-end' : 'justify-start'
-            }`}
+            className={`col-span-2 w-full h-full hidden lg:flex md:items-center ${ltr ? 'md:order-2 md:justify-end' : 'justify-start'
+              }`}
           >
             <Accordion.Root
               className="w-full h-full flex flex-col gap-8"
@@ -345,9 +344,8 @@ export const Feature = ({
             </Accordion.Root>
           </div>
           <div
-            className={`col-span-5 h-[350px] min-h-[200px] w-auto lg:col-span-3 ${
-              ltr && 'md:order-1'
-            }`}
+            className={`col-span-5 h-[350px] min-h-[200px] w-auto lg:col-span-3 ${ltr && 'md:order-1'
+              }`}
           >
             {renderMedia()}
           </div>
@@ -413,7 +411,7 @@ export const Feature = ({
                   />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <h2 className="text-lg font-bold">{item.title}</h2>
+                  <h2 className="text-lg font-medium">{item.title}</h2>
                   <p className="mx-0 max-w-sm text-balance text-sm font-medium leading-relaxed">
                     {item.content}
                   </p>

@@ -482,7 +482,7 @@ export default function TemplateSharePage() {
               </div>
               <div className="space-y-4">
                 <div>
-                  <h1 className="text-3xl font-bold tracking-tight">{template.name}</h1>
+                  <h1 className="text-3xl font-medium tracking-tight">{template.name}</h1>
                   {template.is_kortix_team && (
                     <Badge variant="secondary" className="mt-2 bg-primary/10 text-primary">
                       <Sparkles className="w-3 h-3 mr-1" />
@@ -731,7 +731,7 @@ export default function TemplateSharePage() {
             {/* 
             <Card className="bg-muted/30 border-muted/50">
               <CardContent className="p-8 text-center">
-                <h3 className="text-2xl font-bold mb-4">Ready to get started?</h3>
+                <h3 className="text-2xl font-medium mb-4">Ready to get started?</h3>
                 <p className="text-muted-foreground mb-6">
                   Install this agent template and customize it for your specific needs
                 </p>

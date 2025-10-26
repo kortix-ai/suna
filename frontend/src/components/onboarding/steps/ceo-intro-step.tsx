@@ -30,11 +30,11 @@ export const CEOIntroStep = () => {
         {/* Welcome content */}
         <div className="space-y-6">
           <div>
-            <h1 className="text-3xl font-bold mb-4">
+            <h1 className="text-3xl font-medium mb-4">
               Welcome to Your AI Workforce
             </h1>
             <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-              I'm Marko, and I'm excited to help you build a team of AI agents that will 
+              I'm Marko, and I'm excited to help you build a team of AI agents that will
               supercharge your productivity and help you achieve your goals faster than ever.
             </p>
           </div>

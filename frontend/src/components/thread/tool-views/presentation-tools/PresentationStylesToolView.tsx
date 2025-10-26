@@ -45,7 +45,7 @@
 //           {/* Slide content */}
 //           <div className="absolute inset-0 p-4 flex flex-col justify-center">
 //             <div 
-//               className="text-lg font-bold mb-2 truncate"
+//               className="text-lg font-medium mb-2 truncate"
 //               style={{ color: style.primary_color }}
 //             >
 //               {style.name}

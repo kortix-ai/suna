@@ -208,7 +208,7 @@ export default function APIKeysPage() {
         <div className="space-y-2">
           <div className="flex items-center gap-3">
             <Key className="w-6 h-6" />
-            <h1 className="text-2xl font-bold">API Keys</h1>
+            <h1 className="text-2xl font-medium">API Keys</h1>
           </div>
           <p className="text-muted-foreground">
             Manage your API keys for programmatic access to Suna
@@ -235,14 +235,14 @@ export default function APIKeysPage() {
                     Suna SDK & API
                   </h3>
                   <p className="text-sm text-blue-700 dark:text-blue-300 leading-relaxed">
-                    Our SDK and API are currently in beta. Use these API keys to integrate with our 
+                    Our SDK and API are currently in beta. Use these API keys to integrate with our
                     programmatic interface for building custom applications and automations.
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <a 
-                    href="https://github.com/kortix-ai/suna/tree/main/sdk" 
-                    target="_blank" 
+                  <a
+                    href="https://github.com/kortix-ai/suna/tree/main/sdk"
+                    target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
                   >
@@ -495,37 +495,37 @@ export default function APIKeysPage() {
 
                   {(apiKey.status === 'revoked' ||
                     apiKey.status === 'expired') && (
-                    <div className="flex gap-2 mt-4">
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="outline" size="sm">
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Delete
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Delete API Key</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Are you sure you want to permanently delete "
-                              {apiKey.title}"? This action cannot be undone.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction
-                              onClick={() =>
-                                deleteMutation.mutate(apiKey.key_id)
-                              }
-                              className="bg-destructive hover:bg-destructive/90 text-white"
-                            >
-                              Delete Key
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    </div>
-                  )}
+                      <div className="flex gap-2 mt-4">
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="outline" size="sm">
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Delete
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete API Key</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to permanently delete "
+                                {apiKey.title}"? This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() =>
+                                  deleteMutation.mutate(apiKey.key_id)
+                                }
+                                className="bg-destructive hover:bg-destructive/90 text-white"
+                              >
+                                Delete Key
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    )}
                 </CardContent>
               </Card>
             ))}

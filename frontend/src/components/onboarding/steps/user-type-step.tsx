@@ -30,7 +30,7 @@ export const UserTypeStep = () => {
   const handleTypeSelect = (type: 'individual' | 'company') => {
     setUserType(type);
     updateUserContext({ userType: type });
-    
+
     if (type === 'individual') {
       // Auto-advance immediately for individuals
       setTimeout(() => {
@@ -54,7 +54,7 @@ export const UserTypeStep = () => {
     const selectedRole = roles.find(r => r.id === roleId);
     setRole(selectedRole?.label || '');
     updateUserContext({ role: selectedRole?.label || '' });
-    
+
     // Auto-advance immediately after role selection
     setTimeout(() => {
       const continueButton = document.querySelector('[data-continue-button]') as HTMLButtonElement;
@@ -77,7 +77,7 @@ export const UserTypeStep = () => {
               className="text-center space-y-8"
             >
               <div>
-                <h1 className="text-4xl font-bold mb-3">Welcome to Kortix</h1>
+                <h1 className="text-4xl font-medium mb-3">Welcome to Kortix</h1>
                 <p className="text-lg text-muted-foreground">Choose your account type</p>
               </div>
 
@@ -119,8 +119,8 @@ export const UserTypeStep = () => {
               transition={{ duration: 0.4 }}
               className="text-center space-y-6"
             >
-              <h2 className="text-3xl font-bold">Company size?</h2>
-              
+              <h2 className="text-3xl font-medium">Company size?</h2>
+
               <div className="grid grid-cols-1 gap-3 max-w-lg mx-auto">
                 {companySizes.map((size) => (
                   <Button
@@ -150,8 +150,8 @@ export const UserTypeStep = () => {
               transition={{ duration: 0.4 }}
               className="text-center space-y-6"
             >
-              <h2 className="text-3xl font-bold">What's your role?</h2>
-              
+              <h2 className="text-3xl font-medium">What's your role?</h2>
+
               <div className="grid grid-cols-1 gap-3 max-w-lg mx-auto">
                 {roles.map((roleOption) => (
                   <Button

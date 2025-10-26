@@ -348,7 +348,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                 <DropdownMenuPortal>
                                     <DropdownMenuSubContent className="w-[320px] p-3 border-[1.5px] border-border rounded-2xl max-h-[500px] overflow-y-auto" sideOffset={8}>
                                         <div className="mb-3">
-                                            <span className="text-xs font-medium text-muted-foreground">Available Models</span>
+                                            <span className="text-xs font-medium text-muted-foreground pl-1">Available Models</span>
                                         </div>
                                         <div className="space-y-0.5">
                                             {modelOptions.map((model) => {

@@ -22,20 +22,20 @@ export const SmartContextStep = () => {
   // Simulate website content extraction
   const extractWebsiteContext = async (url: string) => {
     if (!url || isExtracting) return;
-    
+
     setIsExtracting(true);
-    
+
     // Simulate API call
     await new Promise(resolve => setTimeout(resolve, 2000));
-    
+
     // Mock extracted data
     const mockExtracted = {
       businessType: "Digital Agency",
       services: ["SEO", "Content Marketing", "Social Media", "Analytics"],
       size: "Small Agency (10-25 people)"
     };
-    
-    updateContext({ 
+
+    updateContext({
       extractedContext: mockExtracted,
       industry: mockExtracted.businessType,
       companySize: mockExtracted.size,
@@ -47,7 +47,7 @@ export const SmartContextStep = () => {
   // Auto-progress after context is filled
   useEffect(() => {
     const hasBasicInfo = localContext.websiteUrl && localContext.websiteUrl.trim().length > 10;
-    
+
     if (hasBasicInfo) {
       // Auto-advance after a short delay
       const timer = setTimeout(() => {
@@ -66,11 +66,11 @@ export const SmartContextStep = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <h2 className="text-4xl font-bold mb-4">
+          <h2 className="text-4xl font-medium mb-4">
             {localContext.userType === 'company' ? 'Tell us about your company' : 'Tell us about yourself'}
           </h2>
           <p className="text-lg text-muted-foreground mb-8">
-            {localContext.userType === 'company' 
+            {localContext.userType === 'company'
               ? 'Help us understand your business better'
               : 'Help us understand what you do'}
           </p>
@@ -90,7 +90,7 @@ export const SmartContextStep = () => {
             <div className="relative">
               <Textarea
                 id="description"
-                placeholder={localContext.userType === 'company' 
+                placeholder={localContext.userType === 'company'
                   ? "Share your company website or describe what you do...\n\nExamples:\n• https://yourcompany.com\n• We help B2B SaaS companies scale their growth\n• Digital marketing agency for startups"
                   : "Share your website or describe what you do...\n\nExamples:\n• https://myportfolio.com\n• Freelance graphic designer specializing in branding\n• Help small businesses with digital marketing"
                 }
@@ -109,7 +109,7 @@ export const SmartContextStep = () => {
                 </div>
               )}
             </div>
-            
+
             {localContext.extractedContext && (
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}

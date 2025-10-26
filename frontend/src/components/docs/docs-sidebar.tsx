@@ -6,11 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { useTheme } from 'next-themes';
-import { 
-  FileText, 
-  Rocket, 
-  Settings, 
-  Code, 
+import {
+  FileText,
+  Rocket,
+  Settings,
+  Code,
   Zap,
   BookOpen,
   Users,
@@ -55,7 +55,7 @@ export const DocsSidebar = () => {
       <div className="h-full bg-background/60 backdrop-blur-xl border-r border-border/40">
         <div className="p-6">
           <div className="mb-8">
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-primary/80 bg-clip-text text-transparent">
+            <h1 className="text-2xl font-medium bg-gradient-to-r from-primary to-primary/80 bg-clip-text text-transparent">
               Suna Docs
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
@@ -63,8 +63,8 @@ export const DocsSidebar = () => {
             </p>
           </div>
           <div className="mb-6">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               className="w-full justify-start text-muted-foreground bg-muted/50 backdrop-blur-sm border-border/40"
             >
               <FileText className="mr-2 h-4 w-4" />
@@ -94,22 +94,22 @@ export const DocsSidebar = () => {
                     ))}
                   </div>
                   {index < navigationItems.length - 1 && (
-                                            <Separator className="mt-4 bg-border/40" />
+                    <Separator className="mt-4 bg-border/40" />
                   )}
                 </div>
               ))}
             </nav>
           </ScrollArea>
-                      <div className="mt-6 pt-4 border-t border-border/40">
+          <div className="mt-6 pt-4 border-t border-border/40">
             <div className="flex items-center justify-between">
-                              <Badge variant="secondary" className="bg-muted/60 backdrop-blur-sm">
+              <Badge variant="secondary" className="bg-muted/60 backdrop-blur-sm">
                 v1.0.0
               </Badge>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
-                                  className="h-8 w-8 p-0 bg-muted/40 hover:bg-accent/60 backdrop-blur-sm"
+                className="h-8 w-8 p-0 bg-muted/40 hover:bg-accent/60 backdrop-blur-sm"
               >
                 <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
                 <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
