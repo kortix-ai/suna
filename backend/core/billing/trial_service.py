@@ -340,7 +340,7 @@ class TrialService:
             fe_checkout_url = f"{frontend_url}/checkout?{checkout_param}"
             
             return {
-                'checkout_url': session.url,  # Direct Stripe checkout (for web fallback)
+                'checkout_url': fe_checkout_url,  # Use embedded checkout URL (session.url is None for embedded mode)
                 'fe_checkout_url': fe_checkout_url,  # Kortix-branded wrapper with embedded checkout
                 'session_id': session.id,
                 'client_secret': client_secret,  # For direct API usage
