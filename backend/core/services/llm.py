@@ -102,41 +102,42 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
         },
     ]
     
-    # Configure fallbacks: MAP-tagged Bedrock models -> Direct Anthropic API
+    # Configure fallbacks: Bedrock models ONLY (never fall back to direct API providers)
     fallbacks = [
-        # MAP-tagged Bedrock Haiku 4.5 -> Anthropic Haiku 4.5
-        {
-            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/cyuh6gekrmmh": [
-                "anthropic/claude-haiku-4-5-20251001-v1:0"
-            ]
-        },
-        # MAP-tagged Bedrock Sonnet 4.5 -> Anthropic Sonnet 4.5
+        # MAP-tagged Bedrock Sonnet 4.5 -> Bedrock Sonnet 4 -> Bedrock Sonnet 3.7
         {
             "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/pe55zlhpikcf": [
-                "anthropic/claude-sonnet-4-5-20250929"
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/4vac4byw7fqr",
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
             ]
         },
-        # MAP-tagged Bedrock Sonnet 4 -> Anthropic Sonnet 4
+        # MAP-tagged Bedrock Sonnet 4 -> Bedrock Sonnet 3.7
         {
             "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/4vac4byw7fqr": [
-                "anthropic/claude-sonnet-4-20250514"
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
             ]
         },
-        # Legacy fallbacks (keeping for backward compatibility)
+        # MAP-tagged Bedrock Haiku 4.5 -> Bedrock Sonnet 4.5 -> Bedrock Sonnet 4 -> Sonnet 3.7
+        {
+            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/cyuh6gekrmmh": [
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/pe55zlhpikcf",
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/4vac4byw7fqr",
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
+            ]
+        },
+        # Legacy Bedrock Sonnet 4.5 profile -> MAP-tagged Sonnet 4.5 -> MAP-tagged Sonnet 4 -> Sonnet 3.7
         {
             "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0": [
-                "anthropic/claude-sonnet-4-5-20250929"
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/pe55zlhpikcf",
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/4vac4byw7fqr",
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
             ]
         },
+        # Legacy Bedrock Sonnet 4 profile -> MAP-tagged Sonnet 4 -> Sonnet 3.7
         {
             "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0": [
-                "anthropic/claude-sonnet-4-20250514"
-            ]
-        },
-        # Bedrock Sonnet 3.7 -> Anthropic Sonnet 3.7
-        {
-            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0": [
-                "anthropic/claude-3-7-sonnet-latest"
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/4vac4byw7fqr",
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0"
             ]
         }
     ]
@@ -147,7 +148,7 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
         fallbacks=fallbacks,
     )
     
-    logger.info(f"Configured LiteLLM Router with {len(fallbacks)} fallback rules")
+    logger.info(f"Configured LiteLLM Router with {len(fallbacks)} Bedrock-only fallback rules")
 
 def _configure_openai_compatible(params: Dict[str, Any], model_name: str, api_key: Optional[str], api_base: Optional[str]) -> None:
     """Configure OpenAI-compatible provider setup."""
