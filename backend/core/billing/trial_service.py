@@ -332,8 +332,7 @@ class TrialService:
             client_secret = getattr(session, 'client_secret', None)
             
             # Generate frontend checkout wrapper URL for Apple compliance  
-            import os
-            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+            frontend_url = config.FRONTEND_URL
             
             # Use client_secret in URL for embedded checkout, fallback to session_id
             checkout_param = f"client_secret={client_secret}" if client_secret else f"session_id={session.id}"
