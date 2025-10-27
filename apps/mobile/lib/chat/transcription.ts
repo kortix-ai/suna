@@ -18,77 +18,80 @@ export interface TranscriptionError {
 }
 
 /**
- * Copy audio file from temporary location to permanent cache
+ * Save audio recording to permanent file in the file system
  * 
- * This prevents the file from being deleted before transcription completes.
- * expo-audio creates temporary files that may be cleaned up immediately.
- * 
- * Strategy: Read file into memory using legacy API for reliability.
+ * Reads the audio file from expo-audio's temporary location and saves it
+ * to a permanent location in the cache directory.
  * 
  * @param temporaryUri - URI of the temporary audio file from expo-audio
- * @returns URI of the cached file
+ * @returns URI of the saved file in cache directory
  */
-export async function copyAudioToCache(temporaryUri: string): Promise<string> {
-  console.log('📋 Copying audio to cache:', temporaryUri);
+/**
+ * Wait for file to exist by polling
+ */
+async function waitForFileToExist(uri: string, maxRetries: number = 10, initialDelay: number = 200): Promise<boolean> {
+  for (let i = 0; i < maxRetries; i++) {
+    const delay = initialDelay + (i * 100); // Exponential backoff
+    console.log(`🔍 Retry ${i + 1}/${maxRetries}: Waiting ${delay}ms before checking file...`);
+    await new Promise(resolve => setTimeout(resolve, delay));
+    
+    try {
+      const fileInfo = await FileSystem.getInfoAsync(uri);
+      if (fileInfo.exists) {
+        console.log(`✅ File exists after retry ${i + 1}!`);
+        return true;
+      }
+      console.log(`⚠️ File still doesn't exist (attempt ${i + 1}/${maxRetries})`);
+    } catch (error) {
+      console.log(`⚠️ Error checking file (attempt ${i + 1}/${maxRetries}):`, error);
+    }
+  }
+  return false;
+}
+
+export async function saveAudioToFileSystem(temporaryUri: string): Promise<string> {
+  console.log('💾 Saving audio to file system:', temporaryUri);
   
   // Validate the URI
   if (!temporaryUri || temporaryUri.trim() === '') {
     throw new Error('Invalid audio URI: URI is empty or undefined');
   }
   
-  // Check if source file exists (using async API)
-  console.log('📋 Checking if source file exists...');
-  let fileInfo = await FileSystem.getInfoAsync(temporaryUri);
+  // Wait for file to exist with retries
+  console.log('⏳ Waiting for audio file to be written to disk...');
+  const fileExists = await waitForFileToExist(temporaryUri);
   
-  // Retry if file doesn't exist yet (race condition)
-  if (!fileInfo.exists) {
-    console.warn('⚠️ Source file does not exist yet, waiting...');
-    await new Promise(resolve => setTimeout(resolve, 300));
-    fileInfo = await FileSystem.getInfoAsync(temporaryUri);
-    
-    if (!fileInfo.exists) {
-      console.error('❌ Source file still does not exist after wait');
-      throw new Error(`Source audio file does not exist after wait: ${temporaryUri}`);
-    }
-    console.log('✅ Source file exists after retry');
+  if (!fileExists) {
+    console.error('❌ File never appeared on disk after all retries');
+    throw new Error(`Source audio file does not exist: ${temporaryUri}`);
   }
   
-  console.log('📊 Source file info:', {
-    exists: fileInfo.exists,
-    size: fileInfo.size,
-    uri: temporaryUri,
-  });
-  
-  // Read file as base64
-  console.log('📖 Reading file into memory...');
+  // Read the file
+  console.log('📖 Reading audio file...');
   const base64Data = await FileSystem.readAsStringAsync(temporaryUri, {
     encoding: FileSystem.EncodingType.Base64,
   });
-  console.log('✅ File read into memory:', base64Data.length, 'chars');
+  console.log('✅ Audio data read:', base64Data.length, 'chars');
   
-  // Write to cache
-  const filename = `transcription-${Date.now()}.m4a`;
-  const cacheUri = `${FileSystem.cacheDirectory}${filename}`;
+  // Save to permanent location
+  const timestamp = Date.now();
+  const filename = `audio-recording-${timestamp}.m4a`;
+  const permanentPath = `${FileSystem.cacheDirectory}${filename}`;
   
-  console.log('📝 Writing file to cache:', cacheUri);
-  await FileSystem.writeAsStringAsync(cacheUri, base64Data, {
+  console.log('💾 Writing to permanent file:', permanentPath);
+  await FileSystem.writeAsStringAsync(permanentPath, base64Data, {
     encoding: FileSystem.EncodingType.Base64,
   });
   
-  // Verify the copy
-  const cachedInfo = await FileSystem.getInfoAsync(cacheUri);
-  if (!cachedInfo.exists) {
-    throw new Error(`Failed to copy file to cache. Destination file does not exist: ${cacheUri}`);
+  // Verify the file was saved
+  const savedInfo = await FileSystem.getInfoAsync(permanentPath);
+  if (!savedInfo.exists) {
+    throw new Error(`Failed to save file. File does not exist: ${permanentPath}`);
   }
   
-  console.log('✅ Audio copied to cache:', cacheUri);
-  console.log('📊 Cached file info:', {
-    exists: cachedInfo.exists,
-    size: cachedInfo.size,
-    uri: cacheUri,
-  });
+  console.log('✅ Audio saved successfully to:', permanentPath);
   
-  return cacheUri;
+  return permanentPath;
 }
 
 /**
@@ -131,42 +134,34 @@ export async function transcribeAudio(
     const filename = audioUri.split('/').pop() || 'recording.m4a';
     
     // Determine MIME type based on file extension
-    let mimeType = 'audio/m4a';
+    // IMPORTANT: Use 'audio/mp4' for .m4a files as it's the standard MIME type
+    let mimeType = 'audio/mp4';
     if (filename.endsWith('.mp3')) {
-      mimeType = 'audio/mp3';
+      mimeType = 'audio/mpeg';
     } else if (filename.endsWith('.wav')) {
       mimeType = 'audio/wav';
     } else if (filename.endsWith('.webm')) {
       mimeType = 'audio/webm';
-    } else if (filename.endsWith('.mp4')) {
-      mimeType = 'audio/mp4';
+    } else if (filename.endsWith('.mpga')) {
+      mimeType = 'audio/mpga';
     }
+    // Note: .m4a files should use 'audio/mp4' not 'audio/m4a'
     
     console.log('📤 Preparing audio file for upload...');
     console.log('📊 File:', filename, 'Type:', mimeType);
     
-    // Read file as base64
-    console.log('📖 Reading file into memory...');
-    const base64 = await FileSystem.readAsStringAsync(audioUri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
-    console.log('✅ File read into memory:', base64.length, 'chars');
-    
-    // Convert base64 to Blob for upload
-    const byteCharacters = atob(base64);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { type: mimeType });
-    console.log('✅ Blob created:', blob.size, 'bytes');
-    
-    // Create FormData with the Blob
+    // In React Native, we send the file directly as a URI
+    // Create FormData with the file URI
     const formData = new FormData();
-    formData.append('audio_file', blob, filename);
     
-    console.log('✅ FormData created with audio blob');
+    // @ts-ignore - React Native's FormData supports { uri, type, name } format
+    formData.append('audio_file', {
+      uri: audioUri,
+      type: mimeType,
+      name: filename,
+    } as any);
+    
+    console.log('✅ FormData created with audio URI');
 
     console.log('📤 Uploading audio for transcription');
     console.log('📊 API URL:', `${API_URL}/transcription`);

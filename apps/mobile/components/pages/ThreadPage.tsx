@@ -57,6 +57,9 @@ export function ThreadPage({
     agentManager, 
     chat.transcribeAndAddToInput
   );
+  
+  // Combined transcription state (from either chat or audio handlers)
+  const isTranscribing = chat.isTranscribing || audioHandlers.isTranscribing;
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -291,7 +294,7 @@ export function ThreadPage({
             onOpenAuthDrawer={onOpenAuthDrawer}
             isAgentRunning={chat.isAgentRunning}
             isSendingMessage={chat.isSendingMessage}
-            isTranscribing={chat.isTranscribing}
+            isTranscribing={isTranscribing}
           />
         </Pressable>
       </Animated.View>

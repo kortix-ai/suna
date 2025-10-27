@@ -135,6 +135,17 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
       rotation.value = withTiming(0, { duration: 0 });
     }
   }, [isSendingMessage]);
+
+  // Rotating animation for transcription state
+  React.useEffect(() => {
+    if (isTranscribing) {
+      rotation.value = withRepeat(
+        withTiming(360, { duration: 1000 }),
+        -1,
+        false
+      );
+    }
+  }, [isTranscribing]);
   
   // States
   const { colorScheme } = useColorScheme();
@@ -488,7 +499,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                     sendScale.value = withSpring(1, { damping: 15, stiffness: 400 });
                   }}
                   onPress={handleButtonPress}
-                  disabled={isSendingMessage}
+                  disabled={isSendingMessage || isTranscribing}
                   className={`rounded-full items-center justify-center ${
                     isAgentRunning 
                       ? 'bg-destructive' 
@@ -496,7 +507,7 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
                   }`}
                   style={[{ width: 33.75, height: 33.75 }, sendAnimatedStyle]}
                 >
-                  {isSendingMessage ? (
+                  {isSendingMessage || isTranscribing ? (
                     <AnimatedView style={rotationAnimatedStyle}>
                       <Icon 
                         as={Loader2}

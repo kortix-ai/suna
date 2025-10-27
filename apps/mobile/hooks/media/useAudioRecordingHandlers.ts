@@ -1,8 +1,8 @@
+import { useState } from 'react';
 import * as Haptics from 'expo-haptics';
 import type { useAudioRecorder } from './useAudioRecorder';
 import type { useAgentManager } from '../ui/useAgentManager';
-import type { useChat } from '../useChat';
-import { copyAudioToCache, deleteCachedAudio } from '@/lib/chat/transcription';
+import { saveAudioToFileSystem, deleteCachedAudio } from '@/lib/chat/transcription';
 
 /**
  * Custom hook for audio recording handlers with haptic feedback and transcription
@@ -18,6 +18,9 @@ export function useAudioRecordingHandlers(
   agentManager: ReturnType<typeof useAgentManager>,
   transcribeAndAddToInput?: (audioUri: string) => Promise<void>
 ) {
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const isTranscribing = isProcessing;
   // Handle starting audio recording
   const handleStartRecording = async () => {
     console.log('🎤 Starting inline audio recording');
@@ -60,59 +63,44 @@ export function useAudioRecordingHandlers(
       const recordingUri = result.uri;
       console.log('📊 Recording URI captured:', recordingUri);
       
-      // CRITICAL: Add a small delay to ensure file is fully written to disk
-      // The audio recorder may take a moment to finalize the file after stop()
-      console.log('⏳ Waiting for file to finalize...');
-      await new Promise(resolve => setTimeout(resolve, 100));
-      console.log('✅ File finalization wait complete');
+      // With expo-av, the file is already saved by stopAndUnloadAsync()
+      // We can use it directly without copying
+      console.log('✅ Using audio file directly from:', recordingUri);
       
-      // Now copy the file to cache BEFORE resetting
-      let cachedUri: string | null = null;
-      try {
-        console.log('📋 Copying audio to cache from:', recordingUri);
-        cachedUri = await copyAudioToCache(recordingUri);
-        console.log('✅ Audio file secured in cache:', cachedUri);
-      } catch (copyError) {
-        console.error('❌ Failed to copy audio to cache:', copyError);
-        // Reset even on copy failure
-        await audioRecorder.reset();
-        throw copyError;
-      }
+      // DON'T reset yet - we need the file for transcription
+      // The reset will happen after transcription or on error
       
-      // NOW we can reset the recorder (file is safely in cache)
-      await audioRecorder.reset();
-      console.log('✅ Audio recorder reset (temporary file can be deleted safely)');
+      console.log('📤 Processing audio recording');
+      console.log('📊 Audio data:', {
+        uri: recordingUri,
+        duration: result?.duration,
+        agent: agentManager.selectedAgent?.name || 'Unknown',
+      });
       
-      if (cachedUri) {
-        console.log('📤 Processing audio recording from cache');
-        console.log('📊 Audio data:', {
-          uri: cachedUri,
-          duration: result?.duration,
-          agent: agentManager.selectedAgent?.name || 'Unknown',
-        });
-        
-        // Transcribe from the cached copy
-        if (transcribeAndAddToInput) {
-          console.log('🎤 Transcribing audio from cache...');
-          try {
-            await transcribeAndAddToInput(cachedUri);
-            console.log('✅ Audio transcribed and added to input');
-          } catch (error) {
-            console.error('❌ Transcription failed:', error);
-            throw error;
-          } finally {
-            // Always clean up the cached file, whether transcription succeeded or failed
-            await deleteCachedAudio(cachedUri);
-            console.log('🧹 Cached audio file cleaned up');
-          }
-        } else {
-          console.warn('⚠️ No transcription function provided');
-          // Clean up cached file even if not transcribing
-          await deleteCachedAudio(cachedUri);
+      // Transcribe from the original file
+      if (transcribeAndAddToInput) {
+        console.log('🎤 Transcribing audio...');
+        setIsProcessing(true);
+        try {
+          await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          await transcribeAndAddToInput(recordingUri);
+          console.log('✅ Audio transcribed and added to input');
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } catch (error) {
+          console.error('❌ Transcription failed:', error);
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          await audioRecorder.reset();
+          throw error;
+        } finally {
+          setIsProcessing(false);
         }
       } else {
-        console.warn('⚠️ No cached URI available');
+        console.warn('⚠️ No transcription function provided');
       }
+      
+      // NOW we can reset the recorder (file is safely used for transcription)
+      await audioRecorder.reset();
+      console.log('✅ Audio recorder reset');
     } else {
       console.warn('⚠️ Not recording, cannot send audio');
     }
@@ -122,6 +110,8 @@ export function useAudioRecordingHandlers(
     handleStartRecording,
     handleCancelRecording,
     handleSendAudio,
+    isTranscribing,
+    isProcessing,
   };
 }
 

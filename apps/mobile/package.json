@@ -49,6 +49,7 @@
     "expo-apple-authentication": "^8.0.7",
     "expo-audio": "^1.0.13",
     "expo-auth-session": "^7.0.8",
+    "expo-av": "^16.0.7",
     "expo-blur": "~15.0.7",
     "expo-clipboard": "^8.0.7",
     "expo-document-picker": "^14.0.7",
