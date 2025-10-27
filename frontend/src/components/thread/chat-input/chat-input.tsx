@@ -38,6 +38,7 @@ import { useSubscriptionData } from '@/contexts/SubscriptionContext';
 import { isStagingMode, isLocalMode } from '@/lib/config';
 import { BillingModal } from '@/components/billing/billing-modal';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
+import { ContextUsageIndicator } from '../ContextUsageIndicator';
 
 import posthog from 'posthog-js';
 
@@ -112,6 +113,8 @@ export interface ChatInputProps {
   animatePlaceholder?: boolean;
   selectedCharts?: string[];
   selectedOutputFormat?: string | null;
+  threadId?: string | null;
+  projectId?: string;
 }
 
 export interface UploadedFile {
@@ -161,14 +164,27 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       animatePlaceholder = false,
       selectedCharts = [],
       selectedOutputFormat = null,
+      threadId = null,
+      projectId,
     },
     ref,
   ) => {
+    // Use local state by default for better performance (avoids parent re-renders on every keystroke)
+    // Only use controlled value if explicitly provided
     const isControlled =
       controlledValue !== undefined && controlledOnChange !== undefined;
 
-    const [uncontrolledValue, setUncontrolledValue] = useState('');
-    const value = isControlled ? controlledValue : uncontrolledValue;
+    const [localValue, setLocalValue] = useState('');
+
+    // For controlled mode, sync local value with controlled value when it changes externally
+    // (e.g., when clearing after submit)
+    useEffect(() => {
+      if (isControlled && controlledValue !== localValue) {
+        setLocalValue(controlledValue);
+      }
+    }, [isControlled, controlledValue, localValue]);
+
+    const value = localValue;
 
     const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
     const [pendingFiles, setPendingFiles] = useState<File[]>([]);
@@ -389,19 +405,25 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
         model_name: baseModelName,
       });
 
-      if (!isControlled) {
-        setUncontrolledValue('');
+      // Clear local value after submit
+      setLocalValue('');
+
+      // Notify parent in controlled mode
+      if (isControlled && controlledOnChange) {
+        controlledOnChange('');
       }
 
       setUploadedFiles([]);
-    }, [value, uploadedFiles, loading, disabled, isAgentRunning, isUploading, onStopAgent, generateDataOptionsMarkdown, getActualModelId, selectedModel, onSubmit, selectedAgentId, isControlled]);
+    }, [value, uploadedFiles, loading, disabled, isAgentRunning, isUploading, onStopAgent, generateDataOptionsMarkdown, getActualModelId, selectedModel, onSubmit, selectedAgentId, isControlled, controlledOnChange]);
 
     const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newValue = e.target.value;
-      if (isControlled) {
+      // Always update local state immediately for responsive typing
+      setLocalValue(newValue);
+
+      // Only notify parent if in controlled mode (but this won't cause lag since we update local state first)
+      if (isControlled && controlledOnChange) {
         controlledOnChange(newValue);
-      } else {
-        setUncontrolledValue(newValue);
       }
     }, [isControlled, controlledOnChange]);
 
@@ -434,6 +456,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
         handleFiles(
           imageFiles,
           sandboxId,
+          projectId,
           setPendingFiles,
           setUploadedFiles,
           setIsUploading,
@@ -444,15 +467,16 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     };
 
     const handleTranscription = useCallback((transcribedText: string) => {
-      const currentValue = isControlled ? controlledValue : uncontrolledValue;
-      const newValue = currentValue ? `${currentValue} ${transcribedText}` : transcribedText;
+      const newValue = localValue ? `${localValue} ${transcribedText}` : transcribedText;
 
-      if (isControlled) {
+      // Update local state
+      setLocalValue(newValue);
+
+      // Notify parent in controlled mode
+      if (isControlled && controlledOnChange) {
         controlledOnChange(newValue);
-      } else {
-        setUncontrolledValue(newValue);
       }
-    }, [isControlled, controlledValue, uncontrolledValue, controlledOnChange]);
+    }, [localValue, isControlled, controlledOnChange]);
 
     const removeUploadedFile = useCallback(async (index: number) => {
       const fileToRemove = uploadedFiles[index];
@@ -508,7 +532,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       }
       // Unified compact menu for both logged and non-logged (non-logged shows only models subset via menu trigger)
       return (
-        <div className="flex items-center gap-2" data-tour="agent-selector">
+        <div className="flex items-center gap-2">
           <UnifiedConfigMenu
             isLoggedIn={isLoggedIn}
             selectedAgentId={!hideAgentSelection ? selectedAgentId : undefined}
@@ -554,6 +578,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
               isAgentRunning={isAgentRunning}
               isUploading={isUploading}
               sandboxId={sandboxId}
+              projectId={projectId}
               setPendingFiles={setPendingFiles}
               setUploadedFiles={setUploadedFiles}
               setIsUploading={setIsUploading}
@@ -672,50 +697,52 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
             disabled={loading || (disabled && !isAgentRunning)}
           />}
 
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="submit"
-                  onClick={isAgentRunning && onStopAgent ? onStopAgent : handleSubmit}
-                  size="sm"
-                  className={cn(
-                    'w-8 h-8 flex-shrink-0 self-end rounded-xl',
-                    (!value.trim() && uploadedFiles.length === 0 && !isAgentRunning) ||
+          <div className="relative">
+            {threadId && <ContextUsageIndicator threadId={threadId} modelName={selectedModel} />}
+
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="submit"
+                    onClick={isAgentRunning && onStopAgent ? onStopAgent : handleSubmit}
+                    size="sm"
+                    className={cn(
+                      'w-8 h-8 flex-shrink-0 self-end rounded-xl relative z-10',
+                      (!value.trim() && uploadedFiles.length === 0 && !isAgentRunning) ||
+                        loading ||
+                        (disabled && !isAgentRunning) ||
+                        isUploading
+                        ? 'opacity-50'
+                        : '',
+                    )}
+                    disabled={
+                      (!value.trim() && uploadedFiles.length === 0 && !isAgentRunning) ||
                       loading ||
                       (disabled && !isAgentRunning) ||
                       isUploading
-                      ? 'opacity-50'
-                      : '',
-                  )}
-                  disabled={
-                    (!value.trim() && uploadedFiles.length === 0 && !isAgentRunning) ||
-                    loading ||
-                    (disabled && !isAgentRunning) ||
-                    isUploading
-                  }
-                >
-                  {loading || isUploading ? (
-                    <Loader2 className="h-5 w-5 animate-spin" />
-                  ) : isAgentRunning ? (
-                    <div className="min-h-[14px] min-w-[14px] w-[14px] h-[14px] rounded-sm bg-current" />
-                  ) : (
-                    <CornerDownLeft className="h-5 w-5" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              {isUploading && (
-                <TooltipContent side="top">
-                  <p>Uploading {pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''}...</p>
-                </TooltipContent>
-              )}
-            </Tooltip>
-          </TooltipProvider>
+                    }
+                  >
+                    {loading || isUploading ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : isAgentRunning ? (
+                      <div className="min-h-[14px] min-w-[14px] w-[14px] h-[14px] rounded-sm bg-current" />
+                    ) : (
+                      <CornerDownLeft className="h-5 w-5" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                {isUploading && (
+                  <TooltipContent side="top">
+                    <p>Uploading {pendingFiles.length} file{pendingFiles.length !== 1 ? 's' : ''}...</p>
+                  </TooltipContent>
+                )}
+              </Tooltip>
+            </TooltipProvider>
+          </div>
         </div>
       </div>
-    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, messages, isLoggedIn, renderConfigDropdown, billingModalOpen, setBillingModalOpen, handleTranscription, onStopAgent, handleSubmit, value, uploadedFiles, selectedMode, onModeDeselect, handleModeDeselect, isModeDismissing, isSunaAgent, sunaAgentModes, pendingFiles]);
-
-
+    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, messages, isLoggedIn, renderConfigDropdown, billingModalOpen, setBillingModalOpen, handleTranscription, onStopAgent, handleSubmit, value, uploadedFiles, selectedMode, onModeDeselect, handleModeDeselect, isModeDismissing, isSunaAgent, sunaAgentModes, pendingFiles, threadId]);
 
     return (
       <div className="mx-auto w-full max-w-4xl relative">
@@ -757,6 +784,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                 handleFiles(
                   files,
                   sandboxId,
+                  projectId,
                   setPendingFiles,
                   setUploadedFiles,
                   setIsUploading,

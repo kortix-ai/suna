@@ -215,9 +215,10 @@ export type ToolCall = {
   arguments: Record<string, unknown>;
 };
 
-export interface InitiateAgentResponse {
+export interface UnifiedAgentStartResponse {
   thread_id: string;
   agent_run_id: string;
+  status: string;
 }
 
 export interface HealthCheckResponse {
@@ -654,17 +655,50 @@ export const getMessages = async (threadId: string): Promise<Message[]> => {
     }
   }
 
+  // Extract context_usage from the latest llm_response_end message
+  try {
+    const llmResponseEndMessages = allMessages.filter(msg => msg.type === 'llm_response_end');
+    
+    // Find the most recent llm_response_end message
+    if (llmResponseEndMessages.length > 0) {
+      const latestMsg = llmResponseEndMessages[llmResponseEndMessages.length - 1];
+      try {
+        const content = typeof latestMsg.content === 'string' ? JSON.parse(latestMsg.content) : latestMsg.content;
+        if (content?.usage?.total_tokens) {
+          // Store context usage
+          const { useContextUsageStore } = await import('@/lib/stores/context-usage-store');
+          useContextUsageStore.getState().setUsage(threadId, {
+            current_tokens: content.usage.total_tokens
+          });
+        }
+      } catch (e) {
+        console.warn('Failed to parse llm_response_end message:', e);
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to extract context_usage from llm_response_end:', e);
+  }
+
   return allMessages;
 };
 
 // Agent APIs
-export const startAgent = async (
-  threadId: string,
-  options?: {
-    model_name?: string;
-    agent_id?: string; // Optional again
-  },
-): Promise<{ agent_run_id: string }> => {
+
+/**
+ * Unified agent start - works for both new and existing threads
+ * @param options.threadId - Optional thread ID. If provided, starts agent on existing thread. If omitted, creates new thread.
+ * @param options.prompt - Required when creating new thread. Optional for existing threads (creates user message if provided).
+ * @param options.files - Optional files to upload (works for both new and existing threads)
+ * @param options.model_name - Optional model name
+ * @param options.agent_id - Optional agent ID
+ */
+export const unifiedAgentStart = async (options: {
+  threadId?: string;
+  prompt?: string;
+  files?: File[];
+  model_name?: string;
+  agent_id?: string;
+}): Promise<{ thread_id: string; agent_run_id: string; status: string }> => {
   try {
     const supabase = createClient();
     const {
@@ -675,81 +709,55 @@ export const startAgent = async (
       throw new NoAccessTokenAvailableError();
     }
 
-    // Check if backend URL is configured
     if (!API_URL) {
       throw new Error(
         'Backend URL is not configured. Set NEXT_PUBLIC_BACKEND_URL in your environment.',
       );
     }
 
-    const defaultOptions = {
-      model_name: 'anthropic/claude-3-7-sonnet-latest',
-    };
-
-    const finalOptions = { ...defaultOptions, ...options };
-
-    const body: any = {
-      model_name: finalOptions.model_name,
-      stream: true, // Always stream for better UX
-    };
+    // Build FormData
+    const formData = new FormData();
     
-    // Only include agent_id if it's provided
-    if (finalOptions.agent_id) {
-      body.agent_id = finalOptions.agent_id;
+    if (options.threadId) {
+      formData.append('thread_id', options.threadId);
+    }
+    
+    if (options.prompt) {
+      formData.append('prompt', options.prompt);
+    }
+    
+    if (options.model_name) {
+      formData.append('model_name', options.model_name);
+    }
+    
+    if (options.agent_id) {
+      formData.append('agent_id', options.agent_id);
+    }
+    
+    // Add files if provided
+    if (options.files && options.files.length > 0) {
+      options.files.forEach((file) => {
+        formData.append('files', file);
+      });
     }
 
-    const response = await fetch(`${API_URL}/thread/${threadId}/agent/start`, {
+    const response = await fetch(`${API_URL}/agent/start`, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
         Authorization: `Bearer ${session.access_token}`,
       },
-      body: JSON.stringify(body),
+      body: formData,
+      cache: 'no-store',
     });
 
     if (!response.ok) {
-      if (response.status === 402) {
-        try {
-          const errorData = await response.json();
-          const detail = errorData?.detail || { message: 'Payment Required' };
-          if (typeof detail.message !== 'string') {
-            detail.message = 'Payment Required';
-          }
-          throw new BillingError(response.status, detail);
-        } catch (parseError) {
-          throw new BillingError(
-            response.status,
-            { message: 'Payment Required' },
-            `Error starting agent: ${response.statusText} (402)`,
-          );
-        }
-      }
-
-      if (response.status === 429) {
-          const errorData = await response.json();
-          const detail = errorData?.detail || { 
-            message: 'Too many agent runs running',
-            running_thread_ids: [],
-            running_count: 0,
-          };
-          if (typeof detail.message !== 'string') {
-            detail.message = 'Too many agent runs running';
-          }
-          if (!Array.isArray(detail.running_thread_ids)) {
-            detail.running_thread_ids = [];
-          }
-          if (typeof detail.running_count !== 'number') {
-            detail.running_count = 0;
-          }
-          throw new AgentRunLimitError(response.status, detail);
-      }
-
-      // Check for project limit errors (402 with PROJECT_LIMIT_EXCEEDED error_code)
+      // Handle billing errors (402)
       if (response.status === 402) {
         try {
           const errorData = await response.json();
           const detail = errorData?.detail || {};
           
+          // Check for project limit error
           if (detail.error_code === 'PROJECT_LIMIT_EXCEEDED') {
             throw new ProjectLimitError(response.status, {
               message: detail.message || 'Project limit exceeded',
@@ -759,20 +767,60 @@ export const startAgent = async (
               error_code: detail.error_code
             });
           }
+          
+          // Regular billing error
+          if (typeof detail.message !== 'string') {
+            detail.message = 'Payment Required';
+          }
+          throw new BillingError(response.status, detail);
         } catch (parseError) {
-          if (parseError instanceof ProjectLimitError) {
+          if (parseError instanceof BillingError || parseError instanceof ProjectLimitError) {
             throw parseError;
           }
-          // If it's not a project limit error, continue to general error handling
+          throw new BillingError(
+            response.status,
+            { message: 'Payment Required' },
+            `Error starting agent: ${response.statusText} (402)`,
+          );
         }
       }
 
+      // Handle rate limit errors (429)
+      if (response.status === 429) {
+        const errorData = await response.json();
+        const detail = errorData?.detail || { 
+          message: 'Too many agent runs running',
+          running_thread_ids: [],
+          running_count: 0,
+        };
+        if (typeof detail.message !== 'string') {
+          detail.message = 'Too many agent runs running';
+        }
+        if (!Array.isArray(detail.running_thread_ids)) {
+          detail.running_thread_ids = [];
+        }
+        if (typeof detail.running_count !== 'number') {
+          detail.running_count = 0;
+        }
+        throw new AgentRunLimitError(response.status, detail);
+      }
+
+      // Handle other errors
       const errorText = await response
         .text()
         .catch(() => 'No error details available');
+      
       console.error(
         `[API] Error starting agent: ${response.status} ${response.statusText}`,
+        errorText,
       );
+    
+      if (response.status === 401) {
+        throw new Error('Authentication error: Please sign in again');
+      } else if (response.status >= 500) {
+        throw new Error('Server error: Please try again later');
+      }
+    
       throw new Error(
         `Error starting agent: ${response.statusText} (${response.status})`,
       );
@@ -781,7 +829,7 @@ export const startAgent = async (
     const result = await response.json();
     return result;
   } catch (error) {
-    if (error instanceof BillingError || error instanceof AgentRunLimitError) {
+    if (error instanceof BillingError || error instanceof AgentRunLimitError || error instanceof ProjectLimitError) {
       throw error;
     }
 
@@ -1536,122 +1584,6 @@ export const getPublicProjects = async (): Promise<Project[]> => {
   }
 };
 
-
-export const initiateAgent = async (
-  formData: FormData,
-): Promise<InitiateAgentResponse> => {
-  try {
-    const supabase = createClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    if (!session?.access_token) {
-      throw new NoAccessTokenAvailableError();
-    }
-
-    if (!API_URL) {
-      throw new Error(
-        'Backend URL is not configured. Set NEXT_PUBLIC_BACKEND_URL in your environment.',
-      );
-    }
-
-    const response = await fetch(`${API_URL}/agent/initiate`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-      },
-      body: formData,
-      cache: 'no-store',
-    });
-
-    if (!response.ok) {
-      // Check for 402 Payment Required first
-      if (response.status === 402) {
-        try {
-          const errorData = await response.json();
-          // Ensure detail exists and has a message property
-          const detail = errorData?.detail || { message: 'Payment Required' };
-          if (typeof detail.message !== 'string') {
-            detail.message = 'Payment Required'; // Default message if missing
-          }
-          throw new BillingError(response.status, detail);
-        } catch (parseError) {
-          // Handle cases where parsing fails or the structure isn't as expected
-          throw new BillingError(
-            response.status,
-            { message: 'Payment Required' },
-            `Error initiating agent: ${response.statusText} (402)`,
-          );
-        }
-      }
-
-      // Check for 429 Too Many Requests (Agent Run Limit)
-      if (response.status === 429) {
-          const errorData = await response.json();
-          // Ensure detail exists and has required properties
-          const detail = errorData?.detail || { 
-            message: 'Too many agent runs running',
-            running_thread_ids: [],
-            running_count: 0,
-          };
-          if (typeof detail.message !== 'string') {
-            detail.message = 'Too many agent runs running';
-          }
-          if (!Array.isArray(detail.running_thread_ids)) {
-            detail.running_thread_ids = [];
-          }
-          if (typeof detail.running_count !== 'number') {
-            detail.running_count = 0;
-          }
-          throw new AgentRunLimitError(response.status, detail);
-      }
-
-      // Handle other errors
-      const errorText = await response
-        .text()
-        .catch(() => 'No error details available');
-      
-      console.error(
-        `[API] Error initiating agent: ${response.status} ${response.statusText}`,
-        errorText,
-      );
-    
-      if (response.status === 401) {
-        throw new Error('Authentication error: Please sign in again');
-      } else if (response.status >= 500) {
-        throw new Error('Server error: Please try again later');
-      }
-    
-      throw new Error(
-        `Error initiating agent: ${response.statusText} (${response.status})`,
-      );
-    }
-
-    const result = await response.json();
-    return result;
-  } catch (error) {
-    // Rethrow BillingError and AgentRunLimitError instances directly
-    if (error instanceof BillingError || error instanceof AgentRunLimitError) {
-      throw error;
-    }
-
-    console.error('[API] Failed to initiate agent:', error);
-
-    if (
-      error instanceof TypeError &&
-      error.message.includes('Failed to fetch')
-    ) {
-      const networkError = new Error(
-        `Cannot connect to backend server. Please check your internet connection and make sure the backend is running.`,
-      );
-      handleApiError(networkError, { operation: 'initiate agent', resource: 'AI assistant' });
-      throw networkError;
-    }
-    handleApiError(error, { operation: 'initiate agent' });
-    throw error;
-  }
-};
 
 export const checkApiHealth = async (): Promise<HealthCheckResponse> => {
   try {

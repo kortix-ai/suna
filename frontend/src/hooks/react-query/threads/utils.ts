@@ -77,96 +77,42 @@ export const toggleThreadPublicStatus = async (
     return updateThread(threadId, { is_public: isPublic });
 };
 
-const deleteSandbox = async (sandboxId: string): Promise<void> => {
-  try {
-    const supabase = createClient();
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    };
-
-    if (session?.access_token) {
-      headers['Authorization'] = `Bearer ${session.access_token}`;
-    }
-
-    const response = await fetch(`${API_URL}/sandboxes/${sandboxId}`, {
-      method: 'DELETE',
-      headers,
-    });
-
-    if (!response.ok) {
-      console.warn('Failed to delete sandbox, continuing with thread deletion');
-    }
-  } catch (error) {
-    console.warn('Error deleting sandbox, continuing with thread deletion:', error);
-  }
-};
-
+/**
+ * Delete a thread using the backend API endpoint.
+ * The backend handles deleting all associated data (messages, agent runs, project, sandbox).
+ */
 export const deleteThread = async (threadId: string, sandboxId?: string): Promise<void> => {
     try {
       const supabase = createClient();
+      
+      // Get auth session for the API request
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-      // If sandbox ID is provided, delete it directly
-      if (sandboxId) {
-        await deleteSandbox(sandboxId);
-      } else {
-        // Otherwise, get the thread to find its project and sandbox
-        const { data: thread, error: threadError } = await supabase
-          .from('threads')
-          .select('project_id')
-          .eq('thread_id', threadId)
-          .single();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
 
-        if (threadError) {
-          console.error('Error fetching thread:', threadError);
-          throw new Error(`Error fetching thread: ${threadError.message}`);
-        }
-
-        // If thread has a project, get sandbox ID and delete it
-        if (thread?.project_id) {
-          const { data: project } = await supabase
-            .from('projects')
-            .select('sandbox')
-            .eq('project_id', thread.project_id)
-            .single();
-
-          if (project?.sandbox?.id) {
-            await deleteSandbox(project.sandbox.id);
-          }
-        }
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
       }
-      const { error: agentRunsError } = await supabase
-        .from('agent_runs')
-        .delete()
-        .eq('thread_id', threadId);
 
-      if (agentRunsError) {
-        console.error('Error deleting agent runs:', agentRunsError);
-        throw new Error(`Error deleting agent runs: ${agentRunsError.message}`);
-      }
-      const { error: messagesError } = await supabase
-        .from('messages')
-        .delete()
-        .eq('thread_id', threadId);
+      // Use the backend DELETE endpoint which handles everything
+      const response = await fetch(`${API_URL}/threads/${threadId}`, {
+        method: 'DELETE',
+        headers,
+      });
 
-      if (messagesError) {
-        console.error('Error deleting messages:', messagesError);
-        throw new Error(`Error deleting messages: ${messagesError.message}`);
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        console.error('Error deleting thread:', errorText);
+        throw new Error(`Failed to delete thread: ${errorText}`);
       }
-      const { error: threadError2 } = await supabase
-        .from('threads')
-        .delete()
-        .eq('thread_id', threadId);
-  
-      if (threadError2) {
-        console.error('Error deleting thread:', threadError2);
-        throw new Error(`Error deleting thread: ${threadError2.message}`);
-      }
+
+      console.log(`Thread ${threadId} deleted successfully`);
     } catch (error) {
-      console.error('Error deleting thread and related items:', error);
+      console.error('Error deleting thread:', error);
       throw error;
     }
   };

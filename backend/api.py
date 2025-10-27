@@ -25,6 +25,7 @@ from core.sandbox import api as sandbox_api
 from core.billing.api import router as billing_router
 from core.admin.admin_api import router as admin_router
 from core.admin.billing_admin_api import router as billing_admin_router
+from core.admin.master_password_api import router as master_password_router
 from core.services import transcription as transcription_api
 import sys
 from core.services import email_api
@@ -130,18 +131,25 @@ async def log_requests_middleware(request: Request, call_next):
         raise
 
 # Define allowed origins based on environment
-allowed_origins = ["https://www.suna.so", "https://suna.so"]
+allowed_origins = ["https://www.kortix.com", "https://kortix.com", "https://www.suna.so", "https://suna.so"]
 allow_origin_regex = None
 
 # Add staging-specific origins
 if config.ENV_MODE == EnvMode.LOCAL:
     allowed_origins.append("http://localhost:3000")
+    allowed_origins.append("http://127.0.0.1:3000")
 
 # Add staging-specific origins
 if config.ENV_MODE == EnvMode.STAGING:
     allowed_origins.append("https://staging.suna.so")
     allowed_origins.append("http://localhost:3000")
-    allow_origin_regex = r"https://suna-.*-prjcts\.vercel\.app"
+    # Allow Vercel preview deployments for both legacy and new project names
+    allow_origin_regex = r"https://(suna|kortixcom)-.*-prjcts\.vercel\.app"
+
+# Add localhost for production mode local testing (for master password login)
+if config.ENV_MODE == EnvMode.PRODUCTION:
+    allowed_origins.append("http://localhost:3000")
+    allowed_origins.append("http://127.0.0.1:3000")
 
 app.add_middleware(
     CORSMiddleware,
@@ -162,6 +170,7 @@ api_router.include_router(billing_router)
 api_router.include_router(api_keys_api.router)
 api_router.include_router(billing_admin_router)
 api_router.include_router(admin_router)
+api_router.include_router(master_password_router)
 
 from core.mcp_module import api as mcp_api
 from core.credentials import api as credentials_api

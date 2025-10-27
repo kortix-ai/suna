@@ -1,6 +1,6 @@
 import { createMutationHook, createQueryHook } from "@/hooks/use-query";
 import { threadKeys } from "./keys";
-import { BillingError, AgentRunLimitError, getAgentRuns, startAgent, stopAgent } from "@/lib/api";
+import { BillingError, AgentRunLimitError, getAgentRuns, unifiedAgentStart, stopAgent } from "@/lib/api";
 import { useQueryClient } from "@tanstack/react-query";
 
 export const useAgentRunsQuery = (threadId: string) =>
@@ -26,7 +26,11 @@ export const useStartAgentMutation = () => {
         model_name?: string;
         agent_id?: string;
       };
-    }) => startAgent(threadId, options),
+    }) => unifiedAgentStart({
+      threadId,
+      model_name: options?.model_name,
+      agent_id: options?.agent_id,
+    }),
     {
       onSuccess: () => {
         // Invalidate active agent runs to update the sidebar status indicators

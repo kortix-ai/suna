@@ -108,14 +108,32 @@ if enabled:
                 def auth_check(self): return False
             
             class MockTrace:
-                def __init__(self): self.id = "mock-trace-id"
+                def __init__(self): 
+                    self.id = "mock-trace-id"
+                
+                def __getattr__(self, name):
+                    # Return a no-op function for any method call
+                    def no_op(*args, **kwargs):
+                        pass
+                    return no_op
             class MockGeneration:
-                def __init__(self): self.id = "mock-generation-id"
-                def update(self, **kwargs): pass
-                def end(self, **kwargs): pass
+                def __init__(self): 
+                    self.id = "mock-generation-id"
+                
+                def __getattr__(self, name):
+                    # Return a no-op function for any method call
+                    def no_op(*args, **kwargs):
+                        pass
+                    return no_op
             class MockSpan:
-                def __init__(self): self.id = "mock-span-id"
-                def end(self, **kwargs): pass
+                def __init__(self): 
+                    self.id = "mock-span-id"
+                
+                def __getattr__(self, name):
+                    # Return a no-op function for any method call
+                    def no_op(*args, **kwargs):
+                        pass
+                    return no_op
             
             langfuse = MockLangfuse()
         enabled = False
@@ -134,14 +152,32 @@ else:
         def auth_check(self): return False
     
     class MockTrace:
-        def __init__(self): self.id = "mock-trace-id"
+        def __init__(self): 
+            self.id = "mock-trace-id"
+        
+        def __getattr__(self, name):
+            # Return a no-op function for any method call
+            def no_op(*args, **kwargs):
+                pass
+            return no_op
     class MockGeneration:
-        def __init__(self): self.id = "mock-generation-id"
-        def update(self, **kwargs): pass
-        def end(self, **kwargs): pass
+        def __init__(self): 
+            self.id = "mock-generation-id"
+        
+        def __getattr__(self, name):
+            # Return a no-op function for any method call
+            def no_op(*args, **kwargs):
+                pass
+            return no_op
     class MockSpan:
-        def __init__(self): self.id = "mock-span-id"
-        def end(self, **kwargs): pass
+        def __init__(self): 
+            self.id = "mock-span-id"
+        
+        def __getattr__(self, name):
+            # Return a no-op function for any method call
+            def no_op(*args, **kwargs):
+                pass
+            return no_op
     
     langfuse = MockLangfuse()
 

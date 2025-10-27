@@ -1,92 +1,176 @@
-import { ThemeProvider } from '@react-navigation/native';
-import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import 'react-native-reanimated';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import '@/global.css';
 
-import { Colors } from '@/constants/Colors';
-import { fonts } from '@/constants/Fonts';
-import { useColorScheme } from '@/hooks/useColorScheme';
-import { PanelProvider } from '@/hooks/usePanelContext';
-import { AppProviders } from '@/providers/AppProviders';
+import { ROOBERT_FONTS } from '@/lib/utils/fonts';
+import { NAV_THEME } from '@/lib/utils/theme';
+import { initializeI18n } from '@/lib/utils/i18n';
+import { AuthProvider, LanguageProvider, AgentProvider, BillingProvider, AdvancedFeaturesProvider, useAuthContext } from '@/contexts';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
+import { ThemeProvider } from '@react-navigation/native';
+import { PortalHost } from '@rn-primitives/portal';
+import { useFonts } from 'expo-font';
+import { Stack, SplashScreen, useRouter, useSegments } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import * as SystemUI from 'expo-system-ui';
+import { useEffect, useState } from 'react';
+import { useColorScheme } from 'nativewind';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Platform } from 'react-native';
+import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
+
+// Configure Reanimated logger to disable strict mode warnings
+// These warnings appear during theme changes and are overly sensitive
+configureReanimatedLogger({
+  level: ReanimatedLogLevel.warn,
+  strict: false, // Disable strict mode warnings
+});
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
+export {
+  // Catch any errors thrown by the Layout component.
+  ErrorBoundary,
+} from 'expo-router';
+
+/**
+ * Root Layout
+ * 
+ * This is the main entry point that:
+ * 1. Loads fonts
+ * 2. Provides auth context
+ * 3. Sets up providers
+ * 4. Handles navigation stacks
+ * 5. Protects all routes except /auth - unauthenticated users are redirected to /auth
+ */
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-  const colors = Colors[colorScheme ?? 'light'];
-
-  // Custom navigation themes using our color system
-  const customTheme = {
-    dark: colorScheme === 'dark',
-    colors: {
-      primary: colors.primary,
-      background: colors.background,
-      card: colors.card,
-      text: colors.foreground,
-      border: colors.border,
-      notification: colors.destructive,
-    },
-    fonts: {
-      regular: {
-        fontFamily: 'Geist_400Regular',
-        fontWeight: '400' as const,
-      },
-      medium: {
-        fontFamily: 'Geist_500Medium',
-        fontWeight: '500' as const,
-      },
-      bold: {
-        fontFamily: 'Geist_700Bold',
-        fontWeight: '700' as const,
-      },
-      heavy: {
-        fontFamily: 'Geist_800ExtraBold',
-        fontWeight: '800' as const,
+  const { colorScheme, setColorScheme } = useColorScheme();
+  const [i18nInitialized, setI18nInitialized] = useState(false);
+  
+  // Initialize QueryClient inline
+  const [queryClient] = useState(() => new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: 2,
+        staleTime: 5 * 60 * 1000,
+        refetchOnWindowFocus: false,
       },
     },
-  };
+  }));
+  
+  // Load Roobert fonts
+  const [fontsLoaded, fontError] = useFonts(ROOBERT_FONTS);
 
-  const [loaded, error] = useFonts({
-    // Geist Sans font family
-    Geist_100Thin: fonts.Geist_100Thin,
-    Geist_200ExtraLight: fonts.Geist_200ExtraLight,
-    Geist_300Light: fonts.Geist_300Light,
-    Geist_400Regular: fonts.Geist_400Regular,
-    Geist_500Medium: fonts.Geist_500Medium,
-    Geist_600SemiBold: fonts.Geist_600SemiBold,
-    Geist_700Bold: fonts.Geist_700Bold,
-    Geist_800ExtraBold: fonts.Geist_800ExtraBold,
-    Geist_900Black: fonts.Geist_900Black,
-  });
+  // Initialize i18n
+  useEffect(() => {
+    initializeI18n().then(() => {
+      console.log('✅ i18n initialized in RootLayout');
+      setI18nInitialized(true);
+    });
+  }, []);
+
+  // Set light mode as default on first load
+  useEffect(() => {
+    if (!colorScheme) {
+      setColorScheme('light');
+    }
+  }, []);
 
   useEffect(() => {
-    if (loaded || error) {
+    if (Platform.OS === 'ios') {
+      const activeScheme = colorScheme ?? 'light';
+      const backgroundColor = activeScheme === 'dark' ? '#000000' : '#FFFFFF';
+      SystemUI.setBackgroundColorAsync(backgroundColor);
+    }
+  }, [colorScheme]);
+
+  useEffect(() => {
+    if (fontsLoaded || fontError) {
+      // Hide the splash screen after the fonts have loaded (or an error was returned)
       SplashScreen.hideAsync();
     }
-  }, [loaded, error]);
+  }, [fontsLoaded, fontError]);
 
-  if (!loaded && !error) {
+  // Prevent rendering until the fonts have loaded or error, and i18n is initialized
+  if (!fontsLoaded && !fontError) {
     return null;
   }
 
+  if (!i18nInitialized) {
+    return null;
+  }
+
+  // Default to light if colorScheme is not set
+  const activeColorScheme = colorScheme ?? 'light';
+
   return (
-    <AppProviders>
-      <SafeAreaProvider>
-        <GestureHandlerRootView style={{ flex: 1 }}>
-          <PanelProvider>
-            <ThemeProvider value={customTheme}>
-              <Stack screenOptions={{ headerShown: false }} />
-              <StatusBar style="auto" />
-            </ThemeProvider>
-          </PanelProvider>
-        </GestureHandlerRootView>
-      </SafeAreaProvider>
-    </AppProviders>
+    <QueryClientProvider client={queryClient}>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <LanguageProvider>
+          <AuthProvider>
+            <BillingProvider>
+              <AgentProvider>
+                <AdvancedFeaturesProvider>
+                  <BottomSheetModalProvider>
+                    <ThemeProvider value={NAV_THEME[activeColorScheme]}>
+                      <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
+                      <AuthProtection>
+                        <Stack 
+                          screenOptions={{ 
+                            headerShown: false,
+                            animation: 'fade',
+                          }}
+                        >
+                          <Stack.Screen name="index" options={{ animation: 'none' }} />
+                          <Stack.Screen name="onboarding" />
+                          <Stack.Screen name="home" />
+                          <Stack.Screen name="auth" />
+                          <Stack.Screen name="billing" />
+                          <Stack.Screen name="trigger-detail" />
+                          <Stack.Screen 
+                            name="tool-modal" 
+                            options={{ 
+                              presentation: 'modal',
+                              animation: 'slide_from_bottom',
+                            }} 
+                          />
+                        </Stack>
+                      </AuthProtection>
+                      <PortalHost />
+                    </ThemeProvider>
+                  </BottomSheetModalProvider>
+                </AdvancedFeaturesProvider>
+              </AgentProvider>
+            </BillingProvider>
+          </AuthProvider>
+        </LanguageProvider>
+      </GestureHandlerRootView>
+    </QueryClientProvider>
   );
+}
+
+/**
+ * Auth Protection Component
+ * 
+ * Protects all routes except /auth
+ * Redirects unauthenticated users to /auth automatically
+ */
+function AuthProtection({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuthContext();
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isLoading) return;
+
+    const inAuthGroup = segments[0] === 'auth';
+
+    if (!isAuthenticated && !inAuthGroup) {
+      // User is not authenticated and not in auth screens, redirect to auth
+      console.log('🚫 User not authenticated, redirecting to /auth');
+      router.replace('/auth');
+    }
+  }, [isAuthenticated, isLoading, segments, router]);
+
+  return <>{children}</>;
 }

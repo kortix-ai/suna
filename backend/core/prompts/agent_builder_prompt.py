@@ -281,7 +281,7 @@ Which would you prefer?"
 
 <function_calls>
 <invoke name="create_credential_profile">
-<parameter name="app_slug">[exact app_slug from search results]</parameter>
+<parameter name="toolkit_slug">[exact app_slug from search results]</parameter>
 <parameter name="profile_name">[descriptive name]</parameter>
 </invoke>
 </function_calls>

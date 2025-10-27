@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
+from core.utils.config import config
 from core.services.supabase import DBConnection
 from .google_slides_service import GoogleSlidesService, OAuthTokenService
 
@@ -133,8 +134,8 @@ async def google_oauth_callback(
     This endpoint receives the authorization code from Google and exchanges it for tokens.
     Redirects to the frontend with success/error status.
     """
-    # Get frontend URL from environment (supports different environments)
-    frontend_url = os.getenv("FRONTEND_URL")
+    # Get frontend URL from config (supports different environments)
+    frontend_url = config.FRONTEND_URL
     
     if error:
         logger.error(f"Google OAuth error: {error}")
@@ -291,8 +292,15 @@ async def convert_and_upload_to_google_slides(
             except:
                 pass  # Ignore cleanup errors
     
-    except HTTPException:
-        # Re-raise HTTP exceptions as-is
+    except HTTPException as e:
+        # Convert 401 to structured response so frontend fallback works
+        if e.status_code == 401:
+            return ConvertToSlidesResponse(
+                success=False,
+                message="Authentication expired. Please re-authenticate with Google.",
+                pptx_url=None,
+                is_api_enabled=False
+            )
         raise
     except Exception as e:
         logger.error(f"Error in convert_and_upload_to_google_slides: {e}", exc_info=True)

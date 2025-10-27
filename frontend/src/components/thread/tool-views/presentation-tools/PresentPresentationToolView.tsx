@@ -188,17 +188,6 @@ export function PresentPresentationToolView({
 
             {/* Action Buttons */}
             <div className="flex flex-wrap gap-3">
-              {presentationUrl && (
-                <Button 
-                  variant="default" 
-                  size="sm"
-                  className="bg-gray-600 hover:bg-gray-700 text-white"
-                  onClick={() => window.open(presentationUrl, '_blank')}
-                >
-                  <Eye className="h-4 w-4 mr-2" />
-                  View Presentation
-                </Button>
-              )}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button 

@@ -190,6 +190,7 @@ supabase/.temp/storage-version
 **/__pycache__/
 
 .env.scripts
+.env.docker
 
 redis_data
 
@@ -222,3 +223,5 @@ apps/mobile/*.pem
 apps/mobile/.env
 apps/mobile/.env*.local
 apps/mobile/app-example
+# Docker-specific env files
+*.env.docker

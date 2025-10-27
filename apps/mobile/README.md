@@ -1,50 +1,251 @@
-# Welcome to your Expo app 👋
+# Kortix Mobile App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Modern React Native + Expo mobile application with centralized API layer.
 
-## Get started
-
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## 🚀 Quick Start
 
 ```bash
-npm run reset-project
+# Install dependencies
+npm install
+
+# Start development server
+npm run dev
+
+# Run on specific platform
+npm run ios      # iOS Simulator
+npm run android  # Android Emulator
+npm run web      # Web browser
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## 📁 Project Structure
 
-## Learn more
+```
+apps/mobile/
+├── api/                    # Centralized API layer (ALL API code)
+│   ├── client.ts          # HTTP client
+│   ├── config.ts          # Configuration
+│   ├── types.ts           # Type definitions
+│   ├── chat.ts            # Chat API
+│   ├── projects.ts        # Projects API
+│   ├── files.ts           # Files API
+│   ├── agents.ts          # Agents API
+│   ├── streaming.ts       # Streaming utilities
+│   └── hooks/             # React Query hooks
+├── app/                    # Expo Router screens
+├── components/            # React components
+│   ├── examples/         # API example components
+│   └── ...
+├── hooks/                 # Custom hooks
+├── lib/                   # Utilities (non-API)
+├── contexts/              # React contexts
+└── assets/                # Static assets
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+## 🎯 Key Features
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+### ✅ Centralized API Layer
+- All API code in `api/` directory
+- Type-safe with full TypeScript support
+- React Query for data fetching & caching
+- Automatic authentication via Supabase
+- Comprehensive error handling
 
-## Join the community
+### ✅ Modern Stack
+- **React Native** with Expo SDK 54
+- **NativeWind** (Tailwind CSS for RN)
+- **TypeScript** (strict mode)
+- **React Query** for state management
+- **Supabase** for auth & database
+- **Expo Router** for navigation
 
-Join our community of developers creating universal apps.
+### ✅ Design System
+- Custom Roobert font family
+- Theme-aware components
+- Consistent styling with design tokens
+- Dark/light mode support
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+## 📖 Documentation
+
+### Getting Started
+- **[Quick Start Guide](./QUICK_START.md)** - Get up and running in 5 minutes
+- **[Environment Setup](./ENV_SETUP.md)** - Configure environment variables
+- **[API Structure](./API_STRUCTURE.md)** - Understanding the API layer
+
+### API Documentation
+- **[API Documentation](./api/README.md)** - Complete API reference
+- **[Migration Guide](./api/MIGRATION_GUIDE.md)** - Migrate from old structure
+- **[Implementation Summary](./API_IMPLEMENTATION_SUMMARY.md)** - What was built
+
+## 🔧 Configuration
+
+### Environment Variables
+
+Create a `.env` file:
+
+```bash
+# Backend API
+EXPO_PUBLIC_BACKEND_URL=http://localhost:8000/api
+
+# Supabase
+EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+```
+
+See [ENV_SETUP.md](./ENV_SETUP.md) for detailed configuration.
+
+## 🧪 Testing
+
+### API Demo
+Access the API demo in the app:
+1. Sign in
+2. Open Settings (tap profile)
+3. Tap "API Demo" (dev mode only)
+
+### Manual Testing
+```typescript
+import { useProjects } from '@/api/hooks';
+
+function TestComponent() {
+  const { data, isLoading } = useProjects();
+  // Test your API integration
+}
+```
+
+## 📚 Usage Examples
+
+### Fetch Data
+```typescript
+import { useThreads, useProjects } from '@/api/hooks';
+
+function MyComponent() {
+  const { data: threads } = useThreads();
+  const { data: projects } = useProjects();
+  
+  return <View>...</View>;
+}
+```
+
+### Send Data (Mutations)
+```typescript
+import { useSendMessage } from '@/api/hooks';
+
+function ChatInput() {
+  const sendMessage = useSendMessage({
+    onSuccess: () => console.log('Sent!'),
+  });
+  
+  return (
+    <Button onPress={() => {
+      sendMessage.mutate({
+        threadId: 'thread-123',
+        message: 'Hello!',
+      });
+    }}>
+      Send
+    </Button>
+  );
+}
+```
+
+### Error Handling
+```typescript
+import { getUserFriendlyError } from '@/api/error-handler';
+
+const { error } = useThreads();
+
+if (error) {
+  const friendly = getUserFriendlyError(error);
+  Alert.alert(friendly.title, friendly.message);
+}
+```
+
+## 🛠️ Development
+
+### Available Scripts
+```bash
+npm run dev          # Start development server
+npm run ios          # Run on iOS
+npm run android      # Run on Android
+npm run web          # Run on web
+npm run clean        # Clean cache
+```
+
+### Code Quality
+- TypeScript strict mode enabled
+- ESLint configuration included
+- Prettier for code formatting
+
+## 🎨 Design System
+
+### Colors
+All colors use semantic tokens from `global.css`:
+- `bg-background`, `bg-card`, `bg-primary`, etc.
+- `text-foreground`, `text-muted`, etc.
+- Theme-aware (light/dark mode)
+
+### Typography
+- **Font**: Roobert (custom)
+- **Sizes**: Consistent scale
+- **Weights**: Regular, Medium, Semibold, Bold
+
+### Components
+- Reusable UI components in `components/ui/`
+- Consistent styling with NativeWind
+- Accessible and performant
+
+## 🚦 Status
+
+✅ **Production Ready**
+- All API endpoints implemented
+- Comprehensive error handling
+- Full TypeScript coverage
+- Working examples
+- Complete documentation
+
+## 🤝 Contributing
+
+1. Follow the existing code structure
+2. Use TypeScript strict mode
+3. Follow the design system
+4. Add tests for new features
+5. Update documentation
+
+## 📦 Dependencies
+
+### Core
+- `expo` - React Native framework
+- `react` / `react-native` - UI framework
+- `@tanstack/react-query` - Data fetching
+- `@supabase/supabase-js` - Backend & auth
+
+### Styling
+- `nativewind` - Tailwind CSS for RN
+- `tailwindcss` - CSS framework
+- `@rn-primitives/*` - UI primitives
+
+### Navigation
+- `expo-router` - File-based routing
+- `@react-navigation/native` - Navigation
+
+### Other
+- `expo-image-picker` - Image selection
+- `expo-document-picker` - File selection
+- `expo-haptics` - Haptic feedback
+- `react-native-reanimated` - Animations
+
+## 📄 License
+
+[Your License Here]
+
+## 🆘 Support
+
+- Check documentation in `./api/README.md`
+- Review examples in `./components/examples/`
+- Use the API Demo in-app
+- Check console logs for debugging
+
+---
+
+**Ready to build!** 🚀
+
+For detailed API usage, see [api/README.md](./api/README.md)

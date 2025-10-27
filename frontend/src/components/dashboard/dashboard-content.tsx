@@ -421,13 +421,12 @@ export function DashboardContent() {
                       <div className="flex flex-col items-center text-center w-full">
                         <p
                           className="tracking-tight text-2xl md:text-3xl font-normal text-foreground/90"
-                          data-tour="dashboard-title"
                         >
                           What do you want to get done?
                         </p>
                       </div>
 
-                      <div className="w-full" data-tour="chat-input">
+                      <div className="w-full">
                         <ChatInput
                           ref={chatInputRef}
                           onSubmit={handleSubmit}
@@ -475,7 +474,7 @@ export function DashboardContent() {
               {(viewMode === 'worker-templates') && (
                 <div className="w-full animate-in fade-in-0 duration-300">
                   {(isStagingMode() || isLocalMode()) && (
-                    <div className="w-full px-4 pb-8" data-tour="custom-agents">
+                    <div className="w-full px-4 pb-8">
                       <div className="max-w-5xl mx-auto">
                         <CustomAgentsSection
                           onAgentSelect={setSelectedAgent}

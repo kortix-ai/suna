@@ -24,6 +24,46 @@ import secrets
 
 logger = logging.getLogger(__name__)
 
+class SafeConfigWrapper:
+    """
+    A safe wrapper around the Configuration class that prevents NoneType AttributeErrors.
+    This ensures that even if the underlying config is None, we can still access attributes
+    without crashing the application.
+    """
+    
+    def __init__(self, config_instance=None):
+        self._config = config_instance
+        self._defaults = {}
+    
+    def __getattr__(self, name):
+        """Safely get attribute from config, returning None if not found or config is None."""
+        if self._config is None:
+            logger.debug(f"Config is None, returning None for attribute: {name}")
+            return None
+        
+        try:
+            return getattr(self._config, name)
+        except AttributeError:
+            logger.debug(f"Attribute {name} not found in config, returning None")
+            return None
+    
+    def __setattr__(self, name, value):
+        """Set attribute on the underlying config if it exists."""
+        if name.startswith('_'):
+            super().__setattr__(name, value)
+        elif self._config is not None:
+            setattr(self._config, name, value)
+        else:
+            logger.debug(f"Cannot set {name} because config is None")
+    
+    def __bool__(self):
+        """Return True if config is loaded, False otherwise."""
+        return self._config is not None
+    
+    def __repr__(self):
+        """String representation."""
+        return f"SafeConfigWrapper(config={'loaded' if self._config else 'None'})"
+
 class EnvMode(Enum):
     """Environment mode enumeration."""
     LOCAL = "local"
@@ -39,72 +79,72 @@ class Configuration:
     """
     
     # Environment mode
-    ENV_MODE: EnvMode = EnvMode.LOCAL
+    ENV_MODE: Optional[EnvMode] = EnvMode.LOCAL
     
     
     # Subscription tier IDs - Production
-    STRIPE_FREE_TIER_ID_PROD: str = 'price_1RILb4G6l1KZGqIrK4QLrx9i'
-    STRIPE_TIER_2_20_ID_PROD: str = 'price_1RILb4G6l1KZGqIrhomjgDnO'
-    STRIPE_TIER_6_50_ID_PROD: str = 'price_1RILb4G6l1KZGqIr5q0sybWn'
-    STRIPE_TIER_12_100_ID_PROD: str = 'price_1RILb4G6l1KZGqIr5Y20ZLHm'
-    STRIPE_TIER_25_200_ID_PROD: str = 'price_1RILb4G6l1KZGqIrGAD8rNjb'
-    STRIPE_TIER_50_400_ID_PROD: str = 'price_1RILb4G6l1KZGqIruNBUMTF1'
-    STRIPE_TIER_125_800_ID_PROD: str = 'price_1RILb3G6l1KZGqIrbJA766tN'
-    STRIPE_TIER_200_1000_ID_PROD: str = 'price_1RILb3G6l1KZGqIrmauYPOiN'
+    STRIPE_FREE_TIER_ID_PROD: Optional[str] = 'price_1RILb4G6l1KZGqIrK4QLrx9i'
+    STRIPE_TIER_2_20_ID_PROD: Optional[str] = 'price_1RILb4G6l1KZGqIrhomjgDnO'
+    STRIPE_TIER_6_50_ID_PROD: Optional[str] = 'price_1RILb4G6l1KZGqIr5q0sybWn'
+    STRIPE_TIER_12_100_ID_PROD: Optional[str] = 'price_1RILb4G6l1KZGqIr5Y20ZLHm'
+    STRIPE_TIER_25_200_ID_PROD: Optional[str] = 'price_1RILb4G6l1KZGqIrGAD8rNjb'
+    STRIPE_TIER_50_400_ID_PROD: Optional[str] = 'price_1RILb4G6l1KZGqIruNBUMTF1'
+    STRIPE_TIER_125_800_ID_PROD: Optional[str] = 'price_1RILb3G6l1KZGqIrbJA766tN'
+    STRIPE_TIER_200_1000_ID_PROD: Optional[str] = 'price_1RILb3G6l1KZGqIrmauYPOiN'
     
     # Yearly subscription tier IDs - Production (15% discount)
-    STRIPE_TIER_2_20_YEARLY_ID_PROD: str = 'price_1ReHB5G6l1KZGqIrD70I1xqM'
-    STRIPE_TIER_6_50_YEARLY_ID_PROD: str = 'price_1ReHAsG6l1KZGqIrlAog487C'
-    STRIPE_TIER_12_100_YEARLY_ID_PROD: str = 'price_1ReHAWG6l1KZGqIrBHer2PQc'
-    STRIPE_TIER_25_200_YEARLY_ID_PROD: str = 'price_1ReH9uG6l1KZGqIrsvMLHViC'
-    STRIPE_TIER_50_400_YEARLY_ID_PROD: str = 'price_1ReH9fG6l1KZGqIrsPtu5KIA'
-    STRIPE_TIER_125_800_YEARLY_ID_PROD: str = 'price_1ReH9GG6l1KZGqIrfgqaJyat'
-    STRIPE_TIER_200_1000_YEARLY_ID_PROD: str = 'price_1ReH8qG6l1KZGqIrK1akY90q'
+    STRIPE_TIER_2_20_YEARLY_ID_PROD: Optional[str] = 'price_1ReHB5G6l1KZGqIrD70I1xqM'
+    STRIPE_TIER_6_50_YEARLY_ID_PROD: Optional[str] = 'price_1ReHAsG6l1KZGqIrlAog487C'
+    STRIPE_TIER_12_100_YEARLY_ID_PROD: Optional[str] = 'price_1ReHAWG6l1KZGqIrBHer2PQc'
+    STRIPE_TIER_25_200_YEARLY_ID_PROD: Optional[str] = 'price_1ReH9uG6l1KZGqIrsvMLHViC'
+    STRIPE_TIER_50_400_YEARLY_ID_PROD: Optional[str] = 'price_1ReH9fG6l1KZGqIrsPtu5KIA'
+    STRIPE_TIER_125_800_YEARLY_ID_PROD: Optional[str] = 'price_1ReH9GG6l1KZGqIrfgqaJyat'
+    STRIPE_TIER_200_1000_YEARLY_ID_PROD: Optional[str] = 'price_1ReH8qG6l1KZGqIrK1akY90q'
 
     # Yearly commitment prices - Production (15% discount, monthly payments with 12-month commitment via schedules)
-    STRIPE_TIER_2_17_YEARLY_COMMITMENT_ID_PROD: str = 'price_1RqtqiG6l1KZGqIrhjVPtE1s'  # $17/month
-    STRIPE_TIER_6_42_YEARLY_COMMITMENT_ID_PROD: str = 'price_1Rqtr8G6l1KZGqIrQ0ql0qHi'  # $42.50/month
-    STRIPE_TIER_25_170_YEARLY_COMMITMENT_ID_PROD: str = 'price_1RqtrUG6l1KZGqIrEb8hLsk3'  # $170/month
+    STRIPE_TIER_2_17_YEARLY_COMMITMENT_ID_PROD: Optional[str] = 'price_1RqtqiG6l1KZGqIrhjVPtE1s'  # $17/month
+    STRIPE_TIER_6_42_YEARLY_COMMITMENT_ID_PROD: Optional[str] = 'price_1Rqtr8G6l1KZGqIrQ0ql0qHi'  # $42.50/month
+    STRIPE_TIER_25_170_YEARLY_COMMITMENT_ID_PROD: Optional[str] = 'price_1RqtrUG6l1KZGqIrEb8hLsk3'  # $170/month
 
     # Subscription tier IDs - Staging
-    STRIPE_FREE_TIER_ID_STAGING: str = 'price_1RIGvuG6l1KZGqIrw14abxeL'
-    STRIPE_TIER_2_20_ID_STAGING: str = 'price_1RIGvuG6l1KZGqIrCRu0E4Gi'
-    STRIPE_TIER_6_50_ID_STAGING: str = 'price_1RIGvuG6l1KZGqIrvjlz5p5V'
-    STRIPE_TIER_12_100_ID_STAGING: str = 'price_1RIGvuG6l1KZGqIrT6UfgblC'
-    STRIPE_TIER_25_200_ID_STAGING: str = 'price_1RIGvuG6l1KZGqIrOVLKlOMj'
-    STRIPE_TIER_50_400_ID_STAGING: str = 'price_1RIKNgG6l1KZGqIrvsat5PW7'
-    STRIPE_TIER_125_800_ID_STAGING: str = 'price_1RIKNrG6l1KZGqIrjKT0yGvI'
-    STRIPE_TIER_200_1000_ID_STAGING: str = 'price_1RIKQ2G6l1KZGqIrum9n8SI7'
+    STRIPE_FREE_TIER_ID_STAGING: Optional[str] = 'price_1RIGvuG6l1KZGqIrw14abxeL'
+    STRIPE_TIER_2_20_ID_STAGING: Optional[str] = 'price_1RIGvuG6l1KZGqIrCRu0E4Gi'
+    STRIPE_TIER_6_50_ID_STAGING: Optional[str] = 'price_1RIGvuG6l1KZGqIrvjlz5p5V'
+    STRIPE_TIER_12_100_ID_STAGING: Optional[str] = 'price_1RIGvuG6l1KZGqIrT6UfgblC'
+    STRIPE_TIER_25_200_ID_STAGING: Optional[str] = 'price_1RIGvuG6l1KZGqIrOVLKlOMj'
+    STRIPE_TIER_50_400_ID_STAGING: Optional[str] = 'price_1RIKNgG6l1KZGqIrvsat5PW7'
+    STRIPE_TIER_125_800_ID_STAGING: Optional[str] = 'price_1RIKNrG6l1KZGqIrjKT0yGvI'
+    STRIPE_TIER_200_1000_ID_STAGING: Optional[str] = 'price_1RIKQ2G6l1KZGqIrum9n8SI7'
     
     # Yearly subscription tier IDs - Staging (15% discount)
-    STRIPE_TIER_2_20_YEARLY_ID_STAGING: str = 'price_1ReGogG6l1KZGqIrEyBTmtPk'
-    STRIPE_TIER_6_50_YEARLY_ID_STAGING: str = 'price_1ReGoJG6l1KZGqIr0DJWtoOc'
-    STRIPE_TIER_12_100_YEARLY_ID_STAGING: str = 'price_1ReGnZG6l1KZGqIr0ThLEl5S'
-    STRIPE_TIER_25_200_YEARLY_ID_STAGING: str = 'price_1ReGmzG6l1KZGqIre31mqoEJ'
-    STRIPE_TIER_50_400_YEARLY_ID_STAGING: str = 'price_1ReGmgG6l1KZGqIrn5nBc7e5'
-    STRIPE_TIER_125_800_YEARLY_ID_STAGING: str = 'price_1ReGmMG6l1KZGqIrvE2ycrAX'
-    STRIPE_TIER_200_1000_YEARLY_ID_STAGING: str = 'price_1ReGlXG6l1KZGqIrlgurP5GU'
+    STRIPE_TIER_2_20_YEARLY_ID_STAGING: Optional[str] = 'price_1ReGogG6l1KZGqIrEyBTmtPk'
+    STRIPE_TIER_6_50_YEARLY_ID_STAGING: Optional[str] = 'price_1ReGoJG6l1KZGqIr0DJWtoOc'
+    STRIPE_TIER_12_100_YEARLY_ID_STAGING: Optional[str] = 'price_1ReGnZG6l1KZGqIr0ThLEl5S'
+    STRIPE_TIER_25_200_YEARLY_ID_STAGING: Optional[str] = 'price_1ReGmzG6l1KZGqIre31mqoEJ'
+    STRIPE_TIER_50_400_YEARLY_ID_STAGING: Optional[str] = 'price_1ReGmgG6l1KZGqIrn5nBc7e5'
+    STRIPE_TIER_125_800_YEARLY_ID_STAGING: Optional[str] = 'price_1ReGmMG6l1KZGqIrvE2ycrAX'
+    STRIPE_TIER_200_1000_YEARLY_ID_STAGING: Optional[str] = 'price_1ReGlXG6l1KZGqIrlgurP5GU'
 
     # Yearly commitment prices - Staging (15% discount, monthly payments with 12-month commitment via schedules)
-    STRIPE_TIER_2_17_YEARLY_COMMITMENT_ID_STAGING: str = 'price_1RqYGaG6l1KZGqIrIzcdPzeQ'  # $17/month
-    STRIPE_TIER_6_42_YEARLY_COMMITMENT_ID_STAGING: str = 'price_1RqYH1G6l1KZGqIrWDKh8xIU'  # $42.50/month
-    STRIPE_TIER_25_170_YEARLY_COMMITMENT_ID_STAGING: str = 'price_1RqYHbG6l1KZGqIrAUVf8KpG'  # $170/month
+    STRIPE_TIER_2_17_YEARLY_COMMITMENT_ID_STAGING: Optional[str] = 'price_1RqYGaG6l1KZGqIrIzcdPzeQ'  # $17/month
+    STRIPE_TIER_6_42_YEARLY_COMMITMENT_ID_STAGING: Optional[str] = 'price_1RqYH1G6l1KZGqIrWDKh8xIU'  # $42.50/month
+    STRIPE_TIER_25_170_YEARLY_COMMITMENT_ID_STAGING: Optional[str] = 'price_1RqYHbG6l1KZGqIrAUVf8KpG'  # $170/month
     
     # Credit package price IDs - Production
-    STRIPE_CREDITS_10_PRICE_ID_PROD: str = 'price_1RxmQUG6l1KZGqIru453O1zW'
-    STRIPE_CREDITS_25_PRICE_ID_PROD: str = 'price_1RxmQlG6l1KZGqIr3hS5WtGg'
-    STRIPE_CREDITS_50_PRICE_ID_PROD: str = 'price_1RxmQvG6l1KZGqIrLbMZ3D6r'
-    STRIPE_CREDITS_100_PRICE_ID_PROD: str = 'price_1RxmR3G6l1KZGqIrpLwFCGac'
-    STRIPE_CREDITS_250_PRICE_ID_PROD: str = 'price_1RxmRAG6l1KZGqIrtBIMsZAj'
-    STRIPE_CREDITS_500_PRICE_ID_PROD: str = 'price_1RxmRGG6l1KZGqIrSyvl6w1G'
+    STRIPE_CREDITS_10_PRICE_ID_PROD: Optional[str] = 'price_1RxmQUG6l1KZGqIru453O1zW'
+    STRIPE_CREDITS_25_PRICE_ID_PROD: Optional[str] = 'price_1RxmQlG6l1KZGqIr3hS5WtGg'
+    STRIPE_CREDITS_50_PRICE_ID_PROD: Optional[str] = 'price_1RxmQvG6l1KZGqIrLbMZ3D6r'
+    STRIPE_CREDITS_100_PRICE_ID_PROD: Optional[str] = 'price_1RxmR3G6l1KZGqIrpLwFCGac'
+    STRIPE_CREDITS_250_PRICE_ID_PROD: Optional[str] = 'price_1RxmRAG6l1KZGqIrtBIMsZAj'
+    STRIPE_CREDITS_500_PRICE_ID_PROD: Optional[str] = 'price_1RxmRGG6l1KZGqIrSyvl6w1G'
     
     # Credit package price IDs - Staging  
-    STRIPE_CREDITS_10_PRICE_ID_STAGING: str = 'price_1RxXOvG6l1KZGqIrMqsiYQvk'
-    STRIPE_CREDITS_25_PRICE_ID_STAGING: str = 'price_1RxXPNG6l1KZGqIrQprPgDme'
-    STRIPE_CREDITS_50_PRICE_ID_STAGING: str = 'price_1RxmNhG6l1KZGqIrTq2zPtgi'
-    STRIPE_CREDITS_100_PRICE_ID_STAGING: str = 'price_1RxmNwG6l1KZGqIrnliwPDM6'
-    STRIPE_CREDITS_250_PRICE_ID_STAGING: str = 'price_1RxmO6G6l1KZGqIrBF8Kx87G'
-    STRIPE_CREDITS_500_PRICE_ID_STAGING: str = 'price_1RxmOFG6l1KZGqIrn4wgORnH'
+    STRIPE_CREDITS_10_PRICE_ID_STAGING: Optional[str] = 'price_1RxXOvG6l1KZGqIrMqsiYQvk'
+    STRIPE_CREDITS_25_PRICE_ID_STAGING: Optional[str] = 'price_1RxXPNG6l1KZGqIrQprPgDme'
+    STRIPE_CREDITS_50_PRICE_ID_STAGING: Optional[str] = 'price_1RxmNhG6l1KZGqIrTq2zPtgi'
+    STRIPE_CREDITS_100_PRICE_ID_STAGING: Optional[str] = 'price_1RxmNwG6l1KZGqIrnliwPDM6'
+    STRIPE_CREDITS_250_PRICE_ID_STAGING: Optional[str] = 'price_1RxmO6G6l1KZGqIrBF8Kx87G'
+    STRIPE_CREDITS_500_PRICE_ID_STAGING: Optional[str] = 'price_1RxmOFG6l1KZGqIrn4wgORnH'
     
     # Computed subscription tier IDs based on environment
     @property
@@ -266,7 +306,10 @@ class Configuration:
     OPENAI_COMPATIBLE_API_KEY: Optional[str] = None
     OPENAI_COMPATIBLE_API_BASE: Optional[str] = None
     OR_SITE_URL: Optional[str] = "https://kortix.ai"
-    OR_APP_NAME: Optional[str] = "Kortix AI"    
+    OR_APP_NAME: Optional[str] = "Kortix AI"
+    
+    # Frontend URL configuration
+    FRONTEND_URL_ENV: Optional[str] = None
     
     # AWS Bedrock authentication
     AWS_BEARER_TOKEN_BEDROCK: Optional[str] = None
@@ -278,22 +321,22 @@ class Configuration:
     SUPABASE_JWT_SECRET: str
     
     # Redis configuration
-    REDIS_HOST: str
-    REDIS_PORT: int = 6379
+    REDIS_HOST: Optional[str] = "localhost"
+    REDIS_PORT: Optional[int] = 6379
     REDIS_PASSWORD: Optional[str] = None
-    REDIS_SSL: bool = True
+    REDIS_SSL: Optional[bool] = True
     
-    # Daytona sandbox configuration
-    DAYTONA_API_KEY: str
-    DAYTONA_SERVER_URL: str
-    DAYTONA_TARGET: str
+    # Daytona sandbox configuration (optional - sandbox features disabled if not configured)
+    DAYTONA_API_KEY: Optional[str] = None
+    DAYTONA_SERVER_URL: Optional[str] = None
+    DAYTONA_TARGET: Optional[str] = None
     
-    # Search and other API keys
-    TAVILY_API_KEY: str
-    RAPID_API_KEY: str
+    # Search and other API keys (all optional tools)
+    TAVILY_API_KEY: Optional[str] = None
+    RAPID_API_KEY: Optional[str] = None
     SERPER_API_KEY: Optional[str] = None
     CLOUDFLARE_API_TOKEN: Optional[str] = None
-    FIRECRAWL_API_KEY: str
+    FIRECRAWL_API_KEY: Optional[str] = None
     FIRECRAWL_URL: Optional[str] = "https://api.firecrawl.dev"
     EXA_API_KEY: Optional[str] = None
     SEMANTIC_SCHOLAR_API_KEY: Optional[str] = None
@@ -309,28 +352,41 @@ class Configuration:
     STRIPE_SECRET_KEY: Optional[str] = None
     STRIPE_WEBHOOK_SECRET: Optional[str] = None
     STRIPE_DEFAULT_PLAN_ID: Optional[str] = None
-    STRIPE_DEFAULT_TRIAL_DAYS: int = 14
+    STRIPE_DEFAULT_TRIAL_DAYS: Optional[int] = 14
     
     # Stripe Product IDs
-    STRIPE_PRODUCT_ID_PROD: str = 'prod_SCl7AQ2C8kK1CD'
-    STRIPE_PRODUCT_ID_STAGING: str = 'prod_SCgIj3G7yPOAWY'
+    STRIPE_PRODUCT_ID_PROD: Optional[str] = 'prod_SCl7AQ2C8kK1CD'
+    STRIPE_PRODUCT_ID_STAGING: Optional[str] = 'prod_SCgIj3G7yPOAWY'
     
     # Sandbox configuration
-    SANDBOX_IMAGE_NAME = "kortix/suna:0.1.3.21"
-    SANDBOX_SNAPSHOT_NAME = "kortix/suna:0.1.3.21"
+    SANDBOX_IMAGE_NAME = "kortix/suna:0.1.3.23"
+    SANDBOX_SNAPSHOT_NAME = "kortix/suna:0.1.3.23"
     SANDBOX_ENTRYPOINT = "/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf"
 
     # LangFuse configuration
     LANGFUSE_PUBLIC_KEY: Optional[str] = None
     LANGFUSE_SECRET_KEY: Optional[str] = None
-    LANGFUSE_HOST: str = "https://cloud.langfuse.com"
+    LANGFUSE_HOST: Optional[str] = "https://cloud.langfuse.com"
 
     # Admin API key for server-side operations
     KORTIX_ADMIN_API_KEY: Optional[str] = None
 
     # API Keys system configuration
-    API_KEY_SECRET: str = "default-secret-key-change-in-production"
-    API_KEY_LAST_USED_THROTTLE_SECONDS: int = 900
+    API_KEY_SECRET: Optional[str] = "default-secret-key-change-in-production"
+    API_KEY_LAST_USED_THROTTLE_SECONDS: Optional[int] = 900
+    
+    # MCP (Master Credential Provider) configuration
+    MCP_CREDENTIAL_ENCRYPTION_KEY: Optional[str] = None
+    
+    # Composio integration
+    COMPOSIO_API_KEY: Optional[str] = None
+    COMPOSIO_WEBHOOK_SECRET: Optional[str] = None
+    
+    # Webhook configuration
+    WEBHOOK_BASE_URL: Optional[str] = None
+    TRIGGER_WEBHOOK_SECRET: Optional[str] = None
+    
+    # Email configuration
     
     # Agent execution limits (can be overridden via environment variable)
     _MAX_PARALLEL_AGENT_RUNS_ENV: Optional[str] = None
@@ -415,6 +471,29 @@ class Configuration:
             return self.STRIPE_PRODUCT_ID_STAGING
         return self.STRIPE_PRODUCT_ID_PROD
     
+    @property
+    def FRONTEND_URL(self) -> str:
+        """
+        Get the frontend URL based on environment.
+        
+        Returns:
+        - Production: 'https://kortix.com' (or FRONTEND_URL_ENV if set)
+        - Staging: 'https://staging.kortix.com' (or FRONTEND_URL_ENV if set)
+        - Local: FRONTEND_URL_ENV or 'http://localhost:3000'
+        """
+        # Check for environment variable override first
+        if self.FRONTEND_URL_ENV:
+            return self.FRONTEND_URL_ENV
+        
+        # Environment-based defaults
+        if self.ENV_MODE == EnvMode.PRODUCTION:
+            return 'https://kortix.com'
+        elif self.ENV_MODE == EnvMode.STAGING:
+            return 'https://staging.kortix.com'
+        else:
+            # Local mode
+            return 'http://localhost:3000'
+    
     def _generate_admin_api_key(self) -> str:
         """Generate a secure admin API key for Kortix administrative functions."""
         # Generate 32 random bytes and encode as hex for a readable API key
@@ -450,6 +529,10 @@ class Configuration:
     def _load_from_env(self):
         """Load configuration values from environment variables."""
         for key, expected_type in get_type_hints(self.__class__).items():
+            # Skip ENV_MODE as it's already handled in __init__
+            if key == "ENV_MODE":
+                continue
+                
             env_val = os.getenv(key)
             
             if env_val is not None:
@@ -463,17 +546,29 @@ class Configuration:
                         setattr(self, key, int(env_val))
                     except ValueError:
                         logger.warning(f"Invalid value for {key}: {env_val}, using default")
-                elif expected_type == EnvMode:
-                    # Already handled for ENV_MODE
-                    pass
                 else:
                     # String or other type
                     setattr(self, key, env_val)
+            else:
+                # For fields with defaults, use the default value
+                if hasattr(self.__class__, key):
+                    default_value = getattr(self.__class__, key)
+                    if default_value is not None:
+                        setattr(self, key, default_value)
+                    else:
+                        setattr(self, key, None)
+                else:
+                    setattr(self, key, None)
         
         # Custom handling for environment-dependent properties
         max_parallel_runs_env = os.getenv("MAX_PARALLEL_AGENT_RUNS")
         if max_parallel_runs_env is not None:
             self._MAX_PARALLEL_AGENT_RUNS_ENV = max_parallel_runs_env
+        
+        # Custom handling for frontend URL
+        frontend_url_env = os.getenv("FRONTEND_URL")
+        if frontend_url_env is not None:
+            self.FRONTEND_URL_ENV = frontend_url_env
     
     def _validate(self):
         """Validate configuration based on type hints."""
@@ -507,5 +602,33 @@ class Configuration:
             if not key.startswith('_')
         }
 
-# Create a singleton instance
-config = Configuration() 
+# Create a singleton instance with safe wrapper
+config = SafeConfigWrapper()
+
+def get_config():
+    """Get the configuration instance, creating it if it doesn't exist."""
+    global config
+    if config._config is None:
+        try:
+            # Load environment variables from .env file if it exists
+            env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env')
+            if os.path.exists(env_file):
+                load_dotenv(env_file)
+                logger.info(f"Loaded environment variables from {env_file}")
+            else:
+                logger.debug(f"No .env file found at {env_file}")
+            
+            # Create the actual configuration instance
+            actual_config = Configuration()
+            
+            # Update the wrapper with the actual config
+            config._config = actual_config
+            
+            logger.info("Configuration loaded successfully")
+        except Exception as e:
+            logger.error(f"Failed to load configuration: {e}")
+            # Keep the safe wrapper but with None config
+            config._config = None
+    return config
+
+get_config() 

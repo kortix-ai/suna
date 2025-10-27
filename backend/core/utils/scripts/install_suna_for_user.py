@@ -2,18 +2,26 @@
 """
 Suna Agent Installation Script for Individual Users
 
-Simple script to install Suna agents for users by email address.
+Simple script to install Suna agents for users by email address or account ID.
 
 Usage:
-    # Install Suna for a user
+    # Install Suna for a user by email
     python install_suna_for_user.py user@example.com
+    
+    # Install Suna for a user by account ID
+    python install_suna_for_user.py abc123-def456-ghi789
     
     # Install with replacement (if agent already exists)
     python install_suna_for_user.py user@example.com --replace
+    
+    # Explicitly specify account ID
+    python install_suna_for_user.py abc123-def456-ghi789 --account-id
 
 Examples:
     python install_suna_for_user.py john.doe@company.com
     python install_suna_for_user.py admin@example.org --replace
+    python install_suna_for_user.py f47ac10b-58cc-4372-a567-0e02b2c3d479
+    python install_suna_for_user.py f47ac10b-58cc-4372-a567-0e02b2c3d479 --replace
 """
 
 import asyncio
@@ -41,6 +49,21 @@ class SunaUserInstaller:
     async def get_account_by_email(self, email: str) -> Optional[Dict[str, Any]]:
         try:
             client = await self.db.client
+            
+            email_result = await client.schema('basejump').from_('billing_customers').select(
+                'account_id'
+            ).eq('email', email).execute()
+            
+            if email_result.data:
+                account_id = email_result.data[0]['account_id']
+                
+                account_result = await client.schema('basejump').from_('accounts').select(
+                    'id, name, slug, primary_owner_user_id'
+                ).eq('id', account_id).execute()
+                
+                if account_result.data:
+                    return account_result.data[0]
+            
             try:
                 result = await client.rpc('get_user_account_by_email', {
                     'email_input': email.lower()
@@ -50,9 +73,7 @@ class SunaUserInstaller:
                     return result.data
                     
             except Exception as e:
-                logger.warning(f"RPC function not available: {e}")
-                logger.info("Please run migration: 20250121_get_user_account_by_email.sql")
-                logger.info("Falling back to name matching...")
+                logger.debug(f"RPC function not available: {e}")
             
             result = await client.schema('basejump').table('accounts').select(
                 'id',
@@ -113,19 +134,41 @@ class SunaUserInstaller:
             print(f"   📦 Account: {account_id}")
         else:
             print(f"❌ Failed to install Suna agent for {email}")
+    
+    async def install_for_account_id(self, account_id: str, replace: bool = False):
+        print(f"🚀 Installing Suna agent for account: {account_id}")
+        
+        try:
+            agent_id = await self.service.install_suna_agent_for_user(
+                account_id, 
+                replace_existing=replace
+            )
+            
+            if agent_id:
+                print(f"✅ Successfully installed Suna agent!")
+                print(f"   🤖 Agent ID: {agent_id}")
+                print(f"   📦 Account: {account_id}")
+            else:
+                print(f"❌ Failed to install Suna agent for account {account_id}")
+        
+        except Exception as e:
+            print(f"❌ Error: {str(e)}")
+            logger.error(f"Failed to install for account {account_id}: {e}", exc_info=True)
 
 
 
 async def main():
     parser = argparse.ArgumentParser(
-        description="Install Suna agent for a user by email",
+        description="Install Suna agent for a user by email or account ID",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__
     )
     
-    parser.add_argument('email', help='Email address of the user')
+    parser.add_argument('identifier', help='Email address or account ID (UUID) of the user')
     parser.add_argument('--replace', action='store_true', 
                        help='Replace existing Suna agent if present')
+    parser.add_argument('--account-id', action='store_true',
+                       help='Treat identifier as account ID instead of email')
     
     args = parser.parse_args()
     
@@ -133,7 +176,13 @@ async def main():
     
     try:
         await installer.initialize()
-        await installer.install_for_email(args.email, args.replace)
+        
+        if args.account_id:
+            await installer.install_for_account_id(args.identifier, args.replace)
+        elif '@' in args.identifier:
+            await installer.install_for_email(args.identifier, args.replace)
+        else:
+            await installer.install_for_account_id(args.identifier, args.replace)
             
     except KeyboardInterrupt:
         print("\n⚠️  Operation cancelled by user")

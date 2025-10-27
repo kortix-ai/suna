@@ -22,7 +22,8 @@ async def transcribe_audio(
         # Validate file type - OpenAI supports these formats
         allowed_types = [
             'audio/mp3', 'audio/mpeg', 'audio/mp4', 'audio/m4a', 
-            'audio/wav', 'audio/webm', 'audio/mpga'
+            'audio/wav', 'audio/webm', 'audio/mpga',
+            'audio/x-m4a', 'audio/x-mp4', 'audio/x-wav', 'audio/x-webm'
         ]
         
         logger.debug(f"Received audio file: {audio_file.filename}, content_type: {audio_file.content_type}")

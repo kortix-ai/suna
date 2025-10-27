@@ -12,6 +12,8 @@ from .config import (
     TRIAL_CREDITS,
 )
 from .credit_manager import credit_manager
+from .idempotency import generate_trial_idempotency_key
+from .stripe_circuit_breaker import StripeAPIWrapper
 
 class TrialService:
     def __init__(self):
@@ -45,12 +47,25 @@ class TrialService:
             
             if trial_status in ['expired', 'converted', 'cancelled']:
                 trial_history_result = await client.from_('trial_history')\
-                    .select('id, started_at, ended_at, converted_to_paid')\
+                    .select('id, started_at, ended_at, converted_to_paid, status')\
                     .eq('account_id', account_id)\
                     .execute()
                 
                 if trial_history_result.data and len(trial_history_result.data) > 0:
                     history = trial_history_result.data[0]
+                    history_status = history.get('status')
+                    
+                    # If status is retryable (incomplete checkout), allow retry
+                    retryable_statuses = ['checkout_pending', 'checkout_created', 'checkout_failed']
+                    if history_status in retryable_statuses:
+                        return {
+                            'has_trial': False,
+                            'trial_status': 'none',
+                            'can_start_trial': True,
+                            'message': 'You can retry starting your free trial'
+                        }
+                    
+                    # Otherwise, trial was actually used
                     return {
                         'has_trial': False,
                         'trial_status': 'used',
@@ -61,6 +76,38 @@ class TrialService:
                             'converted_to_paid': history.get('converted_to_paid', False)
                         }
                     }
+        
+        # Check if there's an incomplete trial history
+        trial_history_result = await client.from_('trial_history')\
+            .select('id, started_at, ended_at, converted_to_paid, status')\
+            .eq('account_id', account_id)\
+            .execute()
+        
+        if trial_history_result.data and len(trial_history_result.data) > 0:
+            history = trial_history_result.data[0]
+            history_status = history.get('status')
+            
+            # If status is retryable (incomplete checkout), allow retry
+            retryable_statuses = ['checkout_pending', 'checkout_created', 'checkout_failed']
+            if history_status in retryable_statuses:
+                return {
+                    'has_trial': False,
+                    'trial_status': 'none',
+                    'can_start_trial': True,
+                    'message': 'You can retry starting your free trial'
+                }
+            
+            # Otherwise, trial was used
+            return {
+                'has_trial': False,
+                'trial_status': 'used',
+                'message': 'You have already used your free trial',
+                'trial_history': {
+                    'started_at': history.get('started_at'),
+                    'ended_at': history.get('ended_at'),
+                    'converted_to_paid': history.get('converted_to_paid', False)
+                }
+            }
 
         # No trial history - user can start a trial
         return {
@@ -99,6 +146,14 @@ class TrialService:
             )
         
         try:
+            current_balance_result = await client.from_('credit_accounts').select(
+                'balance, expiring_credits, non_expiring_credits'
+            ).eq('account_id', account_id).execute()
+            
+            current_balance = 0
+            if current_balance_result.data:
+                current_balance = float(current_balance_result.data[0].get('balance', 0))
+            
             cancelled_subscription = stripe.Subscription.cancel(stripe_subscription_id)
             logger.info(f"[TRIAL CANCEL] Cancelled Stripe subscription {stripe_subscription_id} for account {account_id}")
             
@@ -106,6 +161,8 @@ class TrialService:
                 'trial_status': 'cancelled',
                 'tier': 'none',
                 'balance': 0.00,
+                'expiring_credits': 0.00,
+                'non_expiring_credits': 0.00,
                 'stripe_subscription_id': None
             }).eq('account_id', account_id).execute()
             
@@ -113,16 +170,18 @@ class TrialService:
                 'account_id': account_id,
                 'started_at': datetime.now(timezone.utc).isoformat(),
                 'ended_at': datetime.now(timezone.utc).isoformat(),
-                'converted_to_paid': False
+                'converted_to_paid': False,
+                'status': 'cancelled'
             }, on_conflict='account_id').execute()
             
-            await client.from_('credit_ledger').insert({
-                'account_id': account_id,
-                'amount': -20.00,
-                'balance_after': 0.00,
-                'type': 'adjustment',
-                'description': 'Trial cancelled by user'
-            }).execute()
+            if current_balance > 0:
+                await client.from_('credit_ledger').insert({
+                    'account_id': account_id,
+                    'amount': -current_balance,
+                    'balance_after': 0.00,
+                    'type': 'adjustment',
+                    'description': 'Trial cancelled by user - credits removed'
+                }).execute()
             
             logger.info(f"[TRIAL CANCEL] Successfully cancelled trial for account {account_id}")
             
@@ -146,19 +205,55 @@ class TrialService:
             logger.warning(f"[TRIAL SECURITY] Trial attempt rejected - trials disabled for account {account_id}")
             raise HTTPException(status_code=400, detail="Trials are not currently enabled")
         
+        # Check if trial history already exists
         trial_history_result = await client.from_('trial_history')\
-            .select('id, started_at, ended_at, converted_to_paid')\
+            .select('id, started_at, ended_at, converted_to_paid, status')\
             .eq('account_id', account_id)\
             .execute()
         
-        if trial_history_result.data and len(trial_history_result.data) > 0:
+        if trial_history_result.data:
             history = trial_history_result.data[0]
-            logger.warning(f"[TRIAL SECURITY] Trial attempt rejected - account {account_id} already used trial. "
-                         f"Started: {history.get('started_at')}, Ended: {history.get('ended_at')}")
-            raise HTTPException(
-                status_code=403,
-                detail="This account has already used its trial. Each account is limited to one free trial."
-            )
+            existing_status = history.get('status')
+            
+            # Allow retries only for incomplete/failed checkouts
+            retryable_statuses = ['checkout_pending', 'checkout_created', 'checkout_failed']
+            
+            if existing_status in retryable_statuses:
+                logger.info(f"[TRIAL RETRY] Allowing retry for account {account_id} with status: {existing_status}")
+                # Update existing record instead of creating new one
+                await client.from_('trial_history').update({
+                    'status': 'checkout_pending',
+                    'started_at': datetime.now(timezone.utc).isoformat(),
+                    'ended_at': None,
+                    'error_message': None,
+                    'stripe_checkout_session_id': None
+                }).eq('account_id', account_id).execute()
+                logger.info(f"[TRIAL SECURITY] Updated trial history record for retry (checkout_pending) for {account_id}")
+            else:
+                # Trial was actually used/completed - block it
+                logger.warning(f"[TRIAL SECURITY] Trial attempt rejected - account {account_id} has completed trial")
+                logger.warning(f"[TRIAL SECURITY] Existing trial found: "
+                             f"Started: {history.get('started_at')}, Ended: {history.get('ended_at')}, "
+                             f"Status: {existing_status}")
+                
+                raise HTTPException(
+                    status_code=403,
+                    detail="This account has already used its trial. Each account is limited to one free trial."
+                )
+        else:
+            # No history - create new record
+            try:
+                await client.from_('trial_history').insert({
+                    'account_id': account_id,
+                    'started_at': datetime.now(timezone.utc).isoformat(),
+                    'ended_at': None,
+                    'converted_to_paid': False,
+                    'status': 'checkout_pending'
+                }).execute()
+                logger.info(f"[TRIAL SECURITY] Created trial history record (checkout_pending) for {account_id}")
+            except Exception as e:
+                logger.error(f"[TRIAL SECURITY] Database error creating trial history: {e}")
+                raise HTTPException(status_code=500, detail="Failed to process trial request")
         
         account_result = await client.from_('credit_accounts')\
             .select('trial_status, tier, stripe_subscription_id')\
@@ -167,29 +262,14 @@ class TrialService:
         
         if account_result.data:
             account_data = account_result.data[0]
-            existing_trial_status = account_data.get('trial_status')
             existing_stripe_sub = account_data.get('stripe_subscription_id')
-            
-            if existing_trial_status and existing_trial_status != 'none':
-                logger.warning(f"[TRIAL SECURITY] Trial attempt rejected - account {account_id} has trial_status: {existing_trial_status}")
-                await client.from_('trial_history').upsert({
-                    'account_id': account_id,
-                    'started_at': datetime.now(timezone.utc).isoformat(),
-                    'ended_at': datetime.now(timezone.utc).isoformat() if existing_trial_status != 'active' else None,
-                    'converted_to_paid': existing_trial_status == 'converted',
-                    'note': 'Created from credit_accounts during blocked trial attempt'
-                }, on_conflict='account_id').execute()
-                
-                raise HTTPException(
-                    status_code=403,
-                    detail=f"Account has trial status: {existing_trial_status}. Each account is limited to one free trial."
-                )
             
             if existing_stripe_sub:
                 try:
-                    existing_sub = await stripe.Subscription.retrieve_async(existing_stripe_sub)
+                    existing_sub = await StripeAPIWrapper.retrieve_subscription(existing_stripe_sub)
                     if existing_sub and existing_sub.status in ['trialing', 'active']:
                         logger.warning(f"[TRIAL SECURITY] Trial attempt rejected - account {account_id} has existing Stripe subscription {existing_stripe_sub}")
+                        await client.from_('trial_history').delete().eq('account_id', account_id).eq('status', 'checkout_pending').execute()
                         raise HTTPException(
                             status_code=403,
                             detail="Cannot start trial - account has an existing subscription"
@@ -197,49 +277,17 @@ class TrialService:
                 except stripe.error.StripeError as e:
                     logger.error(f"[TRIAL SECURITY] Error checking existing subscription: {e}")
         
-        ledger_check = await client.from_('credit_ledger')\
-            .select('id, description')\
-            .eq('account_id', account_id)\
-            .or_(
-                'description.ilike.%trial credits%,'
-                'description.ilike.%free trial%,'
-                'description.ilike.%day trial%,'
-                'type.eq.trial_grant'
-            )\
-            .execute()
-        
-        if ledger_check.data:
-            has_actual_trial = False
-            for entry in ledger_check.data:
-                desc = entry.get('description', '').lower()
-                if 'trial credits' in desc or 'free trial' in desc or 'day trial' in desc:
-                    has_actual_trial = True
-                    break
-                elif 'start a trial' in desc or 'please start a trial' in desc:
-                    continue
-                else:
-                    has_actual_trial = True
-                    break
-            
-            if has_actual_trial:
-                logger.warning(f"[TRIAL SECURITY] Trial attempt rejected - account {account_id} has trial-related ledger entries")
-                await client.from_('trial_history').upsert({
-                    'account_id': account_id,
-                    'started_at': datetime.now(timezone.utc).isoformat(),
-                    'ended_at': datetime.now(timezone.utc).isoformat(),
-                    'note': 'Created from credit_ledger detection during blocked trial attempt'
-                }, on_conflict='account_id').execute()
-                
-                raise HTTPException(
-                    status_code=403,
-                    detail="Trial history detected. Each account is limited to one free trial."
-                )
-        
         try:
             from .subscription_service import subscription_service
             customer_id = await subscription_service.get_or_create_stripe_customer(account_id)
             logger.info(f"[TRIAL] Creating checkout session for account {account_id} - all security checks passed")
-            session = await stripe.checkout.Session.create_async(
+            
+            # Generate unique idempotency key for each retry attempt
+            import time
+            timestamp_ms = int(time.time() * 1000)
+            idempotency_key = f"trial_{account_id}_{TRIAL_DURATION_DAYS}_{timestamp_ms}"
+            
+            session = await StripeAPIWrapper.create_checkout_session(
                 customer=customer_id,
                 payment_method_types=['card'],
                 line_items=[{
@@ -257,8 +305,8 @@ class TrialService:
                     'quantity': 1
                 }],
                 mode='subscription',
-                success_url=success_url,
-                cancel_url=cancel_url,
+                ui_mode='embedded',  # Enable embedded checkout
+                return_url=success_url,  # For embedded checkout
                 metadata={
                     'account_id': account_id,
                     'trial_start': 'true'
@@ -269,13 +317,44 @@ class TrialService:
                         'account_id': account_id,
                         'trial_start': 'true'
                     }
-                }
+                },
+                idempotency_key=idempotency_key
             )
+            
+            await client.from_('trial_history').update({
+                'status': 'checkout_created',
+                'stripe_checkout_session_id': session.id
+            }).eq('account_id', account_id).eq('status', 'checkout_pending').execute()
+            
             logger.info(f"[TRIAL SUCCESS] Checkout session created for account {account_id}: {session.id}")
-            return {'checkout_url': session.url}
+            
+            # Get client secret for embedded checkout
+            client_secret = getattr(session, 'client_secret', None)
+            
+            # Generate frontend checkout wrapper URL for Apple compliance  
+            frontend_url = config.FRONTEND_URL
+            
+            # Use client_secret in URL for embedded checkout, fallback to session_id
+            checkout_param = f"client_secret={client_secret}" if client_secret else f"session_id={session.id}"
+            fe_checkout_url = f"{frontend_url}/checkout?{checkout_param}"
+            
+            return {
+                'checkout_url': fe_checkout_url,  # Use embedded checkout URL (session.url is None for embedded mode)
+                'fe_checkout_url': fe_checkout_url,  # Kortix-branded wrapper with embedded checkout
+                'session_id': session.id,
+                'client_secret': client_secret,  # For direct API usage
+            }
             
         except Exception as e:
             logger.error(f"[TRIAL ERROR] Failed to create checkout session for account {account_id}: {e}")
+            try:
+                await client.from_('trial_history').update({
+                    'status': 'checkout_failed',
+                    'ended_at': datetime.now(timezone.utc).isoformat(),
+                    'error_message': str(e)
+                }).eq('account_id', account_id).eq('status', 'checkout_pending').execute()
+            except Exception as cleanup_error:
+                logger.error(f"[TRIAL ERROR] Failed to mark trial as failed: {cleanup_error}")
             raise
 
     async def create_trial_checkout(self, account_id: str, success_url: str, cancel_url: str) -> Dict:

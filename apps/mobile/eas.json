@@ -1,0 +1,41 @@
+{
+  "cli": {
+    "version": ">= 5.9.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal"
+    },
+    "production": {
+      "ios": {
+        "simulator": false
+      }
+    },
+    "testflight": {
+      "ios": {
+        "simulator": false,
+        "distribution": "store"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": {
+        "appleId": "mkprivat2005@gmail.com",
+        "ascAppId": "6754448524",
+        "appleTeamId": "T8G9J33433"
+      }
+    },
+    "testflight": {
+      "ios": {
+        "appleId": "mkprivat2005@gmail.com",
+        "ascAppId": "6754448524",
+        "appleTeamId": "T8G9J33433"
+      }
+    }
+  }
+}

@@ -143,41 +143,65 @@ class BrowserTool(SandboxToolsBase):
         try:
             await self._ensure_sandbox()
             
+            # Retry logic: The browser API server takes a few seconds to start
+            # after the sandbox initializes. We'll retry with exponential backoff.
+            max_retries = 5
+            retry_delays = [1, 2, 3, 5, 5]  # seconds between retries
             
-            # Simple health check curl command
-            curl_cmd = "curl -s -X GET 'http://localhost:8004/api' -H 'Content-Type: application/json'"
-            
-            # logger.debug(f"Checking Stagehand API health with: {curl_cmd}")
-            
-            response = await self.sandbox.process.exec(curl_cmd, timeout=10)
-            if response.exit_code == 0:
-                try:
-                    result = json.loads(response.result)
-                    if result.get("status") == "healthy":
-                        logger.info("✅ Stagehand API server is running and healthy")
-                        return True
-                    else:
-                        # If the browser api is not healthy, we need to restart the browser api
-                        # Pass API key securely as environment variable instead of command line argument
-                        env_vars = {"GEMINI_API_KEY": config.GEMINI_API_KEY}
-
-                        response = await self.sandbox.process.exec(
-                            "curl -X POST 'http://localhost:8004/api/init' -H 'Content-Type: application/json' -d '{\"api_key\": \"'$GEMINI_API_KEY'\"}'",
-                            timeout=90,
-                            env=env_vars
-                        )
-                        if response.exit_code == 0:
-                            logger.info("Stagehand API server restarted successfully")
+            for attempt in range(max_retries):
+                # Simple health check curl command
+                curl_cmd = "curl -s -X GET 'http://localhost:8004/api' -H 'Content-Type: application/json'"
+                
+                if attempt > 0:
+                    logger.info(f"Retrying Stagehand API health check (attempt {attempt + 1}/{max_retries})...")
+                
+                response = await self.sandbox.process.exec(curl_cmd, timeout=10)
+                
+                if response.exit_code == 0:
+                    try:
+                        result = json.loads(response.result)
+                        if result.get("status") == "healthy":
+                            logger.info("✅ Stagehand API server is running and healthy")
                             return True
                         else:
-                            logger.warning(f"Stagehand API server restart failed: {response.result}")
-                            return False
-                except json.JSONDecodeError:
-                    logger.warning(f"Stagehand API server responded but with invalid JSON: {response.result}")
-                    return False
-            else:
-                logger.warning(f"Stagehand API server health check failed with exit code {response.exit_code}")
-                return False
+                            # If the browser api is not healthy, we need to initialize it
+                            logger.info("Stagehand API server responded but browser not initialized. Initializing...")
+                            # Pass API key securely as environment variable instead of command line argument
+                            env_vars = {"GEMINI_API_KEY": config.GEMINI_API_KEY}
+
+                            response = await self.sandbox.process.exec(
+                                'curl -s -X POST "http://localhost:8004/api/init" -H "Content-Type: application/json" -d "{\\"api_key\\": \\"$GEMINI_API_KEY\\"}"',
+                                timeout=90,
+                                env=env_vars
+                            )
+                            if response.exit_code == 0:
+                                try:
+                                    init_result = json.loads(response.result)
+                                    if init_result.get("status") == "healthy":
+                                        logger.info("✅ Stagehand API server initialized successfully")
+                                        return True
+                                    else:
+                                        logger.warning(f"Stagehand API initialization failed: {init_result}")
+                                        # Don't return False yet, might succeed on retry
+                                except json.JSONDecodeError:
+                                    logger.warning(f"Init endpoint returned invalid JSON: {response.result}")
+                            else:
+                                logger.warning(f"Stagehand API initialization request failed: {response.result}")
+                    except json.JSONDecodeError:
+                        logger.warning(f"Stagehand API server responded but with invalid JSON: {response.result}")
+                elif response.exit_code == 7:
+                    # Connection refused - server not ready yet
+                    logger.debug(f"Browser API server not ready yet (connection refused)")
+                else:
+                    logger.debug(f"Health check failed with exit code {response.exit_code}")
+                
+                # Wait before retrying (except on last attempt)
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(retry_delays[attempt])
+            
+            # All retries exhausted
+            logger.error(f"Stagehand API server failed to start after {max_retries} attempts")
+            return False
                 
         except Exception as e:
             logger.error(f"Error checking Stagehand API health: {e}")
@@ -186,6 +210,10 @@ class BrowserTool(SandboxToolsBase):
     async def _execute_stagehand_api(self, endpoint: str, params: dict = None, method: str = "POST") -> ToolResult:
         """Execute a Stagehand action through the sandbox API"""
         try:
+            # Check if Gemini API key is configured
+            if not config.GEMINI_API_KEY:
+                return self.fail_response("Browser tool is not available. GEMINI_API_KEY is not configured.")
+            
             # Ensure sandbox is initialized
             await self._ensure_sandbox()
             

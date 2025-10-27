@@ -21,6 +21,8 @@ from .webhook_service import webhook_service
 from .subscription_service import subscription_service
 from .trial_service import trial_service
 from .payment_service import payment_service
+from .reconciliation_service import reconciliation_service
+from .stripe_circuit_breaker import StripeAPIWrapper, stripe_circuit_breaker
  
 router = APIRouter(prefix="/billing", tags=["billing"])
 
@@ -131,6 +133,9 @@ async def check_status(
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
     try:
+        from core.utils.ensure_suna import ensure_suna_installed
+        await ensure_suna_installed(account_id)
+        
         if config.ENV_MODE == EnvMode.LOCAL:
             return {
                 "can_run": True,
@@ -199,7 +204,7 @@ async def check_status(
         }
         
     except Exception as e:
-        logger.error(f"Error checking billing status: {e}", exc_info=True)
+        logger.error(f"Error checking billing status: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/project-limits")
@@ -334,7 +339,7 @@ async def purchase_credits_checkout(
         amount=request.amount,
         success_url=request.success_url,
         cancel_url=request.cancel_url,
-        get_user_subscription_tier_func=None  # Will be imported in payment service
+        get_user_subscription_tier_func=subscription_service.get_user_subscription_tier
     )
     return result
 
@@ -401,7 +406,7 @@ async def get_subscription(
         }
         
     except Exception as e:
-        logger.error(f"Error getting subscription: {e}", exc_info=True)
+        logger.error(f"Error getting subscription: {str(e)}")
         no_tier = TIERS['none']
         tier_info = {
             'name': no_tier.name,
@@ -433,6 +438,54 @@ async def get_subscription(
             }
         }
 
+@router.get("/subscription-cancellation-status")
+async def get_subscription_cancellation_status(
+    account_id: str = Depends(verify_and_get_user_id_from_jwt)
+) -> Dict:
+    try:
+        subscription_info = await subscription_service.get_subscription(account_id)
+        subscription_data = subscription_info.get('subscription')
+
+        if not subscription_data or not subscription_data.get('id'):
+            return {
+                'has_subscription': False,
+                'is_cancelled': False,
+                'cancel_at': None,
+                'cancel_at_period_end': False,
+                'current_period_end': None,
+                'status': None
+            }
+        
+        try:
+            stripe_subscription = await StripeAPIWrapper.retrieve_subscription(subscription_data['id'])
+            is_cancelled = stripe_subscription.cancel_at_period_end or stripe_subscription.cancel_at is not None
+            
+            return {
+                'has_subscription': True,
+                'subscription_id': stripe_subscription.id,
+                'is_cancelled': is_cancelled,
+                'cancel_at': stripe_subscription.cancel_at,
+                'cancel_at_period_end': stripe_subscription.cancel_at_period_end,
+                'canceled_at': stripe_subscription.canceled_at,
+                'current_period_end': stripe_subscription.current_period_end,
+                'status': stripe_subscription.status,
+                'cancellation_details': stripe_subscription.cancellation_details if hasattr(stripe_subscription, 'cancellation_details') else None
+            }
+        except stripe.error.StripeError as e:
+            return {
+                'has_subscription': True,
+                'subscription_id': subscription_data.get('id'),
+                'is_cancelled': False,
+                'cancel_at': None,
+                'cancel_at_period_end': False,
+                'current_period_end': subscription_data.get('current_period_end'),
+                'status': subscription_data.get('status'),
+                'error': 'Could not retrieve cancellation status from Stripe'
+            }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/create-checkout-session")
 async def create_checkout_session(
     request: CreateCheckoutSessionRequest,
@@ -449,7 +502,7 @@ async def create_checkout_session(
         return result
             
     except Exception as e:
-        logger.error(f"Error creating checkout session: {e}", exc_info=True)
+        logger.error(f"Error creating checkout session: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/create-portal-session")
@@ -464,7 +517,7 @@ async def create_portal_session(
         )
         return result
     except Exception as e:
-        logger.error(f"Error creating portal session: {e}", exc_info=True)
+        logger.error(f"Error creating portal session: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/sync-subscription")
@@ -485,7 +538,7 @@ async def sync_subscription(
         return result
         
     except Exception as e:
-        logger.error(f"Error syncing subscription: {e}", exc_info=True)
+        logger.error(f"Error syncing subscription: {str(e)}")
         return {
             'success': False,
             'message': f'Failed to sync subscription: {str(e)}'
@@ -505,8 +558,12 @@ async def cancel_subscription(
         await Cache.invalidate(f"subscription_tier:{account_id}")
         return result
         
+    except HTTPException as e:
+        raise e
     except Exception as e:
-        logger.error(f"Error canceling subscription: {e}", exc_info=True)
+        logger.error(f"Error canceling subscription: {str(e)}")
+        if "commitment period" in str(e).lower():
+            raise HTTPException(status_code=403, detail=str(e))
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/reactivate-subscription")
@@ -518,8 +575,11 @@ async def reactivate_subscription(
         await Cache.invalidate(f"subscription_tier:{account_id}")
         return result
         
+    except HTTPException as e:
+        # Re-raise HTTP exceptions as-is
+        raise e
     except Exception as e:
-        logger.error(f"Error reactivating subscription: {e}", exc_info=True)
+        logger.error(f"Error reactivating subscription: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/transactions")
@@ -579,7 +639,7 @@ async def get_my_transactions(
         }
         
     except Exception as e:
-        logger.error(f"Failed to get transactions for account {account_id}: {e}", exc_info=True)
+        logger.error(f"Failed to get transactions for account {account_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve transactions")
 
 @router.get("/transactions/summary")
@@ -637,7 +697,7 @@ async def get_transactions_summary(
         }
         
     except Exception as e:
-        logger.error(f"Failed to get transaction summary for account {account_id}: {e}", exc_info=True)
+        logger.error(f"Failed to get transaction summary for account {account_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve transaction summary")
 
 @router.get("/credit-breakdown")
@@ -727,7 +787,7 @@ async def get_usage_history(
         }
         
     except Exception as e:
-        logger.error(f"Error getting usage history: {e}", exc_info=True)
+        logger.error(f"Error getting usage history: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e)) 
 
 
@@ -746,13 +806,17 @@ async def get_available_models(
             model_info = []
             
             for model_data in all_models:
+                # Apply markup to pricing for display
+                input_cost = model_data["pricing"]["input_per_million"] if model_data["pricing"] else None
+                output_cost = model_data["pricing"]["output_per_million"] if model_data["pricing"] else None
+                
                 model_info.append({
                     "id": model_data["id"],
                     "display_name": model_data["name"],
                     "short_name": model_data.get("aliases", [model_data["name"]])[0] if model_data.get("aliases") else model_data["name"],
                     "requires_subscription": False,
-                    "input_cost_per_million_tokens": model_data["pricing"]["input_per_million"] if model_data["pricing"] else None,
-                    "output_cost_per_million_tokens": model_data["pricing"]["output_per_million"] if model_data["pricing"] else None,
+                    "input_cost_per_million_tokens": float(Decimal(str(input_cost)) * TOKEN_PRICE_MULTIPLIER) if input_cost else None,
+                    "output_cost_per_million_tokens": float(Decimal(str(output_cost)) * TOKEN_PRICE_MULTIPLIER) if output_cost else None,
                     "context_window": model_data["context_window"],
                     "capabilities": model_data["capabilities"],
                     "recommended": model_data["recommended"],
@@ -791,13 +855,17 @@ async def get_available_models(
             
             can_access = model_id in allowed_models
             
+            # Apply markup to pricing for display
+            input_cost = model_data["pricing"]["input_per_million"] if model_data["pricing"] else None
+            output_cost = model_data["pricing"]["output_per_million"] if model_data["pricing"] else None
+            
             model_info.append({
                 "id": model_id,
                 "display_name": model_data["name"],
                 "short_name": model_data.get("aliases", [model_data["name"]])[0] if model_data.get("aliases") else model_data["name"],
                 "requires_subscription": not can_access,
-                "input_cost_per_million_tokens": model_data["pricing"]["input_per_million"] if model_data["pricing"] else None,
-                "output_cost_per_million_tokens": model_data["pricing"]["output_per_million"] if model_data["pricing"] else None,
+                "input_cost_per_million_tokens": float(Decimal(str(input_cost)) * TOKEN_PRICE_MULTIPLIER) if input_cost else None,
+                "output_cost_per_million_tokens": float(Decimal(str(output_cost)) * TOKEN_PRICE_MULTIPLIER) if output_cost else None,
                 "context_window": model_data["context_window"],
                 "capabilities": model_data["capabilities"],
                 "recommended": model_data["recommended"],
@@ -814,7 +882,7 @@ async def get_available_models(
         }
         
     except Exception as e:
-        logger.error(f"Error getting available models: {e}", exc_info=True)
+        logger.error(f"Error getting available models: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/subscription-commitment/{subscription_id}")
@@ -844,11 +912,14 @@ async def get_trial_status(
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
     try:
+        from core.utils.ensure_suna import ensure_suna_installed
+        await ensure_suna_installed(account_id)
+        
         result = await trial_service.get_trial_status(account_id)
         return result
         
     except Exception as e:
-        logger.error(f"Error checking trial status: {e}", exc_info=True)
+        logger.error(f"Error checking trial status: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/trial/cancel")
@@ -862,7 +933,7 @@ async def cancel_trial(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error cancelling trial for account {account_id}: {e}", exc_info=True)
+        logger.error(f"Error cancelling trial for account {account_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/trial/start")
@@ -900,7 +971,7 @@ async def start_trial(
             logger.info(f"[TRIAL API] Trial start failed for account {account_id}: {e.detail}")
         raise
     except Exception as e:
-        logger.error(f"[TRIAL API ERROR] Unexpected error creating trial for account {account_id}: {e}", exc_info=True)
+        logger.error(f"[TRIAL API ERROR] Unexpected error creating trial for account {account_id}: {str(e)}")
         # Don't expose internal errors to the client
         raise HTTPException(status_code=500, detail="An error occurred while processing your request")
 
@@ -933,5 +1004,127 @@ async def create_trial_checkout(
             logger.info(f"[TRIAL API] Trial checkout failed for account {account_id}: {e.detail}")
         raise
     except Exception as e:
-        logger.error(f"[TRIAL API ERROR] Unexpected error in trial checkout for account {account_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="An error occurred while processing your request") 
+        logger.error(f"[TRIAL API ERROR] Unexpected error in trial checkout for account {account_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="An error occurred while processing your request")
+
+@router.get("/proration-preview")
+async def preview_proration(
+    new_price_id: str = Query(..., description="The price ID to change to"),
+    account_id: str = Depends(verify_and_get_user_id_from_jwt)
+) -> Dict:
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        subscription_result = await client.from_('credit_accounts').select(
+            'stripe_subscription_id'
+        ).eq('account_id', account_id).execute()
+        
+        if not subscription_result.data or not subscription_result.data[0].get('stripe_subscription_id'):
+            raise HTTPException(status_code=404, detail="No active subscription found")
+        
+        subscription_id = subscription_result.data[0]['stripe_subscription_id']
+        subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
+        
+        current_item = subscription['items']['data'][0]
+        
+        proration = await StripeAPIWrapper.upcoming_invoice(
+            customer=subscription.customer,
+            subscription=subscription_id,
+            subscription_items=[{
+                'id': current_item.id,
+                'price': new_price_id,
+            }],
+            subscription_proration_behavior='always_invoice'
+        )
+        
+        current_price = current_item.price
+        new_price = await StripeAPIWrapper.retrieve_price(new_price_id)
+        
+        from billing.config import get_tier_by_price_id
+        
+        current_tier = get_tier_by_price_id(current_price.id)
+        new_tier = get_tier_by_price_id(new_price_id)
+        
+        proration_amount = Decimal(str(proration.amount_due)) / 100
+        
+        return {
+            'current_plan': {
+                'price_id': current_price.id,
+                'tier_name': current_tier.name if current_tier else 'unknown',
+                'monthly_amount': float(current_price.unit_amount / 100)
+            },
+            'new_plan': {
+                'price_id': new_price_id,
+                'tier_name': new_tier.name if new_tier else 'unknown',
+                'monthly_amount': float(new_price.unit_amount / 100)
+            },
+            'proration': {
+                'amount_due_now': float(proration_amount),
+                'credit_applied': float(abs(proration.starting_balance or 0) / 100),
+                'next_payment_date': datetime.fromtimestamp(proration.period_end, tz=timezone.utc).isoformat(),
+                'next_payment_amount': float(new_price.unit_amount / 100)
+            },
+            'is_upgrade': proration_amount > 0,
+            'description': f"You will be {'charged' if proration_amount > 0 else 'credited'} ${abs(proration_amount):.2f} for the remaining time in your billing period"
+        }
+    
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe error in proration preview: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to calculate proration: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error in proration preview: {e}")
+        raise HTTPException(status_code=500, detail="Failed to preview proration")
+
+@router.post("/reconcile")
+async def trigger_reconciliation(
+    admin_key: Optional[str] = Query(None, description="Admin API key"),
+    account_id: str = Depends(verify_and_get_user_id_from_jwt)
+) -> Dict:
+
+    if admin_key != config.get('ADMIN_API_KEY'):
+        raise HTTPException(status_code=403, detail="Unauthorized")
+    
+    try:
+        payment_results = await reconciliation_service.reconcile_failed_payments()
+        balance_results = await reconciliation_service.verify_balance_consistency()
+        duplicate_results = await reconciliation_service.detect_double_charges()
+        cleanup_results = await reconciliation_service.cleanup_expired_credits()
+        
+        return {
+            'success': True,
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'results': {
+                'payment_reconciliation': payment_results,
+                'balance_verification': balance_results,
+                'duplicate_detection': duplicate_results,
+                'expired_credit_cleanup': cleanup_results
+            }
+        }
+    
+    except Exception as e:
+        logger.error(f"Reconciliation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Reconciliation failed: {str(e)}")
+
+@router.get("/circuit-breaker-status")
+async def get_circuit_breaker_status(
+    admin_key: Optional[str] = Query(None, description="Admin API key")
+) -> Dict:
+    if admin_key != config.get('ADMIN_API_KEY'):
+        raise HTTPException(status_code=403, detail="Unauthorized - admin key required")
+    
+    try:
+        status = await stripe_circuit_breaker.get_status()
+        
+        db = DBConnection()
+        client = await db.client
+        all_circuits = await client.from_('circuit_breaker_state').select('*').execute()
+        
+        return {
+            'primary_circuit': status,
+            'all_circuits': all_circuits.data if all_circuits.data else [],
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting circuit breaker status: {e}")
+        raise HTTPException(status_code=500, detail=str(e)) 

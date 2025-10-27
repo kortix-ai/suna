@@ -117,7 +117,7 @@ refresh_token_reuse_interval = 10
 # Allow/disallow new user signups to your project.
 enable_signup = true
 # Allow/disallow anonymous sign-ins to your project.
-enable_anonymous_sign_ins = false
+enable_anonymous_sign_ins = true
 # Allow/disallow testing manual linking of accounts
 enable_manual_linking = false
 # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
@@ -153,7 +153,7 @@ enable_signup = true
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
 # If enabled, users need to confirm their email address before signing in.
-enable_confirmations = true
+enable_confirmations = false
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
 secure_password_change = false
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
@@ -169,7 +169,7 @@ otp_expiry = 3600
 # host = "smtp.sendgrid.net"
 # port = 587
 # user = "apikey"
-# pass = "env(SENDGRID_API_KEY)"
+# pass = "env(EMAIL_API_KEY)"
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
@@ -297,14 +297,6 @@ backend = "postgres"
 [experimental]
 # Configures Postgres storage engine to use OrioleDB (S3)
 orioledb_version = ""
-# Configures S3 bucket URL, eg. <bucket_name>.s3-<region>.amazonaws.com
-s3_host = "env(S3_HOST)"
-# Configures S3 bucket region, eg. us-east-1
-s3_region = "env(S3_REGION)"
-# Configures AWS_ACCESS_KEY_ID for S3 bucket
-s3_access_key = "env(S3_ACCESS_KEY)"
-# Configures AWS_SECRET_ACCESS_KEY for S3 bucket
-s3_secret_key = "env(S3_SECRET_KEY)"
 
 [functions.billing-webhooks]
 verify_jwt = false

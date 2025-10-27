@@ -33,12 +33,10 @@ def load_progress():
                 return {"step": 0, "data": {}}
     return {"step": 0, "data": {}}
 
-
 def get_setup_method():
     """Gets the setup method chosen during setup."""
     progress = load_progress()
     return progress.get("data", {}).get("setup_method")
-
 
 def check_docker_available():
     """Check if Docker is available and running."""
@@ -59,26 +57,44 @@ def check_docker_compose_up():
     )
     return len(result.stdout.strip()) > 0
 
-
 def print_manual_instructions():
     """Prints instructions for manually starting Suna services."""
+    progress = load_progress()
+    supabase_setup_method = progress.get("data", {}).get("supabase_setup_method")
+    
     print(f"\n{Colors.BLUE}{Colors.BOLD}🚀 Manual Startup Instructions{Colors.ENDC}\n")
 
     print("To start Suna, you need to run these commands in separate terminals:\n")
 
-    print(f"{Colors.BOLD}1. Start Infrastructure (in project root):{Colors.ENDC}")
+    step_num = 1
+    
+    # Show Supabase start command for local setup
+    if supabase_setup_method == "local":
+        print(f"{Colors.BOLD}{step_num}. Start Local Supabase (in backend directory):{Colors.ENDC}")
+        print(f"{Colors.CYAN}   cd backend && npx supabase start{Colors.ENDC}\n")
+        step_num += 1
+
+    print(f"{Colors.BOLD}{step_num}. Start Infrastructure (in project root):{Colors.ENDC}")
     print(f"{Colors.CYAN}   docker compose up redis -d{Colors.ENDC}\n")
+    step_num += 1
 
-    print(f"{Colors.BOLD}2. Start Frontend (in a new terminal):{Colors.ENDC}")
+    print(f"{Colors.BOLD}{step_num}. Start Frontend (in a new terminal):{Colors.ENDC}")
     print(f"{Colors.CYAN}   cd frontend && npm run dev{Colors.ENDC}\n")
+    step_num += 1
 
-    print(f"{Colors.BOLD}3. Start Backend (in a new terminal):{Colors.ENDC}")
+    print(f"{Colors.BOLD}{step_num}. Start Backend (in a new terminal):{Colors.ENDC}")
     print(f"{Colors.CYAN}   cd backend && uv run api.py{Colors.ENDC}\n")
+    step_num += 1
 
-    print(f"{Colors.BOLD}4. Start Background Worker (in a new terminal):{Colors.ENDC}")
+    print(f"{Colors.BOLD}{step_num}. Start Background Worker (in a new terminal):{Colors.ENDC}")
     print(
         f"{Colors.CYAN}   cd backend && uv run dramatiq run_agent_background{Colors.ENDC}\n"
     )
+
+    # Show stop commands for local Supabase
+    if supabase_setup_method == "local":
+        print(f"{Colors.BOLD}To stop Local Supabase:{Colors.ENDC}")
+        print(f"{Colors.CYAN}   cd backend && npx supabase stop{Colors.ENDC}\n")
 
     print("Once all services are running, access Suna at: http://localhost:3000\n")
 

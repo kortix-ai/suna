@@ -35,7 +35,136 @@ Based on Anthropic documentation and mathematical optimization (Sept 2025).
 """
 
 from typing import Dict, Any, List, Optional
+from datetime import datetime, timezone
 from core.utils.logger import logger
+
+
+async def get_stored_threshold(thread_id: str, model: str) -> Optional[Dict[str, Any]]:
+    """Get stored cache threshold from thread metadata."""
+    from core.services.supabase import DBConnection
+    db = DBConnection()
+    client = await db.client
+    
+    try:
+        result = await client.table('threads').select('metadata').eq('thread_id', thread_id).single().execute()
+        if result.data:
+            metadata = result.data.get('metadata', {})
+            cache_config = metadata.get('cache_config', {})
+            
+            # Validate it's for the same model
+            if cache_config.get('model') == model:
+                return cache_config
+    except Exception as e:
+        logger.debug(f"No stored threshold found for thread {thread_id}: {e}")
+    
+    return None
+
+
+async def store_threshold(thread_id: str, threshold: int, model: str, reason: str, turn: int):
+    """Store cache threshold in thread metadata."""
+    from core.services.supabase import DBConnection
+    db = DBConnection()
+    client = await db.client
+    
+    try:
+        # Get existing metadata
+        result = await client.table('threads').select('metadata').eq('thread_id', thread_id).single().execute()
+        metadata = result.data.get('metadata', {}) if result.data else {}
+        
+        # Update cache config
+        metadata['cache_config'] = {
+            'threshold': threshold,
+            'model': model,
+            'last_calc_turn': turn,
+            'last_calc_reason': reason,
+            'updated_at': datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Write back
+        await client.table('threads').update({'metadata': metadata}).eq('thread_id', thread_id).execute()
+        
+        logger.info(f"💾 Stored cache threshold: {threshold} tokens (reason: {reason})")
+    except Exception as e:
+        logger.warning(f"Failed to store threshold: {e}")
+
+
+async def get_stored_cached_blocks(thread_id: str, model: str) -> Optional[Dict[str, Any]]:
+    """Get stored cached blocks from thread metadata."""
+    from core.services.supabase import DBConnection
+    db = DBConnection()
+    client = await db.client
+    
+    try:
+        result = await client.table('threads').select('metadata').eq('thread_id', thread_id).single().execute()
+        if result.data:
+            metadata = result.data.get('metadata', {})
+            cached_blocks = metadata.get('cached_blocks')
+            cache_metadata = metadata.get('cache_metadata', {})
+            
+            # Validate model matches
+            if cache_metadata.get('model') == model and cached_blocks:
+                return {
+                    'blocks': cached_blocks,
+                    'last_message_id': cache_metadata.get('last_message_id'),
+                    'total_messages': cache_metadata.get('total_messages', 0)
+                }
+    except Exception as e:
+        logger.debug(f"No stored blocks found: {e}")
+    
+    return None
+
+
+async def store_cached_blocks(
+    thread_id: str, 
+    blocks: List[Dict[str, Any]], 
+    last_message_id: str,
+    total_messages: int,
+    model: str
+):
+    """Store prepared cached blocks in thread metadata."""
+    from core.services.supabase import DBConnection
+    
+    db = DBConnection()
+    client = await db.client
+    
+    try:
+        result = await client.table('threads').select('metadata').eq('thread_id', thread_id).single().execute()
+        metadata = result.data.get('metadata', {}) if result.data else {}
+        
+        metadata['cached_blocks'] = blocks
+        metadata['cache_metadata'] = {
+            'last_message_id': last_message_id,
+            'model': model,
+            'created_at': datetime.now(timezone.utc).isoformat(),
+            'total_messages': total_messages, 
+            'blocks_created': len(blocks)
+        }
+        
+        await client.table('threads').update({'metadata': metadata}).eq('thread_id', thread_id).execute()
+        logger.info(f"💾 Stored {len(blocks)} cached blocks covering {total_messages} messages")
+    except Exception as e:
+        logger.warning(f"Failed to store cached blocks: {e}")
+
+
+async def invalidate_cached_blocks(thread_id: str):
+    """Clear cached blocks (after compression or model change)."""
+    from core.services.supabase import DBConnection
+    
+    db = DBConnection()
+    client = await db.client
+    
+    try:
+        result = await client.table('threads').select('metadata').eq('thread_id', thread_id).single().execute()
+        metadata = result.data.get('metadata', {}) if result.data else {}
+        
+        # Remove cached blocks
+        metadata.pop('cached_blocks', None)
+        metadata.pop('cache_metadata', None)
+        
+        await client.table('threads').update({'metadata': metadata}).eq('thread_id', thread_id).execute()
+        logger.info(f"🗑️ Invalidated cached blocks for thread {thread_id}")
+    except Exception as e:
+        logger.warning(f"Failed to invalidate blocks: {e}")
 
 
 def get_resolved_model_id(model_name: str) -> str:
@@ -57,9 +186,10 @@ def get_resolved_model_id(model_name: str) -> str:
         return model_name
 
 def is_anthropic_model(model_name: str) -> bool:
-    """Check if model supports Anthropic prompt caching."""
+    """Check if model supports Anthropic prompt caching (including Bedrock-served Claude models)."""
     resolved_model = get_resolved_model_id(model_name).lower()
-    return any(provider in resolved_model for provider in ['anthropic', 'claude', 'sonnet', 'haiku', 'opus'])
+    # Include 'bedrock' since Bedrock can serve Claude/Anthropic models
+    return any(provider in resolved_model for provider in ['anthropic', 'claude', 'sonnet', 'haiku', 'opus', 'bedrock'])
 
 def estimate_token_count(text: str, model: str = "claude-3-5-sonnet-20240620") -> int:
     """
@@ -206,10 +336,13 @@ def add_cache_control(message: Dict[str, Any]) -> Dict[str, Any]:
         ]
     }
 
-def apply_anthropic_caching_strategy(
+async def apply_anthropic_caching_strategy(
     working_system_prompt: Dict[str, Any], 
     conversation_messages: List[Dict[str, Any]], 
     model_name: str,
+    thread_id: Optional[str] = None,  # NEW: for threshold storage
+    turn_number: Optional[int] = None,  # NEW: for tracking
+    force_recalc: bool = False,  # NEW: for compression triggers
     context_window_tokens: Optional[int] = None,  # Auto-detect from model registry
     cache_threshold_tokens: Optional[int] = None  # Auto-calculate based on context window
 ) -> List[Dict[str, Any]]:
@@ -250,6 +383,50 @@ def apply_anthropic_caching_strategy(
             logger.debug(f"🔧 Filtered out {len(conversation_messages) - len(filtered_conversation)} system messages")
         return [working_system_prompt] + filtered_conversation
     
+    # Try to load stored blocks (unless force rebuild)
+    if thread_id and not force_recalc:
+        stored = await get_stored_cached_blocks(thread_id, model_name)
+        
+        if stored:
+            cached_blocks = stored['blocks']
+            last_message_id = stored['last_message_id']
+            stored_count = stored['total_messages']
+            
+            # Find new messages (after last_message_id)
+            new_messages = []
+            found_last = False
+            for msg in conversation_messages:
+                if found_last:
+                    new_messages.append(msg)
+                elif msg.get('message_id') == last_message_id:
+                    found_last = True
+            
+            if new_messages:
+                logger.info(f"♻️ Loaded {len(cached_blocks)} cached blocks, appending {len(new_messages)} new messages")
+                # Return: system + cached_blocks + new messages
+                return [working_system_prompt] + cached_blocks + new_messages
+            else:
+                # No new messages, just return cached
+                logger.info(f"♻️ Loaded {len(cached_blocks)} cached blocks (no new messages)")
+                return [working_system_prompt] + cached_blocks
+    
+    # No stored blocks or force rebuild - chunk from scratch
+    logger.info(f"🆕 Building cache blocks from scratch ({len(conversation_messages)} messages)")
+    
+    # Check if we should use stored threshold
+    stored_config = None
+    should_recalculate = force_recalc
+    
+    if thread_id and not force_recalc:
+        stored_config = await get_stored_threshold(thread_id, model_name)
+        
+        if stored_config:
+            cache_threshold_tokens = stored_config['threshold']
+            logger.info(f"♻️ Reusing stored threshold: {cache_threshold_tokens} tokens (last calc: turn {stored_config['last_calc_turn']}, reason: {stored_config['last_calc_reason']})")
+        else:
+            should_recalculate = True
+            logger.info(f"🆕 No stored threshold - will calculate and store")
+    
     # Get context window from model registry
     if context_window_tokens is None:
         try:
@@ -261,7 +438,7 @@ def apply_anthropic_caching_strategy(
             context_window_tokens = 200_000  # Safe default
     
     # Calculate mathematically optimized cache threshold
-    if cache_threshold_tokens is None:
+    if cache_threshold_tokens is None or should_recalculate:
         # Include system prompt tokens in calculation for accurate density (like compression does)
         # Use token_counter on combined messages to match compression's calculation method
         from litellm import token_counter
@@ -272,6 +449,11 @@ def apply_anthropic_caching_strategy(
             len(conversation_messages),
             total_tokens  # Now includes system prompt for accurate density calculation
         )
+        
+        # Store it if we have thread_id
+        if thread_id and turn_number is not None:
+            reason = "compression" if force_recalc else "initial"
+            await store_threshold(thread_id, cache_threshold_tokens, model_name, reason, turn_number)
     
     logger.info(f"📊 Applying single cache breakpoint strategy for {len(conversation_messages)} messages")
     
@@ -319,8 +501,22 @@ def apply_anthropic_caching_strategy(
     
     if total_conversation_tokens <= max_cacheable_tokens:
         logger.debug(f"Conversation fits within cache limits - use chunked approach")
+        
+        # DYNAMIC CHUNK SIZING: Adjust threshold to maximize cache utilization
+        # With only 3-4 blocks available, we want to cache as much as possible
+        if max_conversation_blocks > 0:
+            # Calculate optimal chunk size to utilize all available blocks
+            optimal_chunk_size = total_conversation_tokens // max_conversation_blocks
+            
+            # If optimal size is much larger than current threshold, use it
+            # This prevents leaving large portions uncached
+            if optimal_chunk_size > cache_threshold_tokens * 1.5:
+                adjusted_threshold = min(optimal_chunk_size, 30000)  # Cap at 30k per block
+                logger.info(f"📈 Adjusting chunk threshold: {cache_threshold_tokens} → {adjusted_threshold} tokens (to fit {total_conversation_tokens} tokens in {max_conversation_blocks} blocks)")
+                cache_threshold_tokens = adjusted_threshold
+        
         # Conversation fits within cache limits - use chunked approach
-        chunks_created = create_conversation_chunks(
+        chunks_created, last_cached_message_id = create_conversation_chunks(
             conversation_messages, 
             cache_threshold_tokens, 
             max_conversation_blocks,
@@ -348,6 +544,27 @@ def apply_anthropic_caching_strategy(
                      'cache_control' in msg['content'][0])
     
     logger.info(f"✅ Final structure: {cache_count} cache breakpoints, {len(prepared_messages)} total blocks")
+    
+    # Store cached blocks for future use (if we have thread_id and created blocks)
+    if thread_id and 'last_cached_message_id' in locals() and last_cached_message_id:
+        # Extract cached blocks (those with cache_control)
+        cached_blocks_to_store = []
+        for msg in prepared_messages[1:]:  # Skip system prompt
+            if isinstance(msg.get('content'), list):
+                for item in msg['content']:
+                    if isinstance(item, dict) and 'cache_control' in item:
+                        cached_blocks_to_store.append(msg)
+                        break
+        
+        if cached_blocks_to_store:
+            await store_cached_blocks(
+                thread_id,
+                cached_blocks_to_store,
+                last_message_id=last_cached_message_id,
+                total_messages=len(conversation_messages),
+                model=model_name
+            )
+    
     return prepared_messages
 
 def create_conversation_chunks(
@@ -356,19 +573,20 @@ def create_conversation_chunks(
     max_blocks: int,
     prepared_messages: List[Dict[str, Any]],
     model: str = "claude-3-5-sonnet-20240620"
-) -> int:
+) -> tuple[int, Optional[str]]:
     """
     Create conversation cache chunks based on token thresholds.
     Final messages are NEVER cached to prevent cache invalidation.
-    Returns number of cache blocks created.
+    Returns (chunks_created, last_message_id_in_cached_chunks).
     """
     logger.debug(f"Creating conversation chunks - chunk threshold: {chunk_threshold_tokens}, max blocks: {max_blocks}")
     if not messages or max_blocks <= 0:
-        return 0
+        return 0, None
     
     chunks_created = 0
     current_chunk = []
     current_chunk_tokens = 0
+    last_cached_message_id = None
     
     for i, message in enumerate(messages):
         message_tokens = get_message_token_count(message, model)
@@ -377,13 +595,18 @@ def create_conversation_chunks(
         if current_chunk_tokens + message_tokens > chunk_threshold_tokens and current_chunk:
             # Create cache block for current chunk
             if chunks_created < max_blocks:  # No need to reserve blocks since final messages are never cached
+                # Track last message ID before creating cache block
+                if current_chunk:
+                    last_msg = current_chunk[-1]
+                    last_cached_message_id = last_msg.get('message_id')
+                
                 chunk_text = format_conversation_for_cache(current_chunk)
                 cache_block = {
                     "role": "user",
                     "content": [
                         {
                             "type": "text",
-                            "text": f"[Conversation Chunk {chunks_created + 1}]\n{chunk_text}",
+                            "text": chunk_text,
                             "cache_control": {"type": "ephemeral"}
                         }
                     ]
@@ -400,7 +623,7 @@ def create_conversation_chunks(
                 prepared_messages.extend(current_chunk)
                 prepared_messages.extend(messages[i:])
                 logger.debug(f"Hit max blocks limit, added {len(messages) - i + len(current_chunk)} remaining messages uncached")
-                return chunks_created
+                return chunks_created, last_cached_message_id
         
         current_chunk.append(message)
         current_chunk_tokens += message_tokens
@@ -410,7 +633,7 @@ def create_conversation_chunks(
         # Always add final chunk uncached to prevent cache invalidation
         prepared_messages.extend(current_chunk)
     
-    return chunks_created
+    return chunks_created, last_cached_message_id
 
 def get_recent_messages_within_token_limit(messages: List[Dict[str, Any]], token_limit: int, model: str = "claude-3-5-sonnet-20240620") -> List[Dict[str, Any]]:
     """Get the most recent messages that fit within the token limit."""
@@ -474,8 +697,8 @@ def validate_cache_blocks(messages: List[Dict[str, Any]], model_name: str, max_b
                      'cache_control' in msg['content'][0])
     
     if cache_count <= max_blocks:
-        logger.debug(f"✅ Cache validation passed: {cache_count}/{max_blocks} blocks")
+        logger.debug(f"✅ Cache validation passed: {cache_count} conversation blocks (+ system prompt = {cache_count + 1} total)")
         return messages
     
-    logger.warning(f"⚠️ Cache validation failed: {cache_count}/{max_blocks} blocks")
+    logger.warning(f"⚠️ Cache validation failed: {cache_count} conversation blocks exceeds limit of {max_blocks}")
     return messages  # With 2-block strategy, this shouldn't happen

@@ -702,7 +702,6 @@ async def create_composio_trigger(req: CreateComposioTriggerRequest, current_use
 
         url = f"{COMPOSIO_API_BASE}/api/v3/trigger_instances/{req.slug}/upsert"
         headers = {"x-api-key": api_key, "Content-Type": "application/json"}
-        base_url = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
         secret = os.getenv("COMPOSIO_WEBHOOK_SECRET", "")
         webhook_headers = {"X-Composio-Secret": secret} if secret else {}
         vercel_bypass = os.getenv("VERCEL_PROTECTION_BYPASS_KEY", "")
@@ -845,9 +844,6 @@ async def create_composio_trigger(req: CreateComposioTriggerRequest, current_use
         # Immediately sync triggers to the current version config
         await sync_triggers_to_version_config(req.agent_id)
 
-        base_url = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
-        webhook_url = f"{base_url}/api/composio/webhook"
-
         return {
             "success": True,
             "trigger_id": trigger.trigger_id,
@@ -855,7 +851,6 @@ async def create_composio_trigger(req: CreateComposioTriggerRequest, current_use
             "provider": "composio",
             "composio_trigger_id": composio_trigger_id,
             "slug": req.slug,
-            "webhook_url": webhook_url,
             "config": trigger.config,
         }
     except HTTPException:
