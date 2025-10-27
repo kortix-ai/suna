@@ -27,7 +27,7 @@ export * from './media';
 export { useBackgroundScale } from './useBackgroundScale';
 
 // Re-export commonly used hooks from lib for convenience
-export { useMessages, useSendMessage, useThreads, useUnifiedAgentStart } from '@/lib/chat';
+export { useMessages, useSendMessage, useThreads, useUnifiedAgentStart, useDeleteThread, useShareThread } from '@/lib/chat';
 export { useAgents, useAgent } from '@/lib/agents';
 export { useTrigger } from '@/lib/triggers';
 export { useSubscription, useCreditBalance } from '@/lib/billing';

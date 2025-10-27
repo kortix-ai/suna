@@ -12,7 +12,8 @@ import {
   type UseMutationOptions,
   type UseQueryOptions,
 } from '@tanstack/react-query';
-import { API_URL, getAuthToken, getAuthHeaders } from '@/api/config';
+import { Share } from 'react-native';
+import { API_URL, FRONTEND_SHARE_URL, getAuthHeaders, getAuthToken } from '@/api/config';
 import type {
   Thread,
   Message,
@@ -122,6 +123,43 @@ export function useDeleteThread(
     onSuccess: (_, threadId) => {
       queryClient.invalidateQueries({ queryKey: chatKeys.threads() });
       queryClient.removeQueries({ queryKey: chatKeys.thread(threadId) });
+    },
+    ...options,
+  });
+}
+
+export function useShareThread(
+  options?: UseMutationOptions<{ shareUrl: string }, Error, string>
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (threadId) => {
+      const headers = await getAuthHeaders();
+      
+      // Make thread public
+      const updateRes = await fetch(`${API_URL}/threads/${threadId}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({ is_public: true }),
+      });
+      
+      if (!updateRes.ok) throw new Error(`Failed to share thread: ${updateRes.status}`);
+      
+      // Generate share URL using frontend URL
+      const shareUrl = `${FRONTEND_SHARE_URL}/share/${threadId}`;
+      
+      // Open native share menu
+      await Share.share({
+        message: shareUrl, // Android uses this
+        url: shareUrl,     // iOS uses this
+      });
+      
+      return { shareUrl };
+    },
+    onSuccess: (_, threadId) => {
+      queryClient.invalidateQueries({ queryKey: chatKeys.threads() });
+      queryClient.invalidateQueries({ queryKey: chatKeys.thread(threadId) });
     },
     ...options,
   });

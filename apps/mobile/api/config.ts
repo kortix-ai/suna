@@ -9,6 +9,9 @@ import { supabase } from './supabase';
 // Backend URL from environment
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000/api';
 
+// Frontend URL for sharing (defaults to production URL)
+const FRONTEND_URL = process.env.EXPO_PUBLIC_FRONTEND_URL || 'https://kortix.com';
+
 /**
  * Get the correct server URL based on platform
  */
@@ -35,6 +38,7 @@ export function getServerUrl(): string {
 }
 
 export const API_URL = getServerUrl();
+export const FRONTEND_SHARE_URL = FRONTEND_URL;
 
 /**
  * Get authentication token from Supabase

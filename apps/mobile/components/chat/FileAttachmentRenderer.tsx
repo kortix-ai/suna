@@ -12,7 +12,7 @@
  * - Any context where files need to be displayed
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { View, Image, Pressable, ActivityIndicator, Linking } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -130,12 +130,27 @@ function ImageAttachment({
   const [hasError, setHasError] = useState(false);
   const scale = useSharedValue(1);
   
-  // Construct image URL
-  // For now, we'll use the sandbox file API endpoint
-  // TODO: Update with actual API endpoint once available
-  const imageUrl = sandboxId 
-    ? `https://api.example.com/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(file.path)}`
-    : file.path; // Fallback to path
+  // For sandbox files, we need to use blob URLs with authentication
+  // The useSandboxImageBlob hook handles this properly
+  const [blobUrl, setBlobUrl] = useState<string | undefined>();
+
+  useEffect(() => {
+    if (sandboxId && file.path) {
+      // Import hooks dynamically
+      import('@/lib/files/hooks').then(({ useSandboxImageBlob, blobToDataURL }) => {
+        // Fetch and convert blob to data URL
+        fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(file.path)}`)
+          .then(res => res.blob())
+          .then(blobToDataURL)
+          .then(setBlobUrl)
+          .catch(console.error);
+      });
+    } else {
+      setBlobUrl(file.path);
+    }
+  }, [sandboxId, file.path]);
+
+  const imageUrl = blobUrl || file.path;
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],

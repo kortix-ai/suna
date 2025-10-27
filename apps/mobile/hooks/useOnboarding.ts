@@ -24,12 +24,7 @@ export function useOnboarding() {
     return `${ONBOARDING_KEY_PREFIX}${userId}`;
   }, [session?.user?.id]);
 
-  // Check onboarding status on mount and when user changes
-  useEffect(() => {
-    checkOnboardingStatus();
-  }, [session?.user?.id]);
-
-  const checkOnboardingStatus = async () => {
+  const checkOnboardingStatus = useCallback(async () => {
     try {
       const key = getOnboardingKey();
       const completed = await AsyncStorage.getItem(key);
@@ -41,7 +36,12 @@ export function useOnboarding() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [getOnboardingKey]);
+
+  // Check onboarding status on mount and when user changes
+  useEffect(() => {
+    checkOnboardingStatus();
+  }, [checkOnboardingStatus]);
 
   const markAsCompleted = useCallback(async () => {
     try {

@@ -262,9 +262,10 @@ export const ChatInput = React.forwardRef<ChatInputRef, ChatInputProps>(({
 
   const handleButtonPress = () => {
     if (isAgentRunning) {
-      // Stop agent run
+      // Stop agent run immediately
       console.log('🛑 Stop agent run pressed');
       onStopAgentRun?.();
+      return; // Early return to prevent any other actions
     } else if (isRecording) {
       // Send audio recording
       handleSendAudioMessage();

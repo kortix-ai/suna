@@ -21,6 +21,7 @@ export {
   useThread,
   useUpdateThread,
   useDeleteThread,
+  useShareThread,
   useMessages,
   useSendMessage,
   useAgentRuns,

@@ -200,7 +200,9 @@ function UserMessageBubble({
     return '';
   }, [message.content]);
 
-  if (!content) return null;
+  // Extract file references from content
+  const fileReferences = useMemo(() => extractFileReferences(content), [content]);
+  const cleanContent = useMemo(() => removeFileReferences(content), [content]);
 
   const { colorScheme } = useColorScheme();
   
@@ -226,12 +228,27 @@ function UserMessageBubble({
   };
   
   return (
-    <View className={`px-4 flex-row justify-end ${isLast ? 'mb-0' : 'mb-6'}`}>
-      <View style={[containerStyle, bubbleStyle]}>
-        <Text style={textStyle} selectable>
-          {content}
-        </Text>
-      </View>
+    <View className={`px-4 ${isLast ? 'mb-0' : 'mb-6'}`}>
+      {/* File Attachments - Render outside bubble */}
+      {fileReferences.length > 0 && (
+        <View className="mb-2">
+          <FileAttachmentsGrid
+            filePaths={fileReferences}
+            compact
+          />
+        </View>
+      )}
+
+      {/* Message Bubble */}
+      {cleanContent.trim() && (
+        <View className="flex-row justify-end">
+          <View style={[containerStyle, bubbleStyle]}>
+            <Text style={textStyle} selectable>
+              {cleanContent}
+            </Text>
+          </View>
+        </View>
+      )}
     </View>
   );
 }

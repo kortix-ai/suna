@@ -868,24 +868,45 @@ export function useChat(): UseChatReturn {
 
   const stopAgent = useCallback(() => {
     if (agentRunId) {
-      console.log('[useChat] Stopping agent run:', agentRunId);
+      console.log('[useChat] 🛑 Stopping agent run:', agentRunId);
       
-      // Clear UI state immediately for instant feedback
       const runIdToStop = agentRunId;
+      
+      // ✨ IMMEDIATE UI FEEDBACK - Clear all state first
+      console.log('[useChat] ⚡ Clearing UI state immediately');
+      
+      // 1. Mark run as completed to prevent reconnection
+      completedRunIds.current.add(runIdToStop);
+      
+      // 2. Clear agent run ID
       setAgentRunId(null);
+      
+      // 3. Stop streaming and close connection
       stopStreaming();
       
-      // Make API call to stop on backend
+      // 4. Clear streaming content immediately
+      setStreamingContent('');
+      setStreamingToolCall(null);
+      
+      console.log('[useChat] ✅ UI cleared immediately');
+      
+      // Make API call to stop on backend (async, but UI is already stopped)
       stopAgentRunMutation.mutate(runIdToStop, {
         onSuccess: () => {
-          console.log('[useChat] Agent run stopped successfully');
+          console.log('[useChat] ✅ Backend stop confirmed');
+          // Invalidate queries to ensure fresh state
+          queryClient.invalidateQueries({ queryKey: chatKeys.activeRuns() });
+          if (activeThreadId) {
+            queryClient.invalidateQueries({ queryKey: chatKeys.messages(activeThreadId) });
+          }
         },
         onError: (error) => {
-          console.error('[useChat] Failed to stop agent run:', error);
+          console.error('[useChat] ❌ Backend stop failed:', error);
+          // UI is already stopped, so this is just a warning
         }
       });
     }
-  }, [agentRunId, stopAgentRunMutation, stopStreaming]);
+  }, [agentRunId, stopAgentRunMutation, stopStreaming, queryClient, activeThreadId]);
 
   // ============================================================================
   // Public API - Attachment Operations
@@ -1131,20 +1152,20 @@ export function useChat(): UseChatReturn {
     };
   }, [threadData, messages]);
 
-  // ✨ More robust running state - include all possible running conditions
-  const isAgentRunning = !!agentRunId || isStreaming || sendMessageMutation.isPending || unifiedAgentStartMutation.isPending || !!currentRunIdRef.current;
+  // ✨ Agent running state - combines agentRunId, streaming, and currentRunIdRef
+  // Note: Don't include sendMessageMutation/unifiedAgentStartMutation.isPending here
+  // as those are for initial send, not for ongoing agent execution
+  const isAgentRunning = !!agentRunId || isStreaming || !!currentRunIdRef.current;
   
   // Debug running state
   useEffect(() => {
     console.log('🔍 [useChat] Running state check:', {
       agentRunId: !!agentRunId,
       isStreaming,
-      sendMessagePending: sendMessageMutation.isPending,
-      unifiedAgentPending: unifiedAgentStartMutation.isPending,
       currentRunId: !!currentRunIdRef.current,
       isAgentRunning
     });
-  }, [agentRunId, isStreaming, sendMessageMutation.isPending, unifiedAgentStartMutation.isPending, isAgentRunning]);
+  }, [agentRunId, isStreaming, isAgentRunning]);
   
   // Check if any attachments are currently uploading
   const hasUploadingAttachments = attachments.some(a => a.isUploading);

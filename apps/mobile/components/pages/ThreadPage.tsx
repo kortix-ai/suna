@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, View, Keyboard, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, View, Keyboard, ScrollView, ActivityIndicator, Alert, Modal } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
@@ -9,13 +9,18 @@ import Animated, {
   useAnimatedKeyboard,
 } from 'react-native-reanimated';
 import { MessageRenderer, ToolCallPanel, ChatInput, type ToolMessagePair } from '@/components/chat';
-import { ThreadHeader, ThreadActionsDrawer } from '@/components/home';
+import { ThreadHeader, ThreadActionsDrawer } from '@/components/threads';
 import { AgentDrawer } from '@/components/agents';
 import { AttachmentDrawer, AttachmentBar } from '@/components/attachments';
+import { FileManagerScreen } from '@/components/files';
 import { useAgentManager, useAudioRecorder, useAudioRecordingHandlers, type UseChatReturn, useDeleteThread, useShareThread } from '@/hooks';
+import { useThread } from '@/lib/chat';
 import { Text } from '@/components/ui/text';
-import { MessageCircle, ArrowDown } from 'lucide-react-native';
+import { Icon } from '@/components/ui/icon';
+import { MessageCircle, ArrowDown, AlertCircle, X } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import * as Haptics from 'expo-haptics';
 
 interface ThreadPageProps {
   onMenuPress?: () => void;
@@ -53,13 +58,18 @@ export function ThreadPage({
     chat.transcribeAndAddToInput
   );
   const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [isThreadActionsVisible, setIsThreadActionsVisible] = React.useState(false);
+  const [isFileManagerVisible, setIsFileManagerVisible] = React.useState(false);
   
   // Thread actions hooks
   const deleteThreadMutation = useDeleteThread();
   const shareThreadMutation = useShareThread();
+  
+  // Get full thread data with sandbox info
+  const { data: fullThreadData } = useThread(chat.activeThread?.id);
   
   const keyboard = useAnimatedKeyboard();
   
@@ -315,13 +325,13 @@ export function ThreadPage({
             setIsThreadActionsVisible(false);
           } catch (error) {
             console.error('Failed to share thread:', error);
-            Alert.alert('Error', 'Failed to create share link. Please try again.');
+            // Error is already shown by the native share dialog or caught silently if user cancels
           }
         }}
         onFiles={() => {
           console.log('📁 Manage files:', chat.activeThread?.title);
           setIsThreadActionsVisible(false);
-          // TODO: Implement file management in separate plan
+          setIsFileManagerVisible(true);
         }}
         onDelete={() => {
           if (!chat.activeThread?.id) return;
@@ -373,6 +383,53 @@ export function ThreadPage({
         toolMessages={chat.selectedToolData?.toolMessages || []}
         initialIndex={chat.selectedToolData?.initialIndex || 0}
       />
+
+      {/* File Manager Modal */}
+      <Modal
+        visible={isFileManagerVisible}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setIsFileManagerVisible(false)}
+      >
+        {fullThreadData?.project?.sandbox?.id ? (
+          <FileManagerScreen
+            sandboxId={fullThreadData.project.sandbox.id}
+            sandboxUrl={fullThreadData.project.sandbox.sandbox_url}
+            onClose={() => setIsFileManagerVisible(false)}
+          />
+        ) : (
+          <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#f8f8f8' }}>
+            <View style={{ paddingTop: insets.top, paddingHorizontal: 16 }}>
+              <View className="flex-row items-center justify-between py-4">
+                <Text className="text-2xl font-roobert-semibold">Files</Text>
+                <Pressable onPress={() => setIsFileManagerVisible(false)} className="p-2">
+                  <Icon
+                    as={X}
+                    size={24}
+                    color={isDark ? '#f8f8f8' : '#121215'}
+                    strokeWidth={2}
+                  />
+                </Pressable>
+              </View>
+            </View>
+            <View className="flex-1 items-center justify-center p-8">
+              <Icon
+                as={AlertCircle}
+                size={48}
+                color={isDark ? 'rgba(248, 248, 248, 0.3)' : 'rgba(18, 18, 21, 0.3)'}
+                strokeWidth={1.5}
+                className="mb-4"
+              />
+              <Text className="text-base font-roobert-medium text-center mb-2">
+                No Sandbox Available
+              </Text>
+              <Text className="text-sm text-muted-foreground text-center">
+                This thread doesn't have a sandbox environment. Files are only available for threads with sandboxes.
+              </Text>
+            </View>
+          </View>
+        )}
+      </Modal>
     </View>
   );
 }

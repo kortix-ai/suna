@@ -37,7 +37,12 @@
     },
     "plugins": [
       "expo-router",
-      "@bacons/apple-targets"
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow $(PRODUCT_NAME) to record audio for transcription."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

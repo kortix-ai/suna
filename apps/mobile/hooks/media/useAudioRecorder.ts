@@ -190,16 +190,15 @@ export function useAudioRecorder() {
   };
 
   const pauseAudio = async () => {
-    if (!audioPlayer.playing) {
-      return;
-    }
-
     try {
-      console.log('⏸️ Pausing audio');
-      audioPlayer.pause();
-      setState('recorded');
+      if (audioPlayer?.playing) {
+        console.log('⏸️ Pausing audio');
+        audioPlayer.pause();
+        setState('recorded');
+      }
     } catch (error) {
       console.error('❌ Failed to pause audio:', error);
+      setState('recorded');
     }
   };
 
@@ -214,13 +213,14 @@ export function useAudioRecorder() {
   const deleteRecording = async () => {
     console.log('🗑️ Deleting recording');
 
-    // Clean up player
-    if (audioPlayer.playing) {
-      try {
+    // Clean up player - wrapped in try-catch to handle native object cleanup
+    try {
+      if (audioPlayer?.playing) {
         audioPlayer.pause();
-      } catch (error) {
-        console.error('❌ Failed to stop playback:', error);
       }
+    } catch (error) {
+      // Ignore errors if native object is already cleaned up
+      console.log('⚠️ Player already cleaned up');
     }
 
     setState('idle');
