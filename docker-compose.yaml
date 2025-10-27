@@ -78,15 +78,5 @@ services:
       redis:
         condition: service_healthy
 
-  frontend:
-    init: true
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
-
 volumes:
   redis_data:

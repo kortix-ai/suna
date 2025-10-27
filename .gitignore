@@ -1,5 +1,9 @@
 .DS_Store
 
+# SSL Certificates (mkcert for local development)
+*.pem
+*.key
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -225,3 +229,6 @@ apps/mobile/.env*.local
 apps/mobile/app-example
 # Docker-specific env files
 *.env.docker
+
+# Certificates
+/certs

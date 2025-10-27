@@ -138,6 +138,8 @@ allow_origin_regex = None
 if config.ENV_MODE == EnvMode.LOCAL:
     allowed_origins.append("http://localhost:3000")
     allowed_origins.append("http://127.0.0.1:3000")
+    allowed_origins.append("https://super.local.enso.bot:3000")
+    print("✅ [CORS] Added super.local.enso.bot to allowed origins")
 
 # Add staging-specific origins
 if config.ENV_MODE == EnvMode.STAGING:
@@ -198,7 +200,7 @@ from core.google.google_docs_api import router as google_docs_router
 api_router.include_router(google_docs_router)
 
 # Cognito authentication
-from core.auth.cognito_auth import router as cognito_auth_router
+from core.cognito_auth.cognito_auth import router as cognito_auth_router
 api_router.include_router(cognito_auth_router)
 print("✅ [API] Cognito auth router registered")
 

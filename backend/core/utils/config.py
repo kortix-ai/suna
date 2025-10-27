@@ -476,38 +476,63 @@ class Configuration:
 
     def __init__(self):
         """Initialize configuration by loading from environment variables."""
+        print("=" * 80)
+        print("🚀 [Config] Initializing Configuration")
+        print("=" * 80)
+        
         # Load environment variables from .env file if it exists
         load_dotenv()
+        print("✅ [Config] load_dotenv() called")
+        
+        # Test if SUPABASE_URL is in environment
+        supabase_url_test = os.getenv("SUPABASE_URL")
+        print(f"🔍 [Config] Testing SUPABASE_URL from os.getenv(): {supabase_url_test}")
         
         # Set environment mode first
         env_mode_str = os.getenv("ENV_MODE", EnvMode.LOCAL.value)
+        print(f"🔍 [Config] ENV_MODE from env: {env_mode_str}")
         try:
             self.ENV_MODE = EnvMode(env_mode_str.lower())
         except ValueError:
             logger.warning(f"Invalid ENV_MODE: {env_mode_str}, defaulting to LOCAL")
             self.ENV_MODE = EnvMode.LOCAL
             
+        print(f"✅ [Config] Environment mode set to: {self.ENV_MODE.value}")
         logger.debug(f"Environment mode: {self.ENV_MODE.value}")
         
         # Load configuration from environment variables
+        print("📝 [Config] Loading configuration from environment...")
         self._load_from_env()
+        print("✅ [Config] Configuration loaded from environment")
         
         # Auto-generate admin API key if not present
         if not self.KORTIX_ADMIN_API_KEY:
             self.KORTIX_ADMIN_API_KEY = self._generate_admin_api_key()
             logger.info("Auto-generated KORTIX_ADMIN_API_KEY for administrative functions")
+            print("✅ [Config] Auto-generated KORTIX_ADMIN_API_KEY")
         
         # Perform validation
+        print("📝 [Config] Starting validation...")
         self._validate()
+        print("✅ [Config] Validation complete")
+        print("=" * 80)
         
     def _load_from_env(self):
         """Load configuration values from environment variables."""
+        print("📝 [Config] Iterating through type hints to load environment variables...")
+        
         for key, expected_type in get_type_hints(self.__class__).items():
             # Skip ENV_MODE as it's already handled in __init__
             if key == "ENV_MODE":
                 continue
                 
             env_val = os.getenv(key)
+            
+            # Debug log for critical Supabase variables
+            if key in ['SUPABASE_URL', 'SUPABASE_JWT_SECRET', 'SUPABASE_SERVICE_ROLE_KEY']:
+                print(f"🔍 [Config] {key}: {'✅ FOUND' if env_val else '❌ MISSING'}")
+                if env_val:
+                    print(f"    Value preview: {env_val[:30]}...")
             
             if env_val is not None:
                 # Convert environment variable to the expected type
@@ -541,6 +566,8 @@ class Configuration:
     
     def _validate(self):
         """Validate configuration based on type hints."""
+        print("📝 [Config] Validating configuration...")
+        
         # Get all configuration fields and their type hints
         type_hints = get_type_hints(self.__class__)
         
@@ -550,9 +577,27 @@ class Configuration:
             # Check if the field is Optional
             is_optional = hasattr(field_type, "__origin__") and field_type.__origin__ is Union and type(None) in field_type.__args__
             
+            # Debug log for critical fields
+            if field in ['SUPABASE_URL', 'SUPABASE_JWT_SECRET', 'SUPABASE_SERVICE_ROLE_KEY']:
+                has_attr = hasattr(self, field)
+                print(f"🔍 [Config] Validating {field}:")
+                print(f"    hasattr(self, '{field}'): {has_attr}")
+                print(f"    is_optional: {is_optional}")
+                if has_attr:
+                    field_value = getattr(self, field)
+                    print(f"    value: {field_value[:30] if field_value else 'None'}...")
+            
+            # Check if attribute exists before trying to get it
+            if not hasattr(self, field):
+                print(f"❌ [Config] {field} attribute does NOT exist on object!")
+                if not is_optional:
+                    missing_fields.append(field)
+                continue
+            
             # If not optional and value is None, add to missing fields
             if not is_optional and getattr(self, field) is None:
                 missing_fields.append(field)
+                print(f"❌ [Config] {field} is required but value is None!")
         
         if missing_fields:
             error_msg = f"Missing required configuration fields: {', '.join(missing_fields)}"

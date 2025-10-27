@@ -4,6 +4,10 @@ export type Environment = 'local' | 'staging' | 'prod';
  * Gets the hostname from current location
  */
 const getHostname = (): string => {
+  if (typeof window === 'undefined') {
+    // SSR fallback - return localhost
+    return 'localhost';
+  }
   return window.location.hostname;
 };
 
