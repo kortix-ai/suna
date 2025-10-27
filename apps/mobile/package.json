@@ -11,6 +11,7 @@
     "clean": "rm -rf .expo node_modules"
   },
   "dependencies": {
+    "@bacons/apple-targets": "^3.0.5",
     "@gorhom/bottom-sheet": "^5.2.6",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-masked-view/masked-view": "^0.3.2",
@@ -82,6 +83,7 @@
     "react-native-svg": "15.12.1",
     "react-native-url-polyfill": "^3.0.0",
     "react-native-web": "^0.21.0",
+    "react-native-webview": "^13.16.0",
     "react-native-worklets": "0.5.1",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^3.4.14",

@@ -31,6 +31,7 @@ export interface UnifiedMessage {
   updated_at: string;
   agent_id?: string;
   sequence?: number;
+  sandbox_id?: string;
 }
 
 export interface Thread {

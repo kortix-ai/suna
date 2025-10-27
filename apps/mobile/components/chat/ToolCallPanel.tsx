@@ -1,10 +1,3 @@
-/**
- * Tool Call Panel
- * 
- * Bottom drawer displaying detailed tool call information.
- * Supports navigation between multiple tool calls.
- */
-
 import React, { useState, useMemo, useCallback } from 'react';
 import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
@@ -15,6 +8,7 @@ import { getToolViewComponent } from './tool-views';
 import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react-native';
 
@@ -30,9 +24,6 @@ interface ToolCallPanelProps {
   initialIndex?: number;
 }
 
-/**
- * Tool Call Panel Component
- */
 export function ToolCallPanel({
   visible,
   onClose,
@@ -42,9 +33,9 @@ export function ToolCallPanel({
   const bottomSheetRef = React.useRef<BottomSheet>(null);
   const snapPoints = React.useMemo(() => ['85%'], []);
   const { colorScheme } = useColorScheme();
+  const insets = useSafeAreaInsets();
   const [currentIndex, setCurrentIndex] = useState(initialIndex);
 
-  // Reset index when panel opens
   React.useEffect(() => {
     if (visible) {
       setCurrentIndex(initialIndex);
@@ -56,7 +47,6 @@ export function ToolCallPanel({
     }
   }, [visible, initialIndex]);
 
-  // Get current tool data
   const currentPair = toolMessages[currentIndex];
   
   const toolData = useMemo(() => {
@@ -70,7 +60,6 @@ export function ToolCallPanel({
     return getToolViewComponent(toolName);
   }, [toolName]);
 
-  // Navigation handlers
   const handlePrev = useCallback(() => {
     if (currentIndex > 0) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -141,26 +130,6 @@ export function ToolCallPanel({
         overflow: 'hidden'
       }}
     >
-      {/* Header */}
-      <View className="border-b border-border bg-card px-6 pb-4 pt-6">
-        <View className="flex-row items-center justify-between">
-          <View className="flex-1">
-            <Text className="text-lg font-roobert-semibold text-foreground" numberOfLines={1}>
-              {toolName}
-            </Text>
-          </View>
-
-          <Pressable
-            onPress={handleClose}
-            className="p-2 rounded-full bg-secondary active:bg-secondary/80"
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Icon as={X} size={20} className="text-foreground/60" />
-          </Pressable>
-        </View>
-      </View>
-
-      {/* Content */}
       <BottomSheetScrollView 
         className="flex-1"
         showsVerticalScrollIndicator={false}
@@ -184,11 +153,15 @@ export function ToolCallPanel({
         )}
       </BottomSheetScrollView>
 
-      {/* Footer Navigation */}
       {toolMessages.length > 1 && (
-        <View className="border-t border-border bg-card px-6 py-3">
+        <View 
+          className="border-t border-border bg-card px-6"
+          style={{
+            paddingTop: 12,
+            paddingBottom: Math.max(insets.bottom, 12),
+          }}
+        >
           <View className="flex-row items-center justify-between">
-            {/* Previous Button */}
             <Pressable
               onPress={handlePrev}
               disabled={isPrevDisabled}
@@ -215,14 +188,12 @@ export function ToolCallPanel({
               </Text>
             </Pressable>
 
-            {/* Counter */}
             <View className="px-4">
               <Text className="text-sm font-roobert-semibold text-foreground tabular-nums">
                 {currentIndex + 1}/{toolMessages.length}
               </Text>
             </View>
 
-            {/* Next Button */}
             <Pressable
               onPress={handleNext}
               disabled={isNextDisabled}

@@ -55,13 +55,6 @@ export function ThreadPage({
   const insets = useSafeAreaInsets();
   const [isThreadActionsVisible, setIsThreadActionsVisible] = React.useState(false);
   
-  // Tool drawer state - now managed by chat hook
-  // const [selectedToolData, setSelectedToolData] = React.useState<{
-  //   toolMessages: ToolMessagePair[];
-  //   initialIndex: number;
-  // } | null>(null);
-
-  // Optimized keyboard animation - smooth and responsive
   const keyboard = useAnimatedKeyboard();
   
   const animatedBottomStyle = useAnimatedStyle(() => {
@@ -69,30 +62,26 @@ export function ThreadPage({
       transform: [
         {
           translateY: withSpring(-keyboard.height.value, {
-            damping: 25,               // Balanced damping for smooth animation
-            stiffness: 300,            // Moderate stiffness for natural feel
-            mass: 0.8,                 // Slightly heavier for smoother motion
-            overshootClamping: false,  // Allow slight overshoot for natural feel
+            damping: 25,
+            stiffness: 300,
+            mass: 0.8,
+            overshootClamping: false,
           }),
         },
       ],
     };
   });
 
-  // Get messages and streaming state from chat
   const messages = chat.messages || [];
   const streamingContent = chat.streamingContent || '';
   const streamingToolCall = chat.streamingToolCall || null;
   const isLoading = chat.isLoading;
   const hasMessages = messages.length > 0 || streamingContent.length > 0;
-
-  // Enhanced auto-scroll behavior
   const scrollViewRef = React.useRef<ScrollView>(null);
   const [isUserScrolling, setIsUserScrolling] = React.useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = React.useState(false);
   const lastMessageCountRef = React.useRef(messages.length);
   
-  // Auto-scroll to bottom when new messages arrive (only if user isn't manually scrolling)
   React.useEffect(() => {
     const hasNewMessages = messages.length > lastMessageCountRef.current;
     const hasStreamingContent = streamingContent.length > 0;
@@ -145,23 +134,20 @@ export function ThreadPage({
   }, [isLoading, hasMessages, messages.length, chat.activeThread?.id, isUserScrolling, showScrollToBottom, insets.top]);
 
   return (
-    <View className="flex-1 bg-background">
-      {/* Thread Header - Fixed at top */}
-      <ThreadHeader
-        threadTitle={chat.activeThread?.title}
-        onTitleChange={async (newTitle) => {
-          console.log('📝 Thread title changed to:', newTitle);
-          try {
-            await chat.updateThreadTitle(newTitle);
-          } catch (error) {
-            console.error('❌ Failed to update thread title:', error);
-          }
-        }}
-        onMenuPress={onMenuPress}
-        onActionsPress={() => setIsThreadActionsVisible(true)}
-      />
-
-      {/* Main Content Area */}
+    <View className="flex-1" style={{ backgroundColor: colorScheme === 'dark' ? '#121215' : '#f8f8f8' }}>
+        <ThreadHeader
+          threadTitle={chat.activeThread?.title}
+          onTitleChange={async (newTitle) => {
+            console.log('📝 Thread title changed to:', newTitle);
+            try {
+              await chat.updateThreadTitle(newTitle);
+            } catch (error) {
+              console.error('❌ Failed to update thread title:', error);
+            }
+          }}
+          onMenuPress={onMenuPress}
+          onActionsPress={() => setIsThreadActionsVisible(true)}
+        />
       <View className="flex-1">
         {isLoading ? (
           <View className="flex-1 items-center justify-center">
@@ -189,7 +175,7 @@ export function ThreadPage({
             showsVerticalScrollIndicator={true}
             contentContainerStyle={{ 
               flexGrow: 1,
-              paddingTop: insets.top + 60, // Safe area + header height (48px) + extra spacing (12px)
+              paddingTop: insets.top + 60, 
               paddingBottom: 200,
               paddingHorizontal: 16, // Comfortable side margins
             }}
@@ -321,7 +307,7 @@ export function ThreadPage({
         }}
       />
       
-      {/* Tool Call Panel */}
+      {/* Tool Call Panel - Native modal with automatic background scaling on iOS */}
       <ToolCallPanel
         visible={!!chat.selectedToolData}
         onClose={() => chat.setSelectedToolData(null)}
