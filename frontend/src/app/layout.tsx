@@ -51,7 +51,7 @@ export const metadata: Metadata = {
   publisher:
     'Kortix Team',
   category: 'Technology',
-  applicationName: 'Suna',
+  applicationName: 'Kortix',
   formatDetection: {
     telephone: false,
     email: false,
@@ -68,16 +68,16 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     url: siteConfig.url,
-    siteName: 'Suna',
-    title: 'Suna - Open Source Generalist AI Worker',
+    siteName: 'Kortix',
+    title: 'Kortix - Open Source Generalist AI Worker',
     description:
-      'Suna is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
+      'Kortix is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
     images: [
       {
         url: new URL('/banner.png', siteConfig.url).toString(),
         width: 1200,
         height: 630,
-        alt: 'Suna - Open Source Generalist AI Worker',
+        alt: 'Kortix - Open Source Generalist AI Worker',
         type: 'image/png',
       },
     ],
@@ -87,9 +87,9 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     site: '@kortixai',
     creator: '@kortixai',
-    title: 'Suna - Open Source Generalist AI Worker',
+    title: 'Kortix - Open Source Generalist AI Worker',
     description:
-      'Suna is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
+      'Kortix is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
     images: [new URL('/banner.png', siteConfig.url).toString()],
   },
   icons: {
