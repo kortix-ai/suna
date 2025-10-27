@@ -1,9 +1,9 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetView } from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { BlurBackdrop } from '@/components/ui/BlurBackdrop';
+import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
-import { Share, FolderOpen, Trash2 } from 'lucide-react-native';
+import { Share, FolderOpen, Trash2, ChevronRight } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { Pressable, View } from 'react-native';
@@ -26,11 +26,16 @@ interface ThreadActionsDrawerProps {
 interface ActionItemProps {
   icon: any;
   label: string;
+  subtitle?: string;
   onPress: () => void;
-  destructive?: boolean;
 }
 
-function ActionItem({ icon, label, onPress, destructive = false }: ActionItemProps) {
+/**
+ * ActionItem - Matches SelectableListItem design pattern from AgentDrawer
+ * Uses exact same visual patterns as SelectableListItem with chevron
+ */
+function ActionItem({ icon, label, subtitle, onPress }: ActionItemProps) {
+  const { colorScheme } = useColorScheme();
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({
@@ -38,7 +43,6 @@ function ActionItem({ icon, label, onPress, destructive = false }: ActionItemPro
   }));
 
   const handlePress = () => {
-    console.log('🎯 Thread action:', label);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onPress();
   };
@@ -53,21 +57,55 @@ function ActionItem({ icon, label, onPress, destructive = false }: ActionItemPro
       }}
       onPress={handlePress}
       style={animatedStyle}
-      className="flex-row items-center px-6 py-3.5"
+      className="flex-row items-center justify-between active:opacity-70"
       accessibilityRole="button"
       accessibilityLabel={label}
     >
-      <View className={`w-9 h-9 rounded-full items-center justify-center ${destructive ? 'bg-destructive/10' : 'bg-secondary/80'}`}>
-        <Icon 
-          as={icon} 
-          size={17} 
-          className={destructive ? 'text-destructive' : 'text-foreground/70'} 
-          strokeWidth={2} 
-        />
+      {/* Left: Avatar/Icon + Text - Matching SelectableListItem */}
+      <View className="flex-row items-center gap-2 flex-1">
+        {/* Icon Container - 48x48 matching avatar size */}
+        <View 
+          style={{
+            backgroundColor: colorScheme === 'dark' ? '#232324' : '#f4f4f5',
+            width: 48,
+            height: 48,
+          }}
+          className="rounded-xl items-center justify-center"
+        >
+          <Icon 
+            as={icon} 
+            size={20} 
+            color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
+            strokeWidth={2}
+          />
+        </View>
+
+        {/* Text Content - Matching SelectableListItem */}
+        <View className="flex-1">
+          <Text 
+            style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+            className="text-base font-roobert-medium"
+            numberOfLines={1}
+          >
+            {label}
+          </Text>
+          {subtitle && (
+            <Text 
+              style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
+              className="text-xs font-roobert mt-0.5"
+              numberOfLines={1}
+            >
+              {subtitle}
+            </Text>
+          )}
+        </View>
       </View>
-      <Text className={`ml-3 text-[15px] font-roobert-medium ${destructive ? 'text-destructive' : 'text-foreground'}`}>
-        {label}
-      </Text>
+
+      {/* Right: Chevron - Matching SelectableListItem */}
+      <ChevronRight 
+        size={18} 
+        color={colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'} 
+      />
     </AnimatedPressable>
   );
 }
@@ -75,13 +113,11 @@ function ActionItem({ icon, label, onPress, destructive = false }: ActionItemPro
 /**
  * ThreadActionsDrawer Component
  * 
- * Clean bottom sheet showing thread actions
- * Matches AgentDrawer design consistency
- * 
- * Actions:
- * - Share thread
- * - Manage files
- * - Delete thread (destructive)
+ * Matches AgentDrawer's design system exactly:
+ * - Same BottomSheet configuration
+ * - Same layout structure and spacing
+ * - Same section header styling
+ * - Uses SelectableListItem-style action items
  */
 export function ThreadActionsDrawer({
   visible,
@@ -91,31 +127,17 @@ export function ThreadActionsDrawer({
   onDelete,
 }: ThreadActionsDrawerProps) {
   const bottomSheetRef = React.useRef<BottomSheet>(null);
-  const snapPoints = React.useMemo(() => ['32%'], []);
+  const snapPoints = React.useMemo(() => ['95%'], []);
   const { colorScheme } = useColorScheme();
 
   React.useEffect(() => {
     if (visible) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      console.log('📳 Thread Actions Drawer Opened');
       bottomSheetRef.current?.snapToIndex(0);
     } else {
       bottomSheetRef.current?.close();
     }
   }, [visible]);
-
-  const renderBackdrop = React.useCallback(
-    (props: BottomSheetBackdropProps) => (
-      <BottomSheetBackdrop
-        {...props}
-        disappearsOnIndex={-1}
-        appearsOnIndex={0}
-        opacity={0.5}
-        pressBehavior="close"
-      />
-    ),
-    []
-  );
 
   const handleSheetChange = React.useCallback((index: number) => {
     if (index === -1) {
@@ -135,56 +157,72 @@ export function ThreadActionsDrawer({
       snapPoints={snapPoints}
       enablePanDownToClose
       onChange={handleSheetChange}
-      backdropComponent={renderBackdrop}
+      backdropComponent={BlurBackdrop}
       backgroundStyle={{
-        backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF'
+        backgroundColor: colorScheme === 'dark' 
+          ? 'rgba(22, 22, 24, 0.8)' 
+          : 'rgba(255, 255, 255, 0.95)',
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
       }}
-      handleIndicatorStyle={{
+      handleIndicatorStyle={{ 
         backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',
-        width: 40,
-        height: 4,
+        width: 36,
+        height: 5,
+        borderRadius: 3,
       }}
     >
-      <BottomSheetView>
-        {/* Header */}
-        <View className="px-6 pt-2 pb-3">
-          <Text className="text-lg font-roobert-semibold text-foreground">
-            Thread Actions
-          </Text>
-        </View>
-
-        {/* Actions */}
-        <View className="pb-6">
-          {onShare && (
-            <ActionItem
-              icon={Share}
-              label="Share Thread"
-              onPress={() => handleAction(onShare)}
-            />
-          )}
+      <BottomSheetScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{
+          paddingHorizontal: 24,
+          paddingTop: 24,
+          paddingBottom: 32,
+        }}
+      >
+        {/* Thread Actions Section - Matching AgentDrawer structure */}
+        <View className="pb-3">
+          {/* Section Header - Exact AgentDrawer styling */}
+          <View className="flex-row items-center justify-between mb-3">
+            <Text 
+              style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)' }}
+              className="text-sm font-roobert-medium"
+            >
+              Thread Actions
+            </Text>
+          </View>
           
-          {onFiles && (
-            <ActionItem
-              icon={FolderOpen}
-              label="Manage Files"
-              onPress={() => handleAction(onFiles)}
-            />
-          )}
-          
-          {onDelete && (
-            <>
-              <View className="my-2 mx-6 border-t border-border/30" />
+          {/* Action Items - More spacing between items */}
+          <View className="gap-4">
+            {onShare && (
+              <ActionItem
+                icon={Share}
+                label="Share Thread"
+                subtitle="Create a public link"
+                onPress={() => handleAction(onShare)}
+              />
+            )}
+            
+            {onFiles && (
+              <ActionItem
+                icon={FolderOpen}
+                label="Manage Files"
+                subtitle="View and manage attachments"
+                onPress={() => handleAction(onFiles)}
+              />
+            )}
+            
+            {onDelete && (
               <ActionItem
                 icon={Trash2}
                 label="Delete Thread"
+                subtitle="Permanently delete this conversation"
                 onPress={() => handleAction(onDelete)}
-                destructive
               />
-            </>
-          )}
+            )}
+          </View>
         </View>
-      </BottomSheetView>
+      </BottomSheetScrollView>
     </BottomSheet>
   );
 }
-

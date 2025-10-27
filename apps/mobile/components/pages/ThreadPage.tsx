@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, View, Keyboard, ScrollView, ActivityIndicator } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, View, Keyboard, ScrollView, ActivityIndicator, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
@@ -12,9 +12,10 @@ import { MessageRenderer, ToolCallPanel, ChatInput, type ToolMessagePair } from 
 import { ThreadHeader, ThreadActionsDrawer } from '@/components/home';
 import { AgentDrawer } from '@/components/agents';
 import { AttachmentDrawer, AttachmentBar } from '@/components/attachments';
-import { useAgentManager, useAudioRecorder, useAudioRecordingHandlers, type UseChatReturn } from '@/hooks';
+import { useAgentManager, useAudioRecorder, useAudioRecordingHandlers, type UseChatReturn, useDeleteThread, useShareThread } from '@/hooks';
 import { Text } from '@/components/ui/text';
 import { MessageCircle, ArrowDown } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
 
 interface ThreadPageProps {
   onMenuPress?: () => void;
@@ -53,7 +54,12 @@ export function ThreadPage({
   );
   const { colorScheme } = useColorScheme();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [isThreadActionsVisible, setIsThreadActionsVisible] = React.useState(false);
+  
+  // Thread actions hooks
+  const deleteThreadMutation = useDeleteThread();
+  const shareThreadMutation = useShareThread();
   
   const keyboard = useAnimatedKeyboard();
   
@@ -135,19 +141,8 @@ export function ThreadPage({
 
   return (
     <View className="flex-1" style={{ backgroundColor: colorScheme === 'dark' ? '#121215' : '#f8f8f8' }}>
-        <ThreadHeader
-          threadTitle={chat.activeThread?.title}
-          onTitleChange={async (newTitle) => {
-            console.log('📝 Thread title changed to:', newTitle);
-            try {
-              await chat.updateThreadTitle(newTitle);
-            } catch (error) {
-              console.error('❌ Failed to update thread title:', error);
-            }
-          }}
-          onMenuPress={onMenuPress}
-          onActionsPress={() => setIsThreadActionsVisible(true)}
-        />
+
+
       <View className="flex-1">
         {isLoading ? (
           <View className="flex-1 items-center justify-center">
@@ -209,6 +204,24 @@ export function ThreadPage({
         </Pressable>
       )}
 
+
+    <View className="absolute top-0 left-0 right-0">
+      {/* Thread Header */}
+      <ThreadHeader
+          threadTitle={chat.activeThread?.title}
+          onTitleChange={async (newTitle) => {
+            console.log('📝 Thread title changed to:', newTitle);
+            try {
+              await chat.updateThreadTitle(newTitle);
+            } catch (error) {
+              console.error('❌ Failed to update thread title:', error);
+            }
+          }}
+          onMenuPress={onMenuPress}
+          onActionsPress={() => setIsThreadActionsVisible(true)}
+        />
+    </View>        
+
       {/* Bottom Section with Gradient and Chat Input - Smooth keyboard animation */}
       <Animated.View 
         className="absolute bottom-0 left-0 right-0" 
@@ -238,6 +251,7 @@ export function ThreadPage({
           attachments={chat.attachments}
           onRemove={chat.removeAttachment}
         />
+        
         
         {/* Chat Input */}
         <Pressable 
@@ -291,19 +305,64 @@ export function ThreadPage({
       <ThreadActionsDrawer
         visible={isThreadActionsVisible}
         onClose={() => setIsThreadActionsVisible(false)}
-        onShare={() => {
+        onShare={async () => {
+          if (!chat.activeThread?.id) return;
+          
           console.log('📤 Share thread:', chat.activeThread?.title);
-          setIsThreadActionsVisible(false);
+          
+          try {
+            await shareThreadMutation.mutateAsync(chat.activeThread.id);
+            setIsThreadActionsVisible(false);
+          } catch (error) {
+            console.error('Failed to share thread:', error);
+            Alert.alert('Error', 'Failed to create share link. Please try again.');
+          }
         }}
         onFiles={() => {
           console.log('📁 Manage files:', chat.activeThread?.title);
           setIsThreadActionsVisible(false);
+          // TODO: Implement file management in separate plan
         }}
         onDelete={() => {
-          console.log('🗑️ Delete thread:', chat.activeThread?.title);
-          setIsThreadActionsVisible(false);
-          // Start new chat (effectively deletes current thread)
-          chat.startNewChat();
+          if (!chat.activeThread?.id) return;
+          
+          const threadTitle = chat.activeThread?.title || 'this thread';
+          
+          Alert.alert(
+            'Delete Thread',
+            `Are you sure you want to delete "${threadTitle}"? This action cannot be undone.`,
+            [
+              {
+                text: 'Cancel',
+                style: 'cancel',
+              },
+              {
+                text: 'Delete',
+                style: 'destructive',
+                onPress: async () => {
+                  setIsThreadActionsVisible(false);
+                  
+                  if (!chat.activeThread?.id) return;
+                  
+                  try {
+                    console.log('🗑️ Deleting thread:', threadTitle);
+                    await deleteThreadMutation.mutateAsync(chat.activeThread.id);
+                    
+                    // Navigate to home after successful deletion
+                    chat.startNewChat();
+                    if (router.canGoBack()) {
+                      router.back();
+                    }
+                    
+                    console.log('✅ Thread deleted successfully');
+                  } catch (error) {
+                    console.error('Failed to delete thread:', error);
+                    Alert.alert('Error', 'Failed to delete thread. Please try again.');
+                  }
+                },
+              },
+            ]
+          );
         }}
       />
       

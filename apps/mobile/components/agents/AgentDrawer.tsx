@@ -1,10 +1,10 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { SearchBar } from '@/components/ui/SearchBar';
+import { BlurBackdrop } from '@/components/ui/BlurBackdrop';
 import { useLanguage } from '@/contexts';
 import { useAgent } from '@/contexts/AgentContext';
 import BottomSheet, { BottomSheetScrollView, BottomSheetView } from '@gorhom/bottom-sheet';
-import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
 import { 
   Plus, 
@@ -20,17 +20,14 @@ import {
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { Pressable, View, StyleSheet, ScrollView, Keyboard } from 'react-native';
+import { Pressable, View, ScrollView, Keyboard } from 'react-native';
 import Animated, { 
   useAnimatedStyle, 
-  interpolate, 
-  Extrapolate,
   withTiming,
   useSharedValue,
   FadeIn,
   FadeOut
 } from 'react-native-reanimated';
-import { BlurView } from 'expo-blur';
 import { AgentAvatar } from './AgentAvatar';
 import { ModelAvatar } from '@/components/models/ModelAvatar';
 import { SelectableListItem } from '@/components/shared/SelectableListItem';
@@ -47,32 +44,6 @@ interface AgentDrawerProps {
 }
 
 type ViewState = 'main' | 'agents' | 'models';
-
-/**
- * BlurBackdrop - Custom backdrop with blur effect
- */
-function BlurBackdrop({ animatedIndex, style }: BottomSheetBackdropProps) {
-  const { colorScheme } = useColorScheme();
-  
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(
-      animatedIndex.value,
-      [-1, 0],
-      [0, 1],
-      Extrapolate.CLAMP
-    ),
-  }));
-
-  return (
-    <Animated.View style={[StyleSheet.absoluteFill, animatedStyle, style]}>
-      <BlurView
-        intensity={20}
-        tint={colorScheme === 'dark' ? 'dark' : 'light'}
-        style={StyleSheet.absoluteFill}
-      />
-    </Animated.View>
-  );
-}
 
 /**
  * BackButton - Reusable back button component
