@@ -66,14 +66,15 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
+    type: 'website',
+    url: siteConfig.url,
+    siteName: 'Suna',
     title: 'Suna - Open Source Generalist AI Worker',
     description:
       'Suna is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
-    url: siteConfig.url,
-    siteName: 'Suna',
     images: [
       {
-        url: '/banner.png',
+        url: new URL('/banner.png', siteConfig.url).toString(),
         width: 1200,
         height: 630,
         alt: 'Suna - Open Source Generalist AI Worker',
@@ -81,23 +82,15 @@ export const metadata: Metadata = {
       },
     ],
     locale: 'en_US',
-    type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
+    site: '@kortixai',
+    creator: '@kortixai',
     title: 'Suna - Open Source Generalist AI Worker',
     description:
       'Suna is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
-    creator: '@kortixai',
-    site: '@kortixai',
-    images: [
-      {
-        url: '/banner.png',
-        width: 1200,
-        height: 630,
-        alt: 'Suna - Open Source Generalist AI Worker',
-      },
-    ],
+    images: [new URL('/banner.png', siteConfig.url).toString()],
   },
   icons: {
     icon: [{ url: '/favicon.png', sizes: 'any' }],
