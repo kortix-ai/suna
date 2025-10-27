@@ -39,16 +39,16 @@ export function WordmarkFooter() {
                 {/* Background */}
                 <div className="absolute inset-0 bg-background" />
 
-                {/* Wordmark - revealed by spotlight */}
+                {/* Wordmark - hidden by spotlight on hover */}
                 <div className="relative w-full aspect-[1150/344] p-0 sm:p-8 md:p-12 lg:p-16">
                     <div
                         className="absolute inset-0 sm:p-8 md:p-12 lg:p-16"
                         style={{
                             maskImage: isHovered
-                                ? `radial-gradient(1500px circle at var(--mouse-x) var(--mouse-y), black, transparent 40%)`
+                                ? `radial-gradient(1500px circle at var(--mouse-x) var(--mouse-y), transparent, black 40%)`
                                 : 'none',
                             WebkitMaskImage: isHovered
-                                ? `radial-gradient(1500px circle at var(--mouse-x) var(--mouse-y), black, transparent 40%)`
+                                ? `radial-gradient(1500px circle at var(--mouse-x) var(--mouse-y), transparent, black 40%)`
                                 : 'none',
                             transition: 'mask-image 0.3s, -webkit-mask-image 0.3s',
                         }}

@@ -65,7 +65,7 @@ export const metadata: Metadata = {
     siteName: 'Kortix',
     images: [
       {
-        url: '/banner.png',
+        url: new URL('/banner.png', siteConfig.url).toString(),
         width: 1200,
         height: 630,
         alt: 'Kortix - Open Source Generalist AI Worker',
@@ -82,14 +82,7 @@ export const metadata: Metadata = {
       'Kortix is a fully open source AI assistant that helps you accomplish real-world tasks with ease through natural conversation.',
     creator: '@kortixai',
     site: '@kortixai',
-    images: [
-      {
-        url: '/banner.png',
-        width: 1200,
-        height: 630,
-        alt: 'Kortix - Open Source Generalist AI Worker',
-      },
-    ],
+    images: [new URL('/banner.png', siteConfig.url).toString()],
   },
   icons: {
     icon: [

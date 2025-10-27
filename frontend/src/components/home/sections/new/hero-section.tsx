@@ -231,7 +231,7 @@ export function HeroSection() {
 
                     <div className="flex flex-col items-center justify-center gap-3 sm:gap-4 pt-8 sm:pt-20 max-w-4xl mx-auto pb-7">
                         <h1 className="text-2xl md:text-3xl lg:text-4xl font-medium tracking-tighter text-balance text-center px-2">
-                            What do you want to automate today?
+                            What do you want to get done?
                         </h1>
                     </div>
 
