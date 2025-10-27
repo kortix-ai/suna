@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
+from core.utils.config import config
 from core.services.supabase import DBConnection
 from .google_slides_service import GoogleSlidesService, OAuthTokenService
 
@@ -133,8 +134,8 @@ async def google_oauth_callback(
     This endpoint receives the authorization code from Google and exchanges it for tokens.
     Redirects to the frontend with success/error status.
     """
-    # Get frontend URL from environment (supports different environments)
-    frontend_url = os.getenv("FRONTEND_URL")
+    # Get frontend URL from config (supports different environments)
+    frontend_url = config.FRONTEND_URL
     
     if error:
         logger.error(f"Google OAuth error: {error}")

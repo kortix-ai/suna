@@ -35,7 +35,11 @@
       </dict>
     </array>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>2</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>12.0</string>
+    <key>LSRequiresIPhoneOS</key>
+    <true/>
     <key>LSApplicationQueriesSchemes</key>
     <array>
       <string>mailto</string>

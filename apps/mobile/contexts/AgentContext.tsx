@@ -64,13 +64,15 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     console.log('🤖 AgentContext State:', {
       isAuthenticated: !!session,
       hasSession: !!session,
+      sessionUserId: session?.user?.id,
       isLoading,
       error: error?.message,
       agentsCount: agents.length,
       selectedAgentId,
-      hasInitialized
+      hasInitialized,
+      agentsResponse: agentsResponse ? 'present' : 'null'
     });
-  }, [session, isLoading, error, agents.length, selectedAgentId, hasInitialized]);
+  }, [session, isLoading, error, agents.length, selectedAgentId, hasInitialized, agentsResponse]);
   
   // AsyncStorage key
   const STORAGE_KEY = '@selected_agent_id';

@@ -268,14 +268,13 @@ class SubscriptionService:
             logger.info(f"[TRIAL CONVERSION] Created new checkout session for user {account_id}")
             
             # Generate frontend checkout wrapper URL for Apple compliance
-            import os
-            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+            frontend_url = config.FRONTEND_URL
             client_secret = getattr(session, 'client_secret', None)
             checkout_param = f"client_secret={client_secret}" if client_secret else f"session_id={session.id}"
             fe_checkout_url = f"{frontend_url}/checkout?{checkout_param}"
             
             return {
-                'checkout_url': session.url,  # Direct Stripe (fallback)
+                'checkout_url': fe_checkout_url,  # Use embedded checkout URL (session.url is None for embedded mode)
                 'fe_checkout_url': fe_checkout_url,  # Kortix-branded embedded checkout
                 'session_id': session.id,
                 'client_secret': client_secret,
@@ -349,14 +348,13 @@ class SubscriptionService:
             )
             
             # Generate frontend checkout wrapper URL for Apple compliance
-            import os
-            frontend_url = os.getenv('FRONTEND_URL', 'http://localhost:3000')
+            frontend_url = config.FRONTEND_URL
             client_secret = getattr(session, 'client_secret', None)
             checkout_param = f"client_secret={client_secret}" if client_secret else f"session_id={session.id}"
             fe_checkout_url = f"{frontend_url}/checkout?{checkout_param}"
             
             return {
-                'checkout_url': session.url,  # Direct Stripe (fallback)
+                'checkout_url': fe_checkout_url,  # Use embedded checkout URL (session.url is None for embedded mode)
                 'fe_checkout_url': fe_checkout_url,  # Kortix-branded embedded checkout
                 'session_id': session.id,
                 'client_secret': client_secret,
