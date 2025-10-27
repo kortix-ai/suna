@@ -45,6 +45,9 @@ import { AgentToolView } from './agent-tool/AgentToolView';
 import { KbToolView } from './kb-tool/KbToolView';
 import { UploadFileToolView } from './upload-file-tool/UploadFileToolView';
 import { ExpandMessageToolView } from './expand-message-tool/ExpandMessageToolView';
+import { DesignerToolView } from './designer-tool/DesignerToolView';
+import { ImageEditToolView } from './image-edit-tool/ImageEditToolView';
+import { PresentationToolView } from './presentation-tool/PresentationToolView';
 
 /**
  * Registry mapping tool names to their view components
@@ -67,6 +70,7 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   'update-tasks': TaskListToolView,
   'view-tasks': TaskListToolView,
   'delete-tasks': TaskListToolView,
+  'clear-all': TaskListToolView,
   
   // Port management
   'expose-port': ExposePortToolView,
@@ -191,6 +195,22 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   'upload-file': UploadFileToolView,
   'expand-message': ExpandMessageToolView,
   'expand_message': ExpandMessageToolView,
+  
+  // Designer & Image AI tools
+  'designer-create-or-edit': DesignerToolView,
+  'designer_create_or_edit': DesignerToolView,
+  'image-edit-or-generate': ImageEditToolView,
+  
+  // Presentation tools
+  'create-presentation-outline': PresentationToolView,
+  'list-presentation-templates': PresentationToolView,
+  'create-slide': PresentationToolView,
+  'list-slides': PresentationToolView,
+  'list-presentations': PresentationToolView,
+  'delete-slide': PresentationToolView,
+  'delete-presentation': PresentationToolView,
+  'validate-slide': PresentationToolView,
+  'present-presentation': PresentationToolView,
   
   // Document tools
   'parse-document': DocumentParserToolView,

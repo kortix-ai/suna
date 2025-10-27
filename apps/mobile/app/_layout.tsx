@@ -11,9 +11,11 @@ import { PortalHost } from '@rn-primitives/portal';
 import { useFonts } from 'expo-font';
 import { Stack, SplashScreen, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
+import * as SystemUI from 'expo-system-ui';
 import { useEffect, useState } from 'react';
 import { useColorScheme } from 'nativewind';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Platform } from 'react-native';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 
 // Configure Reanimated logger to disable strict mode warnings
@@ -75,6 +77,14 @@ export default function RootLayout() {
   }, []);
 
   useEffect(() => {
+    if (Platform.OS === 'ios') {
+      const activeScheme = colorScheme ?? 'light';
+      const backgroundColor = activeScheme === 'dark' ? '#000000' : '#FFFFFF';
+      SystemUI.setBackgroundColorAsync(backgroundColor);
+    }
+  }, [colorScheme]);
+
+  useEffect(() => {
     if (fontsLoaded || fontError) {
       // Hide the splash screen after the fonts have loaded (or an error was returned)
       SplashScreen.hideAsync();
@@ -117,6 +127,13 @@ export default function RootLayout() {
                           <Stack.Screen name="auth" />
                           <Stack.Screen name="billing" />
                           <Stack.Screen name="trigger-detail" />
+                          <Stack.Screen 
+                            name="tool-modal" 
+                            options={{ 
+                              presentation: 'modal',
+                              animation: 'slide_from_bottom',
+                            }} 
+                          />
                         </Stack>
                       </AuthProtection>
                       <PortalHost />

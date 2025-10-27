@@ -23,6 +23,7 @@ import {
   Plug,
   Clock,
   type LucideIcon,
+  Presentation,
 } from 'lucide-react-native';
 
 export const getToolIcon = (toolName: string): LucideIcon => {
@@ -148,6 +149,14 @@ export const getToolIcon = (toolName: string): LucideIcon => {
 
     case 'complete':
       return CheckCircle2;
+
+    case 'create-presentation-outline':
+    case 'create_presentation_outline':
+      return Presentation;
+    case 'create-slide':
+    case 'create_slide':
+      return Presentation;
+
 
     default:
       if (toolName?.startsWith('mcp_')) {
@@ -302,6 +311,11 @@ const TOOL_DISPLAY_NAMES = new Map([
   ['monitor_call', 'Monitoring Call'],
   ['wait-for-call-completion', 'Waiting for Completion'],
   ['wait_for_call_completion', 'Waiting for Completion'],
+
+  ['create-slide', 'Creating Slide'],
+  ['create_slide', 'Creating Slide'],
+
+  ['designer-create-or-edit', 'Designing'],
 ]);
 
 function formatMCPToolName(serverName: string, toolName: string): string {

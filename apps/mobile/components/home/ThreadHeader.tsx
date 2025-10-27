@@ -103,8 +103,8 @@ export function ThreadHeader({
 
   return (
     <View 
-      className="absolute top-0 left-0 right-0 bg-background z-50 border-b border-border/20" 
-      style={{ paddingTop: insets.top }}
+      className="absolute top-0 left-0 right-0 bg-background border-b border-border/20" 
+      style={{ paddingTop: insets.top, zIndex: 50 }}
     >
       <View className="flex-row items-center justify-between px-6 py-3">
       {/* Left - Chevron Menu Button */}

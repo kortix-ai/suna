@@ -359,16 +359,19 @@ function AssistantMessageContent({
     const parsed = safeJsonParse<ParsedContent>(message.content, {});
     const rawContent = parsed.content || '';
     
-    // Skip if this is a function call
+    let contentToProcess = rawContent;
+    
+    // If there are function calls, extract text BEFORE them
     if (rawContent.includes('<function_calls>')) {
-      return { content: null, fileAttachments: [], sandboxId: undefined };
+      const beforeFunctionCalls = rawContent.split('<function_calls>')[0].trim();
+      contentToProcess = beforeFunctionCalls;
     }
     
     // Extract file references
-    const files = extractFileReferences(rawContent);
+    const files = extractFileReferences(contentToProcess);
     
     // Remove file references from content to get clean text
-    const cleanContent = removeFileReferences(rawContent);
+    const cleanContent = removeFileReferences(contentToProcess);
     
     // Clean and strip XML tags
     const finalContent = stripXMLTags(cleanContent).trim();
