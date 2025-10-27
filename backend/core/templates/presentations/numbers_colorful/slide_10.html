@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presentation - Slide 10</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Inter', sans-serif;
+    background-color: #DFDFDF;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+}
+
+.slide-container {
+    width: 1920px;
+    height: 1080px;
+    display: flex;
+}
+
+.section-left {
+    background-color: #DFDFDF;
+    width: 50%;
+    padding: 70px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.right-column {
+    width: 50%;
+    display: flex;
+    flex-direction: column;
+}
+
+.section-top-right {
+    background-color: #FFCD6C;
+    height: calc(33.33% + 100px);
+    padding: 70px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+}
+
+.section-middle-right {
+    background-color: #FEF4E1;
+    height: 33.33%;
+    padding: 70px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.section-bottom-right {
+    background-color: #FFFFFF;
+    height: calc(33.33% - 100px);
+    padding: 70px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+.title {
+    font-size: 72px;
+    font-weight: 400;
+    color: #000;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    margin-bottom: 30px;
+}
+
+.description {
+    font-size: 28px;
+    font-weight: 400;
+    color: #000;
+    line-height: 1.4;
+}
+
+.percentage {
+    font-size: 140px;
+    font-weight: 400;
+    color: #000;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    margin-bottom: 20px;
+}
+
+.label {
+    font-size: 28px;
+    font-weight: 400;
+    color: #000;
+    line-height: 1.4;
+}
+</style>
+
+<div class="slide-container">
+    <div class="section-left">
+        <h1 class="title">Overview of Key<br>Yearly goal</h1>
+        <p class="description">Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor  incididunt.</p>
+    </div>
+    
+    <div class="right-column">
+        <div class="section-top-right">
+            <div class="percentage">80%</div>
+            <div class="label">Lorem ipsum dolor sit amet.</div>
+        </div>
+        
+        <div class="section-middle-right">
+            <div class="percentage">50%</div>
+            <div class="label">Lorem ipsum dolor sit amet.</div>
+        </div>
+        
+        <div class="section-bottom-right">
+            <div class="percentage">20%</div>
+            <div class="label">Lorem ipsum dolor sit amet.</div>
+        </div>
+    </div>
+</div>
+</body>
+</html>

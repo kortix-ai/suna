@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Architec Presentation - Slide 3</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+    
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #F5F3EE;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        position: relative;
+    }
+    
+    /* Logo Bottom */
+    .logo-bottom {
+        position: absolute;
+        bottom: 50px;
+        left: 60px;
+        font-size: 32px;
+        font-weight: 400;
+        color: #000;
+        letter-spacing: -0.5px;
+    }
+    
+    /* Content Layout */
+    .content-container {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+    }
+    
+    /* Left Content Area */
+    .left-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding-left: 120px;
+        padding-right: 80px;
+    }
+    
+    .heading {
+        font-size: 80px;
+        font-weight: 400;
+        color: #000;
+        margin-bottom: 50px;
+        line-height: 1.1;
+        letter-spacing: -2px;
+    }
+    
+    .description {
+        font-size: 32px;
+        font-weight: 400;
+        color: #000;
+        line-height: 1.5;
+        letter-spacing: -0.5px;
+        max-width: 550px;
+        margin-bottom: 80px;
+    }
+    
+    /* Stats Badge */
+    .stats-badge {
+        position: relative;
+        display: inline-block;
+    }
+    
+    .stats-text {
+        font-size: 42px;
+        font-weight: 500;
+        color: #FF6B35;
+        letter-spacing: -0.5px;
+        position: relative;
+        z-index: 1;
+    }
+    
+    /* Right Image Area */
+    .right-image {
+        width: 750px;
+        height: 100%;
+        background: linear-gradient(135deg, #9BA5B7 0%, #B8C1D0 100%);
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .right-image::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: url('https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800&q=80') center/cover;
+        opacity: 0.3;
+    }
+</style>
+
+<div class="logo-bottom">Architec.</div>
+
+<div class="content-container">
+    <div class="left-content">
+        <div class="heading">
+            Who We Are
+        </div>
+        <div class="description">
+            We are a multidisciplinary architectural agency focused on architectural design, precision construction and comprehensive building solutions.
+        </div>
+        <div class="stats-badge">
+            <div class="stats-text">150+ Clients</div>
+        </div>
+    </div>
+    
+    <div class="right-image"></div>
+</div>
+</body>
+</html>

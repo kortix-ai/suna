@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ELEVATE Pitch Deck 2024 - Slide 3</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+    
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    body {
+        font-family: 'Space Grotesk', sans-serif;
+        background: #f8f9fa;
+        width: 1920px;
+        height: 1080px;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+        overflow: hidden;
+        padding: 80px 108px 140px 108px;
+    }
+    
+    .header-section {
+        margin-bottom: 50px;
+    }
+    
+    .subtitle {
+        font-size: 20px;
+        font-weight: 400;
+        color: #888;
+        margin-bottom: 15px;
+        letter-spacing: 0.5px;
+    }
+    
+    .main-heading {
+        font-size: 56px;
+        font-weight: 500;
+        color: #1a1a1a;
+        line-height: 1.2;
+        max-width: 1200px;
+        letter-spacing: -1px;
+    }
+    
+    .cards-container {
+        display: flex;
+        gap: 50px;
+        align-items: flex-start;
+        width: 100%;
+        padding-bottom: 30px;
+    }
+    
+    .team-card {
+        flex: 1;
+        background: white;
+        border-radius: 16px;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        max-height: 480px;
+    }
+    
+    .image-wrapper {
+        width: 100%;
+        height: 256px;
+        background: #f0f0f0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        position: relative;
+        flex-shrink: 0;
+    }
+    
+    .image-wrapper img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center top;
+    }
+    
+    .card-content {
+        padding: 28px;
+        flex: 1;
+    }
+    
+    .team-name {
+        font-size: 28px;
+        font-weight: 600;
+        color: #1a1a1a;
+        margin-bottom: 12px;
+        letter-spacing: -0.5px;
+    }
+    
+    .team-description {
+        font-size: 16px;
+        font-weight: 400;
+        color: #666;
+        line-height: 1.6;
+        letter-spacing: 0.2px;
+    }
+    
+    .footer-divider {
+        position: absolute;
+        bottom: 120px;
+        left: 0;
+        right: 0;
+        height: 1px;
+        background: #d0d0d0;
+    }
+    
+    .footer {
+        position: absolute;
+        bottom: 50px;
+        left: 108px;
+        right: 108px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 18px;
+        color: #666;
+        font-weight: 400;
+    }
+    
+    .footer-left {
+        letter-spacing: 0.5px;
+    }
+    
+    .footer-right {
+        letter-spacing: 0.5px;
+    }
+</style>
+
+<div class="header-section">
+    <div class="subtitle">Your Special Text Here</div>
+    <h1 class="main-heading">Showcasing the Expertise of Our SaaS-Focused Leadership Team</h1>
+</div>
+
+<div class="cards-container">
+    <div class="team-card">
+        <div class="image-wrapper">
+            <img src="images/team1.jpg" alt="Team Member 1">
+        </div>
+        <div class="card-content">
+            <h3 class="team-name">Sarah Mitchell</h3>
+            <p class="team-description">Chief Executive Officer with 15+ years of experience in SaaS leadership, driving innovation and strategic growth across enterprise solutions.</p>
+        </div>
+    </div>
+    
+    <div class="team-card">
+        <div class="image-wrapper">
+            <img src="images/team2.jpg" alt="Team Member 2">
+        </div>
+        <div class="card-content">
+            <h3 class="team-name">Emily Rodriguez</h3>
+            <p class="team-description">Chief Technology Officer specializing in cloud architecture and scalable systems, leading technical excellence and product development.</p>
+        </div>
+    </div>
+    
+    <div class="team-card">
+        <div class="image-wrapper">
+            <img src="images/team3.jpg" alt="Team Member 3">
+        </div>
+        <div class="card-content">
+            <h3 class="team-name">Michael Chen</h3>
+            <p class="team-description">Chief Operating Officer focused on operational efficiency and customer success, ensuring seamless delivery and business optimization.</p>
+        </div>
+    </div>
+</div>
+
+<div class="footer-divider"></div>
+
+<div class="footer">
+    <div class="footer-left">2024 | Elevate</div>
+    <div class="footer-right">Slide 3</div>
+</div>
+</body>
+</html>

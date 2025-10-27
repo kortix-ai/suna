@@ -1,0 +1,93 @@
+{
+  "presentation_name": "elevate_pitch_deck",
+  "title": "ELEVATE Pitch Deck 2024",
+  "description": "",
+  "slides": {
+    "1": {
+      "title": "Title Slide - ELEVATE",
+      "filename": "slide_01.html",
+      "file_path": "presentations/elevate_pitch_deck/slide_01.html",
+      "preview_url": "/workspace/presentations/elevate_pitch_deck/slide_01.html",
+      "created_at": "2025-10-11T05:44:35.472371"
+    },
+    "2": {
+      "title": "About Elevate",
+      "filename": "slide_02.html",
+      "file_path": "presentations/elevate_pitch_deck/slide_02.html",
+      "preview_url": "/workspace/presentations/elevate_pitch_deck/slide_02.html",
+      "created_at": "2025-10-11T05:52:36.552823"
+    },
+    "3": {
+      "title": "Leadership Team",
+      "filename": "slide_03.html",
+      "file_path": "presentations/elevate_pitch_deck/slide_03.html",
+      "preview_url": "/workspace/presentations/elevate_pitch_deck/slide_03.html",
+      "created_at": "2025-10-11T06:00:27.198364"
+    },
+    "4": {
+      "title": "Business Growth Solutions",
+      "filename": "slide_04.html",
+      "file_path": "presentations/elevate_pitch_deck/slide_04.html",
+      "preview_url": "/workspace/presentations/elevate_pitch_deck/slide_04.html",
+      "created_at": "2025-10-11T05:54:18.543367"
+    },
+    "5": {
+      "title": "SaaS Competitive Advantage",
+      "filename": "slide_05.html",
+      "file_path": "presentations/elevate_pitch_deck/slide_05.html",
+      "preview_url": "/workspace/presentations/elevate_pitch_deck/slide_05.html",
+      "created_at": "2025-10-11T05:58:02.397961"
+    },
+    "6": {
+      "title": "Transformative Role",
+      "filename": "slide_06.html",
+      "file_path": "presentations/elevate_pitch_deck/slide_06.html",
+      "preview_url": "/workspace/presentations/elevate_pitch_deck/slide_06.html",
+      "created_at": "2025-10-11T06:02:33.287128"
+    },
+    "7": {
+      "title": "Business Value Growth",
+      "filename": "slide_07.html",
+      "file_path": "presentations/elevate_pitch_deck/slide_07.html",
+      "preview_url": "/workspace/presentations/elevate_pitch_deck/slide_07.html",
+      "created_at": "2025-10-11T06:07:22.163349"
+    },
+    "8": {
+      "title": "Quarterly Growth Metrics",
+      "filename": "slide_08.html",
+      "file_path": "presentations/elevate_pitch_deck/slide_08.html",
+      "preview_url": "/workspace/presentations/elevate_pitch_deck/slide_08.html",
+      "created_at": "2025-10-11T06:21:26.077972"
+    },
+    "9": {
+      "title": "Evolution Timeline",
+      "filename": "slide_09.html",
+      "file_path": "presentations/elevate_pitch_deck/slide_09.html",
+      "preview_url": "/workspace/presentations/elevate_pitch_deck/slide_09.html",
+      "created_at": "2025-10-11T06:27:39.560250"
+    },
+    "10": {
+      "title": "Key SaaS Advantages",
+      "filename": "slide_10.html",
+      "file_path": "presentations/elevate_pitch_deck/slide_10.html",
+      "preview_url": "/workspace/presentations/elevate_pitch_deck/slide_10.html",
+      "created_at": "2025-10-11T06:28:46.613013"
+    },
+    "11": {
+      "title": "Agenda Overview",
+      "filename": "slide_11.html",
+      "file_path": "presentations/elevate_pitch_deck/slide_11.html",
+      "preview_url": "/workspace/presentations/elevate_pitch_deck/slide_11.html",
+      "created_at": "2025-10-11T06:31:58.449913"
+    },
+    "12": {
+      "title": "Thank You",
+      "filename": "slide_12.html",
+      "file_path": "presentations/elevate_pitch_deck/slide_12.html",
+      "preview_url": "/workspace/presentations/elevate_pitch_deck/slide_12.html",
+      "created_at": "2025-10-11T06:44:44.020614"
+    }
+  },
+  "created_at": "2025-10-11T05:39:26.423328",
+  "updated_at": "2025-10-11T06:44:44.020631"
+}

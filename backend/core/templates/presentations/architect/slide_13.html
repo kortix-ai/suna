@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Architec Presentation - Slide 13</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+    
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #F5F3EE;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        position: relative;
+    }
+    
+    /* Main Container */
+    .container {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 80px 100px;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    /* Heading */
+    .main-heading {
+        font-size: 80px;
+        font-weight: 400;
+        color: #000;
+        letter-spacing: -2px;
+        margin-bottom: 60px;
+    }
+    
+    .main-heading .dot {
+        color: #FF6B35;
+    }
+    
+    /* Projects Grid */
+    .projects-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 40px;
+        margin-bottom: 50px;
+    }
+    
+    /* Project Item */
+    .project-item {
+        position: relative;
+    }
+    
+    .project-image {
+        width: 100%;
+        height: 400px;
+        background: linear-gradient(135deg, #9BA5B7 0%, #B8C1D0 100%);
+        border-radius: 20px;
+        position: relative;
+        overflow: hidden;
+    }
+    
+    .project-image::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: url('https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80') center/cover;
+        opacity: 0.2;
+    }
+    
+    .project-label {
+        position: absolute;
+        top: 0;
+        right: 0;
+        background: #FF6B35;
+        color: #000;
+        font-size: 28px;
+        font-weight: 500;
+        padding: 20px 50px;
+        border-radius: 0 20px 0 20px;
+    }
+    
+    /* Text Content */
+    .text-content {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 40px;
+        margin-top: 20px;
+    }
+    
+    .text-block {
+        font-size: 28px;
+        font-weight: 400;
+        color: #000;
+        line-height: 1.6;
+        letter-spacing: -0.5px;
+    }
+    
+    .text-block.description {
+        opacity: 0.85;
+    }
+</style>
+
+<div class="container">
+    <div class="main-heading">
+        Residential Projects<span class="dot">.</span>
+    </div>
+    
+    <div class="projects-grid">
+        <!-- Project 01 -->
+        <div class="project-item">
+            <div class="project-image"></div>
+            <div class="project-label">Project 01</div>
+        </div>
+        
+        <!-- Project 02 -->
+        <div class="project-item">
+            <div class="project-image"></div>
+            <div class="project-label">Project 02</div>
+        </div>
+    </div>
+    
+    <div class="text-content">
+        <div class="text-block">
+            To be a trusted architectural partner in creating innovative, functional and highly aesthetic spaces.
+        </div>
+        <div class="text-block description">
+            Duis diam nullam dis tincidunt ornare tincidunt Sapien tristique mattis taciti placerat curabitur ipsum metus dolor ridiculus suam litora auctor adipiscing vestibulum proin honcus its netus quam fermenta.
+        </div>
+    </div>
+</div>
+</body>
+</html>

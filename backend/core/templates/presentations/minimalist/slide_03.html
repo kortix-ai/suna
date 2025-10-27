@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minim - Minimalist Presentation Template - Slide 3</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Lora:wght@400;500;600&display=swap');
+  
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  .slide-container {
+    width: 1920px;
+    height: 1080px;
+    background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+    padding: 80px 100px;
+    font-family: 'Lora', Georgia, serif;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .content-area {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1.3fr;
+    gap: 80px;
+    align-items: center;
+  }
+  
+  .left-section {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  
+  .small-title {
+    font-size: 28px;
+    font-weight: 400;
+    color: #95a5a6;
+    margin-bottom: 30px;
+    font-family: 'Lora', Georgia, serif;
+  }
+  
+  .main-heading {
+    font-size: 110px;
+    font-weight: 400;
+    color: #ffffff;
+    line-height: 1.1;
+    margin-bottom: 60px;
+    font-family: 'Playfair Display', Georgia, serif;
+    letter-spacing: -2px;
+  }
+  
+  .description {
+    font-size: 24px;
+    font-weight: 400;
+    color: #bdc3c7;
+    line-height: 1.8;
+    max-width: 600px;
+  }
+  
+  .right-section {
+    width: 100%;
+    height: 600px;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .right-section img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+  }
+  
+  .image-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, rgba(231, 76, 60, 0.1) 0%, rgba(230, 126, 34, 0.1) 100%);
+    mix-blend-mode: multiply;
+  }
+  
+  .footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 60px;
+    padding-top: 30px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  
+  .footer-text {
+    font-size: 20px;
+    font-weight: 400;
+    color: #7f8c8d;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+  }
+  
+  .page-number {
+    font-size: 32px;
+    font-weight: 400;
+    color: #7f8c8d;
+  }
+</style>
+
+<div class="slide-container">
+  <div class="content-area">
+    <div class="left-section">
+      <div class="small-title">Your Title Here</div>
+      <div class="main-heading">our company history</div>
+      <div class="description">
+        Minimalism emerged in New York in the early 1960s among artists who were self-consciously renouncing recent art they thought had become stale and academic. Minimalism is a tool to rid yourself of life's excess in favor of focusing on what's important—so you can find happiness, fulfillment, and freedom.
+      </div>
+    </div>
+    
+    <div class="right-section">
+      <img src="https://media.architecturaldigest.com/photos/6336fe8594fa771c2e9e6a37/1:1/w_4000,h_4000,c_limit/480A_SOIL_-_HUMANS_WORK_VA_04696.jpg" alt="Modern corporate building">
+      <div class="image-overlay"></div>
+    </div>
+  </div>
+  
+  <div class="footer">
+    <div class="footer-text">Minim Company</div>
+    <div class="page-number">4</div>
+  </div>
+</div>
+</body>
+</html>

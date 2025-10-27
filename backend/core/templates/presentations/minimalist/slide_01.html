@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Minim - Minimalist Presentation Template - Slide 1</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Lora:wght@400;500;600&display=swap');
+  
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  .slide-container {
+    width: 1920px;
+    height: 1080px;
+    display: flex;
+    font-family: 'Playfair Display', Georgia, serif;
+    overflow: hidden;
+    position: relative;
+  }
+  
+  .left-section {
+    width: 50%;
+    background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 80px 100px;
+    position: relative;
+    z-index: 2;
+  }
+  
+  .top-text {
+    font-size: 24px;
+    font-weight: 400;
+    color: #95a5a6;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    font-family: 'Lora', Georgia, serif;
+  }
+  
+  .main-content {
+    margin-bottom: 100px;
+  }
+  
+  .title {
+    font-size: 180px;
+    font-weight: 400;
+    color: #ffffff;
+    line-height: 0.9;
+    margin-bottom: 30px;
+    letter-spacing: -2px;
+  }
+  
+  .subtitle {
+    font-size: 32px;
+    font-weight: 400;
+    color: #bdc3c7;
+    letter-spacing: 1px;
+    font-family: 'Lora', Georgia, serif;
+  }
+  
+  .right-section {
+    width: 50%;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .right-section img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+  }
+  
+  .image-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, rgba(231, 76, 60, 0.15) 0%, rgba(230, 126, 34, 0.15) 100%);
+    mix-blend-mode: multiply;
+  }
+</style>
+
+<div class="slide-container">
+  <div class="left-section">
+    <div class="top-text">Minim Company - 2022</div>
+    <div class="main-content">
+      <div class="title">Minim</div>
+      <div class="subtitle">Minimalist Presentation Template</div>
+    </div>
+  </div>
+  <div class="right-section">
+    <img src="https://images.stockcake.com/public/e/1/0/e10422cb-7250-4fbd-81e4-5aeda5d3dfbb_large/corporate-team-meeting-stockcake.jpg" alt="Corporate team meeting">
+    <div class="image-overlay"></div>
+  </div>
+</div>
+</body>
+</html>

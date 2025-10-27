@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pitch Deck Template - Slide 8</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+@import url('https://fonts.googleapis.com/css2?family=Staatliches&family=Inter:wght@400;500;600&family=Stardos+Stencil:wght@400;700&family=Courier+Prime:wght@400;700&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    font-family: 'Inter', sans-serif;
+    background: #DED8CB;
+}
+
+/* Main Container */
+.main-container {
+    width: 100%;
+    height: 100%;
+    padding: 80px;
+}
+
+/* Header Section */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 80px;
+}
+
+.slide-title {
+    font-family: 'Staatliches', cursive;
+    font-size: 72px;
+    color: #000000;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+
+.header-info {
+    display: flex;
+    gap: 100px;
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    color: #000000;
+    padding-top: 20px;
+}
+
+/* Cards Grid */
+.cards-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 40px;
+    height: calc(100% - 180px);
+}
+
+/* Card */
+.principle-card {
+    border-radius: 32px;
+    padding: 50px 40px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.card-1 {
+    background: #A97C50;
+}
+
+.card-2 {
+    background: #C04277;
+}
+
+.card-3 {
+    background: #FF6A3B;
+}
+
+.card-4 {
+    background: #15857A;
+}
+
+/* Number */
+.card-number {
+    font-family: 'Stardos Stencil', cursive;
+    font-size: 300px;
+    font-weight: 700;
+    color: #000000;
+    line-height: 0.85;
+    letter-spacing: -4px;
+}
+
+/* Content Section */
+.card-content {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.card-label {
+    font-family: 'Courier Prime', monospace;
+    font-size: 18px;
+    font-weight: 700;
+    color: #000000;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+}
+
+.card-description {
+    font-family: 'Inter', sans-serif;
+    font-size: 18px;
+    line-height: 1.5;
+    color: #000000;
+    font-weight: 400;
+}
+</style>
+
+<div class="main-container">
+    <div class="header">
+        <h1 class="slide-title">OUR PRINCIPLES</h1>
+        <div class="header-info">
+            <span>Agency Name x Partner Name</span>
+            <span>Phase X</span>
+        </div>
+    </div>
+    
+    <div class="cards-grid">
+        <div class="principle-card card-1">
+            <div class="card-number">1</div>
+            <div class="card-content">
+                <div class="card-label">PRINCIPLE EXPLAINER</div>
+                <div class="card-description">Add a quick description of each of your principles—for building product, designing, etc.</div>
+            </div>
+        </div>
+        
+        <div class="principle-card card-2">
+            <div class="card-number">2</div>
+            <div class="card-content">
+                <div class="card-label">PRINCIPLE EXPLAINER</div>
+                <div class="card-description">Keep them as short and sweet as possible, so they're easy to understand.</div>
+            </div>
+        </div>
+        
+        <div class="principle-card card-3">
+            <div class="card-number">3</div>
+            <div class="card-content">
+                <div class="card-label">PRINCIPLE EXPLAINER</div>
+                <div class="card-description">If it's helpful, you might link to examples of your work that reflect each principle.</div>
+            </div>
+        </div>
+        
+        <div class="principle-card card-4">
+            <div class="card-number">4</div>
+            <div class="card-content">
+                <div class="card-label">PRINCIPLE EXPLAINER</div>
+                <div class="card-description">If you have fewer than four simple cut what you don't need and shift the rest around.</div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>

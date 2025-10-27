@@ -1,0 +1,79 @@
+{
+  "presentation_name": "marketing_strategy_template",
+  "title": "Marketing Strategy Presentation",
+  "description": "",
+  "slides": {
+    "1": {
+      "title": "Title Slide - Marketing Strategy",
+      "filename": "slide_01.html",
+      "file_path": "presentations/marketing_strategy_template/slide_01.html",
+      "preview_url": "/workspace/presentations/marketing_strategy_template/slide_01.html",
+      "created_at": "2025-10-11T19:30:53.230528"
+    },
+    "2": {
+      "title": "Introduction - Purpose Overview",
+      "filename": "slide_02.html",
+      "file_path": "presentations/marketing_strategy_template/slide_02.html",
+      "preview_url": "/workspace/presentations/marketing_strategy_template/slide_02.html",
+      "created_at": "2025-10-11T19:33:10.699069"
+    },
+    "3": {
+      "title": "Section Divider - New Section",
+      "filename": "slide_03.html",
+      "file_path": "presentations/marketing_strategy_template/slide_03.html",
+      "preview_url": "/workspace/presentations/marketing_strategy_template/slide_03.html",
+      "created_at": "2025-10-11T19:36:16.148325"
+    },
+    "4": {
+      "title": "Opportunity - Three Column Stats",
+      "filename": "slide_04.html",
+      "file_path": "presentations/marketing_strategy_template/slide_04.html",
+      "preview_url": "/workspace/presentations/marketing_strategy_template/slide_04.html",
+      "created_at": "2025-10-11T19:36:47.950105"
+    },
+    "5": {
+      "title": "Target Audience - Concentric Circles",
+      "filename": "slide_05.html",
+      "file_path": "presentations/marketing_strategy_template/slide_05.html",
+      "preview_url": "/workspace/presentations/marketing_strategy_template/slide_05.html",
+      "created_at": "2025-10-11T19:40:41.619956"
+    },
+    "6": {
+      "title": "Objectives - Three Column Layout",
+      "filename": "slide_06.html",
+      "file_path": "presentations/marketing_strategy_template/slide_06.html",
+      "preview_url": "/workspace/presentations/marketing_strategy_template/slide_06.html",
+      "created_at": "2025-10-11T19:43:47.660413"
+    },
+    "7": {
+      "title": "Positioning Statement",
+      "filename": "slide_07.html",
+      "file_path": "presentations/marketing_strategy_template/slide_07.html",
+      "preview_url": "/workspace/presentations/marketing_strategy_template/slide_07.html",
+      "created_at": "2025-10-11T19:47:24.267659"
+    },
+    "8": {
+      "title": "Pain Points vs Benefits",
+      "filename": "slide_08.html",
+      "file_path": "presentations/marketing_strategy_template/slide_08.html",
+      "preview_url": "/workspace/presentations/marketing_strategy_template/slide_08.html",
+      "created_at": "2025-10-11T19:47:48.287509"
+    },
+    "9": {
+      "title": "Campaign Funnel",
+      "filename": "slide_09.html",
+      "file_path": "presentations/marketing_strategy_template/slide_09.html",
+      "preview_url": "/workspace/presentations/marketing_strategy_template/slide_09.html",
+      "created_at": "2025-10-11T19:50:34.960023"
+    },
+    "10": {
+      "title": "Thank You Slide",
+      "filename": "slide_10.html",
+      "file_path": "presentations/marketing_strategy_template/slide_10.html",
+      "preview_url": "/workspace/presentations/marketing_strategy_template/slide_10.html",
+      "created_at": "2025-10-11T19:51:13.570307"
+    }
+  },
+  "created_at": "2025-10-11T19:28:25.185126",
+  "updated_at": "2025-10-11T19:51:13.570324"
+}

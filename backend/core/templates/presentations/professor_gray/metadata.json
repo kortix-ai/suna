@@ -1,0 +1,100 @@
+{
+  "presentation_name": "syllabus_presentation",
+  "title": "Syllabus Presentation",
+  "description": "",
+  "slides": {
+    "1": {
+      "title": "Title Slide",
+      "filename": "slide_01.html",
+      "file_path": "presentations/syllabus_presentation/slide_01.html",
+      "preview_url": "/workspace/presentations/syllabus_presentation/slide_01.html",
+      "created_at": "2025-10-12T08:35:09.572076"
+    },
+    "2": {
+      "title": "Table of Contents",
+      "filename": "slide_02.html",
+      "file_path": "presentations/syllabus_presentation/slide_02.html",
+      "preview_url": "/workspace/presentations/syllabus_presentation/slide_02.html",
+      "created_at": "2025-10-12T08:36:36.014406"
+    },
+    "3": {
+      "title": "Quote Slide",
+      "filename": "slide_03.html",
+      "file_path": "presentations/syllabus_presentation/slide_03.html",
+      "preview_url": "/workspace/presentations/syllabus_presentation/slide_03.html",
+      "created_at": "2025-10-12T08:36:52.683311"
+    },
+    "4": {
+      "title": "Introduction",
+      "filename": "slide_04.html",
+      "file_path": "presentations/syllabus_presentation/slide_04.html",
+      "preview_url": "/workspace/presentations/syllabus_presentation/slide_04.html",
+      "created_at": "2025-10-12T08:37:55.045172"
+    },
+    "5": {
+      "title": "Course Outline",
+      "filename": "slide_05.html",
+      "file_path": "presentations/syllabus_presentation/slide_05.html",
+      "preview_url": "/workspace/presentations/syllabus_presentation/slide_05.html",
+      "created_at": "2025-10-12T08:38:51.490625"
+    },
+    "6": {
+      "title": "Academic Policies",
+      "filename": "slide_06.html",
+      "file_path": "presentations/syllabus_presentation/slide_06.html",
+      "preview_url": "/workspace/presentations/syllabus_presentation/slide_06.html",
+      "created_at": "2025-10-12T08:39:46.229302"
+    },
+    "7": {
+      "title": "Readings",
+      "filename": "slide_07.html",
+      "file_path": "presentations/syllabus_presentation/slide_07.html",
+      "preview_url": "/workspace/presentations/syllabus_presentation/slide_07.html",
+      "created_at": "2025-10-12T08:40:50.760300"
+    },
+    "8": {
+      "title": "Title Text Slide",
+      "filename": "slide_08.html",
+      "file_path": "presentations/syllabus_presentation/slide_08.html",
+      "preview_url": "/workspace/presentations/syllabus_presentation/slide_08.html",
+      "created_at": "2025-10-12T08:45:03.326272"
+    },
+    "9": {
+      "title": "Minimal Header Slide",
+      "filename": "slide_09.html",
+      "file_path": "presentations/syllabus_presentation/slide_09.html",
+      "preview_url": "/workspace/presentations/syllabus_presentation/slide_09.html",
+      "created_at": "2025-10-12T08:44:16.737122"
+    },
+    "10": {
+      "title": "Minimal Sub Header Slide",
+      "filename": "slide_10.html",
+      "file_path": "presentations/syllabus_presentation/slide_10.html",
+      "preview_url": "/workspace/presentations/syllabus_presentation/slide_10.html",
+      "created_at": "2025-10-12T08:46:15.227369"
+    },
+    "11": {
+      "title": "Single Concept",
+      "filename": "slide_11.html",
+      "file_path": "presentations/syllabus_presentation/slide_11.html",
+      "preview_url": "/workspace/presentations/syllabus_presentation/slide_11.html",
+      "created_at": "2025-10-12T08:49:06.700106"
+    },
+    "12": {
+      "title": "Three Concepts",
+      "filename": "slide_12.html",
+      "file_path": "presentations/syllabus_presentation/slide_12.html",
+      "preview_url": "/workspace/presentations/syllabus_presentation/slide_12.html",
+      "created_at": "2025-10-12T08:49:51.594733"
+    },
+    "13": {
+      "title": "Thank You",
+      "filename": "slide_13.html",
+      "file_path": "presentations/syllabus_presentation/slide_13.html",
+      "preview_url": "/workspace/presentations/syllabus_presentation/slide_13.html",
+      "created_at": "2025-10-12T08:52:30.855454"
+    }
+  },
+  "created_at": "2025-10-12T08:27:17.434614",
+  "updated_at": "2025-10-12T08:52:30.855472"
+}

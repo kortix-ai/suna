@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Business Enterprise Presentation - Slide 1</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+  
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  body {
+    font-family: 'Inter', sans-serif;
+    background: linear-gradient(180deg, #000000 0%, #0a0a0a 40%, #1a1a2e 70%, #0052cc 100%);
+    overflow: hidden;
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+  }
+  
+  /* Bottom gradient bars - creating the valley effect */
+  .gradient-bars {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 400px;
+    display: flex;
+    align-items: flex-end;
+    z-index: 1;
+  }
+  
+  .bar {
+    flex: 1;
+    background: linear-gradient(180deg, transparent 0%, rgba(0, 102, 255, 0.4) 50%, #0066ff 100%);
+    position: relative;
+  }
+  
+  .bar-1 { height: 380px; }
+  .bar-2 { height: 340px; }
+  .bar-3 { height: 300px; }
+  .bar-4 { height: 260px; }
+  .bar-5 { height: 220px; }
+  .bar-6 { height: 200px; }
+  .bar-7 { height: 180px; }
+  .bar-8 { height: 160px; }
+  .bar-9 { height: 180px; }
+  .bar-10 { height: 200px; }
+  .bar-11 { height: 220px; }
+  .bar-12 { height: 260px; }
+  .bar-13 { height: 300px; }
+  .bar-14 { height: 340px; }
+  .bar-15 { height: 380px; }
+  
+  /* Logo section */
+  .logo-section {
+    position: absolute;
+    top: 60px;
+    left: 80px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    z-index: 10;
+  }
+  
+  .logo-circle {
+    width: 50px;
+    height: 50px;
+    background: linear-gradient(135deg, #0066ff, #0052cc);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .logo-circle::before {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 3px,
+      rgba(255, 255, 255, 0.1) 3px,
+      rgba(255, 255, 255, 0.1) 6px
+    );
+  }
+  
+  .logo-text {
+    color: #ffffff;
+    font-size: 22px;
+    font-weight: 500;
+    letter-spacing: -0.5px;
+  }
+  
+  /* Waitlist section - ABSOLUTELY CENTERED */
+  .waitlist-section {
+    position: absolute;
+    top: 190px;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+  }
+  
+  .waitlist-content {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+  
+  .avatar-group {
+    display: flex;
+    align-items: center;
+  }
+  
+  .avatar {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #d4d4d4, #a3a3a3);
+    border: 3px solid #000000;
+    margin-left: -15px;
+    position: relative;
+  }
+  
+  .avatar:first-child {
+    margin-left: 0;
+  }
+  
+  .waitlist-text {
+    color: #ffffff;
+    font-size: 20px;
+    font-weight: 500;
+    margin-left: 10px;
+  }
+  
+  /* Main content */
+  .main-content {
+    position: absolute;
+    top: 52%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    z-index: 10;
+    width: 100%;
+    padding: 0 100px;
+  }
+  
+  .title-business {
+    font-size: 140px;
+    font-weight: 900;
+    color: #0066ff;
+    letter-spacing: 8px;
+    margin-bottom: -20px;
+    text-transform: uppercase;
+    text-shadow: 0 0 80px rgba(0, 102, 255, 0.5);
+  }
+  
+  .title-enterprise {
+    font-size: 140px;
+    font-weight: 900;
+    color: #ffffff;
+    letter-spacing: 8px;
+    margin-bottom: 40px;
+    text-transform: uppercase;
+    text-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+  }
+  
+  .subtitle {
+    font-size: 22px;
+    font-weight: 400;
+    color: #a3a3a3;
+    line-height: 1.6;
+    max-width: 900px;
+    margin: 0 auto;
+    letter-spacing: 0.5px;
+  }
+  
+  /* Animations */
+  @keyframes fadeInUp {
+    from {
+      opacity: 0;
+      transform: translateY(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  @keyframes slideUp {
+    from {
+      transform: translateY(50px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  
+  .logo-section {
+    animation: fadeIn 0.8s ease-out;
+  }
+  
+  .waitlist-section {
+    animation: fadeInUp 0.8s ease-out 0.2s both;
+  }
+  
+  .title-business {
+    animation: fadeInUp 0.8s ease-out 0.4s both;
+  }
+  
+  .title-enterprise {
+    animation: fadeInUp 0.8s ease-out 0.6s both;
+  }
+  
+  .subtitle {
+    animation: fadeInUp 0.8s ease-out 0.8s both;
+  }
+  
+  .bar {
+    animation: slideUp 1s ease-out both;
+  }
+  
+  .bar-1 { animation-delay: 0s; }
+  .bar-2 { animation-delay: 0.05s; }
+  .bar-3 { animation-delay: 0.1s; }
+  .bar-4 { animation-delay: 0.15s; }
+  .bar-5 { animation-delay: 0.2s; }
+  .bar-6 { animation-delay: 0.25s; }
+  .bar-7 { animation-delay: 0.3s; }
+  .bar-8 { animation-delay: 0.35s; }
+  .bar-9 { animation-delay: 0.3s; }
+  .bar-10 { animation-delay: 0.25s; }
+  .bar-11 { animation-delay: 0.2s; }
+  .bar-12 { animation-delay: 0.15s; }
+  .bar-13 { animation-delay: 0.1s; }
+  .bar-14 { animation-delay: 0.05s; }
+  .bar-15 { animation-delay: 0s; }
+</style>
+
+<div class="gradient-bars">
+  <div class="bar bar-1"></div>
+  <div class="bar bar-2"></div>
+  <div class="bar bar-3"></div>
+  <div class="bar bar-4"></div>
+  <div class="bar bar-5"></div>
+  <div class="bar bar-6"></div>
+  <div class="bar bar-7"></div>
+  <div class="bar bar-8"></div>
+  <div class="bar bar-9"></div>
+  <div class="bar bar-10"></div>
+  <div class="bar bar-11"></div>
+  <div class="bar bar-12"></div>
+  <div class="bar bar-13"></div>
+  <div class="bar bar-14"></div>
+  <div class="bar bar-15"></div>
+</div>
+
+<div class="logo-section">
+  <div class="logo-circle"></div>
+  <div class="logo-text">Business Enterprise</div>
+</div>
+
+<div class="waitlist-section">
+  <div class="waitlist-content">
+    <div class="avatar-group">
+      <div class="avatar"></div>
+      <div class="avatar"></div>
+      <div class="avatar"></div>
+      <div class="avatar"></div>
+    </div>
+    <div class="waitlist-text">24+ Currently On The Waitlist</div>
+  </div>
+</div>
+
+<div class="main-content">
+  <div class="title-business">BUSINESS</div>
+  <div class="title-enterprise">ENTERPRISE</div>
+  <div class="subtitle">
+    Empowering organizations with innovative solutions that drive growth, efficiency, and sustainable success in today's dynamic business landscape
+  </div>
+</div>
+</body>
+</html>

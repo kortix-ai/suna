@@ -1,0 +1,114 @@
+{
+  "presentation_name": "business_enterprise",
+  "title": "Business Enterprise Presentation",
+  "description": "",
+  "slides": {
+    "1": {
+      "title": "Title Slide",
+      "filename": "slide_01.html",
+      "file_path": "presentations/business_enterprise/slide_01.html",
+      "preview_url": "/workspace/presentations/business_enterprise/slide_01.html",
+      "created_at": "2025-10-10T09:35:16.074851"
+    },
+    "2": {
+      "title": "Definition of Business Enterprise",
+      "filename": "slide_02.html",
+      "file_path": "presentations/business_enterprise/slide_02.html",
+      "preview_url": "/workspace/presentations/business_enterprise/slide_02.html",
+      "created_at": "2025-10-10T09:36:55.622697"
+    },
+    "3": {
+      "title": "Importance of Business Enterprises",
+      "filename": "slide_03.html",
+      "file_path": "presentations/business_enterprise/slide_03.html",
+      "preview_url": "/workspace/presentations/business_enterprise/slide_03.html",
+      "created_at": "2025-10-10T09:37:58.357652"
+    },
+    "4": {
+      "title": "Types Of Business Enterprises",
+      "filename": "slide_04.html",
+      "file_path": "presentations/business_enterprise/slide_04.html",
+      "preview_url": "/workspace/presentations/business_enterprise/slide_04.html",
+      "created_at": "2025-10-10T09:39:11.670792"
+    },
+    "5": {
+      "title": "Business Models",
+      "filename": "slide_05.html",
+      "file_path": "presentations/business_enterprise/slide_05.html",
+      "preview_url": "/workspace/presentations/business_enterprise/slide_05.html",
+      "created_at": "2025-10-10T09:40:58.371149"
+    },
+    "6": {
+      "title": "Steps To Start A Business",
+      "filename": "slide_06.html",
+      "file_path": "presentations/business_enterprise/slide_06.html",
+      "preview_url": "/workspace/presentations/business_enterprise/slide_06.html",
+      "created_at": "2025-10-10T09:44:26.498583"
+    },
+    "7": {
+      "title": "Our Success Story",
+      "filename": "slide_07.html",
+      "file_path": "presentations/business_enterprise/slide_07.html",
+      "preview_url": "/workspace/presentations/business_enterprise/slide_07.html",
+      "created_at": "2025-10-10T09:48:30.570798"
+    },
+    "8": {
+      "title": "Meet Our Expert Team",
+      "filename": "slide_08.html",
+      "file_path": "presentations/business_enterprise/slide_08.html",
+      "preview_url": "/workspace/presentations/business_enterprise/slide_08.html",
+      "created_at": "2025-10-10T09:52:06.881701"
+    },
+    "9": {
+      "title": "Business Enterprise Mockup Design",
+      "filename": "slide_09.html",
+      "file_path": "presentations/business_enterprise/slide_09.html",
+      "preview_url": "/workspace/presentations/business_enterprise/slide_09.html",
+      "created_at": "2025-10-10T09:53:56.091441"
+    },
+    "10": {
+      "title": "Infographic Section",
+      "filename": "slide_10.html",
+      "file_path": "presentations/business_enterprise/slide_10.html",
+      "preview_url": "/workspace/presentations/business_enterprise/slide_10.html",
+      "created_at": "2025-10-10T10:18:46.710056"
+    },
+    "11": {
+      "title": "Pricing Plans",
+      "filename": "slide_11.html",
+      "file_path": "presentations/business_enterprise/slide_11.html",
+      "preview_url": "/workspace/presentations/business_enterprise/slide_11.html",
+      "created_at": "2025-10-10T10:23:08.088785"
+    },
+    "12": {
+      "title": "Infographic Section - Final",
+      "filename": "slide_12.html",
+      "file_path": "presentations/business_enterprise/slide_12.html",
+      "preview_url": "/workspace/presentations/business_enterprise/slide_12.html",
+      "created_at": "2025-10-10T11:59:17.293581"
+    },
+    "13": {
+      "title": "Timeline Schedule",
+      "filename": "slide_13.html",
+      "file_path": "presentations/business_enterprise/slide_13.html",
+      "preview_url": "/workspace/presentations/business_enterprise/slide_13.html",
+      "created_at": "2025-10-10T11:57:48.332450"
+    },
+    "14": {
+      "title": "Contact Information",
+      "filename": "slide_14.html",
+      "file_path": "presentations/business_enterprise/slide_14.html",
+      "preview_url": "/workspace/presentations/business_enterprise/slide_14.html",
+      "created_at": "2025-10-10T12:01:28.656848"
+    },
+    "15": {
+      "title": "Thank You",
+      "filename": "slide_15.html",
+      "file_path": "presentations/business_enterprise/slide_15.html",
+      "preview_url": "/workspace/presentations/business_enterprise/slide_15.html",
+      "created_at": "2025-10-10T12:05:16.838599"
+    }
+  },
+  "created_at": "2025-10-10T09:27:33.503203",
+  "updated_at": "2025-10-10T12:05:16.838620"
+}

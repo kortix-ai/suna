@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Business Enterprise Presentation - Slide 13</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+  
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+  
+  body {
+    font-family: 'Inter', sans-serif;
+    background: #0a0a0a;
+    overflow: hidden;
+    position: relative;
+    width: 1920px;
+    height: 1080px;
+  }
+  
+  /* Main heading */
+  .main-heading {
+    text-align: center;
+    font-size: 82px;
+    font-weight: 400;
+    color: #ffffff;
+    margin-top: 140px;
+    margin-bottom: 120px;
+    letter-spacing: -1px;
+  }
+  
+  .main-heading .bold {
+    font-weight: 700;
+  }
+  
+  /* Timeline container */
+  .timeline-container {
+    padding: 0 160px;
+    margin-bottom: 100px;
+  }
+  
+  /* Timeline */
+  .timeline {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 80px;
+  }
+  
+  .timeline-line {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: #ffffff;
+    transform: translateY(-50%);
+    z-index: 1;
+  }
+  
+  .timeline-point {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 30px;
+  }
+  
+  .time-marker {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .time-circle {
+    width: 20px;
+    height: 20px;
+    background: #ffffff;
+    border-radius: 50%;
+  }
+  
+  .time-square {
+    width: 30px;
+    height: 30px;
+    background: linear-gradient(135deg, #3d85ff 0%, #5da3ff 100%);
+    border-radius: 4px;
+  }
+  
+  .time-label {
+    font-size: 32px;
+    font-weight: 400;
+    color: #ffffff;
+    letter-spacing: -0.5px;
+  }
+  
+  .time-label.active {
+    font-weight: 700;
+  }
+  
+  .event-label {
+    font-size: 24px;
+    font-weight: 400;
+    color: #ffffff;
+    text-align: center;
+    letter-spacing: 0.3px;
+    line-height: 1.3;
+  }
+  
+  .event-label.active {
+    font-weight: 700;
+  }
+  
+  /* Description boxes */
+  .description-container {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 60px;
+    padding: 0 160px;
+  }
+  
+  .description-box {
+    text-align: center;
+  }
+  
+  .description-box p {
+    font-size: 17px;
+    font-weight: 400;
+    color: #a3a3a3;
+    line-height: 1.8;
+    letter-spacing: 0.3px;
+  }
+  
+  /* Animations */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  @keyframes slideInUp {
+    from {
+      opacity: 0;
+      transform: translateY(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  @keyframes scaleIn {
+    from {
+      opacity: 0;
+      transform: scale(0.8);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+  
+  .main-heading {
+    animation: slideInUp 0.8s ease-out 0.2s both;
+  }
+  
+  .timeline {
+    animation: fadeIn 1s ease-out 0.4s both;
+  }
+  
+  .timeline-point:nth-child(1) {
+    animation: scaleIn 0.5s ease-out 0.6s both;
+  }
+  
+  .timeline-point:nth-child(2) {
+    animation: scaleIn 0.5s ease-out 0.7s both;
+  }
+  
+  .timeline-point:nth-child(3) {
+    animation: scaleIn 0.5s ease-out 0.8s both;
+  }
+  
+  .timeline-point:nth-child(4) {
+    animation: scaleIn 0.5s ease-out 0.9s both;
+  }
+  
+  .timeline-point:nth-child(5) {
+    animation: scaleIn 0.5s ease-out 1s both;
+  }
+  
+  .timeline-point:nth-child(6) {
+    animation: scaleIn 0.5s ease-out 1.1s both;
+  }
+  
+  .description-container {
+    animation: slideInUp 0.8s ease-out 1.2s both;
+  }
+</style>
+
+<h1 class="main-heading">Infographic <span class="bold">Section</span></h1>
+
+<div class="timeline-container">
+  <div class="timeline">
+    <div class="timeline-line"></div>
+    
+    <div class="timeline-point">
+      <div class="time-label">07.30</div>
+      <div class="time-marker">
+        <div class="time-circle"></div>
+      </div>
+      <div class="event-label">Introduction</div>
+    </div>
+    
+    <div class="timeline-point">
+      <div class="time-label">08.30</div>
+      <div class="time-marker">
+        <div class="time-circle"></div>
+      </div>
+      <div class="event-label">What<br>We Do</div>
+    </div>
+    
+    <div class="timeline-point">
+      <div class="time-label">09.30</div>
+      <div class="time-marker">
+        <div class="time-circle"></div>
+      </div>
+      <div class="event-label">Our Team</div>
+    </div>
+    
+    <div class="timeline-point">
+      <div class="time-label">10.30</div>
+      <div class="time-marker">
+        <div class="time-circle"></div>
+      </div>
+      <div class="event-label">Lorem dolor sit</div>
+    </div>
+    
+    <div class="timeline-point">
+      <div class="time-label active">11.30</div>
+      <div class="time-marker">
+        <div class="time-square"></div>
+      </div>
+      <div class="event-label active">Break</div>
+    </div>
+    
+    <div class="timeline-point">
+      <div class="time-label">12.30</div>
+      <div class="time-marker">
+        <div class="time-circle"></div>
+      </div>
+      <div class="event-label">Get In<br>Touch</div>
+    </div>
+  </div>
+</div>
+
+<div class="description-container">
+  <div class="description-box">
+    <p>Lorem dolor sit amet consectetur adipiscing elit sed do eiu</p>
+  </div>
+  
+  <div class="description-box">
+    <p>Lorem dolor sit amet consectetur adipiscing elit sed do eiu</p>
+  </div>
+  
+  <div class="description-box">
+    <p>Lorem dolor sit amet consectetur adipiscing elit sed do eiu</p>
+  </div>
+  
+  <div class="description-box">
+    <p>Lorem dolor sit amet consectetur adipiscing elit sed do eiu</p>
+  </div>
+</div>
+</body>
+</html>

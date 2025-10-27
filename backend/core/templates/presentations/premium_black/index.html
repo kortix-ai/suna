@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SlideKit Presentation System 2025 - All Slides</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: #0a0a0a;
+            color: #ffffff;
+            padding: 40px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 60px;
+        }
+
+        .header h1 {
+            font-size: 48px;
+            font-weight: 700;
+            margin-bottom: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            font-size: 18px;
+            color: #888;
+        }
+
+        .slides-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+
+        .slide-card {
+            background: #1a1a1a;
+            border-radius: 16px;
+            overflow: hidden;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            cursor: pointer;
+            border: 2px solid #2a2a2a;
+        }
+
+        .slide-card:hover {
+            transform: translateY(-8px);
+            box-shadow: 0 20px 40px rgba(102, 126, 234, 0.3);
+            border-color: #667eea;
+        }
+
+        .slide-preview {
+            width: 100%;
+            height: 225px;
+            background: #000;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .slide-preview iframe {
+            width: 1920px;
+            height: 1080px;
+            border: none;
+            transform: scale(0.208);
+            transform-origin: 0 0;
+            pointer-events: none;
+        }
+
+        .slide-info {
+            padding: 20px;
+        }
+
+        .slide-number {
+            font-size: 14px;
+            color: #667eea;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .slide-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 12px;
+        }
+
+        .slide-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 500;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: scale(1.05);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #2a2a2a;
+            color: #fff;
+        }
+
+        .btn-secondary:hover {
+            background: #3a3a3a;
+        }
+
+        .fullscreen-view {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #000;
+            z-index: 1000;
+        }
+
+        .fullscreen-view.active {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .fullscreen-header {
+            background: #1a1a1a;
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .fullscreen-title {
+            font-size: 20px;
+            font-weight: 600;
+        }
+
+        .fullscreen-controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        .nav-btn {
+            background: #2a2a2a;
+            color: #fff;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .nav-btn:hover {
+            background: #667eea;
+        }
+
+        .nav-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .close-btn {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .close-btn:hover {
+            background: #dc2626;
+        }
+
+        .fullscreen-content {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .fullscreen-content iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        .stats {
+            text-align: center;
+            padding: 40px;
+            background: #1a1a1a;
+            border-radius: 16px;
+            margin-bottom: 40px;
+        }
+
+        .stats h2 {
+            font-size: 48px;
+            font-weight: 700;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stats p {
+            font-size: 16px;
+            color: #888;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>SlideKit™ Presentation System 2025</h1>
+            <p>Complete Presentation Overview</p>
+        </div>
+
+        <div class="stats">
+            <h2>12 Slides</h2>
+            <p>Professional presentation ready to view</p>
+        </div>
+
+        <div class="slides-grid">
+            <div class="slide-card" onclick="openFullscreen(1)">
+                <div class="slide-preview">
+                    <iframe src="slide_01.html"></iframe>
+                </div>
+                <div class="slide-info">
+                    <div class="slide-number">SLIDE 01</div>
+                    <div class="slide-title">Title Slide</div>
+                    <div class="slide-actions">
+                        <a href="slide_01.html" target="_blank" class="btn btn-primary">Open</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="slide-card" onclick="openFullscreen(2)">
+                <div class="slide-preview">
+                    <iframe src="slide_02.html"></iframe>
+                </div>
+                <div class="slide-info">
+                    <div class="slide-number">SLIDE 02</div>
+                    <div class="slide-title">Introduction</div>
+                    <div class="slide-actions">
+                        <a href="slide_02.html" target="_blank" class="btn btn-primary">Open</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="slide-card" onclick="openFullscreen(3)">
+                <div class="slide-preview">
+                    <iframe src="slide_03.html"></iframe>
+                </div>
+                <div class="slide-info">
+                    <div class="slide-number">SLIDE 03</div>
+                    <div class="slide-title">Content Slide</div>
+                    <div class="slide-actions">
+                        <a href="slide_03.html" target="_blank" class="btn btn-primary">Open</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="slide-card" onclick="openFullscreen(4)">
+                <div class="slide-preview">
+                    <iframe src="slide_04.html"></iframe>
+                </div>
+                <div class="slide-info">
+                    <div class="slide-number">SLIDE 04</div>
+                    <div class="slide-title">Goals</div>
+                    <div class="slide-actions">
+                        <a href="slide_04.html" target="_blank" class="btn btn-primary">Open</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="slide-card" onclick="openFullscreen(5)">
+                <div class="slide-preview">
+                    <iframe src="slide_05.html"></iframe>
+                </div>
+                <div class="slide-info">
+                    <div class="slide-number">SLIDE 05</div>
+                    <div class="slide-title">Content Slide</div>
+                    <div class="slide-actions">
+                        <a href="slide_05.html" target="_blank" class="btn btn-primary">Open</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="slide-card" onclick="openFullscreen(6)">
+                <div class="slide-preview">
+                    <iframe src="slide_06.html"></iframe>
+                </div>
+                <div class="slide-info">
+                    <div class="slide-number">SLIDE 06</div>
+                    <div class="slide-title">Efficiency</div>
+                    <div class="slide-actions">
+                        <a href="slide_06.html" target="_blank" class="btn btn-primary">Open</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="slide-card" onclick="openFullscreen(7)">
+                <div class="slide-preview">
+                    <iframe src="slide_07.html"></iframe>
+                </div>
+                <div class="slide-info">
+                    <div class="slide-number">SLIDE 07</div>
+                    <div class="slide-title">Audience</div>
+                    <div class="slide-actions">
+                        <a href="slide_07.html" target="_blank" class="btn btn-primary">Open</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="slide-card" onclick="openFullscreen(8)">
+                <div class="slide-preview">
+                    <iframe src="slide_08.html"></iframe>
+                </div>
+                <div class="slide-info">
+                    <div class="slide-number">SLIDE 08</div>
+                    <div class="slide-title">Content Slide</div>
+                    <div class="slide-actions">
+                        <a href="slide_08.html" target="_blank" class="btn btn-primary">Open</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="slide-card" onclick="openFullscreen(9)">
+                <div class="slide-preview">
+                    <iframe src="slide_09.html"></iframe>
+                </div>
+                <div class="slide-info">
+                    <div class="slide-number">SLIDE 09</div>
+                    <div class="slide-title">Team Overview</div>
+                    <div class="slide-actions">
+                        <a href="slide_09.html" target="_blank" class="btn btn-primary">Open</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="slide-card" onclick="openFullscreen(10)">
+                <div class="slide-preview">
+                    <iframe src="slide_10.html"></iframe>
+                </div>
+                <div class="slide-info">
+                    <div class="slide-number">SLIDE 10</div>
+                    <div class="slide-title">Brand Design System</div>
+                    <div class="slide-actions">
+                        <a href="slide_10.html" target="_blank" class="btn btn-primary">Open</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="slide-card" onclick="openFullscreen(11)">
+                <div class="slide-preview">
+                    <iframe src="slide_11.html"></iframe>
+                </div>
+                <div class="slide-info">
+                    <div class="slide-number">SLIDE 11</div>
+                    <div class="slide-title">Space Adoption</div>
+                    <div class="slide-actions">
+                        <a href="slide_11.html" target="_blank" class="btn btn-primary">Open</a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="slide-card" onclick="openFullscreen(12)">
+                <div class="slide-preview">
+                    <iframe src="slide_12.html"></iframe>
+                </div>
+                <div class="slide-info">
+                    <div class="slide-number">SLIDE 12</div>
+                    <div class="slide-title">Brand Design System - Duplicate</div>
+                    <div class="slide-actions">
+                        <a href="slide_12.html" target="_blank" class="btn btn-primary">Open</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="fullscreen-view" id="fullscreenView">
+        <div class="fullscreen-header">
+            <div class="fullscreen-title" id="fullscreenTitle">Slide 1</div>
+            <div class="fullscreen-controls">
+                <button class="nav-btn" id="prevBtn" onclick="navigateSlide(-1)">← Previous</button>
+                <span id="slideCounter" style="color: #888;">1 / 12</span>
+                <button class="nav-btn" id="nextBtn" onclick="navigateSlide(1)">Next →</button>
+                <button class="close-btn" onclick="closeFullscreen()">Close</button>
+            </div>
+        </div>
+        <div class="fullscreen-content">
+            <iframe id="fullscreenIframe" src=""></iframe>
+        </div>
+    </div>
+
+    <script>
+        let currentSlide = 1;
+        const totalSlides = 12;
+
+        function openFullscreen(slideNumber) {
+            currentSlide = slideNumber;
+            updateFullscreenView();
+            document.getElementById('fullscreenView').classList.add('active');
+        }
+
+        function closeFullscreen() {
+            document.getElementById('fullscreenView').classList.remove('active');
+        }
+
+        function navigateSlide(direction) {
+            currentSlide += direction;
+            if (currentSlide < 1) currentSlide = 1;
+            if (currentSlide > totalSlides) currentSlide = totalSlides;
+            updateFullscreenView();
+        }
+
+        function updateFullscreenView() {
+            const iframe = document.getElementById('fullscreenIframe');
+            const title = document.getElementById('fullscreenTitle');
+            const counter = document.getElementById('slideCounter');
+            const prevBtn = document.getElementById('prevBtn');
+            const nextBtn = document.getElementById('nextBtn');
+
+            iframe.src = `slide_${String(currentSlide).padStart(2, '0')}.html`;
+            title.textContent = `Slide ${currentSlide}`;
+            counter.textContent = `${currentSlide} / ${totalSlides}`;
+
+            prevBtn.disabled = currentSlide === 1;
+            nextBtn.disabled = currentSlide === totalSlides;
+        }
+
+        // Keyboard navigation
+        document.addEventListener('keydown', function(e) {
+            if (document.getElementById('fullscreenView').classList.contains('active')) {
+                if (e.key === 'ArrowLeft') navigateSlide(-1);
+                if (e.key === 'ArrowRight') navigateSlide(1);
+                if (e.key === 'Escape') closeFullscreen();
+            }
+        });
+    </script>
+</body>
+</html>

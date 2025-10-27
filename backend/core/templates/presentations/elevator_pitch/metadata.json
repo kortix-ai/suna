@@ -1,0 +1,65 @@
+{
+  "presentation_name": "elevator_pitch_template",
+  "title": "Elevator Pitch Presentation",
+  "description": "",
+  "slides": {
+    "1": {
+      "title": "Title Slide - Elevator Pitch",
+      "filename": "slide_01.html",
+      "file_path": "presentations/elevator_pitch_template/slide_01.html",
+      "preview_url": "/workspace/presentations/elevator_pitch_template/slide_01.html",
+      "created_at": "2025-10-11T15:39:32.120073"
+    },
+    "2": {
+      "title": "Welcome to Brightpath",
+      "filename": "slide_02.html",
+      "file_path": "presentations/elevator_pitch_template/slide_02.html",
+      "preview_url": "/workspace/presentations/elevator_pitch_template/slide_02.html",
+      "created_at": "2025-10-11T15:34:40.997837"
+    },
+    "3": {
+      "title": "Who are We?",
+      "filename": "slide_03.html",
+      "file_path": "presentations/elevator_pitch_template/slide_03.html",
+      "preview_url": "/workspace/presentations/elevator_pitch_template/slide_03.html",
+      "created_at": "2025-10-11T15:50:08.719420"
+    },
+    "4": {
+      "title": "Our Core Values",
+      "filename": "slide_04.html",
+      "file_path": "presentations/elevator_pitch_template/slide_04.html",
+      "preview_url": "/workspace/presentations/elevator_pitch_template/slide_04.html",
+      "created_at": "2025-10-11T18:11:49.018576"
+    },
+    "5": {
+      "title": "Proposed Solutions",
+      "filename": "slide_05.html",
+      "file_path": "presentations/elevator_pitch_template/slide_05.html",
+      "preview_url": "/workspace/presentations/elevator_pitch_template/slide_05.html",
+      "created_at": "2025-10-11T18:12:17.504205"
+    },
+    "6": {
+      "title": "Timeline & Milestones",
+      "filename": "slide_06.html",
+      "file_path": "presentations/elevator_pitch_template/slide_06.html",
+      "preview_url": "/workspace/presentations/elevator_pitch_template/slide_06.html",
+      "created_at": "2025-10-11T18:12:50.020471"
+    },
+    "7": {
+      "title": "Our Pricing",
+      "filename": "slide_07.html",
+      "file_path": "presentations/elevator_pitch_template/slide_07.html",
+      "preview_url": "/workspace/presentations/elevator_pitch_template/slide_07.html",
+      "created_at": "2025-10-11T18:13:27.340998"
+    },
+    "8": {
+      "title": "Thank You",
+      "filename": "slide_08.html",
+      "file_path": "presentations/elevator_pitch_template/slide_08.html",
+      "preview_url": "/workspace/presentations/elevator_pitch_template/slide_08.html",
+      "created_at": "2025-10-11T18:15:06.056054"
+    }
+  },
+  "created_at": "2025-10-11T15:24:54.378667",
+  "updated_at": "2025-10-11T18:15:06.056075"
+}

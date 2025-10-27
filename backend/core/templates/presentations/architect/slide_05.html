@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Architec Presentation - Slide 5</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+    
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+    }
+    
+    body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #F5F3EE;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        position: relative;
+    }
+    
+    /* Main Container */
+    .main-container {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 100px 120px;
+        display: flex;
+        gap: 100px;
+    }
+    
+    /* Left Section - Our Mission */
+    .left-section {
+        flex: 0 0 500px;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .mission-heading {
+        font-size: 100px;
+        font-weight: 400;
+        color: #000;
+        letter-spacing: -3px;
+        line-height: 1.1;
+        margin-bottom: 80px;
+    }
+    
+    .abstract-graphic {
+        width: 450px;
+        height: 450px;
+    }
+    
+    .abstract-graphic svg {
+        width: 100%;
+        height: 100%;
+    }
+    
+    /* Right Section - Mission Items */
+    .right-section {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 60px;
+        padding-top: 20px;
+    }
+    
+    .mission-item {
+        display: flex;
+        gap: 30px;
+        align-items: flex-start;
+    }
+    
+    .icon-circle {
+        width: 60px;
+        height: 60px;
+        background: #FF6B35;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        font-size: 36px;
+        color: #FFF;
+        font-weight: 300;
+    }
+    
+    .mission-content {
+        flex: 1;
+    }
+    
+    .mission-title {
+        font-size: 36px;
+        font-weight: 400;
+        color: #000;
+        line-height: 1.3;
+        letter-spacing: -0.5px;
+        margin-bottom: 20px;
+    }
+    
+    .mission-description {
+        font-size: 20px;
+        font-weight: 400;
+        color: #000;
+        line-height: 1.7;
+        letter-spacing: -0.2px;
+        opacity: 0.8;
+    }
+</style>
+
+<div class="main-container">
+    <!-- Left Section -->
+    <div class="left-section">
+        <div class="mission-heading">
+            Our Mission
+        </div>
+        <div class="abstract-graphic">
+            <svg viewBox="0 0 450 450" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="225" cy="225" rx="180" ry="120" transform="rotate(-15 225 225)" stroke="#000" stroke-width="1.5" opacity="0.5"/>
+                <ellipse cx="225" cy="225" rx="180" ry="120" transform="rotate(15 225 225)" stroke="#000" stroke-width="1.5" opacity="0.5"/>
+                <ellipse cx="225" cy="225" rx="180" ry="120" transform="rotate(45 225 225)" stroke="#000" stroke-width="1.5" opacity="0.5"/>
+                <ellipse cx="225" cy="225" rx="180" ry="120" transform="rotate(75 225 225)" stroke="#000" stroke-width="1.5" opacity="0.5"/>
+                <ellipse cx="225" cy="225" rx="180" ry="120" transform="rotate(105 225 225)" stroke="#000" stroke-width="1.5" opacity="0.5"/>
+            </svg>
+        </div>
+    </div>
+    
+    <!-- Right Section -->
+    <div class="right-section">
+        <!-- Mission Item 1 -->
+        <div class="mission-item">
+            <div class="icon-circle">+</div>
+            <div class="mission-content">
+                <div class="mission-title">
+                    Providing personal and visionary design solutions
+                </div>
+                <div class="mission-description">
+                    Duis diam nullam dis tincidunt ornare tincidunt Sapien tristique mattis taciti placerat curabitur ipsum metus dolor ridiculus suam litora auctor adipiscing vestibulum proin honcus its netus quam fermenta ornare dapibus ornare conva egestas blandit adipiscing here.
+                </div>
+            </div>
+        </div>
+        
+        <!-- Mission Item 2 -->
+        <div class="mission-item">
+            <div class="icon-circle">+</div>
+            <div class="mission-content">
+                <div class="mission-title">
+                    Providing efficient and precise construction services
+                </div>
+                <div class="mission-description">
+                    Duis diam nullam dis tincidunt ornare tincidunt Sapien tristique mattis taciti placerat curabitur ipsum metus dolor ridiculus suam litora auctor adipiscing vestibulum proin honcus its netus quam fermenta ornare dapibus ornare conva egestas blandit adipiscing here.
+                </div>
+            </div>
+        </div>
+        
+        <!-- Mission Item 3 -->
+        <div class="mission-item">
+            <div class="icon-circle">+</div>
+            <div class="mission-content">
+                <div class="mission-title">
+                    Maintaining quality, time and client satisfaction on every project
+                </div>
+                <div class="mission-description">
+                    Duis diam nullam dis tincidunt ornare tincidunt Sapien tristique mattis taciti place rata curabitur ipsum metus dolor ridiculus suam litora auctor adipiscing.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>
