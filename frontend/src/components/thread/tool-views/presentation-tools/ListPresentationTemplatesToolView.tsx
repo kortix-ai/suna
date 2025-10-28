@@ -51,6 +51,7 @@ export function ListPresentationTemplatesToolView({
 
   let templatesData: TemplatesData | null = null
   let error: string | null = null
+  let autoOpenTemplate: string | null = null
 
   try {
     if (toolResult && toolResult.toolOutput && toolResult.toolOutput !== "STREAMING") {
@@ -65,10 +66,20 @@ export function ListPresentationTemplatesToolView({
       } else {
         templatesData = output as unknown as TemplatesData
       }
+      
+      // Check if this is load_template_design (has template_name in response)
+      if (templatesData && (templatesData as any).template_name) {
+        autoOpenTemplate = (templatesData as any).template_name
+      }
     }
   } catch (e) {
     console.error("Error processing tool result:", e)
     error = "Error processing templates data"
+  }
+  
+  // Auto-open template if specified (from load_template_design)
+  if (autoOpenTemplate && !selectedTemplate) {
+    setSelectedTemplate(autoOpenTemplate)
   }
 
   const templates = templatesData?.templates || []
@@ -77,6 +88,7 @@ export function ListPresentationTemplatesToolView({
   if (selectedTemplate) {
     const template = templates.find(t => t.id === selectedTemplate)
     const pdfUrl = `${getPdfUrl(selectedTemplate)}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`
+    const showBackButton = !autoOpenTemplate // Only show back button if user clicked from grid, not auto-opened
     
     return (
       <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
@@ -88,19 +100,21 @@ export function ListPresentationTemplatesToolView({
               </div>
               <div>
                 <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
-                  {template?.name.replace(/_/g, " ") || "Template Preview"}
+                  {template?.name.replace(/_/g, " ") || selectedTemplate.replace(/_/g, " ") || "Template Preview"}
                 </CardTitle>
               </div>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleBack}
-              className="h-8 px-2"
-            >
-              <ArrowLeft className="h-4 w-4 mr-1" />
-              Back
-            </Button>
+            {showBackButton && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleBack}
+                className="h-8 px-2"
+              >
+                <ArrowLeft className="h-4 w-4 mr-1" />
+                Back
+              </Button>
+            )}
           </div>
         </CardHeader>
         
