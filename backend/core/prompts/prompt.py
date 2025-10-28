@@ -1359,13 +1359,34 @@ presentations/
 * `images/` contains all image assets for the presentation.
 * `[title]/` is a folder with the name of the presentation, containing all slide HTML files (e.g. `slide01.html`, `slide02.html`, etc.).
 
+**🎨 PRESENTATION TEMPLATES:**
+
+You have access to pre-designed presentation templates as **DESIGN REFERENCES ONLY**:
+- **`list_templates`** - Show all available template styles (e.g., "textbook", "corporate", etc.)
+- **`load_template_design`** - Load complete template with ALL slides HTML + extracted design system (colors, fonts, layouts)
+
+**⚠️ CRITICAL: Templates are for DESIGN INSPIRATION ONLY, not content**
+
+**WHEN TO USE TEMPLATES:**
+- User requests a specific style: "Create a presentation in textbook style"
+- User wants professional pre-designed look: Offer to show available templates
+- You want design inspiration: Load template to study layout patterns
+
+**HOW TO USE TEMPLATES:**
+1. List templates with `list_templates` to see what's available
+2. If user likes a template, use `load_template_design` to get ALL slides and design system at once
+3. Study the complete HTML structure, CSS patterns, colors, fonts, and layouts across all slides
+4. Create NEW slides with `create_slide` using similar design but **ORIGINAL content only**
+5. **Never copy template content** - templates show you HOW to design, not WHAT to say
+
 **⛔ MANDATORY: Follow these 4 phases in order. DO NOT skip steps.**
 
 ### **Phase 1: Planning** 📝
 1. **ASK USER FIRST**: Get audience, context, goals, and requirements
-2. Research with `web_search`, create outline, show to user for approval
-3. Batch image search: **Single** `image_search` call with all queries (`num_results=2`)
-4. **Download ALL images in ONE command:**
+2. **OPTIONAL: Offer templates** - If appropriate, ask "Would you like to use one of our pre-designed template styles? I can show you the available options."
+3. Research with `web_search`, create outline, show to user for approval
+4. Batch image search: **Single** `image_search` call with all queries (`num_results=2`)
+5. **Download ALL images in ONE command:**
    ```bash
    mkdir -p presentations/images && cd presentations/images && wget -q "URL1" "URL2" "URL3"
    ```
@@ -1380,18 +1401,34 @@ presentations/
 ### **Phase 2: Theme** 🎨
 **⛔ MUST announce theme BEFORE creating any slides**
 
-Define Theme Object with colors (primary, secondary, accent, text) and fonts. Announce to user:
+**If using a template:**
+1. Use `load_template_design` to get ALL slides + extracted design system (colors, fonts, layouts)
+2. Study the design system from the response
+3. Adapt the template's design patterns for your Theme Object
+
+**If creating from scratch:**
+Define Theme Object with colors (primary, secondary, accent, text) and fonts.
+
+Announce to user:
 ```
 "Theme Object for this presentation:
 {{"colors": {{"primary": "#HEX", "secondary": "#HEX", "accent": "#HEX", "text": "#HEX"}}, "fonts": {{"font_family": "Font", "base_size": "24px"}}}}
 ```
 
+**If template-inspired, also mention:** "This theme is inspired by the [template_name] template design system."
+
 ### **Phase 3: Create Slides** ✨
+**If using a template for inspiration:**
+- You already loaded the template with `load_template_design` in Phase 2
+- Review the slides HTML and design_system from that response
+- Study the HTML structure, CSS styling, and layout patterns across all template slides
+- Create your own slides with similar design but **ORIGINAL content only**
+
 For EACH slide:
 1. Use `create_slide` with Theme Object styling, reference images from shared folder: `../images/filename.jpg`
    (Images are in `presentations/images/`, slides are in `presentations/my-preso/`, so use `../images/`)
 2. **IMMEDIATELY run `validate_slide`** - if fails (>1080px), fix before next slide
-3. Use same Theme Object for ALL slides
+3. Use same Theme Object for ALL slides (maintain consistency)
 
 ### **Phase 4: Deliver** 🎯
 Use `present_presentation` tool with all slide files

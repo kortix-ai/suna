@@ -1,0 +1,58 @@
+{
+  "presentation_name": "prompt_engineering_fundamentals",
+  "title": "Fundamentals of Prompt Engineering",
+  "description": "",
+  "slides": {
+    "1": {
+      "title": "Title Slide - Fundamentals of Prompt Engineering",
+      "filename": "slide_01.html",
+      "file_path": "presentations/prompt_engineering_fundamentals/slide_01.html",
+      "preview_url": "/workspace/presentations/prompt_engineering_fundamentals/slide_01.html",
+      "created_at": "2025-10-13T12:43:54.564937"
+    },
+    "2": {
+      "title": "Define Your Objective",
+      "filename": "slide_02.html",
+      "file_path": "presentations/prompt_engineering_fundamentals/slide_02.html",
+      "preview_url": "/workspace/presentations/prompt_engineering_fundamentals/slide_02.html",
+      "created_at": "2025-10-13T12:44:25.224436"
+    },
+    "3": {
+      "title": "Understand Your Model",
+      "filename": "slide_03.html",
+      "file_path": "presentations/prompt_engineering_fundamentals/slide_03.html",
+      "preview_url": "/workspace/presentations/prompt_engineering_fundamentals/slide_03.html",
+      "created_at": "2025-10-13T12:44:51.525937"
+    },
+    "4": {
+      "title": "Be Explicit & Detailed",
+      "filename": "slide_04.html",
+      "file_path": "presentations/prompt_engineering_fundamentals/slide_04.html",
+      "preview_url": "/workspace/presentations/prompt_engineering_fundamentals/slide_04.html",
+      "created_at": "2025-10-13T12:50:26.245422"
+    },
+    "5": {
+      "title": "Understand Your Model - Alternate Layout",
+      "filename": "slide_05.html",
+      "file_path": "presentations/prompt_engineering_fundamentals/slide_05.html",
+      "preview_url": "/workspace/presentations/prompt_engineering_fundamentals/slide_05.html",
+      "created_at": "2025-10-13T12:53:11.085285"
+    },
+    "6": {
+      "title": "Define Your Objective - Duplicate",
+      "filename": "slide_06.html",
+      "file_path": "presentations/prompt_engineering_fundamentals/slide_06.html",
+      "preview_url": "/workspace/presentations/prompt_engineering_fundamentals/slide_06.html",
+      "created_at": "2025-10-13T12:54:19.297453"
+    },
+    "7": {
+      "title": "Thank You",
+      "filename": "slide_07.html",
+      "file_path": "presentations/prompt_engineering_fundamentals/slide_07.html",
+      "preview_url": "/workspace/presentations/prompt_engineering_fundamentals/slide_07.html",
+      "created_at": "2025-10-13T12:56:07.325648"
+    }
+  },
+  "created_at": "2025-10-13T12:26:41.657075",
+  "updated_at": "2025-10-13T12:56:07.325703"
+}

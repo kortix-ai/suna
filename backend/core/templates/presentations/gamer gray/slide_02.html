@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Presentation - Slide 2</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1"></script>
+    <style>
+        body {
+            height: 1080px;
+            width: 1920px;
+            margin: 0;
+            padding: 0;
+        }
+    </style>
+</head>
+<body>
+    <style>
+@import url('https://fonts.googleapis.com/css2?family=Unbounded:wght@300;400;500;600;700;800;900&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    width: 1920px;
+    height: 1080px;
+    background: #CFCFCF;
+    padding: 70px 100px;
+    overflow: hidden;
+}
+
+.main-heading {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 90px;
+    font-weight: 800;
+    color: #000000;
+    letter-spacing: -0.04em;
+    margin-bottom: 15px;
+    line-height: 1.1;
+}
+
+.subheading {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 40px;
+    font-weight: 700;
+    color: #000000;
+    letter-spacing: 0.02em;
+    margin-bottom: 25px;
+    text-transform: uppercase;
+}
+
+.description {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 40px;
+    font-weight: 300;
+    color: #000000;
+    line-height: 1.3;
+    margin-bottom: 50px;
+    max-width: 1700px;
+    text-transform: uppercase;
+}
+
+.content-wrapper {
+    display: flex;
+    gap: 120px;
+    align-items: flex-start;
+}
+
+.code-section {
+    flex-shrink: 0;
+}
+
+.terminal-window {
+    width: 450px;
+    background: #2D3748;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+}
+
+.terminal-header {
+    background: #1A202C;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.terminal-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+}
+
+.dot-red { background: #FF5F56; }
+.dot-yellow { background: #FFBD2E; }
+.dot-green { background: #27C93F; }
+
+.terminal-title {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 12px;
+    color: #A0AEC0;
+    margin-left: 12px;
+}
+
+.terminal-content {
+    padding: 24px;
+    font-family: 'Courier New', monospace;
+    font-size: 16px;
+    line-height: 1.6;
+    color: #E2E8F0;
+}
+
+.prompt-symbol {
+    color: #68D391;
+}
+
+.prompt-label {
+    color: #63B3ED;
+}
+
+.prompt-text {
+    color: #E2E8F0;
+}
+
+.cursor {
+    display: inline-block;
+    width: 8px;
+    height: 18px;
+    background: #68D391;
+    animation: blink 1s infinite;
+}
+
+@keyframes blink {
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0; }
+}
+
+.key-points-section {
+    flex: 1;
+}
+
+.key-points-title {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 50px;
+    font-weight: 900;
+    color: #000000;
+    letter-spacing: 0.02em;
+    margin-bottom: 45px;
+    text-transform: uppercase;
+}
+
+.key-point {
+    display: flex;
+    align-items: center;
+    gap: 30px;
+    margin-bottom: 30px;
+    padding-bottom: 30px;
+    border-bottom: 2px dashed #666666;
+}
+
+.key-point:last-child {
+    border-bottom: none;
+}
+
+.bullet {
+    width: 40px;
+    height: 40px;
+    background: #000000;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.key-point-text {
+    font-family: 'Unbounded', sans-serif;
+    font-size: 40px;
+    font-weight: 300;
+    color: #000000;
+    line-height: 1.2;
+}
+</style>
+
+<div>
+    <h1 class="main-heading">Define your objective</h1>
+    <h2 class="subheading">START WITH CRYSTAL CLEAR INTENT</h2>
+    <p class="description">START BY CLEARLY ARTICULATING WHAT YOU WANT TO ACHIEVE. BE SPECIFIC ABOUT THE DESIRED OUTPUT FORMAT, TONE, LENGTH AND PURPOSE</p>
+    
+    <div class="content-wrapper">
+        <div class="code-section">
+            <div class="terminal-window">
+                <div class="terminal-header">
+                    <div class="terminal-dot dot-red"></div>
+                    <div class="terminal-dot dot-yellow"></div>
+                    <div class="terminal-dot dot-green"></div>
+                    <span class="terminal-title">AI Chat Interface</span>
+                </div>
+                <div class="terminal-content">
+                    <div><span class="prompt-symbol">$</span> <span class="prompt-label">User Prompt:</span></div>
+                    <div><span class="prompt-label">Task:</span> <span class="prompt-text">Write a professional email</span></div>
+                    <div><span class="prompt-label">Audience:</span> <span class="prompt-text">Marketing team manager</span></div>
+                    <div><span class="prompt-label">Purpose:</span> <span class="prompt-text">Request budget increase</span></div>
+                    <div><span class="prompt-label">Length:</span> <span class="prompt-text">300 words</span></div>
+                    <div><span class="prompt-label">Tone:</span> <span class="prompt-text">Professional, persuasive</span></div>
+                    <div style="margin-top: 12px;"><span class="cursor"></span></div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="key-points-section">
+            <h3 class="key-points-title">KEY POINTS</h3>
+            
+            <div class="key-point">
+                <div class="bullet"></div>
+                <div class="key-point-text">What exact task do I need completed?</div>
+            </div>
+            
+            <div class="key-point">
+                <div class="bullet"></div>
+                <div class="key-point-text">Who is the audience?</div>
+            </div>
+            
+            <div class="key-point">
+                <div class="bullet"></div>
+                <div class="key-point-text">What constraints exist?</div>
+            </div>
+            
+            <div class="key-point">
+                <div class="bullet"></div>
+                <div class="key-point-text">What format should that output take?</div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>
