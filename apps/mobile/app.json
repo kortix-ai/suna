@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "kortix",
+    "name": "Kortix",
     "slug": "kortix",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -19,7 +19,6 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kortix.app",
-      "buildNumber": "2",
       "usesAppleSignIn": true
     },
     "android": {
@@ -41,6 +40,14 @@
         "expo-audio",
         {
           "microphonePermission": "Allow $(PRODUCT_NAME) to record audio for transcription."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "useFrameworks": "static"
+          }
         }
       ]
     ],

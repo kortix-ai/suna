@@ -352,7 +352,6 @@
 				CODE_SIGN_ENTITLEMENTS = kortix/kortix.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = T8G9J33433;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
@@ -391,7 +390,6 @@
 				CODE_SIGN_ENTITLEMENTS = kortix/kortix.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = T8G9J33433;
 				INFOPLIST_FILE = kortix/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;

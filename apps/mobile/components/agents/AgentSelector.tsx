@@ -37,7 +37,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
   // Show loading state only if agents are actually loading
   if (isLoading || agents.length === 0) {
     return (
-      <View className="flex-row items-center gap-1.5 bg-secondary/50 rounded-full px-3 py-1.5 border border-border/30">
+      <View className="flex-row items-center gap-1.5 bg-secondary/50 rounded-full px-3.5 py-2 border border-border/30">
         <View className="w-6 h-6 bg-muted rounded-full animate-pulse" />
         <Text className="text-muted-foreground text-sm font-roobert-medium">Loading...</Text>
       </View>
@@ -55,7 +55,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
           scale.value = withSpring(1, { damping: 15, stiffness: 400 });
         }}
         onPress={onPress}
-        className="flex-row items-center gap-1.5 bg-secondary/50 rounded-full px-3 py-1.5 border border-border/30"
+        className="flex-row items-center gap-1.5 bg-secondary/50 rounded-full px-3.5 py-2 border border-border/30"
         style={animatedStyle}
       >
         <View className="w-6 h-6 bg-muted rounded-full items-center justify-center">
@@ -64,7 +64,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
         <Text className="text-muted-foreground text-sm font-roobert-medium">Select Agent</Text>
         <Icon 
           as={ChevronDown} 
-          size={12} 
+          size={13} 
           className="text-foreground/60"
           strokeWidth={2}
         />
@@ -86,9 +86,9 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
         className="relative"
         style={animatedStyle}
       >
-        <AgentAvatar agent={agent} size={24} />
+        <AgentAvatar agent={agent} size={26} />
         {/* Small chevron indicator */}
-        <View className="absolute -bottom-0.5 -right-0.5 bg-secondary rounded-full items-center justify-center" style={{ width: 12, height: 12 }}>
+        <View className="absolute -bottom-0.5 -right-0.5 bg-secondary rounded-full items-center justify-center" style={{ width: 13, height: 13 }}>
           <Icon 
             as={ChevronDown} 
             size={8} 
@@ -110,17 +110,17 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
         scale.value = withSpring(1, { damping: 15, stiffness: 400 });
       }}
       onPress={onPress}
-      className="flex-row items-center gap-1.5 bg-secondary/50 rounded-full px-3 py-1.5 border border-border/30"
+      className="flex-row items-center gap-1.5 bg-secondary/50 rounded-full px-3.5 py-2 border border-border/30"
       style={animatedStyle}
     >
       {/* Agent info with avatar */}
-      <AgentAvatar agent={agent} size={18} />
+      <AgentAvatar agent={agent} size={19} />
       <Text className="text-foreground text-sm font-roobert-medium">{agent.name}</Text>
       
       {/* Chevron down */}
       <Icon 
         as={ChevronDown} 
-        size={12} 
+        size={13} 
         className="text-foreground/60"
         strokeWidth={2}
       />
