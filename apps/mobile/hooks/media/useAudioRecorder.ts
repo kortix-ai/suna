@@ -1,16 +1,21 @@
 import { Audio } from 'expo-av';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 
 type RecorderState = 'idle' | 'recording' | 'recorded' | 'playing';
+
+const WAVEFORM_BARS = 45;
 
 export function useAudioRecorder() {
   const [state, setState] = useState<RecorderState>('idle');
   const [recordingDuration, setRecordingDuration] = useState(0);
   const [audioUri, setAudioUri] = useState<string | null>(null);
+  const [audioLevel, setAudioLevel] = useState(0); // Single level for backward compat
+  const [audioLevels, setAudioLevels] = useState<number[]>(Array(WAVEFORM_BARS).fill(0)); // Time-series buffer
   
   const recordingRef = useRef<Audio.Recording | null>(null);
   const playbackRef = useRef<Audio.Sound | null>(null);
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const meteringIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const isRecording = state === 'recording';
   const isPlaying = state === 'playing';
@@ -39,15 +44,34 @@ export function useAudioRecorder() {
           console.log('⚠️ Could not stop existing recording, continuing...');
         }
         recordingRef.current = null;
+        
+        // Reset audio mode to clear any lingering state
+        try {
+          await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
+          await new Promise(resolve => setTimeout(resolve, 50));
+          await Audio.setAudioModeAsync({
+            allowsRecordingIOS: true,
+            playsInSilentModeIOS: true,
+          });
+        } catch (err) {
+          console.log('⚠️ Could not reset audio mode:', err);
+        }
+        
         // Wait a bit more after cleanup
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 150));
       }
 
       console.log('🎤 Starting recording...');
       const recording = new Audio.Recording();
       
       console.log('🎤 Preparing to record...');
-      await recording.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      // Enable metering for real-time audio levels
+      const recordingOptions = {
+        ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+        isMeteringEnabled: true, // CRITICAL: Enable metering for waveform
+      };
+      
+      await recording.prepareToRecordAsync(recordingOptions);
       
       console.log('🎤 Starting async recording...');
       await recording.startAsync();
@@ -60,6 +84,36 @@ export function useAudioRecorder() {
       durationIntervalRef.current = setInterval(() => {
         setRecordingDuration((prev) => prev + 1);
       }, 1000);
+
+      // Start REAL audio level monitoring using expo-av's built-in metering
+      meteringIntervalRef.current = setInterval(async () => {
+        if (recordingRef.current) {
+          try {
+            const status = await recordingRef.current.getStatusAsync();
+            if (status.isRecording && typeof status.metering === 'number') {
+              // status.metering is in decibels (dB)
+              // Typical range: -60 (quiet) to 0 (loud)
+              // We need to map this to 0-1 for visualization
+              const db = status.metering;
+              
+              // Improved normalization with less sensitivity
+              // -60 dB or lower = silence (0)
+              // -5 dB or higher = max volume (1)
+              const minDB = -60;
+              const maxDB = -5;
+              const normalizedLevel = Math.max(0, Math.min(1, (db - minDB) / (maxDB - minDB)));
+              
+              // Update single level for backward compatibility
+              setAudioLevel(normalizedLevel);
+              
+              // Update circular buffer - shift left and add new sample on right
+              setAudioLevels(prev => [...prev.slice(1), normalizedLevel]);
+            }
+          } catch (err) {
+            console.log('⚠️ Could not get metering status:', err);
+          }
+        }
+      }, 20); // Poll every 20ms for smooth, state-of-the-art updates
 
       console.log('✅ Recording started - State: recording');
     } catch (error) {
@@ -75,12 +129,18 @@ export function useAudioRecorder() {
         recordingRef.current = null;
       }
       
-      // Clean up interval
+      // Clean up intervals
       if (durationIntervalRef.current) {
         clearInterval(durationIntervalRef.current);
         durationIntervalRef.current = null;
       }
+      if (meteringIntervalRef.current) {
+        clearInterval(meteringIntervalRef.current);
+        meteringIntervalRef.current = null;
+      }
       
+      setAudioLevel(0);
+      setAudioLevels(Array(WAVEFORM_BARS).fill(0));
       setState('idle');
       
       throw error;
@@ -101,6 +161,15 @@ export function useAudioRecorder() {
         clearInterval(durationIntervalRef.current);
         durationIntervalRef.current = null;
       }
+      
+      // Stop audio level monitoring
+      if (meteringIntervalRef.current) {
+        clearInterval(meteringIntervalRef.current);
+        meteringIntervalRef.current = null;
+      }
+      
+      setAudioLevel(0);
+      setAudioLevels(Array(WAVEFORM_BARS).fill(0));
 
       // Stop and unload recording
       if (recordingRef.current) {
@@ -125,6 +194,12 @@ export function useAudioRecorder() {
         clearInterval(durationIntervalRef.current);
         durationIntervalRef.current = null;
       }
+      if (meteringIntervalRef.current) {
+        clearInterval(meteringIntervalRef.current);
+        meteringIntervalRef.current = null;
+      }
+      setAudioLevel(0);
+      setAudioLevels(Array(WAVEFORM_BARS).fill(0));
       setState('idle');
       return null;
     }
@@ -144,6 +219,15 @@ export function useAudioRecorder() {
         clearInterval(durationIntervalRef.current);
         durationIntervalRef.current = null;
       }
+      
+      // Stop audio level monitoring
+      if (meteringIntervalRef.current) {
+        clearInterval(meteringIntervalRef.current);
+        meteringIntervalRef.current = null;
+      }
+      
+      setAudioLevel(0);
+      setAudioLevels(Array(WAVEFORM_BARS).fill(0));
 
       // Stop recording
       if (recordingRef.current) {
@@ -162,6 +246,12 @@ export function useAudioRecorder() {
         clearInterval(durationIntervalRef.current);
         durationIntervalRef.current = null;
       }
+      if (meteringIntervalRef.current) {
+        clearInterval(meteringIntervalRef.current);
+        meteringIntervalRef.current = null;
+      }
+      setAudioLevel(0);
+      setAudioLevels(Array(WAVEFORM_BARS).fill(0));
       setState('idle');
       setRecordingDuration(0);
       setAudioUri(null);
@@ -247,6 +337,8 @@ export function useAudioRecorder() {
     hasRecording,
     recordingDuration,
     audioUri,
+    audioLevel,
+    audioLevels, // Time-series buffer for waveform
     state,
     
     // Recording controls

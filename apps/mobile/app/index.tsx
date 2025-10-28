@@ -59,7 +59,7 @@ export default function SplashScreen() {
   React.useEffect(() => {
     if (!authLoading && !onboardingLoading) {
       // Small delay for smooth transition
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         if (!isAuthenticated) {
           console.log('🔐 User not authenticated, routing to sign in');
           router.replace('/auth');
@@ -71,7 +71,9 @@ export default function SplashScreen() {
           router.replace('/home');
         }
         setIsReady(true);
-      }, 800); // Minimum splash display time
+      }, 300); // Reduced delay for faster navigation
+
+      return () => clearTimeout(timeoutId);
     }
   }, [authLoading, onboardingLoading, isAuthenticated, hasCompletedOnboarding, router]);
 

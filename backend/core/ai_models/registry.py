@@ -8,7 +8,7 @@ FREE_MODEL_ID = "moonshotai/kimi-k2"
 if config.ENV_MODE == EnvMode.LOCAL:
     PREMIUM_MODEL_ID = "anthropic/claude-haiku-4-5"
 else:  # STAGING or PRODUCTION
-    PREMIUM_MODEL_ID = "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/cyuh6gekrmmh"
+    PREMIUM_MODEL_ID = "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/pe55zlhpikcf"
 
 is_local = config.ENV_MODE == EnvMode.LOCAL
 
@@ -20,27 +20,27 @@ class ModelRegistry:
     
     def _initialize_models(self):
         # Claude Haiku 4.5 - New default model with 67% cost reduction
-        self.register(Model(
-            id="anthropic/claude-haiku-4-5" if is_local else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/cyuh6gekrmmh",
-            name="Haiku 4.5",
-            provider=ModelProvider.ANTHROPIC,
-            aliases=["claude-haiku-4.5", "anthropic/claude-haiku-4.5", "Claude Haiku 4.5", "claude-haiku-4-5-20251001-v1:0", "bedrock/anthropic.claude-haiku-4-5-20251001-v1:0"],
-            context_window=200_000,
-            capabilities=[
-                ModelCapability.CHAT,
-                ModelCapability.FUNCTION_CALLING,
-                ModelCapability.VISION,
-            ],
-            pricing=ModelPricing(
-                input_cost_per_million_tokens=1.00,  # 67% reduction from Sonnet 4.0
-                output_cost_per_million_tokens=5.00  # 67% reduction from Sonnet 4.0
-            ),
-            tier_availability=["paid"],
-            priority=102,  # Highest priority as new default
-            recommended=True,
-            enabled=True,
-            config=ModelConfig()
-        ))
+        # self.register(Model(
+        #     id="anthropic/claude-haiku-4-5" if is_local else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/cyuh6gekrmmh",
+        #     name="Haiku 4.5",
+        #     provider=ModelProvider.ANTHROPIC,
+        #     aliases=["claude-haiku-4.5", "anthropic/claude-haiku-4.5", "Claude Haiku 4.5", "claude-haiku-4-5-20251001-v1:0", "bedrock/anthropic.claude-haiku-4-5-20251001-v1:0"],
+        #     context_window=200_000,
+        #     capabilities=[
+        #         ModelCapability.CHAT,
+        #         ModelCapability.FUNCTION_CALLING,
+        #         ModelCapability.VISION,
+        #     ],
+        #     pricing=ModelPricing(
+        #         input_cost_per_million_tokens=1.00,  # 67% reduction from Sonnet 4.0
+        #         output_cost_per_million_tokens=5.00  # 67% reduction from Sonnet 4.0
+        #     ),
+        #     tier_availability=["paid"],
+        #     priority=102,  # Highest priority as new default
+        #     recommended=True,
+        #     enabled=True,
+        #     config=ModelConfig()
+        # ))
         
         self.register(Model(
             id="anthropic/claude-sonnet-4-5-20250929" if is_local else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/pe55zlhpikcf",
