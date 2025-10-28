@@ -19,7 +19,6 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.kortix.app",
-      "buildNumber": "3",
       "usesAppleSignIn": true
     },
     "android": {
