@@ -14,8 +14,8 @@ const ONBOARDING_KEY_PREFIX = '@onboarding_completed_';
  * const { hasCompletedOnboarding, isLoading, markAsCompleted } = useOnboarding();
  */
 export function useOnboarding() {
-  const { session } = useAuthContext();
-  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState<boolean | null>(null);
+  const { session, isLoading: authLoading } = useAuthContext();
+  const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState(true);
 
   // Generate user-specific key
@@ -38,10 +38,15 @@ export function useOnboarding() {
     }
   }, [getOnboardingKey]);
 
-  // Check onboarding status on mount and when user changes
+  // Check onboarding status ONLY after auth is loaded and when user changes
   useEffect(() => {
+    // Wait for auth to complete first
+    if (authLoading) {
+      return;
+    }
+    
     checkOnboardingStatus();
-  }, [checkOnboardingStatus]);
+  }, [checkOnboardingStatus, authLoading]);
 
   const markAsCompleted = useCallback(async () => {
     try {

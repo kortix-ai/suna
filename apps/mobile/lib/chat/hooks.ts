@@ -150,9 +150,9 @@ export function useShareThread(
       const shareUrl = `${FRONTEND_SHARE_URL}/share/${threadId}`;
       
       // Open native share menu
+      // Use message instead of url to prevent iOS duplication issue
       await Share.share({
-        message: shareUrl, // Android uses this
-        url: shareUrl,     // iOS uses this
+        message: shareUrl,
       });
       
       return { shareUrl };

@@ -286,6 +286,8 @@ export function ThreadPage({
             agent={agentManager.selectedAgent || undefined}
             isRecording={audioRecorder.isRecording}
             recordingDuration={audioRecorder.recordingDuration}
+            audioLevel={audioRecorder.audioLevel}
+            audioLevels={audioRecorder.audioLevels}
             attachments={chat.attachments}
             onRemoveAttachment={chat.removeAttachment}
             selectedQuickAction={chat.selectedQuickAction}
