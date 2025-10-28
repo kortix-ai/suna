@@ -18,8 +18,9 @@ import { handleFiles, FileUploadHandler } from './file-upload-handler';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { Loader2, ArrowUp, X, Image as ImageIcon, Presentation, BarChart3, FileText, Search, Users, Code2, Sparkles, Brain as BrainIcon, MessageSquare, CornerDownLeft } from 'lucide-react';
+import { Loader2, ArrowUp, X, Image as ImageIcon, Presentation, BarChart3, FileText, Search, Users, Code2, Sparkles, Brain as BrainIcon, MessageSquare, CornerDownLeft, Plug } from 'lucide-react';
 import { VoiceRecorder } from './voice-recorder';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { UnifiedConfigMenu } from './unified-config-menu';
 import { AttachmentGroup } from '../attachment-group';
 import { cn } from '@/lib/utils';
@@ -39,6 +40,7 @@ import { isStagingMode, isLocalMode } from '@/lib/config';
 import { BillingModal } from '@/components/billing/billing-modal';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
 import { ContextUsageIndicator } from '../ContextUsageIndicator';
+import { SpotlightCard } from '@/components/ui/spotlight-card';
 
 import posthog from 'posthog-js';
 
@@ -218,11 +220,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const deleteFileMutation = useFileDelete();
     const queryClient = useQueryClient();
 
-    // Fetch integration icons only when logged in and advanced config UI is in use
-    const shouldFetchIcons = isLoggedIn && !!enableAdvancedConfig;
-    const { data: googleDriveIcon } = useComposioToolkitIcon('googledrive', { enabled: shouldFetchIcons });
-    const { data: slackIcon } = useComposioToolkitIcon('slack', { enabled: shouldFetchIcons });
-    const { data: notionIcon } = useComposioToolkitIcon('notion', { enabled: shouldFetchIcons });
+    // Fetch integration icons when logged in
+    const { data: googleDriveIcon } = useComposioToolkitIcon('googledrive', { enabled: isLoggedIn });
+    const { data: slackIcon } = useComposioToolkitIcon('slack', { enabled: isLoggedIn });
+    const { data: notionIcon } = useComposioToolkitIcon('notion', { enabled: isLoggedIn });
 
     // Show usage preview logic:
     // - Always show to free users when showToLowCreditUsers is true
@@ -587,6 +588,84 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
             />
           )}
 
+          {isLoggedIn && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 w-8 p-0 bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center cursor-pointer"
+                        disabled={loading || (disabled && !isAgentRunning)}
+                      >
+                        <Plug className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-[320px] px-0 py-3 border-[1.5px] border-border rounded-2xl" sideOffset={6}>
+                      <div className="px-3 mb-3">
+                        <span className="text-xs font-medium text-muted-foreground pl-1">Integrations</span>
+                      </div>
+                      <div className="space-y-0.5 px-2">
+                        <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
+                          <div className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1">
+                            <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
+                              {googleDriveIcon?.icon_url ? (
+                                <img src={googleDriveIcon.icon_url} alt="Google Drive" className="h-4 w-4" />
+                              ) : (
+                                <div className="h-4 w-4 bg-muted rounded" />
+                              )}
+                            </div>
+                            <span className="flex-1 truncate font-medium">Google Drive</span>
+                            <span className="text-xs text-muted-foreground">Connect</span>
+                          </div>
+                        </SpotlightCard>
+                        <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
+                          <div className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1">
+                            <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
+                              {slackIcon?.icon_url ? (
+                                <img src={slackIcon.icon_url} alt="Slack" className="h-4 w-4" />
+                              ) : (
+                                <div className="h-4 w-4 bg-muted rounded" />
+                              )}
+                            </div>
+                            <span className="flex-1 truncate font-medium">Slack</span>
+                            <span className="text-xs text-muted-foreground">Connect</span>
+                          </div>
+                        </SpotlightCard>
+                        <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
+                          <div className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1">
+                            <div className="flex items-center justify-center w-8 h-8 bg-card border-[1.5px] border-border flex-shrink-0" style={{ borderRadius: '10.4px' }}>
+                              {notionIcon?.icon_url ? (
+                                <img src={notionIcon.icon_url} alt="Notion" className="h-4 w-4" />
+                              ) : (
+                                <div className="h-4 w-4 bg-muted rounded" />
+                              )}
+                            </div>
+                            <span className="flex-1 truncate font-medium">Notion</span>
+                            <span className="text-xs text-muted-foreground">Connect</span>
+                          </div>
+                        </SpotlightCard>
+                        <SpotlightCard className="transition-colors cursor-pointer bg-transparent">
+                          <div
+                            className="flex items-center gap-3 text-sm cursor-pointer px-1 py-1 min-h-[40px]"
+                            onClick={() => setRegistryDialogOpen(true)}
+                          >
+                            <span className="text-muted-foreground font-medium">+ See all integrations</span>
+                          </div>
+                        </SpotlightCard>
+                      </div>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  <p>Connect integrations</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+
           {/* Agent Mode Switcher - Only for Suna */}
           {ENABLE_SUNA_AGENT_MODES && (isStagingMode() || isLocalMode()) && isSunaAgent && (
             <TooltipProvider>
@@ -742,7 +821,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           </div>
         </div>
       </div>
-    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, messages, isLoggedIn, renderConfigDropdown, billingModalOpen, setBillingModalOpen, handleTranscription, onStopAgent, handleSubmit, value, uploadedFiles, selectedMode, onModeDeselect, handleModeDeselect, isModeDismissing, isSunaAgent, sunaAgentModes, pendingFiles, threadId]);
+    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, projectId, messages, isLoggedIn, renderConfigDropdown, billingModalOpen, setBillingModalOpen, handleTranscription, onStopAgent, handleSubmit, value, uploadedFiles, selectedMode, onModeDeselect, handleModeDeselect, isModeDismissing, isSunaAgent, sunaAgentModes, pendingFiles, threadId, selectedModel, googleDriveIcon, slackIcon, notionIcon]);
 
     return (
       <div className="mx-auto w-full max-w-4xl relative">

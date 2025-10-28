@@ -175,7 +175,7 @@ export function TriggersScreen({ agentId }: TriggersScreenProps) {
                             No triggers configured
                         </h4>
                         <p className="text-sm text-muted-foreground mb-6 max-w-sm mx-auto">
-                            Set up triggers to automate this agent
+                            Set up triggers to automate this worker
                         </p>
                     </div>
                 ) : (
