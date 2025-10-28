@@ -29,7 +29,7 @@ export function WordmarkFooter() {
                 ref={containerRef}
                 onMouseEnter={() => setIsHovered(true)}
                 onMouseLeave={() => setIsHovered(false)}
-                className="relative w-full mx-auto overflow-hidden md:px-12 lg:px-16 pt-10 md:pt-32"
+                className="relative w-full mx-auto overflow-hidden md:px-12 lg:px-16 pt-32 md:pt-32"
                 style={{
                     // @ts-expect-error - CSS custom properties are not in CSSProperties type
                     '--mouse-x': `${mousePosition.x}px`,
@@ -54,18 +54,44 @@ export function WordmarkFooter() {
                         }}
                     >
                         <div className="relative w-full h-full" style={{ isolation: 'isolate' }}>
-                            {/* Base wordmark */}
+                            {/* Base wordmark - symbol for mobile, wordmark for desktop */}
+                            <div className="relative w-full h-full md:hidden opacity-1">
+                                <Image
+                                    src="/kortix-symbol.svg"
+                                    alt="Kortix"
+                                    fill
+                                    className="object-contain"
+                                    priority
+                                    style={{
+                                        mixBlendMode: 'normal',
+                                        filter: 'brightness(0) saturate(100%) invert(0%)'
+                                    }}
+                                />
+                            </div>
+                            <div className="relative w-full h-full dark:block hidden md:hidden opacity-30">
+                                <Image
+                                    src="/kortix-symbol.svg"
+                                    alt="Kortix"
+                                    fill
+                                    className="object-contain"
+                                    priority
+                                    style={{
+                                        mixBlendMode: 'normal',
+                                        filter: 'brightness(0) saturate(100%) invert(100%)'
+                                    }}
+                                />
+                            </div>
                             <Image
                                 src="/wordmark.svg"
                                 alt="Kortix"
                                 fill
-                                className="object-contain dark:invert"
+                                className="object-contain dark:invert hidden md:block"
                                 priority
                                 style={{ mixBlendMode: 'normal' }}
                             />
                             {/* Grain texture overlay - clipped to wordmark shape */}
                             <div
-                                className="absolute inset-0 pointer-events-none"
+                                className="absolute inset-0 pointer-events-none md:block hidden"
                                 style={{
                                     backgroundImage: 'url(/grain-texture.png)',
                                     backgroundSize: '100px 100px',
@@ -82,16 +108,43 @@ export function WordmarkFooter() {
                                     WebkitMaskPosition: 'center',
                                 }}
                             />
+                            <div
+                                className="absolute inset-0 pointer-events-none md:hidden"
+                                style={{
+                                    backgroundImage: 'url(/grain-texture.png)',
+                                    backgroundSize: '100px 100px',
+                                    backgroundRepeat: 'repeat',
+                                    mixBlendMode: 'multiply',
+                                    opacity: 0.6,
+                                    maskImage: 'url(/kortix-symbol.svg)',
+                                    WebkitMaskImage: 'url(/kortix-symbol.svg)',
+                                    maskSize: 'contain',
+                                    WebkitMaskSize: 'contain',
+                                    maskRepeat: 'no-repeat',
+                                    WebkitMaskRepeat: 'no-repeat',
+                                    maskPosition: 'center',
+                                    WebkitMaskPosition: 'center',
+                                }}
+                            />
                         </div>
                     </div>
 
                     {/* Hidden wordmark for layout (maintains aspect ratio) */}
                     <div className="relative w-full h-full opacity-0">
+                        <div className="relative w-full h-full md:hidden">
+                            <Image
+                                src="/kortix-symbol.svg"
+                                alt="Kortix"
+                                fill
+                                className="object-contain"
+                                priority
+                            />
+                        </div>
                         <Image
                             src="/wordmark.svg"
                             alt="Kortix"
                             fill
-                            className="object-contain"
+                            className="object-contain hidden md:block"
                             priority
                         />
                     </div>
