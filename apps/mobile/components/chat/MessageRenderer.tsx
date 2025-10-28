@@ -44,7 +44,7 @@ interface MessageRendererProps {
 /**
  * Main Message Renderer
  */
-export function MessageRenderer({
+export const MessageRenderer = React.memo(function MessageRenderer({
   messages,
   streamingContent,
   streamingToolCall,
@@ -52,40 +52,33 @@ export function MessageRenderer({
   onToolPress,
 }: MessageRendererProps) {
   const groupedMessages = useMemo(() => {
-    // ✨ Simplified: Trust data layer to handle deduplication
-    // Only add streaming content if it's not already represented in messages
     let messagesToRender = [...messages];
     
     if (streamingContent && streamingContent.trim().length > 0) {
-      // Check if we already have a recent assistant message that matches the streaming content
       const recentAssistantMsg = [...messages].reverse().find(m => m.type === 'assistant');
+      const agentId = recentAssistantMsg?.agent_id || undefined;
       
-      if (!recentAssistantMsg) {
-        // No assistant message yet, show streaming content
-        console.log('✨ [MessageRenderer] First chunks - showing streaming:', streamingContent.length, 'chars');
-        messagesToRender.push({
-          message_id: null,
-          thread_id: 'streaming',
-          type: 'assistant',
-          is_llm_message: true,
-          content: JSON.stringify({ role: 'assistant', content: streamingContent }),
-          metadata: JSON.stringify({ stream_status: 'chunk' }),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
-      }
+      messagesToRender.push({
+        message_id: 'streaming-assistant',
+        thread_id: 'streaming',
+        type: 'assistant',
+        agent_id: agentId,
+        is_llm_message: true,
+        content: JSON.stringify({ role: 'assistant', content: streamingContent }),
+        metadata: JSON.stringify({ stream_status: 'streaming' }),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
     }
 
     return groupMessages(messagesToRender);
   }, [messages, streamingContent]);
 
-  // Collect ALL tool messages from the ENTIRE thread for navigation
   const allToolMessages = useMemo(() => {
     const pairs: ToolMessagePair[] = [];
     const assistantMessages = messages.filter(m => m.type === 'assistant');
     const toolMessages = messages.filter(m => m.type === 'tool');
-    
-    // Map tools to their assistant messages
+
     const toolMap = new Map<string | null, UnifiedMessage[]>();
     toolMessages.forEach(toolMsg => {
       const metadata = safeJsonParse<ParsedMetadata>(toolMsg.metadata, {});
@@ -96,8 +89,6 @@ export function MessageRenderer({
       }
       toolMap.get(assistantId)!.push(toolMsg);
     });
-
-    // Build pairs in chronological order
     assistantMessages.forEach((assistantMsg) => {
       const linkedTools = toolMap.get(assistantMsg.message_id || null);
       if (linkedTools && linkedTools.length > 0) {
@@ -110,7 +101,6 @@ export function MessageRenderer({
       }
     });
     
-    // Add orphaned tools
     const orphanedTools = toolMap.get(null);
     if (orphanedTools) {
       orphanedTools.forEach((toolMsg) => {
@@ -151,27 +141,25 @@ export function MessageRenderer({
           );
         }
       })}
-
-      {/* Streaming indicators with proper spacing */}
-      {streamingToolCall && (
-        <View className="px-4 mb-2.5">
-          <ToolCard isLoading toolCall={streamingToolCall} />
-        </View>
-      )}
-
-      {/* {isStreaming && (
-        <View className="px-4 pt-2 pb-4">
-          <StreamingDots />
-        </View>
-      )} */}
+      {streamingToolCall && groupedMessages.length > 0 && (() => {
+        const lastGroup = groupedMessages[groupedMessages.length - 1];
+        if (lastGroup.type === 'assistant_group') {
+          return null;
+        }
+        return (
+          <View className="px-4 mb-2.5">
+            <ToolCard isLoading toolCall={streamingToolCall} />
+          </View>
+        );
+      })()}
     </View>
   );
-}
+});
 
 /**
  * User Message Bubble
  */
-function UserMessageBubble({ 
+const UserMessageBubble = React.memo(function UserMessageBubble({ 
   message, 
   isLast 
 }: { 
@@ -251,12 +239,12 @@ function UserMessageBubble({
       )}
     </View>
   );
-}
+});
 
 /**
  * Assistant Message Group
  */
-function AssistantMessageGroup({
+const AssistantMessageGroup = React.memo(function AssistantMessageGroup({
   messages,
   streamingToolCall,
   onToolPress,
@@ -342,6 +330,13 @@ function AssistantMessageGroup({
                 ))}
               </View>
             )}
+            
+            {/* Streaming tool call - render as part of this assistant's tools */}
+            {streamingToolCall && idx === assistantMessages.length - 1 && (
+              <View className="px-4 mb-2.5">
+                <ToolCard isLoading toolCall={streamingToolCall} />
+              </View>
+            )}
           </View>
         );
       })}
@@ -357,13 +352,13 @@ function AssistantMessageGroup({
       ))}
     </View>
   );
-}
+});
 
 /**
  * Assistant Message Content - Clean markdown rendering with native text selection
  * Now with file attachment support
  */
-function AssistantMessageContent({ 
+const AssistantMessageContent = React.memo(function AssistantMessageContent({ 
   message,
   hasToolsBelow 
 }: { 
@@ -372,9 +367,12 @@ function AssistantMessageContent({
 }) {
   const { colorScheme } = useColorScheme();
   
-  const { content, fileAttachments, sandboxId } = useMemo(() => {
+  const { content, fileAttachments, sandboxId, isStreaming } = useMemo(() => {
     const parsed = safeJsonParse<ParsedContent>(message.content, {});
     const rawContent = parsed.content || '';
+    
+    const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
+    const streaming = message.message_id === 'streaming-assistant';
     
     let contentToProcess = rawContent;
     
@@ -394,13 +392,13 @@ function AssistantMessageContent({
     const finalContent = stripXMLTags(cleanContent).trim();
     
     // Try to get sandbox ID from message metadata
-    const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
     const sandbox = metadata.sandbox_id;
     
     return { 
       content: finalContent || null, 
       fileAttachments: files,
       sandboxId: sandbox,
+      isStreaming: streaming,
     };
   }, [message.content, message.metadata]);
 
@@ -429,25 +427,32 @@ function AssistantMessageContent({
       
       {/* Text Content */}
       {content && (
-        <Markdown
-          style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
-          onLinkPress={(url) => {
-            Linking.openURL(url).catch(console.error);
-            return false;
-          }}
-          rules={selectableRules}
-        >
-          {content}
-        </Markdown>
+        <View>
+          <Markdown
+            style={colorScheme === 'dark' ? markdownStylesDark : markdownStyles}
+            onLinkPress={(url) => {
+              Linking.openURL(url).catch(console.error);
+              return false;
+            }}
+            rules={selectableRules}
+          >
+            {content}
+          </Markdown>
+          {isStreaming && (
+            <View className="inline-flex">
+              <StreamingCursor />
+            </View>
+          )}
+        </View>
       )}
     </View>
   );
-}
+});
 
 /**
  * Tool Card
  */
-function ToolCard({
+const ToolCard = React.memo(function ToolCard({
   message,
   isLoading = false,
   toolCall,
@@ -555,69 +560,31 @@ function ToolCard({
       </Animated.View>
     </Pressable>
   );
-}
+});
 
 /**
- * Streaming Dots Animation
+ * Streaming Cursor Animation - Like ChatGPT
  */
-function StreamingDots() {
-  const dot1Opacity = useSharedValue(0.3);
-  const dot2Opacity = useSharedValue(0.3);
-  const dot3Opacity = useSharedValue(0.3);
+const StreamingCursor = React.memo(function StreamingCursor() {
+  const opacity = useSharedValue(1);
 
   useEffect(() => {
-    dot1Opacity.value = withRepeat(
+    opacity.value = withRepeat(
       withSequence(
-        withTiming(1, { duration: 400 }),
-        withTiming(0.3, { duration: 400 })
+        withTiming(0, { duration: 500 }),
+        withTiming(1, { duration: 500 })
       ),
       -1,
       false
     );
-
-    dot2Opacity.value = withDelay(
-      133,
-      withRepeat(
-        withSequence(
-          withTiming(1, { duration: 400 }),
-          withTiming(0.3, { duration: 400 })
-        ),
-        -1,
-        false
-      )
-    );
-
-    dot3Opacity.value = withDelay(
-      266,
-      withRepeat(
-        withSequence(
-          withTiming(1, { duration: 400 }),
-          withTiming(0.3, { duration: 400 })
-        ),
-        -1,
-        false
-      )
-    );
   }, []);
 
-  const dot1Style = useAnimatedStyle(() => ({ opacity: dot1Opacity.value }));
-  const dot2Style = useAnimatedStyle(() => ({ opacity: dot2Opacity.value }));
-  const dot3Style = useAnimatedStyle(() => ({ opacity: dot3Opacity.value }));
+  const animatedStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
 
   return (
-    <View className="flex-row gap-2 items-center justify-center py-2">
-      <Animated.View 
-        style={[dot1Style]} 
-        className="w-2 h-2 rounded-full bg-muted-foreground" 
-      />
-      <Animated.View 
-        style={[dot2Style]} 
-        className="w-2 h-2 rounded-full bg-muted-foreground" 
-      />
-      <Animated.View 
-        style={[dot3Style]} 
-        className="w-2 h-2 rounded-full bg-muted-foreground" 
-      />
-    </View>
+    <Animated.View 
+      style={[animatedStyle, { marginLeft: 2 }]} 
+      className="w-0.5 h-5 bg-foreground" 
+    />
   );
-}
+});

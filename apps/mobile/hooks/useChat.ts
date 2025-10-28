@@ -69,6 +69,7 @@ export interface UseChatReturn {
   startNewChat: () => void;
   updateThreadTitle: (newTitle: string) => Promise<void>;
   hasActiveThread: boolean;
+  refreshMessages: () => Promise<void>;
   
   // Messages & Streaming
   messages: UnifiedMessage[];
@@ -177,40 +178,69 @@ export function useChat(): UseChatReturn {
   const isMountedRef = useRef<boolean>(true);
   const currentRunIdRef = useRef<string | null>(null);
   const processedMessageIds = useRef<Set<string>>(new Set());
-  const completedRunIds = useRef<Set<string>>(new Set()); // Track completed runs
+  const completedRunIds = useRef<Set<string>>(new Set());
+  
+  const streamingBufferRef = useRef<string>('');
+  const streamingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastUpdateTimeRef = useRef<number>(0);
 
-  // Computed streaming state
   const isStreaming = !!currentRunIdRef.current;
 
-  // Update streaming status - accumulate ALL chunks
-  const addContentImmediate = useCallback((content: string) => {
-    setStreamingContent((prev) => {
-      const newContent = prev + content;
-      console.log('[useChat] 📝 Accumulated content:', newContent.length, 'chars');
-      return newContent;
-    });
+  const flushStreamingBuffer = useCallback(() => {
+    if (streamingBufferRef.current && isMountedRef.current) {
+      const content = streamingBufferRef.current;
+      streamingBufferRef.current = '';
+      setStreamingContent((prev) => prev + content);
+      lastUpdateTimeRef.current = Date.now();
+    }
   }, []);
 
-  // Helper to safely update messages array with deduplication
+  const addContentImmediate = useCallback((content: string) => {
+    streamingBufferRef.current += content;
+    
+    const now = Date.now();
+    const timeSinceLastUpdate = now - lastUpdateTimeRef.current;
+    
+    if (streamingTimerRef.current) {
+      clearTimeout(streamingTimerRef.current);
+    }
+    
+    if (timeSinceLastUpdate >= 16 || streamingBufferRef.current.length >= 5) {
+      flushStreamingBuffer();
+    } else {
+      streamingTimerRef.current = setTimeout(() => {
+        flushStreamingBuffer();
+      }, 16);
+    }
+  }, [flushStreamingBuffer]);
+
+  // Helper t o safely update messages array with deduplication
   const updateMessagesWithDeduplication = useCallback((newMessage: UnifiedMessage) => {
     setMessages((prev) => {
       const messageExists = prev.some(
         (m) => m.message_id === newMessage.message_id,
       );
       if (messageExists) {
-        // Update existing message in place
         return prev.map((m) =>
           m.message_id === newMessage.message_id ? newMessage : m,
         );
       } else {
-        // Check if this is a user message that should replace an optimistic one
         if (newMessage.type === 'user') {
-          const optimisticIndex = prev.findIndex(
-            (m) =>
-              m.type === 'user' &&
-              (m.message_id?.startsWith('optimistic-') || m.message_id?.startsWith('temp-')) &&
-              m.content === newMessage.content,
-          );
+          const newContent = safeJsonParse<ParsedContent>(newMessage.content, {});
+          const newText = typeof newContent.content === 'string' ? newContent.content : '';
+          
+          const optimisticIndex = prev.findIndex((m) => {
+            if (m.type !== 'user') return false;
+            if (!(m.message_id?.startsWith('optimistic-') || m.message_id?.startsWith('temp-'))) return false;
+            
+            // Parse the optimistic message content
+            const optimisticContent = safeJsonParse<ParsedContent>(m.content, {});
+            const optimisticText = typeof optimisticContent.content === 'string' ? optimisticContent.content : '';
+            
+            // Compare actual text content, not JSON strings
+            return optimisticText === newText;
+          });
+          
           if (optimisticIndex !== -1) {
             // Replace the optimistic message with the real one
             return prev.map((m, index) =>
@@ -230,41 +260,46 @@ export function useChat(): UseChatReturn {
 
     console.log('[useChat] Finalizing stream');
     
-    // Mark this run as completed to prevent reconnection
+    if (streamingTimerRef.current) {
+      clearTimeout(streamingTimerRef.current);
+      streamingTimerRef.current = null;
+    }
+    flushStreamingBuffer();
+    
     if (currentRunIdRef.current) {
       completedRunIds.current.add(currentRunIdRef.current);
     }
     
-    // Clear streaming state but keep agentRunId until refetch completes
     currentRunIdRef.current = null;
     processedMessageIds.current.clear();
 
-    // Invalidate active runs query to update agent running status
     queryClient.invalidateQueries({ queryKey: chatKeys.activeRuns() });
+    
+    const sandboxId = threadData?.project?.sandbox?.id;
+    if (sandboxId) {
+      console.log('[useChat] Invalidating file queries for sandbox:', sandboxId);
+      queryClient.invalidateQueries({ 
+        queryKey: ['files', 'sandbox', sandboxId],
+        refetchType: 'all',
+      });
+    }
 
-    // Clear optimistic flag
     if (isNewThreadOptimistic) {
       console.log('[useChat] Clearing optimistic flag - streaming complete');
       setIsNewThreadOptimistic(false);
     }
 
-    // Refetch messages to get the final state
-    refetchMessages().then(() => {
-      // Clear agentRunId AFTER refetch completes to maintain running state
-      setAgentRunId(null);
-      
-      // Clear streaming content after a longer delay to prevent flicker
-      setTimeout(() => {
-        if (isMountedRef.current) {
-          console.log('[useChat] Clearing streaming content after refetch');
-          setStreamingContent('');
-          setStreamingToolCall(null);
-        }
-      }, 100); // Short delay to ensure refetch is processed
-    });
-  }, [refetchMessages, queryClient, isNewThreadOptimistic]);
+    setTimeout(() => {
+      if (isMountedRef.current) {
+        console.log('[useChat] Clearing streaming state');
+        setStreamingContent('');
+        setStreamingToolCall(null);
+        setAgentRunId(null);
+        refetchMessages();
+      }
+    }, 50);
+  }, [refetchMessages, queryClient, isNewThreadOptimistic, flushStreamingBuffer, threadData]);
 
-  // Handle incoming stream messages
   const handleStreamMessage = useCallback((rawData: string) => {
     if (!isMountedRef.current) return;
 
@@ -319,15 +354,7 @@ export function useChat(): UseChatReturn {
       case 'assistant':
         if (parsedMetadata.stream_status === 'chunk' && parsedContent.content) {
           const content = parsedContent.content;
-          
-          // ✨ ALWAYS add content chunks - never skip them!
-          console.log('[useChat] 📝 Chunk received:', content.substring(0, 50) + (content.length > 50 ? '...' : ''));
-          
-          // Detect <function_calls> start
           if (content.includes('<function_calls>')) {
-            console.log('[useChat] Detected <function_calls> in stream - switching to tool mode');
-            
-            // Show loading state immediately when function calls are detected
             if (!streamingToolCall) {
               setStreamingToolCall({
                 role: 'assistant',
@@ -338,7 +365,6 @@ export function useChat(): UseChatReturn {
               });
             }
             
-            // Try to extract function name from <invoke name="...">
             const invokeMatch = content.match(/<invoke name="([^"]+)">/);
             if (invokeMatch) {
               const functionName = invokeMatch[1];
@@ -361,13 +387,19 @@ export function useChat(): UseChatReturn {
             addContentImmediate(content);
           }
         } else if (parsedMetadata.stream_status === 'complete') {
-          // ✨ Check if message already exists and update in place (same as frontend)
+          // ✨ Message complete - merge streaming content into final message
           if (message.message_id && !processedMessageIds.current.has(message.message_id)) {
             processedMessageIds.current.add(message.message_id);
+            
+            // Add the complete message
             updateMessagesWithDeduplication(message);
             
-            // DON'T clear streaming content here - let finalizeStream handle it
-            // This prevents double clearing and flickering
+            // Clear streaming content smoothly
+            setTimeout(() => {
+              if (isMountedRef.current) {
+                setStreamingContent('');
+              }
+            }, 50);
           }
         } else if (!parsedMetadata.stream_status) {
           // Handle non-chunked assistant messages
@@ -375,6 +407,14 @@ export function useChat(): UseChatReturn {
             processedMessageIds.current.add(message.message_id);
             updateMessagesWithDeduplication(message);
           }
+        }
+        break;
+
+      case 'user':
+        // Handle user messages from stream - deduplicate with optimistic messages
+        if (message.message_id && !processedMessageIds.current.has(message.message_id)) {
+          processedMessageIds.current.add(message.message_id);
+          updateMessagesWithDeduplication(message);
         }
         break;
 
@@ -411,7 +451,7 @@ export function useChat(): UseChatReturn {
         }
         break;
     }
-  }, [addContentImmediate, finalizeStream]);
+  }, [addContentImmediate, finalizeStream, flushStreamingBuffer, updateMessagesWithDeduplication]);
 
   // Start streaming
   const startStreaming = useCallback(async (runId: string) => {
@@ -435,7 +475,13 @@ export function useChat(): UseChatReturn {
 
     console.log('[useChat] 🚀 Starting stream for run:', runId);
     
-    // Clear streaming content and set run ID
+    if (streamingTimerRef.current) {
+      clearTimeout(streamingTimerRef.current);
+      streamingTimerRef.current = null;
+    }
+    streamingBufferRef.current = '';
+    lastUpdateTimeRef.current = Date.now();
+    
     setStreamingContent('');
     setStreamingToolCall(null);
     processedMessageIds.current.clear();
@@ -482,6 +528,12 @@ export function useChat(): UseChatReturn {
   // Stop streaming
   const stopStreaming = useCallback(() => {
     console.log('[useChat] Stopping stream');
+    
+    if (streamingTimerRef.current) {
+      clearTimeout(streamingTimerRef.current);
+      streamingTimerRef.current = null;
+    }
+    streamingBufferRef.current = '';
     
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
@@ -536,35 +588,12 @@ export function useChat(): UseChatReturn {
     if (messagesData && !isNewThreadOptimistic && !isStreaming) {
       const unifiedMessages = messagesData as unknown as UnifiedMessage[];
       
-      // Simple merge: preserve any local optimistic messages for current thread
-      setMessages((prev) => {
-        const serverIds = new Set(
-          unifiedMessages.map((m) => m.message_id).filter(Boolean) as string[],
-        );
-        
-        // Only keep optimistic messages for current thread
-        const localExtras = (prev || []).filter(
-          (m) => {
-            // Keep optimistic/temp messages for current thread only
-            return (m.message_id?.startsWith('optimistic-') || m.message_id?.startsWith('temp-')) &&
-                   (m.thread_id === activeThreadId || m.thread_id === 'optimistic');
-          }
-        );
-        
-        const merged = [...unifiedMessages, ...localExtras].sort((a, b) => {
-          const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
-          const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
-          return aTime - bTime;
-        });
-        
-        console.log('🔄 [useChat] Loaded messages for thread:', {
-          serverCount: unifiedMessages.length,
-          localExtrasCount: localExtras.length,
-          mergedCount: merged.length,
-          currentThreadId: activeThreadId
-        });
-        
-        return merged;
+      // Simple merge: Don't keep any optimistic messages, just use server data
+      setMessages(unifiedMessages);
+      
+      console.log('🔄 [useChat] Loaded messages for thread:', {
+        messageCount: unifiedMessages.length,
+        currentThreadId: activeThreadId
       });
     }
 
@@ -574,14 +603,11 @@ export function useChat(): UseChatReturn {
       console.log('[useChat] Found active agent run:', activeRun.id);
       setAgentRunId(activeRun.id);
     } else if (agentRunId && !activeRun && !isStreaming) {
-      // ✨ Only clear agentRunId if we're not currently streaming
-      // This prevents clearing during active streaming when backend hasn't updated yet
       console.log('[useChat] No active agent run and not streaming, clearing agentRunId');
       setAgentRunId(null);
     }
   }, [activeThreadId, messagesData, activeRuns, agentRunId, isNewThreadOptimistic]);
 
-  // Auto-connect to stream
   useEffect(() => {
     if (agentRunId && activeThreadId && !currentRunIdRef.current) {
       console.log('[useChat] Auto-connecting to stream:', agentRunId);
@@ -592,7 +618,6 @@ export function useChat(): UseChatReturn {
     }
   }, [agentRunId, activeThreadId, startStreaming, stopStreaming]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (eventSourceRef.current) {
@@ -602,7 +627,6 @@ export function useChat(): UseChatReturn {
     };
   }, []);
 
-  // Log loading state changes
   useEffect(() => {
     if (activeThreadId) {
       console.log('📊 [useChat] Loading state:', {
@@ -620,6 +644,39 @@ export function useChat(): UseChatReturn {
   // Public API - Thread Operations
   // ============================================================================
 
+  const refreshMessages = useCallback(async () => {
+    if (!activeThreadId || isStreaming) {
+      console.log('[useChat] Cannot refresh: no active thread or streaming in progress');
+      return;
+    }
+    
+    console.log('[useChat] 🔄 Refreshing messages for thread:', activeThreadId);
+    
+    try {
+      // Refetch messages from server
+      await refetchMessages();
+      
+      // Also invalidate queries to ensure fresh data
+      queryClient.invalidateQueries({ 
+        queryKey: chatKeys.messages(activeThreadId) 
+      });
+      
+      // If there's a sandbox, refresh file list too
+      const sandboxId = threadData?.project?.sandbox?.id;
+      if (sandboxId) {
+        queryClient.invalidateQueries({ 
+          queryKey: ['files', 'sandbox', sandboxId],
+          refetchType: 'all',
+        });
+      }
+      
+      console.log('[useChat] ✅ Messages refreshed successfully');
+    } catch (error) {
+      console.error('[useChat] ❌ Failed to refresh messages:', error);
+      throw error;
+    }
+  }, [activeThreadId, isStreaming, refetchMessages, queryClient, threadData]);
+
   const loadThread = useCallback((threadId: string) => {
     console.log('[useChat] Loading thread:', threadId);
     console.log('🔄 [useChat] Thread loading initiated');
@@ -632,6 +689,7 @@ export function useChat(): UseChatReturn {
     
     // Clear completed runs tracking for fresh state
     completedRunIds.current.clear();
+    processedMessageIds.current.clear(); // Clear processed message tracking
     
     // Clear UI state
     setSelectedToolData(null);
@@ -654,8 +712,9 @@ export function useChat(): UseChatReturn {
     setInputValue('');
     setAttachments([]);
     setSelectedToolData(null);
-    setIsNewThreadOptimistic(false); // Reset optimistic flag
+    setIsNewThreadOptimistic(false);
     completedRunIds.current.clear();
+    processedMessageIds.current.clear();
     stopStreaming();
   }, [stopStreaming]);
 
@@ -1190,6 +1249,7 @@ export function useChat(): UseChatReturn {
     startNewChat,
     updateThreadTitle,
     hasActiveThread: !!activeThreadId,
+    refreshMessages,
     
     // Messages & Streaming
     messages,

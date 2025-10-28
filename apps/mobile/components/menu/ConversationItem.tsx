@@ -39,7 +39,13 @@ export function ConversationItem({
   
   return (
     <SelectableListItem
-      avatar={<ThreadAvatar title={conversation.title} size={48} />}
+      avatar={
+        <ThreadAvatar 
+          title={conversation.title} 
+          icon={conversation.iconName || conversation.icon}
+          size={48} 
+        />
+      }
       title={conversation.title}
       subtitle={conversation.preview}
       meta={formattedDate}

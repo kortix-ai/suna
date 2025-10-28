@@ -1,10 +1,14 @@
 import * as React from 'react';
 import { type ViewProps } from 'react-native';
 import { Avatar } from '@/components/ui/Avatar';
+import type { LucideIcon } from 'lucide-react-native';
 
 interface ThreadAvatarProps extends ViewProps {
   title?: string;
   size?: number;
+  icon?: LucideIcon | string;
+  backgroundColor?: string;
+  iconColor?: string;
 }
 
 /**
@@ -16,11 +20,22 @@ interface ThreadAvatarProps extends ViewProps {
  * @example
  * <ThreadAvatar title="My Chat" size={48} />
  */
-export function ThreadAvatar({ title, size = 48, style, ...props }: ThreadAvatarProps) {
+export function ThreadAvatar({ 
+  title, 
+  size = 48, 
+  icon,
+  backgroundColor,
+  iconColor,
+  style, 
+  ...props 
+}: ThreadAvatarProps) {
   return (
     <Avatar
       variant="thread"
       size={size}
+      icon={icon}
+      backgroundColor={backgroundColor}
+      iconColor={iconColor}
       fallbackText={title}
       style={style}
       {...props}
