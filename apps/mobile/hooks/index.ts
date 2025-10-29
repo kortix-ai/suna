@@ -26,6 +26,9 @@ export * from './media';
 // Animation hooks
 export { useBackgroundScale } from './useBackgroundScale';
 
+// Composite chat hooks
+export { useChatCommons } from './useChatCommons';
+
 // Re-export commonly used hooks from lib for convenience
 export { useMessages, useSendMessage, useThreads, useUnifiedAgentStart, useDeleteThread, useShareThread } from '@/lib/chat';
 export { useAgents, useAgent } from '@/lib/agents';

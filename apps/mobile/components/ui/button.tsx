@@ -24,7 +24,7 @@ const buttonVariants = cva(
           })
         ),
         outline: cn(
-          'border-border bg-background active:bg-accent dark:bg-input/30 dark:border-input dark:active:bg-input/50 border shadow-sm shadow-black/5',
+          'border-[1.5px] border-border bg-card active:bg-accent dark:bg-card dark:border-border dark:active:bg-input/50 shadow-sm shadow-black/5',
           Platform.select({
             web: 'hover:bg-accent dark:hover:bg-input/50',
           })
@@ -43,6 +43,7 @@ const buttonVariants = cva(
         default: cn('h-10 px-4 py-2 sm:h-9', Platform.select({ web: 'has-[>svg]:px-3' })),
         sm: cn('h-9 gap-1.5 rounded-md px-3 sm:h-8', Platform.select({ web: 'has-[>svg]:px-2.5' })),
         lg: cn('h-11 rounded-md px-6 sm:h-10', Platform.select({ web: 'has-[>svg]:px-4' })),
+        figma: 'h-12 rounded-[16px] px-4 gap-[6px]', // Figma design spec: 48px height, 16px radius
         icon: 'h-10 w-10 sm:h-9 sm:w-9',
       },
     },
@@ -78,6 +79,7 @@ const buttonTextVariants = cva(
         default: '',
         sm: '',
         lg: '',
+        figma: 'text-[16px]', // 16px text for Figma spec
         icon: '',
       },
     },

@@ -104,7 +104,7 @@ export function SelectableListItem({
 
   // Selection background (optional, from Figma: #e0e0e0 light, #232324 dark)
   const defaultSelectionBg = isSelected && !showChevron
-    ? (colorScheme === 'dark' ? '#232324' : '#e0e0e0')
+    ? (colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.12)' : 'rgba(18, 18, 21, 0.08)')
     : 'transparent';
 
   return (
@@ -114,13 +114,6 @@ export function SelectableListItem({
       onPressOut={handlePressOut}
       style={[
         animatedStyle,
-        {
-          backgroundColor: selectionBackground || defaultSelectionBg,
-          borderRadius: isSelected && !showChevron ? 16 : 0,
-          paddingHorizontal: isSelected && !showChevron ? 8 : 0,
-          paddingVertical: isSelected && !showChevron ? 6 : 0,
-          marginHorizontal: isSelected && !showChevron ? -8 : 0,
-        }
       ]}
       className="flex-row items-center justify-between active:opacity-70"
       accessibilityRole="button"
@@ -164,23 +157,25 @@ export function SelectableListItem({
       
       {/* Right: Selection Indicator */}
       {!hideIndicator && (
-        showChevron ? (
-          <ChevronRight 
-            size={18} 
-            color={colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'} 
-          />
-        ) : isSelected ? (
-          <View 
-            style={{ backgroundColor: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-            className="w-5 h-5 rounded-full items-center justify-center"
-          >
-            <Check 
-              size={12} 
-              color={colorScheme === 'dark' ? '#121215' : '#f8f8f8'}
-              strokeWidth={3} 
+        <View className="w-6 items-center justify-center">
+          {showChevron ? (
+            <ChevronRight 
+              size={18} 
+              color={colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'} 
             />
-          </View>
-        ) : null
+          ) : isSelected ? (
+            <View 
+              style={{ backgroundColor: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+              className="w-5 h-5 rounded-full items-center justify-center"
+            >
+              <Check 
+                size={12} 
+                color={colorScheme === 'dark' ? '#121215' : '#f8f8f8'}
+                strokeWidth={3} 
+              />
+            </View>
+          ) : null}
+        </View>
       )}
     </AnimatedPressable>
   );

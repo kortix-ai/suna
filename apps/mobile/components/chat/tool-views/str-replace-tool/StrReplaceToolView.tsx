@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { View, ScrollView, ActivityIndicator, Pressable } from 'react-native';
+import { View, ScrollView, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { KortixLoader } from '@/components/ui';
 import { FileDiff, CheckCircle2, AlertCircle, File, Minus, Plus, ChevronDown, ChevronUp } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import { extractStrReplaceData, generateLineDiff, calculateDiffStats } from './_utils';
