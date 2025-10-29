@@ -113,7 +113,9 @@ export function KortixLoader({
         style={{ 
           width: loaderSize, 
           height: loaderSize,
-          filter: effectiveTheme === 'light' ? 'brightness(0)' : undefined
+          // Default animation is white, so we use brightness(0) to make it black in light mode
+          // In dark mode, we keep it white (no filter)
+          filter: effectiveTheme === 'dark' ? 'none' : 'brightness(0)'
         }}
       />
     </div>
