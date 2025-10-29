@@ -397,12 +397,10 @@ class PromptManager:
             mcp_info = "\n\n--- MCP Tools Available ---\n"
             mcp_info += "You have access to external MCP (Model Context Protocol) server tools.\n"
             mcp_info += "MCP tools can be called directly using their native function names in the standard function calling format:\n"
-            mcp_info += '<function_calls>\n'
             mcp_info += '<invoke name="{tool_name}">\n'
             mcp_info += '<parameter name="param1">value1</parameter>\n'
             mcp_info += '<parameter name="param2">value2</parameter>\n'
-            mcp_info += '</invoke>\n'
-            mcp_info += '</function_calls>\n\n'
+            mcp_info += '</invoke>\n\n'
             
             mcp_info += "Available MCP tools:\n"
             try:
@@ -450,16 +448,15 @@ class PromptManager:
 
 In this environment you have access to a set of tools you can use to answer the user's question.
 
-You can invoke functions by writing a <function_calls> block like the following as part of your reply to the user:
+You can invoke functions by writing an <invoke> block like the following as part of your reply to the user:
 
-<function_calls>
 <invoke name="function_name">
 <parameter name="param_name">param_value</parameter>
+<parameter name="flow">CONTINUE</parameter>
 ...
 </invoke>
-</function_calls>
 
-String and scalar parameters should be specified as-is, while lists and objects should use JSON format.
+String and scalar parameters should be specified as-is, while lists and objects should use JSON format. You can write as many invoke blocks as needed.
 
 Here are the functions available in JSON Schema format:
 
@@ -472,6 +469,11 @@ When using the tools:
 - Include all required parameters as specified in the schema
 - Format complex data (objects, arrays) as JSON strings within the parameter tags
 - Boolean values should be "true" or "false" (lowercase)
+- FLOW PARAMETER: Always include the "flow" parameter with one of these values:
+  * "CONTINUE": Use for tools that should continue processing (default, most common)
+  * "STOP": Use for tools that should halt execution after completing
+  Choose "CONTINUE" for operations that should continue processing like file operations, data analysis, or any long-running tasks.
+  Choose "STOP" when you want to halt execution after this specific tool completes, such as for critical operations or when stopping after a confirmation step.
 """
                 
                 system_content += examples_content
@@ -652,7 +654,7 @@ class AgentRunner:
 
         latest_user_message = await self.client.table('messages').select('*').eq('thread_id', self.config.thread_id).eq('type', 'user').order('created_at', desc=True).limit(1).execute()
         latest_user_message_content = None
-        if latest_user_message.data and len(latest_user_message.data) > 0:
+        if latest_user_message.data and len(latest_user_message.data) > 0:                  
             data = latest_user_message.data[0]['content']
             if isinstance(data, str):
                 data = json.loads(data)
@@ -696,7 +698,7 @@ class AgentRunner:
                     llm_temperature=0,
                     llm_max_tokens=max_tokens,
                     tool_choice="auto",
-                    max_xml_tool_calls=1,
+                    max_xml_tool_calls=0,  # 0 = no limit, allow multiple XML tool calls
                     temporary_message=temporary_message,
                     latest_user_message_content=latest_user_message_content,
                     processor_config=ProcessorConfig(

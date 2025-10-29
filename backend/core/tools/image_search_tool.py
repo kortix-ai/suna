@@ -1,6 +1,6 @@
 import httpx
 from dotenv import load_dotenv
-from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
+from core.agentpress.tool import ToolResult, execution_flow, openapi_schema, tool_metadata
 from core.utils.config import config
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
@@ -28,6 +28,11 @@ class SandboxImageSearchTool(SandboxToolsBase):
         
         if not self.serper_api_key:
             logger.warning("SERPER_API_KEY not configured - Image Search Tool will not be available")
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",

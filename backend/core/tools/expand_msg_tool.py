@@ -1,4 +1,4 @@
-from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
+from core.agentpress.tool import Tool, ToolResult, execution_flow, openapi_schema, tool_metadata
 from core.agentpress.thread_manager import ThreadManager
 import json
 
@@ -17,6 +17,11 @@ class ExpandMessageTool(Tool):
         super().__init__()
         self.thread_manager = thread_manager
         self.thread_id = thread_id
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",

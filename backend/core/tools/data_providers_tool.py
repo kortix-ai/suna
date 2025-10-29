@@ -1,7 +1,7 @@
 import json
 from typing import Union, Dict, Any
 
-from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
+from core.agentpress.tool import Tool, ToolResult, execution_flow, openapi_schema, tool_metadata
 from core.tools.data_providers.LinkedinProvider import LinkedinProvider
 from core.tools.data_providers.YahooFinanceProvider import YahooFinanceProvider
 from core.tools.data_providers.AmazonProvider import AmazonProvider
@@ -29,6 +29,11 @@ class DataProvidersTool(Tool):
             "zillow": ZillowProvider(),
             "twitter": TwitterProvider()
         }
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",
@@ -73,6 +78,11 @@ class DataProvidersTool(Tool):
             if len(error_message) > 200:
                 simplified_message += "..."
             return self.fail_response(simplified_message)
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",

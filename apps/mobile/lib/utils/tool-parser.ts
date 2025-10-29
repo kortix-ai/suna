@@ -130,7 +130,7 @@ export function formatToolOutput(output: any, maxLength: number = 50): string {
 }
 
 /**
- * Strip XML function_calls tags from assistant message content
+ * Strip XML invoke tags from assistant message content
  * XML tags are internal and should never be shown to users
  */
 export function stripXMLTags(content: string): string {
@@ -138,8 +138,8 @@ export function stripXMLTags(content: string): string {
   
   let cleaned = content;
   
-  // Remove function_calls blocks
-  cleaned = cleaned.replace(/<function_calls>[\s\S]*?<\/function_calls>/gi, '');
+  // Remove invoke blocks
+  cleaned = cleaned.replace(/<invoke\s+name=["'][^"']*["'][\s\S]*?<\/invoke>/gi, '');
   
   // Remove old-style XML tool tags (preserve HTML tags)
   const htmlTags = 'br|p|div|span|strong|em|ul|ol|li|a|code|pre|h[1-6]|blockquote|img';

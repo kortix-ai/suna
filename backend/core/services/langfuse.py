@@ -110,6 +110,10 @@ if enabled:
             class MockTrace:
                 def __init__(self): 
                     self.id = "mock-trace-id"
+                    self._current_span = None
+                
+                def span(self, **kwargs):
+                    return MockSpan()
                 
                 def __getattr__(self, name):
                     # Return a no-op function for any method call
@@ -128,6 +132,10 @@ if enabled:
             class MockSpan:
                 def __init__(self): 
                     self.id = "mock-span-id"
+                
+                def end(self, **kwargs):
+                    # No-op method that accepts any kwargs
+                    pass
                 
                 def __getattr__(self, name):
                     # Return a no-op function for any method call
@@ -154,6 +162,10 @@ else:
     class MockTrace:
         def __init__(self): 
             self.id = "mock-trace-id"
+            self._current_span = None
+        
+        def span(self, **kwargs):
+            return MockSpan()
         
         def __getattr__(self, name):
             # Return a no-op function for any method call
@@ -172,6 +184,10 @@ else:
     class MockSpan:
         def __init__(self): 
             self.id = "mock-span-id"
+        
+        def end(self, **kwargs):
+            # No-op method that accepts any kwargs
+            pass
         
         def __getattr__(self, name):
             # Return a no-op function for any method call

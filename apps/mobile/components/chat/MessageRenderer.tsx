@@ -371,8 +371,13 @@ const AssistantMessageContent = React.memo(function AssistantMessageContent({
     const parsed = safeJsonParse<ParsedContent>(message.content, {});
     const rawContent = parsed.content || '';
     
+<<<<<<< HEAD
     const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
     const streaming = message.message_id === 'streaming-assistant';
+=======
+    // Skip if this is a function call
+    if (rawContent.includes('<invoke')) return null;
+>>>>>>> e86dd473 (Implement parallel tool calling and flow execution)
     
     let contentToProcess = rawContent;
     

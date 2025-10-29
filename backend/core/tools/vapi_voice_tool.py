@@ -6,7 +6,7 @@ import phonenumbers
 from phonenumbers import NumberParseException, geocoder
 import structlog
 import re
-from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
+from core.agentpress.tool import Tool, ToolResult, execution_flow, openapi_schema, tool_metadata
 from core.utils.config import config
 from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
@@ -340,6 +340,11 @@ class VapiVoiceTool(Tool):
         
         return thread_id, user_id, agent_id
     
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -515,6 +520,11 @@ class VapiVoiceTool(Tool):
             logger.error(f"Error making call: {str(e)}")
             return self.fail_response(f"Error making call: {str(e)}")
     
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -571,6 +581,11 @@ class VapiVoiceTool(Tool):
             logger.error(f"Error ending call: {str(e)}")
             return self.fail_response(f"Error ending call: {str(e)}")
     
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -626,6 +641,11 @@ class VapiVoiceTool(Tool):
             return self.fail_response(f"Error getting call status: {str(e)}")
     
     
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -768,6 +788,11 @@ The voice call has ended. You can continue with any follow-up actions."""
             logger.error(f"Error monitoring call {call_id}: {str(e)}")
             return self.fail_response(f"Error monitoring call: {str(e)}")
     
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {

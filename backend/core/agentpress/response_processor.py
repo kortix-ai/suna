@@ -268,7 +268,7 @@ class ResponseProcessor:
         should_auto_continue = False
         last_assistant_message_object = None # Store the final saved assistant message object
         tool_result_message_objects = {} # tool_index -> full saved message object
-        has_printed_thinking_prefix = False # Flag for printing thinking prefix only once
+        has_printed_thinking_prefix =  False # Flag for printing thinking prefix only once
         agent_should_terminate = False # Flag to track if a terminating tool has been executed
         complete_native_tool_calls = [] # Initialize early for use in assistant_response_end
 
@@ -394,6 +394,8 @@ class ResponseProcessor:
                         # --- Process XML Tool Calls (if enabled and limit not reached) ---
                         if config.xml_tool_calling and not (config.max_xml_tool_calls > 0 and xml_tool_call_count >= config.max_xml_tool_calls):
                             xml_chunks = self._extract_xml_chunks(current_xml_content)
+                            if xml_chunks:
+                                logger.debug(f"🎯 During streaming: Extracted {len(xml_chunks)} XML chunks")
                             for xml_chunk in xml_chunks:
                                 current_xml_content = current_xml_content.replace(xml_chunk, "", 1)
                                 xml_chunks_buffer.append(xml_chunk)
@@ -406,23 +408,65 @@ class ResponseProcessor:
                                         tool_call, tool_index, current_assistant_id, parsing_details
                                     )
 
-                                    if config.execute_tools and config.execute_on_stream:
-                                        # Save and Yield tool_started status
-                                        started_msg_obj = await self._yield_and_save_tool_started(context, thread_id, thread_run_id)
-                                        if started_msg_obj: yield format_for_yield(started_msg_obj)
-                                        yielded_tool_indices.add(tool_index) # Mark status as yielded
+                                    # Check if tool has execution flow metadata and if flow=STOP
+                                    should_break_after_execution = False
+                                    function_name = tool_call.get("function_name")
+                                    flow_param = tool_call.get("arguments", {}).get("flow")
+                                    
+                                    if function_name and flow_param == "STOP":
+                                        # Get tool instance to check execution flow metadata
+                                        tool_info = self.tool_registry.get_tool(function_name)
+                                        if tool_info and "instance" in tool_info:
+                                            tool_instance = tool_info["instance"]
+                                            execution_flow_metadata = tool_instance.get_execution_flow_metadata()
+                                            
+                                            # Check if this specific function allows override and has CONTINUE as default
+                                            method_flow_meta = execution_flow_metadata.get(function_name)
+                                            if method_flow_meta and method_flow_meta.allows_override:
+                                                should_break_after_execution = True
+                                                logger.debug(f"🔴 Tool {function_name} has flow=STOP with allows_override=True - will break after execution")
+                                    
+                                    if should_break_after_execution:
+                                        # Execute the tool immediately and break after execution
+                                        if config.execute_tools:
+                                            logger.debug(f"🔴 Executing STOP tool {function_name} immediately and breaking")
+                                            
+                                            # Save and Yield tool_started status
+                                            started_msg_obj = await self._yield_and_save_tool_started(context, thread_id, thread_run_id)
+                                            if started_msg_obj: yield format_for_yield(started_msg_obj)
+                                            yielded_tool_indices.add(tool_index)
+                                            
+                                            # Execute tool immediately
+                                            execution_task = asyncio.create_task(self._execute_tool(tool_call))
+                                            pending_tool_executions.append({
+                                                "task": execution_task, "tool_call": tool_call,
+                                                "tool_index": tool_index, "context": context
+                                            })
+                                            tool_index += 1
+                                            
+                                            # Break after adding this tool to execution queue
+                                            logger.debug(f"🔴 Breaking after STOP tool {function_name} execution")
+                                            break
+                                    else:
+                                        if config.execute_tools and config.execute_on_stream:
+                                            # Save and Yield tool_started status
+                                            started_msg_obj = await self._yield_and_save_tool_started(context, thread_id, thread_run_id)
+                                            if started_msg_obj: yield format_for_yield(started_msg_obj)
+                                            yielded_tool_indices.add(tool_index) # Mark status as yielded
 
-                                        execution_task = asyncio.create_task(self._execute_tool(tool_call))
-                                        pending_tool_executions.append({
-                                            "task": execution_task, "tool_call": tool_call,
-                                            "tool_index": tool_index, "context": context
-                                        })
-                                        tool_index += 1
+                                            execution_task = asyncio.create_task(self._execute_tool(tool_call))
+                                            pending_tool_executions.append({
+                                                "task": execution_task, "tool_call": tool_call,
+                                                "tool_index": tool_index, "context": context
+                                            })
+                                            tool_index += 1
 
-                                    if config.max_xml_tool_calls > 0 and xml_tool_call_count >= config.max_xml_tool_calls:
-                                        logger.info(f"Reached XML tool call limit ({config.max_xml_tool_calls})")
-                                        finish_reason = "xml_tool_limit_reached"
-                                        break # Stop processing more XML chunks in this delta
+                                        if config.max_xml_tool_calls > 0 and xml_tool_call_count >= config.max_xml_tool_calls:
+                                            logger.info(f"Reached XML tool call limit ({config.max_xml_tool_calls})")
+                                            finish_reason = "xml_tool_limit_reached"
+                                            break # Stop processing more XML chunks in this delta
+                                    
+                                    
 
                     # --- Process Native Tool Call Chunks ---
                     if config.native_tool_calling and delta and hasattr(delta, 'tool_calls') and delta.tool_calls:
@@ -682,20 +726,29 @@ class ResponseProcessor:
                 parsed_xml_data = []
                 if config.xml_tool_calling:
                     # Reparse remaining content just in case (should be empty if processed correctly)
+                    logger.debug(f"🔍 Re-checking current_xml_content for XML chunks (length: {len(current_xml_content)})")
+                    logger.debug(f"🔍 Sample content: {current_xml_content[:200]}...")
                     xml_chunks = self._extract_xml_chunks(current_xml_content)
+                    logger.debug(f"🔍 Extracted {len(xml_chunks)} XML chunks from current_xml_content")
                     xml_chunks_buffer.extend(xml_chunks)
                     # Process only chunks not already handled in the stream loop
                     remaining_limit = config.max_xml_tool_calls - xml_tool_call_count if config.max_xml_tool_calls > 0 else len(xml_chunks_buffer)
                     xml_chunks_to_process = xml_chunks_buffer[:remaining_limit] # Ensure limit is respected
 
                     for chunk in xml_chunks_to_process:
+                         logger.debug(f"🔍 Parsing XML chunk: {chunk[:100]}...")
                          parsed_result = self._parse_xml_tool_call(chunk)
                          if parsed_result:
                              tool_call, parsing_details = parsed_result
                              # Avoid adding if already processed during streaming
                              if not any(exec['tool_call'] == tool_call for exec in pending_tool_executions):
+                                 logger.debug(f"✅ Adding XML tool call to final list: {tool_call.get('function_name')}")
                                  final_tool_calls_to_process.append(tool_call)
                                  parsed_xml_data.append({'tool_call': tool_call, 'parsing_details': parsing_details})
+                         else:
+                             logger.debug(f"❌ Failed to parse XML chunk")
+                
+                logger.debug(f"📊 Final tool calls to process: {len(final_tool_calls_to_process)} (XML: {len(parsed_xml_data)})")
 
 
                 all_tool_data_map = {} # tool_index -> {'tool_call': ..., 'parsing_details': ...}
@@ -723,17 +776,27 @@ class ResponseProcessor:
 
                 # Populate from buffer if executed on stream
                 if config.execute_on_stream and tool_results_buffer:
-                    logger.info(f"Processing {len(tool_results_buffer)} buffered tool results")
+                    logger.info(f"Processing {len(tool_results_buffer)} buffered tool results from streaming")
                     self.trace.event(name="processing_buffered_tool_results", level="DEFAULT", status_message=(f"Processing {len(tool_results_buffer)} buffered tool results"))
                     for tool_call, result, tool_idx, context in tool_results_buffer:
                         if last_assistant_message_object: context.assistant_message_id = last_assistant_message_object['message_id']
                         tool_results_map[tool_idx] = (tool_call, result, context)
 
-                # Or execute now if not streamed
-                elif final_tool_calls_to_process and not config.execute_on_stream:
+                # Execute tools that weren't executed during streaming
+                # This handles both cases:
+                # 1. execute_on_stream=False: execute all tools after streaming
+                # 2. execute_on_stream=True BUT some XML tools completed at the end: execute those tools now
+                # We only execute here if tools weren't already executed during streaming (tool_results_buffer is empty)
+                # or if execute_on_stream=False
+                should_execute_after_stream = (
+                    not config.execute_on_stream or 
+                    (config.execute_on_stream and len(tool_results_buffer) == 0 and len(final_tool_calls_to_process) > 0)
+                )
+                
+                if final_tool_calls_to_process and should_execute_after_stream:
                     logger.info(f"🔄 STREAMING: Executing {len(final_tool_calls_to_process)} tools ({config.tool_execution_strategy}) after stream")
                     logger.debug(f"📋 Final tool calls to process: {final_tool_calls_to_process}")
-                    logger.debug(f"⚙️ Config: execute_on_stream={config.execute_on_stream}, strategy={config.tool_execution_strategy}")
+                    logger.debug(f"⚙️ Config: execute_on_stream={config.execute_on_stream}, strategy={config.tool_execution_strategy}, buffered={len(tool_results_buffer)}")
                     self.trace.event(name="executing_tools_after_stream", level="DEFAULT", status_message=(f"Executing {len(final_tool_calls_to_process)} tools ({config.tool_execution_strategy}) after stream"))
 
                     try:
@@ -1124,8 +1187,19 @@ class ResponseProcessor:
                  if response_message:
                      if hasattr(response_message, 'content') and response_message.content:
                          content = response_message.content
+                         
+                         
+                         logger.info("❤️gonna see what's inside the llm content", content)
+                         
                          if config.xml_tool_calling:
+                             
+                             
                              parsed_xml_data = self._parse_xml_tool_calls(content)
+                             
+                             logger.info("❤️parsed xml data: ", parsed_xml_data)
+                             
+                             
+                             
                              if config.max_xml_tool_calls > 0 and len(parsed_xml_data) > config.max_xml_tool_calls:
                                  # Truncate content and tool data if limit exceeded
                                  # ... (Truncation logic similar to streaming) ...
@@ -1310,18 +1384,24 @@ class ResponseProcessor:
         pos = 0
         
         try:
-            # First, look for new format <function_calls> blocks
-            start_pattern = '<function_calls>'
-            end_pattern = '</function_calls>'
+            # First, look for new format <invoke> blocks
+            # Note: Opening tag can have attributes like <invoke name="function">
+            start_pattern = '<invoke'
+            end_pattern = '</invoke>'
             
             while pos < len(content):
-                # Find the next function_calls block
+                # Find the next invoke block (opening tag with or without attributes)
                 start_pos = content.find(start_pattern, pos)
                 if start_pos == -1:
                     break
                 
-                # Find the matching end tag
-                end_pos = content.find(end_pattern, start_pos)
+                # Find the opening tag end (could be > or />)
+                tag_start_end = content.find('>', start_pos)
+                if tag_start_end == -1:
+                    break
+                
+                # Find the matching closing </invoke> tag
+                end_pos = content.find(end_pattern, tag_start_end)
                 if end_pos == -1:
                     break
                 
@@ -1329,6 +1409,8 @@ class ResponseProcessor:
                 chunk_end = end_pos + len(end_pattern)
                 chunk = content[start_pos:chunk_end]
                 chunks.append(chunk)
+                
+                logger.debug(f"✅ Extracted XML chunk (size: {len(chunk)}): {chunk[:100]}...")
                 
                 # Move position past this chunk
                 pos = chunk_end
@@ -1399,6 +1481,10 @@ class ResponseProcessor:
             self.trace.event(name="error_extracting_xml_chunks", level="ERROR", status_message=(f"Error extracting XML chunks: {e}"), metadata={"content": content})
         
         return chunks
+    
+    
+    # here we have the chunks which are basically the xml pieces end to end
+    # when streaming the llm response now, we should directly call the tools it has to call
 
     def _parse_xml_tool_call(self, xml_chunk: str) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
         """Parse XML chunk into tool call format and return parsing details.
@@ -1409,8 +1495,8 @@ class ResponseProcessor:
             - parsing_details: Dict with 'attributes', 'elements', 'text_content', 'root_content'
         """
         try:
-            # Check if this is the new format (contains <function_calls>)
-            if '<function_calls>' in xml_chunk and '<invoke' in xml_chunk:
+            # Check if this is the new format (contains <invoke>)
+            if '<invoke' in xml_chunk:
                 # Use the new XML parser
                 parsed_calls = self.xml_parser.parse_content(xml_chunk)
                 
@@ -1435,8 +1521,8 @@ class ResponseProcessor:
                 logger.debug(f"Parsed new format tool call: {tool_call}")
                 return tool_call, parsing_details
             
-            # If not the expected <function_calls><invoke> format, return None
-            logger.error(f"XML chunk does not contain expected <function_calls><invoke> format: {xml_chunk}")
+            # If not the expected <invoke> format, return None
+            logger.error(f"XML chunk does not contain expected <invoke> format: {xml_chunk}")
             return None
             
         except Exception as e:
@@ -1472,8 +1558,9 @@ class ResponseProcessor:
         return parsed_data
 
     # Tool execution methods
+    
     async def _execute_tool(self, tool_call: Dict[str, Any]) -> ToolResult:
-        """Execute a single tool call and return the result."""
+        """Execute tool call and return the result."""
         span = self.trace.span(name=f"execute_tool.{tool_call['function_name']}", input=tool_call["arguments"])
         function_name = "unknown"
         try:
@@ -1501,6 +1588,14 @@ class ResponseProcessor:
             logger.debug(f"✅ Found tool function for '{function_name}'")
             # logger.debug(f"🔧 Tool function type: {type(tool_fn)}")
 
+            # Filter out metadata parameters like 'flow' that shouldn't be passed to tools
+            if isinstance(arguments, dict):
+                # Create a copy and remove metadata parameters
+                filtered_args = {k: v for k, v in arguments.items() if k != 'flow'}
+                if 'flow' in arguments:
+                    logger.debug(f"🔍 Filtered out 'flow' parameter (value: {arguments.get('flow')}) - it's for execution control, not tool input")
+                    arguments = filtered_args
+            
             # Handle arguments - if it's a string, try to parse it, otherwise pass as-is
             if isinstance(arguments, str):
                 logger.debug(f"🔄 Parsing string arguments for {function_name}")
@@ -1595,7 +1690,7 @@ class ResponseProcessor:
             if 'arguments' not in tool_call:
                 logger.warning(f"⚠️ Tool call {i} missing 'arguments': {tool_call}")
 
-        self.trace.event(name="executing_tools_with_strategy", level="DEFAULT", status_message=(f"Executing {len(tool_calls)} tools with strategy: {execution_strategy}"))
+        self.trace.event(name="executing_tools_with_strategy", level="DEFAULT", status_message=(f"Executing         {len(tool_calls)} tools with strategy: {execution_strategy}"))
 
         try:
             if execution_strategy == "sequential":
@@ -1624,7 +1719,7 @@ class ResponseProcessor:
 
         Returns:
             List of tuples containing the original tool call and its result
-        """
+        """     
         if not tool_calls:
             logger.debug("🚫 No tool calls to execute sequentially")
             return []
@@ -1740,7 +1835,15 @@ class ResponseProcessor:
 
             # Execute all tasks concurrently with error handling
             logger.debug("🚀 Starting parallel execution with asyncio.gather")
+            
+            
+            
+            
+            
             results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            
+            
             logger.debug(f"✅ Parallel execution completed, got {len(results)} results")
 
             # Process results and handle any exceptions

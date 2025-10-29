@@ -1,4 +1,4 @@
-from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
+from core.agentpress.tool import ToolResult, execution_flow, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.utils.logger import logger
 from typing import List, Dict, Any, Optional
@@ -154,6 +154,11 @@ class TaskListTool(SandboxToolsBase):
         
         return response
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -178,6 +183,11 @@ class TaskListTool(SandboxToolsBase):
         except Exception as e:
             logger.error(f"Error viewing tasks: {e}")
             return ToolResult(success=False, output=f"❌ Error viewing tasks: {str(e)}")
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",
@@ -310,6 +320,11 @@ class TaskListTool(SandboxToolsBase):
             logger.error(f"Error creating tasks: {e}")
             return ToolResult(success=False, output=f"❌ Error creating tasks: {str(e)}")
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -389,6 +404,11 @@ class TaskListTool(SandboxToolsBase):
         except Exception as e:
             logger.error(f"Error updating tasks: {e}")
             return ToolResult(success=False, output=f"❌ Error updating tasks: {str(e)}")
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",
@@ -489,6 +509,11 @@ class TaskListTool(SandboxToolsBase):
         except Exception as e:
             logger.error(f"Error deleting tasks/sections: {e}")
             return ToolResult(success=False, output=f"❌ Error deleting tasks/sections: {str(e)}")
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",

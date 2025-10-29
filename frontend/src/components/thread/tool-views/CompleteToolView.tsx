@@ -75,7 +75,7 @@ export function CompleteToolView({
         if (!contentStr) return;
 
         let cleanContent = contentStr
-          .replace(/<function_calls>[\s\S]*?<\/function_calls>/g, '')
+          .replace(/<invoke[\s\S]*?<\/invoke>/g, '')
           .replace(/<invoke name="complete"[\s\S]*?<\/invoke>/g, '')
           .trim();
 

@@ -180,8 +180,8 @@ function parseMessageToolResults(message: Message): ParsedToolResult[] {
 function cleanContentFromTools(content: string, toolCalls: ParsedToolCall[]): string {
   let cleanContent = content;
   
-  // Remove function_calls blocks
-  cleanContent = cleanContent.replace(/<function_calls>[\s\S]*?<\/function_calls>/gi, '');
+  // Remove invoke blocks
+  cleanContent = cleanContent.replace(/<invoke[\s\S]*?<\/invoke>/gi, '');
   
   // Remove individual tool XML for old format
   toolCalls.forEach(toolCall => {

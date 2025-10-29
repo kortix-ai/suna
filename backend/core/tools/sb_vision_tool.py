@@ -7,7 +7,7 @@ from typing import Optional, Tuple
 from io import BytesIO
 from PIL import Image
 from urllib.parse import urlparse
-from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
+from core.agentpress.tool import ToolResult, execution_flow, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from core.services.supabase import DBConnection
@@ -274,6 +274,11 @@ class SandboxVisionTool(SandboxToolsBase):
         except Exception as e:
             return self.fail_response(f"Failed to download image from URL: {str(e)}")
     
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -493,6 +498,11 @@ Images remain in the sandbox and can be loaded again anytime. SVG files are auto
             print(f"[LoadImage] Error clearing images from context: {e}")
             return 0
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -527,6 +537,10 @@ Call this when you need to load new images but have reached the limit.""",
         except Exception as e:
             return self.fail_response(f"Failed to clear images from context: {str(e)}")
  
+    # @execution_flow(
+    #     default="CONTINUE",
+    #     allows_override=True
+    # )
     # @openapi_schema({
     #     "type": "function",
     #     "function": {

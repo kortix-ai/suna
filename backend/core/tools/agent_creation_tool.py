@@ -1,7 +1,7 @@
 import json
 from typing import Optional, Dict, Any, List
 from uuid import uuid4
-from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
+from core.agentpress.tool import Tool, ToolResult, execution_flow, openapi_schema, tool_metadata
 from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
 from core.utils.core_tools_helper import ensure_core_tools_enabled
@@ -27,6 +27,11 @@ class AgentCreationTool(Tool):
         if not self.account_id:
             raise ValueError("No account_id available")
         return self.account_id
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",
@@ -217,6 +222,11 @@ class AgentCreationTool(Tool):
             logger.error(f"Failed to create agent: {e}")
             return self.fail_response("Failed to create agent")
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -281,6 +291,11 @@ class AgentCreationTool(Tool):
             logger.error(f"Failed to search MCP servers: {e}")
             return self.fail_response("Failed to search MCP servers")
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -341,6 +356,11 @@ class AgentCreationTool(Tool):
         except Exception as e:
             logger.error(f"Failed to get MCP server details: {e}")
             return self.fail_response("Failed to get toolkit details")
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",
@@ -420,6 +440,11 @@ class AgentCreationTool(Tool):
         except Exception as e:
             logger.error(f"Failed to create credential profile: {e}")
             return self.fail_response("Failed to create credential profile")
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",
@@ -509,6 +534,11 @@ class AgentCreationTool(Tool):
         except Exception as e:
             logger.error(f"Failed to discover MCP tools: {e}")
             return self.fail_response("Failed to discover tools")
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",
@@ -684,6 +714,11 @@ class AgentCreationTool(Tool):
             logger.error(f"Failed to configure agent integration: {e}", exc_info=True)
             return self.fail_response("Failed to configure integration")
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -788,6 +823,11 @@ class AgentCreationTool(Tool):
             logger.error(f"Failed to create scheduled trigger: {e}", exc_info=True)
             return self.fail_response("Failed to create scheduled trigger")
     
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -858,6 +898,11 @@ class AgentCreationTool(Tool):
             logger.error(f"Failed to list scheduled triggers: {e}", exc_info=True)
             return self.fail_response("Failed to list scheduled triggers")
     
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -942,6 +987,11 @@ class AgentCreationTool(Tool):
             logger.error(f"Failed to toggle scheduled trigger: {e}", exc_info=True)
             return self.fail_response("Failed to toggle scheduled trigger")
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -1005,6 +1055,11 @@ class AgentCreationTool(Tool):
             logger.error(f"Failed to delete scheduled trigger: {e}", exc_info=True)
             return self.fail_response("Failed to delete scheduled trigger")
     
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {

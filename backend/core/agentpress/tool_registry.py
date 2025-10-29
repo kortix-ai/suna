@@ -1,5 +1,5 @@
 from typing import Dict, Type, Any, List, Optional, Callable
-from core.agentpress.tool import Tool, SchemaType
+from core.agentpress.tool import Tool, SchemaType, ExecutionFlowMetadata
 from core.utils.logger import logger
 import json
 
@@ -95,11 +95,72 @@ class ToolRegistry:
         Returns:
             List of OpenAPI-compatible schema definitions
         """
-        schemas = [
-            tool_info['schema'].schema 
-            for tool_info in self.tools.values()
-            if tool_info['schema'].schema_type == SchemaType.OPENAPI
-        ]
-        # logger.debug(f"Retrieved {len(schemas)} OpenAPI schemas")
-        return schemas
+        enhanced_schemas = []
+        
+        for tool_name, tool_info in self.tools.items():
+            if tool_info['schema'].schema_type == SchemaType.OPENAPI:
+                schema = tool_info['schema'].schema
+                tool_instance = tool_info['instance']
+                
+                # Get execution flow metadata for this specific function
+                execution_flow_metadata = tool_instance.get_execution_flow_metadata().get(tool_name)
+                
+                enhanced_schema = self._add_flow_parameter(schema, execution_flow_metadata)
+                enhanced_schemas.append(enhanced_schema)
+        
+        # logger.debug(f"Retrieved {len(enhanced_schemas)} OpenAPI schemas with flow parameter")
+        return enhanced_schemas
+
+
+
+    def _add_flow_parameter(self, schema: Dict[str, Any], execution_flow_metadata: Optional[ExecutionFlowMetadata] = None) -> Dict[str, Any]:
+        """Add flow parameter to a tool schema.
+        
+        Args:
+            schema: The original OpenAPI schema
+            execution_flow_metadata: Optional execution flow metadata from @execution_flow decorator
+            
+        Returns:
+            Enhanced schema with flow parameter
+        """
+        # Deep copy the schema to avoid modifying the original
+        import copy
+        enhanced_schema = copy.deepcopy(schema)
+        
+        if "function" in enhanced_schema and "parameters" in enhanced_schema["function"]:
+            params = enhanced_schema["function"]["parameters"]
+            
+            # Add flow parameter to properties
+            if "properties" not in params:
+                params["properties"] = {}
+            
+            # Determine default flow value and whether override is allowed
+            if execution_flow_metadata:
+                default_flow = execution_flow_metadata.default
+                allows_override = execution_flow_metadata.allows_override
+            else:
+                # Fallback to CONTINUE default if no metadata
+                default_flow = "CONTINUE"
+                allows_override = True
+            
+            # Create flow parameter description based on metadata
+            if allows_override:
+                description = f"Execution flow type. Use 'STOP' to halt execution or 'CONTINUE' for ongoing processing. Default: '{default_flow}'"
+            else:
+                description = f"Execution flow type (fixed to '{default_flow}'). Use 'STOP' to halt execution or 'CONTINUE' for ongoing processing."
+            
+            params["properties"]["flow"] = {
+                "type": "string",
+                "enum": ["STOP", "CONTINUE"],
+                "description": description,
+                "default": default_flow
+            }
+            
+            # Add flow to required parameters if not already present
+            if "required" not in params:
+                params["required"] = []
+            
+            # Note: We don't add flow to required since it has a default value
+        
+        return enhanced_schema
 

@@ -334,7 +334,7 @@ async def get_agent_tools(
 
     version_data = None
     if agent.get('current_version_id'):
-        try:
+        try:    
             version_service = await _get_version_service()
 
             version_obj = await version_service.get_version(

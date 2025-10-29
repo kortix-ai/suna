@@ -1,6 +1,6 @@
 import asyncio
 from typing import Optional, List
-from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
+from core.agentpress.tool import ToolResult, execution_flow, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from core.utils.config import config
@@ -34,6 +34,11 @@ class SandboxKbTool(SandboxToolsBase):
             "output": response.result,
             "exit_code": response.exit_code
         }
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",
@@ -125,6 +130,11 @@ class SandboxKbTool(SandboxToolsBase):
         except Exception as e:
             return self.fail_response(f"Error installing kb: {str(e)}")
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -170,6 +180,11 @@ class SandboxKbTool(SandboxToolsBase):
             
         except Exception as e:
             return self.fail_response(f"Error performing search: {str(e)}")
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",
@@ -236,6 +251,11 @@ class SandboxKbTool(SandboxToolsBase):
         except Exception as e:
             return self.fail_response(f"Error performing cleanup: {str(e)}")
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -262,6 +282,11 @@ class SandboxKbTool(SandboxToolsBase):
             
         except Exception as e:
             return self.fail_response(f"Error listing files: {str(e)}")
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",
@@ -388,6 +413,11 @@ Agent ID: {agent_id}
         except Exception as e:
             return self.fail_response(f"Failed to sync knowledge base: {str(e)}")
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -476,6 +506,11 @@ Agent ID: {agent_id}
             
         except Exception as e:
             return self.fail_response(f"Failed to create folder: {str(e)}")
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",
@@ -607,6 +642,11 @@ Agent ID: {agent_id}
         except Exception as e:
             return self.fail_response(f"Failed to upload file: {str(e)}")
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -687,6 +727,11 @@ Agent ID: {agent_id}
             
         except Exception as e:
             return self.fail_response(f"Failed to delete item: {str(e)}")
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",
@@ -776,6 +821,11 @@ Agent ID: {agent_id}
             
         except Exception as e:
             return self.fail_response(f"Failed to enable/disable item: {str(e)}")
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",

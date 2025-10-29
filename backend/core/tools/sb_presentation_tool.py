@@ -1,4 +1,4 @@
-from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
+from core.agentpress.tool import ToolResult, execution_flow, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from typing import List, Dict, Optional, Union
@@ -312,6 +312,11 @@ class SandboxPresentationTool(SandboxToolsBase):
             return self.fail_response(f"Failed to load template design: {str(e)}")
 
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -457,6 +462,11 @@ class SandboxPresentationTool(SandboxToolsBase):
         except Exception as e:
             return self.fail_response(f"Failed to create slide: {str(e)}")
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -520,6 +530,11 @@ class SandboxPresentationTool(SandboxToolsBase):
             
         except Exception as e:
             return self.fail_response(f"Failed to list slides: {str(e)}")
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",
@@ -593,6 +608,11 @@ class SandboxPresentationTool(SandboxToolsBase):
 
 
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -644,6 +664,11 @@ class SandboxPresentationTool(SandboxToolsBase):
         except Exception as e:
             return self.fail_response(f"Failed to list presentations: {str(e)}")
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -684,6 +709,11 @@ class SandboxPresentationTool(SandboxToolsBase):
         except Exception as e:
             return self.fail_response(f"Failed to delete presentation: {str(e)}")
 
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",
@@ -840,6 +870,11 @@ print(json.dumps(result))
             
         except Exception as e:
             return self.fail_response(f"Failed to validate slide: {str(e)}")
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",

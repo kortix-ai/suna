@@ -2,7 +2,7 @@
 XML Tool Call Parser Module
 
 This module provides a reliable XML tool call parsing system that supports
-the XML format with structured function_calls blocks.
+the XML format with structured invoke blocks.
 """
 
 import re
@@ -28,20 +28,13 @@ class XMLToolParser:
     """
     Parser for XML tool calls format:
     
-    <function_calls>
     <invoke name="function_name">
     <parameter name="param_name">param_value</parameter>
     ...
-    </invoke>
-    </function_calls>
+    </invoke>   
     """
     
     # Regex patterns for extracting XML blocks
-    FUNCTION_CALLS_PATTERN = re.compile(
-        r'<function_calls>(.*?)</function_calls>',
-        re.DOTALL | re.IGNORECASE
-    )
-    
     INVOKE_PATTERN = re.compile(
         r'<invoke\s+name=["\']([^"\']+)["\']>(.*?)</invoke>',
         re.DOTALL | re.IGNORECASE
@@ -68,24 +61,20 @@ class XMLToolParser:
         """
         tool_calls = []
         
-        # Find function_calls blocks
-        function_calls_matches = self.FUNCTION_CALLS_PATTERN.findall(content)
+        # Find all invoke blocks directly
+        invoke_matches = self.INVOKE_PATTERN.findall(content)
         
-        for fc_content in function_calls_matches:
-            # Find all invoke blocks within this function_calls block
-            invoke_matches = self.INVOKE_PATTERN.findall(fc_content)
-            
-            for function_name, invoke_content in invoke_matches:
-                try:
-                    tool_call = self._parse_invoke_block(
-                        function_name, 
-                        invoke_content,
-                        fc_content
-                    )
-                    if tool_call:
-                        tool_calls.append(tool_call)
-                except Exception as e:
-                    logger.error(f"Error parsing invoke block for {function_name}: {e}")
+        for function_name, invoke_content in invoke_matches:
+            try:
+                tool_call = self._parse_invoke_block(
+                    function_name, 
+                    invoke_content,
+                    content
+                )
+                if tool_call:
+                    tool_calls.append(tool_call)
+            except Exception as e:
+                logger.error(f"Error parsing invoke block for {function_name}: {e}")
         
         return tool_calls
     
@@ -93,9 +82,9 @@ class XMLToolParser:
         self, 
         function_name: str, 
         invoke_content: str,
-        full_block: str
+        full_content: str
     ) -> Optional[XMLToolCall]:
-        """Parse a single invoke block into an XMLToolCall."""
+        """Parse invoke block into an XMLToolCall."""
         parameters = {}
         parsing_details = {
             "function_name": function_name,
@@ -120,7 +109,7 @@ class XMLToolParser:
             rf'<invoke\s+name=["\']{re.escape(function_name)}["\']>.*?</invoke>',
             re.DOTALL | re.IGNORECASE
         )
-        raw_xml_match = invoke_pattern.search(full_block)
+        raw_xml_match = invoke_pattern.search(full_content)
         raw_xml = raw_xml_match.group(0) if raw_xml_match else f"<invoke name=\"{function_name}\">...</invoke>"
         
         return XMLToolCall(
@@ -176,7 +165,7 @@ class XMLToolParser:
         Returns:
             Formatted XML string
         """
-        lines = ['<function_calls>', '<invoke name="{}">'.format(function_name)]
+        lines = ['<invoke name="{}">'.format(function_name)]
         
         for param_name, param_value in parameters.items():
             # Convert value to string representation
@@ -191,7 +180,7 @@ class XMLToolParser:
                 param_name, value_str
             ))
         
-        lines.extend(['</invoke>', '</function_calls>'])
+        lines.append('</invoke>')
         return '\n'.join(lines)
     
     def validate_tool_call(self, tool_call: XMLToolCall, expected_params: Optional[Dict[str, type]] = None) -> Tuple[bool, Optional[str]]:
