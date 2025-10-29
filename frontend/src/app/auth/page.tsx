@@ -14,8 +14,8 @@ import {
   CheckCircle,
   AlertCircle,
   MailCheck,
-  Loader2,
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useAuth } from '@/components/AuthProvider';
 import { useAuthMethodTracking } from '@/lib/stores/auth-tracking';
 import { toast } from 'sonner';
@@ -208,7 +208,7 @@ function LoginContent() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <KortixLoader size="large" />
       </div>
     );
   }

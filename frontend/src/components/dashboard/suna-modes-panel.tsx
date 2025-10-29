@@ -34,6 +34,8 @@ interface SunaModesPanelProps {
   onChartsChange?: (charts: string[]) => void;
   selectedOutputFormat?: string | null;
   onOutputFormatChange?: (format: string | null) => void;
+  selectedTemplate?: string | null;
+  onTemplateChange?: (template: string | null) => void;
 }
 
 type ModeType = 'image' | 'slides' | 'data' | 'docs' | 'people' | 'research';
@@ -1097,7 +1099,9 @@ export function SunaModesPanel({
   selectedCharts: controlledSelectedCharts,
   onChartsChange,
   selectedOutputFormat: controlledSelectedOutputFormat,
-  onOutputFormatChange
+  onOutputFormatChange,
+  selectedTemplate: controlledSelectedTemplate,
+  onTemplateChange
 }: SunaModesPanelProps) {
   const currentMode = selectedMode ? modes.find((m) => m.id === selectedMode) : null;
   const promptCount = isMobile ? 2 : 4;
@@ -1120,6 +1124,11 @@ export function SunaModesPanel({
   const selectedOutputFormat = controlledSelectedOutputFormat ?? uncontrolledSelectedOutputFormat;
   const setSelectedOutputFormat = onOutputFormatChange ?? setUncontrolledSelectedOutputFormat;
 
+  // State for selected template (use controlled state if provided)
+  const [uncontrolledSelectedTemplateId, setUncontrolledSelectedTemplateId] = useState<string | null>(null);
+  const selectedTemplateId = controlledSelectedTemplate ?? uncontrolledSelectedTemplateId;
+  const setSelectedTemplateId = onTemplateChange ?? setUncontrolledSelectedTemplateId;
+
   // Randomize prompts when mode changes or on mount
   useEffect(() => {
     if (currentMode) {
@@ -1131,7 +1140,8 @@ export function SunaModesPanel({
   useEffect(() => {
     setSelectedCharts([]);
     setSelectedOutputFormat(null);
-  }, [selectedMode, setSelectedCharts, setSelectedOutputFormat]);
+    setSelectedTemplateId(null);
+  }, [selectedMode, setSelectedCharts, setSelectedOutputFormat, setSelectedTemplateId]);
 
   // Handler for refresh button
   const handleRefreshPrompts = () => {
@@ -1161,11 +1171,9 @@ export function SunaModesPanel({
     onSelectPrompt(prompt);
   };
 
-  // Handler for template selection (only sends prompt)
-  const handleTemplateSelect = (templateName: string, description: string) => {
-    handlePromptSelect(
-      `Create a presentation using the ${templateName} template about ${description}`
-    );
+  // Handler for template selection (only stores the template ID)
+  const handleTemplateSelect = (templateId: string) => {
+    setSelectedTemplateId(templateId);
   };
 
   // Handler for PDF preview
@@ -1332,8 +1340,13 @@ export function SunaModesPanel({
                 {currentMode.options.items.map((item) => (
                   <Card
                     key={item.id}
-                    className="flex flex-col gap-2 cursor-pointer group p-2 hover:bg-primary/5 transition-all duration-200 border border-border rounded-xl relative"
-                    onClick={() => handleTemplateSelect(item.name, item.description)}
+                    className={cn(
+                      "flex flex-col gap-2 cursor-pointer group p-2 hover:bg-primary/5 transition-all duration-200 border rounded-xl relative",
+                      selectedTemplateId === item.id
+                        ? "border-primary bg-primary/5"
+                        : "border-border"
+                    )}
+                    onClick={() => handleTemplateSelect(item.id)}
                   >
                     <div className="w-full bg-transparent rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-105 transition-all duration-200 overflow-hidden relative">
                       {item.image ? (

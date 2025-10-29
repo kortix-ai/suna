@@ -40,6 +40,7 @@ import { ReleaseBadge } from '../auth/release-badge';
 // import { TourConfirmationDialog } from '@/components/tour/TourConfirmationDialog';
 import { Calendar, MessageSquare, Plus, Sparkles, Zap } from 'lucide-react';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
+import { useSunaModePersistence } from '@/hooks/use-suna-modes-persistence';
 
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 
@@ -76,18 +77,21 @@ export function DashboardContent() {
   const [configAgentId, setConfigAgentId] = useState<string | null>(null);
   const [isRedirecting, setIsRedirecting] = useState(false);
   const [autoSubmit, setAutoSubmit] = useState(false);
-  const [selectedMode, setSelectedMode] = useState<string | null>(null);
+  
+  // Use centralized Suna modes persistence hook
+  const {
+    selectedMode,
+    selectedCharts,
+    selectedOutputFormat,
+    selectedTemplate,
+    setSelectedMode,
+    setSelectedCharts,
+    setSelectedOutputFormat,
+    setSelectedTemplate,
+  } = useSunaModePersistence();
+  
   const [viewMode, setViewMode] = useState<'super-worker' | 'worker-templates'>('super-worker');
-  const [selectedCharts, setSelectedCharts] = useState<string[]>([]);
-  const [selectedOutputFormat, setSelectedOutputFormat] = useState<string | null>(null);
-
-  // Reset data selections when mode changes
-  React.useEffect(() => {
-    if (selectedMode !== 'data') {
-      setSelectedCharts([]);
-      setSelectedOutputFormat(null);
-    }
-  }, [selectedMode]);
+  
   const {
     selectedAgentId,
     setSelectedAgent,
@@ -369,7 +373,6 @@ export function DashboardContent() {
       <div className="flex flex-col h-screen w-full overflow-hidden">
 
 
-
         <div className="flex-1 overflow-y-auto">
           <div className="min-h-full flex flex-col">
             {/* Tabs at the top */}
@@ -437,7 +440,7 @@ export function DashboardContent() {
                           hideAttachments={false}
                           selectedAgentId={selectedAgentId}
                           onAgentSelect={setSelectedAgent}
-                          enableAdvancedConfig={!isStagingMode() && !isLocalMode()}
+                          enableAdvancedConfig={false}
                           onConfigureAgent={(agentId) => {
                             setConfigAgentId(agentId);
                             setShowConfigDialog(true);
@@ -447,13 +450,14 @@ export function DashboardContent() {
                           animatePlaceholder={true}
                           selectedCharts={selectedCharts}
                           selectedOutputFormat={selectedOutputFormat}
+                          selectedTemplate={selectedTemplate}
                         />
                       </div>
                     </div>
                   </div>
 
                   {/* Modes Panel - Below chat input, doesn't affect its position */}
-                  {(isStagingMode() || isLocalMode()) && isSunaAgent && (
+                  {isSunaAgent && (
                     <div className="px-4 pb-8">
                       <div className="max-w-3xl mx-auto">
                         <SunaModesPanel
@@ -465,6 +469,8 @@ export function DashboardContent() {
                           onChartsChange={setSelectedCharts}
                           selectedOutputFormat={selectedOutputFormat}
                           onOutputFormatChange={setSelectedOutputFormat}
+                          selectedTemplate={selectedTemplate}
+                          onTemplateChange={setSelectedTemplate}
                         />
                       </div>
                     </div>

@@ -7,7 +7,7 @@ import { useAccounts } from '@/hooks/use-accounts';
 import { useAuth } from '@/components/AuthProvider';
 import { useMaintenanceNoticeQuery } from '@/hooks/react-query/edge-flags';
 import { useRouter } from 'next/navigation';
-import { Loader2 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useApiHealth } from '@/hooks/react-query';
 import { MaintenancePage } from '@/components/maintenance/maintenance-page';
 import { DeleteOperationProvider } from '@/contexts/DeleteOperationContext';
@@ -80,12 +80,13 @@ export default function DashboardLayoutContent({
 
   const mantenanceBanner: React.ReactNode | null = null;
 
-  // Show loading state only while checking auth or maintenance status (not health)
+  // Show loading state only while checking auth (not maintenance status)
+  // Maintenance check now has placeholder data to prevent flash
   // Health check errors should show the maintenance page, not infinite loading
-  if (isLoading || maintenanceLoading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <KortixLoader size="large" />
       </div>
     );
   }
@@ -96,13 +97,15 @@ export default function DashboardLayoutContent({
   }
 
   // Show maintenance page if maintenance mode is enabled
-  if (maintenanceNotice?.enabled) {
+  // Only show if we have actual data (not placeholder) or if explicitly enabled
+  if (maintenanceNotice?.enabled && !maintenanceLoading) {
     return <MaintenanceAlert open={true} onOpenChange={() => { }} closeable={false} />;
   }
 
   // Show maintenance page if API is not healthy OR if health check failed
-  // This includes: health check errors, unhealthy status, or still loading after initial mount
-  if (!isApiHealthy || healthError) {
+  // But only after initial check completes (not during loading with placeholder data)
+  // This prevents flash during navigation when placeholder data is being used
+  if (!isCheckingHealth && (!isApiHealthy || healthError)) {
     return <MaintenancePage />;
   }
 
