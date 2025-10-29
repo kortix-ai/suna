@@ -48,12 +48,12 @@ const BlurredDialogOverlay = () => (
 );
 
 // Rotating text component for job types
-const RotatingText = ({ 
-  texts, 
-  className = "" 
-}: { 
-  texts: string[]; 
-  className?: string; 
+const RotatingText = ({
+  texts,
+  className = ""
+}: {
+  texts: string[];
+  className?: string;
 }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isVisible, setIsVisible] = useState(true);
@@ -61,7 +61,7 @@ const RotatingText = ({
   useEffect(() => {
     const interval = setInterval(() => {
       setIsVisible(false);
-      
+
       setTimeout(() => {
         setCurrentIndex((prev) => (prev + 1) % texts.length);
         setIsVisible(true);
@@ -73,10 +73,9 @@ const RotatingText = ({
 
   return (
     <span className={`inline-block transition-all duration-300 ${className}`}>
-      <span 
-        className={`inline-block transition-opacity duration-300 ${
-          isVisible ? 'opacity-100' : 'opacity-0'
-        }`}
+      <span
+        className={`inline-block transition-opacity duration-300 ${isVisible ? 'opacity-100' : 'opacity-0'
+          }`}
       >
         {texts[currentIndex]}
       </span>
@@ -97,12 +96,12 @@ export function HeroSection() {
   const { scrollY } = useScroll();
   const [inputValue, setInputValue] = useState('');
   const router = useRouter();
-  
+
   // Use the agent selection store for localStorage persistence
-  const { 
-    selectedAgentId, 
-    setSelectedAgent, 
-    initializeFromAgents 
+  const {
+    selectedAgentId,
+    setSelectedAgent,
+    initializeFromAgents
   } = useAgentSelection();
   const { user, isLoading } = useAuth();
   const { billingError, handleBillingError, clearBillingError } =
@@ -257,7 +256,7 @@ export function HeroSection() {
         setShowPaymentModal(true);
       } else if (error instanceof AgentRunLimitError) {
         const { running_thread_ids, running_count } = error.detail;
-        
+
         setAgentLimitData({
           runningCount: running_count,
           runningThreadIds: running_thread_ids,
@@ -282,8 +281,8 @@ export function HeroSection() {
 
   return (
     <section id="hero" className="w-full relative overflow-hidden">
-      <BillingModal 
-        open={showPaymentModal} 
+      <BillingModal
+        open={showPaymentModal}
         onOpenChange={setShowPaymentModal}
         showUsageLimitAlert={true}
       />
@@ -375,13 +374,13 @@ export function HeroSection() {
           <div className="flex flex-col items-center justify-center gap-3 sm:gap-4 pt-8 sm:pt-12 max-w-4xl mx-auto">
             <h1 className="text-3xl md:text-4xl lg:text-5xl xl:text-6xl font-medium tracking-tighter text-balance text-center px-2">
               <span className="text-primary">Hire Kortix for </span>
-              <RotatingText 
+              <RotatingText
                 texts={['Research', 'Presentations', 'Docs', 'Spreadsheets', 'Design', 'Data Analysis', 'Email Management', 'Social Media', 'SEO', 'Lead Generation', 'Customer Support', 'Content Creation', 'Project Management', 'Sales', 'Marketing', 'Analytics']}
                 className="text-secondary"
               />
             </h1>
             <p className="text-base md:text-lg text-center text-muted-foreground font-medium text-balance leading-relaxed tracking-tight max-w-2xl px-2">
-            Deploy AI Workers that run your business autonomously.
+              Deploy AI Workers that run your business autonomously.
             </p>
           </div>
 
@@ -407,13 +406,13 @@ export function HeroSection() {
               {/* Subtle glow effect */}
               <div className="absolute -bottom-4 inset-x-0 h-6 bg-secondary/20 blur-xl rounded-full -z-10 opacity-70"></div>
             </div>
-            
+
           </div>
 
         </div>
 
       </div>
-        <div className="mb-8 sm:mb-16 sm:mt-32 mx-auto"></div>
+      <div className="mb-8 sm:mb-16 sm:mt-32 mx-auto"></div>
 
       {/* Auth Dialog */}
       <Dialog open={authDialogOpen} onOpenChange={setAuthDialogOpen}>
@@ -432,7 +431,7 @@ export function HeroSection() {
               </button> */}
             </div>
             <DialogDescription className="text-muted-foreground">
-              Sign in or create an account to talk with Suna
+              Sign in or create an account to talk with Kortix
             </DialogDescription>
           </DialogHeader>
 

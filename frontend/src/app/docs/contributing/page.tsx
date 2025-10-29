@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { 
+import {
   DocsHeader,
   DocsCard,
   DocsBody,
@@ -19,8 +19,8 @@ export default function ContributingPage() {
   return (
     <>
       <DocsHeader
-        title="Contributing to Suna"
-        description="Help make Suna better for everyone! We welcome contributions from the community"
+        title="Contributing to Kortix"
+        description="Help make Kortix better for everyone! We welcome contributions from the community"
         breadcrumbs={breadcrumbs}
         lastUpdated="August 2025"
         showSeparator
@@ -104,8 +104,8 @@ export default function ContributingPage() {
           className="mb-6"
           clickable
           actions={[
-            { 
-              label: 'View Setup Guide', 
+            {
+              label: 'View Setup Guide',
               variant: 'default',
               onClick: () => window.location.href = '/docs/self-hosting'
             }
@@ -113,7 +113,7 @@ export default function ContributingPage() {
         />
         <DocsBody className="mb-8">
           <p className="text-muted-foreground">
-            The self-hosting guide covers all prerequisites, dependencies, and configuration needed for development. 
+            The self-hosting guide covers all prerequisites, dependencies, and configuration needed for development.
             Once you've completed the setup, you can start contributing to the project.
           </p>
         </DocsBody>
@@ -126,7 +126,7 @@ export default function ContributingPage() {
             Follow these guidelines to maintain code quality and consistency:
           </p>
         </DocsBody>
-        
+
         <div className="space-y-6">
           <div>
             <h3 id="frontend-guidelines" className="text-lg font-semibold mb-4">Frontend (TypeScript/React)</h3>
@@ -214,8 +214,8 @@ export default function ContributingPage() {
             description="Join our Discord server for real-time discussions and support"
             clickable
             actions={[
-              { 
-                label: 'Join Discord', 
+              {
+                label: 'Join Discord',
                 variant: 'default',
                 onClick: () => window.open('https://discord.gg/Py6pCBUUPw', '_blank')
               }
@@ -226,8 +226,8 @@ export default function ContributingPage() {
             description="Report bugs, request features, and other issues"
             clickable
             actions={[
-              { 
-                label: 'View Discussions', 
+              {
+                label: 'View Discussions',
                 variant: 'default',
                 onClick: () => window.open('https://github.com/kortix-ai/suna/issues', '_blank')
               }
