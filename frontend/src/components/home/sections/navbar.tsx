@@ -155,7 +155,7 @@ export function Navbar({ tabs }: NavbarProps = {}) {
                     href="https://github.com/kortix-ai/suna"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="hidden md:flex items-center gap-1.5 h-7 px-2.5 text-xs font-medium rounded-full bg-transparent text-muted-foreground/60 hover:text-muted-foreground hover:bg-accent/30 transition-all duration-200"
+                    className="flex items-center gap-1.5 h-7 px-2.5 text-xs font-medium rounded-full bg-transparent text-muted-foreground/60 hover:text-muted-foreground hover:bg-accent/30 transition-all duration-200"
                     aria-label="GitHub Repository"
                   >
                     <Github className="size-3.5" />
@@ -165,14 +165,14 @@ export function Navbar({ tabs }: NavbarProps = {}) {
                   </Link>
                   {user ? (
                     <Link
-                      className="bg-primary h-8 hidden md:flex items-center justify-center text-sm font-normal tracking-wide rounded-full text-primary-foreground w-fit px-4 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
+                      className="bg-primary h-8 flex items-center justify-center text-sm font-normal tracking-wide rounded-full text-primary-foreground w-fit px-4 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
                       href="/dashboard"
                     >
                       Dashboard
                     </Link>
                   ) : (
                     <Link
-                      className="bg-primary text-primary-foreground h-8 hidden md:flex items-center justify-center text-sm font-normal tracking-wide rounded-full w-fit px-4 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
+                      className="bg-primary text-primary-foreground h-8 flex items-center justify-center text-sm font-normal tracking-wide rounded-full w-fit px-4 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
                       href="/auth"
                     >
                       Try free
@@ -180,16 +180,6 @@ export function Navbar({ tabs }: NavbarProps = {}) {
                   )}
                 </div>
                 {/* <ThemeToggle /> */}
-                <button
-                  className="md:hidden border border-border size-8 rounded-md cursor-pointer flex items-center justify-center"
-                  onClick={toggleDrawer}
-                >
-                  {isDrawerOpen ? (
-                    <X className="size-5" />
-                  ) : (
-                    <Menu className="size-5" />
-                  )}
-                </button>
               </div>
             </div>
           </div>
