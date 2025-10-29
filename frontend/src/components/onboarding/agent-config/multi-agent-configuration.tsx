@@ -12,7 +12,7 @@ import { userContext } from '../shared/context';
 
 export const MultiAgentConfigurationStep = () => {
   const [currentAgentIndex, setCurrentAgentIndex] = useState(0);
-  const [configurations, setConfigurations] = useState<{[key: string]: any}>({});
+  const [configurations, setConfigurations] = useState<{ [key: string]: any }>({});
 
   const selectedAgentIds = userContext.selectedAgents || ['maya', 'sage', 'nova'];
   const selectedAgents = allAgents.filter(agent => selectedAgentIds.includes(agent.id));
@@ -73,7 +73,7 @@ export const MultiAgentConfigurationStep = () => {
           animate={{ opacity: 1, y: 0 }}
           className="text-center"
         >
-          <h2 className="text-2xl font-bold mb-2">Configure {currentAgent.name}</h2>
+          <h2 className="text-2xl font-medium mb-2">Configure {currentAgent.name}</h2>
           <p className="text-sm text-muted-foreground">
             {currentAgentIndex + 1} of {selectedAgents.length}
           </p>
@@ -117,11 +117,11 @@ export const MultiAgentConfigurationStep = () => {
                   key={agent.id}
                   className={cn(
                     'w-2 h-2 rounded-full transition-all',
-                    index === currentAgentIndex 
-                      ? 'bg-foreground w-6' 
+                    index === currentAgentIndex
+                      ? 'bg-foreground w-6'
                       : isConfigured(agent.id)
-                      ? 'bg-foreground/40'
-                      : 'bg-border'
+                        ? 'bg-foreground/40'
+                        : 'bg-border'
                   )}
                 />
               ))}

@@ -13,6 +13,7 @@ import { useTheme } from 'next-themes';
 import { useAuth } from '@/components/AuthProvider';
 import { useGitHubStars } from '@/hooks/use-github-stars';
 import { useRouter, usePathname } from 'next/navigation';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
 const INITIAL_WIDTH = '70rem';
 const MAX_WIDTH = '1000px';
@@ -53,7 +54,11 @@ const drawerMenuVariants = {
   visible: { opacity: 1 },
 };
 
-export function Navbar() {
+interface NavbarProps {
+  tabs?: string[];
+}
+
+export function Navbar({ tabs }: NavbarProps = {}) {
   const { scrollY } = useScroll();
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -65,13 +70,20 @@ export function Navbar() {
   const router = useRouter();
   const pathname = usePathname();
 
+  // Filter nav links based on tabs prop
+  const filteredNavLinks = tabs
+    ? siteConfig.nav.links.filter(link =>
+      tabs.includes(link.name.toLowerCase())
+    )
+    : siteConfig.nav.links;
+
   useEffect(() => {
     setMounted(true);
   }, []);
 
   useEffect(() => {
     const handleScroll = () => {
-      const sections = siteConfig.nav.links.map((item) =>
+      const sections = filteredNavLinks.map((item) =>
         item.href.substring(1),
       );
 
@@ -91,7 +103,7 @@ export function Navbar() {
     handleScroll();
 
     return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [filteredNavLinks]);
 
   useEffect(() => {
     const unsubscribe = scrollY.on('change', (latest) => {
@@ -102,12 +114,6 @@ export function Navbar() {
 
   const toggleDrawer = () => setIsDrawerOpen((prev) => !prev);
   const handleOverlayClick = () => setIsDrawerOpen(false);
-
-  const logoSrc = !mounted
-    ? '/kortix-logo.svg'
-    : resolvedTheme === 'dark'
-      ? '/kortix-logo-white.svg'
-      : '/kortix-logo.svg';
 
   return (
     <header
@@ -133,21 +139,13 @@ export function Navbar() {
             {/* Left Section - Logo */}
             <div className="flex items-center justify-start flex-shrink-0 w-auto md:w-[200px]">
               <Link href="/" className="flex items-center gap-3">
-                <Image
-                  src={logoSrc}
-                  alt="Kortix Logo"
-                  width={80}
-                  height={14}
-                  className="md:w-[100px] md:h-[18px]"
-                  priority
-                /> 
+                <KortixLogo size={18} variant='logomark' />
               </Link>
             </div>
-
-            {/* Center Section - Navigation Menu */}
+            {/* 
             <div className="hidden md:flex items-center justify-center flex-grow">
-              <NavMenu />
-            </div>
+              <NavMenu links={filteredNavLinks} />
+            </div> */}
 
             {/* Right Section - Actions */}
             <div className="flex items-center justify-end flex-shrink-0 w-auto md:w-[200px] ml-auto">
@@ -167,21 +165,21 @@ export function Navbar() {
                   </Link>
                   {user ? (
                     <Link
-                      className="bg-secondary h-8 hidden md:flex items-center justify-center text-sm font-normal tracking-wide rounded-full text-primary-foreground dark:text-secondary-foreground w-fit px-4 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
+                      className="bg-primary h-8 hidden md:flex items-center justify-center text-sm font-normal tracking-wide rounded-full text-primary-foreground w-fit px-4 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
                       href="/dashboard"
                     >
                       Dashboard
                     </Link>
                   ) : (
                     <Link
-                      className="bg-secondary h-8 hidden md:flex items-center justify-center text-sm font-normal tracking-wide rounded-full text-primary-foreground dark:text-secondary-foreground w-fit px-4 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
+                      className="bg-primary text-primary-foreground h-8 hidden md:flex items-center justify-center text-sm font-normal tracking-wide rounded-full w-fit px-4 shadow-[inset_0_1px_2px_rgba(255,255,255,0.25),0_3px_3px_-1.5px_rgba(16,24,40,0.06),0_1px_1px_rgba(16,24,40,0.08)] border border-white/[0.12]"
                       href="/auth"
                     >
                       Try free
                     </Link>
                   )}
                 </div>
-                <ThemeToggle />
+                {/* <ThemeToggle /> */}
                 <button
                   className="md:hidden border border-border size-8 rounded-md cursor-pointer flex items-center justify-center"
                   onClick={toggleDrawer}
@@ -223,13 +221,7 @@ export function Navbar() {
               <div className="flex flex-col gap-4">
                 <div className="flex items-center justify-between">
                   <Link href="/" className="flex items-center gap-3">
-                    <Image
-                      src={logoSrc}
-                      alt="Kortix Logo"
-                      width={120}
-                      height={22}
-                      priority
-                    />
+                    <KortixLogo size={120} />
                     <span className="font-medium text-primary text-sm">
                       / Suna
                     </span>
@@ -247,7 +239,7 @@ export function Navbar() {
                   variants={drawerMenuContainerVariants}
                 >
                   <AnimatePresence>
-                    {siteConfig.nav.links.map((item) => (
+                    {filteredNavLinks.map((item) => (
                       <motion.li
                         key={item.id}
                         className="p-2.5 border-b border-border last:border-b-0"
@@ -261,27 +253,26 @@ export function Navbar() {
                               setIsDrawerOpen(false);
                               return;
                             }
-                            
+
                             e.preventDefault();
-                            
+
                             // If we're not on the homepage, redirect to homepage with the section
                             if (pathname !== '/') {
                               router.push(`/${item.href}`);
                               setIsDrawerOpen(false);
                               return;
                             }
-                            
+
                             const element = document.getElementById(
                               item.href.substring(1),
                             );
                             element?.scrollIntoView({ behavior: 'smooth' });
                             setIsDrawerOpen(false);
                           }}
-                          className={`underline-offset-4 hover:text-primary/80 transition-colors ${
-                            (item.href.startsWith('#') && pathname === '/' && activeSection === item.href.substring(1)) || (item.href === pathname)
-                              ? 'text-primary font-medium'
-                              : 'text-primary/60'
-                          }`}
+                          className={`underline-offset-4 hover:text-primary/80 transition-colors ${(item.href.startsWith('#') && pathname === '/' && activeSection === item.href.substring(1)) || (item.href === pathname)
+                            ? 'text-primary font-medium'
+                            : 'text-primary/60'
+                            }`}
                         >
                           {item.name}
                         </a>
@@ -331,5 +322,5 @@ export function Navbar() {
         )}
       </AnimatePresence>
     </header>
-  ); 
+  );
 }

@@ -13,7 +13,7 @@ import type { ComposioToolkit, ComposioProfile, AuthConfigField } from '@/hooks/
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { cn } from '@/lib/utils';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
@@ -324,7 +324,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
   const [selectedProfile, setSelectedProfile] = useState<ComposioProfile | null>(null);
   const [redirectUrl, setRedirectUrl] = useState<string | null>(null);
   const [showToolsManager, setShowToolsManager] = useState(false);
-  const [direction, setDirection] = useState<'forward' | 'backward'>('forward');
   const [selectedConnectionType, setSelectedConnectionType] = useState<'existing' | 'new' | null>(null);
 
   const [initiationFields, setInitiationFields] = useState<Record<string, string>>({});
@@ -344,14 +343,14 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
     app.slug,
     { enabled: open && currentStep === Step.ProfileCreate }
   );
-  
+
   // Profile name availability checking
   const { data: nameAvailability, isLoading: isCheckingName } = useCheckProfileNameAvailability(
     app.slug,
     profileName,
-    { 
+    {
       enabled: open && currentStep === Step.ProfileCreate && profileName.length > 0,
-      debounceMs: 500 
+      debounceMs: 500
     }
   );
 
@@ -382,7 +381,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
       setCreatedProfileId(null);
       setRedirectUrl(null);
       setShowToolsManager(false);
-      setDirection('forward');
       setSelectedConnectionType(null);
       setSelectedTools([]);
       setInitiationFields({});
@@ -443,7 +441,7 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
 
   const validateCustomAuthFields = (): boolean => {
     if (!useCustomAuth) return true;
-    
+
     const newErrors: Record<string, string> = {};
     const authConfigDetails = toolkitDetails?.toolkit.auth_config_details?.[0];
     const authConfigFields = authConfigDetails?.fields?.auth_config_creation;
@@ -483,9 +481,6 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
   };
 
   const navigateToStep = (newStep: Step) => {
-    const currentIndex = getStepIndex(currentStep);
-    const newIndex = getStepIndex(newStep);
-    setDirection(newIndex > currentIndex ? 'forward' : 'backward');
     if (newStep === Step.ProfileCreate) {
       const requiresCustomAuth = CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug);
       setInitiationFields({});
@@ -645,32 +640,16 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
     tool.tags?.some(tag => tag.toLowerCase().includes(toolsPreviewSearchTerm.toLowerCase()))
   );
 
-
-
-  const slideVariants = {
-    enter: (direction: 'forward' | 'backward') => ({
-      x: direction === 'forward' ? 300 : -300,
-      opacity: 0
-    }),
-    center: {
-      x: 0,
-      opacity: 1
-    },
-    exit: (direction: 'forward' | 'backward') => ({
-      x: direction === 'forward' ? -300 : 300,
-      opacity: 0
-    })
-  };
-
-
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn(
-        "overflow-hidden gap-0",
-        currentStep === Step.ToolsSelection ? "max-w-2xl h-[85vh] p-0 flex flex-col" :
-          currentStep === Step.ProfileSelect ? "max-w-2xl p-0" : "max-w-lg p-0"
-      )}>
+      <DialogContent
+        hideCloseButton
+        className={cn(
+          "overflow-hidden gap-0",
+          currentStep === Step.ToolsSelection ? "max-w-2xl h-[85vh] p-0 flex flex-col" :
+            currentStep === Step.ProfileSelect ? "max-w-2xl p-0" : "max-w-lg p-0"
+        )}
+      >
         <StepIndicator currentStep={currentStep} mode={mode} />
 
         {currentStep !== Step.ToolsSelection ? (
@@ -698,314 +677,295 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
               "flex-1 overflow-hidden",
               currentStep === Step.ProfileSelect ? "px-0 pb-0 pt-0" : "px-8 pb-8 pt-6"
             )}>
-              <AnimatePresence mode="wait" custom={direction}>
-                {currentStep === Step.ProfileSelect && (
-                  <motion.div
-                    key="profile-select"
-                    custom={direction}
-                    variants={slideVariants}
-                    initial="enter"
-                    animate="center"
-                    exit="exit"
-                    transition={{ duration: 0.3, ease: "easeInOut" }}
-                    className="flex flex-col h-full max-h-[500px]"
-                  >
-                    <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-primary/20 scrollbar-track-transparent">
-                      <div className="p-6 space-y-6">
-                        <div className="space-y-4">
-                          <div className="flex items-center gap-3 mb-4">
-                            {app.logo ? (
-                              <img src={app.logo} alt={app.name} className="w-8 h-8 rounded-lg object-contain bg-muted p-1 border flex-shrink-0" />
-                            ) : (
-                              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center text-primary font-semibold text-sm flex-shrink-0">
-                                {app.name.charAt(0)}
-                              </div>
-                            )}
-                            <div className="flex-1">
-                              <h4 className="font-medium text-foreground">Connect to {app.name}</h4>
-                              <p className="text-xs text-muted-foreground">Choose an existing profile or create a new connection</p>
+              {currentStep === Step.ProfileSelect && (
+                <div className="flex flex-col h-full max-h-[500px]">
+                  <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-primary/20 scrollbar-track-transparent">
+                    <div className="p-6 space-y-6">
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-3 mb-4">
+                          {app.logo ? (
+                            <img src={app.logo} alt={app.name} className="w-8 h-8 rounded-lg object-contain bg-muted p-1 border flex-shrink-0" />
+                          ) : (
+                            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center text-primary font-semibold text-sm flex-shrink-0">
+                              {app.name.charAt(0)}
                             </div>
-                            <Button variant="outline" size="sm" onClick={() => setShowToolsManager(!showToolsManager)}>
-                              {showToolsManager ? 'Hide' : 'View'} Tools
-                            </Button>
+                          )}
+                          <div className="flex-1">
+                            <h4 className="font-medium text-foreground">Connect to {app.name}</h4>
+                            <p className="text-xs text-muted-foreground">Choose an existing profile or create a new connection</p>
                           </div>
+                          <Button variant="outline" size="sm" onClick={() => setShowToolsManager(!showToolsManager)}>
+                            {showToolsManager ? 'Hide' : 'View'} Tools
+                          </Button>
+                        </div>
 
-                          <div className="grid gap-3">
-                            {existingProfiles.length > 0 && (
-                              <Card
-                                className={cn(
-                                  "cursor-pointer p-0 transition-all",
-                                  selectedConnectionType === 'existing' ? "border-primary bg-primary/5" : "border-border hover:border-border/80"
-                                )}
-                                onClick={() => {
-                                  if (selectedConnectionType === 'existing') {
-                                    setSelectedConnectionType(null);
-                                    setSelectedProfileId('');
-                                  } else {
-                                    setSelectedConnectionType('existing');
-                                    setSelectedProfileId(existingProfiles[0]?.profile_id || '');
-                                  }
-                                }}
-                              >
-                                <CardContent className='p-2'>
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                      <div className="w-10 h-10 rounded-xl bg-green-200 dark:bg-green-900/20 flex items-center justify-center">
-                                        <Check className="w-5 h-5 text-green-600 dark:text-green-400" />
-                                      </div>
-                                      <div>
-                                        <h5 className="font-medium text-sm">Use Existing Connection</h5>
-                                        <p className="text-xs text-muted-foreground">{existingProfiles.length} profile{existingProfiles.length > 1 ? 's' : ''} already connected</p>
-                                      </div>
-                                    </div>
-                                    <ChevronRight className={cn("w-4 h-4 text-muted-foreground transition-transform", selectedConnectionType === 'existing' && "rotate-90")} />
-                                  </div>
-                                  <AnimatePresence>
-                                    {selectedConnectionType === 'existing' && (
-                                      <motion.div
-                                        initial={{ height: 0, opacity: 0 }}
-                                        animate={{ height: "auto", opacity: 1 }}
-                                        exit={{ height: 0, opacity: 0 }}
-                                        transition={{ duration: 0.2, ease: "easeInOut" }}
-                                        className="overflow-hidden"
-                                      >
-                                        <div className="mt-3 pt-3 border-t border-border/50">
-                                          <Select value={selectedProfileId} onValueChange={setSelectedProfileId}>
-                                            <SelectTrigger className="w-full h-10">
-                                              <SelectValue placeholder="Select a profile..." />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                              {existingProfiles.map((profile) => (
-                                                <SelectItem key={profile.profile_id} value={profile.profile_id}>
-                                                  <div className="flex items-center gap-3">
-                                                    {app.logo ? (
-                                                      <img src={app.logo} alt={app.name} className="w-5 h-5 rounded-lg object-contain bg-muted p-0.5 border flex-shrink-0" />
-                                                    ) : (
-                                                      <div className="w-5 h-5 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center text-primary text-xs font-semibold flex-shrink-0">
-                                                        {app.name.charAt(0)}
-                                                      </div>
-                                                    )}
-                                                    <div>
-                                                      <div className="text-sm font-medium">{profile.profile_name}</div>
-                                                    </div>
-                                                  </div>
-                                                </SelectItem>
-                                              ))}
-                                            </SelectContent>
-                                          </Select>
-                                        </div>
-                                      </motion.div>
-                                    )}
-                                  </AnimatePresence>
-                                </CardContent>
-                              </Card>
-                            )}
-
-                            <Card className={cn(
-                              "cursor-pointer p-0 transition-all",
-                              selectedConnectionType === 'new' ? "border-primary bg-primary/5" : "border-border hover:border-border/80"
-                            )} onClick={() => {
-                              if (selectedConnectionType === 'new') {
-                                setSelectedConnectionType(null);
-                                setSelectedProfileId('');
-                              } else {
-                                setSelectedConnectionType('new');
-                                setSelectedProfileId('new');
-                                // Clear all fields when selecting new connection to prevent stale data
-                                const requiresCustomAuth = CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug);
-                                setInitiationFields({});
-                                setInitiationFieldsErrors({});
-                                setCustomAuthConfig({});
-                                setCustomAuthConfigErrors({});
-                                setUseCustomAuth(requiresCustomAuth);
-                                setProfileName(`${app.name} Profile`);
-                              }
-                            }}>
+                        <div className="grid gap-3">
+                          {existingProfiles.length > 0 && (
+                            <Card
+                              className={cn(
+                                "cursor-pointer p-0 transition-all",
+                                selectedConnectionType === 'existing' ? "border-primary bg-primary/5" : "border-border hover:border-border/80"
+                              )}
+                              onClick={() => {
+                                if (selectedConnectionType === 'existing') {
+                                  setSelectedConnectionType(null);
+                                  setSelectedProfileId('');
+                                } else {
+                                  setSelectedConnectionType('existing');
+                                  setSelectedProfileId(existingProfiles[0]?.profile_id || '');
+                                }
+                              }}
+                            >
                               <CardContent className='p-2'>
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
-                                      <Plus className="w-5 h-5 text-primary" />
+                                    <div className="w-10 h-10 rounded-xl bg-green-200 dark:bg-green-900/20 flex items-center justify-center">
+                                      <Check className="w-5 h-5 text-green-600 dark:text-green-400" />
                                     </div>
                                     <div>
-                                      <h5 className="font-medium text-sm">Create New Connection</h5>
-                                      <p className="text-xs text-muted-foreground">Connect a new {app.name} account</p>
+                                      <h5 className="font-medium text-sm">Use Existing Connection</h5>
+                                      <p className="text-xs text-muted-foreground">{existingProfiles.length} profile{existingProfiles.length > 1 ? 's' : ''} already connected</p>
                                     </div>
                                   </div>
-                                  <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                                  <ChevronRight className={cn("w-4 h-4 text-muted-foreground transition-transform", selectedConnectionType === 'existing' && "rotate-90")} />
                                 </div>
+                                <AnimatePresence>
+                                  {selectedConnectionType === 'existing' && (
+                                    <motion.div
+                                      initial={{ height: 0, opacity: 0 }}
+                                      animate={{ height: "auto", opacity: 1 }}
+                                      exit={{ height: 0, opacity: 0 }}
+                                      transition={{ duration: 0.2, ease: "easeInOut" }}
+                                      className="overflow-hidden"
+                                    >
+                                      <div className="mt-3 pt-3 border-t border-border/50">
+                                        <Select value={selectedProfileId} onValueChange={setSelectedProfileId}>
+                                          <SelectTrigger className="w-full h-10">
+                                            <SelectValue placeholder="Select a profile..." />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {existingProfiles.map((profile) => (
+                                              <SelectItem key={profile.profile_id} value={profile.profile_id}>
+                                                <div className="flex items-center gap-3">
+                                                  {app.logo ? (
+                                                    <img src={app.logo} alt={app.name} className="w-5 h-5 rounded-lg object-contain bg-muted p-0.5 border flex-shrink-0" />
+                                                  ) : (
+                                                    <div className="w-5 h-5 rounded-lg bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center text-primary text-xs font-semibold flex-shrink-0">
+                                                      {app.name.charAt(0)}
+                                                    </div>
+                                                  )}
+                                                  <div>
+                                                    <div className="text-sm font-medium">{profile.profile_name}</div>
+                                                  </div>
+                                                </div>
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                    </motion.div>
+                                  )}
+                                </AnimatePresence>
                               </CardContent>
                             </Card>
-                          </div>
-                        </div>
-                        <AnimatePresence>
-                          {showToolsManager && (
-                            <motion.div
-                              initial={{ height: 0, opacity: 0 }}
-                              animate={{ height: "auto", opacity: 1 }}
-                              exit={{ height: 0, opacity: 0 }}
-                              transition={{ duration: 0.3, ease: "easeInOut" }}
-                              className="overflow-hidden"
-                            >
-                              <div className="space-y-3">
-                                <ScrollArea className="h-[200px] border rounded-md bg-muted/10">
-                                  <div className="p-2">
-                                    {isLoadingToolsPreview ? (
-                                      <div className="grid grid-cols-2 gap-1">
-                                        {[...Array(8)].map((_, i) => (
-                                          <div key={i} className="border rounded-md p-2 animate-pulse bg-background/50">
-                                            <div className="h-2 bg-muted rounded w-3/4 mb-1"></div>
-                                            <div className="h-2 bg-muted rounded w-1/2"></div>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    ) : filteredToolsPreview.length > 0 ? (
-                                      <div className="grid grid-cols-2 gap-1">
-                                        {filteredToolsPreview.map((tool) => (
-                                          <ToolPreviewCard
-                                            key={tool.slug}
-                                            tool={tool}
-                                            searchTerm={toolsPreviewSearchTerm}
-                                          />
-                                        ))}
-                                      </div>
-                                    ) : (
-                                      <div className="text-center py-6 text-muted-foreground">
-                                        <Search className="h-4 w-4 mx-auto mb-2" />
-                                        <p className="text-xs">
-                                          {toolsPreviewSearchTerm ? 'No matches' : 'No tools available'}
-                                        </p>
-                                      </div>
-                                    )}
+                          )}
+
+                          <Card className={cn(
+                            "cursor-pointer p-0 transition-all",
+                            selectedConnectionType === 'new' ? "border-primary bg-primary/5" : "border-border hover:border-border/80"
+                          )} onClick={() => {
+                            if (selectedConnectionType === 'new') {
+                              setSelectedConnectionType(null);
+                              setSelectedProfileId('');
+                            } else {
+                              setSelectedConnectionType('new');
+                              setSelectedProfileId('new');
+                              // Clear all fields when selecting new connection to prevent stale data
+                              const requiresCustomAuth = CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug);
+                              setInitiationFields({});
+                              setInitiationFieldsErrors({});
+                              setCustomAuthConfig({});
+                              setCustomAuthConfigErrors({});
+                              setUseCustomAuth(requiresCustomAuth);
+                              setProfileName(`${app.name} Profile`);
+                            }
+                          }}>
+                            <CardContent className='p-2'>
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center">
+                                    <Plus className="w-5 h-5 text-primary" />
                                   </div>
-                                </ScrollArea>
-                              </div>
-                            </motion.div>
-                          )}
-                        </AnimatePresence>
-                      </div>
-                    </div>
-                    <div className="px-6 py-4 border-t border-border/50 bg-muted/20 flex-shrink-0">
-                      <div className="flex items-center justify-between">
-                        <div className="text-sm text-muted-foreground">
-                          {selectedConnectionType === 'new' ? 'Ready to create new connection' :
-                            selectedConnectionType === 'existing' && selectedProfileId ? 'Profile selected' :
-                              selectedConnectionType === 'existing' ? 'Select a profile to continue' :
-                                'Choose how you want to connect'}
-                        </div>
-                        <div className="flex gap-3">
-                          <Button
-                            variant="outline"
-                            onClick={() => onOpenChange(false)}
-                            className="px-6"
-                          >
-                            Cancel
-                          </Button>
-                          <Button
-                            onClick={() => {
-                              if (selectedConnectionType === 'new') {
-                                navigateToStep(Step.ProfileCreate);
-                              } else {
-                                handleProfileSelect();
-                              }
-                            }}
-                            disabled={!selectedConnectionType || (selectedConnectionType === 'existing' && !selectedProfileId)}
-                            className="px-8 min-w-[120px]"
-                          >
-                            {selectedConnectionType === 'new' ? (
-                              <>
-                                Create Connection
-                                <ChevronRight className="h-4 w-4 ml-1" />
-                              </>
-                            ) : selectedConnectionType === 'existing' && selectedProfileId ? (
-                              <>
-                                {mode === 'full' && agentId ? 'Configure Tools' : 'Use Profile'}
-                                <ChevronRight className="h-4 w-4 ml-1" />
-                              </>
-                            ) : (
-                              'Continue'
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </motion.div>
-                )}
-                {currentStep === Step.ProfileCreate && (
-                  <motion.div
-                    key="profile-create"
-                    custom={direction}
-                    variants={slideVariants}
-                    initial="enter"
-                    animate="center"
-                    exit="exit"
-                    transition={{ duration: 0.3, ease: "easeInOut" }}
-                    className="flex flex-col h-full"
-                  >
-                    <div className="flex-1 overflow-y-auto">
-                      <div className="space-y-3">
-                        <div className="space-y-1.5">
-                          <Label htmlFor="profileName" className="text-sm font-medium">
-                            Profile Name
-                          </Label>
-                          <div className="relative">
-                            <Input
-                              id="profileName"
-                              value={profileName}
-                              onChange={(e) => setProfileName(e.target.value)}
-                              placeholder={`e.g., ${app.name} Production`}
-                              className={cn(
-                                "pr-10 h-9",
-                                nameAvailability && !nameAvailability.available && "border-destructive",
-                                nameAvailability && nameAvailability.available && profileName.length > 0 && "border-green-500"
-                              )}
-                            />
-                            <div className="absolute right-2 top-1/2 -translate-y-1/2">
-                              {isCheckingName && profileName.length > 0 && (
-                                <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
-                              )}
-                              {!isCheckingName && nameAvailability && profileName.length > 0 && (
-                                <>
-                                  {nameAvailability.available ? (
-                                    <Check className="h-3.5 w-3.5 text-green-500" />
-                                  ) : (
-                                    <X className="h-3.5 w-3.5 text-destructive" />
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          </div>
-                          
-                          {nameAvailability && !nameAvailability.available && (
-                            <div className="space-y-1">
-                              <p className="text-xs text-destructive">
-                                This name is already in use
-                              </p>
-                              {nameAvailability.suggestions.length > 0 && (
-                                <div className="flex flex-wrap gap-1">
-                                  {nameAvailability.suggestions.map((suggestion) => (
-                                    <button
-                                      key={suggestion}
-                                      type="button"
-                                      onClick={() => setProfileName(suggestion)}
-                                      className="text-xs px-2 py-0.5 rounded bg-muted hover:bg-muted/80 transition-colors"
-                                    >
-                                      {suggestion}
-                                    </button>
-                                  ))}
+                                  <div>
+                                    <h5 className="font-medium text-sm">Create New Connection</h5>
+                                    <p className="text-xs text-muted-foreground">Connect a new {app.name} account</p>
+                                  </div>
                                 </div>
-                              )}
+                                <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                              </div>
+                            </CardContent>
+                          </Card>
+                        </div>
+                      </div>
+                      <AnimatePresence>
+                        {showToolsManager && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.3, ease: "easeInOut" }}
+                            className="overflow-hidden"
+                          >
+                            <div className="space-y-3">
+                              <ScrollArea className="h-[200px] border rounded-md bg-muted/10">
+                                <div className="p-2">
+                                  {isLoadingToolsPreview ? (
+                                    <div className="grid grid-cols-2 gap-1">
+                                      {[...Array(8)].map((_, i) => (
+                                        <div key={i} className="border rounded-md p-2 animate-pulse bg-background/50">
+                                          <div className="h-2 bg-muted rounded w-3/4 mb-1"></div>
+                                          <div className="h-2 bg-muted rounded w-1/2"></div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : filteredToolsPreview.length > 0 ? (
+                                    <div className="grid grid-cols-2 gap-1">
+                                      {filteredToolsPreview.map((tool) => (
+                                        <ToolPreviewCard
+                                          key={tool.slug}
+                                          tool={tool}
+                                          searchTerm={toolsPreviewSearchTerm}
+                                        />
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <div className="text-center py-6 text-muted-foreground">
+                                      <Search className="h-4 w-4 mx-auto mb-2" />
+                                      <p className="text-xs">
+                                        {toolsPreviewSearchTerm ? 'No matches' : 'No tools available'}
+                                      </p>
+                                    </div>
+                                  )}
+                                </div>
+                              </ScrollArea>
                             </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+                  <div className="px-6 py-4 border-t border-border/50 bg-muted/20 flex-shrink-0">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm text-muted-foreground">
+                        {selectedConnectionType === 'new' ? 'Ready to create new connection' :
+                          selectedConnectionType === 'existing' && selectedProfileId ? 'Profile selected' :
+                            selectedConnectionType === 'existing' ? 'Select a profile to continue' :
+                              'Choose how you want to connect'}
+                      </div>
+                      <div className="flex gap-3">
+                        <Button
+                          variant="outline"
+                          onClick={() => onOpenChange(false)}
+                          className="px-6"
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            if (selectedConnectionType === 'new') {
+                              navigateToStep(Step.ProfileCreate);
+                            } else {
+                              handleProfileSelect();
+                            }
+                          }}
+                          disabled={!selectedConnectionType || (selectedConnectionType === 'existing' && !selectedProfileId)}
+                          className="px-8 min-w-[120px]"
+                        >
+                          {selectedConnectionType === 'new' ? (
+                            <>
+                              Create Connection
+                              <ChevronRight className="h-4 w-4 ml-1" />
+                            </>
+                          ) : selectedConnectionType === 'existing' && selectedProfileId ? (
+                            <>
+                              {mode === 'full' && agentId ? 'Configure Tools' : 'Use Profile'}
+                              <ChevronRight className="h-4 w-4 ml-1" />
+                            </>
+                          ) : (
+                            'Continue'
                           )}
-                          {nameAvailability && nameAvailability.available && profileName.length > 0 && (
-                            <p className="text-xs text-green-600 dark:text-green-400">
-                              Name available
-                            </p>
-                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {currentStep === Step.ProfileCreate && (
+                <div className="flex flex-col h-full">
+                  <div className="flex-1 overflow-y-auto">
+                    <div className="space-y-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="profileName" className="text-sm font-medium">
+                          Profile Name
+                        </Label>
+                        <div className="relative">
+                          <Input
+                            id="profileName"
+                            value={profileName}
+                            onChange={(e) => setProfileName(e.target.value)}
+                            placeholder={`e.g., ${app.name} Production`}
+                            className={cn(
+                              "pr-10 h-9",
+                              nameAvailability && !nameAvailability.available && "border-destructive",
+                              nameAvailability && nameAvailability.available && profileName.length > 0 && "border-green-500"
+                            )}
+                          />
+                          <div className="absolute right-2 top-1/2 -translate-y-1/2">
+                            {isCheckingName && profileName.length > 0 && (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                            )}
+                            {!isCheckingName && nameAvailability && profileName.length > 0 && (
+                              <>
+                                {nameAvailability.available ? (
+                                  <Check className="h-3.5 w-3.5 text-green-500" />
+                                ) : (
+                                  <X className="h-3.5 w-3.5 text-destructive" />
+                                )}
+                              </>
+                            )}
+                          </div>
                         </div>
 
-                        {!isLoadingToolkitDetails && 
-                         toolkitDetails?.toolkit.connected_account_initiation_fields?.required?.length > 0 && (
+                        {nameAvailability && !nameAvailability.available && (
+                          <div className="space-y-1">
+                            <p className="text-xs text-destructive">
+                              This name is already in use
+                            </p>
+                            {nameAvailability.suggestions.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {nameAvailability.suggestions.map((suggestion) => (
+                                  <button
+                                    key={suggestion}
+                                    type="button"
+                                    onClick={() => setProfileName(suggestion)}
+                                    className="text-xs px-2 py-0.5 rounded bg-muted hover:bg-muted/80 transition-colors"
+                                  >
+                                    {suggestion}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {nameAvailability && nameAvailability.available && profileName.length > 0 && (
+                          <p className="text-xs text-green-600 dark:text-green-400">
+                            Name available
+                          </p>
+                        )}
+                      </div>
+
+                      {!isLoadingToolkitDetails &&
+                        toolkitDetails?.toolkit.connected_account_initiation_fields?.required?.length > 0 && (
                           <div className="space-y-2">
                             <div className="flex items-center gap-1.5">
                               <Settings className="h-3.5 w-3.5 text-muted-foreground" />
@@ -1015,20 +975,20 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                               const fieldType = field.type?.toLowerCase() || 'string';
                               const isBoolean = fieldType === 'boolean';
                               const isNumber = fieldType === 'number' || fieldType === 'double';
-                              
+
                               return (
                                 <div key={field.name} className="space-y-1">
                                   <Label htmlFor={field.name} className="text-xs">
                                     {field.displayName}
                                     {field.required && <span className="text-destructive ml-1">*</span>}
                                   </Label>
-                                  
+
                                   {isBoolean ? (
                                     <div className="flex items-center space-x-2">
                                       <Switch
                                         id={field.name}
                                         checked={initiationFields[field.name] === 'true'}
-                                        onCheckedChange={(checked) => 
+                                        onCheckedChange={(checked) =>
                                           handleInitiationFieldChange(field.name, checked ? 'true' : 'false')
                                         }
                                       />
@@ -1040,9 +1000,9 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                                     <>
                                       <Input
                                         id={field.name}
-                                        type={fieldType === 'password' ? 'password' : 
-                                              fieldType === 'email' ? 'email' :
-                                              fieldType === 'url' ? 'url' :
+                                        type={fieldType === 'password' ? 'password' :
+                                          fieldType === 'email' ? 'email' :
+                                            fieldType === 'url' ? 'url' :
                                               isNumber ? 'number' : 'text'}
                                         value={initiationFields[field.name] || ''}
                                         onChange={(e) => handleInitiationFieldChange(field.name, e.target.value)}
@@ -1058,7 +1018,7 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                                       )}
                                     </>
                                   )}
-                                  
+
                                   {initiationFieldsErrors[field.name] && (
                                     <p className="text-[10px] text-destructive">{initiationFieldsErrors[field.name]}</p>
                                   )}
@@ -1067,260 +1027,241 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                             })}
                           </div>
                         )}
-                        {toolkitDetails?.toolkit.auth_config_details?.[0]?.fields?.auth_config_creation && (
-                          <div className="space-y-3 border rounded-lg p-3">
-                            <div className="flex items-center justify-between">
-                              <div className="flex items-center gap-2">
-                                <Shield className="h-3.5 w-3.5 text-primary" />
-                                <div>
-                                  <Label htmlFor="custom-auth" className="text-sm font-medium cursor-pointer">
-                                    Custom OAuth App
-                                    {CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug) && (
-                                      <Badge variant="secondary" className="ml-2 text-xs">Required</Badge>
-                                    )}
-                                  </Label>
-                                  <p className="text-xs text-muted-foreground">
-                                    {CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug) 
-                                      ? `${app.name} requires your own OAuth credentials`
-                                      : 'Use your own OAuth credentials'
-                                    }
-                                  </p>
-                                </div>
-                              </div>
-                              <Switch
-                                id="custom-auth"
-                                checked={useCustomAuth}
-                                disabled={CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug)}
-                                onCheckedChange={(checked) => {
-                                  if (CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug)) return;
-                                  setUseCustomAuth(checked);
-                                  if (checked && toolkitDetails?.toolkit.auth_config_details?.[0]?.fields?.auth_config_creation?.optional) {
-                                    const defaults: Record<string, string> = {};
-                                    for (const field of toolkitDetails.toolkit.auth_config_details[0].fields.auth_config_creation.optional) {
-                                      if (field.default) {
-                                        defaults[field.name] = field.default;
-                                      }
-                                    }
-                                    setCustomAuthConfig(prev => ({ ...prev, ...defaults }));
+                      {toolkitDetails?.toolkit.auth_config_details?.[0]?.fields?.auth_config_creation && (
+                        <div className="space-y-3 border rounded-lg p-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Shield className="h-3.5 w-3.5 text-primary" />
+                              <div>
+                                <Label htmlFor="custom-auth" className="text-sm font-medium cursor-pointer">
+                                  Custom OAuth App
+                                  {CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug) && (
+                                    <Badge variant="secondary" className="ml-2 text-xs">Required</Badge>
+                                  )}
+                                </Label>
+                                <p className="text-xs text-muted-foreground">
+                                  {CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug)
+                                    ? `${app.name} requires your own OAuth credentials`
+                                    : 'Use your own OAuth credentials'
                                   }
-                                }}
-                              />
+                                </p>
+                              </div>
                             </div>
-                              <AnimatePresence>
-                                {useCustomAuth && (
-                                  <motion.div
-                                    initial={{ height: 0, opacity: 0 }}
-                                    animate={{ height: "auto", opacity: 1 }}
-                                    exit={{ height: 0, opacity: 0 }}
-                                    transition={{ duration: 0.2 }}
-                                    className="overflow-hidden"
-                                  >
-                                    <div className="space-y-2 pt-2 border-t">
-                                      <div className="grid gap-2 sm:grid-cols-2">
-                                        {toolkitDetails.toolkit.auth_config_details[0].fields.auth_config_creation.required?.map((field) => (
-                                            <div key={field.name} className="space-y-1">
-                                              <Label htmlFor={`auth-${field.name}`} className="text-xs">
-                                                {field.displayName}
-                                                <span className="text-destructive ml-1">*</span>
-                                              </Label>
-                                              <Input
-                                                id={`auth-${field.name}`}
-                                                type={field.name.includes('secret') ? 'password' : 'text'}
-                                                value={customAuthConfig[field.name] || ''}
-                                                onChange={(e) => handleCustomAuthFieldChange(field.name, e.target.value)}
-                                                placeholder={`Enter ${field.displayName.toLowerCase()}`}
-                                                className={cn(
-                                                  "h-8 text-xs",
-                                                  customAuthConfigErrors[field.name] && "border-destructive"
-                                                )}
-                                              />
-                                              {customAuthConfigErrors[field.name] && (
-                                                <p className="text-[10px] text-destructive">
-                                                  {customAuthConfigErrors[field.name]}
-                                                </p>
-                                              )}
-                                            </div>
-                                        ))}
-                                          {toolkitDetails.toolkit.auth_config_details[0].fields.auth_config_creation.optional
-                                            ?.filter(field => !['bearer_token', 'access_token'].includes(field.name))
-                                            .map((field) => (
-                                              <div key={field.name} className={cn(
-                                                "space-y-1",
-                                                ['oauth_redirect_uri', 'scopes'].includes(field.name) ? 'sm:col-span-2' : ''
-                                              )}>
-                                                <Label htmlFor={`auth-opt-${field.name}`} className="text-xs">
-                                                  {field.displayName}
-                                                </Label>
-                                                {field.name === 'oauth_redirect_uri' && field.default ? (
-                                                  <div className="flex gap-1">
-                                                    <Input
-                                                      id={`auth-opt-${field.name}`}
-                                                      value={field.default}
-                                                      className="h-8 text-[10px] flex-1"
-                                                      readOnly
-                                                    />
-                                                    <Button
-                                                      type="button"
-                                                      variant="outline"
-                                                      size="sm"
-                                                      className="h-8 px-2 text-xs"
-                                                      onClick={() => {
-                                                        navigator.clipboard.writeText(field.default || '');
-                                                        toast.success('Copied!');
-                                                      }}
-                                                    >
-                                                      Copy
-                                                    </Button>
-                                                  </div>
-                                                ) : (
-                                                  <Input
-                                                    id={`auth-opt-${field.name}`}
-                                                    type={field.name.includes('secret') ? 'password' : 'text'}
-                                                    value={customAuthConfig[field.name] || field.default || ''}
-                                                    onChange={(e) => handleCustomAuthFieldChange(field.name, e.target.value)}
-                                                    placeholder={field.default || `Enter ${field.displayName.toLowerCase()}`}
-                                                    className={cn(
-                                                      "h-8 text-xs",
-                                                      field.name === 'scopes' && "text-[10px]"
-                                                    )}
-                                                  />
-                                                )}
-                                                {field.description && (
-                                                  <p className="text-[10px] text-muted-foreground">
-                                                    {field.description}
-                                                  </p>
-                                                )}
-                                              </div>
-                                            ))}
+                            <Switch
+                              id="custom-auth"
+                              checked={useCustomAuth}
+                              disabled={CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug)}
+                              onCheckedChange={(checked) => {
+                                if (CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug)) return;
+                                setUseCustomAuth(checked);
+                                if (checked && toolkitDetails?.toolkit.auth_config_details?.[0]?.fields?.auth_config_creation?.optional) {
+                                  const defaults: Record<string, string> = {};
+                                  for (const field of toolkitDetails.toolkit.auth_config_details[0].fields.auth_config_creation.optional) {
+                                    if (field.default) {
+                                      defaults[field.name] = field.default;
+                                    }
+                                  }
+                                  setCustomAuthConfig(prev => ({ ...prev, ...defaults }));
+                                }
+                              }}
+                            />
+                          </div>
+                          <AnimatePresence>
+                            {useCustomAuth && (
+                              <motion.div
+                                initial={{ height: 0, opacity: 0 }}
+                                animate={{ height: "auto", opacity: 1 }}
+                                exit={{ height: 0, opacity: 0 }}
+                                transition={{ duration: 0.2 }}
+                                className="overflow-hidden"
+                              >
+                                <div className="space-y-2 pt-2 border-t">
+                                  <div className="grid gap-2 sm:grid-cols-2">
+                                    {toolkitDetails.toolkit.auth_config_details[0].fields.auth_config_creation.required?.map((field) => (
+                                      <div key={field.name} className="space-y-1">
+                                        <Label htmlFor={`auth-${field.name}`} className="text-xs">
+                                          {field.displayName}
+                                          <span className="text-destructive ml-1">*</span>
+                                        </Label>
+                                        <Input
+                                          id={`auth-${field.name}`}
+                                          type={field.name.includes('secret') ? 'password' : 'text'}
+                                          value={customAuthConfig[field.name] || ''}
+                                          onChange={(e) => handleCustomAuthFieldChange(field.name, e.target.value)}
+                                          placeholder={`Enter ${field.displayName.toLowerCase()}`}
+                                          className={cn(
+                                            "h-8 text-xs",
+                                            customAuthConfigErrors[field.name] && "border-destructive"
+                                          )}
+                                        />
+                                        {customAuthConfigErrors[field.name] && (
+                                          <p className="text-[10px] text-destructive">
+                                            {customAuthConfigErrors[field.name]}
+                                          </p>
+                                        )}
                                       </div>
-                                    </div>
-                                  </motion.div>
-                                )}
-                              </AnimatePresence>
-                          </div>
-                        )}
-
-                        {/* Loading State */}
-                        {isLoadingToolkitDetails && (
-                          <div className="space-y-3">
-                            <Skeleton className="h-4 w-32" />
-                            <Skeleton className="h-10 w-full" />
-                            <Skeleton className="h-10 w-full" />
-                          </div>
-                        )}
-                        </div>
-                      </div>
-                      <div className='mt-4'>
-                        <div className="flex gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleBack}
-                            disabled={isCreating}
-                            className="flex-1 h-8"
-                          >
-                            <ArrowLeft className="h-3.5 w-3.5 mr-1" />
-                            Back
-                          </Button>
-                          <Button
-                            size="sm"
-                            onClick={handleCreateProfile}
-                            disabled={
-                              isCreating || 
-                              isLoadingToolkitDetails || 
-                              !profileName.trim() ||
-                              isCheckingName ||
-                              (nameAvailability && !nameAvailability.available)
-                            }
-                            className="flex-1 h-8"
-                          >
-                            {isCreating ? (
-                              <>
-                                <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
-                                Creating...
-                              </>
-                            ) : (
-                              <>
-                                Connect
-                                <ChevronRight className="h-3.5 w-3.5 ml-1" />
-                              </>
+                                    ))}
+                                    {toolkitDetails.toolkit.auth_config_details[0].fields.auth_config_creation.optional
+                                      ?.filter(field => !['bearer_token', 'access_token'].includes(field.name))
+                                      .map((field) => (
+                                        <div key={field.name} className={cn(
+                                          "space-y-1",
+                                          ['oauth_redirect_uri', 'scopes'].includes(field.name) ? 'sm:col-span-2' : ''
+                                        )}>
+                                          <Label htmlFor={`auth-opt-${field.name}`} className="text-xs">
+                                            {field.displayName}
+                                          </Label>
+                                          {field.name === 'oauth_redirect_uri' && field.default ? (
+                                            <div className="flex gap-1">
+                                              <Input
+                                                id={`auth-opt-${field.name}`}
+                                                value={field.default}
+                                                className="h-8 text-[10px] flex-1"
+                                                readOnly
+                                              />
+                                              <Button
+                                                type="button"
+                                                variant="outline"
+                                                size="sm"
+                                                className="h-8 px-2 text-xs"
+                                                onClick={() => {
+                                                  navigator.clipboard.writeText(field.default || '');
+                                                  toast.success('Copied!');
+                                                }}
+                                              >
+                                                Copy
+                                              </Button>
+                                            </div>
+                                          ) : (
+                                            <Input
+                                              id={`auth-opt-${field.name}`}
+                                              type={field.name.includes('secret') ? 'password' : 'text'}
+                                              value={customAuthConfig[field.name] || field.default || ''}
+                                              onChange={(e) => handleCustomAuthFieldChange(field.name, e.target.value)}
+                                              placeholder={field.default || `Enter ${field.displayName.toLowerCase()}`}
+                                              className={cn(
+                                                "h-8 text-xs",
+                                                field.name === 'scopes' && "text-[10px]"
+                                              )}
+                                            />
+                                          )}
+                                          {field.description && (
+                                            <p className="text-[10px] text-muted-foreground">
+                                              {field.description}
+                                            </p>
+                                          )}
+                                        </div>
+                                      ))}
+                                  </div>
+                                </div>
+                              </motion.div>
                             )}
-                          </Button>
+                          </AnimatePresence>
                         </div>
-                      </div>
-                  </motion.div>
-                )}
-                {currentStep === Step.Connecting && (
-                  <motion.div
-                    key="connecting"
-                    custom={direction}
-                    variants={slideVariants}
-                    initial="enter"
-                    animate="center"
-                    exit="exit"
-                    transition={{ duration: 0.3, ease: "easeInOut" }}
-                    className="space-y-6"
-                  >
-                    <div className="text-center space-y-6 py-8">
-                      <div className="w-20 h-20 mx-auto border rounded-2xl bg-primary/10 flex items-center justify-center">
-                        <ExternalLink className="h-10 w-10 text-primary animate-pulse" />
-                      </div>
-                      <div className="space-y-1">
-                        <h3 className="font-semibold text-lg">Complete Authentication</h3>
-                        <p className="text-sm text-muted-foreground max-w-sm mx-auto">
-                          A new window has opened for you to authorize your {app.name} connection.
-                          Complete the process there and return here.
-                        </p>
-                      </div>
+                      )}
+
+                      {/* Loading State */}
+                      {isLoadingToolkitDetails && (
+                        <div className="space-y-3">
+                          <Skeleton className="h-4 w-32" />
+                          <Skeleton className="h-10 w-full" />
+                          <Skeleton className="h-10 w-full" />
+                        </div>
+                      )}
                     </div>
-                    {redirectUrl && (
-                      <Alert className="bg-muted/50 border-muted">
-                        <AlertCircle className="h-4 w-4" />
-                        <AlertDescription className="text-sm">
-                          If the window didn't open,{' '}
-                          <button
-                            onClick={() => window.open(redirectUrl, '_blank')}
-                            className="underline font-medium hover:no-underline"
-                          >
-                            click here to authenticate
-                          </button>
-                        </AlertDescription>
-                      </Alert>
-                    )}
-                    <Button
-                      onClick={handleAuthComplete}
-                      className="w-full"
-                    >
-                      I've Completed Authentication
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </motion.div>
-                )}
-                {currentStep === Step.Success && (
-                  <motion.div
-                    key="success"
-                    custom={direction}
-                    variants={slideVariants}
-                    initial="enter"
-                    animate="center"
-                    exit="exit"
-                    transition={{ duration: 0.3, ease: "easeInOut" }}
-                    className="text-center py-8"
-                  >
-                    <div className="space-y-6">
-                      <div className="w-18 h-18 mx-auto rounded-full bg-green-400 dark:bg-green-600 flex items-center justify-center">
-                        <Check className="h-10 w-10 text-white" />
-                      </div>
-                      <div className="space-y-1">
-                        <h3 className="font-semibold text-lg">Successfully Connected!</h3>
-                        <p className="text-sm text-muted-foreground">
-                          Your {app.name} integration is ready.
-                        </p>
-                      </div>
+                  </div>
+                  <div className='mt-4'>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleBack}
+                        disabled={isCreating}
+                        className="flex-1 h-8"
+                      >
+                        <ArrowLeft className="h-3.5 w-3.5 mr-1" />
+                        Back
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleCreateProfile}
+                        disabled={
+                          isCreating ||
+                          isLoadingToolkitDetails ||
+                          !profileName.trim() ||
+                          isCheckingName ||
+                          (nameAvailability && !nameAvailability.available)
+                        }
+                        className="flex-1 h-8"
+                      >
+                        {isCreating ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                            Creating...
+                          </>
+                        ) : (
+                          <>
+                            Connect
+                            <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                          </>
+                        )}
+                      </Button>
                     </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
+                  </div>
+                </div>
+              )}
+              {currentStep === Step.Connecting && (
+                <div className="space-y-6">
+                  <div className="text-center space-y-6 py-8">
+                    <div className="w-20 h-20 mx-auto border rounded-2xl bg-primary/10 flex items-center justify-center">
+                      <ExternalLink className="h-10 w-10 text-primary animate-pulse" />
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="font-semibold text-lg">Complete Authentication</h3>
+                      <p className="text-sm text-muted-foreground max-w-sm mx-auto">
+                        A new window has opened for you to authorize your {app.name} connection.
+                        Complete the process there and return here.
+                      </p>
+                    </div>
+                  </div>
+                  {redirectUrl && (
+                    <Alert className="bg-muted/50 border-muted">
+                      <AlertCircle className="h-4 w-4" />
+                      <AlertDescription className="text-sm">
+                        If the window didn't open,{' '}
+                        <button
+                          onClick={() => window.open(redirectUrl, '_blank')}
+                          className="underline font-medium hover:no-underline"
+                        >
+                          click here to authenticate
+                        </button>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  <Button
+                    onClick={handleAuthComplete}
+                    className="w-full"
+                  >
+                    I've Completed Authentication
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
+              {currentStep === Step.Success && (
+                <div className="text-center py-8">
+                  <div className="space-y-6">
+                    <div className="w-18 h-18 mx-auto rounded-full bg-green-400 dark:bg-green-600 flex items-center justify-center">
+                      <Check className="h-10 w-10 text-white" />
+                    </div>
+                    <div className="space-y-1">
+                      <h3 className="font-semibold text-lg">Successfully Connected!</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Your {app.name} integration is ready.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </>
         ) : (
@@ -1348,61 +1289,50 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                 </div>
               </div>
             </DialogHeader>
-            <AnimatePresence mode="wait" custom={direction}>
-              {currentStep === Step.ToolsSelection && (
-                <motion.div
-                  key="tools-selection"
-                  custom={direction}
-                  variants={slideVariants}
-                  initial="enter"
-                  animate="center"
-                  exit="exit"
-                  transition={{ duration: 0.3, ease: "easeInOut" }}
-                  className="flex-1 flex flex-col min-h-0"
-                >
-                  {selectedProfile && (
-                    <ComposioToolsSelector
-                      profileId={selectedProfile.profile_id}
-                      agentId={agentId}
-                      toolkitName={selectedProfile.toolkit_name || app.name}
-                      toolkitSlug={selectedProfile.toolkit_slug || app.slug}
-                      selectedTools={selectedTools}
-                      onToolsChange={setSelectedTools}
-                      onSave={handleSaveTools}
-                      showSaveButton={false}
-                      className="flex-1 min-h-0"
-                    />
-                  )}
-                  <div className="px-6 py-4 border-t bg-muted/20 flex-shrink-0">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm text-muted-foreground">
-                        {selectedTools.length > 0 ? (
-                          `${selectedTools.length} tool${selectedTools.length === 1 ? '' : 's'} will be added to your agent`
-                        ) : (
-                          'No tools selected'
-                        )}
-                      </div>
-                      <div className="flex gap-3">
-                        <Button
-                          variant="outline"
-                          onClick={handleBack}
-                        >
-                          <ArrowLeft className="h-4 w-4" />
-                          Back
-                        </Button>
-                        <Button
-                          onClick={handleSaveTools}
-                          className="min-w-[80px]"
-                        >
-                          <Save className="h-4 w-4" />
-                          Save Tools
-                        </Button>
-                      </div>
+            {currentStep === Step.ToolsSelection && (
+              <div className="flex-1 flex flex-col min-h-0">
+                {selectedProfile && (
+                  <ComposioToolsSelector
+                    profileId={selectedProfile.profile_id}
+                    agentId={agentId}
+                    toolkitName={selectedProfile.toolkit_name || app.name}
+                    toolkitSlug={selectedProfile.toolkit_slug || app.slug}
+                    selectedTools={selectedTools}
+                    onToolsChange={setSelectedTools}
+                    onSave={handleSaveTools}
+                    showSaveButton={false}
+                    className="flex-1 min-h-0"
+                  />
+                )}
+                <div className="px-6 py-4 border-t bg-muted/20 flex-shrink-0">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm text-muted-foreground">
+                      {selectedTools.length > 0 ? (
+                        `${selectedTools.length} tool${selectedTools.length === 1 ? '' : 's'} will be added to your agent`
+                      ) : (
+                        'No tools selected'
+                      )}
+                    </div>
+                    <div className="flex gap-3">
+                      <Button
+                        variant="outline"
+                        onClick={handleBack}
+                      >
+                        <ArrowLeft className="h-4 w-4" />
+                        Back
+                      </Button>
+                      <Button
+                        onClick={handleSaveTools}
+                        className="min-w-[80px]"
+                      >
+                        <Save className="h-4 w-4" />
+                        Save Tools
+                      </Button>
                     </div>
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                </div>
+              </div>
+            )}
           </>
         )}
       </DialogContent>

@@ -11,8 +11,8 @@ import { userContext } from '../shared/context';
 export const CompletionStep = () => {
   // Get the configured agents from global context
   const selectedAgentIds = userContext.selectedAgents || [];
-  
-  const completedAgents = allAgents.filter(agent => 
+
+  const completedAgents = allAgents.filter(agent =>
     selectedAgentIds.includes(agent.id)
   );
 
@@ -25,7 +25,7 @@ export const CompletionStep = () => {
             key={i}
             className="absolute"
             initial={{ opacity: 0, scale: 0 }}
-            animate={{ 
+            animate={{
               opacity: [0, 1, 0],
               scale: [0, 1, 0],
               rotate: [0, 180, 360]
@@ -49,7 +49,7 @@ export const CompletionStep = () => {
       <motion.div
         initial={{ opacity: 0, scale: 0.8, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
-        transition={{ 
+        transition={{
           duration: 0.8,
           type: "spring",
           stiffness: 100,
@@ -61,11 +61,11 @@ export const CompletionStep = () => {
         <motion.div
           initial={{ scale: 0, opacity: 0, rotate: -180 }}
           animate={{ scale: 1, opacity: 1, rotate: 0 }}
-          transition={{ 
+          transition={{
             type: "spring",
             stiffness: 200,
             damping: 15,
-            delay: 0.3 
+            delay: 0.3
           }}
           className="relative mx-auto mb-6"
         >
@@ -86,14 +86,14 @@ export const CompletionStep = () => {
           transition={{ delay: 0.5, duration: 0.6 }}
           className="space-y-4"
         >
-          
-          <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent leading-tight">
+
+          <h1 className="text-4xl md:text-5xl font-medium bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent leading-tight">
             Your AI Workforce
             <br />
-            is Ready to Dominate! 
+            is Ready to Dominate!
           </h1>
-          
-          <motion.p 
+
+          <motion.p
             className="text-lg text-muted-foreground max-w-xl mx-auto"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}

@@ -38,7 +38,7 @@ export const TeamInvitationStep = () => {
     updateUserContext({ invitedTeammates: validEmails });
     console.log('Sending invites to:', validEmails);
     setInvitesSent(true);
-    
+
     // Simulate sending invites
     setTimeout(() => {
       setInvitesSent(false);
@@ -48,7 +48,7 @@ export const TeamInvitationStep = () => {
   const skipInvitation = () => {
     setIsSkipping(true);
     updateUserContext({ invitedTeammates: [] });
-    
+
     // Auto-advance after showing skip message
     setTimeout(() => {
       setIsSkipping(false);
@@ -68,9 +68,9 @@ export const TeamInvitationStep = () => {
           transition={{ duration: 0.5 }}
         >
           <UserPlus className="h-12 w-12 text-primary mx-auto mb-4" />
-          <h2 className="text-2xl font-bold mb-3">Invite Your Team</h2>
+          <h2 className="text-2xl font-medium mb-3">Invite Your Team</h2>
           <p className="text-muted-foreground max-w-lg mx-auto">
-            Collaboration makes everything better. Invite your teammates to join your AI workforce 
+            Collaboration makes everything better. Invite your teammates to join your AI workforce
             and work together more efficiently.
           </p>
         </motion.div>
@@ -128,7 +128,7 @@ export const TeamInvitationStep = () => {
                   </p>
                 </CardContent>
               </Card>
-              
+
               <Card className="bg-primary/5 border-primary/20">
                 <CardContent className="p-4 text-center">
                   <Mail className="h-6 w-6 text-primary mx-auto mb-2" />
@@ -138,7 +138,7 @@ export const TeamInvitationStep = () => {
                   </p>
                 </CardContent>
               </Card>
-              
+
               <Card className="bg-primary/5 border-primary/20">
                 <CardContent className="p-4 text-center">
                   <Send className="h-6 w-6 text-primary mx-auto mb-2" />
@@ -153,7 +153,7 @@ export const TeamInvitationStep = () => {
             {/* Email inputs */}
             <div className="space-y-4">
               <Label className="text-sm font-medium">Team member email addresses</Label>
-              
+
               {inviteEmails.map((email, index) => (
                 <motion.div
                   key={index}
@@ -181,7 +181,7 @@ export const TeamInvitationStep = () => {
                   )}
                 </motion.div>
               ))}
-              
+
               <Button
                 variant="outline"
                 onClick={addEmailField}
@@ -203,7 +203,7 @@ export const TeamInvitationStep = () => {
                 <Send className="h-4 w-4" />
                 Send {validEmails.length} invitation{validEmails.length !== 1 ? 's' : ''}
               </Button>
-              
+
               <Button
                 variant="outline"
                 onClick={skipInvitation}

@@ -67,7 +67,7 @@ export function MaintenanceAlert({
               animate={{ y: 0, opacity: 1 }}
               transition={{ delay: 0.2 }}
             >
-              <AlertDialogTitle className="text-2xl font-bold text-center text-primary bg-clip-text">
+              <AlertDialogTitle className="text-2xl font-medium text-center text-primary bg-clip-text">
                 Maintenance Notice
               </AlertDialogTitle>
             </motion.div>

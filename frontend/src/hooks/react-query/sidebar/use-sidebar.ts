@@ -148,10 +148,19 @@ export const groupThreadsByDate = (
   const grouped: GroupedThreads = {};
   const now = new Date();
   
+  // Get start of today (midnight)
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  
   sortedThreads.forEach(thread => {
     const threadDate = new Date(thread.updatedAt);
-    const diffInMs = now.getTime() - threadDate.getTime();
-    const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+    
+    // Get start of thread date (midnight)
+    const startOfThreadDate = new Date(threadDate);
+    startOfThreadDate.setHours(0, 0, 0, 0);
+    
+    // Calculate difference in calendar days, not 24-hour periods
+    const diffInDays = Math.floor((startOfToday.getTime() - startOfThreadDate.getTime()) / (1000 * 60 * 60 * 24));
     
     let dateGroup: string;
     

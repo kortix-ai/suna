@@ -30,15 +30,15 @@ export default function SubscriptionRequiredPage() {
     try {
       const response = await backendApi.get('/billing/subscription');
       setBillingStatus(response.data);
-      const hasActiveSubscription = response.data.subscription && 
-                                   response.data.subscription.status === 'active' &&
-                                   !response.data.subscription.cancel_at_period_end;
-      
+      const hasActiveSubscription = response.data.subscription &&
+        response.data.subscription.status === 'active' &&
+        !response.data.subscription.cancel_at_period_end;
+
       const hasActiveTrial = response.data.trial_status === 'active';
-      const hasActiveTier = response.data.tier && 
-                           response.data.tier.name !== 'none' && 
-                           response.data.tier.name !== 'free';
-      
+      const hasActiveTier = response.data.tier &&
+        response.data.tier.name !== 'none' &&
+        response.data.tier.name !== 'free';
+
       if ((hasActiveSubscription && hasActiveTier) || (hasActiveTrial && hasActiveTier)) {
         router.push('/dashboard');
       }
@@ -73,7 +73,7 @@ export default function SubscriptionRequiredPage() {
   }
 
   if (maintenanceNotice?.enabled) {
-    return <MaintenanceAlert open={true} onOpenChange={() => {}} closeable={false} />;
+    return <MaintenanceAlert open={true} onOpenChange={() => { }} closeable={false} />;
   }
 
 
@@ -99,9 +99,9 @@ export default function SubscriptionRequiredPage() {
     );
   }
 
-  const isTrialExpired = billingStatus?.trial_status === 'expired' || 
-                         billingStatus?.trial_status === 'cancelled' ||
-                         billingStatus?.trial_status === 'used';
+  const isTrialExpired = billingStatus?.trial_status === 'expired' ||
+    billingStatus?.trial_status === 'cancelled' ||
+    billingStatus?.trial_status === 'used';
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 py-12 px-4">
@@ -109,8 +109,8 @@ export default function SubscriptionRequiredPage() {
         <div className="text-center space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex-1" />
-            <div className="text-2xl font-bold flex items-center justify-center gap-2">
-              <KortixLogo/>
+            <div className="text-2xl font-medium flex items-center justify-center gap-2">
+              <KortixLogo />
               <span>{isTrialExpired ? 'Your Trial Has Ended' : 'Subscription Required'}</span>
             </div>
             <div className="flex-1 flex justify-end">
@@ -126,12 +126,12 @@ export default function SubscriptionRequiredPage() {
             </div>
           </div>
           <p className="text-md text-muted-foreground max-w-2xl mx-auto">
-            {isTrialExpired 
+            {isTrialExpired
               ? 'Your 7-day free trial has ended. Choose a plan to continue using Suna AI.'
               : 'A subscription is required to use Suna. Choose the plan that works best for you.'}
           </p>
         </div>
-        <PricingSection 
+        <PricingSection
           returnUrl={`${typeof window !== 'undefined' ? window.location.origin : ''}/dashboard?subscription=activated`}
           showTitleAndTabs={false}
           onSubscriptionUpdate={handleSubscriptionUpdate}

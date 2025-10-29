@@ -17,10 +17,10 @@ interface ExpandableMarkdownEditorProps {
   disabled?: boolean;
 }
 
-export const ExpandableMarkdownEditor: React.FC<ExpandableMarkdownEditorProps> = ({ 
-  value, 
-  onSave, 
-  className = '', 
+export const ExpandableMarkdownEditor: React.FC<ExpandableMarkdownEditorProps> = ({
+  value,
+  onSave,
+  className = '',
   placeholder = 'Click to edit...',
   title = 'Edit Instructions',
   disabled = false
@@ -64,10 +64,10 @@ export const ExpandableMarkdownEditor: React.FC<ExpandableMarkdownEditorProps> =
   };
 
   const renderMarkdown = (content: string, isPreview = false) => (
-    <ReactMarkdown 
+    <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       components={{
-        h1: ({ children }) => <h1 className="text-2xl font-bold mb-4 text-foreground">{children}</h1>,
+        h1: ({ children }) => <h1 className="text-2xl font-medium mb-4 text-foreground">{children}</h1>,
         h2: ({ children }) => <h2 className="text-xl font-semibold mb-3 text-foreground">{children}</h2>,
         h3: ({ children }) => <h3 className="text-lg font-semibold mb-2 text-foreground">{children}</h3>,
         h4: ({ children }) => <h4 className="text-base font-semibold mb-2 text-foreground">{children}</h4>,
@@ -118,11 +118,11 @@ export const ExpandableMarkdownEditor: React.FC<ExpandableMarkdownEditorProps> =
   return (
     <>
       <div className={cn('relative', className)}>
-        <div 
+        <div
           className={cn(
             "group h-full relative pb-4 border rounded-2xl bg-muted/30 transition-colors overflow-hidden",
-            disabled 
-              ? "cursor-not-allowed opacity-60" 
+            disabled
+              ? "cursor-not-allowed opacity-60"
               : "hover:opacity-80 cursor-pointer"
           )}
           onClick={openDialog}
@@ -178,7 +178,7 @@ export const ExpandableMarkdownEditor: React.FC<ExpandableMarkdownEditorProps> =
               )}
             </DialogTitle>
           </DialogHeader>
-          
+
           <div className="flex-1 overflow-hidden min-h-0">
             {isEditing ? (
               <div className="h-full flex flex-col gap-3">

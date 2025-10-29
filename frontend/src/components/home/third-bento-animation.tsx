@@ -3,6 +3,7 @@
 import { motion, useInView, AnimatePresence } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { Icons } from '@/components/home/icons';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
 interface TaskConfig {
   title: string;
@@ -115,11 +116,7 @@ export function AITaskExecution({
           className="relative"
         >
           <div className="size-12 bg-black rounded-full flex items-center justify-center">
-            <img 
-              src="/kortix-symbol.svg" 
-              alt="Kortix Symbol" 
-              className="size-6 filter brightness-0 invert"
-            />
+            <KortixLogo size={24} />
           </div>
           {/* Pulsing ring */}
           <motion.div
@@ -152,9 +149,8 @@ export function AITaskExecution({
               delay: index * 0.2,
               ease: 'easeOut',
             }}
-            className={`flex items-center gap-3 p-3 rounded-lg transition-all duration-300 ${
-              index <= currentTaskIndex ? task.className : 'bg-muted/30 border border-border/30 text-muted-foreground/50'
-            }`}
+            className={`flex items-center gap-3 p-3 rounded-lg transition-all duration-300 ${index <= currentTaskIndex ? task.className : 'bg-muted/30 border border-border/30 text-muted-foreground/50'
+              }`}
           >
             {/* Status indicator */}
             <div className="flex-shrink-0">

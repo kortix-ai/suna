@@ -219,7 +219,7 @@ export const config: Config = {
 };
 
 export const isLocalMode = (): boolean => {
-  return config.IS_LOCAL;
+  return false;
 };
 
 export const isStagingMode = (): boolean => {

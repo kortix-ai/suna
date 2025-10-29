@@ -28,7 +28,7 @@ export const TagInput: React.FC<TagInputProps> = ({
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
-    
+
     // Check if user typed a comma or pressed enter
     if (value.includes(',')) {
       const newTags = value.split(',').map(tag => tag.trim()).filter(tag => tag.length > 0);
@@ -36,7 +36,7 @@ export const TagInput: React.FC<TagInputProps> = ({
       setInputValue('');
       return;
     }
-    
+
     setInputValue(value);
   };
 
@@ -54,12 +54,12 @@ export const TagInput: React.FC<TagInputProps> = ({
   };
 
   const addTags = (newTags: string[]) => {
-    const filteredTags = newTags.filter(tag => 
-      tag.length > 0 && 
+    const filteredTags = newTags.filter(tag =>
+      tag.length > 0 &&
       !tags.includes(tag) &&
       tag.length <= 50
     );
-    
+
     const updatedTags = [...tags, ...filteredTags].slice(0, maxTags);
     onTagsChange(updatedTags);
   };
@@ -79,7 +79,7 @@ export const TagInput: React.FC<TagInputProps> = ({
     <div className={cn("relative", className)}>
       <div
         className={cn(
-          "flex flex-wrap gap-1.5 p-3 min-h-[2.5rem] border rounded-md bg-background cursor-text",
+          "flex flex-wrap gap-1.5 p-3 min-h-[2.5rem] border rounded-2xl bg-background cursor-text",
           "focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2",
           disabled && "opacity-50 cursor-not-allowed bg-muted"
         )}
@@ -106,7 +106,7 @@ export const TagInput: React.FC<TagInputProps> = ({
             )}
           </Badge>
         ))}
-        
+
         {!disabled && tags.length < maxTags && (
           <Input
             ref={inputRef}
@@ -119,7 +119,7 @@ export const TagInput: React.FC<TagInputProps> = ({
           />
         )}
       </div>
-      
+
       {tags.length >= maxTags && (
         <p className="text-xs text-muted-foreground mt-1">
           Maximum {maxTags} tags allowed

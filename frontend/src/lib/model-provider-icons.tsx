@@ -3,9 +3,9 @@ import Image from 'next/image';
 import { Cpu } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export type ModelProvider = 
+export type ModelProvider =
   | 'openai'
-  | 'anthropic' 
+  | 'anthropic'
   | 'google'
   | 'xai'
   | 'moonshotai'
@@ -37,7 +37,7 @@ export function getModelProvider(modelId: string): ModelProvider {
   if (modelId.includes('openrouter')) {
     return 'openrouter';
   }
-  
+
   // Default fallback - try to extract provider from model ID format "provider/model"
   const parts = modelId.split('/');
   if (parts.length > 1) {
@@ -46,7 +46,7 @@ export function getModelProvider(modelId: string): ModelProvider {
       return provider as ModelProvider;
     }
   }
-  
+
   return 'openai'; // Default fallback
 }
 
@@ -60,14 +60,14 @@ interface ModelProviderIconProps {
   variant?: 'default' | 'compact';
 }
 
-export function ModelProviderIcon({ 
-  modelId, 
+export function ModelProviderIcon({
+  modelId,
   size = 24, // Default to 24px for better visibility
   className = '',
   variant = 'default'
 }: ModelProviderIconProps) {
   const provider = getModelProvider(modelId);
-  
+
   const iconMap: Record<ModelProvider, string> = {
     anthropic: '/images/models/Anthropic.svg',
     openai: '/images/models/OAI.svg',
@@ -87,9 +87,9 @@ export function ModelProviderIcon({
 
   if (!iconSrc) {
     return (
-      <div 
+      <div
         className={cn(
-          "flex items-center justify-center bg-muted dark:bg-zinc-800 border dark:border-zinc-700 flex-shrink-0",
+          "flex items-center justify-center bg-card border flex-shrink-0",
           className
         )}
         style={{ width: size, height: size, ...borderRadiusStyle }}
@@ -100,9 +100,9 @@ export function ModelProviderIcon({
   }
 
   return (
-    <div 
+    <div
       className={cn(
-        "flex items-center justify-center bg-background dark:bg-zinc-800 border dark:border-zinc-700 flex-shrink-0",
+        "flex items-center justify-center bg-card border flex-shrink-0",
         className
       )}
       style={{ width: size, height: size, ...borderRadiusStyle }}
@@ -124,7 +124,7 @@ export function ModelProviderIcon({
  */
 export function getModelProviderName(modelId: string): string {
   const provider = getModelProvider(modelId);
-  
+
   const nameMap: Record<ModelProvider, string> = {
     anthropic: 'Anthropic',
     openai: 'OpenAI',

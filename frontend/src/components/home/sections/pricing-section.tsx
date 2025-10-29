@@ -6,19 +6,19 @@ import { siteConfig } from '@/lib/home';
 import { cn } from '@/lib/utils';
 import { motion } from 'motion/react';
 import React, { useState, useEffect, useCallback } from 'react';
-import { 
-  CheckIcon, 
-  Clock, 
-  Bot, 
-  FileText, 
-  Settings, 
-  Grid3X3, 
-  Image, 
-  Video, 
-  Presentation, 
-  Diamond, 
+import {
+  CheckIcon,
+  Clock,
+  Bot,
+  FileText,
+  Settings,
+  Grid3X3,
+  Image,
+  Video,
+  Presentation,
+  Diamond,
   Heart,
-  Zap
+  Zap,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -31,6 +31,8 @@ import { isLocalMode, isYearlyCommitmentDowngrade, isPlanChangeAllowed, getPlanI
 import { useSubscription, useSubscriptionCommitment } from '@/hooks/react-query';
 import { useAuth } from '@/components/AuthProvider';
 import posthog from 'posthog-js';
+import { Badge } from '@/components/ui/badge';
+import { AnimatedBg } from '@/components/home/ui/AnimatedBg';
 
 // Constants
 export const SUBSCRIPTION_PLANS = {
@@ -70,10 +72,21 @@ interface PricingTierProps {
   billingPeriod?: 'monthly' | 'yearly' | 'yearly_commitment';
 }
 
+// Helper function to get plan icon
+function getPlanIcon(planName: string, isLocal: boolean = false) {
+  if (isLocal) return '/plan-icons/ultra.svg';
+
+  const plan = planName?.toLowerCase();
+  if (plan?.includes('ultra')) return '/plan-icons/ultra.svg';
+  if (plan?.includes('pro')) return '/plan-icons/pro.svg';
+  if (plan?.includes('plus')) return '/plan-icons/plus.svg';
+  return '/plan-icons/plus.svg'; // default
+}
+
 // Feature icon mapping
 const getFeatureIcon = (feature: string) => {
   const featureLower = feature.toLowerCase();
-  
+
   if (featureLower.includes('token credits') || featureLower.includes('ai token')) {
     return <Clock className="size-4" />;
   }
@@ -101,7 +114,7 @@ const getFeatureIcon = (feature: string) => {
   if (featureLower.includes('dedicated account manager')) {
     return <Zap className="size-4" />;
   }
-  
+
   // Default icon
   return <CheckIcon className="size-4" />;
 };
@@ -112,7 +125,7 @@ function PriceDisplay({ price, isCompact }: PriceDisplayProps) {
   return (
     <motion.span
       key={price}
-      className={isCompact ? 'text-xl font-semibold' : 'text-4xl font-semibold'}
+      className={isCompact ? 'text-xl font-medium' : 'text-[48px] font-medium leading-none'}
       initial={{
         opacity: 0,
         x: 10,
@@ -134,33 +147,24 @@ function BillingPeriodToggle({
   setBillingPeriod: (period: 'monthly' | 'yearly' | 'yearly_commitment') => void;
 }) {
   return (
-    <div className="flex items-center justify-center gap-3">
-      <div className="relative bg-muted rounded-full p-1">
-        <div className="flex">
-          <div 
-            className={cn("px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 cursor-pointer",
-              billingPeriod === 'monthly'
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            )}
-            onClick={() => setBillingPeriod('monthly')}
-          >
-            Monthly
-          </div>
-          <div 
-            className={cn("px-3 py-1 rounded-full text-xs font-medium transition-all duration-200 flex items-center gap-1 cursor-pointer",
-              billingPeriod === 'yearly_commitment'
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            )}
-            onClick={() => setBillingPeriod('yearly_commitment')}
-          >
-            Yearly
-            <span className="bg-green-600 text-green-50 dark:bg-green-500 dark:text-green-50 text-[10px] px-1.5 py-0.5 rounded-full font-semibold whitespace-nowrap">
-              15% off
-            </span>
-          </div>
-        </div>
+    <div className="flex items-center justify-center gap-3 w-full">
+      <div className="flex gap-2 justify-end w-full">
+        <Button
+          variant={billingPeriod === 'monthly' ? 'default' : 'outline'}
+          onClick={() => setBillingPeriod('monthly')}
+        >
+          Monthly
+        </Button>
+        <Button
+          variant={billingPeriod === 'yearly_commitment' ? 'default' : 'outline'}
+          onClick={() => setBillingPeriod('yearly_commitment')}
+          className="flex items-center gap-1.5"
+        >
+          Yearly
+          <span className="text-[10px] font-semibold">
+            Save 15%
+          </span>
+        </Button>
       </div>
     </div>
   );
@@ -180,7 +184,7 @@ function PricingTier({
   insideDialog = false,
   billingPeriod = 'monthly' as 'monthly' | 'yearly' | 'yearly_commitment',
 }: PricingTierProps) {
-  
+
   // Determine the price to display based on billing period
   const getDisplayPrice = () => {
     if (billingPeriod === 'yearly_commitment' && tier.monthlyCommitmentStripePriceId) {
@@ -222,9 +226,9 @@ function PricingTier({
 
     try {
       onPlanSelect?.(planStripePriceId);
-      const commitmentType = billingPeriod === 'yearly_commitment' ? 'yearly_commitment' : 
-                          billingPeriod === 'yearly' ? 'yearly' : 
-                          'monthly';
+      const commitmentType = billingPeriod === 'yearly_commitment' ? 'yearly_commitment' :
+        billingPeriod === 'yearly' ? 'yearly' :
+          'monthly';
 
       const response: CreateCheckoutSessionResponse =
         await createCheckoutSession({
@@ -309,10 +313,10 @@ function PricingTier({
     currentSubscription?.price_id === priceId ||
     (userPlanName === 'trial' && tier.price === '$20' && billingPeriod === 'monthly') ||
     (userPlanName === 'tier_2_20' && tier.price === '$20' && billingPeriod === 'monthly') ||
-    (currentSubscription?.subscription && 
-     userPlanName === 'tier_2_20' && 
-     tier.price === '$20' && 
-     currentSubscription?.subscription?.status === 'active')
+    (currentSubscription?.subscription &&
+      userPlanName === 'tier_2_20' &&
+      tier.price === '$20' &&
+      currentSubscription?.subscription?.status === 'active')
   );
 
   const isScheduled = isAuthenticated && currentSubscription?.has_schedule;
@@ -326,8 +330,8 @@ function PricingTier({
   let ringClass = '';
   let statusBadge = null;
   let buttonClassName = '';
-  
-  const planChangeValidation = (isAuthenticated && currentSubscription?.price_id) 
+
+  const planChangeValidation = (isAuthenticated && currentSubscription?.price_id)
     ? isPlanChangeAllowed(currentSubscription.price_id, priceId)
     : { allowed: true };
 
@@ -398,12 +402,12 @@ function PricingTier({
       const targetIsYearly = priceId === tier.yearlyStripePriceId;
       const targetIsYearlyCommitment = priceId === tier.monthlyCommitmentStripePriceId;
       const isSameTierUpgradeToLongerTerm = currentTier && currentTier.name === tier.name &&
-        ((currentIsMonthly && (targetIsYearly || targetIsYearlyCommitment)) || 
-         (currentIsYearlyCommitment && targetIsYearly));
-      
+        ((currentIsMonthly && (targetIsYearly || targetIsYearlyCommitment)) ||
+          (currentIsYearlyCommitment && targetIsYearly));
+
       const isSameTierDowngradeToShorterTerm = currentTier && currentTier.name === tier.name &&
-        ((currentIsYearly && targetIsMonthly) || 
-         (currentIsYearlyCommitment && targetIsMonthly));
+        ((currentIsYearly && targetIsMonthly) ||
+          (currentIsYearlyCommitment && targetIsMonthly));
 
       // Use the plan change validation already computed above
 
@@ -465,38 +469,88 @@ function PricingTier({
     buttonVariant = tier.buttonColor as ButtonVariant;
     buttonClassName =
       tier.buttonColor === 'default'
-        ? 'bg-primary hover:bg-primary/90 text-white'
-        : 'bg-secondary hover:bg-secondary/90 text-white';
+        ? 'bg-primary hover:bg-primary/90 text-primary-foreground'
+        : 'bg-primary hover:bg-primary/90 text-primary-foreground';
   }
+
+  const isUltraPlan = tier.name === 'Ultra';
 
   return (
     <div
       className={cn(
-        'rounded-xl flex flex-col relative',
+        'rounded-[18px] flex flex-col relative overflow-hidden',
         insideDialog
           ? 'min-h-[300px]'
           : 'h-full min-h-[300px]',
         tier.isPopular && !insideDialog
-          ? 'md:shadow-[0px_61px_24px_-10px_rgba(0,0,0,0.01),0px_34px_20px_-8px_rgba(0,0,0,0.05),0px_15px_15px_-6px_rgba(0,0,0,0.09),0px_4px_8px_-2px_rgba(0,0,0,0.10),0px_0px_0px_1px_rgba(0,0,0,0.08)] bg-accent'
-          : 'bg-[#F3F4F6] dark:bg-[#F9FAFB]/[0.02] border border-border',
+          ? 'bg-card border border-border'
+          : 'bg-card border border-border',
         !insideDialog && ringClass,
       )}
     >
+      {/* AnimatedBg for Ultra plan */}
+      {isUltraPlan && (
+        <AnimatedBg
+          variant="header"
+          blurMultiplier={0.8}
+          sizeMultiplier={0.7}
+          customArcs={{
+            left: [
+              {
+                pos: { left: -120, top: -30 },
+                size: 350,
+                tone: 'light',
+                opacity: 0.15,
+                delay: 0.02,
+                x: [0, 12, -6, 0],
+                y: [0, 8, -4, 0],
+                scale: [0.85, 1.05, 0.95, 0.85],
+                blur: ['10px', '15px', '12px', '10px'],
+              },
+            ],
+            right: [
+              {
+                pos: { right: -110, top: 200 },
+                size: 380,
+                tone: 'dark',
+                opacity: 0.2,
+                delay: 1.0,
+                x: [0, -15, 8, 0],
+                y: [0, 10, -6, 0],
+                scale: [0.9, 1.1, 0.98, 0.9],
+                blur: ['8px', '4px', '6px', '8px'],
+              },
+            ],
+          }}
+        />
+      )}
+
       <div className={cn(
-        "flex flex-col gap-3",
+        "flex flex-col gap-3 relative z-10",
         insideDialog ? "p-3" : "p-4"
       )}>
-        <p className="text-sm flex items-center gap-2">
-          {tier.name}
-          {tier.isPopular && (
-            <span className="bg-gradient-to-b from-secondary/50 from-[1.92%] to-secondary to-[100%] text-white inline-flex w-fit items-center justify-center px-1.5 py-0.5 rounded-full text-[10px] font-medium shadow-[0px_6px_6px_-3px_rgba(0,0,0,0.08),0px_3px_3px_-1.5px_rgba(0,0,0,0.08),0px_1px_1px_-0.5px_rgba(0,0,0,0.08),0px_0px_0px_1px_rgba(255,255,255,0.12)_inset,0px_1px_0px_0px_rgba(255,255,255,0.12)_inset]">
-              Popular
-            </span>
-          )}
-          {/* Show upgrade badge for yearly commitment plans when user is on monthly */}
-          {isAuthenticated && statusBadge}
-        </p>
-        <div className="flex items-baseline mt-2">
+        <div className="flex items-center gap-2">
+          <div className="bg-black dark:hidden rounded-full px-2 py-1 flex items-center justify-center w-fit">
+            <img
+              src={getPlanIcon(tier.name)}
+              alt={tier.name}
+              className="h-[24px] w-auto"
+            />
+          </div>
+          <img
+            src={getPlanIcon(tier.name)}
+            alt={tier.name}
+            className="h-[24px] w-auto hidden dark:block"
+          />
+          <div className="flex items-center gap-2">
+            {tier.isPopular && (
+              <Badge variant='outline'>Popular</Badge>
+            )}
+            {/* Show upgrade badge for yearly commitment plans when user is on monthly */}
+            {isAuthenticated && statusBadge}
+          </div>
+        </div>
+        <div className="flex items-baseline mt-2 min-h-[80px]">
           {billingPeriod === 'yearly_commitment' && tier.monthlyCommitmentStripePriceId ? (
             <div className="flex flex-col">
               <div className="flex items-baseline gap-2">
@@ -526,34 +580,20 @@ function PricingTier({
               </div>
             </div>
           ) : (
-            <div className="flex items-baseline">
-              <PriceDisplay price={displayPrice} isCompact={insideDialog} />
-              <span className="ml-2">{displayPrice !== '$0' ? '/month' : ''}</span>
+            <div className="flex flex-col">
+              <div className="flex items-baseline">
+                <PriceDisplay price={displayPrice} isCompact={insideDialog} />
+                <span className="ml-2">{displayPrice !== '$0' ? '/month' : ''}</span>
+              </div>
+              <div className="h-[20px]" />
             </div>
           )}
         </div>
         <p className="hidden text-sm mt-2">{tier.description}</p>
-
-        {billingPeriod === 'yearly_commitment' && tier.monthlyCommitmentStripePriceId ? (
-          <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-green-50 border-green-200 text-green-700 w-fit">
-            Save ${Math.round((parseFloat(tier.price.slice(1)) - parseFloat(displayPrice.slice(1))) * 12)} per year
-          </div>
-        ) : billingPeriod === 'yearly' && tier.yearlyPrice && tier.discountPercentage ? (
-          <div className="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-green-50 border-green-200 text-green-700 w-fit">
-            Save ${Math.round(parseFloat(tier.originalYearlyPrice?.slice(1) || '0') - parseFloat(tier.yearlyPrice.slice(1)))} per year
-          </div>
-        ) : (
-          <div className="hidden items-center rounded-full border px-2.5 py-0.5 text-xs font-semibold bg-primary/10 border-primary/20 text-primary w-fit">
-            {billingPeriod === 'yearly' && tier.yearlyPrice && displayPrice !== '$0'
-              ? `$${Math.round(parseFloat(tier.yearlyPrice.slice(1)) / 12)}/month (billed yearly)`
-              : `${displayPrice}/month`
-            }
-          </div>
-        )}
       </div>
 
       <div className={cn(
-        "flex-grow",
+        "flex-grow relative z-10",
         insideDialog ? "px-3 pb-2" : "px-4 pb-3"
       )}>
         {tier.features && tier.features.length > 0 && (
@@ -571,7 +611,7 @@ function PricingTier({
       </div>
 
       <div className={cn(
-        "mt-auto",
+        "mt-auto relative z-10",
         insideDialog ? "px-3 pt-1 pb-3" : "px-4 pt-2 pb-4"
       )}>
         <Button
@@ -580,7 +620,7 @@ function PricingTier({
           variant={buttonVariant || 'default'}
           className={cn(
             'w-full font-medium transition-all duration-200',
-            isCompact || insideDialog ? 'h-8 text-xs' : 'h-10 rounded-full text-sm',
+            isCompact || insideDialog ? 'h-8 text-xs' : 'h-10 text-sm',
             buttonClassName,
             isPlanLoading && 'animate-pulse',
           )}
@@ -627,9 +667,9 @@ export function PricingSection({
     }
 
     const currentTier = siteConfig.cloudPricingItems.find(
-      (p) => p.stripePriceId === currentSubscription.price_id || 
-             p.yearlyStripePriceId === currentSubscription.price_id ||
-             p.monthlyCommitmentStripePriceId === currentSubscription.price_id,
+      (p) => p.stripePriceId === currentSubscription.price_id ||
+        p.yearlyStripePriceId === currentSubscription.price_id ||
+        p.monthlyCommitmentStripePriceId === currentSubscription.price_id,
     );
 
     if (currentTier) {
@@ -734,8 +774,8 @@ export function PricingSection({
       {showInfo && (
         <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg max-w-2xl mx-auto">
           <p className="text-sm text-blue-800 dark:text-blue-200 text-center">
-            <strong>What are AI tokens?</strong> Tokens are units of text that AI models process. 
-            Your plan includes credits to spend on various AI models - the more complex the task, 
+            <strong>What are AI tokens?</strong> Tokens are units of text that AI models process.
+            Your plan includes credits to spend on various AI models - the more complex the task,
             the more tokens used.
           </p>
         </div>

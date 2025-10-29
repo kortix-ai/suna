@@ -10,9 +10,12 @@ interface NavItem {
   href: string;
 }
 
-const navs: NavItem[] = siteConfig.nav.links;
+interface NavMenuProps {
+  links?: typeof siteConfig.nav.links;
+}
 
-export function NavMenu() {
+export function NavMenu({ links }: NavMenuProps = {}) {
+  const navs: NavItem[] = links || siteConfig.nav.links;
   const ref = useRef<HTMLUListElement>(null);
   const [left, setLeft] = useState(0);
   const [width, setWidth] = useState(0);
@@ -28,7 +31,7 @@ export function NavMenu() {
     if (pathname === '/enterprise') {
       targetHref = '/enterprise';
     }
-    
+
     const targetItem = ref.current?.querySelector(
       `[href="${targetHref}"]`,
     )?.parentElement;
@@ -108,13 +111,13 @@ export function NavMenu() {
     e.preventDefault();
 
     const targetId = item.href.substring(1);
-    
+
     // If we're not on the homepage, redirect to homepage with the section
     if (pathname !== '/') {
       router.push(`/${item.href}`);
       return;
     }
-    
+
     const element = document.getElementById(targetId);
 
     if (element) {
@@ -156,11 +159,10 @@ export function NavMenu() {
         {navs.map((item) => (
           <li
             key={item.name}
-            className={`z-10 cursor-pointer h-full flex items-center justify-center px-4 py-2 text-sm font-medium transition-colors duration-200 ${
-              (item.href.startsWith('#') && pathname === '/' && activeSection === item.href.substring(1)) || (item.href === pathname)
+            className={`z-10 cursor-pointer h-full flex items-center justify-center px-4 py-2 text-sm font-medium transition-colors duration-200 ${(item.href.startsWith('#') && pathname === '/' && activeSection === item.href.substring(1)) || (item.href === pathname)
                 ? 'text-primary'
                 : 'text-primary/60 hover:text-primary'
-            } tracking-tight`}
+              } tracking-tight`}
           >
             <a href={item.href} onClick={(e) => handleClick(e, item)}>
               {item.name}

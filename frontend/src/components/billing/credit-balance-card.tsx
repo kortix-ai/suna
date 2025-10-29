@@ -4,9 +4,9 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { 
-  ShoppingCart, 
-  Clock, 
+import {
+  ShoppingCart,
+  Clock,
   Infinity,
   Coins,
   AlertCircle
@@ -33,16 +33,16 @@ interface CreditBalanceCardProps {
   tierCredits?: number;
 }
 
-export function CreditBalanceCard({ 
-  showPurchaseButton = true, 
+export function CreditBalanceCard({
+  showPurchaseButton = true,
   compact = false,
-  tierCredits 
+  tierCredits
 }: CreditBalanceCardProps) {
   const { user } = useAuth();
   const { data: balance, isLoading, error } = useCreditBalance(!!user);
   const [showPurchaseModal, setShowPurchaseModal] = useState(false);
   const [purchaseAmount, setPurchaseAmount] = useState('10');
-  
+
   const purchaseMutation = usePurchaseCredits();
 
   if (error) {
@@ -84,8 +84,8 @@ export function CreditBalanceCard({
   // For monthly reset: available percentage = (balance / tier_limit) * 100
   // Use tierCredits if provided, otherwise assume balance is full (100%)
   const maxCredits = tierCredits || balance.balance;
-  const availablePercentage = maxCredits > 0 
-    ? (balance.balance / maxCredits) * 100 
+  const availablePercentage = maxCredits > 0
+    ? (balance.balance / maxCredits) * 100
     : 100; // If no max, show as full
 
   const handlePurchase = async () => {
@@ -116,10 +116,10 @@ export function CreditBalanceCard({
   const formatNextGrant = (dateString?: string) => {
     if (!dateString) return null;
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
-      year: 'numeric' 
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
     });
   };
 
@@ -130,7 +130,7 @@ export function CreditBalanceCard({
           <Coins className="h-5 w-5 text-primary" />
           <div>
             <p className="text-sm text-muted-foreground">Credit Balance</p>
-            <p className="text-2xl font-bold">${balance.balance.toFixed(2)}</p>
+            <p className="text-2xl font-medium">${balance.balance.toFixed(2)}</p>
             {hasBreakdown && showPurchaseButton && balance.can_purchase_credits && (expiringCredits > 0 || nonExpiringCredits > 0) && (
               <div className="flex gap-3 mt-1">
                 <span className="text-xs text-muted-foreground">
@@ -166,15 +166,15 @@ export function CreditBalanceCard({
           <div>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-baseline gap-2">
-                <span className="text-3xl font-bold">${balance.balance.toFixed(2)}</span>
+                <span className="text-3xl font-medium">${balance.balance.toFixed(2)}</span>
                 <span className="text-sm text-muted-foreground">total available</span>
               </div>
             </div>
           </div>
           {showPurchaseButton && balance.can_purchase_credits && (
             <div className="pt-2 pb-4">
-              <Button 
-                onClick={() => setShowPurchaseModal(true)} 
+              <Button
+                onClick={() => setShowPurchaseModal(true)}
                 className="w-full"
                 variant="outline"
               >
@@ -200,7 +200,7 @@ export function CreditBalanceCard({
               </Alert>
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="amount">Credit Amount (USD)</Label>
@@ -221,42 +221,42 @@ export function CreditBalanceCard({
             <div className="grid grid-cols-3 gap-2">
               <Button
                 variant="outline"
-                className="flex-1 h-24 text-2xl font-bold"
+                className="flex-1 h-24 text-2xl font-medium"
                 onClick={() => setPurchaseAmount('10')}
               >
                 $10
               </Button>
               <Button
                 variant="outline"
-                className="flex-1 h-24 text-2xl font-bold"
+                className="flex-1 h-24 text-2xl font-medium"
                 onClick={() => setPurchaseAmount('25')}
               >
                 $25
               </Button>
               <Button
                 variant="outline"
-                className="flex-1 h-24 text-2xl font-bold"
+                className="flex-1 h-24 text-2xl font-medium"
                 onClick={() => setPurchaseAmount('50')}
               >
                 $50
               </Button>
               <Button
                 variant="outline"
-                className="flex-1 h-24 text-2xl font-bold"
+                className="flex-1 h-24 text-2xl font-medium"
                 onClick={() => setPurchaseAmount('100')}
               >
                 $100
               </Button>
               <Button
                 variant="outline"
-                className="flex-1 h-24 text-2xl font-bold"
+                className="flex-1 h-24 text-2xl font-medium"
                 onClick={() => setPurchaseAmount('200')}
               >
                 $200
               </Button>
               <Button
                 variant="outline"
-                className="flex-1 h-24 text-2xl font-bold"
+                className="flex-1 h-24 text-2xl font-medium"
                 onClick={() => setPurchaseAmount('500')}
               >
                 $500

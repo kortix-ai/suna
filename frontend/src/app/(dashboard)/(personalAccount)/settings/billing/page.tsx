@@ -27,7 +27,7 @@ export default function PersonalAccountBillingPage() {
   const { data: accounts, isLoading, error } = useAccounts();
   const [showBillingModal, setShowBillingModal] = useState(false);
   const triggerTestRenewal = useTriggerTestRenewal();
-  
+
   const { data: transactionData } = useTransactions(1, 0);
 
   const {
@@ -36,7 +36,7 @@ export default function PersonalAccountBillingPage() {
     error: subscriptionError,
     refetch: refetchSubscription,
   } = useSharedSubscription();
-  
+
   const {
     data: commitmentInfo,
     isLoading: commitmentLoading,
@@ -92,8 +92,8 @@ export default function PersonalAccountBillingPage() {
 
   return (
     <div className="space-y-6">
-      <BillingModal 
-        open={showBillingModal} 
+      <BillingModal
+        open={showBillingModal}
         onOpenChange={(open) => {
           setShowBillingModal(open);
           if (!open) {
@@ -123,7 +123,7 @@ export default function PersonalAccountBillingPage() {
           }}
         />
       )}
-      
+
       <div className="rounded-xl border shadow-sm bg-card p-6">
         <h2 className="text-xl font-semibold mb-4">Billing Status</h2>
 
@@ -150,9 +150,9 @@ export default function PersonalAccountBillingPage() {
         ) : (
           <>
             <div className="mb-6">
-              <CreditBalanceCard 
+              <CreditBalanceCard
                 showPurchaseButton={
-                  (subscriptionData?.credits?.can_purchase_credits || false) && 
+                  (subscriptionData?.credits?.can_purchase_credits || false) &&
                   subscriptionData?.tier?.name === 'tier_25_200'
                 }
                 tierCredits={subscriptionData?.credits?.tier_credits || subscriptionData?.tier?.credits}
@@ -167,7 +167,7 @@ export default function PersonalAccountBillingPage() {
                         <p className="text-xs text-muted-foreground">Resets monthly with subscription</p>
                       </div>
                     </div>
-                    <span className="text-lg font-bold text-orange-600">
+                    <span className="text-lg font-medium text-orange-600">
                       ${transactionData.current_balance.expiring.toFixed(2)}
                     </span>
                   </div>
@@ -178,7 +178,7 @@ export default function PersonalAccountBillingPage() {
                         <p className="text-sm font-medium">Non-Expiring Credits</p>
                       </div>
                     </div>
-                    <span className="text-lg font-bold text-blue-600">
+                    <span className="text-lg font-medium text-blue-600">
                       ${transactionData.current_balance.non_expiring.toFixed(2)}
                     </span>
                   </div>
@@ -203,23 +203,23 @@ export default function PersonalAccountBillingPage() {
                   Manage Subscription
                 </Button>
               </div>
-              {cancellationStatus?.has_subscription && 
-               !cancellationStatus?.is_cancelled && 
-               subscriptionData?.subscription?.id && 
-               subscriptionData?.subscription?.status !== 'trialing' && (
-                <CancelSubscriptionButton
-                  subscriptionId={subscriptionData.subscription.id}
-                  hasCommitment={commitmentInfo?.has_commitment}
-                  commitmentEndDate={commitmentInfo?.commitment_end_date}
-                  monthsRemaining={commitmentInfo?.months_remaining}
-                  onCancel={() => {
-                    refetchSubscription();
-                    refetchCancellation();
-                  }}
-                  variant="destructive"
-                  size="default"
-                />
-              )}
+              {cancellationStatus?.has_subscription &&
+                !cancellationStatus?.is_cancelled &&
+                subscriptionData?.subscription?.id &&
+                subscriptionData?.subscription?.status !== 'trialing' && (
+                  <CancelSubscriptionButton
+                    subscriptionId={subscriptionData.subscription.id}
+                    hasCommitment={commitmentInfo?.has_commitment}
+                    commitmentEndDate={commitmentInfo?.commitment_end_date}
+                    monthsRemaining={commitmentInfo?.months_remaining}
+                    onCancel={() => {
+                      refetchSubscription();
+                      refetchCancellation();
+                    }}
+                    variant="destructive"
+                    size="default"
+                  />
+                )}
             </div>
           </>
         )}

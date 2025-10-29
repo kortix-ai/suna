@@ -94,7 +94,7 @@ export const DocsHeader = React.forwardRef<HTMLDivElement, DocsHeaderProps>(
               </Badge>
             )}
             <h1 className={cn(
-              "font-bold tracking-tight",
+              "font-medium tracking-tight",
               titleSizes[size]
             )}>
               {title}

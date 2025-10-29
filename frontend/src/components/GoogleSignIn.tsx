@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { toast } from 'sonner';
 import { Icons } from './home/icons';
 import { Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface GoogleSignInProps {
   returnUrl?: string;
@@ -20,9 +21,8 @@ export default function GoogleSignIn({ returnUrl }: GoogleSignInProps) {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback${
-            returnUrl ? `?returnUrl=${encodeURIComponent(returnUrl)}` : ''
-          }`,
+          redirectTo: `${window.location.origin}/auth/callback${returnUrl ? `?returnUrl=${encodeURIComponent(returnUrl)}` : ''
+            }`,
         },
       });
 
@@ -37,20 +37,22 @@ export default function GoogleSignIn({ returnUrl }: GoogleSignInProps) {
   };
 
   return (
-    <button
+    <Button
       onClick={handleGoogleSignIn}
       disabled={isLoading}
-      className="w-full h-12 flex items-center justify-center text-sm font-medium tracking-wide rounded-full bg-background text-foreground border border-border hover:bg-accent/30 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed font-sans"
+      variant="outline"
+      size="lg"
+      className="w-full h-12"
       type="button"
     >
       {isLoading ? (
-        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+        <Loader2 className="w-4 h-4 animate-spin" />
       ) : (
-        <Icons.google className="w-4 h-4 mr-2" />
+        <Icons.google className="w-4 h-4" />
       )}
-      <span className="font-medium">
+      <span>
         {isLoading ? 'Signing in...' : 'Continue with Google'}
       </span>
-    </button>
+    </Button>
   );
 }

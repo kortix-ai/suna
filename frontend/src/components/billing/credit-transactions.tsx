@@ -166,7 +166,7 @@ export default function CreditTransactions({ accountId }: Props) {
           <CardContent>
             <div className="grid gap-4 md:grid-cols-3">
               <div>
-                <div className="text-2xl font-bold">
+                <div className="text-2xl font-medium">
                   {formatBalance(currentBalance.total)}
                 </div>
                 <p className="text-xs text-muted-foreground">Total Balance</p>

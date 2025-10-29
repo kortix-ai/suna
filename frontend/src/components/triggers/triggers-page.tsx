@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,9 +27,11 @@ import {
   ChevronDown,
   PlugZap,
   Webhook,
-  Repeat
+  Repeat,
+  Search
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { TriggerCreationDialog } from './trigger-creation-dialog';
 import { SimplifiedTriggerDetailPanel } from './simplified-trigger-detail-panel';
 import { TriggersPageHeader } from './triggers-page-header';
@@ -103,39 +106,44 @@ const TriggerListItem = ({
   const isScheduled = getTriggerCategory(trigger.trigger_type) === 'scheduled';
 
   return (
-    <div
-      onClick={onClick}
+    <SpotlightCard
       className={cn(
-        "rounded-xl border group flex items-center justify-between px-4 py-3 cursor-pointer transition-all",
-        isSelected ? "bg-muted border-foreground/20" : "dark:bg-card hover:bg-muted/50"
+        "transition-colors cursor-pointer",
+        isSelected ? "bg-muted" : "bg-card"
       )}
     >
-      <div className="flex items-center gap-3 flex-1 min-w-0">
-        <Icon className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-medium text-sm truncate">{trigger.name}</span>
-            <Badge
-              variant={trigger.is_active ? "highlight" : "secondary"}
-              className="text-xs"
-            >
-              {trigger.is_active ? "Active" : "Inactive"}
-            </Badge>
+      <div
+        onClick={onClick}
+        className="flex items-center justify-between p-5"
+      >
+        <div className="flex items-center gap-4 flex-1 min-w-0">
+          <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-card border border-border/50 flex-shrink-0">
+            <Icon className="h-5 w-5 text-foreground" />
           </div>
-          {trigger.description && (
-            <p className="text-xs text-muted-foreground truncate mt-0.5">
-              {trigger.description}
-            </p>
-          )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 mb-0.5">
+              <h3 className="font-medium text-foreground truncate">{trigger.name}</h3>
+              <Badge
+                variant={trigger.is_active ? "highlight" : "secondary"}
+                className="text-xs"
+              >
+                {trigger.is_active ? "Active" : "Inactive"}
+              </Badge>
+            </div>
+            {trigger.description && (
+              <p className="text-sm text-muted-foreground truncate">
+                {trigger.description}
+              </p>
+            )}
+          </div>
         </div>
-      </div>
-      <div className="flex items-center gap-4 text-xs text-muted-foreground">
         {isScheduled && trigger.config?.cron_expression && (
-          <span className="hidden sm:block">{formatCronExpression(trigger.config.cron_expression)}</span>
+          <div className="ml-4 text-xs text-muted-foreground hidden sm:block">
+            {formatCronExpression(trigger.config.cron_expression)}
+          </div>
         )}
-        <Repeat className="h-3 w-3" />
       </div>
-    </div>
+    </SpotlightCard>
   );
 };
 
@@ -152,7 +160,7 @@ const EmptyState = () => (
 );
 
 const LoadingSkeleton = () => (
-  <div className="space-y-4 px-4">
+  <div className="space-y-4">
     {[1, 2, 3, 4, 5].map((i) => (
       <div key={i} className="rounded-xl border dark:bg-card px-4 py-3">
         <div className="flex items-center gap-3">
@@ -173,6 +181,8 @@ export function TriggersPage() {
   const [selectedTrigger, setSelectedTrigger] = useState<TriggerWithAgent | null>(null);
   const [triggerDialogType, setTriggerDialogType] = useState<'schedule' | 'event' | null>(null);
   const [pendingTriggerId, setPendingTriggerId] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const router = useRouter();
 
   const sortedTriggers = useMemo(() => {
     return [...triggers].sort((a, b) => {
@@ -182,6 +192,22 @@ export function TriggersPage() {
       return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
     });
   }, [triggers]);
+
+  // Handle trigger_id from URL
+  useEffect(() => {
+    const triggerIdFromUrl = searchParams.get('trigger_id');
+    if (triggerIdFromUrl && triggers.length > 0) {
+      const trigger = triggers.find(t => t.trigger_id === triggerIdFromUrl);
+      if (trigger) {
+        setSelectedTrigger(trigger);
+        // Scroll to header
+        setTimeout(() => {
+          const headerHeight = document.querySelector('.container')?.clientHeight || 120;
+          window.scrollTo({ top: headerHeight, behavior: 'smooth' });
+        }, 100);
+      }
+    }
+  }, [searchParams, triggers]);
 
   useEffect(() => {
     if (pendingTriggerId) {
@@ -206,6 +232,20 @@ export function TriggersPage() {
 
   const handleClosePanel = () => {
     setSelectedTrigger(null);
+  };
+
+  const handleTriggerClick = (trigger: TriggerWithAgent) => {
+    if (selectedTrigger?.trigger_id === trigger.trigger_id) {
+      setSelectedTrigger(null);
+      // Remove trigger_id from URL
+      router.replace('/triggers', { scroll: false });
+    } else {
+      setSelectedTrigger(trigger);
+      // Add trigger_id to URL
+      router.replace(`/triggers?trigger_id=${trigger.trigger_id}`, { scroll: false });
+      const headerHeight = document.querySelector('.container')?.clientHeight || 120;
+      window.scrollTo({ top: headerHeight, behavior: 'smooth' }); //for smooth brain
+    }
   };
 
   const handleTriggerCreated = (triggerId: string) => {
@@ -235,18 +275,30 @@ export function TriggersPage() {
       </div>
       <div className="h-screen flex overflow-hidden">
         <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="flex justify-center">
-            <div className={cn(
-              "w-full px-4 transition-all duration-300 ease-in-out",
-              selectedTrigger ? "max-w-2xl" : "max-w-4xl"
-            )}>
-              <div className="flex items-center justify-between py-10">
-                <h1 className="text-xl font-semibold">Triggers</h1>
+          {/* Search Bar and Create Button */}
+          <div className="container mx-auto max-w-7xl px-4">
+            <div className="flex items-center justify-between pb-4 pt-3">
+              <div className="max-w-md w-md">
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search"
+                    className="h-10 w-full rounded-xl border border-input bg-background px-10 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  />
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                    <Search className="h-4 w-4" />
+                  </div>
+                </div>
+              </div>
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="sm">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="h-10 px-4 rounded-xl gap-2"
+                  >
                     <Plus className="h-4 w-4" />
-                    New trigger
+                    Create new
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-72">
@@ -272,13 +324,9 @@ export function TriggersPage() {
               </DropdownMenu>
             </div>
           </div>
-        </div>
-        <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700 scrollbar-track-transparent">
-          <div className="flex justify-center">
-            <div className={cn(
-              "w-full px-4 pb-8 transition-all duration-300 ease-in-out",
-              selectedTrigger ? "max-w-2xl" : "max-w-4xl"
-            )}>
+
+          <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700 scrollbar-track-transparent">
+            <div className="container mx-auto max-w-7xl px-4 pb-8">
               {isLoading ? (
                 <LoadingSkeleton />
               ) : sortedTriggers.length === 0 ? (
@@ -290,13 +338,7 @@ export function TriggersPage() {
                       key={trigger.trigger_id}
                       trigger={trigger}
                       isSelected={selectedTrigger?.trigger_id === trigger.trigger_id}
-                      onClick={() => {
-                        if (selectedTrigger?.trigger_id === trigger.trigger_id) {
-                          setSelectedTrigger(null);
-                        } else {
-                          setSelectedTrigger(trigger);
-                        }
-                      }}
+                      onClick={() => handleTriggerClick(trigger)}
                     />
                   ))}
                 </div>
@@ -304,20 +346,19 @@ export function TriggersPage() {
             </div>
           </div>
         </div>
-      </div>
-      <div className={cn(
-        "h-screen transition-all duration-300 ease-in-out overflow-hidden border-l",
-        selectedTrigger
-          ? "w-full sm:w-[440px] xl:w-2xl"
-          : "w-0"
-      )}>
-        {selectedTrigger && (
-          <SimplifiedTriggerDetailPanel
-            trigger={selectedTrigger}
-            onClose={handleClosePanel}
-          />
-        )}
-      </div>
+        <div className={cn(
+          "h-screen transition-all duration-300 ease-in-out overflow-hidden border-l",
+          selectedTrigger
+            ? "w-full sm:w-[440px] xl:w-2xl"
+            : "w-0"
+        )}>
+          {selectedTrigger && (
+            <SimplifiedTriggerDetailPanel
+              trigger={selectedTrigger}
+              onClose={handleClosePanel}
+            />
+          )}
+        </div>
         {/* Trigger Creation Dialog */}
         {triggerDialogType && (
           <TriggerCreationDialog

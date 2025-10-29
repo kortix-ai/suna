@@ -137,10 +137,10 @@ const exampleTasks = [
 const DISABLE_EXAMPLES = true;
 
 export default function PricingPage() {
-  const { 
-    allModels, 
-    modelsData: modelsResponse, 
-    isLoading: loading 
+  const {
+    allModels,
+    modelsData: modelsResponse,
+    isLoading: loading
   } = useModelSelection();
 
   const [selectedModelId, setSelectedModelId] = useState<string>(
@@ -177,7 +177,7 @@ export default function PricingPage() {
         if ((a.priority ?? 0) !== (b.priority ?? 0)) {
           return (b.priority ?? 0) - (a.priority ?? 0);
         }
-        
+
         // Finally by name (alphabetical)
         return (a.display_name ?? a.id).localeCompare(b.display_name ?? b.id);
       });
@@ -242,7 +242,7 @@ export default function PricingPage() {
     <div className="space-y-8 p-8 max-w-4xl mx-auto">
       {/* Header Section */}
       <div className="space-y-4">
-        <h1 className="text-3xl font-bold text-foreground">Token Pricing</h1>
+        <h1 className="text-3xl font-medium text-foreground">Token Pricing</h1>
         <p className="text-lg text-muted-foreground max-w-3xl">
           Understand how tokens work, explore pricing for AI models, and find
           the right plan for your needs.
@@ -331,10 +331,10 @@ export default function PricingPage() {
                   (task, index) => {
                     const calculatedCost = selectedModel
                       ? calculateCost(
-                          task.inputTokens,
-                          task.outputTokens,
-                          selectedModel,
-                        )
+                        task.inputTokens,
+                        task.outputTokens,
+                        selectedModel,
+                      )
                       : null;
 
                     return (
@@ -427,11 +427,10 @@ export default function PricingPage() {
               {models.map((model, index) => (
                 <div
                   key={model.id}
-                  className={`px-6 py-4 hover:bg-muted/50 transition-colors duration-150 ${
-                    selectedModelId === model.id
+                  className={`px-6 py-4 hover:bg-muted/50 transition-colors duration-150 ${selectedModelId === model.id
                       ? 'bg-blue-50 dark:bg-blue-950/20 border-l-4 border-l-blue-500'
                       : ''
-                  }`}
+                    }`}
                 >
                   <div className="grid grid-cols-3 gap-4 items-center">
                     {/* Model Name */}
@@ -450,7 +449,7 @@ export default function PricingPage() {
                     <div className="col-span-1 text-center">
                       <div className="space-y-1">
                         {model.input_cost_per_million_tokens !== null &&
-                        model.input_cost_per_million_tokens !== undefined ? (
+                          model.input_cost_per_million_tokens !== undefined ? (
                           <>
                             <div className="font-semibold text-foreground">
                               ${model.input_cost_per_million_tokens.toFixed(2)}
@@ -471,7 +470,7 @@ export default function PricingPage() {
                     <div className="col-span-1 text-center">
                       <div className="space-y-1">
                         {model.output_cost_per_million_tokens !== null &&
-                        model.output_cost_per_million_tokens !== undefined ? (
+                          model.output_cost_per_million_tokens !== undefined ? (
                           <>
                             <div className="font-semibold text-foreground">
                               ${model.output_cost_per_million_tokens.toFixed(2)}

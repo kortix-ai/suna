@@ -31,13 +31,13 @@ export const WorkforceSelectionStep = () => {
       recommended.add('weekly-recap');
       recommended.add('meeting-researcher');
     }
-    
+
     if (role.includes('sales') || role.includes('business development')) {
       recommended.add('lead-generator');
       recommended.add('meeting-researcher');
       recommended.add('presentation-creator');
     }
-    
+
     if (role.includes('marketing') || role.includes('content')) {
       recommended.add('email-assistant');
       recommended.add('presentation-creator');
@@ -61,7 +61,7 @@ export const WorkforceSelectionStep = () => {
     // Universal recommendations - everyone can benefit from these
     recommended.add('email-assistant'); // Everyone has email
     recommended.add('daily-recap'); // Everyone needs daily updates
-    
+
     // Add lead generation for business-focused users
     if (userType === 'company' || role.includes('business') || role.includes('sales')) {
       recommended.add('lead-generator');
@@ -86,7 +86,7 @@ export const WorkforceSelectionStep = () => {
   const recommendedIds = getRecommendedAgents();
 
   const toggleAgent = (agentId: string) => {
-    setSelectedAgents(prev => 
+    setSelectedAgents(prev =>
       prev.includes(agentId)
         ? prev.filter(id => id !== agentId)
         : [...prev, agentId]
@@ -104,7 +104,7 @@ export const WorkforceSelectionStep = () => {
           transition={{ duration: 0.5 }}
           className="text-center"
         >
-          <h2 className="text-3xl font-bold">
+          <h2 className="text-3xl font-medium">
             Choose Your AI Workers
           </h2>
         </motion.div>

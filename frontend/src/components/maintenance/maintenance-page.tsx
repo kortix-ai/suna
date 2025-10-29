@@ -1,18 +1,17 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Loader2, Server, RefreshCw, AlertCircle, Clock, Wrench } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 import { useApiHealth } from '@/hooks/react-query';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { isLocalMode } from '@/lib/config';
+import { AnimatedBg } from '@/components/home/ui/AnimatedBg';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
 export function MaintenancePage() {
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
-  
+
   const { data: healthData, isLoading: isCheckingHealth, refetch } = useApiHealth();
 
   const checkHealth = async () => {
@@ -33,85 +32,69 @@ export function MaintenancePage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 flex items-center justify-center p-4">
-      <div className="w-full max-w-2xl">
-        <Card className="border-none shadow-none backdrop-blur-sm bg-transparent">
-          <CardContent className="p-8">
-            <div className="text-center space-y-6">
-              <div className="flex justify-center mb-4">
-                <div className="relative">
-                  <div className="relative p-4 rounded-full border-2 bg-primary/10">
-                    <Wrench className="h-10 w-10" />
+    <div className="w-full relative overflow-hidden min-h-screen">
+      <div className="relative flex flex-col items-center w-full px-4 sm:px-6 min-h-screen justify-center">
+        {/* Animated background - exactly like hero section */}
+        <AnimatedBg variant="hero" />
+
+        <div className="relative z-10 w-full max-w-[456px] flex flex-col items-center gap-8">
+          {/* Logo - 32px height */}
+          <KortixLogo size={32} />
+
+          {/* Title - 43px */}
+          <h1 className="text-[43px] font-normal tracking-tight textforeground leading-none">
+            We'll Be Right Back
+          </h1>
+
+          {/* Description - 16px */}
+          <p className="text-[16px] text-foreground/60 text-center leading-relaxed">
+            {isLocalMode() ? (
+              "Performing scheduled maintenance to enhance system stability. All services will resume shortly."
+            ) : (
+              "Performing scheduled maintenance to enhance system stability. All services will resume shortly."
+            )}
+          </p>
+
+          {/* Status Card - 456px width, 96px height */}
+          <Card className="w-full h-24 bg-card border border-border">
+            <CardContent className="p-6 h-full">
+              <div className="flex items-center justify-between h-full">
+                <div className="flex items-center gap-3">
+                  <div className="flex flex-col gap-1">
+                    <div className='flex items-center gap-2'>
+                      <div className="h-2.5 w-2.5 bg-red-500 rounded-full animate-pulse"></div>
+                      <span className="text-base font-medium text-red-400">Services Offline</span>
+                    </div>
+                    <p className="text-base text-gray-400">All Worker executions are currently paused.</p>
                   </div>
                 </div>
-              </div>
-              <div className="flex justify-center">
-                <Badge variant="outline" className="px-3 py-1 bg-blue-50 dark:bg-blue-900/30 border-blue-200 dark:border-blue-700 text-blue-800 dark:text-blue-200 font-medium">
-                  <AlertCircle className="h-4 w-4" />
-                  System Under Maintenance
-                </Badge>
-              </div>
-              <div className="space-y-4">
-                <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-                  We'll Be Right Back
-                </h1>
-                <p className="text-base text-muted-foreground max-w-lg mx-auto leading-relaxed">
-                  {isLocalMode() ? (
-                    "The backend server appears to be offline. Please ensure your backend server is running and try again."
-                  ) : (
-                    "We're performing scheduled maintenance to improve your experience. Our team is working diligently to restore all services."
-                  )}
-                </p>
-              </div>
-              <div className="grid grid-cols-1 gap-3 mt-6 md:px-4">
-                <Card className="bg-muted-foreground/10 border-none shadow-none">
-                  <CardContent className="text-center">
-                    <div className="flex items-center justify-center mb-1">
-                      <div className="h-3 w-3 bg-red-500 dark:bg-red-400 rounded-full mr-2 animate-pulse"></div>
-                      <span className="font-medium text-red-700 dark:text-red-300">Services Offline</span>
-                    </div>
-                    <p className="text-sm text-red-600 dark:text-red-400">All agent executions are currently paused.</p>
-                  </CardContent>
-                </Card>
-              </div>
-              <div className="space-y-4 pt-4">
                 <Button
                   onClick={checkHealth}
                   disabled={isCheckingHealth}
-                  size="lg"
-                  className="w-full md:w-auto px-6 py-2 bg-primary hover:bg-primary/90 text-primary-foreground font-medium transition-all duration-200"
+                  size="icon"
+                  variant="ghost"
+                  className="h-12 w-12 bg-border"
                 >
                   {isCheckingHealth ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Checking Status...
-                    </>
+                    <Loader2 className="h-5 w-5 animate-spin text-foreground" />
                   ) : (
-                    <>
-                      <RefreshCw className="h-4 w-4" />
-                      Check System Status
-                    </>
+                    <RefreshCw className="h-5 w-5 text-foreground" />
                   )}
                 </Button>
-                {lastChecked && (
-                  <div className="flex items-center justify-center text-sm text-muted-foreground">
-                    <Clock className="h-4 w-4 mr-2" />
-                    Last checked: {lastChecked.toLocaleTimeString()}
-                  </div>
-                )}
               </div>
-              <div className="pt-4 border-t border-border/50">
-                <p className="text-sm text-muted-foreground">
-                  {isLocalMode() ? (
-                    "Need help? Check the documentation for setup instructions."
-                  ) : (
-                    "For urgent matters, please contact our support team."
-                  )}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Grain texture overlay - ON TOP OF EVERYTHING */}
+        <div
+          className="absolute inset-0 opacity-[0.15] pointer-events-none z-50"
+          style={{
+            backgroundImage: 'url(/grain-texture.png)',
+            backgroundRepeat: 'repeat',
+            mixBlendMode: 'overlay'
+          }}
+        />
       </div>
     </div>
   );

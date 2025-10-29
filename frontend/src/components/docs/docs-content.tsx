@@ -6,8 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import { 
-  ArrowRight, 
+import {
+  ArrowRight,
   ExternalLink,
   Clock,
   User,
@@ -53,25 +53,25 @@ export const DocsContent = () => {
                   Latest
                 </Badge>
               </div>
-              
-              <h1 className="text-3xl lg:text-5xl font-bold mb-4 bg-gradient-to-r from-foreground to-foreground/60 bg-clip-text text-transparent">
+
+              <h1 className="text-3xl lg:text-5xl font-medium mb-4 bg-gradient-to-r from-foreground to-foreground/60 bg-clip-text text-transparent">
                 Welcome to Suna
               </h1>
-              
+
               <p className="text-lg lg:text-xl text-muted-foreground leading-relaxed max-w-3xl">
-                Build, deploy, and manage powerful AI agents that automate complex workflows. 
+                Build, deploy, and manage powerful AI agents that automate complex workflows.
                 Suna provides everything you need to create intelligent automation solutions.
               </p>
-                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 mt-6">
-                 <Button size="lg" className="w-full sm:w-auto backdrop-blur-sm">
-                   Get Started
-                   <ArrowRight className="ml-2 h-4 w-4" />
-                 </Button>
-                 <Button variant="outline" size="lg" className="w-full sm:w-auto bg-muted/60 backdrop-blur-sm border-border/40">
-                   View on GitHub
-                   <ExternalLink className="ml-2 h-4 w-4" />
-                 </Button>
-               </div>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 mt-6">
+                <Button size="lg" className="w-full sm:w-auto backdrop-blur-sm">
+                  Get Started
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+                <Button variant="outline" size="lg" className="w-full sm:w-auto bg-muted/60 backdrop-blur-sm border-border/40">
+                  View on GitHub
+                  <ExternalLink className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
             </div>
 
             <Separator className="mb-12 bg-border/40" />
@@ -109,35 +109,35 @@ export const DocsContent = () => {
             <div className="space-y-16">
               <section id="introduction" className="scroll-mt-8">
                 <div className="bg-card/60 backdrop-blur-xl rounded-2xl p-8 border border-border/40">
-                  <h2 className="text-3xl font-bold mb-6">Introduction</h2>
-                    <div className="space-y-4 text-muted-foreground">
-                      <div className="h-4 bg-muted/60 rounded animate-pulse"></div>
-                      <div className="h-4 bg-muted/60 rounded animate-pulse w-4/5"></div>
-                      <div className="h-4 bg-muted/60 rounded animate-pulse w-3/5"></div>
-                    </div>
+                  <h2 className="text-3xl font-medium mb-6">Introduction</h2>
+                  <div className="space-y-4 text-muted-foreground">
+                    <div className="h-4 bg-muted/60 rounded animate-pulse"></div>
+                    <div className="h-4 bg-muted/60 rounded animate-pulse w-4/5"></div>
+                    <div className="h-4 bg-muted/60 rounded animate-pulse w-3/5"></div>
+                  </div>
                 </div>
               </section>
 
               <section id="quick-start" className="scroll-mt-8">
                 <div className="bg-card/60 backdrop-blur-xl rounded-2xl p-8 border border-border/40">
-                  <h2 className="text-3xl font-bold mb-6">Quick Start</h2>
-                    <div className="space-y-4 text-muted-foreground">
-                      <div className="h-4 bg-muted/60 rounded animate-pulse"></div>
-                      <div className="h-4 bg-muted/60 rounded animate-pulse w-5/6"></div>
-                      <div className="h-4 bg-muted/60 rounded animate-pulse w-4/5"></div>
-                      <div className="h-4 bg-muted/60 rounded animate-pulse w-2/3"></div>
-                    </div>
+                  <h2 className="text-3xl font-medium mb-6">Quick Start</h2>
+                  <div className="space-y-4 text-muted-foreground">
+                    <div className="h-4 bg-muted/60 rounded animate-pulse"></div>
+                    <div className="h-4 bg-muted/60 rounded animate-pulse w-5/6"></div>
+                    <div className="h-4 bg-muted/60 rounded animate-pulse w-4/5"></div>
+                    <div className="h-4 bg-muted/60 rounded animate-pulse w-2/3"></div>
+                  </div>
                 </div>
               </section>
 
               <section id="installation" className="scroll-mt-8">
                 <div className="bg-card/60 backdrop-blur-xl rounded-2xl p-8 border border-border/40">
-                  <h2 className="text-3xl font-bold mb-6">Installation</h2>
-                    <div className="space-y-4 text-muted-foreground">
-                      <div className="h-4 bg-muted/60 rounded animate-pulse"></div>
-                      <div className="h-4 bg-muted/60 rounded animate-pulse w-3/4"></div>
-                      <div className="h-4 bg-muted/60 rounded animate-pulse w-5/6"></div>
-                    </div>
+                  <h2 className="text-3xl font-medium mb-6">Installation</h2>
+                  <div className="space-y-4 text-muted-foreground">
+                    <div className="h-4 bg-muted/60 rounded animate-pulse"></div>
+                    <div className="h-4 bg-muted/60 rounded animate-pulse w-3/4"></div>
+                    <div className="h-4 bg-muted/60 rounded animate-pulse w-5/6"></div>
+                  </div>
                 </div>
               </section>
             </div>

@@ -117,9 +117,9 @@ export function NewAgentDialogLegacy({ open, onOpenChange, onSuccess }: NewAgent
     <AlertDialog open={open} onOpenChange={handleDialogClose}>
       <AlertDialogContent className="max-w-lg">
         <AlertDialogHeader className="space-y-3">
-          <AlertDialogTitle className="text-xl">Create New Agent</AlertDialogTitle>
+          <AlertDialogTitle className="text-xl">Create New Worker</AlertDialogTitle>
           <AlertDialogDescription className="text-base leading-relaxed">
-            Create a new agent with default settings that you can customize later, or{' '}
+            Create a new worker with default settings that you can customize later, or{' '}
             <button
               onClick={handleFileImport}
               className="text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4 disabled:cursor-not-allowed disabled:opacity-50"

@@ -3,7 +3,8 @@
 import React, { useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
+import { SpotlightCard } from '@/components/ui/spotlight-card';
 import {
     FolderIcon,
     FileIcon,
@@ -212,149 +213,139 @@ export function SharedTreeItem({
         <div ref={combinedRef} style={style} className="select-none my-2">
             {item.type === 'folder' ? (
                 <div>
-                    {/* Folder Row - Using div instead of button to avoid nesting */}
-                    <div
-                        className={`group flex items-center w-full text-sm h-auto px-4 py-4 rounded-lg transition-all duration-200 cursor-pointer border border-transparent ${(isOver && enableDnd) || isDragOverNative
-                            ? 'bg-primary/5 border-primary/20 border-dashed'
-                            : 'hover:bg-muted/30 hover:border-border/50'
-                            }`}
+                    {/* Folder Row - Using SpotlightCard */}
+                    <SpotlightCard className={`bg-card border ${(isOver && enableDnd) || isDragOverNative
+                        ? 'border-primary/20 border-dashed bg-primary/5'
+                        : 'border-border'
+                        }`}>
+                        <div className="flex items-center justify-between p-5">
+                            <div
+                                className="group flex items-center gap-4 flex-1 min-w-0 cursor-pointer"
+                                onClick={() => onExpand(item.id)}
+                                onDragOver={handleNativeDragOver}
+                                onDragLeave={handleNativeDragLeave}
+                                onDrop={handleNativeDrop}
+                            >
+                                {/* Expand/Collapse Icon */}
+                                {item.expanded ?
+                                    <ChevronDownIcon className="h-4 w-4 shrink-0" /> :
+                                    <ChevronRightIcon className="h-4 w-4 shrink-0" />
+                                }
 
-                        onClick={() => onExpand(item.id)}
-                        onDragOver={handleNativeDragOver}
-                        onDragLeave={handleNativeDragLeave}
-                        onDrop={handleNativeDrop}
-                    >
-                        {/* Expand/Collapse Icon */}
-                        {item.expanded ?
-                            <ChevronDownIcon className="h-4 w-4 mr-2 shrink-0" /> :
-                            <ChevronRightIcon className="h-4 w-4 mr-2 shrink-0" />
-                        }
+                                {/* Folder Icon */}
+                                <div className="w-12 h-12 bg-card border border-border/50 rounded-xl flex items-center justify-center shrink-0">
+                                    <FolderIcon className="h-5 w-5 text-foreground" />
+                                </div>
 
-                        {/* Folder Icon */}
-                        <div className="w-10 h-10 mr-4 bg-muted border border-border/50 rounded-lg flex items-center justify-center shrink-0 group-hover:bg-muted/80 transition-all duration-200">
-                            <FolderIcon className="h-5 w-5 text-foreground/70" />
-                        </div>
-
-                        {/* Folder Name */}
-                        <div className="flex-1 text-left min-w-0">
-                            {enableEdit && editingFolder === item.id ? (
-                                <div>
-                                    <Input
-                                        ref={editInputRef}
-                                        value={editingName}
-                                        onChange={(e) => onEditChange?.(e.target.value)}
-                                        onKeyDown={onEditKeyPress}
-                                        onBlur={(e) => {
-                                            // Prevent immediate blur when editing just started
-                                            if (isEditingJustStarted.current) {
-                                                isEditingJustStarted.current = false;
-                                                editInputRef?.current?.focus();
-                                                return;
-                                            }
-                                            onFinishEdit?.();
-                                        }}
-                                        className={`h-5 text-sm border-0 bg-transparent p-0 focus:ring-1 ${validationError ? 'focus:ring-red-500' : 'focus:ring-blue-500'
-                                            }`}
-                                        autoFocus
-                                        onClick={(e) => e.stopPropagation()}
-                                    />
-                                    {validationError && (
-                                        <div className="text-xs text-red-500 mt-1">
-                                            {validationError}
+                                {/* Folder Name */}
+                                <div className="flex-1 text-left min-w-0">
+                                    {enableEdit && editingFolder === item.id ? (
+                                        <div>
+                                            <Input
+                                                ref={editInputRef}
+                                                value={editingName}
+                                                onChange={(e) => onEditChange?.(e.target.value)}
+                                                onKeyDown={onEditKeyPress}
+                                                onBlur={(e) => {
+                                                    // Prevent immediate blur when editing just started
+                                                    if (isEditingJustStarted.current) {
+                                                        isEditingJustStarted.current = false;
+                                                        editInputRef?.current?.focus();
+                                                        return;
+                                                    }
+                                                    onFinishEdit?.();
+                                                }}
+                                                className={`h-5 text-sm border-0 bg-transparent p-0 focus:ring-1 ${validationError ? 'focus:ring-red-500' : 'focus:ring-blue-500'
+                                                    }`}
+                                                autoFocus
+                                                onClick={(e) => e.stopPropagation()}
+                                            />
+                                            {validationError && (
+                                                <div className="text-xs text-red-500 mt-1">
+                                                    {validationError}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div>
+                                            <h3 className="font-medium text-foreground mb-0.5">{item.name}</h3>
+                                            <p className="text-sm text-muted-foreground truncate">
+                                                {uploadStatus?.isUploading ? (
+                                                    <>
+                                                        <Loader2 className="h-3 w-3 animate-spin text-primary inline mr-1.5" />
+                                                        <span>
+                                                            Uploading {uploadStatus.currentFile}... ({uploadStatus.completedFiles || 0}/{uploadStatus.totalFiles || 0})
+                                                        </span>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        {item.data?.entry_count || 0} files • Click to {item.expanded ? 'collapse' : 'expand'}
+                                                    </>
+                                                )}
+                                            </p>
                                         </div>
                                     )}
                                 </div>
-                            ) : (
-                                <div className="space-y-1">
-                                    <div className="font-semibold text-foreground truncate text-sm">{item.name}</div>
-                                    <div className="flex items-center gap-2">
-                                        {uploadStatus?.isUploading ? (
-                                            <div className="flex items-center gap-1.5">
-                                                <Loader2 className="h-3 w-3 animate-spin text-primary" />
-                                                <span className="text-xs text-muted-foreground">
-                                                    Uploading {uploadStatus.currentFile}... ({uploadStatus.completedFiles || 0}/{uploadStatus.totalFiles || 0})
-                                                </span>
-                                            </div>
-                                        ) : (
-                                            <>
-                                                <span className="text-xs text-muted-foreground">
-                                                    {item.data?.entry_count || 0} files
-                                                </span>
-                                                <span className="text-xs text-muted-foreground/50">•</span>
-                                                <span className="text-xs text-muted-foreground">
-                                                    Click to {item.expanded ? 'collapse' : 'expand'}
-                                                </span>
-                                            </>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
+                            </div>
 
-                        {/* Assignment Switch */}
-                        {enableAssignment && (
-                            <div className="relative shrink-0">
-                                <Switch
-                                    checked={assignments?.[item.id] || false}
-                                    onCheckedChange={() => onToggleAssignment?.(item.id)}
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="shrink-0"
-                                />
-                                {/* Indeterminate indicator for folders */}
-                                {assignmentIndeterminate?.[item.id] && (
-                                    <div
-                                        className="absolute inset-0 flex items-center justify-center pointer-events-none"
-                                        style={{
-                                            background: 'linear-gradient(45deg, transparent 30%, hsl(var(--primary)) 30%, hsl(var(--primary)) 70%, transparent 70%)',
-                                            borderRadius: 'inherit'
-                                        }}
-                                    />
+                            <div className="flex items-center gap-2 ml-4">
+                                {/* Assignment Checkbox */}
+                                {enableAssignment && (
+                                    <div className="inline-flex items-center justify-center h-12 w-12 bg-card border border-border rounded-2xl shrink-0">
+                                        <Checkbox
+                                            checked={assignmentIndeterminate?.[item.id] ? 'indeterminate' : (assignments?.[item.id] || false)}
+                                            onCheckedChange={() => onToggleAssignment?.(item.id)}
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                    </div>
+                                )}
+
+                                {/* Actions Dropdown */}
+                                {enableActions && (
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                size="icon"
+                                                className="h-12 w-12 bg-card border border-border hover:bg-muted shrink-0"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                <MoreVerticalIcon className="h-5 w-5" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end">
+                                            {enableEdit && (
+                                                <DropdownMenuItem
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        isEditingJustStarted.current = true;
+                                                        onStartEdit?.(item.id, item.name);
+                                                    }}
+                                                >
+                                                    <Pen className="h-3 w-3 mr-2" />
+                                                    Rename
+                                                </DropdownMenuItem>
+                                            )}
+                                            <DropdownMenuItem
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onDelete?.(item.id, item.type);
+                                                }}
+                                                className="text-destructive"
+                                            >
+                                                <TrashIcon className="h-3 w-3 mr-2 text-destructive" />
+                                                Delete
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
                                 )}
                             </div>
-                        )}
-
-                        {/* Actions Dropdown */}
-                        {enableActions && (
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <button
-                                        className="h-6 w-6 p-0 ml-2 shrink-0 inline-flex items-center justify-center rounded-lg hover:bg-accent"
-                                        onClick={(e) => e.stopPropagation()}
-                                    >
-                                        <MoreVerticalIcon className="h-3.5 w-3.5" />
-                                    </button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                    {enableEdit && (
-                                        <DropdownMenuItem
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                isEditingJustStarted.current = true;
-                                                onStartEdit?.(item.id, item.name);
-                                            }}
-                                        >
-                                            <Pen className="h-3 w-3 mr-2" />
-                                            Rename
-                                        </DropdownMenuItem>
-                                    )}
-                                    <DropdownMenuItem
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            onDelete?.(item.id, item.type);
-                                        }}
-                                        className="text-destructive"
-                                    >
-                                        <TrashIcon className="h-3 w-3 mr-2 text-destructive" />
-                                        Delete
-                                    </DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
-                        )}
-                    </div>
+                        </div>
+                    </SpotlightCard>
 
                     {/* Files (when expanded) */}
                     {item.expanded && (
-                        <div className="flex flex-col">
+                        <div className="flex flex-col mt-2">
                             {isLoadingEntries ? (
                                 <div className="flex items-center gap-3 px-4 py-4 text-sm text-muted-foreground bg-muted/20 rounded-lg mx-4 mb-2" style={{ paddingLeft: `${level * 20 + 32}px` }}>
                                     <Loader2 className="h-4 w-4 animate-spin text-primary" />
@@ -396,110 +387,110 @@ export function SharedTreeItem({
                     )}
                 </div>
             ) : (
-                /* File Row - Using div instead of button to avoid nesting */
-                <div
-                    ref={combinedRef}
-                    className={`group flex items-center w-full text-sm h-auto px-4 py-3 rounded-lg transition-all duration-200 border border-transparent ${itemIsMoving
-                            ? 'opacity-60 cursor-not-allowed bg-muted/30'
-                            : 'hover:bg-muted/30 hover:border-border/50 cursor-pointer'
-                        } ${isDragging ? 'opacity-50' : ''}`}
-                    style={{
-                        paddingLeft: ``,
-                        ...style
-                    }}
-                    onClick={() => {
-                        // Don't allow clicks when moving
-                        if (itemIsMoving) return;
+                /* File Row - Using SpotlightCard */
+                <div ref={combinedRef} style={style}>
+                    <SpotlightCard
+                        className={`bg-card border border-border ${itemIsMoving
+                            ? 'opacity-60 cursor-not-allowed'
+                            : ''
+                            } ${isDragging ? 'opacity-50' : ''}`}
+                    >
+                        <div className="flex items-center justify-between p-5">
+                            <div
+                                className="group flex items-center gap-4 flex-1 min-w-0 cursor-pointer"
+                                onClick={() => {
+                                    // Don't allow clicks when moving
+                                    if (itemIsMoving) return;
 
-                        // Trigger file preview on file click
-                        onSelect(item);
-                    }}
-                >
-                    {/* Drag Handle - Only visible on hover and only when DND is enabled for files */}
-                    {enableDnd && item.type === 'file' && !itemIsMoving && (
-                        <div
-                            className="opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-1 ml-1"
-                            {...attributes}
-                            {...listeners}
-                        >
-                            <GripVerticalIcon className="h-4 w-4 text-muted-foreground" />
-                        </div>
-                    )}
-                    {/* File Icon */}
-                    <div className="w-9 h-9 mr-3 bg-muted/50 border border-border/50 rounded-lg flex items-center justify-center shrink-0 group-hover:bg-muted transition-all duration-200">
-                        <FileIcon className="h-4 w-4 text-foreground/70" />
-                    </div>
+                                    // Trigger file preview on file click
+                                    onSelect(item);
+                                }}
+                            >
+                                {/* Drag Handle - Only visible on hover and only when DND is enabled for files */}
+                                {enableDnd && item.type === 'file' && !itemIsMoving && (
+                                    <div
+                                        className="opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
+                                        {...attributes}
+                                        {...listeners}
+                                    >
+                                        <GripVerticalIcon className="h-4 w-4 text-muted-foreground" />
+                                    </div>
+                                )}
 
-
-                    {/* File Details */}
-                    <div className="flex-1 text-left min-w-0 space-y-1">
-                        <div className="font-semibold text-foreground truncate text-sm">{item.name}</div>
-                        <div className="flex items-center gap-2">
-                            {itemIsMoving ? (
-                                <div className="flex items-center gap-1.5">
-                                    <Loader2 className="h-3 w-3 animate-spin text-primary" />
-                                    <span className="text-xs text-muted-foreground">Moving...</span>
+                                {/* File Icon */}
+                                <div className="w-12 h-12 bg-card border border-border/50 rounded-xl flex items-center justify-center shrink-0">
+                                    <FileIcon className="h-5 w-5 text-foreground" />
                                 </div>
-                            ) : (
-                                <>
-                                    <span className="text-xs text-muted-foreground">
-                                        {formatFileSize(item.data?.file_size || 0)}
-                                    </span>
-                                    <span className="text-xs text-muted-foreground/50">•</span>
-                                    <span className="text-xs text-muted-foreground">
-                                        Click to edit summary
-                                    </span>
-                                </>
-                            )}
+
+                                {/* File Details */}
+                                <div className="flex-1 text-left min-w-0">
+                                    <h3 className="font-medium text-foreground mb-0.5">{item.name}</h3>
+                                    <p className="text-sm text-muted-foreground truncate">
+                                        {itemIsMoving ? (
+                                            <>
+                                                <Loader2 className="h-3 w-3 animate-spin text-primary inline mr-1.5" />
+                                                Moving...
+                                            </>
+                                        ) : (
+                                            <>
+                                                {formatFileSize(item.data?.file_size || 0)} • Click to edit summary
+                                            </>
+                                        )}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 ml-4">
+                                {/* Assignment Checkbox for Files */}
+                                {enableAssignment && (
+                                    <div className="inline-flex items-center justify-center h-12 w-12 bg-card border border-border rounded-2xl shrink-0">
+                                        <Checkbox
+                                            checked={assignments?.[item.id] || false}
+                                            onCheckedChange={() => onToggleAssignment?.(item.id)}
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                    </div>
+                                )}
+
+                                {/* File Actions */}
+                                {enableActions && !itemIsMoving && (
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                size="icon"
+                                                className="h-12 w-12 bg-card border border-border hover:bg-muted shrink-0"
+                                                onClick={(e) => e.stopPropagation()}
+                                            >
+                                                <MoreVerticalIcon className="h-5 w-5" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end">
+                                            <DropdownMenuItem
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onEditSummary?.(item.id, item.name, item.data?.summary || '');
+                                                }}
+                                            >
+                                                <FileTextIcon className="h-3 w-3 mr-2" />
+                                                Edit Summary
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onDelete?.(item.id, item.type);
+                                                }}
+                                                className="text-destructive"
+                                            >
+                                                <TrashIcon className="h-3 w-3 mr-2" />
+                                                Delete
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
+                                )}
+                            </div>
                         </div>
-                    </div>
-
-                    {/* Assignment Switch for Files */}
-                    {enableAssignment && (
-                        <Switch
-                            checked={assignments?.[item.id] || false}
-                            onCheckedChange={() => onToggleAssignment?.(item.id)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="shrink-0"
-                        />
-                    )}
-
-
-
-                    {/* File Actions */}
-                    {enableActions && !itemIsMoving && (
-                        <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                                <button
-                                    className="h-6 w-6 p-0 ml-2 shrink-0 inline-flex items-center justify-center rounded-lg hover:bg-accent"
-                                    onClick={(e) => e.stopPropagation()}
-                                >
-                                    <MoreVerticalIcon className="h-3.5 w-3.5" />
-                                </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                                <DropdownMenuItem
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onEditSummary?.(item.id, item.name, item.data?.summary || '');
-                                    }}
-                                >
-                                    <FileTextIcon className="h-3 w-3 mr-2" />
-                                    Edit Summary
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        onDelete?.(item.id, item.type);
-                                    }}
-                                    className="text-destructive"
-                                >
-                                    <TrashIcon className="h-3 w-3 mr-2" />
-                                    Delete
-                                </DropdownMenuItem>
-                            </DropdownMenuContent>
-                        </DropdownMenu>
-                    )}
+                    </SpotlightCard>
                 </div>
             )}
         </div>
@@ -517,19 +508,21 @@ export function FileDragOverlay({ item }: { item: TreeItem }) {
     };
 
     return (
-        <div className="flex items-center w-full text-sm h-8 px-3 py-5 rounded-md bg-accent text-accent-foreground border shadow-lg">
-            {/* File Icon */}
-            <div className="w-8 h-8 mr-3 bg-background border border-border rounded-md flex items-center justify-center shrink-0">
-                <FileIcon className="h-4 w-4 text-foreground/60" />
-            </div>
+        <SpotlightCard className="bg-card border border-border shadow-2xl opacity-90">
+            <div className="flex items-center gap-4 p-5">
+                {/* File Icon */}
+                <div className="w-12 h-12 bg-card border border-border/50 rounded-xl flex items-center justify-center shrink-0">
+                    <FileIcon className="h-5 w-5 text-foreground" />
+                </div>
 
-            {/* File Details */}
-            <div className="flex-1 text-left min-w-0">
-                <div className="font-medium truncate">{item.name}</div>
-                <div className="text-xs text-muted-foreground">
-                    {formatFileSize(item.data?.file_size || 0)}
+                {/* File Details */}
+                <div className="flex-1 text-left min-w-0">
+                    <h3 className="font-medium text-foreground mb-0.5">{item.name}</h3>
+                    <p className="text-sm text-muted-foreground truncate">
+                        {formatFileSize(item.data?.file_size || 0)} • Click to edit summary
+                    </p>
                 </div>
             </div>
-        </div>
+        </SpotlightCard>
     );
 }

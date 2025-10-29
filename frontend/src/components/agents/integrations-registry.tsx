@@ -7,6 +7,7 @@ interface IntegrationsRegistryProps {
   onAgentChange?: (agentId: string | undefined) => void;
   onToolsSelected?: (profileId: string, selectedTools: string[], appName: string, appSlug: string) => void;
   onClose?: () => void;
+  initialSelectedApp?: string | null;
 }
 
 export const IntegrationsRegistry: React.FC<IntegrationsRegistryProps> = ({
@@ -14,7 +15,8 @@ export const IntegrationsRegistry: React.FC<IntegrationsRegistryProps> = ({
   selectedAgentId,
   onAgentChange,
   onToolsSelected,
-  onClose
+  onClose,
+  initialSelectedApp,
 }) => {
   return (
     <ComposioRegistry
@@ -23,6 +25,7 @@ export const IntegrationsRegistry: React.FC<IntegrationsRegistryProps> = ({
       onAgentChange={onAgentChange}
       onToolsSelected={onToolsSelected}
       onClose={onClose}
+      initialSelectedApp={initialSelectedApp}
     />
   );
 }; 

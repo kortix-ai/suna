@@ -26,24 +26,24 @@ export const PixelArtEditor: React.FC<PixelArtEditorProps> = ({
 }) => {
   const [grid, setGrid] = useState<string[][]>(() => {
     // Initialize grid with transparent pixels
-    const initialGrid = Array(GRID_SIZE).fill(null).map(() => 
+    const initialGrid = Array(GRID_SIZE).fill(null).map(() =>
       Array(GRID_SIZE).fill('transparent')
     );
-    
+
     // If there's initial pixel art, try to parse it
     if (initialPixelArt) {
       try {
         const parser = new DOMParser();
         const doc = parser.parseFromString(initialPixelArt, 'image/svg+xml');
         const rects = doc.querySelectorAll('rect');
-        
+
         rects.forEach(rect => {
           const x = parseInt(rect.getAttribute('x') || '0');
           const y = parseInt(rect.getAttribute('y') || '0');
           const width = parseInt(rect.getAttribute('width') || '1');
           const height = parseInt(rect.getAttribute('height') || '1');
           const fill = rect.getAttribute('fill') || 'currentColor';
-          
+
           // Fill the grid based on the rect
           for (let row = y; row < y + height && row < GRID_SIZE; row++) {
             for (let col = x; col < x + width && col < GRID_SIZE; col++) {
@@ -57,7 +57,7 @@ export const PixelArtEditor: React.FC<PixelArtEditorProps> = ({
         console.warn('Failed to parse initial pixel art:', error);
       }
     }
-    
+
     return initialGrid;
   });
 
@@ -89,7 +89,7 @@ export const PixelArtEditor: React.FC<PixelArtEditorProps> = ({
   }, []);
 
   const clearGrid = useCallback(() => {
-    setGrid(Array(GRID_SIZE).fill(null).map(() => 
+    setGrid(Array(GRID_SIZE).fill(null).map(() =>
       Array(GRID_SIZE).fill('transparent')
     ));
   }, []);
@@ -103,9 +103,9 @@ export const PixelArtEditor: React.FC<PixelArtEditorProps> = ({
           const color = grid[row][col];
           let width = 1;
           let height = 1;
-          while (col + width < GRID_SIZE && 
-                 grid[row][col + width] === color && 
-                 !visited[row][col + width]) {
+          while (col + width < GRID_SIZE &&
+            grid[row][col + width] === color &&
+            !visited[row][col + width]) {
             width++;
           }
           let canExtendHeight = true;
@@ -163,11 +163,10 @@ export const PixelArtEditor: React.FC<PixelArtEditorProps> = ({
             {COLORS.map(color => (
               <button
                 key={color}
-                className={`w-8 h-8 rounded border-2 ${
-                  selectedColor === color && !isErasing
-                    ? 'border-primary ring-2 ring-primary/20' 
+                className={`w-8 h-8 rounded border-2 ${selectedColor === color && !isErasing
+                    ? 'border-primary ring-2 ring-primary/20'
                     : 'border-border'
-                }`}
+                  }`}
                 style={{ backgroundColor: color }}
                 onClick={() => {
                   setSelectedColor(color);
@@ -177,25 +176,24 @@ export const PixelArtEditor: React.FC<PixelArtEditorProps> = ({
               />
             ))}
             <button
-              className={`w-8 h-8 rounded border-2 ${
-                selectedColor === 'currentColor' && !isErasing
-                  ? 'border-primary ring-2 ring-primary/20' 
+              className={`w-8 h-8 rounded border-2 ${selectedColor === 'currentColor' && !isErasing
+                  ? 'border-primary ring-2 ring-primary/20'
                   : 'border-border'
-              } bg-gradient-to-br from-blue-500 to-purple-500`}
+                } bg-gradient-to-br from-blue-500 to-purple-500`}
               onClick={() => {
                 setSelectedColor('currentColor');
                 setIsErasing(false);
               }}
               title="Theme Color"
             >
-              <span className="text-white text-xs font-bold">T</span>
+              <span className="text-white text-xs font-medium">T</span>
             </button>
           </div>
         </div>
         <div className="flex justify-center">
-          <div 
+          <div
             className="grid border-2 border-border bg-white dark:bg-gray-900 relative"
-            style={{ 
+            style={{
               gridTemplateColumns: `repeat(${GRID_SIZE}, 1fr)`,
               width: size,
               height: size
@@ -208,8 +206,8 @@ export const PixelArtEditor: React.FC<PixelArtEditorProps> = ({
                   key={`${rowIndex}-${colIndex}`}
                   className="border border-gray-200 dark:border-gray-700 cursor-pointer hover:opacity-80"
                   style={{
-                    backgroundColor: pixel === 'transparent' ? 'transparent' : 
-                                   pixel === 'currentColor' ? '#3b82f6' : pixel,
+                    backgroundColor: pixel === 'transparent' ? 'transparent' :
+                      pixel === 'currentColor' ? '#3b82f6' : pixel,
                     width: pixelSize,
                     height: pixelSize
                   }}
@@ -224,17 +222,17 @@ export const PixelArtEditor: React.FC<PixelArtEditorProps> = ({
         <div className="space-y-2">
           <span className="text-sm font-medium">Preview:</span>
           <div className="flex items-center gap-4">
-            <div 
+            <div
               className="w-12 h-12 border rounded"
               style={{ backgroundColor: '#3b82f6', color: 'white' }}
               dangerouslySetInnerHTML={{ __html: generateSVG() }}
             />
-            <div 
+            <div
               className="w-12 h-12 border rounded"
               style={{ backgroundColor: '#ef4444', color: 'white' }}
               dangerouslySetInnerHTML={{ __html: generateSVG() }}
             />
-            <div 
+            <div
               className="w-12 h-12 border rounded"
               style={{ backgroundColor: '#10b981', color: 'white' }}
               dangerouslySetInnerHTML={{ __html: generateSVG() }}

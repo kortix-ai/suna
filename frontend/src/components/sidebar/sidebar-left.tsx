@@ -2,9 +2,13 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Bot, Menu, Plus, Zap, ChevronRight, BookOpen } from 'lucide-react';
+import { Bot, Menu, Plus, Zap, ChevronRight, BookOpen, Code, Star, Package, Sparkle, Sparkles, X, MessageCircle, PanelLeftOpen, Settings, LogOut, User, CreditCard, Key, Plug, Shield, DollarSign, KeyRound, Sun, Moon, Book, Database, PanelLeftClose } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 import { NavAgents } from '@/components/sidebar/nav-agents';
+import { NavAgentsView } from '@/components/sidebar/nav-agents-view';
+import { NavGlobalConfig } from '@/components/sidebar/nav-global-config';
+import { NavTriggerRuns } from '@/components/sidebar/nav-trigger-runs';
 import { NavUserWithTeams } from '@/components/sidebar/nav-user-with-teams';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { CTACard } from '@/components/sidebar/cta';
@@ -30,22 +34,86 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { NewAgentDialog } from '@/components/agents/new-agent-dialog';
+import { ThreadSearchModal } from '@/components/sidebar/thread-search-modal';
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useTheme } from 'next-themes';
+import { useRouter } from 'next/navigation';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuGroup,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+  DropdownMenuPortal,
+} from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
 import { usePathname, useSearchParams } from 'next/navigation';
 import posthog from 'posthog-js';
 import { useDocumentModalStore } from '@/lib/stores/use-document-modal-store';
+import { useSubscriptionData } from '@/contexts/SubscriptionContext';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import Image from 'next/image';
+import { isLocalMode } from '@/lib/config';
+import { KortixProcessModal } from './kortix-enterprise-modal';
+
+// Helper function to get plan icon
+function getPlanIcon(planName: string, isLocal: boolean = false) {
+  if (isLocal) return '/plan-icons/ultra.svg';
+
+  const plan = planName?.toLowerCase();
+  if (plan?.includes('ultra')) return '/plan-icons/ultra.svg';
+  if (plan?.includes('pro')) return '/plan-icons/pro.svg';
+  if (plan?.includes('plus')) return '/plan-icons/plus.svg';
+  return '/plan-icons/plus.svg'; // default
+}
+
+// Helper function to get plan name
+function getPlanName(subscriptionData: any, isLocal: boolean = false): string {
+  if (isLocal) return 'Ultra';
+  return subscriptionData?.plan_name || subscriptionData?.tier?.name || 'Free';
+}
+
+// Helper function to get user initials
+function getInitials(name: string) {
+  return name
+    .split(' ')
+    .map((part) => part[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+}
+
+function UserProfileSection({ user }: { user: any }) {
+  const { data: subscriptionData } = useSubscriptionData();
+  const { state } = useSidebar();
+  const isLocal = isLocalMode();
+  const planName = getPlanName(subscriptionData, isLocal);
+
+  // Return the enhanced user object with plan info for NavUserWithTeams
+  const enhancedUser = {
+    ...user,
+    planName,
+    planIcon: getPlanIcon(planName, isLocal)
+  };
+
+  return <NavUserWithTeams user={enhancedUser} />;
+}
 
 function FloatingMobileMenuButton() {
-  const { setOpenMobile, openMobile } = useSidebar();
+  const { setOpenMobile, openMobile, setOpen } = useSidebar();
   const isMobile = useIsMobile();
 
   if (!isMobile || openMobile) return null;
@@ -55,9 +123,12 @@ function FloatingMobileMenuButton() {
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
-            onClick={() => setOpenMobile(true)}
+            onClick={() => {
+              setOpen(true);
+              setOpenMobile(true);
+            }}
             size="icon"
-            className="h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 transition-all duration-200 hover:scale-105 active:scale-95 touch-manipulation"
+            className="h-10 w-10 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 transition-all duration-200 hover:scale-105 active:scale-95 touch-manipulation"
             aria-label="Open menu"
           >
             <Menu className="h-5 w-5" />
@@ -76,6 +147,10 @@ export function SidebarLeft({
 }: React.ComponentProps<typeof Sidebar>) {
   const { state, setOpen, setOpenMobile } = useSidebar();
   const isMobile = useIsMobile();
+  const { theme, setTheme } = useTheme();
+  const router = useRouter();
+  const [activeView, setActiveView] = useState<'chats' | 'agents' | 'starred'>('chats');
+  const [showEnterpriseCard, setShowEnterpriseCard] = useState(true);
   const [user, setUser] = useState<{
     name: string;
     email: string;
@@ -91,7 +166,22 @@ export function SidebarLeft({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [showNewAgentDialog, setShowNewAgentDialog] = useState(false);
+  const [showSearchModal, setShowSearchModal] = useState(false);
   const { isOpen: isDocumentModalOpen } = useDocumentModalStore();
+
+  // Update active view based on pathname
+  useEffect(() => {
+    if (pathname?.includes('/triggers') || pathname?.includes('/knowledge')) {
+      setActiveView('starred');
+    }
+  }, [pathname]);
+
+  // Logout handler
+  const handleLogout = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
 
   useEffect(() => {
     if (isMobile) {
@@ -131,6 +221,7 @@ export function SidebarLeft({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (isDocumentModalOpen) return;
 
+      // CMD+B to toggle sidebar
       if ((event.metaKey || event.ctrlKey) && event.key === 'b') {
         event.preventDefault();
         setOpen(!state.startsWith('expanded'));
@@ -140,11 +231,27 @@ export function SidebarLeft({
           }),
         );
       }
+
+      // CMD+K to open search modal
+      if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+        event.preventDefault();
+        setShowSearchModal(true);
+      }
+
+      // CMD+J to open new chat
+      if ((event.metaKey || event.ctrlKey) && event.key === 'j') {
+        event.preventDefault();
+        posthog.capture('new_task_clicked', { source: 'keyboard_shortcut' });
+        router.push('/dashboard');
+        if (isMobile) {
+          setOpenMobile(false);
+        }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [state, setOpen, isDocumentModalOpen]);
+  }, [state, setOpen, isDocumentModalOpen, router, isMobile, setOpenMobile]);
 
 
 
@@ -152,163 +259,236 @@ export function SidebarLeft({
   return (
     <Sidebar
       collapsible="icon"
-      className="border-r-0 bg-background/95 backdrop-blur-sm [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']"
+      className="border-r border-border/50 bg-background [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']"
       {...props}
     >
-      <SidebarHeader className="px-2 py-2">
-        <div className="flex h-[40px] items-center px-1 relative">
-          <Link href="/dashboard" className="flex-shrink-0" onClick={() => isMobile && setOpenMobile(false)}>
-            <KortixLogo size={24} />
-          </Link>
-          {state !== 'collapsed' && (
-            <div className="ml-2 transition-all duration-200 ease-in-out whitespace-nowrap">
-            </div>
-          )}
-          <div className="ml-auto flex items-center gap-2">
-            {state !== 'collapsed' && !isMobile && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <SidebarTrigger className="h-8 w-8" />
-                </TooltipTrigger>
-                <TooltipContent>Toggle sidebar (CMD+B)</TooltipContent>
-              </Tooltip>
+      <SidebarHeader className={cn("px-6 pt-7 overflow-hidden", state === 'collapsed' && "px-6")}>
+        <div className={cn("flex h-[32px] items-center justify-between min-w-[200px]")}>
+          <div className="">
+            {state === 'collapsed' ? (
+              <div className="pl-2 relative flex items-center justify-center w-fit group/logo">
+                <Link href="/dashboard" onClick={() => isMobile && setOpenMobile(false)}>
+                  <KortixLogo size={20} className="flex-shrink-0 opacity-100 group-hover/logo:opacity-0 transition-opacity" />
+                </Link>
+                <Tooltip delayDuration={2000}>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 absolute opacity-0 group-hover/logo:opacity-100 transition-opacity"
+                      onClick={() => setOpen(true)}
+                    >
+                      <PanelLeftOpen className="!h-5 !w-5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Expand sidebar (CMD+B)</TooltipContent>
+                </Tooltip>
+              </div>
+            ) : (
+              <div className="pl-2 relative flex items-center justify-center w-fit">
+                <Link href="/dashboard" onClick={() => isMobile && setOpenMobile(false)}>
+                  <KortixLogo size={20} className="flex-shrink-0" />
+                </Link>
+              </div>
             )}
+
           </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={() => {
+              if (isMobile) {
+                setOpenMobile(false);
+              } else {
+                setOpen(false);
+              }
+            }}
+          >
+            <PanelLeftClose className="!h-5 !w-5" />
+          </Button>
         </div>
-      </SidebarHeader>
+      </SidebarHeader >
       <SidebarContent className="[&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
-        <SidebarGroup>
-          <Link href="/dashboard">
-            <SidebarMenuButton
-              className={cn('touch-manipulation', {
-                'bg-accent text-accent-foreground font-medium': pathname === '/dashboard',
-              })}
-              onClick={() => {
-                posthog.capture('new_task_clicked');
-                if (isMobile) setOpenMobile(false);
-              }}
+        <AnimatePresence mode="wait">
+          {state === 'collapsed' ? (
+            /* Collapsed layout: + button and 4 state buttons only */
+            <motion.div
+              key="collapsed"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
+              className="px-6 pt-4 space-y-3 flex flex-col items-center"
             >
-              <Plus className="h-4 w-4 mr-1" />
-              <span className="flex items-center justify-between w-full">
-                New Task
-              </span>
-            </SidebarMenuButton>
-          </Link>
-          <Link href="/triggers">
-            <SidebarMenuButton
-              className={cn('touch-manipulation mt-1', {
-                'bg-accent text-accent-foreground font-medium': pathname === '/triggers',
-              })}
-              onClick={() => {
-                if (isMobile) setOpenMobile(false);
-              }}
+              {/* + button */}
+              <div className="w-full flex justify-center">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="h-10 w-10 p-0 shadow-none"
+                  asChild
+                >
+                  <Link
+                    href="/dashboard"
+                    onClick={() => {
+                      posthog.capture('new_task_clicked');
+                      if (isMobile) setOpenMobile(false);
+                    }}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Link>
+                </Button>
+              </div>
+
+              {/* State buttons vertically */}
+              <div className="w-full flex flex-col items-center space-y-3">
+                {[
+                  { view: 'chats' as const, icon: MessageCircle },
+                  { view: 'agents' as const, icon: Bot },
+                  { view: 'starred' as const, icon: Zap },
+                ].map(({ view, icon: Icon }) => (
+                  <Button
+                    key={view}
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      "h-10 w-10 p-0 cursor-pointer hover:bg-card hover:border-[1.5px] hover:border-border",
+                      activeView === view ? 'bg-card border-[1.5px] border-border' : ''
+                    )}
+                    onClick={() => {
+                      setActiveView(view);
+                      setOpen(true); // Expand sidebar when clicking state button
+                    }}
+                  >
+                    <Icon className="!h-4 !w-4" />
+                  </Button>
+                ))}
+              </div>
+            </motion.div>
+          ) : (
+            /* Expanded layout */
+            <motion.div
+              key="expanded"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15, ease: "easeOut" }}
+              className="flex flex-col h-full"
             >
-              <Zap className="h-4 w-4 mr-1" />
-              <span className="flex items-center justify-between w-full">
-                Triggers
-              </span>
-            </SidebarMenuButton>
-          </Link>
-          <Link href="/knowledge">
-            <SidebarMenuButton
-              className={cn('touch-manipulation mt-1', {
-                'bg-accent text-accent-foreground font-medium': pathname === '/knowledge',
-              })}
-              onClick={() => {
-                if (isMobile) setOpenMobile(false);
-              }}
-            >
-              <BookOpen className="h-4 w-4 mr-1" />
-              <span className="flex items-center justify-between w-full">
-                Knowledge Base
-              </span>
-            </SidebarMenuButton>
-          </Link>
-          {(
-            <SidebarMenu>
-              <Collapsible
-                defaultOpen={true}
-                className="group/collapsible"
-              >
-                <SidebarMenuItem>
-                  <CollapsibleTrigger asChild>
-                    <SidebarMenuButton
-                      tooltip="Agents"
+              <div className="px-6 pt-4 space-y-4">
+                {/* New Chat button */}
+                <div className="w-full">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full shadow-none justify-between h-10 px-4"
+                    asChild
+                  >
+                    <Link
+                      href="/dashboard"
                       onClick={() => {
-                        if (state === 'collapsed') {
-                          setOpen(true);
-                        }
+                        posthog.capture('new_task_clicked');
+                        if (isMobile) setOpenMobile(false);
                       }}
                     >
-                      <Bot className="h-4 w-4 mr-1" />
-                      <span>Agents</span>
-                      <ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                    </SidebarMenuButton>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <SidebarMenuSub>
-                      {/* <SidebarMenuSubItem>
-                        <SidebarMenuSubButton className={cn('pl-3 touch-manipulation', {
-                          'bg-accent text-accent-foreground font-medium': pathname === '/agents' && searchParams.get('tab') === 'marketplace',
-                        })} asChild>
-                          <Link href="/agents?tab=marketplace" onClick={() => isMobile && setOpenMobile(false)}>
-                            <span>Explore</span>
-                          </Link>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem> */}
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton className={cn('pl-3 touch-manipulation', {
-                          'bg-accent text-accent-foreground font-medium': pathname === '/agents' && (searchParams.get('tab') === 'my-agents' || searchParams.get('tab') === null),
-                        })} asChild>
-                          <Link href="/agents?tab=my-agents" onClick={() => isMobile && setOpenMobile(false)}>
-                            <span>My Agents</span>
-                          </Link>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                      <SidebarMenuSubItem>
-                        <SidebarMenuSubButton
-                          onClick={() => {
-                            setShowNewAgentDialog(true);
-                            if (isMobile) setOpenMobile(false);
-                          }}
-                          className="cursor-pointer pl-3 touch-manipulation"
-                        >
-                          <span>New Agent</span>
-                        </SidebarMenuSubButton>
-                      </SidebarMenuSubItem>
-                    </SidebarMenuSub>
-                  </CollapsibleContent>
-                </SidebarMenuItem>
-              </Collapsible>
-            </SidebarMenu>
+                      <div className="flex items-center gap-2">
+                        <Plus className="h-4 w-4" />
+                        New Chat
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-base leading-0 cursor-pointer">⌘</kbd>
+                        <kbd className="h-6 w-6 flex items-center justify-center bg-muted border border-border rounded-md text-xs cursor-pointer">J</kbd>
+                      </div>
+                    </Link>
+                  </Button>
+                </div>
+
+                {/* State buttons horizontally */}
+                <div className="flex justify-between items-center gap-2">
+                  {[
+                    { view: 'chats' as const, icon: MessageCircle, label: 'Chats' },
+                    { view: 'agents' as const, icon: Bot, label: 'Workers' },
+                    { view: 'starred' as const, icon: Zap, label: 'Triggers' }
+                  ].map(({ view, icon: Icon, label }) => (
+                    <button
+                      key={view}
+                      className={cn(
+                        "flex flex-col items-center justify-center gap-1.5 p-1.5 rounded-2xl cursor-pointer transition-colors w-[64px] h-[64px]",
+                        "hover:bg-muted/60 hover:border-[1.5px] hover:border-border",
+                        activeView === view ? 'bg-card border-[1.5px] border-border' : 'border-[1.5px] border-transparent'
+                      )}
+                      onClick={() => setActiveView(view)}
+                    >
+                      <Icon className="!h-4 !w-4" />
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        {label}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Content area */}
+              <div className="px-6 flex-1 overflow-hidden">
+                {activeView === 'chats' && <NavAgents />}
+                {activeView === 'agents' && <NavAgentsView />}
+                {activeView === 'starred' && (
+                  <>
+                    <NavGlobalConfig />
+                    <NavTriggerRuns />
+                  </>
+                )}
+              </div>
+            </motion.div>
           )}
-        </SidebarGroup>
-        <NavAgents />
+        </AnimatePresence>
       </SidebarContent>
-      {state !== 'collapsed' && (
-        <div className="px-3 py-2">
-          <CTACard />
-        </div>
-      )}
-      <SidebarFooter>
-        {state === 'collapsed' && (
-          <div className="mt-2 flex justify-center">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <SidebarTrigger className="h-8 w-8" />
-              </TooltipTrigger>
-              <TooltipContent>Expand sidebar (CMD+B)</TooltipContent>
-            </Tooltip>
+
+      {/* Enterprise Demo Card - Only show when expanded */}
+      {
+        state !== 'collapsed' && showEnterpriseCard && (
+          <div className="absolute bottom-[86px] left-6 right-6 z-10">
+            <div className="rounded-2xl p-5 backdrop-blur-[12px] border-[1.5px] bg-gradient-to-br from-white/25 to-gray-300/25 dark:from-gray-600/25 dark:to-gray-800/25 border-gray-300/50 dark:border-gray-600/50">
+              <div className="flex items-center gap-2 mb-3">
+                <Sparkles className="h-4 w-4" />
+                <span className="text-sm font-medium text-foreground">Enterprise Demo</span>
+
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowEnterpriseCard(false)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground mb-4">
+                Request custom AI Workers implementation
+              </p>
+              <KortixProcessModal>
+                <Button size="sm" className="w-full text-xs h-8">
+                  Learn More
+                </Button>
+              </KortixProcessModal>
+            </div>
           </div>
-        )}
-        <NavUserWithTeams user={user} />
-      </SidebarFooter>
+        )
+      }
+
+      <div className={cn("pb-4", state === 'collapsed' ? "px-6" : "px-6")}>
+        <UserProfileSection user={user} />
+      </div>
       <SidebarRail />
       <NewAgentDialog
         open={showNewAgentDialog}
         onOpenChange={setShowNewAgentDialog}
       />
-    </Sidebar>
+      <ThreadSearchModal
+        open={showSearchModal}
+        onOpenChange={setShowSearchModal}
+      />
+    </Sidebar >
   );
 }
 

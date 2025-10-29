@@ -24,14 +24,14 @@ interface MonitorCallData {
 
 function extractMonitorData(toolContent: string | undefined): MonitorCallData | null {
   if (!toolContent) return null;
-  
+
   try {
     const parsed = typeof toolContent === 'string' ? JSON.parse(toolContent) : toolContent;
-    
+
     if (!parsed || typeof parsed !== 'object') return null;
-    
+
     let output: any = {};
-    
+
     if ('output' in parsed && typeof parsed.output === 'object') {
       output = parsed.output;
     } else if ('tool_execution' in parsed && typeof parsed.tool_execution === 'object') {
@@ -53,7 +53,7 @@ function extractMonitorData(toolContent: string | undefined): MonitorCallData | 
         return null;
       }
     }
-    
+
     return {
       call_id: output.call_id || '',
       status: output.status || 'unknown',
@@ -97,23 +97,23 @@ export function MonitorCallToolView({
     callId: initialData?.call_id,
     initialTranscript: initialData?.transcript
   });
-  
+
   const [liveTranscript, setLiveTranscript] = useState<any[]>(initialData?.transcript || []);
   const [liveStatus, setLiveStatus] = useState(initialData?.status || 'unknown');
   const toolTitle = getToolTitle(name);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
-  
+
   // Don't use the hook, we'll implement our own subscription
   // useVapiCallRealtime(initialData?.call_id);
-  
+
   // Set up direct Supabase real-time subscription
   useEffect(() => {
     if (!initialData?.call_id) return;
-    
+
     console.log('[MonitorCallToolView] Setting up real-time subscription for:', initialData.call_id);
     const supabase = createClient();
     let channel: RealtimeChannel;
-    
+
     const setupSubscription = async () => {
       // First, do an initial fetch to get current data
       const { data: currentData } = await supabase
@@ -121,7 +121,7 @@ export function MonitorCallToolView({
         .select('*')
         .eq('call_id', initialData.call_id)
         .maybeSingle();
-      
+
       if (currentData) {
         console.log('[MonitorCallToolView] Initial data from DB:', {
           status: currentData.status,
@@ -129,13 +129,13 @@ export function MonitorCallToolView({
         });
         setLiveStatus(currentData.status);
         if (currentData.transcript) {
-          const transcript = typeof currentData.transcript === 'string' 
-            ? JSON.parse(currentData.transcript) 
+          const transcript = typeof currentData.transcript === 'string'
+            ? JSON.parse(currentData.transcript)
             : currentData.transcript;
           setLiveTranscript(Array.isArray(transcript) ? transcript : []);
         }
       }
-      
+
       // Set up real-time subscription
       channel = supabase
         .channel(`call-monitor-${initialData.call_id}`)
@@ -149,14 +149,14 @@ export function MonitorCallToolView({
           },
           (payload) => {
             console.log('[MonitorCallToolView] Real-time update received:', payload);
-            
+
             if (payload.new) {
               const newData = payload.new as any;
               setLiveStatus(newData.status);
-              
+
               if (newData.transcript) {
-                const transcript = typeof newData.transcript === 'string' 
-                  ? JSON.parse(newData.transcript) 
+                const transcript = typeof newData.transcript === 'string'
+                  ? JSON.parse(newData.transcript)
                   : newData.transcript;
                 const transcriptArray = Array.isArray(transcript) ? transcript : [];
                 console.log('[MonitorCallToolView] Updating transcript via real-time:', transcriptArray.length, 'messages');
@@ -169,9 +169,9 @@ export function MonitorCallToolView({
           console.log('[MonitorCallToolView] Subscription status:', status);
         });
     };
-    
+
     setupSubscription();
-    
+
     return () => {
       console.log('[MonitorCallToolView] Cleaning up subscription');
       if (channel) {
@@ -185,19 +185,19 @@ export function MonitorCallToolView({
     queryFn: async () => {
       if (!initialData?.call_id) return null;
       const supabase = createClient();
-      
+
       // Use maybeSingle() instead of single() to handle 0 rows gracefully
       const { data, error } = await supabase
         .from('vapi_calls')
         .select('*')
         .eq('call_id', initialData.call_id)
         .maybeSingle();
-      
+
       if (error && error.code !== 'PGRST116') {
         console.error('[MonitorCallToolView] Error fetching call data:', error);
         return null;
       }
-      
+
       // If no data found, return initial data to keep showing something
       if (!data) {
         console.log('[MonitorCallToolView] No data found, using initial data');
@@ -209,7 +209,7 @@ export function MonitorCallToolView({
           is_live: true
         };
       }
-      
+
       console.log('[MonitorCallToolView] Fetched call data:', {
         status: data.status,
         transcriptLength: Array.isArray(data.transcript) ? data.transcript.length : 0
@@ -246,7 +246,7 @@ export function MonitorCallToolView({
         // Only refetch if we haven't received updates in a while
         refetch();
       }, 3000); // Less frequent since we have real-time subscription
-      
+
       return () => clearInterval(interval);
     }
   }, [liveStatus, refetch]);
@@ -261,7 +261,7 @@ export function MonitorCallToolView({
   const StatusIcon = statusInfo.icon;
   const isActive = currentStatus === 'ringing' || currentStatus === 'in-progress' || currentStatus === 'queued';
   const currentTranscript = liveTranscript; // Always use the live transcript state
-  
+
   return (
     <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
@@ -321,7 +321,7 @@ export function MonitorCallToolView({
               {initialData.call_id}
             </div>
           </div>
-          
+
           {initialData.phone_number && (
             <div className="space-y-1">
               <div className="text-xs text-muted-foreground">Phone Number</div>
@@ -337,7 +337,7 @@ export function MonitorCallToolView({
             <div className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
               <User className="h-3 w-3" />
               {isActive ? (
-                <span className="text-red-500 font-bold">🔴 LIVE CONVERSATION</span>
+                <span className="text-red-500 font-medium">🔴 LIVE CONVERSATION</span>
               ) : (
                 <span>Conversation Transcript</span>
               )}

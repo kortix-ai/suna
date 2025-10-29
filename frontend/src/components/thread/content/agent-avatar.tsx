@@ -10,38 +10,38 @@ import type { Agent } from '@/hooks/react-query/agents/utils';
 interface AgentAvatarProps {
   // For passing agent data directly (preferred - no fetch)
   agent?: Agent;
-  
+
   // For fetching agent by ID (will use cache if available)
   agentId?: string;
   fallbackName?: string;
-  
+
   // For direct props (bypasses agent fetch)
   iconName?: string | null;
   iconColor?: string;
   backgroundColor?: string;
   agentName?: string;
   isSunaDefault?: boolean;
-  
+
   // Common props
   size?: number;
   className?: string;
 }
 
-export const AgentAvatar: React.FC<AgentAvatarProps> = ({ 
+export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   // Agent data props
   agent: propAgent,
-  agentId, 
+  agentId,
   fallbackName = "Suna",
-  
+
   // Direct props
   iconName: propIconName,
   iconColor: propIconColor,
   backgroundColor: propBackgroundColor,
   agentName: propAgentName,
   isSunaDefault: propIsSunaDefault,
-  
+
   // Common props
-  size = 16, 
+  size = 16,
   className = ""
 }) => {
   // Try to get agent from cache if agentId is provided and agent prop is not
@@ -50,9 +50,8 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
 
   // Determine values from props or agent data
   const iconName = propIconName ?? agent?.icon_name;
-  const iconColor = propIconColor ?? agent?.icon_color ?? '#000000';
+  const iconColor = propIconColor ?? agent?.icon_color ?? '#6B7280';
   const backgroundColor = propBackgroundColor ?? agent?.icon_background ?? '#F3F4F6';
-  const agentName = propAgentName ?? agent?.name ?? fallbackName;
   const isSuna = propIsSunaDefault ?? agent?.metadata?.is_suna_default;
 
   // Calculate responsive border radius - proportional to size
@@ -64,8 +63,8 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   // Show skeleton when no data is available
   if (!agent && !propIconName && !propIsSunaDefault && agentId) {
     return (
-      <div 
-        className={cn("bg-muted animate-pulse border", className)}
+      <div
+        className={cn("bg-muted animate-pulse", className)}
         style={{ width: size, height: size, ...borderRadiusStyle }}
       />
     );
@@ -73,35 +72,35 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
 
   if (isSuna) {
     return (
-      <div 
+      <div
         className={cn(
-          "flex items-center justify-center bg-muted border",
+          "flex items-center justify-center bg-card border",
           className
         )}
         style={{ width: size, height: size, ...borderRadiusStyle }}
       >
-        <KortixLogo size={size * 0.6} />
+        <KortixLogo size={size * 0.5} />
       </div>
     );
   }
 
   if (iconName) {
     return (
-      <div 
+      <div
         className={cn(
           "flex items-center justify-center transition-all border",
           className
         )}
-        style={{ 
-          width: size, 
+        style={{
+          width: size,
           height: size,
           backgroundColor,
           ...borderRadiusStyle
         }}
       >
-        <DynamicIcon 
-          name={iconName as any} 
-          size={size * 0.5} 
+        <DynamicIcon
+          name={iconName as any}
+          size={size * 0.5}
           color={iconColor}
         />
       </div>
@@ -110,16 +109,16 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
 
   // Fallback to default bot icon
   return (
-    <div 
+    <div
       className={cn(
-        "flex items-center justify-center bg-muted border",
+        "flex items-center justify-center bg-card border",
         className
       )}
       style={{ width: size, height: size, ...borderRadiusStyle }}
     >
-      <DynamicIcon 
-        name="bot" 
-        size={size * 0.5} 
+      <DynamicIcon
+        name="bot"
+        size={size * 0.5}
         color="#6B7280"
       />
     </div>
@@ -132,10 +131,10 @@ interface AgentNameProps {
   fallback?: string;
 }
 
-export const AgentName: React.FC<AgentNameProps> = ({ 
+export const AgentName: React.FC<AgentNameProps> = ({
   agent: propAgent,
-  agentId, 
-  fallback = "Suna" 
+  agentId,
+  fallback = "Suna"
 }) => {
   const cachedAgent = useAgentFromCache(!propAgent && agentId ? agentId : undefined);
   const agent = propAgent || cachedAgent;

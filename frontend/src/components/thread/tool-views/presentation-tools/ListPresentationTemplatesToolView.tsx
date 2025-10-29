@@ -32,11 +32,11 @@ export function ListPresentationTemplatesToolView({
   const toolTitle = getToolTitle(name)
   const { toolResult } = extractToolData(toolContent)
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null)
-  
+
   const handleTemplateClick = (templateId: string) => {
     setSelectedTemplate(templateId)
   }
-  
+
   const handleBack = () => {
     setSelectedTemplate(null)
   }
@@ -58,7 +58,7 @@ export function ListPresentationTemplatesToolView({
       } else {
         templatesData = output as unknown as TemplatesData
       }
-      
+
       // Check if this is load_template_design (has template_name in response)
       if (templatesData && (templatesData as any).template_name) {
         autoOpenTemplate = (templatesData as any).template_name
@@ -68,20 +68,20 @@ export function ListPresentationTemplatesToolView({
     console.error("Error processing tool result:", e)
     error = "Error processing templates data"
   }
-  
+
   // Auto-open template if specified (from load_template_design)
   if (autoOpenTemplate && !selectedTemplate) {
     setSelectedTemplate(autoOpenTemplate)
   }
 
   const templates = templatesData?.templates || []
-  
+
   // If a template is selected, show PDF viewer
   if (selectedTemplate) {
     const template = templates.find(t => t.id === selectedTemplate)
     const pdfUrl = `${getPdfUrl(selectedTemplate)}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`
     const showBackButton = !autoOpenTemplate // Only show back button if user clicked from grid, not auto-opened
-    
+
     return (
       <Card className="gap-0 flex border shadow-none border-t border-b-0 border-x-0 p-0 rounded-none flex-col h-full overflow-hidden bg-card">
         <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
@@ -109,7 +109,7 @@ export function ListPresentationTemplatesToolView({
             )}
           </div>
         </CardHeader>
-        
+
         <CardContent className="p-0 h-full flex-1 overflow-hidden relative bg-muted/10">
           <object
             data={pdfUrl}

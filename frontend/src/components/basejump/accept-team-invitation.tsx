@@ -18,7 +18,7 @@ export default async function AcceptTeamInvitation({ token }: Props) {
       <CardContent className="p-8 text-center flex flex-col gap-y-8">
         <div>
           <p>You've been invited to join</p>
-          <h1 className="text-xl font-bold">{invitation.account_name}</h1>
+          <h1 className="text-xl font-medium">{invitation.account_name}</h1>
         </div>
         {Boolean(invitation.active) ? (
           <form>

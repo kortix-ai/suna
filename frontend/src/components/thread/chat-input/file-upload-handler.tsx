@@ -146,7 +146,7 @@ const uploadFiles = async (
     }
 
     setUploadedFiles((prev) => [...prev, ...newUploadedFiles]);
-    
+
     // Clear pending files after successful upload
     if (setPendingFiles) {
       setPendingFiles([]);

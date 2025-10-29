@@ -35,7 +35,7 @@ export const Changelog = ({
     <section id="changelog" className="py-32 px-10 lg:px-0">
       <div className="container">
         <div className="mx-auto max-w-3xl">
-          <h1 className="mb-4 text-3xl font-bold tracking-tight md:text-5xl">
+          <h1 className="mb-4 text-3xl font-medium tracking-tight md:text-5xl">
             {title}
           </h1>
           <p className="mb-6 text-base text-muted-foreground md:text-lg">
@@ -57,7 +57,7 @@ export const Changelog = ({
                 </span>
               </div>
               <div className="flex flex-col">
-                <h2 className="mb-3 text-lg leading-tight font-bold text-foreground/90 md:text-2xl">
+                <h2 className="mb-3 text-lg leading-tight font-medium text-foreground/90 md:text-2xl">
                   {entry.title}
                 </h2>
                 <p className="text-sm text-muted-foreground md:text-base">
