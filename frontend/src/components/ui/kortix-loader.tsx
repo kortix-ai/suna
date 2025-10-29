@@ -91,31 +91,31 @@ export function KortixLoader({
 }: KortixLoaderProps) {
   const { resolvedTheme } = useTheme();
   const loaderSize = customSize || SIZE_MAP[size];
+  const lottieRef = React.useRef<any>(null);
   
   // Determine which theme to use
   const effectiveTheme = forceTheme || resolvedTheme;
-  
-  // Create color filter based on theme
-  // The Lottie is originally white, we invert for light mode
-  const colorFilter = React.useMemo(() => {
-    if (effectiveTheme === 'dark') {
-      // Keep white for dark mode
-      return undefined;
+
+  // Ensure animation starts from beginning
+  React.useEffect(() => {
+    if (lottieRef.current) {
+      lottieRef.current.goToAndPlay(0, true);
     }
-    // Black for light mode
-    return 'invert(1)';
-  }, [effectiveTheme]);
+  }, []);
 
   return (
     <div className={cn('flex items-center justify-center', className)} style={style}>
-      <div style={{ width: loaderSize, height: loaderSize, filter: colorFilter, opacity: 1 }}>
-        <Lottie
-          animationData={animationData}
-          loop={loop}
-          autoplay={autoPlay}
-          style={{ width: loaderSize, height: loaderSize, opacity: 1 }}
-        />
-      </div>
+      <Lottie
+        lottieRef={lottieRef}
+        animationData={animationData}
+        loop={loop}
+        autoplay={autoPlay}
+        style={{ 
+          width: loaderSize, 
+          height: loaderSize,
+          filter: effectiveTheme === 'light' ? 'brightness(0)' : undefined
+        }}
+      />
     </div>
   );
 }

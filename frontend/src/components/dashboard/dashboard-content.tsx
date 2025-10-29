@@ -373,7 +373,6 @@ export function DashboardContent() {
       <div className="flex flex-col h-screen w-full overflow-hidden">
 
 
-
         <div className="flex-1 overflow-y-auto">
           <div className="min-h-full flex flex-col">
             {/* Tabs at the top */}
@@ -441,7 +440,7 @@ export function DashboardContent() {
                           hideAttachments={false}
                           selectedAgentId={selectedAgentId}
                           onAgentSelect={setSelectedAgent}
-                          enableAdvancedConfig={false}
+                          enableAdvancedConfig={!isStagingMode() && !isLocalMode()}
                           onConfigureAgent={(agentId) => {
                             setConfigAgentId(agentId);
                             setShowConfigDialog(true);
