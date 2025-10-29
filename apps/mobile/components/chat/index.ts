@@ -9,3 +9,7 @@ export {
 } from './FileAttachmentRenderer';
 export type { ToolMessagePair } from './MessageRenderer';
 export type { ChatInputRef } from './ChatInput';
+
+// Shared components
+export { ChatInputSection, ChatDrawers } from './shared';
+export type { ChatInputSectionProps, ChatInputSectionRef, ChatDrawersProps } from './shared';

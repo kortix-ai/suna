@@ -1,7 +1,8 @@
 import * as React from 'react';
-import { View, ActivityIndicator } from 'react-native';
+import { View } from 'react-native';
 import { useRouter, useSegments } from 'expo-router';
 import { useAuthContext } from '@/contexts';
+import { KortixLoader } from '@/components/ui';
 
 /**
  * ProtectedRoute Component
@@ -43,7 +44,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   if (isLoading) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
-        <ActivityIndicator size="large" color="hsl(var(--primary))" />
+        <KortixLoader size="large" />
       </View>
     );
   }

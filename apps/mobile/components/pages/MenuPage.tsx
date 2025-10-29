@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Pressable, ScrollView, View, ActivityIndicator } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { 
   useAnimatedStyle, 
@@ -13,6 +13,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { SearchBar } from '@/components/ui/SearchBar';
+import { KortixLoader } from '@/components/ui';
 import { Search, Plus, ChevronLeft, AlertCircle, MessageSquare, Users, Zap } from 'lucide-react-native';
 import { ConversationSection } from '@/components/menu/ConversationSection';
 import { BottomNav } from '@/components/menu/BottomNav';
@@ -114,7 +115,7 @@ function EmptyState({
   if (type === 'loading') {
     return (
       <View className="items-center justify-center py-16 px-8">
-        <ActivityIndicator size="large" color={colorScheme === 'dark' ? '#FFFFFF' : '#000000'} />
+        <KortixLoader size="large" />
         <Text className="text-muted-foreground text-sm font-roobert mt-4 text-center">
           {title}
         </Text>

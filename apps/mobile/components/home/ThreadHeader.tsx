@@ -1,8 +1,9 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
+import { KortixLoader } from '@/components/ui';
 import { useLanguage } from '@/contexts';
 import * as React from 'react';
-import { Pressable, TextInput, View, ActivityIndicator } from 'react-native';
+import { Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChevronRight, MoreHorizontal } from 'lucide-react-native';
 import Animated, {
@@ -95,17 +96,14 @@ export function ThreadHeader({
       try {
         await onTitleChange?.(newTitle);
         console.log('✅ Title updated successfully');
-        // Optimistically keep the new title immediately after success
         setEditedTitle(newTitle);
       } catch (error) {
         console.error('❌ Failed to update title:', error);
-        // Revert to original on error
         setEditedTitle(threadTitle || '');
       } finally {
         setIsUpdating(false);
       }
     } else {
-      // Revert if empty or unchanged
       setEditedTitle(threadTitle || '');
     }
   };
@@ -158,10 +156,7 @@ export function ThreadHeader({
           {/* Center - Thread Title (Editable) */}
           <View className="flex-1 mx-2.5 flex-row items-center justify-center">
             {isUpdating ? (
-              <ActivityIndicator 
-                size="small" 
-                color={colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)'}
-              />
+              <KortixLoader size="small" />
             ) : isEditingTitle ? (
               <TextInput
                 ref={titleInputRef}

@@ -1,7 +1,6 @@
 import * as React from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, View, Keyboard, ScrollView, ActivityIndicator, Alert, Modal, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
 import Animated, { 
   useAnimatedStyle, 
@@ -15,12 +14,10 @@ import Animated, {
   Easing,
 } from 'react-native-reanimated';
 import LottieView from 'lottie-react-native';
-import { MessageRenderer, ToolCallPanel, ChatInput, type ToolMessagePair } from '@/components/chat';
+import { MessageRenderer, ToolCallPanel, ChatInputSection, ChatDrawers, type ToolMessagePair } from '@/components/chat';
 import { ThreadHeader, ThreadActionsDrawer } from '@/components/threads';
-import { AgentDrawer } from '@/components/agents';
-import { AttachmentDrawer, AttachmentBar } from '@/components/attachments';
 import { FileManagerScreen } from '@/components/files';
-import { useAgentManager, useAudioRecorder, useAudioRecordingHandlers, type UseChatReturn, useDeleteThread, useShareThread } from '@/hooks';
+import { useChatCommons, type UseChatReturn, useDeleteThread, useShareThread } from '@/hooks';
 import { useThread } from '@/lib/chat';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -235,17 +232,8 @@ export function ThreadPage({
   isAuthenticated,
   onOpenAuthDrawer,
 }: ThreadPageProps) {
-  // Custom hooks - Clean separation of concerns
-  const agentManager = useAgentManager();
-  const audioRecorder = useAudioRecorder();
-  const audioHandlers = useAudioRecordingHandlers(
-    audioRecorder, 
-    agentManager, 
-    chat.transcribeAndAddToInput
-  );
-  
-  // Combined transcription state (from either chat or audio handlers)
-  const isTranscribing = chat.isTranscribing || audioHandlers.isTranscribing;
+  // Use shared chat commons hook
+  const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
@@ -260,21 +248,6 @@ export function ThreadPage({
   // Get full thread data with sandbox info
   const { data: fullThreadData } = useThread(chat.activeThread?.id);
   
-  const keyboard = useAnimatedKeyboard();
-  
-  const animatedBottomStyle = useAnimatedStyle(() => {
-    return {
-      transform: [
-        {
-          translateY: withTiming(-keyboard.height.value, {
-            duration: 250,               // Match iOS keyboard animation duration
-            easing: Easing.out(Easing.cubic),  // iOS-like easing curve
-          }),
-        },
-      ],
-    };
-  });
-
   const messages = chat.messages || [];
   const streamingContent = chat.streamingContent || '';
   const streamingToolCall = chat.streamingToolCall || null;
@@ -534,82 +507,44 @@ export function ThreadPage({
         />
     </View>        
 
-      {/* Bottom Section with Gradient and Chat Input - Smooth keyboard animation */}
-      <Animated.View 
-        className="absolute bottom-0 left-0 right-0" 
-        pointerEvents="box-none"
-        style={animatedBottomStyle}
-      >
-        {/* Gradient fade from transparent to background */}
-        <LinearGradient
-          colors={
-            colorScheme === 'dark'
-              ? ['rgba(18, 18, 21, 0)', 'rgba(18, 18, 21, 0.85)', 'rgba(18, 18, 21, 1)']
-              : ['rgba(248, 248, 248, 0)', 'rgba(248, 248, 248, 0.85)', 'rgba(248, 248, 248, 1)']
-          }
-          locations={[0, 0.4, 1]}
-          style={{
-            position: 'absolute',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            height: 250,
-          }}
-          pointerEvents="none"
-        />
-        
-        {/* Attachment Bar - Above Input */}
-        <AttachmentBar 
-          attachments={chat.attachments}
-          onRemove={chat.removeAttachment}
-        />
-        
-        
-        {/* Chat Input */}
-        <Pressable 
-          onPress={Keyboard.dismiss}
-          accessible={false}
-          className="mx-3 mb-8"
-        >
-          <ChatInput
-            value={chat.inputValue}
-            onChangeText={chat.setInputValue}
-            onSendMessage={(content, agentId, agentName) => chat.sendMessage(content, agentId, agentName)}
-            onSendAudio={audioHandlers.handleSendAudio}
-            onAttachPress={chat.openAttachmentDrawer}
-            onAgentPress={agentManager.openDrawer}
-            onAudioRecord={audioHandlers.handleStartRecording}
-            onCancelRecording={audioHandlers.handleCancelRecording}
-            onStopAgentRun={chat.stopAgent}
-            placeholder={chat.getPlaceholder()}
-            agent={agentManager.selectedAgent || undefined}
-            isRecording={audioRecorder.isRecording}
-            recordingDuration={audioRecorder.recordingDuration}
-            audioLevel={audioRecorder.audioLevel}
-            audioLevels={audioRecorder.audioLevels}
-            attachments={chat.attachments}
-            onRemoveAttachment={chat.removeAttachment}
-            selectedQuickAction={chat.selectedQuickAction}
-            onClearQuickAction={chat.clearQuickAction}
-            isAuthenticated={isAuthenticated}
-            onOpenAuthDrawer={onOpenAuthDrawer}
-            isAgentRunning={chat.isAgentRunning}
-            isSendingMessage={chat.isSendingMessage}
-            isTranscribing={isTranscribing}
-          />
-        </Pressable>
-      </Animated.View>
-
-      {/* Agent Drawer */}
-      <AgentDrawer
-        visible={agentManager.isDrawerVisible}
-        onClose={agentManager.closeDrawer}
+      {/* Chat Input Section with Gradient */}
+      <ChatInputSection
+        value={chat.inputValue}
+        onChangeText={chat.setInputValue}
+        onSendMessage={(content, agentId, agentName) => {
+          // Both ChatInputSection and sendMessage expect non-null strings
+          // This should never receive empty strings from ChatInput
+          chat.sendMessage(content, agentId, agentName);
+        }}
+        onSendAudio={audioHandlers.handleSendAudio}
+        onAttachPress={chat.openAttachmentDrawer}
+        onAgentPress={agentManager.openDrawer}
+        onAudioRecord={audioHandlers.handleStartRecording}
+        onCancelRecording={audioHandlers.handleCancelRecording}
+        onStopAgentRun={chat.stopAgent}
+        placeholder={chat.getPlaceholder()}
+        agent={agentManager.selectedAgent || undefined}
+        isRecording={audioRecorder.isRecording}
+        recordingDuration={audioRecorder.recordingDuration}
+        audioLevel={audioRecorder.audioLevel}
+        audioLevels={audioRecorder.audioLevels}
+        attachments={chat.attachments}
+        onRemoveAttachment={chat.removeAttachment}
+        selectedQuickAction={chat.selectedQuickAction}
+        onClearQuickAction={chat.clearQuickAction}
+        isAuthenticated={isAuthenticated}
+        onOpenAuthDrawer={onOpenAuthDrawer}
+        isAgentRunning={chat.isAgentRunning}
+        isSendingMessage={chat.isSendingMessage}
+        isTranscribing={isTranscribing}
       />
 
-      {/* Attachment Drawer */}
-      <AttachmentDrawer
-        visible={chat.isAttachmentDrawerVisible}
-        onClose={chat.closeAttachmentDrawer}
+      {/* Shared Drawers */}
+      <ChatDrawers
+        isAgentDrawerVisible={agentManager.isDrawerVisible}
+        onCloseAgentDrawer={agentManager.closeDrawer}
+        isAttachmentDrawerVisible={chat.isAttachmentDrawerVisible}
+        onCloseAttachmentDrawer={chat.closeAttachmentDrawer}
         onTakePicture={chat.handleTakePicture}
         onChooseImages={chat.handleChooseImages}
         onChooseFiles={chat.handleChooseFiles}
