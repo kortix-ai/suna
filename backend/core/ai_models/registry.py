@@ -6,11 +6,11 @@ FREE_MODEL_ID = "moonshotai/kimi-k2"
 
 SHOULD_USE_ANTHROPIC = config.ENV_MODE == EnvMode.LOCAL and bool(config.ANTHROPIC_API_KEY)
 
-# Set premium model ID based on environment - now using Haiku 4.5 as default
+# Set premium model ID based on environment - using MAP-tagged application inference profiles with global routing
 if SHOULD_USE_ANTHROPIC:
-    PREMIUM_MODEL_ID = "anthropic/claude-sonnet-4-5-20250929"
-else:  # STAGING or PRODUCTION
-    PREMIUM_MODEL_ID = "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/pe55zlhpikcf"
+    PREMIUM_MODEL_ID = "anthropic/claude-haiku-4-5"
+else:  
+    PREMIUM_MODEL_ID = "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48"
 
 is_local = config.ENV_MODE == EnvMode.LOCAL
 
@@ -21,34 +21,33 @@ class ModelRegistry:
         self._initialize_models()
     
     def _initialize_models(self):
-        # Claude Haiku 4.5 - New default model with 67% cost reduction
-        # self.register(Model(
-        #     id="anthropic/claude-haiku-4-5" if is_local else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/cyuh6gekrmmh",
-        #     name="Haiku 4.5",
-        #     provider=ModelProvider.ANTHROPIC,
-        #     aliases=["claude-haiku-4.5", "anthropic/claude-haiku-4.5", "Claude Haiku 4.5", "claude-haiku-4-5-20251001-v1:0", "bedrock/anthropic.claude-haiku-4-5-20251001-v1:0"],
-        #     context_window=200_000,
-        #     capabilities=[
-        #         ModelCapability.CHAT,
-        #         ModelCapability.FUNCTION_CALLING,
-        #         ModelCapability.VISION,
-        #     ],
-        #     pricing=ModelPricing(
-        #         input_cost_per_million_tokens=1.00,  # 67% reduction from Sonnet 4.0
-        #         output_cost_per_million_tokens=5.00  # 67% reduction from Sonnet 4.0
-        #     ),
-        #     tier_availability=["paid"],
-        #     priority=102,  # Highest priority as new default
-        #     recommended=True,
-        #     enabled=True,
-        #     config=ModelConfig()
-        # ))
+        self.register(Model(
+            id="anthropic/claude-haiku-4-5" if is_local else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48",
+            name="Haiku 4.5",
+            provider=ModelProvider.ANTHROPIC,
+            aliases=["claude-haiku-4.5", "anthropic/claude-haiku-4.5", "Claude Haiku 4.5", "global.anthropic.claude-haiku-4-5-20251001-v1:0", "bedrock/global.anthropic.claude-haiku-4-5-20251001-v1:0", "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48"],
+            context_window=200_000,
+            capabilities=[
+                ModelCapability.CHAT,
+                ModelCapability.FUNCTION_CALLING,
+                ModelCapability.VISION,
+            ],
+            pricing=ModelPricing(
+                input_cost_per_million_tokens=1.00,
+                output_cost_per_million_tokens=5.00
+            ),
+            tier_availability=["paid"],
+            priority=102,
+            recommended=True,
+            enabled=True,
+            config=ModelConfig()
+        ))
         
         self.register(Model(
-            id="anthropic/claude-sonnet-4-5-20250929" if SHOULD_USE_ANTHROPIC else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/pe55zlhpikcf",
+            id="anthropic/claude-sonnet-4-5-20250929" if SHOULD_USE_ANTHROPIC else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh",
             name="Sonnet 4.5",
             provider=ModelProvider.ANTHROPIC,
-            aliases=["claude-sonnet-4.5", "anthropic/claude-sonnet-4.5", "Claude Sonnet 4.5", "claude-sonnet-4-5-20250929", "global.anthropic.claude-sonnet-4-5-20250929-v1:0", "arn:aws:bedrock:us-west-2:935064898258:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0", "bedrock/anthropic.claude-sonnet-4-5-20250929-v1:0"],
+            aliases=["claude-sonnet-4.5", "anthropic/claude-sonnet-4.5", "Claude Sonnet 4.5", "claude-sonnet-4-5-20250929", "global.anthropic.claude-sonnet-4-5-20250929-v1:0", "arn:aws:bedrock:us-west-2:935064898258:inference-profile/global.anthropic.claude-sonnet-4-5-20250929-v1:0", "bedrock/global.anthropic.claude-sonnet-4-5-20250929-v1:0", "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh"],
             context_window=1_000_000,
             capabilities=[
                 ModelCapability.CHAT,
@@ -72,10 +71,10 @@ class ModelRegistry:
         ))
         
         self.register(Model(
-            id="anthropic/claude-sonnet-4-20250514" if SHOULD_USE_ANTHROPIC else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/4vac4byw7fqr",
+            id="anthropic/claude-sonnet-4-20250514" if SHOULD_USE_ANTHROPIC else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf",
             name="Sonnet 4",
             provider=ModelProvider.ANTHROPIC,
-            aliases=["claude-sonnet-4", "Claude Sonnet 4", "claude-sonnet-4-20250514", "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-sonnet-4-20250514-v1:0", "bedrock/anthropic.claude-sonnet-4-20250514-v1:0"],
+            aliases=["claude-sonnet-4", "Claude Sonnet 4", "claude-sonnet-4-20250514", "global.anthropic.claude-sonnet-4-20250514-v1:0", "arn:aws:bedrock:us-west-2:935064898258:inference-profile/global.anthropic.claude-sonnet-4-20250514-v1:0", "bedrock/global.anthropic.claude-sonnet-4-20250514-v1:0", "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf"],
             context_window=1_000_000,
             capabilities=[
                 ModelCapability.CHAT,
@@ -98,30 +97,31 @@ class ModelRegistry:
             )
         ))
         
-        self.register(Model(
-            id="anthropic/claude-3-7-sonnet-latest" if SHOULD_USE_ANTHROPIC else "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-            name="Sonnet 3.7",
-            provider=ModelProvider.ANTHROPIC,
-            aliases=["claude-3.7", "Claude 3.7 Sonnet", "claude-3-7-sonnet-latest", "arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0", "bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0"],
-            context_window=200_000,
-            capabilities=[
-                ModelCapability.CHAT,
-                ModelCapability.FUNCTION_CALLING,
-                ModelCapability.VISION,
-            ],
-            pricing=ModelPricing(
-                input_cost_per_million_tokens=3.00,
-                output_cost_per_million_tokens=15.00
-            ),
-            tier_availability=["paid"],
-            priority=99,
-            enabled=True,
-            config=ModelConfig(
-                # extra_headers={
-                #     "anthropic-beta": "prompt-caching-2024-07-31"
-                # },
-            )
-        ))
+        # Sonnet 3.7 - No global inference profile available yet
+        # self.register(Model(
+        #     id="anthropic/claude-3-7-sonnet-latest" if SHOULD_USE_ANTHROPIC else "global.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        #     name="Sonnet 3.7",
+        #     provider=ModelProvider.ANTHROPIC,
+        #     aliases=["claude-3.7", "Claude 3.7 Sonnet", "claude-3-7-sonnet-latest", "global.anthropic.claude-3-7-sonnet-20250219-v1:0", "arn:aws:bedrock:us-west-2:935064898258:inference-profile/global.anthropic.claude-3-7-sonnet-20250219-v1:0", "bedrock/global.anthropic.claude-3-7-sonnet-20250219-v1:0"],
+        #     context_window=200_000,
+        #     capabilities=[
+        #         ModelCapability.CHAT,
+        #         ModelCapability.FUNCTION_CALLING,
+        #         ModelCapability.VISION,
+        #     ],
+        #     pricing=ModelPricing(
+        #         input_cost_per_million_tokens=3.00,
+        #         output_cost_per_million_tokens=15.00
+        #     ),
+        #     tier_availability=["paid"],
+        #     priority=99,
+        #     enabled=True,
+        #     config=ModelConfig(
+        #         # extra_headers={
+        #         #     "anthropic-beta": "prompt-caching-2024-07-31"
+        #         # },
+        #     )
+        # ))
 
         # Commented out non-Anthropic models as requested
         # self.register(Model(

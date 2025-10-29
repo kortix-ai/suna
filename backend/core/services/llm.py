@@ -102,39 +102,31 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
         },
     ]
     
-    # Configure fallbacks: Bedrock models ONLY (never fall back to direct API providers)
+    # Configure fallbacks: MAP-tagged Bedrock app inference profiles (global routing, 14B tokens/day)
     fallbacks = [
-        # MAP-tagged Bedrock Sonnet 4.5 -> Bedrock Haiku 4.5 -> Bedrock Sonnet 4 -> Bedrock Sonnet 3.7 -> Anthropic Sonnet 4.5 -> Anthropic Haiku 4.5 -> Anthropic Sonnet 4 -> Anthropic Sonnet 3.7
+        # MAP-tagged Haiku 4.5 (default) -> Sonnet 4 -> Sonnet 4.5 -> Anthropic fallbacks
         {
-            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/pe55zlhpikcf": [
-                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/4vac4byw7fqr",
-                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/cyuh6gekrmmh",
-                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48": [
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf",
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh",
+                "anthropic/claude-haiku-4-5-20251001",
+                "anthropic/claude-sonnet-4-20250514"
+            ]
+        },
+        # MAP-tagged Sonnet 4.5 -> Sonnet 4 -> Haiku 4.5 -> Anthropic fallbacks
+        {
+            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/few7z4l830xh": [
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf",
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48",
                 "anthropic/claude-sonnet-4-5-20250929",
-                "anthropic/claude-haiku-4-5-20251001",
-                "anthropic/claude-sonnet-4-20250514",
-                "anthropic/claude-3-7-sonnet-latest"
+                "anthropic/claude-sonnet-4-20250514"
             ]
         },
-        # MAP-tagged Bedrock Sonnet 4 -> Bedrock Sonnet 3.7 -> Anthropic Sonnet 4 -> Anthropic Sonnet 3.7
+        # MAP-tagged Sonnet 4 -> Haiku 4.5 -> Anthropic fallbacks
         {
-            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/4vac4byw7fqr": [
-                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0",
-                "anthropic/claude-sonnet-4-20250514",
-                "anthropic/claude-3-7-sonnet-latest"
-            ]
-        },
-        # MAP-tagged Bedrock Haiku 4.5 -> Anthropic Haiku 4.5 -> Anthropic Haiku 3.5
-        {
-            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/cyuh6gekrmmh": [
-                "anthropic/claude-haiku-4-5-20251001",
-                "anthropic/claude-3-5-haiku-20241022"
-            ]
-        },
-        # Bedrock Sonnet 3.7 -> Anthropic Sonnet 3.7
-        {
-            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-7-sonnet-20250219-v1:0": [
-                "anthropic/claude-3-7-sonnet-latest"
+            "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/tyj1ks3nj9qf": [
+                "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48",
+                "anthropic/claude-sonnet-4-20250514"
             ]
         }
     ]
