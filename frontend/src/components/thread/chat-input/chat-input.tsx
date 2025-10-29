@@ -115,6 +115,7 @@ export interface ChatInputProps {
   animatePlaceholder?: boolean;
   selectedCharts?: string[];
   selectedOutputFormat?: string | null;
+  selectedTemplate?: string | null;
   threadId?: string | null;
   projectId?: string;
 }
@@ -166,6 +167,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       animatePlaceholder = false,
       selectedCharts = [],
       selectedOutputFormat = null,
+      selectedTemplate = null,
       threadId = null,
       projectId,
     },
@@ -340,6 +342,15 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       return markdown;
     }, [selectedMode, selectedCharts, selectedOutputFormat]);
 
+    // Generate Markdown for selected slides template
+    const generateSlidesTemplateMarkdown = useCallback(() => {
+      if (selectedMode !== 'slides' || !selectedTemplate) {
+        return '';
+      }
+      
+      return `\n\n----\n\n**Presentation Template:** ${selectedTemplate}`;
+    }, [selectedMode, selectedTemplate]);
+
     // Handle mode deselection with animation
     const handleModeDeselect = useCallback(() => {
       setIsModeDismissing(true);
@@ -408,6 +419,12 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
         message = message + dataOptionsMarkdown;
       }
 
+      // Append Markdown for slides template
+      const slidesTemplateMarkdown = generateSlidesTemplateMarkdown();
+      if (slidesTemplateMarkdown) {
+        message = message + slidesTemplateMarkdown;
+      }
+
       const baseModelName = getActualModelId(selectedModel);
 
       posthog.capture("task_prompt_submitted", { message });
@@ -426,7 +443,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       }
 
       setUploadedFiles([]);
-    }, [value, uploadedFiles, loading, disabled, isAgentRunning, isUploading, onStopAgent, generateDataOptionsMarkdown, getActualModelId, selectedModel, onSubmit, selectedAgentId, isControlled, controlledOnChange]);
+    }, [value, uploadedFiles, loading, disabled, isAgentRunning, isUploading, onStopAgent, generateDataOptionsMarkdown, generateSlidesTemplateMarkdown, getActualModelId, selectedModel, onSubmit, selectedAgentId, isControlled, controlledOnChange]);
 
     const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
       const newValue = e.target.value;

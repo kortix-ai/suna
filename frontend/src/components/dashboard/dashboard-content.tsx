@@ -80,12 +80,16 @@ export function DashboardContent() {
   const [viewMode, setViewMode] = useState<'super-worker' | 'worker-templates'>('super-worker');
   const [selectedCharts, setSelectedCharts] = useState<string[]>([]);
   const [selectedOutputFormat, setSelectedOutputFormat] = useState<string | null>(null);
-
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  
   // Reset data selections when mode changes
   React.useEffect(() => {
     if (selectedMode !== 'data') {
       setSelectedCharts([]);
       setSelectedOutputFormat(null);
+    }
+    if (selectedMode !== 'slides') {
+      setSelectedTemplate(null);
     }
   }, [selectedMode]);
   const {
@@ -447,6 +451,7 @@ export function DashboardContent() {
                           animatePlaceholder={true}
                           selectedCharts={selectedCharts}
                           selectedOutputFormat={selectedOutputFormat}
+                          selectedTemplate={selectedTemplate}
                         />
                       </div>
                     </div>
@@ -465,6 +470,8 @@ export function DashboardContent() {
                           onChartsChange={setSelectedCharts}
                           selectedOutputFormat={selectedOutputFormat}
                           onOutputFormatChange={setSelectedOutputFormat}
+                          selectedTemplate={selectedTemplate}
+                          onTemplateChange={setSelectedTemplate}
                         />
                       </div>
                     </div>
