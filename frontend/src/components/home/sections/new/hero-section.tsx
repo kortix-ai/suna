@@ -277,19 +277,21 @@ export function HeroSection() {
                         </div>
                     </div>
 
-                    {/* Modes Panel - Below chat input, always visible */}
-                    <div className="w-full max-w-3xl mx-auto mt-4 px-2 sm:px-0">
-                        <SunaModesPanel
-                            selectedMode={selectedMode}
-                            onModeSelect={setSelectedMode}
-                            onSelectPrompt={setInputValue}
-                            isMobile={isMobile}
-                            selectedCharts={selectedCharts}
-                            onChartsChange={setSelectedCharts}
-                            selectedOutputFormat={selectedOutputFormat}
-                            onOutputFormatChange={setSelectedOutputFormat}
-                        />
-                    </div>
+                    {/* Modes Panel - Below chat input, only visible when Suna agent is selected */}
+                    {isSunaAgent && (
+                        <div className="w-full max-w-3xl mx-auto mt-4 px-2 sm:px-0">
+                            <SunaModesPanel
+                                selectedMode={selectedMode}
+                                onModeSelect={setSelectedMode}
+                                onSelectPrompt={setInputValue}
+                                isMobile={isMobile}
+                                selectedCharts={selectedCharts}
+                                onChartsChange={setSelectedCharts}
+                                selectedOutputFormat={selectedOutputFormat}
+                                onOutputFormatChange={setSelectedOutputFormat}
+                            />
+                        </div>
+                    )}
 
 
                 </div>

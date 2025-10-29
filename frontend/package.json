@@ -123,6 +123,7 @@
     "katex": "^0.16.22",
     "libphonenumber-js": "^1.12.10",
     "lodash": "^4.17.21",
+    "lottie-react": "^2.4.1",
     "lowlight": "^3.3.0",
     "lucide-react": "^0.479.0",
     "marked": "^15.0.7",

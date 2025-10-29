@@ -1,6 +1,5 @@
 import React from 'react';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ChatInput } from '@/components/thread/chat-input/chat-input';
 import { cn } from '@/lib/utils';
 
 interface ThreadSkeletonProps {
@@ -22,39 +21,63 @@ export function ThreadSkeleton({
             <div className="h-full flex flex-col">
                 {/* Compact thread content */}
                 <div className="flex-1 overflow-y-auto p-4">
-                    <div className="space-y-4">
+                    <div className="space-y-8">
                         {/* Generate message skeletons */}
                         {Array.from({ length: messageCount }).map((_, index) => (
                             <React.Fragment key={index}>
                                 {/* User message */}
                                 {index % 2 === 0 ? (
-                                    <div className="flex justify-end">
-                                        <div className="max-w-[80%] rounded-lg bg-primary/10 px-3 py-2">
-                                            <div className="space-y-1">
-                                                <Skeleton className="h-3 w-32" />
-                                                <Skeleton className="h-3 w-24" />
+                                    <div className="space-y-3">
+                                        <div className="flex justify-end">
+                                            <div className="flex max-w-[85%] rounded-3xl rounded-br-lg bg-card border px-4 py-3">
+                                                <div className="space-y-2 min-w-0 flex-1">
+                                                    <Skeleton className="h-4 w-48" />
+                                                    <Skeleton className="h-4 w-32" />
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
                                 ) : (
                                     /* Assistant response */
-                                    <div className="flex items-start gap-2">
-                                        <Skeleton className="flex-shrink-0 w-4 h-4 mt-1 rounded-full" />
-                                        <div className="flex-1 max-w-[80%]">
-                                            <div className="rounded-lg bg-muted px-3 py-2">
-                                                <div className="space-y-2">
-                                                    <div className="space-y-1">
-                                                        <Skeleton className="h-3 w-full" />
-                                                        <Skeleton className="h-3 w-3/4" />
-                                                        <Skeleton className="h-3 w-1/2" />
-                                                    </div>
-                                                    
-                                                    {/* Tool call button skeleton */}
-                                                    {index % 3 === 1 && (
-                                                        <Skeleton className="h-5 w-20 rounded-md" />
-                                                    )}
-                                                </div>
+                                    <div className="space-y-3">
+                                        <div className="flex flex-col gap-2">
+                                            {/* Agent Avatar & Name */}
+                                            <div className="flex items-center gap-2">
+                                                <Skeleton className="h-6 w-6 rounded-md flex-shrink-0" />
+                                                <Skeleton className="h-4 w-16" />
                                             </div>
+                                            
+                                             {/* Assistant Message Content */}
+                                             <div className="flex max-w-[90%]">
+                                                 <div className="space-y-3 min-w-0 flex-1">
+                                                     <div className="space-y-2">
+                                                         <Skeleton className="h-4 w-full" />
+                                                         <Skeleton className="h-4 w-[90%]" />
+                                                         <Skeleton className="h-4 w-[75%]" />
+                                                     </div>
+                                                     
+                                                     {/* Tool call section */}
+                                                     {index % 3 === 1 && (
+                                                         <div className="space-y-2 mt-3">
+                                                             <Skeleton className="h-10 w-full rounded-2xl" />
+                                                             <div className="space-y-2">
+                                                                 <Skeleton className="h-4 w-full" />
+                                                                 <Skeleton className="h-4 w-[85%]" />
+                                                                 <Skeleton className="h-4 w-[70%]" />
+                                                             </div>
+                                                         </div>
+                                                     )}
+                                                     
+                                                     {/* Additional longer response lines */}
+                                                     <div className="space-y-2 mt-3">
+                                                         <Skeleton className="h-4 w-full" />
+                                                         <Skeleton className="h-4 w-[95%]" />
+                                                         <Skeleton className="h-4 w-[88%]" />
+                                                         <Skeleton className="h-4 w-[92%]" />
+                                                         <Skeleton className="h-4 w-[78%]" />
+                                                     </div>
+                                                 </div>
+                                             </div>
                                         </div>
                                     </div>
                                 )}
@@ -62,34 +85,22 @@ export function ThreadSkeleton({
                         ))}
 
                         {/* Assistant thinking state */}
-                        <div className="flex items-start gap-2">
-                            <Skeleton className="flex-shrink-0 w-4 h-4 mt-1 rounded-full" />
-                            <div className="flex items-center gap-1 py-1">
-                                <div className="h-1 w-1 rounded-full bg-gray-400/50 animate-pulse" />
-                                <div className="h-1 w-1 rounded-full bg-gray-400/50 animate-pulse delay-150" />
-                                <div className="h-1 w-1 rounded-full bg-gray-400/50 animate-pulse delay-300" />
+                        <div className="space-y-3">
+                            <div className="flex flex-col gap-2">
+                                <div className="flex items-center gap-2">
+                                    <Skeleton className="h-6 w-6 rounded-md flex-shrink-0" />
+                                    <Skeleton className="h-4 w-16" />
+                                </div>
+                                <div className="flex items-center gap-1.5 py-1">
+                                    <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30 animate-pulse" />
+                                    <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30 animate-pulse delay-150" style={{ animationDelay: '150ms' }} />
+                                    <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30 animate-pulse delay-300" style={{ animationDelay: '300ms' }} />
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                {/* Compact Chat Input */}
-                <div className="flex-shrink-0 border-t border-border/20 bg-background p-4">
-                    <ChatInput
-                        onSubmit={() => {}}
-                        onChange={() => {}}
-                        placeholder="Describe what you need help with..."
-                        loading={false}
-                        disabled={true}
-                        isAgentRunning={false}
-                        value=""
-                        hideAttachments={false}
-                        isLoggedIn={true}
-                        hideAgentSelection={true}
-                        defaultShowSnackbar={false}
-                        enableAdvancedConfig={true}
-                    />
-                </div>
             </div>
         );
     }
@@ -98,87 +109,103 @@ export function ThreadSkeleton({
     return (
         <div className="flex h-screen">
             <div
-                className={`flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out`}
+                className="flex flex-col flex-1 overflow-hidden transition-all duration-200 ease-in-out mr-[90%] sm:mr-[450px] md:mr-[500px] lg:mr-[550px] xl:mr-[650px]"
             >
                 {/* Skeleton Header */}
                 {showHeader && (
-                    <div className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+                    <div className="bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
                         <div className="flex h-14 items-center gap-4 px-4">
                             <div className="flex-1">
                                 <div className="flex items-center gap-2">
-                                    <Skeleton className="h-6 w-6 rounded-full" />
+                                    <Skeleton className="h-5 w-5 rounded" />
                                     <Skeleton className="h-5 w-40" />
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
-                                <Skeleton className="h-8 w-8 rounded-full" />
-                                <Skeleton className="h-8 w-8 rounded-full" />
+                                <Skeleton className="h-9 w-9 rounded-md" />
+                                <Skeleton className="h-9 w-9 rounded-md" />
                             </div>
                         </div>
                     </div>
                 )}
 
                 {/* Skeleton Chat Messages */}
-                <div className="flex-1 overflow-y-auto px-6 py-4 pb-72">
-                    <div className="mx-auto max-w-3xl space-y-6">
-                        {/* Generate multiple message skeletons based on messageCount */}
-                        {Array.from({ length: messageCount }).map((_, index) => (
-                            <React.Fragment key={index}>
-                                {/* User message - every other message */}
-                                {index % 2 === 0 ? (
-                                    <div className="flex justify-end">
-                                        <div className="max-w-[85%] rounded-lg bg-primary/10 px-4 py-3">
-                                            <div className="space-y-2">
-                                                <Skeleton className="h-4 w-48" />
-                                                <Skeleton className="h-4 w-32" />
-                                            </div>
-                                        </div>
-                                    </div>
-                                ) : (
-                                    /* Assistant response with tool usage */
-                                    <div>
-                                        <div className="flex items-start gap-3">
-                                            <Skeleton className="flex-shrink-0 w-5 h-5 mt-2 rounded-full" />
-                                            <div className="flex-1 space-y-2">
-                                                <div className="max-w-[90%] w-full rounded-lg bg-muted px-4 py-3">
-                                                    <div className="space-y-3">
-                                                        <div>
-                                                            <Skeleton className="h-4 w-full max-w-[360px] mb-2" />
-                                                            <Skeleton className="h-4 w-full max-w-[320px] mb-2" />
-                                                            <Skeleton className="h-4 w-full max-w-[290px]" />
-                                                        </div>
-
-                                                        {/* Tool call button skeleton */}
-                                                        {index % 3 === 1 && (
-                                                            <div className="py-1">
-                                                                <Skeleton className="h-6 w-32 rounded-md" />
-                                                            </div>
-                                                        )}
-
-                                                        {index % 3 === 1 && (
-                                                            <div>
-                                                                <Skeleton className="h-4 w-full max-w-[340px] mb-2" />
-                                                                <Skeleton className="h-4 w-full max-w-[280px]" />
-                                                            </div>
-                                                        )}
+                <div className="flex-1 overflow-y-auto py-4 pb-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+                    <div className="mx-auto max-w-3xl px-4 md:px-6">
+                        <div className="space-y-8">
+                            {/* Generate multiple message skeletons based on messageCount */}
+                            {Array.from({ length: messageCount }).map((_, index) => (
+                                <React.Fragment key={index}>
+                                    {/* User message - every other message */}
+                                    {index % 2 === 0 ? (
+                                        <div className="space-y-3">
+                                            <div className="flex justify-end">
+                                                <div className="flex max-w-[85%] rounded-3xl rounded-br-lg bg-card border px-4 py-3">
+                                                    <div className="space-y-2 min-w-0 flex-1">
+                                                        <Skeleton className="h-4 w-64" />
+                                                        <Skeleton className="h-4 w-48" />
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
-                                    </div>
-                                )}
-                            </React.Fragment>
-                        ))}
+                                    ) : (
+                                        /* Assistant response with tool usage */
+                                        <div className="space-y-3">
+                                            <div className="flex flex-col gap-2">
+                                                {/* Agent Avatar & Name */}
+                                                <div className="flex items-center gap-2">
+                                                    <Skeleton className="h-6 w-6 rounded-md flex-shrink-0" />
+                                                    <Skeleton className="h-4 w-16" />
+                                                </div>
+                                                
+                                             {/* Assistant Message Content */}
+                                             <div className="flex max-w-[90%]">
+                                                 <div className="space-y-3 min-w-0 flex-1">
+                                                     <div className="space-y-2">
+                                                         <Skeleton className="h-4 w-full max-w-[400px]" />
+                                                         <Skeleton className="h-4 w-full max-w-[360px]" />
+                                                         <Skeleton className="h-4 w-full max-w-[300px]" />
+                                                     </div>
 
-                        {/* Assistant thinking state */}
-                        <div>
-                            <div className="flex items-start gap-3">
-                                <Skeleton className="flex-shrink-0 w-5 h-5 mt-2 rounded-full" />
-                                <div className="flex-1 space-y-2">
+                                                         {/* Tool call section */}
+                                                         {index % 3 === 1 && (
+                                                             <div className="space-y-2 mt-3">
+                                                                 <Skeleton className="h-10 w-full max-w-[400px] rounded-2xl" />
+                                                                 <div className="space-y-2">
+                                                                     <Skeleton className="h-4 w-full max-w-[380px]" />
+                                                                     <Skeleton className="h-4 w-full max-w-[340px]" />
+                                                                     <Skeleton className="h-4 w-full max-w-[280px]" />
+                                                                 </div>
+                                                             </div>
+                                                         )}
+                                                         
+                                                         {/* Additional longer response lines */}
+                                                         <div className="space-y-2 mt-3">
+                                                             <Skeleton className="h-4 w-full max-w-[420px]" />
+                                                             <Skeleton className="h-4 w-full max-w-[390px]" />
+                                                             <Skeleton className="h-4 w-full max-w-[410px]" />
+                                                             <Skeleton className="h-4 w-full max-w-[370px]" />
+                                                             <Skeleton className="h-4 w-full max-w-[320px]" />
+                                                         </div>
+                                                     </div>
+                                                 </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </React.Fragment>
+                            ))}
+
+                            {/* Assistant thinking state */}
+                            <div className="space-y-3">
+                                <div className="flex flex-col gap-2">
+                                    <div className="flex items-center gap-2">
+                                        <Skeleton className="h-6 w-6 rounded-md flex-shrink-0" />
+                                        <Skeleton className="h-4 w-16" />
+                                    </div>
                                     <div className="flex items-center gap-1.5 py-1">
-                                        <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse" />
-                                        <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse delay-150" />
-                                        <div className="h-1.5 w-1.5 rounded-full bg-gray-400/50 animate-pulse delay-300" />
+                                        <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30 animate-pulse" />
+                                        <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30 animate-pulse delay-150" style={{ animationDelay: '150ms' }} />
+                                        <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30 animate-pulse delay-300" style={{ animationDelay: '300ms' }} />
                                     </div>
                                 </div>
                             </div>
@@ -186,44 +213,59 @@ export function ThreadSkeleton({
                     </div>
                 </div>
 
-                {/* ChatInput - Inside the left div, positioned at bottom with exact same styling */}
-                <div
-                    className={cn(
-                        "bg-gradient-to-t from-background via-background/90 to-transparent px-0 pt-8 transition-all duration-200 ease-in-out"
-                    )}
-                >
-                    <div className={cn(
-                        "mx-auto",
-                        "max-w-3xl"
-                    )}>
-                        <ChatInput
-                            onSubmit={() => {}}
-                            onChange={() => {}}
-                            placeholder="Describe what you need help with..."
-                            loading={false}
-                            disabled={true}
-                            isAgentRunning={false}
-                            value=""
-                            hideAttachments={false}
-                            isLoggedIn={true}
-                            hideAgentSelection={true}
-                            defaultShowSnackbar={false}
-                            enableAdvancedConfig={true}
-                        />
+            </div>
+
+            {/* Side Panel - Elegant floating skeleton matching actual design */}
+            <div className="hidden sm:block fixed top-2 right-2 bottom-4 w-[40vw] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[645px] pointer-events-none z-30">
+                <div className="h-full border rounded-3xl bg-card pointer-events-auto flex flex-col overflow-hidden">
+                    {/* Header */}
+                    <div className="pt-4 pl-4 pr-4">
+                        <div className="flex items-center justify-between">
+                            <div className="ml-2">
+                                <Skeleton className="h-5 w-32" />
+                            </div>
+                            <Skeleton className="h-8 w-8 rounded-md" />
+                        </div>
+                    </div>
+
+                    {/* Content area */}
+                    <div className="flex-1 overflow-hidden p-6 pt-4">
+                        <div className="space-y-3">
+                            {/* Tool sections */}
+                            <div className="space-y-2">
+                                <Skeleton className="h-4 w-24" />
+                                <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
+                                    <Skeleton className="h-3 w-full" />
+                                    <Skeleton className="h-3 w-3/4" />
+                                </div>
+                            </div>
+
+                            <div className="space-y-2">
+                                <Skeleton className="h-4 w-32" />
+                                <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
+                                    <Skeleton className="h-3 w-full" />
+                                    <Skeleton className="h-3 w-5/6" />
+                                    <Skeleton className="h-3 w-2/3" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Footer navigation */}
+                    <div className="border-t bg-muted/20 px-4 py-2.5">
+                        <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-1">
+                                <Skeleton className="h-7 w-7 rounded-md" />
+                                <Skeleton className="h-4 w-12" />
+                                <Skeleton className="h-7 w-7 rounded-md" />
+                            </div>
+                            <Skeleton className="h-2 flex-1 rounded-full" />
+                            <Skeleton className="h-6 w-24 rounded-full" />
+                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* Side Panel - Always visible in skeleton with exact responsive widths */}
-            <div className="hidden sm:block">
-                <div className="h-screen w-[90%] sm:w-[450px] md:w-[500px] lg:w-[550px] xl:w-[650px] border-l">
-                    <div className="p-4">
-                        <Skeleton className="h-8 w-32 mb-4" />
-                        <Skeleton className="h-20 w-full rounded-md mb-4" />
-                        <Skeleton className="h-40 w-full rounded-md" />
-                    </div>
-                </div>
-            </div>
         </div>
     );
 }
