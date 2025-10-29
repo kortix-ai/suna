@@ -124,7 +124,6 @@ export function PricingCarousel({
             <View
               key={tier.id}
               style={{ width: CARD_WIDTH }}
-              className={`${isActive ? 'opacity-100' : 'opacity-40'}`}
             >
               <PricingTierCard
                 tier={tier}

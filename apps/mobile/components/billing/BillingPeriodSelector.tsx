@@ -9,6 +9,7 @@ import React from 'react';
 import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import type { BillingPeriod } from '@/lib/billing';
+import * as Haptics from 'expo-haptics';
 
 interface BillingPeriodSelectorProps {
   selected: BillingPeriod;
@@ -19,13 +20,19 @@ interface BillingPeriodSelectorProps {
 export function BillingPeriodSelector({ selected, onChange, t }: BillingPeriodSelectorProps) {
   const periods: BillingPeriod[] = ['yearly_commitment', 'monthly'];
 
+  const handleChange = (period: BillingPeriod) => {
+    if (selected === period) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onChange(period);
+  };
+
   return (
     <View className="mb-4">
       <View className="flex-row gap-2">
         {periods.map((period) => (
           <Pressable
             key={period}
-            onPress={() => onChange(period)}
+            onPress={() => handleChange(period)}
             className={`flex-1 p-3 rounded-2xl border-2 ${
               selected === period
                 ? 'bg-primary/10 border-primary'
@@ -40,8 +47,8 @@ export function BillingPeriodSelector({ selected, onChange, t }: BillingPeriodSe
                 : t('billing.monthly', 'Monthly')}
             </Text>
             {period === 'yearly_commitment' && (
-              <Text className="text-xs text-green-600 text-center mt-1">
-                {t('billing.savePercent', 'Save 20%')}
+              <Text className="text-xs text-primary text-center mt-1">
+                {t('billing.savePercent', 'Save 15%')}
               </Text>
             )}
           </Pressable>

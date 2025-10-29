@@ -357,6 +357,7 @@ docker compose down`
           </AlertDescription>
         </Alert>
       </DocsBody>
+      
       <Separator className="my-6 w-full" />
       <div className='w-full items-center justify-end flex pb-8'>
         <Card onClick={() => window.location.href = '/docs/quick-start'} className="p-2 group rounded-xl w-full lg:w-[400px] hover:opacity-80 transition-opacity">

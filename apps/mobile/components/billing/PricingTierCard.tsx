@@ -11,7 +11,8 @@ import { View, Pressable, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Check } from 'lucide-react-native';
-import type { PricingTier } from '@/lib/billing/types';
+import type { PricingTier } from '@/lib/billing';
+import * as Haptics from 'expo-haptics';
 
 interface PricingTierCardProps {
   tier: PricingTier;
@@ -36,40 +37,30 @@ export function PricingTierCard({
 }: PricingTierCardProps) {
   const featuresToShow = simplified ? tier.features.slice(0, 3) : tier.features;
 
+  const handlePress = () => {
+    if (disabled || isSelected) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onSelect();
+  };
+
   return (
     <Pressable
-      onPress={onSelect}
+      onPress={handlePress}
       disabled={disabled || isSelected}
       className="mb-3"
     >
-      {/* White Card with Border - Adapts to dark mode */}
-      <View className="bg-[#F8F8F8] dark:bg-[#1A1A1D] border-[1.5px] border-[rgba(0,0,0,0.12)] dark:border-[rgba(255,255,255,0.12)] rounded-[18px] pb-[18px] pt-[24px] px-[18px]">
+      {/* Card - Adapts to dark mode */}
+      <View className={`bg-secondary border-2 rounded-2xl pb-4 pt-6 px-4 ${
+        isSelected ? 'border-primary' : 'border-border'
+      }`}>
         {/* Tier Name & Badge */}
-        <View className="flex-row items-center gap-[6px] mb-[6px]">
-          {/* Pro Badge (black with logo in light, white in dark) */}
+        <View className="flex-row items-center gap-2 mb-2">
+          <Text className="text-lg font-roobert-semibold text-foreground">
+            {tier.displayName}
+          </Text>
           {tier.isPopular && (
-            <View className="bg-[#121215] dark:bg-[#F8F8F8] flex-row items-center gap-[5px] px-[10px] py-[6px] rounded-[16px] h-[24px]">
-              <View className="w-[11px] h-[9px] bg-white/90 dark:bg-black/90 rounded-[2px]" />
-              <Text className="text-[12px] font-roobert-medium text-[#F8F8F8] dark:text-[#121215]">
-                {tier.displayName}
-              </Text>
-            </View>
-          )}
-          
-          {/* Plus/Business - Just text with icon */}
-          {!tier.isPopular && (
-            <View className="flex-row items-center gap-[5px]">
-              <View className="w-[15px] h-[13px] bg-black/10 dark:bg-white/10 rounded-[2px]" />
-              <Text className="text-[17px] font-roobert-medium text-[#121215] dark:text-[#F8F8F8]">
-                {tier.displayName}
-              </Text>
-            </View>
-          )}
-
-          {/* Popular Badge */}
-          {tier.isPopular && (
-            <View className="bg-[#F8F8F8] dark:bg-[#1A1A1D] border-[0.75px] border-[#E5E5E5] dark:border-[rgba(255,255,255,0.12)] px-[9px] py-[3px] rounded-[18px] h-[24px] items-center justify-center">
-              <Text className="text-[10.5px] font-roobert-semibold text-[#121215] dark:text-[#F8F8F8] opacity-80 tracking-[-0.105px]">
+            <View className="bg-primary/10 px-2 py-0.5 rounded-full">
+              <Text className="text-xs font-roobert-medium text-primary">
                 Popular
               </Text>
             </View>
@@ -77,49 +68,48 @@ export function PricingTierCard({
         </View>
 
         {/* Price */}
-        <View className="pt-[18px] pb-[24px]">
-          <Text className="text-[48px] font-roobert-medium text-[#121215] dark:text-[#F8F8F8] leading-[1.2]">
+        <View className="pt-4 pb-6">
+          <Text className="text-4xl font-roobert-semibold text-foreground">
             {displayPrice}
           </Text>
-          <Text className="text-[12px] font-roobert-medium text-[#121215] dark:text-[#F8F8F8] opacity-70 mt-[18px]">
+          <Text className="text-sm font-roobert text-muted-foreground mt-2">
             per month
           </Text>
         </View>
 
         {/* Features */}
-        <View className="space-y-[12px] py-[6px] mb-[12px]">
-          {featuresToShow.map((feature, idx) => (
-            <View key={idx} className="flex-row items-center gap-[9px]">
-              {/* Green checkmark icon */}
-              <View className="w-[15px] h-[15px] items-center justify-center">
-                <Icon as={Check} size={15} className="text-green-600 dark:text-green-500" strokeWidth={2.5} />
-              </View>
-              <Text className="flex-1 text-[12px] font-roobert-medium text-[#121215] dark:text-[#F8F8F8] opacity-70">
+        <View className="gap-3 py-2 mb-3">
+          {featuresToShow.map((feature: string, idx: number) => (
+            <View key={idx} className="flex-row items-center gap-2">
+              <Icon as={Check} size={16} className="text-primary" strokeWidth={2} />
+              <Text className="flex-1 text-sm font-roobert text-foreground/80">
                 {feature}
               </Text>
             </View>
           ))}
         </View>
 
-        {/* Select Button - Inverts in dark mode */}
+        {/* Select Button */}
         <Pressable
-          onPress={onSelect}
+          onPress={handlePress}
           disabled={disabled || isSelected}
-          className={`h-[48px] rounded-[16px] items-center justify-center ${
+          className={`h-12 rounded-xl items-center justify-center ${
             isSelected 
-              ? 'bg-[#121215]/30 dark:bg-[#F8F8F8]/30' 
-              : 'bg-[#121215] dark:bg-[#F8F8F8]'
+              ? 'bg-primary/20 border-2 border-primary' 
+              : disabled
+              ? 'bg-muted'
+              : 'bg-primary'
           }`}
         >
           {disabled && !isSelected ? (
-            <ActivityIndicator color="#F8F8F8" size="small" />
+            <ActivityIndicator size="small" />
           ) : (
-            <Text className={`text-[14px] font-roobert-medium ${
+            <Text className={`text-sm font-roobert-medium ${
               isSelected 
-                ? 'text-[#F8F8F8] dark:text-[#121215]' 
-                : 'text-[#F8F8F8] dark:text-[#121215]'
+                ? 'text-primary' 
+                : 'text-primary-foreground'
             }`}>
-              {isSelected ? t('billing.currentActive', 'Current') : 'Select'}
+              {isSelected ? t('billing.currentActive', 'Current Plan') : t('billing.selectPlan', 'Select')}
             </Text>
           )}
         </Pressable>

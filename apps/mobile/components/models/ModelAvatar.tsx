@@ -36,7 +36,7 @@ export function ModelAvatar({ model, size = 48, style, ...props }: ModelAvatarPr
   const iconSize = size * 0.6;
   
   // Icon fill color - white in dark mode, black in light mode
-  const iconFill = colorScheme === 'dark' ? '#ffffff' : '#000000';
+  const iconColor = colorScheme === 'dark' ? '#ffffff' : '#000000';
   
   return (
     <View
@@ -59,7 +59,8 @@ export function ModelAvatar({ model, size = 48, style, ...props }: ModelAvatarPr
         <IconComponent 
           width={iconSize} 
           height={iconSize}
-          fill={iconFill}
+          fill={iconColor}
+          color={iconColor}
         />
       ) : (
         <Cpu 

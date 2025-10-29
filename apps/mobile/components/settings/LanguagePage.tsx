@@ -8,20 +8,21 @@ import Animated, {
 import { useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { X, Check, Globe } from 'lucide-react-native';
+import { Check, Globe } from 'lucide-react-native';
+import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-interface LanguageDrawerProps {
+interface LanguagePageProps {
   visible: boolean;
   onClose: () => void;
 }
 
 /**
- * LanguageDrawer Component
+ * LanguagePage Component
  * 
- * Clean language selector drawer matching Settings style.
+ * Clean language selector page matching Settings style.
  * 
  * Features:
  * - List of all available languages
@@ -30,7 +31,7 @@ interface LanguageDrawerProps {
  * - Smooth animations
  * - Haptic feedback
  */
-export function LanguageDrawer({ visible, onClose }: LanguageDrawerProps) {
+export function LanguagePage({ visible, onClose }: LanguagePageProps) {
   const { currentLanguage, availableLanguages, setLanguage, t } = useLanguage();
   
   const handleLanguageSelect = async (languageCode: string) => {
@@ -39,14 +40,14 @@ export function LanguageDrawer({ visible, onClose }: LanguageDrawerProps) {
     
     await setLanguage(languageCode);
     
-    // Close drawer after a short delay
+    // Close page after a short delay
     setTimeout(() => {
       onClose();
     }, 300);
   };
   
   const handleClose = () => {
-    console.log('🎯 Language drawer closing');
+    console.log('🎯 Language page closing');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
   };
@@ -61,25 +62,14 @@ export function LanguageDrawer({ visible, onClose }: LanguageDrawerProps) {
         className="absolute inset-0 bg-black/50"
       />
       
-      {/* Drawer */}
+      {/* Page */}
       <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
         <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
           {/* Header */}
-          <View className="px-6 pt-16 pb-6 flex-row items-center justify-between">
-            <Pressable
-              onPress={handleClose}
-              className="w-10 h-10 items-center justify-center"
-              hitSlop={8}
-            >
-              <Icon as={X} size={24} className="text-foreground" strokeWidth={2} />
-            </Pressable>
-            
-            <Text className="text-xl font-roobert-semibold text-foreground">
-              {t('languages.title')}
-            </Text>
-            
-            <View className="w-10" />
-          </View>
+          <SettingsHeader
+            title={t('languages.title')}
+            onClose={handleClose}
+          />
           
           {/* Language List */}
           <View className="px-6">

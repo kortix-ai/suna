@@ -9,20 +9,21 @@ import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { X, Sun, Moon, Check } from 'lucide-react-native';
+import { Sun, Moon, Check } from 'lucide-react-native';
+import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-interface ThemeDrawerProps {
+interface ThemePageProps {
   visible: boolean;
   onClose: () => void;
 }
 
 /**
- * ThemeDrawer Component
+ * ThemePage Component
  * 
- * Simple theme selector drawer for switching between light and dark modes.
+ * Simple theme selector page for switching between light and dark modes.
  * 
  * Features:
  * - Full-screen overlay with backdrop
@@ -33,12 +34,12 @@ interface ThemeDrawerProps {
  * - Haptic feedback on selection
  * - Auto-persists theme selection
  */
-export function ThemeDrawer({ visible, onClose }: ThemeDrawerProps) {
+export function ThemePage({ visible, onClose }: ThemePageProps) {
   const { colorScheme, setColorScheme } = useColorScheme();
   const { t } = useLanguage();
   
   const handleClose = React.useCallback(() => {
-    console.log('🎯 Theme drawer closing');
+    console.log('🎯 Theme page closing');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
   }, [onClose]);
@@ -52,7 +53,7 @@ export function ThemeDrawer({ visible, onClose }: ThemeDrawerProps) {
     console.log('🌓 Theme selected:', theme);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     
-    // Change theme immediately - drawer stays open
+    // Change theme immediately - page stays open
     setColorScheme(theme);
   }, [colorScheme, setColorScheme]);
   
@@ -66,28 +67,17 @@ export function ThemeDrawer({ visible, onClose }: ThemeDrawerProps) {
         className="absolute inset-0 bg-black/50"
       />
       
-      {/* Drawer */}
+      {/* Page */}
       <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
-        <View className="flex-1 px-6 pt-16">
+        <View className="flex-1">
           {/* Header */}
-          <View className="flex-row items-center justify-between mb-8">
-            <Pressable
-              onPress={handleClose}
-              className="w-10 h-10 items-center justify-center"
-              hitSlop={8}
-            >
-              <Icon as={X} size={24} className="text-foreground" strokeWidth={2} />
-            </Pressable>
-            
-            <Text className="text-xl font-roobert-semibold text-foreground">
-              {t('settings.themeTitle') || 'Theme'}
-            </Text>
-            
-            <View className="w-10" />
-          </View>
+          <SettingsHeader
+            title={t('settings.themeTitle') || 'Theme'}
+            onClose={handleClose}
+          />
           
           {/* Theme Options */}
-          <View className="gap-3">
+          <View className="px-6 gap-3">
             {/* Light Mode */}
             <ThemeOption
               icon={Sun}
@@ -106,7 +96,8 @@ export function ThemeDrawer({ visible, onClose }: ThemeDrawerProps) {
           </View>
           
           {/* Current Theme Indicator */}
-          <View className="mt-8 p-4 bg-secondary rounded-2xl">
+          <View className="px-6 mt-8">
+            <View className="p-4 bg-secondary rounded-2xl">
             <Text className="text-sm font-roobert text-muted-foreground text-center">
               {t('settings.currentTheme') || 'Current Theme'}:{' '}
               <Text className="font-roobert-medium text-foreground">
@@ -116,6 +107,7 @@ export function ThemeDrawer({ visible, onClose }: ThemeDrawerProps) {
                 }
               </Text>
             </Text>
+          </View>
           </View>
         </View>
       </View>

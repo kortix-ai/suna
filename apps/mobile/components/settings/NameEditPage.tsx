@@ -9,13 +9,14 @@ import { useColorScheme } from 'nativewind';
 import { useAuthContext, useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { X, Save } from 'lucide-react-native';
+import { Save } from 'lucide-react-native';
+import { SettingsHeader } from './SettingsHeader';
 import { supabase } from '@/api/supabase';
 import * as Haptics from 'expo-haptics';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-interface NameEditDrawerProps {
+interface NameEditPageProps {
   visible: boolean;
   currentName: string;
   onClose: () => void;
@@ -23,9 +24,9 @@ interface NameEditDrawerProps {
 }
 
 /**
- * NameEditDrawer Component
+ * NameEditPage Component
  * 
- * Clean, elegant drawer for editing user name.
+ * Clean, elegant page for editing user name.
  * 
  * Features:
  * - Full-screen overlay with backdrop
@@ -36,12 +37,12 @@ interface NameEditDrawerProps {
  * - Error handling with user feedback
  * - Uses Supabase RPC call to update account name
  */
-export function NameEditDrawer({ 
+export function NameEditPage({ 
   visible, 
   currentName, 
   onClose,
   onNameUpdated 
-}: NameEditDrawerProps) {
+}: NameEditPageProps) {
   const { colorScheme } = useColorScheme();
   const { user } = useAuthContext();
   const { t } = useLanguage();
@@ -51,7 +52,7 @@ export function NameEditDrawer({
   const [error, setError] = React.useState<string | null>(null);
   const inputRef = React.useRef<TextInput>(null);
   
-  // Reset name when drawer opens
+  // Reset name when page opens
   React.useEffect(() => {
     if (visible) {
       setName(currentName);
@@ -64,7 +65,7 @@ export function NameEditDrawer({
   }, [visible, currentName]);
   
   const handleClose = () => {
-    console.log('🎯 Name edit drawer closing');
+    console.log('🎯 Name edit page closing');
     Keyboard.dismiss();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
@@ -137,7 +138,7 @@ export function NameEditDrawer({
       
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       
-      // Close drawer first
+      // Close page first
       handleClose();
       
       // Show success message after a short delay
@@ -172,29 +173,18 @@ export function NameEditDrawer({
         className="absolute inset-0 bg-black/50"
       />
       
-      {/* Drawer */}
+      {/* Page */}
       <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
-        <View className="flex-1 px-6 pt-16">
+        <View className="flex-1">
           {/* Header */}
-          <View className="flex-row items-center justify-between mb-8">
-            <Pressable
-              onPress={handleClose}
-              className="w-10 h-10 items-center justify-center"
-              hitSlop={8}
-              disabled={isLoading}
-            >
-              <Icon as={X} size={24} className="text-foreground" strokeWidth={2} />
-            </Pressable>
-            
-            <Text className="text-xl font-roobert-semibold text-foreground">
-              {t('settings.editName') || 'Edit Name'}
-            </Text>
-            
-            <View className="w-10" />
-          </View>
+          <SettingsHeader
+            title={t('settings.editName') || 'Edit Name'}
+            onClose={handleClose}
+            disabled={isLoading}
+          />
           
           {/* Form */}
-          <View className="gap-6">
+          <View className="px-6 gap-6">
             {/* Label */}
             <View>
               <Text className="text-sm font-roobert-medium text-muted-foreground mb-2">
@@ -235,6 +225,7 @@ export function NameEditDrawer({
               isLoading={isLoading}
             />
           </View>
+          
         </View>
       </View>
     </View>

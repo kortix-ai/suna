@@ -18,7 +18,7 @@ import { Search, Plus, ChevronLeft, AlertCircle, MessageSquare, Users, Zap } fro
 import { ConversationSection } from '@/components/menu/ConversationSection';
 import { BottomNav } from '@/components/menu/BottomNav';
 import { ProfileSection } from '@/components/menu/ProfileSection';
-import { SettingsDrawer } from '@/components/menu/SettingsDrawer';
+import { SettingsPage } from '@/components/settings/SettingsPage';
 import { useAuthContext, useLanguage } from '@/contexts';
 import { useRouter } from 'expo-router';
 import { AgentList } from '@/components/agents/AgentList';
@@ -778,8 +778,8 @@ export function MenuPage({
         </View>
       </SafeAreaView>
       
-      {/* Settings Drawer */}
-      <SettingsDrawer
+      {/* Settings Page */}
+      <SettingsPage
         visible={isSettingsVisible}
         profile={profile}
         onClose={handleCloseSettings}
