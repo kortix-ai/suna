@@ -55,32 +55,14 @@ export function WordmarkFooter() {
                     >
                         <div className="relative w-full h-full" style={{ isolation: 'isolate' }}>
                             {/* Base wordmark - symbol for mobile, wordmark for desktop */}
-                            <div className="relative w-full h-full md:hidden opacity-1">
-                                <Image
-                                    src="/kortix-symbol.svg"
-                                    alt="Kortix"
-                                    fill
-                                    className="object-contain"
-                                    priority
-                                    style={{
-                                        mixBlendMode: 'normal',
-                                        filter: 'brightness(0) saturate(100%) invert(0%)'
-                                    }}
-                                />
-                            </div>
-                            <div className="relative w-full h-full dark:block hidden md:hidden opacity-30">
-                                <Image
-                                    src="/kortix-symbol.svg"
-                                    alt="Kortix"
-                                    fill
-                                    className="object-contain"
-                                    priority
-                                    style={{
-                                        mixBlendMode: 'normal',
-                                        filter: 'brightness(0) saturate(100%) invert(100%)'
-                                    }}
-                                />
-                            </div>
+                            <Image
+                                src="/kortix-symbol.svg"
+                                alt="Kortix"
+                                fill
+                                className="object-contain invert dark:invert-0 md:hidden opacity-5"
+                                priority
+                                style={{ mixBlendMode: 'normal' }}
+                            />
                             <Image
                                 src="/wordmark.svg"
                                 alt="Kortix"
