@@ -2,12 +2,23 @@
  * Message Renderer - Clean chat message display
  */
 
-import React, { useMemo, useCallback, useEffect } from 'react';
-import { View, Pressable, Linking, Text as RNText } from 'react-native';
+import React, { useMemo, useCallback, useEffect, useRef } from 'react';
+import { View, Pressable, Linking, Text as RNText, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import type { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/api/types';
 import { groupMessages, safeJsonParse, type MessageGroup } from '@/lib/utils/message-grouping';
-import { parseToolMessage, formatToolOutput, stripXMLTags } from '@/lib/utils/tool-parser';
+import { 
+  parseToolMessage, 
+  formatToolOutput, 
+  stripXMLTags,
+  preprocessTextOnlyTools,
+  parseXmlToolCalls,
+  isNewXmlFormat,
+  HIDE_STREAMING_XML_TAGS,
+  detectAndStripPartialXML,
+  STREAMABLE_TOOLS,
+  extractStreamingContent
+} from '@/lib/utils/tool-parser';
 import { getToolIcon, getUserFriendlyToolName } from '@/lib/utils/tool-display';
 import { AlertCircle, CheckCircle2, type LucideIcon } from 'lucide-react-native';
 import Markdown from 'react-native-markdown-display';
@@ -19,6 +30,7 @@ import {
   extractFileReferences, 
   removeFileReferences 
 } from './FileAttachmentRenderer';
+import { AgentLoader } from './AgentLoader';
 import Animated, { 
   useSharedValue, 
   useAnimatedStyle, 
@@ -41,9 +53,6 @@ interface MessageRendererProps {
   onToolPress?: (toolMessages: ToolMessagePair[], initialIndex: number) => void;
 }
 
-/**
- * Main Message Renderer
- */
 export const MessageRenderer = React.memo(function MessageRenderer({
   messages,
   streamingContent,
@@ -51,10 +60,26 @@ export const MessageRenderer = React.memo(function MessageRenderer({
   isStreaming = false,
   onToolPress,
 }: MessageRendererProps) {
+  const processedStreamingContent = useMemo(() => {
+    if (!streamingContent || !streamingContent.trim()) return '';
+    
+    let processed = streamingContent;
+    
+    if (processed.includes('<function_calls>')) {
+      const beforeFunctionCalls = processed.split('<function_calls>')[0];
+      processed = beforeFunctionCalls;
+    }
+    
+    processed = preprocessTextOnlyTools(processed);
+    processed = detectAndStripPartialXML(processed);
+    
+    return processed.trim();
+  }, [streamingContent]);
+
   const groupedMessages = useMemo(() => {
     let messagesToRender = [...messages];
     
-    if (streamingContent && streamingContent.trim().length > 0) {
+    if (processedStreamingContent) {
       const recentAssistantMsg = [...messages].reverse().find(m => m.type === 'assistant');
       const agentId = recentAssistantMsg?.agent_id || undefined;
       
@@ -64,7 +89,7 @@ export const MessageRenderer = React.memo(function MessageRenderer({
         type: 'assistant',
         agent_id: agentId,
         is_llm_message: true,
-        content: JSON.stringify({ role: 'assistant', content: streamingContent }),
+        content: JSON.stringify({ role: 'assistant', content: processedStreamingContent }),
         metadata: JSON.stringify({ stream_status: 'streaming' }),
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -72,7 +97,7 @@ export const MessageRenderer = React.memo(function MessageRenderer({
     }
 
     return groupMessages(messagesToRender);
-  }, [messages, streamingContent]);
+  }, [messages, processedStreamingContent]);
 
   const allToolMessages = useMemo(() => {
     const pairs: ToolMessagePair[] = [];
@@ -115,6 +140,10 @@ export const MessageRenderer = React.memo(function MessageRenderer({
     return pairs;
   }, [messages]);
 
+  const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
+  const shouldShowInitialLoader = isStreaming && !processedStreamingContent && !streamingToolCall && 
+    (messages.length === 0 || lastMessage?.type === 'user');
+
   return (
     <View className="flex-1 pt-4">
       {groupedMessages.map((group, index) => {
@@ -137,6 +166,9 @@ export const MessageRenderer = React.memo(function MessageRenderer({
               onToolPress={onToolPress}
               allToolMessages={allToolMessages}
               isLast={isLastGroup}
+              isStreaming={isStreaming}
+              hasStreamingContent={!!processedStreamingContent}
+              streamingContent={streamingContent}
             />
           );
         }
@@ -148,10 +180,29 @@ export const MessageRenderer = React.memo(function MessageRenderer({
         }
         return (
           <View className="px-4 mb-2.5">
-            <ToolCard isLoading toolCall={streamingToolCall} />
+            <ToolCard 
+              isLoading 
+              toolCall={streamingToolCall}
+              streamingContent={streamingContent}
+            />
           </View>
         );
       })()}
+      
+      {/* Initial loading state - when agent starts with no content yet */}
+      {shouldShowInitialLoader && (
+        <View className="px-4">
+          <View className="mb-2">
+            <AgentIdentifier 
+              agentId={lastMessage?.agent_id} 
+              size={16} 
+              showName 
+              textSize="base"
+            />
+          </View>
+          <AgentLoader />
+        </View>
+      )}
     </View>
   );
 });
@@ -250,12 +301,18 @@ const AssistantMessageGroup = React.memo(function AssistantMessageGroup({
   onToolPress,
   allToolMessages,
   isLast,
+  isStreaming,
+  hasStreamingContent,
+  streamingContent,
 }: {
   messages: UnifiedMessage[];
   streamingToolCall?: ParsedContent | null;
   onToolPress?: (toolMessages: ToolMessagePair[], initialIndex: number) => void;
   allToolMessages: ToolMessagePair[];
   isLast: boolean;
+  isStreaming: boolean;
+  hasStreamingContent: boolean;
+  streamingContent?: string;
 }) {
   // Build map of tools linked to their calling assistant messages
   const { assistantMessages, toolResultsMap } = useMemo(() => {
@@ -334,7 +391,20 @@ const AssistantMessageGroup = React.memo(function AssistantMessageGroup({
             {/* Streaming tool call - render as part of this assistant's tools */}
             {streamingToolCall && idx === assistantMessages.length - 1 && (
               <View className="px-4 mb-2.5">
-                <ToolCard isLoading toolCall={streamingToolCall} />
+                <ToolCard 
+                  isLoading 
+                  toolCall={streamingToolCall}
+                  streamingContent={streamingContent}
+                />
+              </View>
+            )}
+            
+            {/* Loading state after tool execution - like web version */}
+            {isStreaming && !hasStreamingContent && !streamingToolCall && 
+             linkedTools && linkedTools.length > 0 && 
+             idx === assistantMessages.length - 1 && (
+              <View className="px-4 mt-2">
+                <AgentLoader />
               </View>
             )}
           </View>
@@ -356,7 +426,7 @@ const AssistantMessageGroup = React.memo(function AssistantMessageGroup({
 
 /**
  * Assistant Message Content - Clean markdown rendering with native text selection
- * Now with file attachment support
+ * Now with file attachment support and proper function_calls handling
  */
 const AssistantMessageContent = React.memo(function AssistantMessageContent({ 
   message,
@@ -374,35 +444,42 @@ const AssistantMessageContent = React.memo(function AssistantMessageContent({
     const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
     const streaming = message.message_id === 'streaming-assistant';
     
+    if (streaming) {
+      const files = extractFileReferences(rawContent);
+      const cleanContent = removeFileReferences(rawContent);
+      const sandbox = metadata.sandbox_id;
+      
+      return { 
+        content: cleanContent || null, 
+        fileAttachments: files,
+        sandboxId: sandbox,
+        isStreaming: true,
+      };
+    }
+    
     let contentToProcess = rawContent;
     
-    // If there are function calls, extract text BEFORE them
     if (rawContent.includes('<function_calls>')) {
       const beforeFunctionCalls = rawContent.split('<function_calls>')[0].trim();
       contentToProcess = beforeFunctionCalls;
     }
     
-    // Extract file references
     const files = extractFileReferences(contentToProcess);
+    let cleanContent = removeFileReferences(contentToProcess);
     
-    // Remove file references from content to get clean text
-    const cleanContent = removeFileReferences(contentToProcess);
-    
-    // Clean and strip XML tags
+    cleanContent = preprocessTextOnlyTools(cleanContent);
     const finalContent = stripXMLTags(cleanContent).trim();
     
-    // Try to get sandbox ID from message metadata
     const sandbox = metadata.sandbox_id;
     
     return { 
       content: finalContent || null, 
       fileAttachments: files,
       sandboxId: sandbox,
-      isStreaming: streaming,
+      isStreaming: false,
     };
-  }, [message.content, message.metadata]);
+  }, [message.content, message.metadata, message.message_id]);
 
-  // Override textgroup rule to inject native text selection
   const selectableRules = useMemo(() => ({
     textgroup: (node: any, children: any) => (
       <RNText key={node.key} selectable>
@@ -411,12 +488,10 @@ const AssistantMessageContent = React.memo(function AssistantMessageContent({
     ),
   }), []);
 
-  // Return null if no content and no files
   if (!content && fileAttachments.length === 0) return null;
 
   return (
     <View className={`px-4 ${hasToolsBelow ? 'mb-3' : 'mb-0'}`}>
-      {/* File Attachments */}
       {fileAttachments.length > 0 && (
         <FileAttachmentsGrid
           filePaths={fileAttachments}
@@ -425,7 +500,6 @@ const AssistantMessageContent = React.memo(function AssistantMessageContent({
         />
       )}
       
-      {/* Text Content */}
       {content && (
         <View>
           <Markdown
@@ -457,11 +531,13 @@ const ToolCard = React.memo(function ToolCard({
   isLoading = false,
   toolCall,
   onPress,
+  streamingContent,
 }: {
   message?: UnifiedMessage;
   isLoading?: boolean;
   toolCall?: ParsedContent;
   onPress?: () => void;
+  streamingContent?: string;
 }) {
   // Parse completed tool data
   const completedData = useMemo(() => {
@@ -495,6 +571,25 @@ const ToolCard = React.memo(function ToolCard({
     return { toolName, displayName };
   }, [isLoading, toolCall]);
 
+  const extractedStreamingContent = useMemo(() => {
+    if (!isLoading || !streamingContent || !toolCall) return null;
+    
+    const toolName = toolCall.function_name || toolCall.name || 'Tool';
+    const normalizedToolName = toolName.replace(/_/g, '-').toLowerCase();
+    
+    if (!STREAMABLE_TOOLS.has(normalizedToolName)) return null;
+    
+    return extractStreamingContent(streamingContent, normalizedToolName);
+  }, [isLoading, streamingContent, toolCall]);
+
+  const scrollViewRef = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    if (extractedStreamingContent && scrollViewRef.current) {
+      scrollViewRef.current.scrollToEnd({ animated: true });
+    }
+  }, [extractedStreamingContent]);
+
   // Determine display data
   const toolName = isLoading 
     ? loadingData?.toolName || 'Tool'
@@ -512,6 +607,8 @@ const ToolCard = React.memo(function ToolCard({
   
   const ToolIcon = getToolIcon(toolName);
   const { colorScheme } = useColorScheme();
+  
+  const iconColor = colorScheme === 'dark' ? '#d4d4d4' : '#404040';
 
   // Animated opacity for smooth transitions
   const contentOpacity = useSharedValue(1);
@@ -528,37 +625,54 @@ const ToolCard = React.memo(function ToolCard({
     opacity: contentOpacity.value,
   }));
 
+  const hasStreamingContent = extractedStreamingContent && extractedStreamingContent.trim();
+  
   return (
-    <Pressable
-      onPress={isLoading ? undefined : onPress}
-      disabled={isLoading}
-      className={`bg-muted/10 dark:bg-muted/80 rounded-2xl px-2 py-2 pr-4 border ${
-        isLoading ? 'border-primary/30' : 'border-border'
-      } ${!isLoading && 'active:bg-muted/50'}`}
-    >
-      <Animated.View style={animatedStyle}>
-        <View className="flex-row items-center justify-between">
-          <View className="flex-row items-center gap-2">
-            {isLoading && (
-              <View className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-            )}
-            <View className='rounded-full h-8 w-8 flex items-center justify-center bg-muted-foreground/20'>
-              <ToolIcon size={14} className="text-muted-foreground" />
+    <View className={`${hasStreamingContent ? 'border border-neutral-200 dark:border-neutral-700/50 rounded-2xl overflow-hidden' : ''}`}>
+      <Pressable
+        onPress={isLoading ? undefined : onPress}
+        disabled={isLoading}
+        className={`${hasStreamingContent ? 'bg-neutral-200 dark:bg-neutral-800' : 'bg-neutral-200 dark:bg-muted/80 rounded-2xl'} border-[1px] border-neutral-200 dark:border-neutral-700/50 px-2 py-2 pr-4`}
+      >
+        <Animated.View style={animatedStyle}>
+          <View className="flex-row items-center justify-between">
+            <View className="flex-row items-center gap-2">
+              <View className='rounded-full h-8 w-8 flex items-center justify-center bg-neutral-300 dark:bg-neutral-700'>
+                <ToolIcon size={14} color={iconColor} />
+              </View>
+              <Text className="text-[14px] font-semibold text-foreground">
+                {displayName}
+              </Text>
             </View>
-            <Text className="text-[14px] font-semibold text-foreground">
-              {displayName}
-            </Text>
+            {isError ? (
+              <AlertCircle size={14} color={(colorScheme ?? 'light') === 'dark' ? '#f87171' : '#ef4444'} />
+            ) : (
+              <CheckCircle2 size={14} color={(colorScheme ?? 'light') === 'dark' ? '#4ade80' : '#22c55e'} />
+            )}
           </View>
-          {isLoading ? (
-            <View className="w-3.5 h-3.5 rounded-full border-2 border-muted-foreground/30 border-t-primary animate-spin" />
-          ) : isError ? (
-            <AlertCircle size={14} color={(colorScheme ?? 'light') === 'dark' ? '#f87171' : '#ef4444'} />
-          ) : (
-            <CheckCircle2 size={14} color={(colorScheme ?? 'light') === 'dark' ? '#4ade80' : '#22c55e'} />
-          )}
+        </Animated.View>
+      </Pressable>
+      
+      {hasStreamingContent && (
+        <View className="border-t border-neutral-200 dark:border-neutral-700/50">
+          <ScrollView 
+            ref={scrollViewRef}
+            className="max-h-[300px] bg-zinc-100 dark:bg-neutral-900"
+            showsVerticalScrollIndicator={false}
+          >
+            <View className="p-3">
+              <Text 
+                className="text-xs text-foreground font-mono leading-5" 
+                selectable
+                style={{ fontFamily: 'monospace' }}
+              >
+                {extractedStreamingContent}
+              </Text>
+            </View>
+          </ScrollView>
         </View>
-      </Animated.View>
-    </Pressable>
+      )}
+    </View>
   );
 });
 

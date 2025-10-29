@@ -183,6 +183,7 @@ export function useChat(): UseChatReturn {
   const streamingBufferRef = useRef<string>('');
   const streamingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastUpdateTimeRef = useRef<number>(0);
+  const isInToolModeRef = useRef<boolean>(false);
 
   const isStreaming = !!currentRunIdRef.current;
 
@@ -354,7 +355,16 @@ export function useChat(): UseChatReturn {
       case 'assistant':
         if (parsedMetadata.stream_status === 'chunk' && parsedContent.content) {
           const content = parsedContent.content;
+          
           if (content.includes('<function_calls>')) {
+            const beforeFunctionCalls = content.split('<function_calls>')[0];
+            
+            if (beforeFunctionCalls && !isInToolModeRef.current) {
+              addContentImmediate(beforeFunctionCalls);
+            }
+            
+            isInToolModeRef.current = true;
+            
             if (!streamingToolCall) {
               setStreamingToolCall({
                 role: 'assistant',
@@ -370,7 +380,6 @@ export function useChat(): UseChatReturn {
               const functionName = invokeMatch[1];
               console.log('[useChat] Extracted function name:', functionName);
               
-              // Update with actual function name
               setStreamingToolCall({
                 role: 'assistant',
                 status_type: 'tool_started',
@@ -379,22 +388,17 @@ export function useChat(): UseChatReturn {
                 arguments: {},
               });
             }
-            
-            // Clear streaming content to prevent XML from showing in UI
-            setStreamingContent('');
-          } else {
-            // Regular text content - ALWAYS render it
+          } else if (!isInToolModeRef.current) {
             addContentImmediate(content);
           }
         } else if (parsedMetadata.stream_status === 'complete') {
-          // ✨ Message complete - merge streaming content into final message
           if (message.message_id && !processedMessageIds.current.has(message.message_id)) {
             processedMessageIds.current.add(message.message_id);
             
-            // Add the complete message
             updateMessagesWithDeduplication(message);
             
-            // Clear streaming content smoothly
+            isInToolModeRef.current = false;
+            
             setTimeout(() => {
               if (isMountedRef.current) {
                 setStreamingContent('');
@@ -402,7 +406,6 @@ export function useChat(): UseChatReturn {
             }, 50);
           }
         } else if (!parsedMetadata.stream_status) {
-          // Handle non-chunked assistant messages
           if (message.message_id && !processedMessageIds.current.has(message.message_id)) {
             processedMessageIds.current.add(message.message_id);
             updateMessagesWithDeduplication(message);
@@ -419,9 +422,9 @@ export function useChat(): UseChatReturn {
         break;
 
       case 'tool':
-        setStreamingToolCall(null); // Clear any streaming tool call
+        setStreamingToolCall(null);
+        isInToolModeRef.current = false;
 
-        // Only emit if has message_id and not already processed
         if (message.message_id && !processedMessageIds.current.has(message.message_id)) {
           processedMessageIds.current.add(message.message_id);
           updateMessagesWithDeduplication(message);
@@ -481,6 +484,7 @@ export function useChat(): UseChatReturn {
     }
     streamingBufferRef.current = '';
     lastUpdateTimeRef.current = Date.now();
+    isInToolModeRef.current = false;
     
     setStreamingContent('');
     setStreamingToolCall(null);
@@ -534,6 +538,7 @@ export function useChat(): UseChatReturn {
       streamingTimerRef.current = null;
     }
     streamingBufferRef.current = '';
+    isInToolModeRef.current = false;
     
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
