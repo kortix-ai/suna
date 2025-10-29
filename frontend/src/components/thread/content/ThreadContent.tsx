@@ -61,30 +61,30 @@ function preprocessTextOnlyTools(content: string): string {
     // Only strip them if they don't have attachments parameter
 
     // Handle new function calls format - only strip if no attachments
-    content = content.replace(/<function_calls>\s*<invoke name="ask">\s*<parameter name="text">([\s\S]*?)<\/parameter>\s*<\/invoke>\s*<\/function_calls>/gi, (match) => {
+    content = content.replace(/<invoke name="ask">\s*<parameter name="text">([\s\S]*?)<\/parameter>\s*<\/invoke>/gi, (match) => {
         if (match.includes('<parameter name="attachments"')) return match;
-        return match.replace(/<function_calls>\s*<invoke name="ask">\s*<parameter name="text">([\s\S]*?)<\/parameter>\s*<\/invoke>\s*<\/function_calls>/gi, '$1');
+        return match.replace(/<invoke name="ask">\s*<parameter name="text">([\s\S]*?)<\/parameter>\s*<\/invoke>/gi, '$1');
     });
 
-    content = content.replace(/<function_calls>\s*<invoke name="complete">\s*<parameter name="text">([\s\S]*?)<\/parameter>\s*<\/invoke>\s*<\/function_calls>/gi, (match) => {
+    content = content.replace(/<invoke name="complete">\s*<parameter name="text">([\s\S]*?)<\/parameter>\s*<\/invoke>/gi, (match) => {
         if (match.includes('<parameter name="attachments"')) return match;
-        return match.replace(/<function_calls>\s*<invoke name="complete">\s*<parameter name="text">([\s\S]*?)<\/parameter>\s*<\/invoke>\s*<\/function_calls>/gi, '$1');
+        return match.replace(/<invoke name="complete">\s*<parameter name="text">([\s\S]*?)<\/parameter>\s*<\/invoke>/gi, '$1');
     });
 
-    content = content.replace(/<function_calls>\s*<invoke name="present_presentation">[\s\S]*?<parameter name="text">([\s\S]*?)<\/parameter>[\s\S]*?<\/invoke>\s*<\/function_calls>/gi, '$1');
+    content = content.replace(/<invoke name="present_presentation">[\s\S]*?<parameter name="text">([\s\S]*?)<\/parameter>[\s\S]*?<\/invoke>/gi, '$1');
 
     // Handle streaming/partial XML for message tools - only strip if no attachments visible yet
-    content = content.replace(/<function_calls>\s*<invoke name="ask">\s*<parameter name="text">([\s\S]*?)$/gi, (match) => {
+    content = content.replace(/<invoke name="ask">\s*<parameter name="text">([\s\S]*?)$/gi, (match) => {
         if (match.includes('<parameter name="attachments"')) return match;
-        return match.replace(/<function_calls>\s*<invoke name="ask">\s*<parameter name="text">([\s\S]*?)$/gi, '$1');
+        return match.replace(/<invoke name="ask">\s*<parameter name="text">([\s\S]*?)$/gi, '$1');
     });
 
-    content = content.replace(/<function_calls>\s*<invoke name="complete">\s*<parameter name="text">([\s\S]*?)$/gi, (match) => {
+    content = content.replace(/<invoke name="complete">\s*<parameter name="text">([\s\S]*?)$/gi, (match) => {
         if (match.includes('<parameter name="attachments"')) return match;
-        return match.replace(/<function_calls>\s*<invoke name="complete">\s*<parameter name="text">([\s\S]*?)$/gi, '$1');
+        return match.replace(/<invoke name="complete">\s*<parameter name="text">([\s\S]*?)$/gi, '$1');
     });
 
-    content = content.replace(/<function_calls>\s*<invoke name="present_presentation">[\s\S]*?<parameter name="text">([\s\S]*?)$/gi, '$1');
+    content = content.replace(/<invoke name="present_presentation">[\s\S]*?<parameter name="text">([\s\S]*?)$/gi, '$1');
 
     // Also handle old format - only strip if no attachments attribute
     content = content.replace(/<ask[^>]*>([\s\S]*?)<\/ask>/gi, (match) => {
@@ -126,12 +126,12 @@ export function renderMarkdownContent(
         const contentParts: React.ReactNode[] = [];
         let lastIndex = 0;
 
-        // Find all function_calls blocks
-        const functionCallsRegex = /<function_calls>([\s\S]*?)<\/function_calls>/gi;
+        // Find all invoke blocks
+        const invokeRegex = /<invoke\s+name=["']([^"']+)["']>([\s\S]*?)<\/invoke>/gi;
         let match: RegExpExecArray | null = null;
 
-        while ((match = functionCallsRegex.exec(content)) !== null) {
-            // Add text before the function_calls block
+        while ((match = invokeRegex.exec(content)) !== null) {
+            // Add text before the invoke block
             if (match.index > lastIndex) {
                 const textBeforeBlock = content.substring(lastIndex, match.index);
                 if (textBeforeBlock.trim()) {
@@ -237,7 +237,7 @@ export function renderMarkdownContent(
             lastIndex = match.index + match[0].length;
         }
 
-        // Add any remaining text after the last function_calls block
+        // Add any remaining text after the last invoke block
         if (lastIndex < content.length) {
             const remainingText = content.substring(lastIndex);
             if (remainingText.trim()) {
@@ -974,10 +974,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                         let tagStartIndex = -1;
                                                                         if (textToRender) {
                                                                             // First check for new format
-                                                                            const functionCallsIndex = textToRender.indexOf('<function_calls>');
-                                                                            if (functionCallsIndex !== -1) {
-                                                                                detectedTag = 'function_calls';
-                                                                                tagStartIndex = functionCallsIndex;
+                                                                            const invokeIndex = textToRender.indexOf('<invoke');
+                                                                            if (invokeIndex !== -1) {
+                                                                                detectedTag = 'invoke';
+                                                                                tagStartIndex = invokeIndex;
                                                                             } else {
                                                                                 // Check for partial XML tags at the end (e.g., "<function", "<antml", "<", etc.)
                                                                                 // This prevents showing incomplete XML during streaming
@@ -1052,10 +1052,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = ({
                                                                         let tagStartIndex = -1;
                                                                         if (textToRender) {
                                                                             // First check for new format
-                                                                            const functionCallsIndex = textToRender.indexOf('<function_calls>');
-                                                                            if (functionCallsIndex !== -1) {
-                                                                                detectedTag = 'function_calls';
-                                                                                tagStartIndex = functionCallsIndex;
+                                                                            const invokeIndex = textToRender.indexOf('<invoke');
+                                                                            if (invokeIndex !== -1) {
+                                                                                detectedTag = 'invoke';
+                                                                                tagStartIndex = invokeIndex;
                                                                             } else {
                                                                                 // Check for partial XML tags at the end (e.g., "<function", "<antml", "<", etc.)
                                                                                 // This prevents showing incomplete XML during streaming

@@ -1,7 +1,7 @@
 import json
 import os
 from typing import Optional, Dict, Any, List
-from core.agentpress.tool import openapi_schema, tool_metadata
+from core.agentpress.tool import execution_flow, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
@@ -181,6 +181,11 @@ class SandboxDocsTool(SandboxToolsBase):
         
         return html
         
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -294,6 +299,11 @@ IMPORTANT: All content must be wrapped in proper HTML tags. Do not use unsupport
             logger.error(f"Error creating document: {str(e)}")
             return self.fail_response(f"Error creating document: {str(e)}")
             
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -359,6 +369,11 @@ IMPORTANT: All content must be wrapped in proper HTML tags. Do not use unsupport
             logger.error(f"Error reading document: {str(e)}")
             return self.fail_response(f"Error reading document: {str(e)}")
             
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -408,6 +423,11 @@ IMPORTANT: All content must be wrapped in proper HTML tags. Do not use unsupport
             logger.error(f"Error listing documents: {str(e)}")
             return self.fail_response(f"Error listing documents: {str(e)}")
             
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -452,6 +472,11 @@ IMPORTANT: All content must be wrapped in proper HTML tags. Do not use unsupport
         except Exception as e:
             logger.error(f"Error deleting document: {str(e)}")
             return self.fail_response(f"Error deleting document: {str(e)}")
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",
@@ -735,6 +760,11 @@ IMPORTANT: All content must be wrapped in proper HTML tags. Do not use unsupport
         
         return doc_html
     
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {

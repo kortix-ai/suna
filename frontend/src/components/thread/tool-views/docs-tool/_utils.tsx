@@ -225,44 +225,36 @@ export function extractStreamingDocumentContent(
       ? assistantContent 
       : (assistantContent.content || JSON.stringify(assistantContent));
   
-    const functionCallsMatch = contentStr.match(/<function_calls>([\s\S]*?)<\/function_calls>/);
-    if (functionCallsMatch) {
-      const functionContent = functionCallsMatch[1];
-
-      const invokeMatch = functionContent.match(/<invoke[^>]*name=["']([^"']+)["'][^>]*>([\s\S]*?)(?:<\/invoke>|$)/);
-      if (invokeMatch) {
-        const invokeName = invokeMatch[1];
-        const invokeContent = invokeMatch[2];
+    const invokeMatch = contentStr.match(/<invoke\s+name=["']([^"']+)["']>([\s\S]*?)<\/invoke>/);
+    if (invokeMatch) {
+      const functionName = invokeMatch[1];
+      const functionContent = invokeMatch[2];
+      
+      if (functionName === 'create_document' || functionName === 'update_document' || 
+          functionName === 'edit_file' || toolName?.includes('create') || toolName?.includes('update')) {
         
-        if (invokeName === 'create_document' || invokeName === 'update_document' || 
-            invokeName === 'edit_file' || toolName?.includes('create') || toolName?.includes('update')) {
-          
-          const result: { content?: string; title?: string; metadata?: any } = {};
-          
-
-          const titleMatch = invokeContent.match(/<parameter[^>]*name=["']title["'][^>]*>([\s\S]*?)(?:<\/parameter>|$)/);
-          if (titleMatch) {
-            result.title = titleMatch[1].trim();
-          }
-          
-
-          const contentMatch = invokeContent.match(/<parameter[^>]*name=["'](?:content|file_contents)["'][^>]*>([\s\S]*?)(?:<\/parameter>|$)/);
-          if (contentMatch) {
-            result.content = contentMatch[1];
-          }
-          
-
-          const metadataMatch = invokeContent.match(/<parameter[^>]*name=["']metadata["'][^>]*>([\s\S]*?)(?:<\/parameter>|$)/);
-          if (metadataMatch) {
-            try {
-              result.metadata = JSON.parse(metadataMatch[1]);
-            } catch {
-              result.metadata = metadataMatch[1];
-            }
-          }
-          
-          return result;
+        const result: { content?: string; title?: string; metadata?: any } = {};
+        
+        const titleMatch = functionContent.match(/<parameter[^>]*name=["']title["'][^>]*>([\s\S]*?)(?:<\/parameter>|$)/);
+        if (titleMatch) {
+          result.title = titleMatch[1].trim();
         }
+        
+        const contentMatch = functionContent.match(/<parameter[^>]*name=["'](?:content|file_contents)["'][^>]*>([\s\S]*?)(?:<\/parameter>|$)/);
+        if (contentMatch) {
+          result.content = contentMatch[1];
+        }
+        
+        const metadataMatch = functionContent.match(/<parameter[^>]*name=["']metadata["'][^>]*>([\s\S]*?)(?:<\/parameter>|$)/);
+        if (metadataMatch) {
+          try {
+            result.metadata = JSON.parse(metadataMatch[1]);
+          } catch {
+            result.metadata = metadataMatch[1];
+          }
+        }
+        
+        return result;
       }
     }
     

@@ -150,6 +150,16 @@ async def run_agent_background(
             stop_signal_received = True # Stop the run if the checker fails
 
     trace = langfuse.trace(name="agent_run", id=agent_run_id, session_id=thread_id, metadata={"project_id": project_id, "instance_id": instance_id})
+    # Safety check: ensure trace is not None
+    if trace is None:
+        logger.warning("Langfuse trace is None, creating a mock trace to prevent errors")
+        class MockTraceSafe:
+            def span(self, **kwargs):
+                return MockSpanSafe()
+        class MockSpanSafe:
+            def end(self, **kwargs):
+                pass
+        trace = MockTraceSafe()
 
     try:
         # Setup Pub/Sub listener for control signals

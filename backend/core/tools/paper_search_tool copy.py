@@ -3,7 +3,7 @@ import asyncio
 import json
 import aiohttp
 import time
-from core.agentpress.tool import Tool, ToolResult, execution_flow, openapi_schema, tool_metadata
+from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
 from core.utils.config import config
 from core.utils.logger import logger
 from core.agentpress.thread_manager import ThreadManager
@@ -89,11 +89,6 @@ class PaperSearchTool(Tool):
             
             raise Exception(f"Failed after {max_retries} attempts")
     
-    @execution_flow(
-        default="CONTINUE",
-        allows_override=True
-    )
-
     @openapi_schema({
         "type": "function",
         "function": {
@@ -238,11 +233,6 @@ class PaperSearchTool(Tool):
             logger.error(f"Paper search failed: {repr(e)}", exc_info=True)
             return self.fail_response(f"An error occurred during the paper search: {str(e)}")
     
-    @execution_flow(
-        default="CONTINUE",
-        allows_override=True
-    )
-
     @openapi_schema({
         "type": "function",
         "function": {
@@ -399,11 +389,6 @@ class PaperSearchTool(Tool):
             logger.error(f"Get paper details failed: {repr(e)}", exc_info=True)
             return self.fail_response(f"An error occurred while fetching paper details: {str(e)}")
     
-    @execution_flow(
-        default="CONTINUE",
-        allows_override=True
-    )
-
     @openapi_schema({
         "type": "function",
         "function": {
@@ -501,11 +486,6 @@ class PaperSearchTool(Tool):
             logger.error(f"Author search failed: {repr(e)}", exc_info=True)
             return self.fail_response(f"An error occurred during the author search: {str(e)}")
     
-    @execution_flow(
-        default="CONTINUE",
-        allows_override=True
-    )
-
     @openapi_schema({
         "type": "function",
         "function": {
@@ -609,11 +589,6 @@ class PaperSearchTool(Tool):
             logger.error(f"Get author details failed: {repr(e)}", exc_info=True)
             return self.fail_response(f"An error occurred while fetching author details: {str(e)}")
     
-    @execution_flow(
-        default="CONTINUE",
-        allows_override=True
-    )
-
     @openapi_schema({
         "type": "function",
         "function": {

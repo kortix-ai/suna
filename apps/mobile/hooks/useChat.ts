@@ -353,18 +353,16 @@ export function useChat(): UseChatReturn {
     switch (message.type) {
       case 'assistant':
         if (parsedMetadata.stream_status === 'chunk' && parsedContent.content) {
+          // Check if this chunk contains invoke XML
           const content = parsedContent.content;
-          if (content.includes('<function_calls>')) {
-            if (!streamingToolCall) {
-              setStreamingToolCall({
-                role: 'assistant',
-                status_type: 'tool_started',
-                name: 'Tool',
-                function_name: 'Tool',
-                arguments: {},
-              });
-            }
+          
+          // Detect <invoke> start
+          if (content.includes('<invoke')) {
+            console.log('[useChat] Detected <invoke> in stream');
+            // Clear streaming text content
+            setStreamingContent('');
             
+            // Try to extract function name from <invoke name="...">
             const invokeMatch = content.match(/<invoke name="([^"]+)">/);
             if (invokeMatch) {
               const functionName = invokeMatch[1];

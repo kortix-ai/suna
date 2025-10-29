@@ -78,6 +78,17 @@ class MethodMetadata:
     is_core: bool = False
     visible: bool = True
 
+@dataclass
+class ExecutionFlowMetadata:
+    """Container for execution flow metadata.
+    
+    Attributes:
+        default (str): Default execution flow type ("CONTINUE" or "STOP")
+        allows_override (bool): Whether the LLM can override the default flow
+    """
+    default: str = "CONTINUE"
+    allows_override: bool = True
+
 class Tool(ABC):
     """Abstract base class for all tools.
     
@@ -102,6 +113,7 @@ class Tool(ABC):
         self._schemas: Dict[str, List[ToolSchema]] = {}
         self._metadata: Optional[ToolMetadata] = None
         self._method_metadata: Dict[str, MethodMetadata] = {}
+        self._execution_flow_metadata: Dict[str, ExecutionFlowMetadata] = {}
         # logger.debug(f"Initializing tool class: {self.__class__.__name__}")
         self._register_metadata()
         self._register_schemas()
@@ -116,6 +128,10 @@ class Tool(ABC):
         for name, method in inspect.getmembers(self, predicate=inspect.ismethod):
             if hasattr(method, '__method_metadata__'):
                 self._method_metadata[name] = method.__method_metadata__
+            
+            # Register execution flow metadata
+            if hasattr(method, '__execution_flow_metadata__'):
+                self._execution_flow_metadata[name] = method.__execution_flow_metadata__
 
     def _register_schemas(self):
         """Register schemas from all decorated methods."""
@@ -147,6 +163,14 @@ class Tool(ABC):
             Dict mapping method names to their metadata
         """
         return self._method_metadata
+
+    def get_execution_flow_metadata(self) -> Dict[str, ExecutionFlowMetadata]:
+        """Get execution flow metadata for all methods.
+        
+        Returns:
+            Dict mapping method names to their execution flow metadata
+        """
+        return self._execution_flow_metadata
 
     def success_response(self, data: Union[Dict[str, Any], str]) -> ToolResult:
         """Create a successful tool result.
@@ -291,6 +315,42 @@ def method_metadata(
             description=description,
             is_core=is_core,
             visible=visible
+        )
+        return func
+    return decorator
+
+def execution_flow(
+    default: str = "CONTINUE",
+    allows_override: bool = True
+):
+    """Decorator to specify execution flow behavior for a tool method.
+    
+    Args:
+        default: Default execution flow type ("CONTINUE" or "STOP")
+        allows_override: Whether the LLM can override the default flow via XML parameter
+    
+    Usage:
+        @execution_flow(
+            default="CONTINUE",         # Preferred execution flow
+            allows_override=True        # Can LLM override the default?
+        )
+        @openapi_schema({...})
+        def my_method(self, ...):
+            ...
+        
+        # Example: Fixed STOP flow (no override allowed)
+        @execution_flow(
+            default="STOP",
+            allows_override=False
+        )
+        @openapi_schema({...})
+        def critical_method(self, ...):
+            ...
+    """
+    def decorator(func):
+        func.__execution_flow_metadata__ = ExecutionFlowMetadata(
+            default=default,
+            allows_override=allows_override
         )
         return func
     return decorator

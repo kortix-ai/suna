@@ -397,12 +397,10 @@ class PromptManager:
             mcp_info = "\n\n--- MCP Tools Available ---\n"
             mcp_info += "You have access to external MCP (Model Context Protocol) server tools.\n"
             mcp_info += "MCP tools can be called directly using their native function names in the standard function calling format:\n"
-            mcp_info += '<function_calls>\n'
             mcp_info += '<invoke name="{tool_name}">\n'
             mcp_info += '<parameter name="param1">value1</parameter>\n'
             mcp_info += '<parameter name="param2">value2</parameter>\n'
-            mcp_info += '</invoke>\n'
-            mcp_info += '</function_calls>\n\n'
+            mcp_info += '</invoke>\n\n'
             
             mcp_info += "Available MCP tools:\n"
             try:
@@ -450,16 +448,15 @@ class PromptManager:
 
 In this environment you have access to a set of tools you can use to answer the user's question.
 
-You can invoke functions by writing a <function_calls> block like the following as part of your reply to the user:
+You can invoke functions by writing an <invoke> block like the following as part of your reply to the user:
 
-<function_calls>
 <invoke name="function_name">
 <parameter name="param_name">param_value</parameter>
+<parameter name="flow">CONTINUE</parameter>
 ...
 </invoke>
-</function_calls>
 
-String and scalar parameters should be specified as-is, while lists and objects should use JSON format.
+String and scalar parameters should be specified as-is, while lists and objects should use JSON format. You can write as many invoke blocks as needed.
 
 Here are the functions available in JSON Schema format:
 
@@ -472,6 +469,68 @@ When using the tools:
 - Include all required parameters as specified in the schema
 - Format complex data (objects, arrays) as JSON strings within the parameter tags
 - Boolean values should be "true" or "false" (lowercase)
+
+## 🎯 FLOW PARAMETER GUIDE 
+
+### `flow=STOP` - Halt Execution
+
+**Use when you need to pause and wait:**
+
+1. **User Confirmation** - Destructive operations, critical decisions
+2. **Task Complete** - All work finished, terminate execution
+3. **Blocking Errors** - Cannot proceed without user input
+4. **User Choice** - Next steps depend on user decision
+5. **Resource Approval** - Financial/resource implications
+
+**Result:** Returns `"status": "Awaiting user response..."` or `"status": "complete"` and halts.
+
+---
+
+### `flow=CONTINUE` - Keep Processing (DEFAULT)
+
+**Use for ongoing workflows:**
+
+1. **File Operations** - Creating, editing, deleting files in a workflow
+2. **Commands** - Running scripts, background processes
+3. **Data Processing** - Web searches, API calls, data analysis
+4. **Task Updates** - Marking progress while more work remains
+5. **Error Handling** - Continue execution even if step fails
+
+**Result:** Execution proceeds to next operation regardless of success/failure.
+
+---
+
+## STOP Example
+
+I found that this operation will delete 500 files permanently. This cannot be undone. Are you absolutely sure you want to proceed?</parameter>
+<parameter name="flow">STOP
+
+All tasks completed successfully! I've created your presentation with 15 slides, uploaded it to cloud storage, and generated the PDF version. Everything is ready for your review.</parameter>
+<parameter name="flow">STOP
+
+
+## CONTINUE Example
+
+I’m starting your workflow now. I’ll execute each step in sequence and continue even if a non-critical step fails. You’ll get progress updates as I go.</parameter> <parameter name="flow">CONTINUE
+
+<invoke name="search_dataset"> <parameter name="query">"customer_churn_data 2023"</parameter> <parameter name="flow">CONTINUE</parameter> </invoke>
+
+Found multiple candidates. Proceeding to fetch the top match.</parameter> <parameter name="flow">CONTINUE
+
+<invoke name="download_asset"> <parameter name="url">https://example.org/data/churn_v3.csv</parameter> <parameter name="destination">/workspace/input/churn_v3.csv</parameter> <parameter name="flow">CONTINUE</parameter> </invoke>
+
+Checksum verification failed for churn_v3.csv, switching to fallback source and continuing.</parameter> <parameter name="flow">CONTINUE
+
+
+🎯 Decision Tree
+Is this operation...
+├─ Using 'ask' tool for user input? → STOP
+├─ Using 'complete' to signal finish? → STOP
+├─ Encountering blocking error needing approval? → STOP
+├─ Requiring critical user decision? → STOP
+├─ Involving financial/resource approval? → STOP
+└─ Part of ongoing workflow? → CONTINUE
+
 """
                 
                 system_content += examples_content
@@ -652,7 +711,7 @@ class AgentRunner:
 
         latest_user_message = await self.client.table('messages').select('*').eq('thread_id', self.config.thread_id).eq('type', 'user').order('created_at', desc=True).limit(1).execute()
         latest_user_message_content = None
-        if latest_user_message.data and len(latest_user_message.data) > 0:
+        if latest_user_message.data and len(latest_user_message.data) > 0:                  
             data = latest_user_message.data[0]['content']
             if isinstance(data, str):
                 data = json.loads(data)
@@ -696,7 +755,7 @@ class AgentRunner:
                     llm_temperature=0,
                     llm_max_tokens=max_tokens,
                     tool_choice="auto",
-                    max_xml_tool_calls=1,
+                    max_xml_tool_calls=0,  # 0 = no limit, allow multiple XML tool calls
                     temporary_message=temporary_message,
                     latest_user_message_content=latest_user_message_content,
                     processor_config=ProcessorConfig(

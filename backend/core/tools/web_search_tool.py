@@ -1,7 +1,7 @@
 from tavily import AsyncTavilyClient
 import httpx
 from dotenv import load_dotenv
-from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
+from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata, execution_flow
 from core.utils.config import config
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
@@ -40,6 +40,10 @@ class SandboxWebSearchTool(SandboxToolsBase):
         # Tavily asynchronous search client
         self.tavily_client = AsyncTavilyClient(api_key=self.tavily_api_key)
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
     @openapi_schema({
         "type": "function",
         "function": {
@@ -132,6 +136,10 @@ class SandboxWebSearchTool(SandboxToolsBase):
                 simplified_message += "..."
             return self.fail_response(simplified_message)
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
     @openapi_schema({
         "type": "function",
         "function": {

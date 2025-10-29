@@ -130,7 +130,7 @@ Each agent can be configured with custom tools, workflows, knowledge bases, and 
 
 Kortix consists of four main components that work together to provide a complete AI agent development platform:
 
-### 🔧 Backend API
+### 🔧 Backend 
 Python/FastAPI service that powers the agent platform with REST endpoints, thread management, agent orchestration, and LLM integration with Anthropic, OpenAI, and others via LiteLLM. Includes agent builder tools, workflow management, and extensible tool system.
 
 ### 🖥️ Frontend Dashboard

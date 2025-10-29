@@ -1,5 +1,5 @@
 from typing import List, Optional, Union
-from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
+from core.agentpress.tool import Tool, ToolResult, execution_flow, openapi_schema, tool_metadata
 from core.utils.logger import logger
 
 @tool_metadata(
@@ -17,6 +17,11 @@ class MessageTool(Tool):
 
     def __init__(self):
         super().__init__()
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",
@@ -62,6 +67,11 @@ class MessageTool(Tool):
             return self.fail_response(f"Error asking user: {str(e)}")
 
 
+
+#     @execution_flow(
+#         default="CONTINUE",
+#         allows_override=True
+#     )
 #     @openapi_schema({
 #         "type": "function",
 #         "function": {
@@ -136,6 +146,11 @@ class MessageTool(Tool):
 #             return self.fail_response(f"Error informing user: {str(e)}")
 
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -178,6 +193,11 @@ class MessageTool(Tool):
             return self.success_response({"status": "complete"})
         except Exception as e:
             return self.fail_response(f"Error entering complete state: {str(e)}")
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",

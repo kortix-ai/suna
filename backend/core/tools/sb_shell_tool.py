@@ -3,7 +3,7 @@ from typing import Optional, Dict, Any
 import time
 import asyncio
 from uuid import uuid4
-from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
+from core.agentpress.tool import ToolResult, execution_flow, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 
@@ -45,6 +45,11 @@ class SandboxShellTool(SandboxToolsBase):
                 del self._sessions[session_name]
             except Exception as e:
                 print(f"Warning: Failed to cleanup session {session_name}: {str(e)}")
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",
@@ -208,6 +213,11 @@ class SandboxShellTool(SandboxToolsBase):
             "exit_code": response.exit_code
         }
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -264,6 +274,11 @@ class SandboxShellTool(SandboxToolsBase):
         except Exception as e:
             return self.fail_response(f"Error checking command output: {str(e)}")
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -303,6 +318,11 @@ class SandboxShellTool(SandboxToolsBase):
                 
         except Exception as e:
             return self.fail_response(f"Error terminating command: {str(e)}")
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",

@@ -2,11 +2,9 @@
  * XML Tool Parser for new format
  * 
  * Parses tool calls in the format:
- * <function_calls>
  * <invoke name="tool_name">
  * <parameter name="param">value</parameter>
  * </invoke>
- * </function_calls>
  */
 
 export interface ParsedToolCall {
@@ -19,36 +17,30 @@ export interface ParsedToolCall {
 export function parseXmlToolCalls(content: string): ParsedToolCall[] {
   const toolCalls: ParsedToolCall[] = [];
 
-  const functionCallsRegex = /<function_calls>([\s\S]*?)<\/function_calls>/gi;
-  let functionCallsMatch;
+  // Find all invoke blocks directly
+  const invokeRegex = /<invoke\s+name=["']([^"']+)["']>([\s\S]*?)<\/invoke>/gi;
+  let invokeMatch;
   
-  while ((functionCallsMatch = functionCallsRegex.exec(content)) !== null) {
-    const functionCallsContent = functionCallsMatch[1];
+  while ((invokeMatch = invokeRegex.exec(content)) !== null) {
+    const functionName = invokeMatch[1].replace(/_/g, '-');
+    const invokeContent = invokeMatch[2];
+    const parameters: Record<string, any> = {};
     
-    const invokeRegex = /<invoke\s+name=["']([^"']+)["']>([\s\S]*?)<\/invoke>/gi;
-    let invokeMatch;
+    const paramRegex = /<parameter\s+name=["']([^"']+)["']>([\s\S]*?)<\/parameter>/gi;
+    let paramMatch;
     
-    while ((invokeMatch = invokeRegex.exec(functionCallsContent)) !== null) {
-      const functionName = invokeMatch[1].replace(/_/g, '-');
-      const invokeContent = invokeMatch[2];
-      const parameters: Record<string, any> = {};
+    while ((paramMatch = paramRegex.exec(invokeContent)) !== null) {
+      const paramName = paramMatch[1];
+      const paramValue = paramMatch[2].trim();
       
-      const paramRegex = /<parameter\s+name=["']([^"']+)["']>([\s\S]*?)<\/parameter>/gi;
-      let paramMatch;
-      
-      while ((paramMatch = paramRegex.exec(invokeContent)) !== null) {
-        const paramName = paramMatch[1];
-        const paramValue = paramMatch[2].trim();
-        
-        parameters[paramName] = parseParameterValue(paramValue);
-      }
-      
-      toolCalls.push({
-        functionName,
-        parameters,
-        rawXml: invokeMatch[0]
-      });
+      parameters[paramName] = parseParameterValue(paramValue);
     }
+    
+    toolCalls.push({
+      functionName,
+      parameters,
+      rawXml: invokeMatch[0]
+    });
   }
   
   return toolCalls;
@@ -94,7 +86,7 @@ export function extractToolName(content: string): string | null {
 }
 
 export function isNewXmlFormat(content: string): boolean {
-  return /<function_calls>[\s\S]*<invoke\s+name=/.test(content);
+  return /<invoke\s+name=/.test(content);
 }
 
 export function extractToolNameFromStream(content: string): string | null {

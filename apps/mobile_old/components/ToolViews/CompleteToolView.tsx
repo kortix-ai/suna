@@ -101,7 +101,7 @@ const extractCompleteData = (toolCall: any, messages?: any[]): CompleteContent =
                     // Clean up function calls from the content
                     if (typeof summary === 'string') {
                         summary = summary
-                            .replace(/<function_calls>[\s\S]*?<\/function_calls>/g, '')
+                            .replace(/<invoke[\s\S]*?<\/invoke>/g, '')
                             .replace(/<invoke name="complete"[\s\S]*?<\/invoke>/g, '')
                             .trim();
                     }

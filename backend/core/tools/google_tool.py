@@ -1,34 +1,47 @@
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import asyncio
 import json
 import aiohttp
 import time
+import os
+from datetime import datetime, timedelta
 from core.agentpress.tool import Tool, ToolResult, execution_flow, openapi_schema, tool_metadata
 from core.utils.config import config
 from core.utils.logger import logger
 from core.agentpress.thread_manager import ThreadManager
 
 @tool_metadata(
-    display_name="Academic Research",
-    description="Search and analyze academic papers, authors, and scientific research",
-    icon="GraduationCap",
-    color="bg-emerald-100 dark:bg-emerald-800/50",
-    weight=270,
+    display_name="Google Services",
+    description="Access Google services including Search, Drive, Gmail, Calendar, Maps, and Translate",
+    icon="Search",
+    color="bg-blue-100 dark:bg-blue-800/50",
+    weight=280,
     visible=True
 )
-class PaperSearchTool(Tool):
+class GoogleTool(Tool):
     def __init__(self, thread_manager: ThreadManager):
         super().__init__()
         self.thread_manager = thread_manager
-        self.api_key = config.SEMANTIC_SCHOLAR_API_KEY
-        self.base_url = "https://api.semanticscholar.org/graph/v1"
+        
+        # Google API configuration
+        self.google_api_key = os.getenv("GOOGLE_API_KEY")
+        self.google_cse_id = os.getenv("GOOGLE_CSE_ID")  # Custom Search Engine ID
+        self.google_client_id = os.getenv("GOOGLE_CLIENT_ID")
+        self.google_client_secret = os.getenv("GOOGLE_CLIENT_SECRET")
+        
+        # Rate limiting
         self.last_request_time = 0
         self.request_lock = asyncio.Lock()
         
-        if self.api_key:
-            logger.info("Paper Search Tool initialized with Semantic Scholar API (Free)")
+        # Service URLs
+        self.search_url = "https://www.googleapis.com/customsearch/v1"
+        self.translate_url = "https://translation.googleapis.com/language/translate/v2"
+        self.maps_url = "https://maps.googleapis.com/maps/api"
+        
+        if self.google_api_key:
+            logger.info("Google Tool initialized with Google API key")
         else:
-            logger.warning("SEMANTIC_SCHOLAR_API_KEY not configured - Paper Search Tool will not be available")
+            logger.warning("GOOGLE_API_KEY not configured - Google Tool will have limited functionality")
     
     async def _rate_limited_request(
         self,

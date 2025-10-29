@@ -1,4 +1,4 @@
-from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
+from core.agentpress.tool import ToolResult, execution_flow, openapi_schema, tool_metadata
 from core.agentpress.thread_manager import ThreadManager
 from core.sandbox.tool_base import SandboxToolsBase
 from core.utils.logger import logger
@@ -335,6 +335,11 @@ class BrowserTool(SandboxToolsBase):
 
     # Core Functions Only
     
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -357,6 +362,11 @@ class BrowserTool(SandboxToolsBase):
         logger.debug(f"Browser navigating to: {url}")
         return await self._execute_stagehand_api("navigate", {"url": url})
     
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -397,6 +407,11 @@ class BrowserTool(SandboxToolsBase):
             params["filePath"] = filePath
         return await self._execute_stagehand_api("act", params)
     
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -425,6 +440,11 @@ class BrowserTool(SandboxToolsBase):
         params = {"instruction": instruction, "iframes": iframes}
         return await self._execute_stagehand_api("extract", params)
     
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {

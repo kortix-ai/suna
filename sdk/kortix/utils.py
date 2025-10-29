@@ -105,7 +105,7 @@ def _highlight_xml_tag(tag: str) -> str:
 
     # Extract tag name and attributes
     if is_closing:
-        # For closing tags like </function_calls>
+        # For closing tags like </invoke>
         tag_name = tag[2:-1].strip()
         return f"{Colors.YELLOW}</{Colors.BLUE}{Colors.BOLD}{tag_name}{Colors.ENDC}{Colors.YELLOW}>{Colors.ENDC}"
     else:
@@ -225,7 +225,7 @@ async def print_stream(stream: AsyncGenerator[str, None]):
 
                     # Check for function call detection
                     if parsing_state == "text":
-                        if "<function_calls>" in full_text:
+                        if "<invoke" in full_text:
                             parsing_state = "in_function_call"
                             print(
                                 f"\n{Colors.YELLOW}🔧 [TOOL USE DETECTED]{Colors.ENDC}"
@@ -240,7 +240,7 @@ async def print_stream(stream: AsyncGenerator[str, None]):
                                     f'{Colors.BLUE}⚡ [TOOL UPDATE] Calling function: {Colors.BOLD}"{current_function_name}"{Colors.ENDC}'
                                 )
 
-                        if "</function_calls>" in full_text:
+                        if "</invoke>" in full_text:
                             parsing_state = "function_call_ended"
                             print(f"{Colors.YELLOW}⏳ [TOOL USE WAITING]{Colors.ENDC}")
                             current_function_name = None

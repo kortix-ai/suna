@@ -1,4 +1,4 @@
-from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
+from core.agentpress.tool import ToolResult, execution_flow, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.utils.files_utils import should_exclude_file, clean_path
 from core.agentpress.thread_manager import ThreadManager
@@ -85,6 +85,11 @@ class SandboxFilesTool(SandboxToolsBase):
     #         return f"{self._sandbox_url}/{(file_path.replace('/workspace/', ''))}"
     #     return None
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -149,6 +154,11 @@ class SandboxFilesTool(SandboxToolsBase):
             return self.success_response(message)
         except Exception as e:
             return self.fail_response(f"Error creating file: {str(e)}")
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",
@@ -217,6 +227,11 @@ class SandboxFilesTool(SandboxToolsBase):
         except Exception as e:
             return self.fail_response(f"Error replacing string: {str(e)}")
 
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -271,6 +286,11 @@ class SandboxFilesTool(SandboxToolsBase):
             return self.success_response(message)
         except Exception as e:
             return self.fail_response(f"Error rewriting file: {str(e)}")
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",
@@ -372,6 +392,11 @@ class SandboxFilesTool(SandboxToolsBase):
                 error_message += f"\n\nAPI Response Body:\n{e.body}"
             logger.error(f"Error calling Morph/OpenRouter API: {error_message}", exc_info=True)
             return None, error_message
+
+    @execution_flow(
+        default="CONTINUE",
+        allows_override=True
+    )
 
     @openapi_schema({
         "type": "function",
@@ -506,6 +531,10 @@ class SandboxFilesTool(SandboxToolsBase):
                 "updated_content": None
             }))
 
+    # @execution_flow(
+    #     default="CONTINUE",
+    #     allows_override=True
+    # )
     # @openapi_schema({
     #     "type": "function",
     #     "function": {
